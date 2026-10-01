@@ -66,7 +66,7 @@ the tunnel (e.g. a Cloudflare origin rule). A Cloudflare cache rule already bypa
 caching for `dev.tuti.so` and `*--dev.tuti.so` (otherwise browsers keep stale dev CSS
 for 4 hours).
 
-## Phase 1.8 — Team members (next)
+## Phase 1.8 — Team members (in progress)
 
 - [ ] Invitations: owners/admins create an invite link with a role (email invites once email exists); invitee signs in or up on the apex and accepts
 - [ ] Members page in `/app/<workspace>/members`: list, change role, remove, revoke pending invites
