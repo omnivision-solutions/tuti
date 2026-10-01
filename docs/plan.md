@@ -16,12 +16,12 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 ## Phase 1 — JWT SSO ✅
 
 Customer apps sign a short-lived HS256 JWT with a per-project secret and redirect
-users to `/<project>/sso?token=…&redirect=…`. Users are matched by `sub`, never by
+users to `<project>.tuti.so/sso?token=…&redirect=…` (originally `/<project>/sso`). Users are matched by `sub`, never by
 email, so one project can't take over accounts in another.
 
 - [x] Schema: project SSO secret, `SsoIdentity` (project + `sub` → user), used-token log for replay protection; migration
 - [x] Better Auth plugin endpoint: verify token (signature, `exp`, max lifetime, one-time `jti`), find or create the user, set the session cookie, safe redirect
-- [x] `/<project>/sso` route forwarding to the endpoint
+- [x] SSO route forwarding to the endpoint (now on the portal host, see Phase 1.75)
 - [x] Project settings page (owners/admins only): enable SSO, generate/rotate secret, integration snippet
 - [x] Show the user's name (not email) in the header; SSO users get a placeholder email
 - [x] Tests: happy path, same `sub` → same user, replay, expired, bad signature, overlong token, open redirect, non-admin access to settings
