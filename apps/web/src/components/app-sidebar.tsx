@@ -11,6 +11,7 @@ import {
   SettingsIcon,
   SunIcon,
   UserIcon,
+  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -65,6 +66,7 @@ export function AppSidebar({
   const base = `/app/${current.slug}`;
   const nav = [
     { title: "Feedback", href: base, icon: InboxIcon },
+    { title: "Members", href: `${base}/members`, icon: UsersIcon },
     ...(isAdmin ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }] : []),
   ];
 

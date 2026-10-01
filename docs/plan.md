@@ -70,7 +70,7 @@ for 4 hours).
 
 - [ ] Invitations: owners/admins create an invite link with a role (email invites once email exists); invitee signs in or up on the apex and accepts
 - [ ] Members page in `/app/<workspace>/members`: list, change role, remove, revoke pending invites
-- [ ] Rules: only owners manage owners; a workspace always keeps at least one owner; members can leave
+- [x] Rules: only owners manage owners; a workspace always keeps at least one owner; members can leave
 - [ ] Tests; commit + push
 
 ## Phase 2 — Post pages & admin basics
