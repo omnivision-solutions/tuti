@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { NewPostForm } from "@/components/new-post-form";
 import { VoteButton } from "@/components/vote-button";
+import { getAdminWorkspace } from "@/server/members";
 import { getSession } from "@/server/session";
 
 export default async function BoardPage(props: PageProps<"/[workspace]/[board]">) {
@@ -29,12 +30,20 @@ export default async function BoardPage(props: PageProps<"/[workspace]/[board]">
   if (!board) {
     notFound();
   }
+  const isAdmin = (await getAdminWorkspace(workspaceSlug)) !== null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <p className="text-sm text-zinc-500">{board.workspace.name}</p>
-        <h1 className="text-2xl font-semibold">{board.name}</h1>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-zinc-500">{board.workspace.name}</p>
+          <h1 className="text-2xl font-semibold">{board.name}</h1>
+        </div>
+        {isAdmin && (
+          <Link href={`/${workspaceSlug}/settings`} className="text-sm text-zinc-500 underline">
+            Settings
+          </Link>
+        )}
       </div>
 
       {session ? (

@@ -13,22 +13,22 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 - [x] Dev environment: `tuti_dev` database, Hatchet Cloud dev tenant, https://dev.tuti.so tunnel
 - [x] End-to-end tests passing on dev (web + worker)
 
-## Phase 1 — JWT SSO (in progress)
+## Phase 1 — JWT SSO ✅
 
 Customer apps sign a short-lived HS256 JWT with a per-workspace secret and redirect
 users to `/<workspace>/sso?token=…&redirect=…`. Users are matched by `sub`, never by
 email, so one workspace can't take over accounts in another.
 
-- [ ] Schema: workspace SSO secret, `SsoIdentity` (workspace + `sub` → user), used-token log for replay protection; migration
-- [ ] Better Auth plugin endpoint: verify token (signature, `exp`, max lifetime, one-time `jti`), find or create the user, set the session cookie, safe redirect
-- [ ] `/<workspace>/sso` route forwarding to the endpoint
-- [ ] Workspace settings page (owners/admins only): enable SSO, generate/rotate secret, integration snippet
-- [ ] Show the user's name (not email) in the header; SSO users get a placeholder email
-- [ ] Tests: happy path, same `sub` → same user, replay, expired, bad signature, overlong token, open redirect, non-admin access to settings
-- [ ] Docs: integration guide for customers
-- [ ] Commit + push, verify on dev.tuti.so
+- [x] Schema: workspace SSO secret, `SsoIdentity` (workspace + `sub` → user), used-token log for replay protection; migration
+- [x] Better Auth plugin endpoint: verify token (signature, `exp`, max lifetime, one-time `jti`), find or create the user, set the session cookie, safe redirect
+- [x] `/<workspace>/sso` route forwarding to the endpoint
+- [x] Workspace settings page (owners/admins only): enable SSO, generate/rotate secret, integration snippet
+- [x] Show the user's name (not email) in the header; SSO users get a placeholder email
+- [x] Tests: happy path, same `sub` → same user, replay, expired, bad signature, overlong token, open redirect, non-admin access to settings
+- [x] Docs: integration guide for customers (`docs/sso.md`)
+- [x] Commit + push, verify on dev.tuti.so
 
-## Phase 2 — Post pages & admin basics
+## Phase 2 — Post pages & admin basics (next)
 
 - [ ] Post page with comments
 - [ ] Admins change post status

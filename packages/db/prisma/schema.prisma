@@ -26,6 +26,7 @@ model User {
   posts       Post[]
   votes       Vote[]
   comments    Comment[]
+  ssoIdentity SsoIdentity?
 
   @@unique([email])
   @@map("user")
@@ -93,14 +94,19 @@ model Workspace {
   id        String   @id @default(cuid())
   slug      String   @unique
   name      String
+  /// HS256 secret the workspace's own app uses to sign SSO tokens. SSO is
+  /// enabled when this is set. Stored as-is because verification needs it.
+  ssoSecret String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members  Member[]
-  boards   Board[]
-  posts    Post[]
-  votes    Vote[]
-  comments Comment[]
+  members       Member[]
+  boards        Board[]
+  posts         Post[]
+  votes         Vote[]
+  comments      Comment[]
+  ssoIdentities SsoIdentity[]
+  ssoTokenUses  SsoTokenUse[]
 
   @@map("workspace")
 }
@@ -120,6 +126,43 @@ model Member {
   @@unique([workspaceId, userId])
   @@index([userId])
   @@map("member")
+}
+
+// ─── SSO ─────────────────────────────────────────────────────────────────────
+
+/// A user signed in through a workspace's JWT SSO. Users are matched by the
+/// workspace's own user id (`sub`), never by email, so each (workspace, sub) gets
+/// its own User and one workspace can't sign in as another workspace's users.
+model SsoIdentity {
+  id          String   @id @default(cuid())
+  workspaceId String
+  /// The `sub` claim: the user's id in the workspace's app.
+  externalId  String
+  userId      String   @unique
+  /// Email as asserted by the workspace's app (User.email is a placeholder).
+  email       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, externalId])
+  @@map("sso_identity")
+}
+
+/// Token ids (`jti`) already used, so a token can't be replayed. Rows are only
+/// needed until the token would have expired anyway.
+model SsoTokenUse {
+  workspaceId String
+  jti         String
+  expiresAt   DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, jti])
+  @@index([expiresAt])
+  @@map("sso_token_use")
 }
 
 // ─── Feedback ────────────────────────────────────────────────────────────────

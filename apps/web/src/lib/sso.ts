@@ -1,0 +1,183 @@
+import { createHash, randomBytes } from "node:crypto";
+
+import { Prisma, prisma } from "@tuti/db";
+import type { BetterAuthPlugin } from "better-auth";
+import { createAuthEndpoint } from "better-auth/api";
+import { setSessionCookie } from "better-auth/cookies";
+import { errors as joseErrors, jwtVerify } from "jose";
+import { z } from "zod";
+
+/**
+ * JWT single sign-on.
+ *
+ * A workspace's own app signs a short-lived HS256 token with the workspace's SSO
+ * secret and sends the user to `/<workspace>/sso?token=…&redirect=…`. We verify it,
+ * find or create the user and sign them in.
+ *
+ * Users are matched by `sub` (the user's id in the workspace's app), never by email:
+ * a workspace controls everything in its tokens, so trusting email would let it sign
+ * in as any Tuti user. Each (workspace, sub) therefore gets its own User.
+ */
+
+/** Longest allowed gap between `iat` and `exp`. Tokens are meant to be used immediately. */
+const MAX_TOKEN_LIFETIME_SECONDS = 10 * 60;
+const CLOCK_TOLERANCE_SECONDS = 30;
+
+export const SSO_ERROR_CODES = [
+  "sso_not_enabled",
+  "invalid_token",
+  "expired_token",
+  "token_lifetime_too_long",
+  "token_already_used",
+  "invalid_claims",
+] as const;
+export type SsoErrorCode = (typeof SSO_ERROR_CODES)[number];
+
+const claimsSchema = z.object({
+  sub: z.string().min(1).max(255),
+  jti: z.string().min(1).max(255),
+  iat: z.number(),
+  exp: z.number(),
+  email: z.email().max(320).optional(),
+  name: z.string().trim().min(1).max(100).optional(),
+  avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
+});
+
+const querySchema = z.object({
+  workspace: z.string().min(1).max(100),
+  token: z.string().min(1).max(8192),
+  redirect: z.string().max(2048).optional(),
+});
+
+export function generateSsoSecret(): string {
+  return `tsso_${randomBytes(32).toString("base64url")}`;
+}
+
+/** Only same-site paths, so the SSO endpoint can't be used as an open redirect. */
+export function safeRedirectPath(redirect: string | undefined, fallback: string): string {
+  if (!redirect || !redirect.startsWith("/") || redirect.startsWith("//") || redirect.includes("\\")) {
+    return fallback;
+  }
+  return redirect;
+}
+
+/** User.email must be unique, so SSO users get a stable placeholder; the asserted email lives on SsoIdentity. */
+function placeholderEmail(workspaceId: string, externalId: string): string {
+  const hash = createHash("sha256").update(`${workspaceId}:${externalId}`).digest("hex").slice(0, 32);
+  return `sso-${hash}@users.tuti.invalid`;
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+export const jwtSso = () =>
+  ({
+    id: "tuti-jwt-sso",
+    endpoints: {
+      ssoJwt: createAuthEndpoint(
+        "/sso/jwt",
+        { method: "GET", query: querySchema },
+        async (ctx) => {
+          const { workspace: slug, token } = ctx.query;
+          const fail = (code: SsoErrorCode) => ctx.redirect(`/${slug}/sso/error?code=${code}`);
+
+          const workspace = await prisma.workspace.findUnique({
+            where: { slug },
+            select: { id: true, ssoSecret: true },
+          });
+          if (!workspace?.ssoSecret) {
+            throw fail("sso_not_enabled");
+          }
+
+          let payload: unknown;
+          try {
+            ({ payload } = await jwtVerify(token, new TextEncoder().encode(workspace.ssoSecret), {
+              algorithms: ["HS256"],
+              clockTolerance: CLOCK_TOLERANCE_SECONDS,
+              requiredClaims: ["sub", "jti", "iat", "exp"],
+            }));
+          } catch (error) {
+            throw fail(error instanceof joseErrors.JWTExpired ? "expired_token" : "invalid_token");
+          }
+
+          const claims = claimsSchema.safeParse(payload);
+          if (!claims.success) {
+            throw fail("invalid_claims");
+          }
+          const { sub, jti, iat, exp, email, name, avatar } = claims.data;
+          if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
+            throw fail("token_lifetime_too_long");
+          }
+
+          // One-time use: the primary key on (workspaceId, jti) rejects replays.
+          // Old rows only matter until their token would have expired anyway.
+          await prisma.ssoTokenUse.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+          try {
+            await prisma.ssoTokenUse.create({
+              data: {
+                workspaceId: workspace.id,
+                jti,
+                expiresAt: new Date((exp + CLOCK_TOLERANCE_SECONDS) * 1000),
+              },
+            });
+          } catch (error) {
+            if (isUniqueViolation(error)) {
+              throw fail("token_already_used");
+            }
+            throw error;
+          }
+
+          const profile = {
+            name: name ?? email?.split("@")[0] ?? "Anonymous",
+            image: avatar ?? null,
+          };
+
+          const identity = await prisma.ssoIdentity.findUnique({
+            where: { workspaceId_externalId: { workspaceId: workspace.id, externalId: sub } },
+            select: { userId: true },
+          });
+
+          let userId = identity?.userId;
+          if (userId) {
+            await ctx.context.internalAdapter.updateUser(userId, profile);
+            await prisma.ssoIdentity.update({
+              where: { userId },
+              data: { email: email ?? null },
+            });
+          } else {
+            const user = await ctx.context.internalAdapter.createUser(
+              { ...profile, email: placeholderEmail(workspace.id, sub) },
+              { method: "jwt-sso" },
+            );
+            try {
+              await prisma.ssoIdentity.create({
+                data: { workspaceId: workspace.id, externalId: sub, userId: user.id, email: email ?? null },
+              });
+              userId = user.id;
+            } catch (error) {
+              // Lost a race with a concurrent first sign-in for the same sub.
+              await ctx.context.internalAdapter.deleteUser(user.id);
+              if (!isUniqueViolation(error)) {
+                throw error;
+              }
+              const existing = await prisma.ssoIdentity.findUniqueOrThrow({
+                where: { workspaceId_externalId: { workspaceId: workspace.id, externalId: sub } },
+                select: { userId: true },
+              });
+              userId = existing.userId;
+            }
+          }
+
+          const user = await ctx.context.internalAdapter.findUserById(userId);
+          if (!user) {
+            throw fail("invalid_claims");
+          }
+          const session = await ctx.context.internalAdapter.createSession(user.id);
+          await setSessionCookie(ctx, { session, user });
+
+          throw ctx.redirect(safeRedirectPath(ctx.query.redirect, `/${slug}`));
+        },
+      ),
+    },
+  }) satisfies BetterAuthPlugin;

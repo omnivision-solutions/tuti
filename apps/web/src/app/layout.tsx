@@ -34,7 +34,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           </Link>
           {session ? (
             <div className="flex items-center gap-4 text-sm">
-              <span className="text-zinc-500">{session.user.email}</span>
+              <span className="text-zinc-500">{session.user.name}</span>
               <SignOutButton />
             </div>
           ) : (
