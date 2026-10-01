@@ -39,18 +39,27 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
     return { error: "Board not found" };
   }
 
-  // Authors automatically upvote their own post.
-  const post = await prisma.post.create({
-    data: {
-      workspaceId: board.workspaceId,
-      boardId: board.id,
-      authorId: session.user.id,
-      title: parsed.data.title,
-      body: parsed.data.body,
-      voteCount: 1,
-      votes: { create: { userId: session.user.id, workspaceId: board.workspaceId } },
-    },
-    select: { id: true },
+  const post = await prisma.$transaction(async (tx) => {
+    // Locks the workspace row, so concurrent posts get distinct numbers.
+    const { postCount: number } = await tx.workspace.update({
+      where: { id: board.workspaceId },
+      data: { postCount: { increment: 1 } },
+      select: { postCount: true },
+    });
+    // Authors automatically upvote their own post.
+    return tx.post.create({
+      data: {
+        workspaceId: board.workspaceId,
+        boardId: board.id,
+        authorId: session.user.id,
+        number,
+        title: parsed.data.title,
+        body: parsed.data.body,
+        voteCount: 1,
+        votes: { create: { userId: session.user.id, workspaceId: board.workspaceId } },
+      },
+      select: { id: true },
+    });
   });
 
   // Background work must never block or fail the user's request.

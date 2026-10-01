@@ -39,6 +39,33 @@ Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base
 - [x] Typecheck, lint, build; check pages on dev.tuti.so (light + dark)
 - [x] Commit + push
 
+## Phase 1.75 — URL structure: portals on subdomains (in progress)
+
+- Apex (`tuti.so`): marketing at `/`, team sign-in/up, admin app at `/app/...`
+- Portals: `<workspace>.tuti.so` (dev: `<workspace>--dev.tuti.so`, local:
+  `<workspace>.localhost:3100`), later custom domains. Boards at `/b/<board>`,
+  posts at `/p/<title>-<number>`, SSO at `/sso`.
+- Sessions are per host (no cookies on `.tuti.so`), so portal sign-ins (incl. SSO)
+  only apply to that portal.
+
+- [ ] Config: `APP_URL` + `PORTAL_URL_TEMPLATE` (Infisical dev/prod, `.env.example`, startup check, turbo)
+- [ ] `proxy.ts`: route portal hosts to internal portal routes; block portal routes on the apex
+- [ ] Move admin pages to `/app` (workspace list, create, settings); apex `/` is marketing
+- [ ] `/app` shell: shadcn sidebar with workspace switcher (switch / create) at the top, nav, account menu at the bottom
+- [ ] Account settings page (`/app/account`: name, password)
+- [ ] Portal pages: board list → `/b/<board>`, sign-in/up for end users
+- [x] Per-workspace post numbers (`#123`) for `/p/<title>-<number>` URLs
+- [ ] SSO moves to `<portal>/sso`; docs + settings snippet updated
+- [ ] Better Auth trusts the apex and portal origins
+- [ ] Reserved workspace slugs (www, app, api, admin, dev, docs, …); no `--`
+- [ ] Dev: wildcard DNS `*.tuti.so` → tunnel, tunnel route, Next dev origins
+- [ ] Tests updated and passing (local + through the tunnel); commit + push
+
+Before production: `*.tuti.so` must point at production, with `--dev` hosts routed to
+the tunnel (e.g. a Cloudflare origin rule). A Cloudflare cache rule already bypasses
+caching for `dev.tuti.so` and `*--dev.tuti.so` (otherwise browsers keep stale dev CSS
+for 4 hours).
+
 ## Phase 2 — Post pages & admin basics (next)
 
 - [ ] Post page with comments

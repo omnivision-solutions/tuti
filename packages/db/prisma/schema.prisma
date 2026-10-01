@@ -97,6 +97,8 @@ model Workspace {
   /// HS256 secret the workspace's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
   ssoSecret String?
+  /// Last post number handed out; posts are numbered #1, #2, … per workspace.
+  postCount Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -197,6 +199,8 @@ model Post {
   workspaceId   String
   boardId       String
   authorId      String
+  /// Per-workspace number (#123), used in URLs: /p/<title>-<number>.
+  number        Int
   title         String
   body          String     @default("")
   status        PostStatus @default(OPEN)
@@ -216,6 +220,7 @@ model Post {
   votes       Vote[]
   comments    Comment[]
 
+  @@unique([workspaceId, number])
   @@index([boardId, voteCount(sort: Desc)])
   @@index([boardId, createdAt(sort: Desc)])
   @@index([workspaceId, status])
