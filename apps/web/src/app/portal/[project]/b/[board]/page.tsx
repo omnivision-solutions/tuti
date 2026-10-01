@@ -2,15 +2,19 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
+import { ListFilters } from "@/components/list-filters";
 import { NewPostForm } from "@/components/new-post-form";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
+import { sortFilter, statusFilter } from "@/lib/post-filter-options";
+import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 import { postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/b/[board]">) {
   const { project: projectSlug, board: boardSlug } = await props.params;
+  const filters = parsePostFilters(await props.searchParams);
   const session = await getSession();
   const userId = session?.user.id;
 
@@ -18,8 +22,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
     where: { slug: boardSlug, project: { slug: projectSlug } },
     include: {
       posts: {
-        where: { duplicateOfId: null },
-        orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+        where: { duplicateOfId: null, ...(filters.status && { status: filters.status }) },
+        orderBy: postOrderBy(filters.sort),
         take: 100,
         include: {
           author: { select: { name: true } },
@@ -58,6 +62,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
         </p>
       )}
 
+      <ListFilters filters={[sortFilter(filters.sort), statusFilter(filters.statusParam)]} />
+
       <div className="flex flex-col gap-3">
         {board.posts.map((post) => (
           <Card key={post.id} size="sm">
@@ -88,7 +94,11 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
             </CardContent>
           </Card>
         ))}
-        {board.posts.length === 0 && <p className="text-muted-foreground">No feedback yet. Be the first!</p>}
+        {board.posts.length === 0 && (
+          <p className="text-muted-foreground">
+            {filters.status ? "No posts with this status yet." : "No feedback yet. Be the first!"}
+          </p>
+        )}
       </div>
     </div>
   );

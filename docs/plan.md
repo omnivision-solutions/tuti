@@ -80,14 +80,14 @@ for 4 hours).
 - [x] Multiple boards per project: Boards page in `/app` (create, rename, change URL with redirects, delete empty boards); board tabs on the portal; the default board is an ordinary board
 - [x] Tests; commit + push
 
-## Phase 2 — Post pages & team actions (in progress)
+## Phase 2 — Post pages & team actions ✅
 
 - [x] Post page `/p/<title>-<number>` on the portal, with comments (Team badge for the project's team)
 - [x] Post view in `/app/<project>/p/<number>` for the team: comment (shown with a **Team** badge), change status, move to another board
-- [ ] Team members change post status from the feedback list too
-- [ ] Board sorting/filtering (top, new, by status)
+- [x] Team members change post status from the feedback list too
+- [x] Sorting and filtering in the URL: Feedback list (board, status, most votes / newest), portal boards (most votes / newest, status)
 
-## Phase 3 — Duplicates
+## Phase 3 — Duplicates (next)
 
 - [ ] Admin "merge into…" (moves votes and subscribers without double counting)
 - [ ] Similar-post suggestions while typing (full-text / trigram)
