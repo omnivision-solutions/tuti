@@ -26,6 +26,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
     select: { id: true, role: true, userId: true, user: { select: { name: true, email: true, image: true } } },
   });
   const isAdmin = isAdminRole(myRole);
+  // A project always keeps an owner, so the only owner can't leave.
+  const isOnlyOwner = myRole === "OWNER" && members.filter((m) => m.role === "OWNER").length === 1;
   const invitations = isAdmin
     ? await prisma.invitation.findMany({
         where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -84,7 +86,13 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
           })}
         </CardContent>
         <CardFooter className="justify-end">
-          <LeaveProjectButton projectSlug={project.slug} projectName={project.name} />
+          {isOnlyOwner ? (
+            <p className="text-sm text-muted-foreground">
+              You&apos;re the only owner. To leave, make someone else an owner first.
+            </p>
+          ) : (
+            <LeaveProjectButton projectSlug={project.slug} projectName={project.name} />
+          )}
         </CardFooter>
       </Card>
 
