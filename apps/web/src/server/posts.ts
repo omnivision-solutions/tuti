@@ -113,3 +113,34 @@ export async function toggleVote(postId: string): Promise<FormState> {
   refresh();
   return {};
 }
+
+const addCommentSchema = z.object({
+  postId: z.string().min(1),
+  body: z.string().trim().min(1, "Write something first").max(5000),
+});
+
+/** Comments from portal users and from the team (the team badge is shown when rendering). */
+export async function addComment(_prev: FormState, formData: FormData): Promise<FormState> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Sign in to comment" };
+  }
+  const parsed = addCommentSchema.safeParse({ postId: formData.get("postId"), body: formData.get("body") });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  const post = await prisma.post.findUnique({ where: { id: parsed.data.postId }, select: { id: true, projectId: true } });
+  if (!post || !(await canActIn(session.user.id, post.projectId))) {
+    return { error: "Post not found" };
+  }
+
+  await prisma.$transaction([
+    prisma.comment.create({
+      data: { projectId: post.projectId, postId: post.id, authorId: session.user.id, body: parsed.data.body },
+    }),
+    prisma.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } }),
+  ]);
+  refresh();
+  return {};
+}

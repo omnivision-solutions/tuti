@@ -80,9 +80,9 @@ for 4 hours).
 - [x] Multiple boards per project: Boards page in `/app` (create, rename, change URL with redirects, delete empty boards); board tabs on the portal; the default board is an ordinary board
 - [x] Tests; commit + push
 
-## Phase 2 — Post pages & team actions (next)
+## Phase 2 — Post pages & team actions (in progress)
 
-- [ ] Post page `/p/<title>-<number>` on the portal, with comments
+- [x] Post page `/p/<title>-<number>` on the portal, with comments (Team badge for the project's team)
 - [ ] Post view in `/app` for the team: comment (shown with a **Team** badge), change status, move to another board (`movePost` already exists)
 - [ ] Team members change post status from the feedback list too
 - [ ] Board sorting/filtering (top, new, by status)

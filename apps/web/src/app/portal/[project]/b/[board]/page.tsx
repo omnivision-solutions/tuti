@@ -6,6 +6,7 @@ import { NewPostForm } from "@/components/new-post-form";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
+import { postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/b/[board]">) {
@@ -68,11 +69,20 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
                 disabled={!session}
               />
               <div className="flex min-w-0 flex-col gap-1">
-                <h2 className="font-medium">{post.title}</h2>
+                <h2 className="font-medium">
+                  <Link href={postPath(post)} className="hover:underline">
+                    {post.title}
+                  </Link>
+                </h2>
                 {post.body && <p className="line-clamp-2 text-sm text-muted-foreground">{post.body}</p>}
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <PostStatusBadge status={post.status} />
                   <span>{post.author.name}</span>
+                  {post.commentCount > 0 && (
+                    <span>
+                      · {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
+                    </span>
+                  )}
                 </div>
               </div>
             </CardContent>
