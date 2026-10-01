@@ -8,6 +8,7 @@ import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { resolveHost } from "./hosts";
+import { safeRedirectPath } from "./redirects";
 
 /**
  * JWT single sign-on.
@@ -53,14 +54,6 @@ const querySchema = z.object({
 
 export function generateSsoSecret(): string {
   return `tsso_${randomBytes(32).toString("base64url")}`;
-}
-
-/** Only same-site paths, so the SSO endpoint can't be used as an open redirect. */
-export function safeRedirectPath(redirect: string | undefined, fallback: string): string {
-  if (!redirect || !redirect.startsWith("/") || redirect.startsWith("//") || redirect.includes("\\")) {
-    return fallback;
-  }
-  return redirect;
 }
 
 /** User.email must be unique, so SSO users get a stable placeholder; the asserted email lives on SsoIdentity. */
