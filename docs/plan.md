@@ -73,14 +73,14 @@ for 4 hours).
 - [x] Rules: only owners manage owners; a project always keeps at least one owner; members can leave
 - [x] Tests; commit + push
 
-## Phase 1.9 — Naming and boards (in progress)
+## Phase 1.9 — Naming and boards ✅
 
 - [x] Rename workspaces → **projects** everywhere: UI, code, database (rename in place, keep data), routes, `PORTAL_URL_TEMPLATE` placeholder, docs
 - [x] Rename members → **team** (team members with roles Owner / Admin / Member); people on portals are **users**
 - [x] Multiple boards per project: Boards page in `/app` (create, rename, change URL with redirects, delete empty boards); board tabs on the portal; the default board is an ordinary board
-- [ ] Tests; commit + push
+- [x] Tests; commit + push
 
-## Phase 2 — Post pages & team actions
+## Phase 2 — Post pages & team actions (next)
 
 - [ ] Post page `/p/<title>-<number>` on the portal, with comments
 - [ ] Post view in `/app` for the team: comment (shown with a **Team** badge), change status
