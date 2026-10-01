@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { z } from "zod";
 import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
@@ -35,6 +36,28 @@ export async function movePost(projectSlug: string, postId: string, boardSlug: s
   }
 
   await prisma.post.update({ where: { id: post.id }, data: { boardId: board.id } });
+  refresh();
+  return {};
+}
+
+const statusSchema = z.enum(["OPEN", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS", "COMPLETED", "CLOSED"]);
+
+export async function changePostStatus(projectSlug: string, postId: string, status: string): Promise<FormState> {
+  const membership = await getMembership(projectSlug);
+  if (!membership) {
+    return { error: "Only the project's team can change a post's status" };
+  }
+  const parsed = statusSchema.safeParse(status);
+  if (!parsed.success) {
+    return { error: "Unknown status" };
+  }
+  const { count } = await prisma.post.updateMany({
+    where: { id: postId, projectId: membership.project.id },
+    data: { status: parsed.data },
+  });
+  if (count === 0) {
+    return { error: "Post not found" };
+  }
   refresh();
   return {};
 }

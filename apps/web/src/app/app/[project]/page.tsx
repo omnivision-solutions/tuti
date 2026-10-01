@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { ExternalLinkIcon } from "lucide-react";
+import Link from "next/link";
 
 import { MovePostSelect } from "@/components/move-post-select";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -60,7 +61,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
               <div key={post.id} className="flex items-center gap-4 py-2.5 first:pt-0 last:pb-0">
                 <span className="w-10 text-right font-semibold tabular-nums">{post.voteCount}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{post.title}</span>
+                  <Link href={`/app/${slug}/p/${post.number}`} className="truncate font-medium hover:underline">
+                    {post.title}
+                  </Link>
                   <span className="text-xs text-muted-foreground">
                     #{post.number} · {post.author.name}
                   </span>
