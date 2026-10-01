@@ -1,6 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { resolveHost } from "@/lib/hosts";
+import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
+import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 /**
  * Routes requests by host:
@@ -26,7 +28,17 @@ export function proxy(request: NextRequest) {
     if (pathname === "/portal" || pathname.startsWith("/portal/")) {
       return new NextResponse(null, { status: 404 });
     }
-    return NextResponse.next();
+    const response = NextResponse.next();
+    const project = /^\/app\/([^/]+)/.exec(pathname)?.[1];
+    if (project && SLUG_PATTERN.test(project) && !isReservedSlug(project)) {
+      response.cookies.set(LAST_PROJECT_COOKIE, project, {
+        path: "/app",
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 365,
+      });
+    }
+    return response;
   }
 
   // Unknown host (later: custom domains).

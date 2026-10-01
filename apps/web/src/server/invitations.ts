@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
-import { refresh } from "next/cache";
+import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -105,6 +105,8 @@ export async function acceptInvitation(token: string): Promise<Result> {
       }
     }
   }
+  // The /app layout lists your projects; refresh it before navigating.
+  revalidatePath("/app", "layout");
   redirect(`/app/${slug}`);
 }
 

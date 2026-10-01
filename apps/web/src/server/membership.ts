@@ -25,8 +25,8 @@ export async function getAdminProject(slug: string) {
 export async function listMyProjects(userId: string) {
   const memberships = await prisma.teamMember.findMany({
     where: { userId },
-    select: { project: { select: { slug: true, name: true } } },
+    select: { role: true, project: { select: { slug: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
-  return memberships.map((m) => m.project);
+  return memberships.map((m) => ({ ...m.project, role: m.role }));
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import type { TeamRole } from "@tuti/db";
 import {
   ChevronsUpDownIcon,
   ExternalLinkIcon,
@@ -15,7 +16,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -48,60 +49,56 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 
-type ProjectSummary = { slug: string; name: string };
+export type ProjectSummary = { slug: string; name: string; role: TeamRole; portalUrl: string };
 
+/** Shared by every /app page. The current project comes from the URL, else the last one opened. */
 export function AppSidebar({
   projects,
-  current,
-  portalUrl,
-  isAdmin,
+  fallbackSlug,
   user,
 }: {
   projects: ProjectSummary[];
-  current: ProjectSummary;
-  portalUrl: string;
-  isAdmin: boolean;
+  fallbackSlug: string | null;
   user: { name: string; email: string; image: string | null };
 }) {
   const pathname = usePathname();
-  const base = `/app/${current.slug}`;
-  const nav = [
-    { title: "Feedback", href: base, icon: InboxIcon },
-    { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
-    { title: "Team", href: `${base}/team`, icon: UsersIcon },
-    ...(isAdmin ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }] : []),
-  ];
+  const current = useCurrentProject(projects, fallbackSlug);
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <ProjectSwitcher projects={projects} current={current} portalHost={new URL(portalUrl).host} />
+        <ProjectSwitcher projects={projects} current={current} />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map((item) => (
-                <SidebarMenuItem key={item.href}>
+        {current && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {projectNav(current).map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton
+                      isActive={pathname === item.href}
+                      tooltip={item.title}
+                      render={<Link href={item.href} />}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+                <SidebarMenuItem>
                   <SidebarMenuButton
-                    isActive={pathname === item.href}
-                    tooltip={item.title}
-                    render={<Link href={item.href} />}
+                    tooltip="View portal"
+                    render={<a href={current.portalUrl} target="_blank" rel="noreferrer" />}
                   >
-                    <item.icon />
-                    <span>{item.title}</span>
+                    <ExternalLinkIcon />
+                    <span>View portal</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
-              <SidebarMenuItem>
-                <SidebarMenuButton tooltip="View portal" render={<a href={portalUrl} target="_blank" rel="noreferrer" />}>
-                  <ExternalLinkIcon />
-                  <span>View portal</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
@@ -120,16 +117,41 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function ProjectSwitcher({
-  projects,
-  current,
-  portalHost,
-}: {
-  projects: ProjectSummary[];
-  current: ProjectSummary;
-  portalHost: string;
-}) {
+export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: string | null) {
+  const params = useParams<{ project?: string }>();
+  const slug = params.project ?? fallbackSlug;
+  return projects.find((p) => p.slug === slug) ?? null;
+}
+
+function projectNav(project: ProjectSummary) {
+  const base = `/app/${project.slug}`;
+  return [
+    { title: "Feedback", href: base, icon: InboxIcon },
+    { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
+    { title: "Team", href: `${base}/team`, icon: UsersIcon },
+    ...(project.role === "OWNER" || project.role === "ADMIN"
+      ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }]
+      : []),
+  ];
+}
+
+function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; current: ProjectSummary | null }) {
   const { isMobile } = useSidebar();
+
+  if (!current) {
+    return (
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" render={<Link href="/app/new" />}>
+            <div className="flex aspect-square size-8 items-center justify-center rounded-lg border">
+              <PlusIcon className="size-4" />
+            </div>
+            <span className="font-medium">Create a project</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    );
+  }
 
   return (
     <SidebarMenu>
@@ -143,7 +165,7 @@ function ProjectSwitcher({
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{current.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{portalHost}</span>
+              <span className="truncate text-xs text-muted-foreground">{new URL(current.portalUrl).host}</span>
             </div>
             <ChevronsUpDownIcon className="ml-auto" />
           </DropdownMenuTrigger>

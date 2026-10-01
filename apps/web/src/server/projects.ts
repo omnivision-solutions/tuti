@@ -1,6 +1,7 @@
 "use server";
 
 import { Prisma, prisma } from "@tuti/db";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -51,5 +52,7 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
     throw error;
   }
 
+  // The /app layout lists your projects; refresh it before navigating.
+  revalidatePath("/app", "layout");
   redirect(`/app/${parsed.data.slug}`);
 }
