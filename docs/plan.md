@@ -28,6 +28,17 @@ email, so one workspace can't take over accounts in another.
 - [x] Docs: integration guide for customers (`docs/sso.md`)
 - [x] Commit + push, verify on dev.tuti.so
 
+## Phase 1.5 — UI foundation: shadcn/ui ✅
+
+Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base UI**
+(`base-nova` style), lucide icons, `next-themes` for light/dark.
+
+- [x] Initialise shadcn in `apps/web` (Tailwind 4, CSS variables, light/dark)
+- [x] Add base components (button, input, textarea, label, card, badge, alert, dropdown/sonner as needed)
+- [x] Replace the hand-written UI (`.input`, `.btn-primary`) in every page and form
+- [x] Typecheck, lint, build; check pages on dev.tuti.so (light + dark)
+- [x] Commit + push
+
 ## Phase 2 — Post pages & admin basics (next)
 
 - [ ] Post page with comments

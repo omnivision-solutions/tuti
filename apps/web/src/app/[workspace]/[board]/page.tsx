@@ -1,8 +1,12 @@
 import { prisma } from "@tuti/db";
+import { SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { NewPostForm } from "@/components/new-post-form";
+import { PostStatusBadge } from "@/components/post-status-badge";
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
 import { getAdminWorkspace } from "@/server/members";
 import { getSession } from "@/server/session";
@@ -36,11 +40,12 @@ export default async function BoardPage(props: PageProps<"/[workspace]/[board]">
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-zinc-500">{board.workspace.name}</p>
-          <h1 className="text-2xl font-semibold">{board.name}</h1>
+          <p className="text-sm text-muted-foreground">{board.workspace.name}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
         </div>
         {isAdmin && (
-          <Link href={`/${workspaceSlug}/settings`} className="text-sm text-zinc-500 underline">
+          <Link href={`/${workspaceSlug}/settings`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            <SettingsIcon />
             Settings
           </Link>
         )}
@@ -49,34 +54,37 @@ export default async function BoardPage(props: PageProps<"/[workspace]/[board]">
       {session ? (
         <NewPostForm workspaceSlug={workspaceSlug} boardSlug={boardSlug} />
       ) : (
-        <p className="text-sm text-zinc-500">
-          <Link href="/sign-in" className="underline">
+        <p className="text-sm text-muted-foreground">
+          <Link href="/sign-in" className="text-foreground underline underline-offset-4">
             Sign in
           </Link>{" "}
           to post feedback and vote.
         </p>
       )}
 
-      <ul className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         {board.posts.map((post) => (
-          <li key={post.id} className="flex gap-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-            <VoteButton
-              postId={post.id}
-              count={post.voteCount}
-              voted={post.votes.length > 0}
-              disabled={!session}
-            />
-            <div className="flex min-w-0 flex-col gap-1">
-              <h2 className="font-medium">{post.title}</h2>
-              {post.body && <p className="line-clamp-2 text-sm text-zinc-500">{post.body}</p>}
-              <p className="text-xs text-zinc-400">
-                {post.author.name} · {post.status.replace("_", " ").toLowerCase()}
-              </p>
-            </div>
-          </li>
+          <Card key={post.id} size="sm">
+            <CardContent className="flex gap-4">
+              <VoteButton
+                postId={post.id}
+                count={post.voteCount}
+                voted={post.votes.length > 0}
+                disabled={!session}
+              />
+              <div className="flex min-w-0 flex-col gap-1">
+                <h2 className="font-medium">{post.title}</h2>
+                {post.body && <p className="line-clamp-2 text-sm text-muted-foreground">{post.body}</p>}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <PostStatusBadge status={post.status} />
+                  <span>{post.author.name}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ))}
-        {board.posts.length === 0 && <p className="text-zinc-500">No feedback yet. Be the first!</p>}
-      </ul>
+        {board.posts.length === 0 && <p className="text-muted-foreground">No feedback yet. Be the first!</p>}
+      </div>
     </div>
   );
 }

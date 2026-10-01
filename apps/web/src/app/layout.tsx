@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 
-import { SignOutButton } from "@/components/sign-out-button";
+import { ThemeProvider } from "@/components/theme-provider";
+import { buttonVariants } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
+import { UserMenu } from "@/components/user-menu";
 import { getSession } from "@/server/session";
 
 import "./globals.css";
 
 const geistSans = Geist({
-  variable: "--font-geist-sans",
+  variable: "--font-sans",
   subsets: ["latin"],
 });
 
@@ -26,24 +29,25 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const session = await getSession();
 
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col font-sans">
-        <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-          <Link href="/" className="font-semibold">
-            Tuti
-          </Link>
-          {session ? (
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-zinc-500">{session.user.name}</span>
-              <SignOutButton />
-            </div>
-          ) : (
-            <Link href="/sign-in" className="text-sm">
-              Sign in
+    // next-themes sets the theme class on <html> before hydration.
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <body className="flex min-h-full flex-col">
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <header className="flex items-center justify-between border-b px-6 py-2">
+            <Link href="/" className="font-semibold">
+              Tuti
             </Link>
-          )}
-        </header>
-        <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
+            {session ? (
+              <UserMenu name={session.user.name} image={session.user.image ?? null} />
+            ) : (
+              <Link href="/sign-in" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Sign in
+              </Link>
+            )}
+          </header>
+          <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   );

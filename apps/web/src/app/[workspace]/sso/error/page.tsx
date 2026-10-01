@@ -1,5 +1,8 @@
+import { CircleAlertIcon } from "lucide-react";
 import Link from "next/link";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { SSO_ERROR_CODES, type SsoErrorCode } from "@/lib/sso";
 
 const MESSAGES: Record<SsoErrorCode, string> = {
@@ -17,11 +20,16 @@ export default async function SsoErrorPage(props: PageProps<"/[workspace]/sso/er
   const known = SSO_ERROR_CODES.find((c) => c === code);
 
   return (
-    <div className="flex flex-col items-start gap-3">
-      <h1 className="text-2xl font-semibold">Couldn&apos;t sign you in</h1>
-      <p className="text-zinc-500">{known ? MESSAGES[known] : "Single sign-on failed."}</p>
-      {known && <code className="text-xs text-zinc-400">{known}</code>}
-      <Link href={`/${workspace}`} className="underline">
+    <div className="flex flex-col items-start gap-4">
+      <Alert variant="destructive">
+        <CircleAlertIcon />
+        <AlertTitle>Couldn&apos;t sign you in</AlertTitle>
+        <AlertDescription>
+          <p>{known ? MESSAGES[known] : "Single sign-on failed."}</p>
+          {known && <code className="font-mono text-xs">{known}</code>}
+        </AlertDescription>
+      </Alert>
+      <Link href={`/${workspace}`} className={buttonVariants({ variant: "outline" })}>
         Continue to the board
       </Link>
     </div>

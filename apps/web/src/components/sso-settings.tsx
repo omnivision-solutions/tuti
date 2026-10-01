@@ -1,7 +1,12 @@
 "use client";
 
+import { TriangleAlertIcon } from "lucide-react";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { disableSso, rotateSsoSecret } from "@/server/sso-settings";
 
 export function SsoSettings({
@@ -25,6 +30,9 @@ export function SsoSettings({
       const result = await rotateSsoSecret(workspaceSlug);
       setError(result.error);
       setSecret(result.secret);
+      if (result.secret) {
+        toast.success(enabled ? "SSO secret rotated" : "SSO enabled");
+      }
     });
   };
 
@@ -36,51 +44,53 @@ export function SsoSettings({
       const result = await disableSso(workspaceSlug);
       setError(result.error);
       setSecret(undefined);
+      if (!result.error) {
+        toast.success("SSO disabled");
+      }
     });
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm">
-        Status:{" "}
-        <span className={enabled ? "font-medium text-green-600" : "font-medium text-zinc-500"}>
-          {enabled ? "Enabled" : "Disabled"}
-        </span>
-      </p>
+      <div className="flex items-center gap-2 text-sm">
+        Status <Badge variant={enabled ? "default" : "secondary"}>{enabled ? "Enabled" : "Disabled"}</Badge>
+      </div>
 
       {secret && (
-        <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950">
-          <p className="font-medium">Copy your SSO secret now. It won&apos;t be shown again.</p>
-          <code className="break-all rounded bg-white px-2 py-1 font-mono text-xs dark:bg-black">{secret}</code>
-          <p className="text-zinc-500">Store it on your server only (e.g. as TUTI_SSO_SECRET). Never send it to the browser.</p>
-        </div>
+        <Alert>
+          <TriangleAlertIcon />
+          <AlertTitle>Copy your SSO secret now. It won&apos;t be shown again.</AlertTitle>
+          <AlertDescription className="flex flex-col gap-2">
+            <code className="w-full rounded-md bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">{secret}</code>
+            Store it on your server only (e.g. as TUTI_SSO_SECRET). Never send it to the browser.
+          </AlertDescription>
+        </Alert>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="flex gap-2">
-        <button type="button" onClick={rotate} disabled={pending} className="btn-primary">
+        <Button onClick={rotate} disabled={pending}>
           {enabled ? "Rotate secret" : "Enable SSO"}
-        </button>
+        </Button>
         {enabled && (
-          <button
-            type="button"
-            onClick={disable}
-            disabled={pending}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700"
-          >
+          <Button variant="outline" onClick={disable} disabled={pending}>
             Disable
-          </button>
+          </Button>
         )}
       </div>
 
       <div className="flex flex-col gap-2 text-sm">
         <p className="font-medium">How to sign users in from your app</p>
-        <p className="text-zinc-500">
+        <p className="text-muted-foreground">
           On your server, sign a short-lived token for the logged-in user and redirect them to{" "}
           <code>{ssoUrl}</code>. Example with Node and <code>jose</code>:
         </p>
-        <pre className="overflow-x-auto rounded-md bg-zinc-100 p-3 text-xs dark:bg-zinc-900">
+        <pre className="overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs">
           {`import { SignJWT } from "jose";
 
 const token = await new SignJWT({
