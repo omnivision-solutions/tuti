@@ -83,7 +83,7 @@ for 4 hours).
 ## Phase 2 — Post pages & team actions (next)
 
 - [ ] Post page `/p/<title>-<number>` on the portal, with comments
-- [ ] Post view in `/app` for the team: comment (shown with a **Team** badge), change status
+- [ ] Post view in `/app` for the team: comment (shown with a **Team** badge), change status, move to another board (`movePost` already exists)
 - [ ] Team members change post status from the feedback list too
 - [ ] Board sorting/filtering (top, new, by status)
 

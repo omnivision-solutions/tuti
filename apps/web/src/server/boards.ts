@@ -121,7 +121,7 @@ export async function deleteBoard(projectSlug: string, boardId: string): Promise
     return { error: "Board not found" };
   }
   if (board._count.posts > 0) {
-    return { error: "Only empty boards can be deleted" };
+    return { error: "Only empty boards can be deleted. Move its posts to another board first." };
   }
   if ((await prisma.board.count({ where: { projectId: project.id } })) <= 1) {
     return { error: "A project needs at least one board" };

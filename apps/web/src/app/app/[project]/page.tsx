@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { ExternalLinkIcon } from "lucide-react";
 
+import { MovePostSelect } from "@/components/move-post-select";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +12,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
     select: {
+      boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
       posts: {
         where: { duplicateOfId: null },
         orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
@@ -21,7 +23,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
           title: true,
           status: true,
           voteCount: true,
-          board: { select: { name: true } },
+          board: { select: { slug: true } },
           author: { select: { name: true } },
         },
       },
@@ -60,9 +62,15 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{post.title}</span>
                   <span className="text-xs text-muted-foreground">
-                    #{post.number} · {post.board.name} · {post.author.name}
+                    #{post.number} · {post.author.name}
                   </span>
                 </div>
+                <MovePostSelect
+                  projectSlug={slug}
+                  postId={post.id}
+                  boardSlug={post.board.slug}
+                  boards={project.boards}
+                />
                 <PostStatusBadge status={post.status} />
               </div>
             ))}
