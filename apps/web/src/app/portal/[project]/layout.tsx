@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BoardTabs } from "@/components/board-tabs";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
 import { getSession } from "@/server/session";
@@ -12,7 +13,10 @@ import { getSession } from "@/server/session";
  */
 export default async function PortalLayout({ children, params }: LayoutProps<"/portal/[project]">) {
   const { project: slug } = await params;
-  const project = await prisma.project.findUnique({ where: { slug }, select: { name: true } });
+  const project = await prisma.project.findUnique({
+    where: { slug },
+    select: { name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+  });
   if (!project) {
     notFound();
   }
@@ -33,6 +37,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </Link>
         )}
       </header>
+      <BoardTabs boards={project.boards} />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
     </>
   );

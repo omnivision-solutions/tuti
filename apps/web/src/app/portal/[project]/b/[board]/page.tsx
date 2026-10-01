@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
 import { NewPostForm } from "@/components/new-post-form";
 import { PostStatusBadge } from "@/components/post-status-badge";
@@ -28,12 +28,23 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
     },
   });
   if (!board) {
+    // An old URL of a board that has since moved?
+    const moved = await prisma.boardRedirect.findFirst({
+      where: { slug: boardSlug, project: { slug: projectSlug } },
+      select: { board: { select: { slug: true } } },
+    });
+    if (moved) {
+      permanentRedirect(`/b/${moved.board.slug}`);
+    }
     notFound();
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
+        {board.description && <p className="text-sm text-muted-foreground">{board.description}</p>}
+      </div>
 
       {session ? (
         <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} />

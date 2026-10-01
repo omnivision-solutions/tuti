@@ -4,6 +4,7 @@ import {
   ChevronsUpDownIcon,
   ExternalLinkIcon,
   InboxIcon,
+  LayoutListIcon,
   LogOutIcon,
   MonitorIcon,
   MoonIcon,
@@ -66,6 +67,7 @@ export function AppSidebar({
   const base = `/app/${current.slug}`;
   const nav = [
     { title: "Feedback", href: base, icon: InboxIcon },
+    { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(isAdmin ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }] : []),
   ];
