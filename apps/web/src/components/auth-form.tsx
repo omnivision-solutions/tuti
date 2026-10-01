@@ -10,7 +10,8 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 
-export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
+/** Used on the apex (team accounts → /app) and on portals (end users → the portal). */
+export function AuthForm({ mode, redirectTo }: { mode: "sign-in" | "sign-up"; redirectTo: string }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -33,7 +34,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       setError(error.message ?? "Something went wrong");
       return;
     }
-    router.push("/");
+    router.push(redirectTo);
     router.refresh();
   }
 

@@ -14,8 +14,7 @@ const MESSAGES: Record<SsoErrorCode, string> = {
   invalid_claims: "The sign-in token is missing required claims (sub, jti, iat, exp) or has invalid ones.",
 };
 
-export default async function SsoErrorPage(props: PageProps<"/[workspace]/sso/error">) {
-  const { workspace } = await props.params;
+export default async function SsoErrorPage(props: PageProps<"/portal/[workspace]/sso/error">) {
   const { code } = await props.searchParams;
   const known = SSO_ERROR_CODES.find((c) => c === code);
 
@@ -29,7 +28,7 @@ export default async function SsoErrorPage(props: PageProps<"/[workspace]/sso/er
           {known && <code className="font-mono text-xs">{known}</code>}
         </AlertDescription>
       </Alert>
-      <Link href={`/${workspace}`} className={buttonVariants({ variant: "outline" })}>
+      <Link href="/" className={buttonVariants({ variant: "outline" })}>
         Continue to the board
       </Link>
     </div>

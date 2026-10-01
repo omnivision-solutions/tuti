@@ -1,17 +1,14 @@
 import { prisma } from "@tuti/db";
-import { SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { NewPostForm } from "@/components/new-post-form";
 import { PostStatusBadge } from "@/components/post-status-badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
-import { getAdminWorkspace } from "@/server/members";
 import { getSession } from "@/server/session";
 
-export default async function BoardPage(props: PageProps<"/[workspace]/[board]">) {
+export default async function BoardPage(props: PageProps<"/portal/[workspace]/b/[board]">) {
   const { workspace: workspaceSlug, board: boardSlug } = await props.params;
   const session = await getSession();
   const userId = session?.user.id;
@@ -19,7 +16,6 @@ export default async function BoardPage(props: PageProps<"/[workspace]/[board]">
   const board = await prisma.board.findFirst({
     where: { slug: boardSlug, workspace: { slug: workspaceSlug } },
     include: {
-      workspace: { select: { name: true } },
       posts: {
         where: { duplicateOfId: null },
         orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
@@ -34,22 +30,10 @@ export default async function BoardPage(props: PageProps<"/[workspace]/[board]">
   if (!board) {
     notFound();
   }
-  const isAdmin = (await getAdminWorkspace(workspaceSlug)) !== null;
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{board.workspace.name}</p>
-          <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
-        </div>
-        {isAdmin && (
-          <Link href={`/${workspaceSlug}/settings`} className={buttonVariants({ variant: "ghost", size: "sm" })}>
-            <SettingsIcon />
-            Settings
-          </Link>
-        )}
-      </div>
+      <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
 
       {session ? (
         <NewPostForm workspaceSlug={workspaceSlug} boardSlug={boardSlug} />

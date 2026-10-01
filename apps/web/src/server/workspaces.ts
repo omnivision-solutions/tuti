@@ -4,11 +4,10 @@ import { Prisma, prisma } from "@tuti/db";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { isReservedSlug, SLUG_PATTERN } from "@/lib/workspace-slugs";
+
 import type { FormState } from "./form-state";
 import { getSession } from "./session";
-
-// Top-level routes a workspace slug must not shadow.
-const RESERVED_SLUGS = new Set(["api", "sign-in", "sign-up", "settings", "admin"]);
 
 const createWorkspaceSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -16,10 +15,10 @@ const createWorkspaceSchema = z.object({
     .string()
     .trim()
     .toLowerCase()
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Use lowercase letters, numbers and dashes")
+    .regex(SLUG_PATTERN, "Use lowercase letters, numbers and single dashes")
     .min(2)
     .max(40)
-    .refine((slug) => !RESERVED_SLUGS.has(slug), "That URL is reserved"),
+    .refine((slug) => !isReservedSlug(slug), "That URL is reserved"),
 });
 
 export async function createWorkspace(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -52,5 +51,5 @@ export async function createWorkspace(_prev: FormState, formData: FormData): Pro
     throw error;
   }
 
-  redirect(`/${parsed.data.slug}/feature-requests`);
+  redirect(`/app/${parsed.data.slug}`);
 }

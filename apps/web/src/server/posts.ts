@@ -8,6 +8,15 @@ import { z } from "zod";
 import type { FormState } from "./form-state";
 import { getSession } from "./session";
 
+/**
+ * Users who came in through a workspace's SSO belong to that workspace: their
+ * identity is vouched for by its app only, so they can't act in other workspaces.
+ */
+async function canActIn(userId: string, workspaceId: string): Promise<boolean> {
+  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { workspaceId: true } });
+  return !identity || identity.workspaceId === workspaceId;
+}
+
 const createPostSchema = z.object({
   workspaceSlug: z.string(),
   boardSlug: z.string(),
@@ -35,7 +44,7 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
     where: { slug: parsed.data.boardSlug, workspace: { slug: parsed.data.workspaceSlug } },
     select: { id: true, workspaceId: true },
   });
-  if (!board) {
+  if (!board || !(await canActIn(session.user.id, board.workspaceId))) {
     return { error: "Board not found" };
   }
 
@@ -79,6 +88,11 @@ export async function toggleVote(postId: string): Promise<FormState> {
     return { error: "Sign in to vote" };
   }
   const userId = session.user.id;
+
+  const target = await prisma.post.findUnique({ where: { id: postId }, select: { workspaceId: true } });
+  if (!target || !(await canActIn(userId, target.workspaceId))) {
+    return { error: "Post not found" };
+  }
 
   await prisma.$transaction(async (tx) => {
     const post = await tx.post.findUnique({ where: { id: postId }, select: { workspaceId: true } });

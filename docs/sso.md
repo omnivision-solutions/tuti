@@ -6,8 +6,8 @@ to Tuti, which signs them in.
 
 ## 1. Enable SSO
 
-Open your workspace's **Settings** (link on your board, visible to owners and admins)
-and click **Enable SSO**. Copy the secret (`tsso_…`) — it's shown once. Store it on your
+In the Tuti app, open your workspace's **Settings** (owners and admins) and click
+**Enable SSO**. Copy the secret (`tsso_…`) — it's shown once. Store it on your
 server only, e.g. as `TUTI_SSO_SECRET`. Never send it to the browser.
 
 **Rotate secret** issues a new one and invalidates the old one immediately.
@@ -52,11 +52,15 @@ Any JWT library works the same way (PyJWT, `golang-jwt`, `firebase/php-jwt`, …
 Redirect the user (or link them) to:
 
 ```
-https://<your Tuti host>/<workspace>/sso?token=<token>&redirect=<path>
+https://<workspace>.tuti.so/sso?token=<token>&redirect=<path>
 ```
 
-- `redirect` is optional: a path on Tuti such as `/acme/feature-requests`. Anything that
-  isn't a same-site path is ignored, and the user lands on your workspace instead.
+(or your portal's custom domain). The exact URL is shown on the Settings page.
+
+- `redirect` is optional: a path on your portal such as `/b/feature-requests`. Anything
+  that isn't a same-site path is ignored, and the user lands on the portal's home page.
+- The sign-in only applies to your portal: sessions are per portal, so these users
+  aren't signed in anywhere else on Tuti.
 - Create the token right before redirecting. Don't put tokens in emails or pages that
   get cached: they expire quickly and only work once.
 
@@ -65,7 +69,7 @@ current user and redirects, so "Feedback" links in your app always sign users in
 
 ## Errors
 
-If sign-in fails, the user sees an error page at `/<workspace>/sso/error?code=…`:
+If sign-in fails, the user sees an error page on your portal at `/sso/error?code=…`:
 
 | Code | Meaning |
 |---|---|

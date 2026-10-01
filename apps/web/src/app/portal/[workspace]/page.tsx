@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
-export default async function WorkspacePage(props: PageProps<"/[workspace]">) {
+export default async function PortalHome(props: PageProps<"/portal/[workspace]">) {
   const { workspace: slug } = await props.params;
 
   const board = await prisma.board.findFirst({
@@ -13,5 +13,5 @@ export default async function WorkspacePage(props: PageProps<"/[workspace]">) {
     notFound();
   }
 
-  redirect(`/${slug}/${board.slug}`);
+  redirect(`/b/${board.slug}`);
 }

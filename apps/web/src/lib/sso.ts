@@ -7,12 +7,15 @@ import { setSessionCookie } from "better-auth/cookies";
 import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
+import { resolveHost } from "./hosts";
+
 /**
  * JWT single sign-on.
  *
  * A workspace's own app signs a short-lived HS256 token with the workspace's SSO
- * secret and sends the user to `/<workspace>/sso?token=…&redirect=…`. We verify it,
- * find or create the user and sign them in.
+ * secret and sends the user to `<workspace portal>/sso?token=…&redirect=…`. We verify
+ * it, find or create the user and sign them in. The workspace is taken from the
+ * request's host, so the session cookie is only ever set on that workspace's portal.
  *
  * Users are matched by `sub` (the user's id in the workspace's app), never by email:
  * a workspace controls everything in its tokens, so trusting email would let it sign
@@ -44,7 +47,6 @@ const claimsSchema = z.object({
 });
 
 const querySchema = z.object({
-  workspace: z.string().min(1).max(100),
   token: z.string().min(1).max(8192),
   redirect: z.string().max(2048).optional(),
 });
@@ -79,8 +81,13 @@ export const jwtSso = () =>
         "/sso/jwt",
         { method: "GET", query: querySchema },
         async (ctx) => {
-          const { workspace: slug, token } = ctx.query;
-          const fail = (code: SsoErrorCode) => ctx.redirect(`/${slug}/sso/error?code=${code}`);
+          const target = resolveHost(ctx.headers?.get("host") ?? null);
+          if (target.kind !== "portal") {
+            throw ctx.redirect("/");
+          }
+          const { slug } = target;
+          const { token } = ctx.query;
+          const fail = (code: SsoErrorCode) => ctx.redirect(`/sso/error?code=${code}`);
 
           const workspace = await prisma.workspace.findUnique({
             where: { slug },
@@ -176,7 +183,7 @@ export const jwtSso = () =>
           const session = await ctx.context.internalAdapter.createSession(user.id);
           await setSessionCookie(ctx, { session, user });
 
-          throw ctx.redirect(safeRedirectPath(ctx.query.redirect, `/${slug}`));
+          throw ctx.redirect(safeRedirectPath(ctx.query.redirect, "/"));
         },
       ),
     },

@@ -48,6 +48,11 @@ pnpm db:migrate   # apply migrations
 pnpm dev          # web on http://localhost:3100 + worker
 ```
 
+The app is at http://localhost:3100 (`/app` after signing in); each workspace's portal
+is at `http://<workspace>.localhost:3100`. In production these are `APP_URL` and
+`PORTAL_URL_TEMPLATE` (e.g. `https://tuti.so` and `https://{workspace}.tuti.so`, which
+needs a wildcard DNS record).
+
 Prefer a secrets manager? Tuti only reads env vars, so any tool works.
 See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:pull`).
 

@@ -105,7 +105,7 @@ const token = await new SignJWT({
   .setExpirationTime("5m")     // 10 minutes max
   .sign(new TextEncoder().encode(process.env.TUTI_SSO_SECRET));
 
-redirect(\`${ssoUrl}?token=\${token}&redirect=/${workspaceSlug}\`);`}
+redirect(\`${ssoUrl}?token=\${token}&redirect=/\`);`}
         </pre>
       </div>
     </div>
