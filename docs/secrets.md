@@ -37,7 +37,7 @@ lives in `/shared`, which the others import.
 | `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN` | — |
 | `/web` ← shared | `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS` (dev: `https://dev.tuti.so`) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
-| `/scripts` ← shared (dev only) | overrides for the Prisma CLI if migrations need a different DB role | `packages/db/.env` |
+| `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
 Use separate Hatchet Cloud tenants/tokens for `dev` and `prod`, so local runs never
 pick up production jobs.
