@@ -1,6 +1,6 @@
 "use client";
 
-import type { MemberRole } from "@tuti/db";
+import type { TeamRole } from "@tuti/db";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -11,8 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 import { acceptInvitation, createInvitation, revokeInvitation } from "@/server/invitations";
 
-export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: MemberRole[] }) {
-  const [role, setRole] = useState<MemberRole>("MEMBER");
+export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: TeamRole[] }) {
+  const [role, setRole] = useState<TeamRole>("MEMBER");
   const [url, setUrl] = useState<string>();
   const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -20,8 +20,8 @@ export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles:
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Select items={ROLE_LABELS} value={role} onValueChange={(value) => setRole(value as MemberRole)}>
-          <SelectTrigger className="w-32" aria-label="Role for the new member">
+        <Select items={ROLE_LABELS} value={role} onValueChange={(value) => setRole(value as TeamRole)}>
+          <SelectTrigger className="w-32" aria-label="Role for the new team member">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

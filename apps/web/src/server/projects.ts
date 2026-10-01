@@ -40,7 +40,7 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
       data: {
         name: parsed.data.name,
         slug: parsed.data.slug,
-        members: { create: { userId: session.user.id, role: "OWNER" } },
+        team: { create: { userId: session.user.id, role: "OWNER" } },
         boards: { create: { slug: "feature-requests", name: "Feature requests" } },
       },
     });

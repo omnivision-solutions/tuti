@@ -9,7 +9,7 @@ import { appUrl } from "@/lib/hosts";
 import { generateInvitationToken, hashInvitationToken, INVITATION_TTL_DAYS } from "@/lib/invitations";
 import { canAssignRole, isAdminRole } from "@/lib/roles";
 
-import { getMembership } from "./members";
+import { getMembership } from "./membership";
 import { getSession } from "./session";
 
 type Result = { error?: string };
@@ -76,7 +76,7 @@ export async function acceptInvitation(token: string): Promise<Result> {
   }
   const { slug } = invitation.project;
 
-  const existing = await prisma.member.findUnique({
+  const existing = await prisma.teamMember.findUnique({
     where: { projectId_userId: { projectId: invitation.projectId, userId: session.user.id } },
     select: { id: true },
   });
@@ -91,7 +91,7 @@ export async function acceptInvitation(token: string): Promise<Result> {
         if (claimed.count !== 1) {
           throw new InvitationUnavailableError();
         }
-        await tx.member.create({
+        await tx.teamMember.create({
           data: { projectId: invitation.projectId, userId: session.user.id, role: invitation.role },
         });
       });

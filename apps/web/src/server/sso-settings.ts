@@ -5,7 +5,7 @@ import { refresh } from "next/cache";
 
 import { generateSsoSecret } from "@/lib/sso";
 
-import { getAdminProject } from "./members";
+import { getAdminProject } from "./membership";
 
 export type RotateSsoSecretState = { error?: string; secret?: string };
 

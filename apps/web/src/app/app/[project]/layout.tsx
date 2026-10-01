@@ -4,7 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { portalUrl } from "@/lib/hosts";
-import { getMembership, listMyProjects } from "@/server/members";
+import { getMembership, listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
 
 export default async function ProjectLayout({ children, params }: LayoutProps<"/app/[project]">) {

@@ -35,7 +35,7 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
 
   const alreadyMember =
     session &&
-    (await prisma.member.findFirst({
+    (await prisma.teamMember.findFirst({
       where: { userId: session.user.id, project: { slug: invitation.projectSlug } },
       select: { id: true },
     }));
@@ -70,7 +70,7 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
           </>
         ) : alreadyMember ? (
           <Link href={`/app/${invitation.projectSlug}`} className={buttonVariants()}>
-            You&apos;re already a member — open project
+            You&apos;re already on the team — open project
           </Link>
         ) : (
           <AcceptInvitationButton token={token} />

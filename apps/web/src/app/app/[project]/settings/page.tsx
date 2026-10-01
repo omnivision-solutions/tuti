@@ -3,13 +3,13 @@ import { notFound } from "next/navigation";
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
-import { getAdminProject } from "@/server/members";
+import { getAdminProject } from "@/server/membership";
 
 export default async function SettingsPage(props: PageProps<"/app/[project]/settings">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
   if (!project) {
-    // Members who aren't owners/admins get the same response as outsiders.
+    // Team members who aren't owners/admins get the same response as outsiders.
     notFound();
   }
 

@@ -1,11 +1,11 @@
-import { type MemberRole, prisma } from "@tuti/db";
+import { type TeamRole, prisma } from "@tuti/db";
 
 import { hashInvitationToken } from "@/lib/invitations";
 
 export type InvitationState =
   | { status: "invalid" }
   | { status: "expired" | "used" | "revoked"; projectName: string }
-  | { status: "valid"; projectName: string; projectSlug: string; role: MemberRole };
+  | { status: "valid"; projectName: string; projectSlug: string; role: TeamRole };
 
 /** Looks up an invite link for the accept page. */
 export async function getInvitation(token: string): Promise<InvitationState> {

@@ -22,11 +22,11 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
-  memberships Member[]
-  posts       Post[]
-  votes       Vote[]
-  comments    Comment[]
-  ssoIdentity SsoIdentity?
+  teamMemberships TeamMember[]
+  posts           Post[]
+  votes           Vote[]
+  comments        Comment[]
+  ssoIdentity     SsoIdentity?
 
   invitationsCreated  Invitation[] @relation("InvitationCreatedBy")
   invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
@@ -87,7 +87,7 @@ model Verification {
 // Every domain table carries projectId so a single deployment can host many
 // projects (and so self-hosters with one project pay nothing extra).
 
-enum MemberRole {
+enum TeamRole {
   OWNER
   ADMIN
   MEMBER
@@ -105,7 +105,7 @@ model Project {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members       Member[]
+  team          TeamMember[]
   boards        Board[]
   posts         Post[]
   votes         Vote[]
@@ -117,21 +117,21 @@ model Project {
   @@map("project")
 }
 
-/// Team members who manage a project. End users who vote and comment are
-/// plain `User`s and don't need a membership.
-model Member {
-  id        String     @id @default(cuid())
+/// The team that manages a project. Users who vote and comment on its portal
+/// are plain `User`s and aren't on the team.
+model TeamMember {
+  id        String   @id @default(cuid())
   projectId String
   userId    String
-  role      MemberRole @default(MEMBER)
-  createdAt DateTime   @default(now())
+  role      TeamRole @default(MEMBER)
+  createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, userId])
   @@index([userId])
-  @@map("member")
+  @@map("team_member")
 }
 
 // ─── SSO ─────────────────────────────────────────────────────────────────────
@@ -174,16 +174,16 @@ model SsoTokenUse {
 /// A single-use link that adds someone to a project with a given role.
 /// Only a hash of the token is stored; the link is shown once when created.
 model Invitation {
-  id           String     @id @default(cuid())
+  id           String    @id @default(cuid())
   projectId    String
-  role         MemberRole @default(MEMBER)
-  tokenHash    String     @unique
+  role         TeamRole  @default(MEMBER)
+  tokenHash    String    @unique
   createdById  String
   expiresAt    DateTime
   acceptedAt   DateTime?
   acceptedById String?
   revokedAt    DateTime?
-  createdAt    DateTime   @default(now())
+  createdAt    DateTime  @default(now())
 
   project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy  User    @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)

@@ -1,6 +1,6 @@
 "use client";
 
-import type { MemberRole } from "@tuti/db";
+import type { TeamRole } from "@tuti/db";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/lib/roles";
-import { changeMemberRole, leaveProject, removeMember } from "@/server/team";
+import { changeTeamRole, leaveProject, removeMember } from "@/server/team";
 
 export function RoleSelect({
   projectSlug,
@@ -28,8 +28,8 @@ export function RoleSelect({
 }: {
   projectSlug: string;
   memberId: string;
-  role: MemberRole;
-  assignable: MemberRole[];
+  role: TeamRole;
+  assignable: TeamRole[];
 }) {
   const [pending, startTransition] = useTransition();
 
@@ -40,11 +40,11 @@ export function RoleSelect({
       disabled={pending}
       onValueChange={(value) =>
         startTransition(async () => {
-          const result = await changeMemberRole(projectSlug, memberId, String(value));
+          const result = await changeTeamRole(projectSlug, memberId, String(value));
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(`Role changed to ${ROLE_LABELS[value as MemberRole]}`);
+            toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}`);
           }
         })
       }

@@ -10,7 +10,7 @@ export async function getMembership(slug: string) {
   if (!session) {
     return null;
   }
-  return prisma.member.findFirst({
+  return prisma.teamMember.findFirst({
     where: { userId: session.user.id, project: { slug } },
     select: { role: true, project: { select: { id: true, slug: true, name: true, ssoSecret: true } } },
   });
@@ -23,7 +23,7 @@ export async function getAdminProject(slug: string) {
 }
 
 export async function listMyProjects(userId: string) {
-  const memberships = await prisma.member.findMany({
+  const memberships = await prisma.teamMember.findMany({
     where: { userId },
     select: { project: { select: { slug: true, name: true } } },
     orderBy: { createdAt: "asc" },

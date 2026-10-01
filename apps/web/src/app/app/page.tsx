@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CreateProjectForm } from "@/components/create-project-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
-import { listMyProjects } from "@/server/members";
+import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
 
 export default async function AppHome() {

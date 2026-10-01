@@ -1,18 +1,18 @@
-import { type MemberRole, prisma } from "@tuti/db";
+import { type TeamRole, prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { InviteForm, RevokeInvitationButton } from "@/components/invitations";
-import { LeaveProjectButton, RemoveMemberButton, RoleSelect } from "@/components/member-actions";
+import { LeaveProjectButton, RemoveMemberButton, RoleSelect } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { canAssignRole, canManageMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
-import { getMembership } from "@/server/members";
+import { canAssignRole, canManageTeamMember, isAdminRole, ROLE_LABELS } from "@/lib/roles";
+import { getMembership } from "@/server/membership";
 import { getSession } from "@/server/session";
 
-const ROLES: MemberRole[] = ["OWNER", "ADMIN", "MEMBER"];
+const ROLES: TeamRole[] = ["OWNER", "ADMIN", "MEMBER"];
 
-export default async function MembersPage(props: PageProps<"/app/[project]/members">) {
+export default async function TeamPage(props: PageProps<"/app/[project]/team">) {
   const { project: slug } = await props.params;
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
@@ -20,7 +20,7 @@ export default async function MembersPage(props: PageProps<"/app/[project]/membe
   }
   const { project, role: myRole } = membership;
 
-  const members = await prisma.member.findMany({
+  const members = await prisma.teamMember.findMany({
     where: { projectId: project.id },
     orderBy: [{ createdAt: "asc" }],
     select: { id: true, role: true, userId: true, user: { select: { name: true, email: true, image: true } } },
@@ -38,21 +38,21 @@ export default async function MembersPage(props: PageProps<"/app/[project]/membe
   return (
     <>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
         <p className="text-sm text-muted-foreground">People who manage feedback in {project.name}.</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Team</CardTitle>
+          <CardTitle>Team members</CardTitle>
           <CardDescription>
-            {members.length} {members.length === 1 ? "member" : "members"}
+            {members.length} {members.length === 1 ? "person" : "people"}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col divide-y">
           {members.map((member) => {
             const isMe = member.userId === session.user.id;
-            const manageable = !isMe && canManageMember(myRole, member.role);
+            const manageable = !isMe && canManageTeamMember(myRole, member.role);
             return (
               <div key={member.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
                 <Avatar className="size-8">

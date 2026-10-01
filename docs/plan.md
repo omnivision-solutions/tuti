@@ -69,14 +69,14 @@ for 4 hours).
 ## Phase 1.8 — Team members ✅
 
 - [x] Invitations: owners/admins create an invite link with a role (email invites once email exists); invitee signs in or up on the apex and accepts
-- [x] Members page in `/app/<project>/members`: list, change role, remove, revoke pending invites
+- [x] Team page (originally "Members") in `/app/<project>/team`: list, change role, remove, revoke pending invites
 - [x] Rules: only owners manage owners; a project always keeps at least one owner; members can leave
 - [x] Tests; commit + push
 
 ## Phase 1.9 — Naming and boards (in progress)
 
 - [x] Rename workspaces → **projects** everywhere: UI, code, database (rename in place, keep data), routes, `PORTAL_URL_TEMPLATE` placeholder, docs
-- [ ] Rename members → **team** (team members with roles Owner / Admin / Member); people on portals are **users**
+- [x] Rename members → **team** (team members with roles Owner / Admin / Member); people on portals are **users**
 - [ ] Multiple boards per project: Boards page in `/app` (create, rename, delete empty boards); board navigation on the portal
 - [ ] Tests; commit + push
 
