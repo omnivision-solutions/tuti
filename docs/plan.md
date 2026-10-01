@@ -39,7 +39,7 @@ Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base
 - [x] Typecheck, lint, build; check pages on dev.tuti.so (light + dark)
 - [x] Commit + push
 
-## Phase 1.75 — URL structure: portals on subdomains (in progress)
+## Phase 1.75 — URL structure: portals on subdomains ✅
 
 - Apex (`tuti.so`): marketing at `/`, team sign-in/up, admin app at `/app/...`
 - Portals: `<workspace>.tuti.so` (dev: `<workspace>--dev.tuti.so`, local:
@@ -51,22 +51,29 @@ Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base
 - [x] Config: `APP_URL` + `PORTAL_URL_TEMPLATE` (Infisical dev/prod, `.env.example`, startup check, turbo)
 - [x] `proxy.ts`: route portal hosts to internal portal routes; block portal routes on the apex
 - [x] Move admin pages to `/app` (workspace list, create, settings); apex `/` is marketing
-- [ ] `/app` shell: shadcn sidebar with workspace switcher (switch / create) at the top, nav, account menu at the bottom
-- [ ] Account settings page (`/app/account`: name, password)
+- [x] `/app` shell: shadcn sidebar with workspace switcher (switch / create) at the top, nav, account menu at the bottom
+- [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
 - [x] Per-workspace post numbers (`#123`) for `/p/<title>-<number>` URLs
 - [x] SSO moves to `<portal>/sso`; docs + settings snippet updated
 - [x] Better Auth trusts the apex and portal origins
 - [x] Reserved workspace slugs (www, app, api, admin, dev, docs, …); no `--`
 - [x] Dev: wildcard DNS `*.tuti.so` → tunnel, tunnel route, Next dev origins
-- [ ] Tests updated and passing (local + through the tunnel); commit + push
+- [x] Tests updated and passing (local + through the tunnel); commit + push
 
 Before production: `*.tuti.so` must point at production, with `--dev` hosts routed to
 the tunnel (e.g. a Cloudflare origin rule). A Cloudflare cache rule already bypasses
 caching for `dev.tuti.so` and `*--dev.tuti.so` (otherwise browsers keep stale dev CSS
 for 4 hours).
 
-## Phase 2 — Post pages & admin basics (next)
+## Phase 1.8 — Team members (next)
+
+- [ ] Invitations: owners/admins create an invite link with a role (email invites once email exists); invitee signs in or up on the apex and accepts
+- [ ] Members page in `/app/<workspace>/members`: list, change role, remove, revoke pending invites
+- [ ] Rules: only owners manage owners; a workspace always keeps at least one owner; members can leave
+- [ ] Tests; commit + push
+
+## Phase 2 — Post pages & admin basics
 
 - [ ] Post page with comments
 - [ ] Admins change post status
