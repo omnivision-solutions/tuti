@@ -1,0 +1,22 @@
+{
+  "name": "tuti",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "pnpm --filter @tuti/db db:migrate",
+    "db:studio": "pnpm --filter @tuti/db db:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.6",
+    "typescript": "^6.0.3"
+  }
+}

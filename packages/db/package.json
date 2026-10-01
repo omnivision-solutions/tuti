@@ -1,0 +1,27 @@
+{
+  "name": "@tuti/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0"
+  },
+  "devDependencies": {
+    "@tuti/typescript-config": "workspace:*",
+    "@types/node": "^22",
+    "dotenv": "^17",
+    "prisma": "7.10.0",
+    "typescript": "^6.0.3"
+  }
+}
