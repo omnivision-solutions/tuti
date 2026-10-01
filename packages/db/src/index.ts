@@ -13,10 +13,25 @@ function createPrismaClient() {
 }
 
 // Reuse one client across hot reloads in dev so we don't exhaust connections.
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+// After `prisma generate` the generated module (and so the PrismaClient class)
+// is reloaded; the cached client would lack new models, so replace it then.
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+  prismaClass?: typeof PrismaClient;
+};
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+function getPrismaClient(): PrismaClient {
+  const cached = globalForPrisma.prisma;
+  if (cached && globalForPrisma.prismaClass === PrismaClient) {
+    return cached;
+  }
+  void cached?.$disconnect();
+  return createPrismaClient();
+}
+
+export const prisma = getPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
+  globalForPrisma.prismaClass = PrismaClient;
 }
