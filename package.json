@@ -13,7 +13,8 @@
     "typecheck": "turbo run typecheck",
     "db:generate": "turbo run db:generate",
     "db:migrate": "pnpm --filter @tuti/db db:migrate",
-    "db:studio": "pnpm --filter @tuti/db db:studio"
+    "db:studio": "pnpm --filter @tuti/db db:studio",
+    "env:pull": "sh scripts/env-pull.sh"
   },
   "devDependencies": {
     "turbo": "^2.11.6",

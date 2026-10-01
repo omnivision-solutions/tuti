@@ -41,12 +41,15 @@ pnpm install
 # Env files — fill in DATABASE_URL everywhere, BETTER_AUTH_SECRET (openssl rand -base64 32),
 # and HATCHET_CLIENT_TOKEN (Hatchet Cloud → Settings → API Tokens)
 cp packages/db/.env.example packages/db/.env
-cp apps/web/.env.example apps/web/.env.local
+cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env
 
 pnpm db:migrate   # apply migrations
 pnpm dev          # web on http://localhost:3100 + worker
 ```
+
+Prefer a secrets manager? Tuti only reads env vars, so any tool works.
+See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:pull`).
 
 ## Scripts
 
@@ -58,6 +61,7 @@ pnpm dev          # web on http://localhost:3100 + worker
 | `pnpm lint` | Lint |
 | `pnpm db:migrate` | Create/apply a migration (`prisma migrate dev`) |
 | `pnpm db:studio` | Open Prisma Studio |
+| `pnpm env:pull` | Maintainers: generate `.env` files from Infisical |
 
 ## Data model
 
