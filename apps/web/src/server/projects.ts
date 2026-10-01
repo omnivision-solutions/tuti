@@ -4,12 +4,12 @@ import { Prisma, prisma } from "@tuti/db";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { isReservedSlug, SLUG_PATTERN } from "@/lib/workspace-slugs";
+import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
 import { getSession } from "./session";
 
-const createWorkspaceSchema = z.object({
+const createProjectSchema = z.object({
   name: z.string().trim().min(2).max(60),
   slug: z
     .string()
@@ -21,13 +21,13 @@ const createWorkspaceSchema = z.object({
     .refine((slug) => !isReservedSlug(slug), "That URL is reserved"),
 });
 
-export async function createWorkspace(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function createProject(_prev: FormState, formData: FormData): Promise<FormState> {
   const session = await getSession();
   if (!session) {
-    return { error: "Sign in to create a workspace" };
+    return { error: "Sign in to create a project" };
   }
 
-  const parsed = createWorkspaceSchema.safeParse({
+  const parsed = createProjectSchema.safeParse({
     name: formData.get("name"),
     slug: formData.get("slug"),
   });
@@ -36,7 +36,7 @@ export async function createWorkspace(_prev: FormState, formData: FormData): Pro
   }
 
   try {
-    await prisma.workspace.create({
+    await prisma.project.create({
       data: {
         name: parsed.data.name,
         slug: parsed.data.slug,

@@ -7,13 +7,13 @@ import { UserMenu } from "@/components/user-menu";
 import { getSession } from "@/server/session";
 
 /**
- * A workspace's public portal (served on <workspace>.tuti.so via proxy.ts).
- * Links here are host-relative: "/b/ideas", not "/portal/<workspace>/b/ideas".
+ * A project's public portal (served on <project>.tuti.so via proxy.ts).
+ * Links here are host-relative: "/b/ideas", not "/portal/<project>/b/ideas".
  */
-export default async function PortalLayout({ children, params }: LayoutProps<"/portal/[workspace]">) {
-  const { workspace: slug } = await params;
-  const workspace = await prisma.workspace.findUnique({ where: { slug }, select: { name: true } });
-  if (!workspace) {
+export default async function PortalLayout({ children, params }: LayoutProps<"/portal/[project]">) {
+  const { project: slug } = await params;
+  const project = await prisma.project.findUnique({ where: { slug }, select: { name: true } });
+  if (!project) {
     notFound();
   }
   // Portal sessions are per host: this is the user signed in on this portal.
@@ -23,7 +23,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
     <>
       <header className="flex items-center justify-between border-b px-6 py-2">
         <Link href="/" className="font-semibold">
-          {workspace.name}
+          {project.name}
         </Link>
         {session ? (
           <UserMenu name={session.user.name} image={session.user.image ?? null} />

@@ -25,7 +25,7 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
       <Card className="mx-auto w-full max-w-sm">
         <CardHeader>
           <CardTitle>
-            {invitation.status === "invalid" ? "Invite not found" : `Invite to ${invitation.workspaceName}`}
+            {invitation.status === "invalid" ? "Invite not found" : `Invite to ${invitation.projectName}`}
           </CardTitle>
           <CardDescription>{UNAVAILABLE[invitation.status]}</CardDescription>
         </CardHeader>
@@ -36,14 +36,14 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
   const alreadyMember =
     session &&
     (await prisma.member.findFirst({
-      where: { userId: session.user.id, workspace: { slug: invitation.workspaceSlug } },
+      where: { userId: session.user.id, project: { slug: invitation.projectSlug } },
       select: { id: true },
     }));
 
   return (
     <Card className="mx-auto w-full max-w-sm">
       <CardHeader>
-        <CardTitle>Join {invitation.workspaceName}</CardTitle>
+        <CardTitle>Join {invitation.projectName}</CardTitle>
         <CardDescription>
           You&apos;ve been invited to join as {invitation.role === "ADMIN" || invitation.role === "OWNER" ? "an" : "a"}{" "}
           <strong>{ROLE_LABELS[invitation.role].toLowerCase()}</strong>.
@@ -69,8 +69,8 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
             </Link>
           </>
         ) : alreadyMember ? (
-          <Link href={`/app/${invitation.workspaceSlug}`} className={buttonVariants()}>
-            You&apos;re already a member — open workspace
+          <Link href={`/app/${invitation.projectSlug}`} className={buttonVariants()}>
+            You&apos;re already a member — open project
           </Link>
         ) : (
           <AcceptInvitationButton token={token} />

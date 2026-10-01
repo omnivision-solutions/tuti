@@ -6,7 +6,7 @@ to Tuti, which signs them in.
 
 ## 1. Enable SSO
 
-In the Tuti app, open your workspace's **Settings** (owners and admins) and click
+In the Tuti app, open your project's **Settings** (owners and admins) and click
 **Enable SSO**. Copy the secret (`tsso_…`) — it's shown once. Store it on your
 server only, e.g. as `TUTI_SSO_SECRET`. Never send it to the browser.
 
@@ -52,7 +52,7 @@ Any JWT library works the same way (PyJWT, `golang-jwt`, `firebase/php-jwt`, …
 Redirect the user (or link them) to:
 
 ```
-https://<workspace>.tuti.so/sso?token=<token>&redirect=<path>
+https://<project>.tuti.so/sso?token=<token>&redirect=<path>
 ```
 
 (or your portal's custom domain). The exact URL is shown on the Settings page.
@@ -73,7 +73,7 @@ If sign-in fails, the user sees an error page on your portal at `/sso/error?code
 
 | Code | Meaning |
 |---|---|
-| `sso_not_enabled` | SSO is off for this workspace. |
+| `sso_not_enabled` | SSO is off for this project. |
 | `invalid_token` | Bad signature, wrong algorithm (must be HS256), malformed, or missing `jti`/`sub`. |
 | `expired_token` | `exp` is in the past. Check your server clock. |
 | `token_lifetime_too_long` | `exp` is more than 10 minutes after `iat`, or `iat` is in the future. |
@@ -83,6 +83,6 @@ If sign-in fails, the user sees an error page on your portal at `/sso/error?code
 ## Security notes
 
 - Users are matched by your `sub`, **never by email**. Your tokens can't sign anyone in
-  as a user from another workspace or an existing Tuti account, even with the same email.
-- Each `(workspace, sub)` is its own Tuti user. Signing a token for a user is equivalent
+  as a user from another project or an existing Tuti account, even with the same email.
+- Each `(project, sub)` is its own Tuti user. Signing a token for a user is equivalent
   to logging in as them on your board, so protect the secret like a password.

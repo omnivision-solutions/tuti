@@ -6,9 +6,9 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
 
-export default async function FeedbackPage(props: PageProps<"/app/[workspace]">) {
-  const { workspace: slug } = await props.params;
-  const workspace = await prisma.workspace.findUniqueOrThrow({
+export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
+  const { project: slug } = await props.params;
+  const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
     select: {
       posts: {
@@ -42,7 +42,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[workspace]">)
         </a>
       </div>
 
-      {workspace.posts.length === 0 ? (
+      {project.posts.length === 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>No feedback yet</CardTitle>
@@ -54,7 +54,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[workspace]">)
       ) : (
         <Card size="sm">
           <CardContent className="flex flex-col divide-y">
-            {workspace.posts.map((post) => (
+            {project.posts.map((post) => (
               <div key={post.id} className="flex items-center gap-4 py-2.5 first:pt-0 last:pb-0">
                 <span className="w-10 text-right font-semibold tabular-nums">{post.voteCount}</span>
                 <div className="flex min-w-0 flex-1 flex-col">

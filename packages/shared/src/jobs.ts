@@ -9,7 +9,7 @@ export const jobs = {
   postCreated: {
     name: "post-created",
     input: z.object({
-      workspaceId: z.string(),
+      projectId: z.string(),
       postId: z.string(),
     }),
   },

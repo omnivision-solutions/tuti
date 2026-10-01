@@ -11,7 +11,7 @@ export const auth = betterAuth({
   // One deployment serves the app host and every portal host. Each host gets its
   // own (host-only) session cookies: a portal sign-in only applies to that portal.
   // Never enable advanced.crossSubDomainCookies — it would share sessions with
-  // every workspace's subdomain.
+  // every project's subdomain.
   baseURL: {
     allowedHosts: allowedHostPatterns(),
     fallback: appUrl().origin,

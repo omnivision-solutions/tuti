@@ -3,12 +3,12 @@ import { notFound } from "next/navigation";
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
-import { getAdminWorkspace } from "@/server/members";
+import { getAdminProject } from "@/server/members";
 
-export default async function SettingsPage(props: PageProps<"/app/[workspace]/settings">) {
-  const { workspace: slug } = await props.params;
-  const workspace = await getAdminWorkspace(slug);
-  if (!workspace) {
+export default async function SettingsPage(props: PageProps<"/app/[project]/settings">) {
+  const { project: slug } = await props.params;
+  const project = await getAdminProject(slug);
+  if (!project) {
     // Members who aren't owners/admins get the same response as outsiders.
     notFound();
   }
@@ -30,9 +30,9 @@ export default async function SettingsPage(props: PageProps<"/app/[workspace]/se
         </CardHeader>
         <CardContent>
           <SsoSettings
-            workspaceSlug={workspace.slug}
-            enabled={workspace.ssoSecret !== null}
-            ssoUrl={`${portalUrl(workspace.slug)}/sso`}
+            projectSlug={project.slug}
+            enabled={project.ssoSecret !== null}
+            ssoUrl={`${portalUrl(project.slug)}/sso`}
           />
         </CardContent>
       </Card>

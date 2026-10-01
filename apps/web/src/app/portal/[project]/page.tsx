@@ -1,11 +1,11 @@
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
-export default async function PortalHome(props: PageProps<"/portal/[workspace]">) {
-  const { workspace: slug } = await props.params;
+export default async function PortalHome(props: PageProps<"/portal/[project]">) {
+  const { project: slug } = await props.params;
 
   const board = await prisma.board.findFirst({
-    where: { workspace: { slug } },
+    where: { project: { slug } },
     orderBy: { createdAt: "asc" },
     select: { slug: true },
   });

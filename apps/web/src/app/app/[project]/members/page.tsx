@@ -2,7 +2,7 @@ import { type MemberRole, prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { InviteForm, RevokeInvitationButton } from "@/components/invitations";
-import { LeaveWorkspaceButton, RemoveMemberButton, RoleSelect } from "@/components/member-actions";
+import { LeaveProjectButton, RemoveMemberButton, RoleSelect } from "@/components/member-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,23 +12,23 @@ import { getSession } from "@/server/session";
 
 const ROLES: MemberRole[] = ["OWNER", "ADMIN", "MEMBER"];
 
-export default async function MembersPage(props: PageProps<"/app/[workspace]/members">) {
-  const { workspace: slug } = await props.params;
+export default async function MembersPage(props: PageProps<"/app/[project]/members">) {
+  const { project: slug } = await props.params;
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
     notFound();
   }
-  const { workspace, role: myRole } = membership;
+  const { project, role: myRole } = membership;
 
   const members = await prisma.member.findMany({
-    where: { workspaceId: workspace.id },
+    where: { projectId: project.id },
     orderBy: [{ createdAt: "asc" }],
     select: { id: true, role: true, userId: true, user: { select: { name: true, email: true, image: true } } },
   });
   const isAdmin = isAdminRole(myRole);
   const invitations = isAdmin
     ? await prisma.invitation.findMany({
-        where: { workspaceId: workspace.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
         select: { id: true, role: true, expiresAt: true, createdBy: { select: { name: true } } },
       })
@@ -39,7 +39,7 @@ export default async function MembersPage(props: PageProps<"/app/[workspace]/mem
     <>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Members</h1>
-        <p className="text-sm text-muted-foreground">People who manage feedback in {workspace.name}.</p>
+        <p className="text-sm text-muted-foreground">People who manage feedback in {project.name}.</p>
       </div>
 
       <Card>
@@ -69,12 +69,12 @@ export default async function MembersPage(props: PageProps<"/app/[workspace]/mem
                 {manageable ? (
                   <>
                     <RoleSelect
-                      workspaceSlug={workspace.slug}
+                      projectSlug={project.slug}
                       memberId={member.id}
                       role={member.role}
                       assignable={assignable}
                     />
-                    <RemoveMemberButton workspaceSlug={workspace.slug} memberId={member.id} name={member.user.name} />
+                    <RemoveMemberButton projectSlug={project.slug} memberId={member.id} name={member.user.name} />
                   </>
                 ) : (
                   <Badge variant={member.role === "OWNER" ? "default" : "secondary"}>{ROLE_LABELS[member.role]}</Badge>
@@ -84,7 +84,7 @@ export default async function MembersPage(props: PageProps<"/app/[workspace]/mem
           })}
         </CardContent>
         <CardFooter className="justify-end">
-          <LeaveWorkspaceButton workspaceSlug={workspace.slug} workspaceName={workspace.name} />
+          <LeaveProjectButton projectSlug={project.slug} projectName={project.name} />
         </CardFooter>
       </Card>
 
@@ -95,7 +95,7 @@ export default async function MembersPage(props: PageProps<"/app/[workspace]/mem
             <CardDescription>Create a single-use link and send it to the person you&apos;re inviting.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
-            <InviteForm workspaceSlug={workspace.slug} roles={assignable} />
+            <InviteForm projectSlug={project.slug} roles={assignable} />
             {invitations.length > 0 && (
               <div className="flex flex-col divide-y border-t pt-2">
                 {invitations.map((invitation) => (
@@ -107,7 +107,7 @@ export default async function MembersPage(props: PageProps<"/app/[workspace]/mem
                       </span>
                     </div>
                     {canAssignRole(myRole, invitation.role) && (
-                      <RevokeInvitationButton workspaceSlug={workspace.slug} invitationId={invitation.id} />
+                      <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
                     )}
                   </div>
                 ))}

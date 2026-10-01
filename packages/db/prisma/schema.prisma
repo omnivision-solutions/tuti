@@ -84,8 +84,8 @@ model Verification {
 }
 
 // ─── Tenancy ─────────────────────────────────────────────────────────────────
-// Every domain table carries workspaceId so a single deployment can host many
-// workspaces (and so self-hosters with one workspace pay nothing extra).
+// Every domain table carries projectId so a single deployment can host many
+// projects (and so self-hosters with one project pay nothing extra).
 
 enum MemberRole {
   OWNER
@@ -93,14 +93,14 @@ enum MemberRole {
   MEMBER
 }
 
-model Workspace {
+model Project {
   id        String   @id @default(cuid())
   slug      String   @unique
   name      String
-  /// HS256 secret the workspace's own app uses to sign SSO tokens. SSO is
+  /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
   ssoSecret String?
-  /// Last post number handed out; posts are numbered #1, #2, … per workspace.
+  /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -114,68 +114,68 @@ model Workspace {
   ssoTokenUses  SsoTokenUse[]
   invitations   Invitation[]
 
-  @@map("workspace")
+  @@map("project")
 }
 
-/// Team members who manage a workspace. End users who vote and comment are
+/// Team members who manage a project. End users who vote and comment are
 /// plain `User`s and don't need a membership.
 model Member {
-  id          String     @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        MemberRole @default(MEMBER)
-  createdAt   DateTime   @default(now())
+  id        String     @id @default(cuid())
+  projectId String
+  userId    String
+  role      MemberRole @default(MEMBER)
+  createdAt DateTime   @default(now())
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, userId])
+  @@unique([projectId, userId])
   @@index([userId])
   @@map("member")
 }
 
 // ─── SSO ─────────────────────────────────────────────────────────────────────
 
-/// A user signed in through a workspace's JWT SSO. Users are matched by the
-/// workspace's own user id (`sub`), never by email, so each (workspace, sub) gets
-/// its own User and one workspace can't sign in as another workspace's users.
+/// A user signed in through a project's JWT SSO. Users are matched by the
+/// project's own user id (`sub`), never by email, so each (project, sub) gets
+/// its own User and one project can't sign in as another project's users.
 model SsoIdentity {
-  id          String   @id @default(cuid())
-  workspaceId String
-  /// The `sub` claim: the user's id in the workspace's app.
-  externalId  String
-  userId      String   @unique
-  /// Email as asserted by the workspace's app (User.email is a placeholder).
-  email       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(cuid())
+  projectId  String
+  /// The `sub` claim: the user's id in the project's app.
+  externalId String
+  userId     String   @unique
+  /// Email as asserted by the project's app (User.email is a placeholder).
+  email      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([workspaceId, externalId])
+  @@unique([projectId, externalId])
   @@map("sso_identity")
 }
 
 /// Token ids (`jti`) already used, so a token can't be replayed. Rows are only
 /// needed until the token would have expired anyway.
 model SsoTokenUse {
-  workspaceId String
-  jti         String
-  expiresAt   DateTime
+  projectId String
+  jti       String
+  expiresAt DateTime
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@id([workspaceId, jti])
+  @@id([projectId, jti])
   @@index([expiresAt])
   @@map("sso_token_use")
 }
 
-/// A single-use link that adds someone to a workspace with a given role.
+/// A single-use link that adds someone to a project with a given role.
 /// Only a hash of the token is stored; the link is shown once when created.
 model Invitation {
   id           String     @id @default(cuid())
-  workspaceId  String
+  projectId    String
   role         MemberRole @default(MEMBER)
   tokenHash    String     @unique
   createdById  String
@@ -185,11 +185,11 @@ model Invitation {
   revokedAt    DateTime?
   createdAt    DateTime   @default(now())
 
-  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy  User      @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
-  acceptedBy User?     @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User    @relation("InvitationCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  acceptedBy User?   @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
 
-  @@index([workspaceId])
+  @@index([projectId])
   @@map("invitation")
 }
 
@@ -206,26 +206,26 @@ enum PostStatus {
 
 model Board {
   id          String   @id @default(cuid())
-  workspaceId String
+  projectId   String
   slug        String
   name        String
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  posts     Post[]
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  posts   Post[]
 
-  @@unique([workspaceId, slug])
+  @@unique([projectId, slug])
   @@map("board")
 }
 
 model Post {
   id            String     @id @default(cuid())
-  workspaceId   String
+  projectId     String
   boardId       String
   authorId      String
-  /// Per-workspace number (#123), used in URLs: /p/<title>-<number>.
+  /// Per-project number (#123), used in URLs: /p/<title>-<number>.
   number        Int
   title         String
   body          String     @default("")
@@ -238,7 +238,7 @@ model Post {
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
   author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   duplicateOf Post?     @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
@@ -246,23 +246,23 @@ model Post {
   votes       Vote[]
   comments    Comment[]
 
-  @@unique([workspaceId, number])
+  @@unique([projectId, number])
   @@index([boardId, voteCount(sort: Desc)])
   @@index([boardId, createdAt(sort: Desc)])
-  @@index([workspaceId, status])
+  @@index([projectId, status])
   @@index([duplicateOfId])
   @@map("post")
 }
 
 model Vote {
-  postId      String
-  userId      String
-  workspaceId String
-  createdAt   DateTime @default(now())
+  postId    String
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
 
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@id([postId, userId])
   @@index([userId])
@@ -270,17 +270,17 @@ model Vote {
 }
 
 model Comment {
-  id          String   @id @default(cuid())
-  workspaceId String
-  postId      String
-  authorId    String
-  body        String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  projectId String
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
   @@index([postId, createdAt])
   @@map("comment")

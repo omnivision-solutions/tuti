@@ -9,16 +9,16 @@ import type { FormState } from "./form-state";
 import { getSession } from "./session";
 
 /**
- * Users who came in through a workspace's SSO belong to that workspace: their
- * identity is vouched for by its app only, so they can't act in other workspaces.
+ * Users who came in through a project's SSO belong to that project: their
+ * identity is vouched for by its app only, so they can't act in other projects.
  */
-async function canActIn(userId: string, workspaceId: string): Promise<boolean> {
-  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { workspaceId: true } });
-  return !identity || identity.workspaceId === workspaceId;
+async function canActIn(userId: string, projectId: string): Promise<boolean> {
+  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { projectId: true } });
+  return !identity || identity.projectId === projectId;
 }
 
 const createPostSchema = z.object({
-  workspaceSlug: z.string(),
+  projectSlug: z.string(),
   boardSlug: z.string(),
   title: z.string().trim().min(3, "Title is too short").max(120),
   body: z.string().trim().max(5000),
@@ -31,7 +31,7 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
   }
 
   const parsed = createPostSchema.safeParse({
-    workspaceSlug: formData.get("workspaceSlug"),
+    projectSlug: formData.get("projectSlug"),
     boardSlug: formData.get("boardSlug"),
     title: formData.get("title"),
     body: formData.get("body") ?? "",
@@ -41,31 +41,31 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
   }
 
   const board = await prisma.board.findFirst({
-    where: { slug: parsed.data.boardSlug, workspace: { slug: parsed.data.workspaceSlug } },
-    select: { id: true, workspaceId: true },
+    where: { slug: parsed.data.boardSlug, project: { slug: parsed.data.projectSlug } },
+    select: { id: true, projectId: true },
   });
-  if (!board || !(await canActIn(session.user.id, board.workspaceId))) {
+  if (!board || !(await canActIn(session.user.id, board.projectId))) {
     return { error: "Board not found" };
   }
 
   const post = await prisma.$transaction(async (tx) => {
-    // Locks the workspace row, so concurrent posts get distinct numbers.
-    const { postCount: number } = await tx.workspace.update({
-      where: { id: board.workspaceId },
+    // Locks the project row, so concurrent posts get distinct numbers.
+    const { postCount: number } = await tx.project.update({
+      where: { id: board.projectId },
       data: { postCount: { increment: 1 } },
       select: { postCount: true },
     });
     // Authors automatically upvote their own post.
     return tx.post.create({
       data: {
-        workspaceId: board.workspaceId,
+        projectId: board.projectId,
         boardId: board.id,
         authorId: session.user.id,
         number,
         title: parsed.data.title,
         body: parsed.data.body,
         voteCount: 1,
-        votes: { create: { userId: session.user.id, workspaceId: board.workspaceId } },
+        votes: { create: { userId: session.user.id, projectId: board.projectId } },
       },
       select: { id: true },
     });
@@ -73,7 +73,7 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
 
   // Background work must never block or fail the user's request.
   try {
-    await enqueue("postCreated", { workspaceId: board.workspaceId, postId: post.id });
+    await enqueue("postCreated", { projectId: board.projectId, postId: post.id });
   } catch (error) {
     console.error("Failed to enqueue post-created job", error);
   }
@@ -89,13 +89,13 @@ export async function toggleVote(postId: string): Promise<FormState> {
   }
   const userId = session.user.id;
 
-  const target = await prisma.post.findUnique({ where: { id: postId }, select: { workspaceId: true } });
-  if (!target || !(await canActIn(userId, target.workspaceId))) {
+  const target = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true } });
+  if (!target || !(await canActIn(userId, target.projectId))) {
     return { error: "Post not found" };
   }
 
   await prisma.$transaction(async (tx) => {
-    const post = await tx.post.findUnique({ where: { id: postId }, select: { workspaceId: true } });
+    const post = await tx.post.findUnique({ where: { id: postId }, select: { projectId: true } });
     if (!post) {
       return;
     }
@@ -106,7 +106,7 @@ export async function toggleVote(postId: string): Promise<FormState> {
       return;
     }
 
-    await tx.vote.create({ data: { postId, userId, workspaceId: post.workspaceId } });
+    await tx.vote.create({ data: { postId, userId, projectId: post.projectId } });
     await tx.post.update({ where: { id: postId }, data: { voteCount: { increment: 1 } } });
   });
 

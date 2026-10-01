@@ -48,9 +48,9 @@ pnpm db:migrate   # apply migrations
 pnpm dev          # web on http://localhost:3100 + worker
 ```
 
-The app is at http://localhost:3100 (`/app` after signing in); each workspace's portal
-is at `http://<workspace>.localhost:3100`. In production these are `APP_URL` and
-`PORTAL_URL_TEMPLATE` (e.g. `https://tuti.so` and `https://{workspace}.tuti.so`, which
+The app is at http://localhost:3100 (`/app` after signing in); each project's portal
+is at `http://<project>.localhost:3100`. In production these are `APP_URL` and
+`PORTAL_URL_TEMPLATE` (e.g. `https://tuti.so` and `https://{project}.tuti.so`, which
 needs a wildcard DNS record).
 
 Prefer a secrets manager? Tuti only reads env vars, so any tool works.
@@ -70,10 +70,10 @@ See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:
 
 ## Data model
 
-Every domain table carries `workspaceId`, so one deployment can host many workspaces.
+Every domain table carries `projectId`, so one deployment can host many projects.
 
-- `Workspace` (incl. JWT SSO secret), `Member` (team members, with roles), `Board`
-- `SsoIdentity` (workspace + your app's user id → Tuti user), `SsoTokenUse` (one-time token ids)
+- `Project` (incl. JWT SSO secret), `Member` (team members, with roles), `Board`
+- `SsoIdentity` (project + your app's user id → Tuti user), `SsoTokenUse` (one-time token ids)
 - `Post` (with denormalised `voteCount`, `status`, `duplicateOfId` for merges), `Vote`, `Comment`
 - Better Auth tables: `User`, `Session`, `Account`, `Verification`
 

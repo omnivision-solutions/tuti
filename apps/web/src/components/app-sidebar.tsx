@@ -47,17 +47,17 @@ import {
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
 
-type WorkspaceSummary = { slug: string; name: string };
+type ProjectSummary = { slug: string; name: string };
 
 export function AppSidebar({
-  workspaces,
+  projects,
   current,
   portalUrl,
   isAdmin,
   user,
 }: {
-  workspaces: WorkspaceSummary[];
-  current: WorkspaceSummary;
+  projects: ProjectSummary[];
+  current: ProjectSummary;
   portalUrl: string;
   isAdmin: boolean;
   user: { name: string; email: string; image: string | null };
@@ -73,7 +73,7 @@ export function AppSidebar({
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
-        <WorkspaceSwitcher workspaces={workspaces} current={current} portalHost={new URL(portalUrl).host} />
+        <ProjectSwitcher projects={projects} current={current} portalHost={new URL(portalUrl).host} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -118,13 +118,13 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function WorkspaceSwitcher({
-  workspaces,
+function ProjectSwitcher({
+  projects,
   current,
   portalHost,
 }: {
-  workspaces: WorkspaceSummary[];
-  current: WorkspaceSummary;
+  projects: ProjectSummary[];
+  current: ProjectSummary;
   portalHost: string;
 }) {
   const { isMobile } = useSidebar();
@@ -152,14 +152,14 @@ function WorkspaceSwitcher({
             sideOffset={4}
           >
             <DropdownMenuGroup>
-              <DropdownMenuLabel className="text-xs text-muted-foreground">Workspaces</DropdownMenuLabel>
-              {workspaces.map((workspace) => (
-                <DropdownMenuItem key={workspace.slug} render={<Link href={`/app/${workspace.slug}`} />}>
+              <DropdownMenuLabel className="text-xs text-muted-foreground">Projects</DropdownMenuLabel>
+              {projects.map((project) => (
+                <DropdownMenuItem key={project.slug} render={<Link href={`/app/${project.slug}`} />}>
                   <div className="flex size-6 items-center justify-center rounded-md border text-xs font-semibold">
-                    {workspace.name.slice(0, 1).toUpperCase()}
+                    {project.name.slice(0, 1).toUpperCase()}
                   </div>
-                  <span className="truncate">{workspace.name}</span>
-                  {workspace.slug === current.slug && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
+                  <span className="truncate">{project.name}</span>
+                  {project.slug === current.slug && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuGroup>
@@ -168,7 +168,7 @@ function WorkspaceSwitcher({
               <div className="flex size-6 items-center justify-center rounded-md border">
                 <PlusIcon className="size-4" />
               </div>
-              Add workspace
+              Add project
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

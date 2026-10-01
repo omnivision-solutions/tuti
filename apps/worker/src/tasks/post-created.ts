@@ -15,7 +15,7 @@ export const postCreated = getHatchet().task<
   retries: 3,
   fn: async (input, ctx) => {
     const post = await prisma.post.findFirst({
-      where: { id: input.postId, workspaceId: input.workspaceId },
+      where: { id: input.postId, projectId: input.projectId },
       select: { id: true, title: true },
     });
 

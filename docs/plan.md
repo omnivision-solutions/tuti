@@ -6,8 +6,8 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 
 - [x] Name, domain (tuti.so), private repo `omnivision-solutions/tuti`, AGPL-3.0
 - [x] Turborepo monorepo: `apps/web` (Next.js 16), `apps/worker` (Hatchet), `packages/db` (Prisma 7), `packages/shared`
-- [x] Data model: workspace, member, board, post, vote, comment + Better Auth tables, `workspaceId` everywhere
-- [x] Email/password auth, create workspace, public board with posting + voting
+- [x] Data model: project, member, board, post, vote, comment + Better Auth tables, `projectId` everywhere
+- [x] Email/password auth, create project, public board with posting + voting
 - [x] `post-created` background job (web → Hatchet → worker)
 - [x] Secrets: Infisical "Tuti" project, `pnpm env:pull`, app stays secrets-manager-agnostic
 - [x] Dev environment: `tuti_dev` database, Hatchet Cloud dev tenant, https://dev.tuti.so tunnel
@@ -15,14 +15,14 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 
 ## Phase 1 — JWT SSO ✅
 
-Customer apps sign a short-lived HS256 JWT with a per-workspace secret and redirect
-users to `/<workspace>/sso?token=…&redirect=…`. Users are matched by `sub`, never by
-email, so one workspace can't take over accounts in another.
+Customer apps sign a short-lived HS256 JWT with a per-project secret and redirect
+users to `/<project>/sso?token=…&redirect=…`. Users are matched by `sub`, never by
+email, so one project can't take over accounts in another.
 
-- [x] Schema: workspace SSO secret, `SsoIdentity` (workspace + `sub` → user), used-token log for replay protection; migration
+- [x] Schema: project SSO secret, `SsoIdentity` (project + `sub` → user), used-token log for replay protection; migration
 - [x] Better Auth plugin endpoint: verify token (signature, `exp`, max lifetime, one-time `jti`), find or create the user, set the session cookie, safe redirect
-- [x] `/<workspace>/sso` route forwarding to the endpoint
-- [x] Workspace settings page (owners/admins only): enable SSO, generate/rotate secret, integration snippet
+- [x] `/<project>/sso` route forwarding to the endpoint
+- [x] Project settings page (owners/admins only): enable SSO, generate/rotate secret, integration snippet
 - [x] Show the user's name (not email) in the header; SSO users get a placeholder email
 - [x] Tests: happy path, same `sub` → same user, replay, expired, bad signature, overlong token, open redirect, non-admin access to settings
 - [x] Docs: integration guide for customers (`docs/sso.md`)
@@ -42,22 +42,22 @@ Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base
 ## Phase 1.75 — URL structure: portals on subdomains ✅
 
 - Apex (`tuti.so`): marketing at `/`, team sign-in/up, admin app at `/app/...`
-- Portals: `<workspace>.tuti.so` (dev: `<workspace>--dev.tuti.so`, local:
-  `<workspace>.localhost:3100`), later custom domains. Boards at `/b/<board>`,
+- Portals: `<project>.tuti.so` (dev: `<project>--dev.tuti.so`, local:
+  `<project>.localhost:3100`), later custom domains. Boards at `/b/<board>`,
   posts at `/p/<title>-<number>`, SSO at `/sso`.
 - Sessions are per host (no cookies on `.tuti.so`), so portal sign-ins (incl. SSO)
   only apply to that portal.
 
 - [x] Config: `APP_URL` + `PORTAL_URL_TEMPLATE` (Infisical dev/prod, `.env.example`, startup check, turbo)
 - [x] `proxy.ts`: route portal hosts to internal portal routes; block portal routes on the apex
-- [x] Move admin pages to `/app` (workspace list, create, settings); apex `/` is marketing
-- [x] `/app` shell: shadcn sidebar with workspace switcher (switch / create) at the top, nav, account menu at the bottom
+- [x] Move admin pages to `/app` (project list, create, settings); apex `/` is marketing
+- [x] `/app` shell: shadcn sidebar with project switcher (switch / create) at the top, nav, account menu at the bottom
 - [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
-- [x] Per-workspace post numbers (`#123`) for `/p/<title>-<number>` URLs
+- [x] Per-project post numbers (`#123`) for `/p/<title>-<number>` URLs
 - [x] SSO moves to `<portal>/sso`; docs + settings snippet updated
 - [x] Better Auth trusts the apex and portal origins
-- [x] Reserved workspace slugs (www, app, api, admin, dev, docs, …); no `--`
+- [x] Reserved project slugs (www, app, api, admin, dev, docs, …); no `--`
 - [x] Dev: wildcard DNS `*.tuti.so` → tunnel, tunnel route, Next dev origins
 - [x] Tests updated and passing (local + through the tunnel); commit + push
 
@@ -69,14 +69,22 @@ for 4 hours).
 ## Phase 1.8 — Team members ✅
 
 - [x] Invitations: owners/admins create an invite link with a role (email invites once email exists); invitee signs in or up on the apex and accepts
-- [x] Members page in `/app/<workspace>/members`: list, change role, remove, revoke pending invites
-- [x] Rules: only owners manage owners; a workspace always keeps at least one owner; members can leave
+- [x] Members page in `/app/<project>/members`: list, change role, remove, revoke pending invites
+- [x] Rules: only owners manage owners; a project always keeps at least one owner; members can leave
 - [x] Tests; commit + push
 
-## Phase 2 — Post pages & admin basics (next)
+## Phase 1.9 — Naming and boards (in progress)
 
-- [ ] Post page with comments
-- [ ] Admins change post status
+- [x] Rename workspaces → **projects** everywhere: UI, code, database (rename in place, keep data), routes, `PORTAL_URL_TEMPLATE` placeholder, docs
+- [ ] Rename members → **team** (team members with roles Owner / Admin / Member); people on portals are **users**
+- [ ] Multiple boards per project: Boards page in `/app` (create, rename, delete empty boards); board navigation on the portal
+- [ ] Tests; commit + push
+
+## Phase 2 — Post pages & team actions
+
+- [ ] Post page `/p/<title>-<number>` on the portal, with comments
+- [ ] Post view in `/app` for the team: comment (shown with a **Team** badge), change status
+- [ ] Team members change post status from the feedback list too
 - [ ] Board sorting/filtering (top, new, by status)
 
 ## Phase 3 — Duplicates

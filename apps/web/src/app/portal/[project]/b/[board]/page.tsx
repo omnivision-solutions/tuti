@@ -8,13 +8,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
 import { getSession } from "@/server/session";
 
-export default async function BoardPage(props: PageProps<"/portal/[workspace]/b/[board]">) {
-  const { workspace: workspaceSlug, board: boardSlug } = await props.params;
+export default async function BoardPage(props: PageProps<"/portal/[project]/b/[board]">) {
+  const { project: projectSlug, board: boardSlug } = await props.params;
   const session = await getSession();
   const userId = session?.user.id;
 
   const board = await prisma.board.findFirst({
-    where: { slug: boardSlug, workspace: { slug: workspaceSlug } },
+    where: { slug: boardSlug, project: { slug: projectSlug } },
     include: {
       posts: {
         where: { duplicateOfId: null },
@@ -36,7 +36,7 @@ export default async function BoardPage(props: PageProps<"/portal/[workspace]/b/
       <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
 
       {session ? (
-        <NewPostForm workspaceSlug={workspaceSlug} boardSlug={boardSlug} />
+        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} />
       ) : (
         <p className="text-sm text-muted-foreground">
           <Link href="/sign-in" className="text-foreground underline underline-offset-4">

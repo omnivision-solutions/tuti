@@ -4,8 +4,8 @@ import { hashInvitationToken } from "@/lib/invitations";
 
 export type InvitationState =
   | { status: "invalid" }
-  | { status: "expired" | "used" | "revoked"; workspaceName: string }
-  | { status: "valid"; workspaceName: string; workspaceSlug: string; role: MemberRole };
+  | { status: "expired" | "used" | "revoked"; projectName: string }
+  | { status: "valid"; projectName: string; projectSlug: string; role: MemberRole };
 
 /** Looks up an invite link for the accept page. */
 export async function getInvitation(token: string): Promise<InvitationState> {
@@ -16,21 +16,21 @@ export async function getInvitation(token: string): Promise<InvitationState> {
       expiresAt: true,
       acceptedAt: true,
       revokedAt: true,
-      workspace: { select: { name: true, slug: true } },
+      project: { select: { name: true, slug: true } },
     },
   });
   if (!invitation) {
     return { status: "invalid" };
   }
-  const workspaceName = invitation.workspace.name;
+  const projectName = invitation.project.name;
   if (invitation.revokedAt) {
-    return { status: "revoked", workspaceName };
+    return { status: "revoked", projectName };
   }
   if (invitation.acceptedAt) {
-    return { status: "used", workspaceName };
+    return { status: "used", projectName };
   }
   if (invitation.expiresAt < new Date()) {
-    return { status: "expired", workspaceName };
+    return { status: "expired", projectName };
   }
-  return { status: "valid", workspaceName, workspaceSlug: invitation.workspace.slug, role: invitation.role };
+  return { status: "valid", projectName, projectSlug: invitation.project.slug, role: invitation.role };
 }

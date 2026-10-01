@@ -4,29 +4,29 @@ import { getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
 
-/** The signed-in user's membership in a workspace, if any. */
+/** The signed-in user's membership in a project, if any. */
 export async function getMembership(slug: string) {
   const session = await getSession();
   if (!session) {
     return null;
   }
   return prisma.member.findFirst({
-    where: { userId: session.user.id, workspace: { slug } },
-    select: { role: true, workspace: { select: { id: true, slug: true, name: true, ssoSecret: true } } },
+    where: { userId: session.user.id, project: { slug } },
+    select: { role: true, project: { select: { id: true, slug: true, name: true, ssoSecret: true } } },
   });
 }
 
-/** The workspace, if the signed-in user is one of its owners or admins. */
-export async function getAdminWorkspace(slug: string) {
+/** The project, if the signed-in user is one of its owners or admins. */
+export async function getAdminProject(slug: string) {
   const membership = await getMembership(slug);
-  return membership && (ADMIN_ROLES as readonly string[]).includes(membership.role) ? membership.workspace : null;
+  return membership && (ADMIN_ROLES as readonly string[]).includes(membership.role) ? membership.project : null;
 }
 
-export async function listMyWorkspaces(userId: string) {
+export async function listMyProjects(userId: string) {
   const memberships = await prisma.member.findMany({
     where: { userId },
-    select: { workspace: { select: { slug: true, name: true } } },
+    select: { project: { select: { slug: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
-  return memberships.map((m) => m.workspace);
+  return memberships.map((m) => m.project);
 }

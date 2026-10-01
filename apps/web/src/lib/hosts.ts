@@ -1,16 +1,16 @@
-import { isReservedSlug, SLUG_PATTERN } from "./workspace-slugs";
+import { isReservedSlug, SLUG_PATTERN } from "./project-slugs";
 
 /**
  * Which part of Tuti a request is for, based on its Host header.
  *
  * - The app host (APP_URL, e.g. tuti.so) serves marketing, team auth and /app.
- * - Portal hosts (PORTAL_URL_TEMPLATE, e.g. {workspace}.tuti.so) serve one
- *   workspace's public portal each.
- * Outside production, localhost and <workspace>.localhost also work.
+ * - Portal hosts (PORTAL_URL_TEMPLATE, e.g. {project}.tuti.so) serve one
+ *   project's public portal each.
+ * Outside production, localhost and <project>.localhost also work.
  */
 export type HostTarget = { kind: "app" } | { kind: "portal"; slug: string } | { kind: "unknown" };
 
-const PLACEHOLDER = "{workspace}";
+const PLACEHOLDER = "{project}";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -32,7 +32,7 @@ function portalTemplate(): string {
   return template;
 }
 
-/** Public origin of a workspace's portal, e.g. https://acme.tuti.so */
+/** Public origin of a project's portal, e.g. https://acme.tuti.so */
 export function portalUrl(slug: string): string {
   return portalTemplate().replace(PLACEHOLDER, slug).replace(/\/$/, "");
 }
@@ -68,7 +68,7 @@ export function resolveHost(host: string | null): HostTarget {
   return { kind: "unknown" };
 }
 
-/** Hostname patterns for Better Auth / Next.js allowlists (wildcard in place of the workspace). */
+/** Hostname patterns for Better Auth / Next.js allowlists (wildcard in place of the project). */
 export function allowedHostPatterns(): string[] {
   const portalHost = new URL(portalTemplate().replace(PLACEHOLDER, "x")).host.replace(/^x/, "*");
   const hosts = [appUrl().host, portalHost];

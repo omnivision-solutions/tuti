@@ -6,26 +6,26 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { FormState } from "@/server/form-state";
-import { createWorkspace } from "@/server/workspaces";
+import { createProject } from "@/server/projects";
 
-export function CreateWorkspaceForm({ portalExample }: { portalExample: string }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(createWorkspace, {});
+export function CreateProjectForm({ portalExample }: { portalExample: string }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(createProject, {});
 
   return (
     <form action={action}>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="workspace-name">Name</FieldLabel>
-          <Input id="workspace-name" name="name" placeholder="Acme" required />
+          <FieldLabel htmlFor="project-name">Name</FieldLabel>
+          <Input id="project-name" name="name" placeholder="Acme" required />
         </Field>
         <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="workspace-slug">URL</FieldLabel>
-          <Input id="workspace-slug" name="slug" placeholder="acme" required aria-invalid={state.error ? true : undefined} />
+          <FieldLabel htmlFor="project-slug">URL</FieldLabel>
+          <Input id="project-slug" name="slug" placeholder="acme" required aria-invalid={state.error ? true : undefined} />
           <FieldDescription>Your public portal, e.g. {new URL(portalExample).host}. Lowercase letters, numbers and single dashes.</FieldDescription>
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
         <Button type="submit" disabled={pending} className="self-start">
-          {pending ? "Creating…" : "Create workspace"}
+          {pending ? "Creating…" : "Create project"}
         </Button>
       </FieldGroup>
     </form>

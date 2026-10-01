@@ -1,5 +1,5 @@
 /**
- * Workspace slugs become portal subdomains, so they must be valid DNS labels.
+ * Project slugs become portal subdomains, so they must be valid DNS labels.
  * Single dashes only: "--" is reserved (dev portals use <slug>--dev).
  */
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

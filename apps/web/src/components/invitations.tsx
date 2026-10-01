@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/roles";
 import { acceptInvitation, createInvitation, revokeInvitation } from "@/server/invitations";
 
-export function InviteForm({ workspaceSlug, roles }: { workspaceSlug: string; roles: MemberRole[] }) {
+export function InviteForm({ projectSlug, roles }: { projectSlug: string; roles: MemberRole[] }) {
   const [role, setRole] = useState<MemberRole>("MEMBER");
   const [url, setUrl] = useState<string>();
   const [copied, setCopied] = useState(false);
@@ -36,7 +36,7 @@ export function InviteForm({ workspaceSlug, roles }: { workspaceSlug: string; ro
           disabled={pending}
           onClick={() =>
             startTransition(async () => {
-              const result = await createInvitation(workspaceSlug, role);
+              const result = await createInvitation(projectSlug, role);
               if (result.error) {
                 toast.error(result.error);
                 return;
@@ -79,7 +79,7 @@ export function InviteForm({ workspaceSlug, roles }: { workspaceSlug: string; ro
   );
 }
 
-export function RevokeInvitationButton({ workspaceSlug, invitationId }: { workspaceSlug: string; invitationId: string }) {
+export function RevokeInvitationButton({ projectSlug, invitationId }: { projectSlug: string; invitationId: string }) {
   const [pending, startTransition] = useTransition();
   return (
     <Button
@@ -88,7 +88,7 @@ export function RevokeInvitationButton({ workspaceSlug, invitationId }: { worksp
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await revokeInvitation(workspaceSlug, invitationId);
+          const result = await revokeInvitation(projectSlug, invitationId);
           if (result.error) {
             toast.error(result.error);
           } else {

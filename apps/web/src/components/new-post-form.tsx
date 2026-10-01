@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 
-export function NewPostForm({ workspaceSlug, boardSlug }: { workspaceSlug: string; boardSlug: string }) {
+export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; boardSlug: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState<FormState, FormData>(createPost, {});
 
@@ -24,7 +24,7 @@ export function NewPostForm({ workspaceSlug, boardSlug }: { workspaceSlug: strin
     <Card>
       <CardContent>
         <form ref={formRef} action={action}>
-          <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
+          <input type="hidden" name="projectSlug" value={projectSlug} />
           <input type="hidden" name="boardSlug" value={boardSlug} />
           <FieldGroup>
             <Field data-invalid={state.error ? true : undefined}>

@@ -10,11 +10,11 @@ import { Button } from "@/components/ui/button";
 import { disableSso, rotateSsoSecret } from "@/server/sso-settings";
 
 export function SsoSettings({
-  workspaceSlug,
+  projectSlug,
   enabled,
   ssoUrl,
 }: {
-  workspaceSlug: string;
+  projectSlug: string;
   enabled: boolean;
   ssoUrl: string;
 }) {
@@ -27,7 +27,7 @@ export function SsoSettings({
       return;
     }
     startTransition(async () => {
-      const result = await rotateSsoSecret(workspaceSlug);
+      const result = await rotateSsoSecret(projectSlug);
       setError(result.error);
       setSecret(result.secret);
       if (result.secret) {
@@ -41,7 +41,7 @@ export function SsoSettings({
       return;
     }
     startTransition(async () => {
-      const result = await disableSso(workspaceSlug);
+      const result = await disableSso(projectSlug);
       setError(result.error);
       setSecret(undefined);
       if (!result.error) {

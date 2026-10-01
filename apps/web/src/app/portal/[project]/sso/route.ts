@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 
-// <workspace>.tuti.so/sso?token=…&redirect=… (the workspace comes from the host).
+// <project>.tuti.so/sso?token=…&redirect=… (the project comes from the host).
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
 

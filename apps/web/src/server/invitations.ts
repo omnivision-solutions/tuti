@@ -17,12 +17,12 @@ type Result = { error?: string };
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 
 /** Creates a single-use invite link. The URL is only ever returned here, once. */
-export async function createInvitation(workspaceSlug: string, role: string): Promise<Result & { url?: string }> {
-  const membership = await getMembership(workspaceSlug);
+export async function createInvitation(projectSlug: string, role: string): Promise<Result & { url?: string }> {
+  const membership = await getMembership(projectSlug);
   const session = await getSession();
   const parsedRole = roleSchema.safeParse(role);
   if (!membership || !session || !isAdminRole(membership.role)) {
-    return { error: "Only workspace owners and admins can invite people" };
+    return { error: "Only project owners and admins can invite people" };
   }
   if (!parsedRole.success || !canAssignRole(membership.role, parsedRole.data)) {
     return { error: "You can't invite people with that role" };
@@ -31,7 +31,7 @@ export async function createInvitation(workspaceSlug: string, role: string): Pro
   const token = generateInvitationToken();
   await prisma.invitation.create({
     data: {
-      workspaceId: membership.workspace.id,
+      projectId: membership.project.id,
       role: parsedRole.data,
       tokenHash: hashInvitationToken(token),
       createdById: session.user.id,
@@ -42,13 +42,13 @@ export async function createInvitation(workspaceSlug: string, role: string): Pro
   return { url: `${appUrl().origin}/invite/${token}` };
 }
 
-export async function revokeInvitation(workspaceSlug: string, invitationId: string): Promise<Result> {
-  const membership = await getMembership(workspaceSlug);
+export async function revokeInvitation(projectSlug: string, invitationId: string): Promise<Result> {
+  const membership = await getMembership(projectSlug);
   if (!membership || !isAdminRole(membership.role)) {
-    return { error: "Only workspace owners and admins can revoke invites" };
+    return { error: "Only project owners and admins can revoke invites" };
   }
   const invitation = await prisma.invitation.findFirst({
-    where: { id: invitationId, workspaceId: membership.workspace.id, acceptedAt: null, revokedAt: null },
+    where: { id: invitationId, projectId: membership.project.id, acceptedAt: null, revokedAt: null },
     select: { role: true },
   });
   if (!invitation) {
@@ -69,15 +69,15 @@ export async function acceptInvitation(token: string): Promise<Result> {
   }
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashInvitationToken(token) },
-    select: { id: true, role: true, workspaceId: true, workspace: { select: { slug: true } } },
+    select: { id: true, role: true, projectId: true, project: { select: { slug: true } } },
   });
   if (!invitation) {
     return { error: "This invite link isn't valid" };
   }
-  const { slug } = invitation.workspace;
+  const { slug } = invitation.project;
 
   const existing = await prisma.member.findUnique({
-    where: { workspaceId_userId: { workspaceId: invitation.workspaceId, userId: session.user.id } },
+    where: { projectId_userId: { projectId: invitation.projectId, userId: session.user.id } },
     select: { id: true },
   });
   if (!existing) {
@@ -92,7 +92,7 @@ export async function acceptInvitation(token: string): Promise<Result> {
           throw new InvitationUnavailableError();
         }
         await tx.member.create({
-          data: { workspaceId: invitation.workspaceId, userId: session.user.id, role: invitation.role },
+          data: { projectId: invitation.projectId, userId: session.user.id, role: invitation.role },
         });
       });
     } catch (error) {

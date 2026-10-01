@@ -5,8 +5,8 @@ import { resolveHost } from "@/lib/hosts";
 /**
  * Routes requests by host:
  * - app host (tuti.so): served as-is; internal /portal routes are hidden.
- * - portal hosts (<workspace>.tuti.so): rewritten to /portal/<workspace>/…, so
- *   acme.tuti.so/b/ideas renders app/portal/[workspace]/b/[board].
+ * - portal hosts (<project>.tuti.so): rewritten to /portal/<project>/…, so
+ *   acme.tuti.so/b/ideas renders app/portal/[project]/b/[board].
  * The auth API (/api/*) is served on every host so sessions stay per host.
  */
 export function proxy(request: NextRequest) {

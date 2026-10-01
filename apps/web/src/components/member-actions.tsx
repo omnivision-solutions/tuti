@@ -18,15 +18,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ROLE_LABELS } from "@/lib/roles";
-import { changeMemberRole, leaveWorkspace, removeMember } from "@/server/team";
+import { changeMemberRole, leaveProject, removeMember } from "@/server/team";
 
 export function RoleSelect({
-  workspaceSlug,
+  projectSlug,
   memberId,
   role,
   assignable,
 }: {
-  workspaceSlug: string;
+  projectSlug: string;
   memberId: string;
   role: MemberRole;
   assignable: MemberRole[];
@@ -40,7 +40,7 @@ export function RoleSelect({
       disabled={pending}
       onValueChange={(value) =>
         startTransition(async () => {
-          const result = await changeMemberRole(workspaceSlug, memberId, String(value));
+          const result = await changeMemberRole(projectSlug, memberId, String(value));
           if (result.error) {
             toast.error(result.error);
           } else {
@@ -63,7 +63,7 @@ export function RoleSelect({
   );
 }
 
-export function RemoveMemberButton({ workspaceSlug, memberId, name }: { workspaceSlug: string; memberId: string; name: string }) {
+export function RemoveMemberButton({ projectSlug, memberId, name }: { projectSlug: string; memberId: string; name: string }) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -72,7 +72,7 @@ export function RemoveMemberButton({ workspaceSlug, memberId, name }: { workspac
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-          <AlertDialogDescription>They lose access to this workspace right away. You can invite them again later.</AlertDialogDescription>
+          <AlertDialogDescription>They lose access to this project right away. You can invite them again later.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -80,7 +80,7 @@ export function RemoveMemberButton({ workspaceSlug, memberId, name }: { workspac
             variant="destructive"
             onClick={() =>
               startTransition(async () => {
-                const result = await removeMember(workspaceSlug, memberId);
+                const result = await removeMember(projectSlug, memberId);
                 if (result.error) {
                   toast.error(result.error);
                 } else {
@@ -97,15 +97,15 @@ export function RemoveMemberButton({ workspaceSlug, memberId, name }: { workspac
   );
 }
 
-export function LeaveWorkspaceButton({ workspaceSlug, workspaceName }: { workspaceSlug: string; workspaceName: string }) {
+export function LeaveProjectButton({ projectSlug, projectName }: { projectSlug: string; projectName: string }) {
   const [pending, startTransition] = useTransition();
 
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Leave workspace</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Leave project</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Leave {workspaceName}?</AlertDialogTitle>
+          <AlertDialogTitle>Leave {projectName}?</AlertDialogTitle>
           <AlertDialogDescription>You&apos;ll need a new invite to come back.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -114,7 +114,7 @@ export function LeaveWorkspaceButton({ workspaceSlug, workspaceName }: { workspa
             variant="destructive"
             onClick={() =>
               startTransition(async () => {
-                const result = await leaveWorkspace(workspaceSlug);
+                const result = await leaveProject(projectSlug);
                 if (result?.error) {
                   toast.error(result.error);
                 }
