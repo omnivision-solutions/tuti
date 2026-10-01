@@ -42,6 +42,11 @@ lives in `/shared`, which the others import.
 Use separate Hatchet Cloud tenants/tokens for `dev` and `prod`, so local runs never
 pick up production jobs.
 
+`DATABASE_URL` (dev) points at the `tuti_dev` database and role on "Database - Server 2"
+(the Postgres from the Shared Infra project; the superuser is only used to create
+roles and databases). It uses `sslmode=no-verify`: the connection is encrypted, but the
+server's certificate is self-signed, so it isn't verified.
+
 `BETTER_AUTH_SECRET` is generated separately per environment. Empty values are
 placeholders still to be filled in; the apps refuse to start while a required
 variable is empty.
