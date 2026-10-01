@@ -10,8 +10,12 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 
-/** Used on the apex (team accounts → /app) and on portals (end users → the portal). */
-export function AuthForm({ mode, redirectTo }: { mode: "sign-in" | "sign-up"; redirectTo: string }) {
+/**
+ * Used on the apex (team accounts → /app) and on portals (end users → the portal).
+ * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
+ * is carried over when switching between sign-in and sign-up.
+ */
+export function AuthForm({ mode, redirectTo, next }: { mode: "sign-in" | "sign-up"; redirectTo: string; next?: string }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -34,7 +38,7 @@ export function AuthForm({ mode, redirectTo }: { mode: "sign-in" | "sign-up"; re
       setError(error.message ?? "Something went wrong");
       return;
     }
-    router.push(redirectTo);
+    router.push(next ?? redirectTo);
     router.refresh();
   }
 
@@ -78,7 +82,10 @@ export function AuthForm({ mode, redirectTo }: { mode: "sign-in" | "sign-up"; re
           </Button>
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
-            <Link href={isSignUp ? "/sign-in" : "/sign-up"} className="text-foreground underline underline-offset-4">
+            <Link
+              href={`${isSignUp ? "/sign-in" : "/sign-up"}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+              className="text-foreground underline underline-offset-4"
+            >
               {isSignUp ? "Sign in" : "Create an account"}
             </Link>
           </p>
