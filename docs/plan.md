@@ -87,13 +87,13 @@ for 4 hours).
 - [x] Team members change post status from the feedback list too
 - [x] Sorting and filtering in the URL: Feedback list (board, status, most votes / newest), portal boards (most votes / newest, status)
 
-## Phase 3 — Duplicates (in progress)
+## Phase 3 — Duplicates ✅
 
 - [x] Team "Merge into…": votes move to the original (people who voted on both count once), comments move too, the duplicate leaves all lists and its URL redirects to the original; earlier duplicates are re-pointed; no undo
 - [x] Similar-post suggestions while typing a new post (`pg_trgm`, across boards)
 - [x] Embeddings with OpenAI `text-embedding-3-small` in the `post-created` job, stored with pgvector; posts at ≥ 0.45 cosine similarity to an older post get a pending duplicate suggestion (top 3, same project). Optional: skipped without `OPENAI_API_KEY`. `pnpm --filter @tuti/worker backfill:embeddings` for existing posts
 - [x] "Possible duplicates" for the team: on the post view with Merge / Dismiss, badge + filter in the Feedback list; merging clears its suggestions
-- [ ] Typing suggestions also use embeddings (≥ 0.40) when `OPENAI_API_KEY` is set
+- [x] Typing suggestions also use embeddings (≥ 0.40, queries of 10+ characters) when `OPENAI_API_KEY` is set; falls back to title matches if OpenAI fails
 
 ## Phase 4 — First real users
 
