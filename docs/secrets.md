@@ -47,6 +47,12 @@ pick up production jobs.
 roles and databases). It uses `sslmode=no-verify`: the connection is encrypted, but the
 server's certificate is self-signed, so it isn't verified.
 
+The dev databases have pgvector installed by the superuser in an `extensions` schema
+(`CREATE SCHEMA extensions; CREATE EXTENSION vector SCHEMA extensions;`
+`ALTER DATABASE … SET search_path TO "$user", public, extensions`). pgvector isn't a
+trusted extension, and `prisma migrate dev` wipes the shadow database's `public` schema
+before replaying migrations, so the extension has to live outside it.
+
 `BETTER_AUTH_SECRET` is generated separately per environment. Empty values are
 placeholders still to be filled in; the apps refuse to start while a required
 variable is empty.
