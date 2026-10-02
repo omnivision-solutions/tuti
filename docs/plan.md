@@ -87,11 +87,11 @@ for 4 hours).
 - [x] Team members change post status from the feedback list too
 - [x] Sorting and filtering in the URL: Feedback list (board, status, most votes / newest), portal boards (most votes / newest, status)
 
-## Phase 3 — Duplicates (next)
+## Phase 3 — Duplicates (in progress)
 
-- [ ] Admin "merge into…" (moves votes and subscribers without double counting)
-- [ ] Similar-post suggestions while typing (full-text / trigram)
-- [ ] Embedding-based detection in the `post-created` job (needs pgvector or a vector store — pgvector isn't on the shared Postgres server)
+- [x] Team "Merge into…": votes move to the original (people who voted on both count once), comments move too, the duplicate leaves all lists and its URL redirects to the original; earlier duplicates are re-pointed; no undo
+- [ ] Similar-post suggestions while typing a new post (`pg_trgm`)
+- [ ] Embeddings with OpenAI `text-embedding-3-small` in the `post-created` job, stored with pgvector (needs `OPENAI_API_KEY` in Infisical); "Possible duplicates" for the team with one-click merge; better suggestions
 
 ## Phase 4 — First real users
 

@@ -61,3 +61,58 @@ export async function changePostStatus(projectSlug: string, postId: string, stat
   refresh();
   return {};
 }
+
+/**
+ * Merges a duplicate into another post. Votes move over (people who voted on
+ * both count once), comments move over, earlier duplicates are re-pointed, and
+ * the duplicate leaves all lists (its URL redirects to the original). No undo.
+ */
+export async function mergePost(projectSlug: string, postId: string, targetPostId: string): Promise<FormState> {
+  const membership = await getMembership(projectSlug);
+  if (!membership) {
+    return { error: "Only the project's team can merge posts" };
+  }
+  const projectId = membership.project.id;
+
+  const post = await prisma.post.findFirst({ where: { id: postId, projectId }, select: { id: true, duplicateOfId: true } });
+  let target = await prisma.post.findFirst({
+    where: { id: targetPostId, projectId },
+    select: { id: true, duplicateOfId: true },
+  });
+  if (!post || !target) {
+    return { error: "Post not found" };
+  }
+  if (post.duplicateOfId) {
+    return { error: "This post was already merged" };
+  }
+  // Merging into a post that was itself merged goes to its final original.
+  for (let hops = 0; target.duplicateOfId && hops < 10; hops++) {
+    target = await prisma.post.findUniqueOrThrow({
+      where: { id: target.duplicateOfId },
+      select: { id: true, duplicateOfId: true },
+    });
+  }
+  if (target.id === post.id) {
+    return { error: "Can't merge a post into itself" };
+  }
+
+  const from = post.id;
+  const to = target.id;
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      INSERT INTO vote ("postId", "userId", "projectId", "createdAt")
+      SELECT ${to}, "userId", "projectId", "createdAt" FROM vote WHERE "postId" = ${from}
+      ON CONFLICT ("postId", "userId") DO NOTHING`,
+    prisma.vote.deleteMany({ where: { postId: from } }),
+    prisma.comment.updateMany({ where: { postId: from }, data: { postId: to } }),
+    prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
+    prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
+    prisma.$executeRaw`
+      UPDATE post SET
+        "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${to}),
+        "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${to})
+      WHERE id = ${to}`,
+  ]);
+  refresh();
+  return {};
+}

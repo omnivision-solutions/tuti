@@ -89,9 +89,12 @@ export async function toggleVote(postId: string): Promise<FormState> {
   }
   const userId = session.user.id;
 
-  const target = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true } });
+  const target = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true, duplicateOfId: true } });
   if (!target || !(await canActIn(userId, target.projectId))) {
     return { error: "Post not found" };
+  }
+  if (target.duplicateOfId) {
+    return { error: "This post was merged into another one; vote there instead" };
   }
 
   await prisma.$transaction(async (tx) => {
@@ -130,9 +133,15 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
 
-  const post = await prisma.post.findUnique({ where: { id: parsed.data.postId }, select: { id: true, projectId: true } });
+  const post = await prisma.post.findUnique({
+    where: { id: parsed.data.postId },
+    select: { id: true, projectId: true, duplicateOfId: true },
+  });
   if (!post || !(await canActIn(session.user.id, post.projectId))) {
     return { error: "Post not found" };
+  }
+  if (post.duplicateOfId) {
+    return { error: "This post was merged into another one; comment there instead" };
   }
 
   await prisma.$transaction([

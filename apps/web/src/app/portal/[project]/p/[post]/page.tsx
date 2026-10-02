@@ -32,10 +32,15 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         select: { id: true, body: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
       },
       project: { select: { team: { select: { userId: true } } } },
+      duplicateOf: { select: { number: true, title: true } },
     },
   });
   if (!post) {
     notFound();
+  }
+  // Merged into another post: that's where its votes and comments are now.
+  if (post.duplicateOf) {
+    permanentRedirect(postPath(post.duplicateOf));
   }
   // Retitled since the link was made: send to the current URL.
   if (param !== postPath(post).slice(3)) {

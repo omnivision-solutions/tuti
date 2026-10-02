@@ -5,8 +5,10 @@ import { notFound } from "next/navigation";
 
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
+import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PostStatusSelect } from "@/components/post-status-select";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
@@ -30,6 +32,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       include: {
         board: { select: { slug: true } },
         author: { select: { name: true } },
+        duplicateOf: { select: { number: true, title: true } },
         comments: {
           orderBy: { createdAt: "asc" },
           select: { id: true, body: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -42,6 +45,14 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
+  const candidates = post.duplicateOf
+    ? []
+    : await prisma.post.findMany({
+        where: { projectId: project.id, duplicateOfId: null, id: { not: post.id } },
+        orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+        take: 500,
+        select: { id: true, number: true, title: true, voteCount: true },
+      });
 
   return (
     <>
@@ -72,16 +83,31 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         </p>
       </div>
 
-      <Card size="sm">
-        <CardContent className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="flex items-center gap-2">
-            Status <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} />
-          </span>
-          <span className="flex items-center gap-2">
-            Board <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} />
-          </span>
-        </CardContent>
-      </Card>
+      {post.duplicateOf ? (
+        <Alert>
+          <AlertTitle>
+            Merged into{" "}
+            <Link href={`/app/${slug}/p/${post.duplicateOf.number}`} className="underline underline-offset-4">
+              #{post.duplicateOf.number} {post.duplicateOf.title}
+            </Link>
+          </AlertTitle>
+          <AlertDescription>Its votes and comments moved there, and its link points there.</AlertDescription>
+        </Alert>
+      ) : (
+        <Card size="sm">
+          <CardContent className="flex flex-wrap items-center gap-4 text-sm">
+            <span className="flex items-center gap-2">
+              Status <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} />
+            </span>
+            <span className="flex items-center gap-2">
+              Board <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} />
+            </span>
+            <span className="ml-auto">
+              <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       {post.body && <p className="whitespace-pre-wrap break-words">{post.body}</p>}
 
@@ -90,7 +116,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
         <CommentList comments={post.comments} teamUserIds={new Set(team.map((m) => m.userId))} />
-        <CommentForm postId={post.id} placeholder="Reply as the team…" />
+        {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" />}
       </section>
     </>
   );
