@@ -266,6 +266,8 @@ model Post {
   comments    Comment[]
 
   @@unique([projectId, number])
+  /// Trigram index for "similar posts" suggestions (pg_trgm).
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "post_title_trgm_idx")
   @@index([boardId, voteCount(sort: Desc)])
   @@index([boardId, createdAt(sort: Desc)])
   @@index([projectId, status])
