@@ -107,12 +107,31 @@ export async function mergePost(projectSlug: string, postId: string, targetPostI
     prisma.comment.updateMany({ where: { postId: from }, data: { postId: to } }),
     prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
     prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
+    // The merged post is out of every list, so its duplicate suggestions are settled.
+    prisma.duplicateSuggestion.deleteMany({ where: { OR: [{ postId: from }, { originalId: from }] } }),
     prisma.$executeRaw`
       UPDATE post SET
         "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${to}),
         "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${to})
       WHERE id = ${to}`,
   ]);
+  refresh();
+  return {};
+}
+
+/** "Not a duplicate": hides a suggestion for good (the worker won't suggest the pair again). */
+export async function dismissDuplicate(projectSlug: string, suggestionId: string): Promise<FormState> {
+  const membership = await getMembership(projectSlug);
+  if (!membership) {
+    return { error: "Only the project's team can dismiss duplicates" };
+  }
+  const { count } = await prisma.duplicateSuggestion.updateMany({
+    where: { id: suggestionId, projectId: membership.project.id },
+    data: { status: "DISMISSED" },
+  });
+  if (count === 0) {
+    return { error: "Suggestion not found" };
+  }
   refresh();
   return {};
 }

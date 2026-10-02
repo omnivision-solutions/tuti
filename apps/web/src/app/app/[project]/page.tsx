@@ -5,15 +5,21 @@ import Link from "next/link";
 import { ListFilters } from "@/components/list-filters";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PostStatusSelect } from "@/components/post-status-select";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 
+/** Pending suggestions that this post duplicates an older post that's still listed. */
+const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
+
 export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
   const { project: slug } = await props.params;
-  const filters = parsePostFilters(await props.searchParams);
+  const searchParams = await props.searchParams;
+  const filters = parsePostFilters(searchParams);
+  const duplicatesOnly = searchParams.show === "duplicates";
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
     select: {
@@ -23,6 +29,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
           duplicateOfId: null,
           ...(filters.status && { status: filters.status }),
           ...(filters.board && { board: { slug: filters.board } }),
+          ...(duplicatesOnly && { duplicateSuggestions: { some: possibleDuplicateOf } }),
         },
         orderBy: postOrderBy(filters.sort),
         take: 100,
@@ -35,12 +42,13 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
           commentCount: true,
           board: { select: { slug: true } },
           author: { select: { name: true } },
+          _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
         },
       },
     },
   });
   const portal = portalUrl(slug);
-  const filtered = Boolean(filters.status || filters.board);
+  const filtered = Boolean(filters.status || filters.board || duplicatesOnly);
 
   return (
     <>
@@ -65,6 +73,15 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
           },
           statusFilter(filters.statusParam),
           sortFilter(filters.sort),
+          {
+            name: "show",
+            label: "Show",
+            value: duplicatesOnly ? "duplicates" : "all",
+            options: [
+              { value: "all", label: "All posts" },
+              { value: "duplicates", label: "Possible duplicates" },
+            ],
+          },
         ]}
       />
 
@@ -74,7 +91,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
             <CardTitle>{filtered ? "No posts match these filters" : "No feedback yet"}</CardTitle>
             <CardDescription>
               {filtered
-                ? "Try another board or status."
+                ? "Try other filters."
                 : "Share your portal with users, or connect your app with single sign-on in Settings."}
             </CardDescription>
           </CardHeader>
@@ -86,9 +103,16 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
               <div key={post.id} className="flex items-center gap-4 py-2.5 first:pt-0 last:pb-0">
                 <span className="w-10 text-right font-semibold tabular-nums">{post.voteCount}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <Link href={`/app/${slug}/p/${post.number}`} className="truncate font-medium hover:underline">
-                    {post.title}
-                  </Link>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Link href={`/app/${slug}/p/${post.number}`} className="truncate font-medium hover:underline">
+                      {post.title}
+                    </Link>
+                    {post._count.duplicateSuggestions > 0 && (
+                      <Badge variant="outline" className="shrink-0">
+                        Possible duplicate
+                      </Badge>
+                    )}
+                  </div>
                   <span className="text-xs text-muted-foreground">
                     #{post.number} · {post.author.name}
                     {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
+import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PostStatusSelect } from "@/components/post-status-select";
@@ -16,7 +17,7 @@ import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
 
-/** The team's view of a post: reply as the team, change status, move board. */
+/** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
   const { project: slug, number: param } = await props.params;
   const number = Number(param);
@@ -45,14 +46,29 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const candidates = post.duplicateOf
-    ? []
-    : await prisma.post.findMany({
-        where: { projectId: project.id, duplicateOfId: null, id: { not: post.id } },
-        orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
-        take: 500,
-        select: { id: true, number: true, title: true, voteCount: true },
-      });
+  const postRef = { id: true, number: true, title: true, voteCount: true } as const;
+  const [candidates, suggestions] = post.duplicateOf
+    ? [[], []]
+    : await Promise.all([
+        prisma.post.findMany({
+          where: { projectId: project.id, duplicateOfId: null, id: { not: post.id } },
+          orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+          take: 500,
+          select: postRef,
+        }),
+        prisma.duplicateSuggestion.findMany({
+          where: {
+            projectId: project.id,
+            status: "PENDING",
+            OR: [
+              { postId: post.id, original: { duplicateOfId: null } },
+              { originalId: post.id, post: { duplicateOfId: null } },
+            ],
+          },
+          orderBy: { similarity: "desc" },
+          select: { id: true, similarity: true, post: { select: postRef }, original: { select: postRef } },
+        }),
+      ]);
 
   return (
     <>
@@ -110,6 +126,14 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       )}
 
       {post.body && <p className="whitespace-pre-wrap break-words">{post.body}</p>}
+
+      {suggestions.length > 0 && (
+        <DuplicateSuggestions
+          projectSlug={slug}
+          postId={post.id}
+          suggestions={suggestions.map(({ post: duplicate, ...s }) => ({ ...s, duplicate }))}
+        />
+      )}
 
       <section className="flex flex-col gap-4" aria-label="Comments">
         <h2 className="font-medium">
