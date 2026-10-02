@@ -90,7 +90,7 @@ for 4 hours).
 ## Phase 3 — Duplicates (in progress)
 
 - [x] Team "Merge into…": votes move to the original (people who voted on both count once), comments move too, the duplicate leaves all lists and its URL redirects to the original; earlier duplicates are re-pointed; no undo
-- [ ] Similar-post suggestions while typing a new post (`pg_trgm`)
+- [x] Similar-post suggestions while typing a new post (`pg_trgm`, across boards)
 - [ ] Embeddings with OpenAI `text-embedding-3-small` in the `post-created` job, stored with pgvector (needs `OPENAI_API_KEY` in Infisical); "Possible duplicates" for the team with one-click merge; better suggestions
 
 ## Phase 4 — First real users
