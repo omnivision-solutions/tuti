@@ -1,0 +1,54 @@
+import { createHash } from "node:crypto";
+
+/**
+ * OpenAI text embeddings for duplicate detection. Optional: without
+ * OPENAI_API_KEY, posting works and duplicate detection is skipped.
+ */
+export const EMBEDDING_MODEL = "text-embedding-3-small";
+
+/**
+ * Cosine similarity cut-offs, calibrated on text-embedding-3-small: duplicates
+ * scored ~0.47–0.65, related-but-different posts ~0.32–0.59, unrelated ~0.1–0.2.
+ * Embeddings separate related from unrelated, not duplicate from related, so
+ * these only produce suggestions a person confirms.
+ */
+export const DUPLICATE_MIN_SIMILARITY = 0.45;
+export const TYPING_SUGGESTION_MIN_SIMILARITY = 0.4;
+
+export function embeddingsEnabled(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY);
+}
+
+/** What gets embedded for a post. */
+export function postEmbeddingText(post: { title: string; body: string }): string {
+  return `${post.title}\n\n${post.body}`.trim().slice(0, 8000);
+}
+
+export function contentHash(text: string): string {
+  return createHash("sha256").update(`${EMBEDDING_MODEL}\n${text}`).digest("hex");
+}
+
+/** pgvector literal, e.g. "[0.1,0.2]", to cast with ::vector in SQL. */
+export function toVectorLiteral(vector: number[]): string {
+  return `[${vector.join(",")}]`;
+}
+
+export async function embed(texts: string[]): Promise<number[][]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  const response = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+  });
+  const json = (await response.json()) as {
+    data?: { index: number; embedding: number[] }[];
+    error?: { message?: string };
+  };
+  if (!response.ok || !json.data) {
+    throw new Error(`OpenAI embeddings failed (${response.status}): ${json.error?.message ?? "no data"}`);
+  }
+  return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
+}

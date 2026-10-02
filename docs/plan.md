@@ -91,7 +91,9 @@ for 4 hours).
 
 - [x] Team "Merge into…": votes move to the original (people who voted on both count once), comments move too, the duplicate leaves all lists and its URL redirects to the original; earlier duplicates are re-pointed; no undo
 - [x] Similar-post suggestions while typing a new post (`pg_trgm`, across boards)
-- [ ] Embeddings with OpenAI `text-embedding-3-small` in the `post-created` job, stored with pgvector (needs `OPENAI_API_KEY` in Infisical); "Possible duplicates" for the team with one-click merge; better suggestions
+- [x] Embeddings with OpenAI `text-embedding-3-small` in the `post-created` job, stored with pgvector; posts at ≥ 0.45 cosine similarity to an older post get a pending duplicate suggestion (top 3, same project). Optional: skipped without `OPENAI_API_KEY`. `pnpm --filter @tuti/worker backfill:embeddings` for existing posts
+- [ ] "Possible duplicates" for the team: on the post view with Merge / Dismiss, badge + filter in the Feedback list; merging clears its suggestions
+- [ ] Typing suggestions also use embeddings (≥ 0.40) when `OPENAI_API_KEY` is set
 
 ## Phase 4 — First real users
 

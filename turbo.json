@@ -9,7 +9,8 @@
     "APP_URL",
     "PORTAL_URL_TEMPLATE",
     "BETTER_AUTH_*",
-    "HATCHET_CLIENT_*"
+    "HATCHET_CLIENT_*",
+    "OPENAI_API_KEY"
   ],
   "tasks": {
     "db:generate": {
