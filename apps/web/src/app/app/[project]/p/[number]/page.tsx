@@ -81,13 +81,13 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       </Link>
 
       <div className="flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">{post.title}</h1>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{post.title}</h1>
           <a
             href={`${portalUrl(slug)}${postPath(post)}`}
             target="_blank"
             rel="noreferrer"
-            className={buttonVariants({ variant: "outline", size: "sm" })}
+            className={buttonVariants({ variant: "outline", size: "sm", className: "self-start" })}
           >
             <ExternalLinkIcon />
             View on portal

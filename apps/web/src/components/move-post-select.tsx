@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "cn";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -12,11 +13,13 @@ export function MovePostSelect({
   postId,
   boardSlug,
   boards,
+  className,
 }: {
   projectSlug: string;
   postId: string;
   boardSlug: string;
   boards: { slug: string; name: string }[];
+  className?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const labels = Object.fromEntries(boards.map((b) => [b.slug, b.name]));
@@ -38,7 +41,7 @@ export function MovePostSelect({
         })
       }
     >
-      <SelectTrigger size="sm" className="max-w-40" aria-label="Board">
+      <SelectTrigger size="sm" className={cn("max-w-40", className)} aria-label="Board">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

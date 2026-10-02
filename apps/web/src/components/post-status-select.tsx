@@ -1,6 +1,7 @@
 "use client";
 
 import type { PostStatus } from "@tuti/db";
+import { cn } from "cn";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -11,7 +12,17 @@ import { changePostStatus } from "@/server/manage-posts";
 const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
 
 /** Team-only: shows a post's status and changes it. */
-export function PostStatusSelect({ projectSlug, postId, status }: { projectSlug: string; postId: string; status: PostStatus }) {
+export function PostStatusSelect({
+  projectSlug,
+  postId,
+  status,
+  className,
+}: {
+  projectSlug: string;
+  postId: string;
+  status: PostStatus;
+  className?: string;
+}) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -30,7 +41,7 @@ export function PostStatusSelect({ projectSlug, postId, status }: { projectSlug:
         })
       }
     >
-      <SelectTrigger size="sm" className="w-36" aria-label="Status">
+      <SelectTrigger size="sm" className={cn("w-36", className)} aria-label="Status">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
