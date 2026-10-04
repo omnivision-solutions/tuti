@@ -120,7 +120,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
                         {post.title}
                       </Link>
                       {post._count.duplicateSuggestions > 0 && (
-                        <Badge variant="outline" className="shrink-0">
+                        <Badge variant="highlight" className="shrink-0">
                           Possible duplicate
                         </Badge>
                       )}

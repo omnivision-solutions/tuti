@@ -25,7 +25,7 @@ export function BoardTabs({ boards }: { boards: { slug: string; name: string }[]
               aria-current={active ? "page" : undefined}
               className={cn(
                 "border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",
-                active ? "border-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
+                active ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
               {board.name}

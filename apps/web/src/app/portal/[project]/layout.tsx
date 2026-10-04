@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BoardTabs } from "@/components/board-tabs";
+import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
+import { appUrl } from "@/lib/hosts";
 import { getSession } from "@/server/session";
 
 /**
@@ -26,7 +28,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   return (
     <>
       <header className="flex items-center justify-between border-b px-6 py-2">
-        <Link href="/" className="font-semibold">
+        <Link href="/" className="font-heading text-lg font-bold tracking-tight">
           {project.name}
         </Link>
         {session ? (
@@ -39,6 +41,18 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
       </header>
       <BoardTabs boards={project.boards} />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
+      <footer className="flex justify-center pb-6">
+        <a
+          href={appUrl().origin}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Powered by
+          <TutiMark className="size-4" />
+          <span className="font-heading font-bold text-foreground">tuti</span>
+        </a>
+      </footer>
     </>
   );
 }

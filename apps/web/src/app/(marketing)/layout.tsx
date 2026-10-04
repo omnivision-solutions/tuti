@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { TutiLogo } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/server/session";
 
@@ -10,8 +11,8 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
   return (
     <>
       <header className="flex items-center justify-between border-b px-6 py-2">
-        <Link href="/" className="font-semibold">
-          Tuti
+        <Link href="/" aria-label="Tuti home">
+          <TutiLogo />
         </Link>
         {session ? (
           <Link href="/app" className={buttonVariants({ size: "sm" })}>
