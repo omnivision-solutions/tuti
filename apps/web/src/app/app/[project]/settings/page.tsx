@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
@@ -15,10 +16,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
 
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Owners and admins only.</p>
-      </div>
+      <PageHeader title="Settings" description="Owners and admins only." />
 
       <Card>
         <CardHeader>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { ItemList, ItemRow } from "@/components/item-list";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,10 +47,12 @@ export function DuplicateSuggestions({
         <CardTitle>Possible duplicates</CardTitle>
         <CardDescription>Found by comparing what the posts say. Merge them, or mark them as different.</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col divide-y">
-        {suggestions.map((s) => (
-          <SuggestionRow key={s.id} projectSlug={projectSlug} postId={postId} suggestion={s} />
-        ))}
+      <CardContent>
+        <ItemList>
+          {suggestions.map((s) => (
+            <SuggestionRow key={s.id} projectSlug={projectSlug} postId={postId} suggestion={s} />
+          ))}
+        </ItemList>
       </CardContent>
     </Card>
   );
@@ -84,39 +87,46 @@ function SuggestionRow({ projectSlug, postId, suggestion }: { projectSlug: strin
     });
 
   return (
-    <div className="flex flex-wrap items-center gap-3 py-2 text-sm first:pt-0 last:pb-0">
-      <span className="w-10 shrink-0 text-muted-foreground tabular-nums">#{other.number}</span>
-      <Link href={`/app/${projectSlug}/p/${other.number}`} className="min-w-0 flex-1 truncate hover:underline">
-        {other.title}
-      </Link>
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {other.voteCount} {other.voteCount === 1 ? "vote" : "votes"} · {Math.round(suggestion.similarity * 100)}% similar
-      </span>
-      <div className="flex shrink-0 gap-2">
-        <Button variant="ghost" size="sm" disabled={pending} onClick={dismiss}>
-          Not a duplicate
-        </Button>
-        <AlertDialog>
-          <AlertDialogTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
-            {isDuplicate ? `Merge into #${original.number}` : `Merge #${duplicate.number} into this`}
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                Merge #{duplicate.number} into #{original.number}?
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                “{duplicate.title}” will be merged into “{original.title}”. Its votes (counted once per person) and
-                comments move over, and its link will point to #{original.number}. This can&apos;t be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={merge}>Merge</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    </div>
+    <ItemRow
+      wideActions
+      title={
+        <Link href={`/app/${projectSlug}/p/${other.number}`} className="hover:underline">
+          {other.title}
+        </Link>
+      }
+      meta={
+        <>
+          #{other.number} · {other.voteCount} {other.voteCount === 1 ? "vote" : "votes"} ·{" "}
+          {Math.round(suggestion.similarity * 100)}% similar
+        </>
+      }
+      actions={
+        <>
+          <Button variant="ghost" size="sm" disabled={pending} onClick={dismiss}>
+            Not a duplicate
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger render={<Button variant="outline" size="sm" disabled={pending} />}>
+              {isDuplicate ? `Merge into #${original.number}` : `Merge #${duplicate.number} into this`}
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Merge #{duplicate.number} into #{original.number}?
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  “{duplicate.title}” will be merged into “{original.title}”. Its votes (counted once per person) and
+                  comments move over, and its link will point to #{original.number}. This can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={merge}>Merge</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      }
+    />
   );
 }

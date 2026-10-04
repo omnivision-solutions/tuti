@@ -1,13 +1,15 @@
 import { prisma } from "@tuti/db";
-import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
+import { PageHeader } from "@/components/page-header";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -72,32 +74,28 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
   return (
     <>
-      <Link
-        href={`/app/${slug}`}
-        className={buttonVariants({ variant: "link", size: "sm", className: "self-start px-0 text-muted-foreground" })}
-      >
-        <ArrowLeftIcon />
-        Feedback
-      </Link>
+      <BackLink href={`/app/${slug}`}>Feedback</BackLink>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight break-words">{post.title}</h1>
+      <PageHeader
+        title={post.title}
+        description={
+          <>
+            #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
+            {post.voteCount === 1 ? "vote" : "votes"}
+          </>
+        }
+        actions={
           <a
             href={`${portalUrl(slug)}${postPath(post)}`}
             target="_blank"
             rel="noreferrer"
-            className={buttonVariants({ variant: "outline", size: "sm", className: "self-start" })}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
           >
             <ExternalLinkIcon />
             View on portal
           </a>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
-          {post.voteCount === 1 ? "vote" : "votes"}
-        </p>
-      </div>
+        }
+      />
 
       {post.duplicateOf ? (
         <Alert>

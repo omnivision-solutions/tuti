@@ -1,4 +1,5 @@
 import { AccountForms } from "@/components/account-forms";
+import { PageHeader } from "@/components/page-header";
 import { getSession } from "@/server/session";
 
 export default async function AccountPage() {
@@ -9,10 +10,7 @@ export default async function AccountPage() {
 
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Account settings</h1>
-        <p className="text-sm text-muted-foreground">{session.user.email}</p>
-      </div>
+      <PageHeader title="Account settings" description={session.user.email} />
       <AccountForms name={session.user.name} />
     </>
   );

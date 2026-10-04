@@ -2,6 +2,8 @@ import { type TeamRole, prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { InviteForm, RevokeInvitationButton } from "@/components/invitations";
+import { ItemList, ItemRow } from "@/components/item-list";
+import { PageHeader } from "@/components/page-header";
 import { LeaveProjectButton, RemoveMemberButton, RoleSelect } from "@/components/team-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +41,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
 
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="text-sm text-muted-foreground">People who manage feedback in {project.name}.</p>
-      </div>
+      <PageHeader title="Team" description={`People who manage feedback in ${project.name}.`} />
 
       <Card>
         <CardHeader>
@@ -51,39 +50,47 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
             {members.length} {members.length === 1 ? "person" : "people"}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col divide-y">
-          {members.map((member) => {
-            const isMe = member.userId === session.user.id;
-            const manageable = !isMe && canManageTeamMember(myRole, member.role);
-            return (
-              <div key={member.id} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
-                <Avatar className="size-8">
-                  {member.user.image && <AvatarImage src={member.user.image} alt="" />}
-                  <AvatarFallback>{member.user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm font-medium">
-                    {member.user.name}
-                    {isMe && <span className="text-muted-foreground"> (you)</span>}
-                  </span>
-                  <span className="truncate text-xs text-muted-foreground">{member.user.email}</span>
-                </div>
-                {manageable ? (
-                  <>
-                    <RoleSelect
-                      projectSlug={project.slug}
-                      memberId={member.id}
-                      role={member.role}
-                      assignable={assignable}
-                    />
-                    <RemoveMemberButton projectSlug={project.slug} memberId={member.id} name={member.user.name} />
-                  </>
-                ) : (
-                  <Badge variant={member.role === "OWNER" ? "default" : "secondary"}>{ROLE_LABELS[member.role]}</Badge>
-                )}
-              </div>
-            );
-          })}
+        <CardContent>
+          <ItemList>
+            {members.map((member) => {
+              const isMe = member.userId === session.user.id;
+              const manageable = !isMe && canManageTeamMember(myRole, member.role);
+              return (
+                <ItemRow
+                  key={member.id}
+                  wideActions={manageable}
+                  leading={
+                    <Avatar className="size-8">
+                      {member.user.image && <AvatarImage src={member.user.image} alt="" />}
+                      <AvatarFallback>{member.user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  }
+                  title={
+                    <>
+                      {member.user.name}
+                      {isMe && <span className="text-muted-foreground"> (you)</span>}
+                    </>
+                  }
+                  meta={<span className="break-all">{member.user.email}</span>}
+                  actions={
+                    manageable ? (
+                      <>
+                        <RoleSelect
+                          projectSlug={project.slug}
+                          memberId={member.id}
+                          role={member.role}
+                          assignable={assignable}
+                        />
+                        <RemoveMemberButton projectSlug={project.slug} memberId={member.id} name={member.user.name} />
+                      </>
+                    ) : (
+                      <Badge variant={member.role === "OWNER" ? "default" : "secondary"}>{ROLE_LABELS[member.role]}</Badge>
+                    )
+                  }
+                />
+              );
+            })}
+          </ItemList>
         </CardContent>
         <CardFooter className="justify-end">
           {isOnlyOwner ? (
@@ -105,21 +112,20 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
           <CardContent className="flex flex-col gap-4">
             <InviteForm projectSlug={project.slug} roles={assignable} />
             {invitations.length > 0 && (
-              <div className="flex flex-col divide-y border-t pt-2">
+              <ItemList className="border-t pt-2.5">
                 {invitations.map((invitation) => (
-                  <div key={invitation.id} className="flex items-center gap-3 py-2">
-                    <div className="flex min-w-0 flex-1 flex-col">
-                      <span className="text-sm">Pending invite · {ROLE_LABELS[invitation.role]}</span>
-                      <span className="text-xs text-muted-foreground">
-                        Created by {invitation.createdBy.name} · expires {invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </span>
-                    </div>
-                    {canAssignRole(myRole, invitation.role) && (
-                      <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
-                    )}
-                  </div>
+                  <ItemRow
+                    key={invitation.id}
+                    title={`Pending invite · ${ROLE_LABELS[invitation.role]}`}
+                    meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+                    actions={
+                      canAssignRole(myRole, invitation.role) && (
+                        <RevokeInvitationButton projectSlug={project.slug} invitationId={invitation.id} />
+                      )
+                    }
+                  />
                 ))}
-              </div>
+              </ItemList>
             )}
           </CardContent>
         </Card>

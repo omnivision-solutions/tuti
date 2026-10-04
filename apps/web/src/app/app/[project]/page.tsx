@@ -2,12 +2,15 @@ import { prisma } from "@tuti/db";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
+import { EmptyState } from "@/components/empty-state";
+import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { MovePostSelect } from "@/components/move-post-select";
+import { PageHeader } from "@/components/page-header";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
@@ -52,21 +55,21 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
 
   return (
     <>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Feedback</h1>
-          <p className="text-sm text-muted-foreground">Everything your users have posted.</p>
-        </div>
-        <a
-          href={portal}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonVariants({ variant: "outline", size: "sm", className: "max-w-full self-start" })}
-        >
-          <ExternalLinkIcon />
-          {new URL(portal).host}
-        </a>
-      </div>
+      <PageHeader
+        title="Feedback"
+        description="Everything your users have posted."
+        actions={
+          <a
+            href={portal}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: "outline", size: "sm", className: "max-w-full" })}
+          >
+            <ExternalLinkIcon />
+            <span className="truncate">{new URL(portal).host}</span>
+          </a>
+        }
+      />
 
       <ListFilters
         filters={[
@@ -91,58 +94,58 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
       />
 
       {project.posts.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{filtered ? "No posts match these filters" : "No feedback yet"}</CardTitle>
-            <CardDescription>
-              {filtered
-                ? "Try other filters."
-                : "Share your portal with users, or connect your app with single sign-on in Settings."}
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <EmptyState
+          title={filtered ? "No posts match these filters" : "No feedback yet"}
+          description={
+            filtered
+              ? "Try other filters."
+              : "Share your portal with users, or connect your app with single sign-on in Settings."
+          }
+        />
       ) : (
         <Card size="sm">
-          <CardContent className="flex flex-col divide-y">
-            {project.posts.map((post) => (
-              <div
-                key={post.id}
-                className="flex flex-col gap-2 py-2.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4"
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-4">
-                  <span className="w-10 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
-                      <Link
-                        href={`/app/${slug}/p/${post.number}`}
-                        className="min-w-0 font-medium break-words hover:underline sm:truncate"
-                      >
-                        {post.title}
-                      </Link>
-                      {post._count.duplicateSuggestions > 0 && (
-                        <Badge variant="highlight" className="shrink-0">
-                          Possible duplicate
-                        </Badge>
-                      )}
-                    </div>
-                    <span className="text-xs text-muted-foreground">
+          <CardContent>
+            <ItemList>
+              {project.posts.map((post) => (
+                <ItemRow
+                  key={post.id}
+                  wideActions
+                  leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>}
+                  title={
+                    <Link href={`/app/${slug}/p/${post.number}`} className="hover:underline">
+                      {post.title}
+                    </Link>
+                  }
+                  badges={
+                    post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
+                  }
+                  meta={
+                    <>
                       #{post.number} · {post.author.name}
-                      {post.commentCount > 0 && ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                    </span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:flex">
-                  <MovePostSelect
-                    projectSlug={slug}
-                    postId={post.id}
-                    boardSlug={post.board.slug}
-                    boards={project.boards}
-                    className="w-full max-w-none sm:w-auto sm:max-w-40"
-                  />
-                  <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} className="w-full sm:w-36" />
-                </div>
-              </div>
-            ))}
+                      {post.commentCount > 0 &&
+                        ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
+                    </>
+                  }
+                  actions={
+                    <>
+                      <MovePostSelect
+                        projectSlug={slug}
+                        postId={post.id}
+                        boardSlug={post.board.slug}
+                        boards={project.boards}
+                        className="w-full max-w-none sm:w-auto sm:max-w-40"
+                      />
+                      <PostStatusSelect
+                        projectSlug={slug}
+                        postId={post.id}
+                        status={post.status}
+                        className="w-full sm:w-36"
+                      />
+                    </>
+                  }
+                />
+              ))}
+            </ItemList>
           </CardContent>
         </Card>
       )}

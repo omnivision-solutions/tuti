@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { CreateProjectForm } from "@/components/create-project-form";
+import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
@@ -19,10 +20,7 @@ export default async function AppHome() {
 
   return (
     <>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Welcome to Tuti</h1>
-        <p className="text-sm text-muted-foreground">Create a project to start collecting feedback.</p>
-      </div>
+      <PageHeader title="Welcome to Tuti" description="Create a project to start collecting feedback." />
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Create your first project</CardTitle>

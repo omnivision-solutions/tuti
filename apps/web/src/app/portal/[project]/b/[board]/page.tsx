@@ -2,8 +2,10 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
+import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
 import { NewPostForm } from "@/components/new-post-form";
+import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
@@ -46,10 +48,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{board.name}</h1>
-        {board.description && <p className="text-sm text-muted-foreground">{board.description}</p>}
-      </div>
+      <PageHeader title={board.name} description={board.description} />
 
       {session ? (
         <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} />
@@ -95,9 +94,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
           </Card>
         ))}
         {board.posts.length === 0 && (
-          <p className="text-muted-foreground">
-            {filters.status ? "No posts with this status yet." : "No feedback yet. Be the first!"}
-          </p>
+          <EmptyState
+            title={filters.status ? "No posts with this status yet" : "No feedback yet"}
+            description={filters.status ? "Try another status." : "Be the first to share an idea."}
+          />
         )}
       </div>
     </div>

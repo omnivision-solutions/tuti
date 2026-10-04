@@ -1,12 +1,11 @@
 import { prisma } from "@tuti/db";
-import { ArrowLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
+import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { PostStatusBadge } from "@/components/post-status-badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
@@ -50,18 +49,12 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
 
   return (
     <div className="flex flex-col gap-6">
-      <Link
-        href={`/b/${post.board.slug}`}
-        className={buttonVariants({ variant: "link", size: "sm", className: "self-start px-0 text-muted-foreground" })}
-      >
-        <ArrowLeftIcon />
-        {post.board.name}
-      </Link>
+      <BackLink href={`/b/${post.board.slug}`}>{post.board.name}</BackLink>
 
       <article className="flex gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{post.title}</h1>
+          <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <PostStatusBadge status={post.status} />
             <span>{post.author.name}</span>
