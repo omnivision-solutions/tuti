@@ -95,6 +95,13 @@ for 4 hours).
 - [x] "Possible duplicates" for the team: on the post view with Merge / Dismiss, badge + filter in the Feedback list; merging clears its suggestions
 - [x] Typing suggestions also use embeddings (≥ 0.40, queries of 10+ characters) when `OPENAI_API_KEY` is set; falls back to title matches if OpenAI fails
 
+## Phase 3.5 — Design system ✅
+
+- [x] Brand direction "Parrot" (picked from four options): green + beak-orange tokens for light and dark, Figtree + Bricolage Grotesque, parrot mark, favicon, "Powered by tuti" on portals
+- [x] Shared layout components (`PageHeader`, `ItemList`/`ItemRow`, `EmptyState`, `BackLink`); every page moved onto them
+- [x] `docs/design.md` rulebook and a dev-only `/design` gallery (light and dark side by side)
+- [ ] A proper parrot illustration to replace the placeholder mark
+
 ## Phase 4 — First real users
 
 - [ ] Email (magic links, notifications) via the shared SMTP relay or a provider
