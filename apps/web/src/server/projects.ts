@@ -8,7 +8,7 @@ import { z } from "zod";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
-import { getSession } from "./session";
+import { getAccountSession } from "./session";
 
 const createProjectSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -23,7 +23,7 @@ const createProjectSchema = z.object({
 });
 
 export async function createProject(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await getSession();
+  const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to create a project" };
   }

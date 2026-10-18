@@ -41,8 +41,8 @@ type Case = {
   allowed: Level;
   /** Takes ids of the project's records: another project's team must not reach them through their own slug. */
   takesIds?: true;
-  /** Users who signed in through another project's SSO can't act here (portal actions). */
-  portal?: true;
+  /** Users who signed in through another project's SSO can't do this (they only exist on that portal). */
+  refusesSsoUsers?: true;
   call: (slug: string, fixture: Fixture) => Promise<unknown>;
 };
 
@@ -74,7 +74,11 @@ const matrix: Matrix = {
       call: (slug, f) => invitations.revokeInvitation(slug, f.invitationId),
     },
     // The token is the permission: anyone signed in who has it may join.
-    acceptInvitation: { allowed: "signed in", call: (_slug, f) => invitations.acceptInvitation(f.invitationToken) },
+    acceptInvitation: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (_slug, f) => invitations.acceptInvitation(f.invitationToken),
+    },
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
@@ -97,20 +101,21 @@ const matrix: Matrix = {
   posts: {
     createPost: {
       allowed: "signed in",
-      portal: true,
+      refusesSsoUsers: true,
       call: (slug) =>
         posts.createPost({}, form({ projectSlug: slug, boardSlug: "feature-requests", title: "Dark mode" })),
     },
-    toggleVote: { allowed: "signed in", portal: true, call: (_slug, f) => posts.toggleVote(f.postId) },
+    toggleVote: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => posts.toggleVote(f.postId) },
     addComment: {
       allowed: "signed in",
-      portal: true,
+      refusesSsoUsers: true,
       call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
     },
   },
   projects: {
     createProject: {
       allowed: "signed in",
+      refusesSsoUsers: true,
       call: () => projects.createProject({}, form({ name: "New project", slug: `new-${crypto.randomUUID().slice(0, 8)}` })),
     },
   },
@@ -207,7 +212,7 @@ function refusedActors(rule: Case): Actor[] {
     return [];
   }
   if (rule.allowed === "signed in") {
-    return rule.portal ? ["signed out", "other project's SSO user"] : ["signed out"];
+    return rule.refusesSsoUsers ? ["signed out", "other project's SSO user"] : ["signed out"];
   }
   return ["signed out", "other project's owner", ...ROLES.slice(0, ROLES.indexOf(rule.allowed))];
 }
