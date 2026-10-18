@@ -18,14 +18,14 @@ This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It revi
 
 1. **Check the head.** `gh pr view <n> --json headRefOid,mergeable,statusCheckRollup`. Results for an older commit don't count; if your local branch and the PR head differ, sync first.
 2. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed`. Fix the cause and push. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
-3. **Review comments.** List them: `gh api repos/{owner}/{repo}/pulls/<n>/comments` (inline) and `gh pr view <n> --comments` (conversation). Judge each on its merits; bots are confidently wrong often enough to check.
+3. **Review comments.** List them: `gh api --paginate repos/{owner}/{repo}/pulls/<n>/comments` (inline) and `gh pr view <n> --comments` (conversation). Judge each on its merits; bots are confidently wrong often enough to check.
    - Real issue: fix it, push, then reply in the thread saying what changed.
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
    A comment is answered only when you've replied after its latest edit.
    - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the GraphQL `resolveReviewThread` mutation; `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
    - Thread state isn't in the REST comment list. Check it with:
-     `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} path body}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>`
+     `gh api graphql --paginate -f query='query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{id isResolved comments(first:1){nodes{author{login} path body}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>`
 4. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
 
 ## Merge when all of these hold
