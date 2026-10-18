@@ -7,7 +7,8 @@
 # files named like 01-step-name.png in a plainly named folder are used.
 #
 # Needs: gh, aws, jq; GH_TOKEN, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and
-# REPO, RUN_ID, RUN_ATTEMPT, RUN_URL, HEAD_SHA, S3_ENDPOINT, S3_BUCKET, PUBLIC_BASE_URL.
+# REPO, RUN_ID, RUN_ATTEMPT, RUN_URL, HEAD_OWNER, HEAD_BRANCH, HEAD_SHA, S3_ENDPOINT,
+# S3_BUCKET, PUBLIC_BASE_URL.
 set -euo pipefail
 
 marker="<!-- tuti-e2e-screenshots -->"
@@ -18,9 +19,10 @@ case "$base_url" in https://*) ;; *) echo "PUBLIC_BASE_URL must use https" >&2; 
 # Uploads are signed with the storage keys: https only (plain http just for a local mock).
 case "$S3_ENDPOINT" in https://* | http://127.0.0.1:* | http://localhost:*) ;; *) echo "S3_ENDPOINT must use https" >&2; exit 1 ;; esac
 
-# The pull request this run was for, if it's still that PR's latest commit.
-pr=$(gh pr list --repo "$REPO" --state open --search "$HEAD_SHA" --json number,headRefOid \
-  --jq "[.[] | select(.headRefOid == \"$HEAD_SHA\")][0].number // empty")
+# The pull request this run was for: the open PR from the run's branch (in a fork too;
+# the workflow_run event lists no PRs for forks), if the tested commit is still its latest.
+pr=$(gh api "repos/$REPO/pulls?state=open&head=$HEAD_OWNER:$HEAD_BRANCH" \
+  --jq "[.[] | select(.head.sha == \"$HEAD_SHA\")][0].number // empty")
 still_latest() { [[ $(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid) == "$HEAD_SHA" ]]; }
 if [[ -z "$pr" ]]; then
   echo "No open pull request has $HEAD_SHA as its latest commit; nothing to post."

@@ -37,6 +37,8 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           S3_ENDPOINT: ${{ vars.SCREENSHOTS_S3_ENDPOINT }}
           S3_BUCKET: ${{ vars.SCREENSHOTS_BUCKET }}
