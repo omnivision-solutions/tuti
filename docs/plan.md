@@ -100,15 +100,57 @@ for 4 hours).
 - [x] Brand direction "Parrot" (picked from four options): green + beak-orange tokens for light and dark, Figtree + Bricolage Grotesque, parrot mark, favicon, "Powered by tuti" on portals
 - [x] Shared layout components (`PageHeader`, `ItemList`/`ItemRow`, `EmptyState`, `BackLink`); every page moved onto them
 - [x] `docs/design.md` rulebook and a dev-only `/design` gallery (light and dark side by side)
-- [ ] A proper parrot illustration to replace the placeholder mark
+- [ ] A proper parrot illustration to replace the placeholder mark (moved to Later)
 
-## Phase 4 — First real users
+## How we work from Phase 4 on
 
-- [ ] Email (magic links, notifications) via the shared SMTP relay or a provider
-- [ ] Landing page
-- [ ] Production deployment: Dockerfiles (`infisical run` only when a token is set), Coolify apps, prod values in Infisical
+Every change is a small PR (one topic, squash-merged) that CI proves before it lands:
+lint, typecheck, unit, database and browser tests, production build. An agent opens
+the PR, stays with it until checks and review bots finish, answers every finding
+(fix it or rebut it with evidence), then merges. Each phase below lists the tests it
+adds; a feature isn't done until its tests are in the PR.
 
-## The "shipped loop" (Phases 5–8)
+Test layers (set up in Phase 4):
+
+| Command | Real | Faked | Runs |
+|---|---|---|---|
+| `pnpm test` | product logic | everything external; no database, no keys | every PR |
+| `pnpm test:db` | Postgres (pgvector, pg_trgm), Prisma, Better Auth, server actions, worker tasks | OpenAI, Hatchet (jobs run inline), email, GitHub | every PR |
+| `pnpm test:e2e` | production build of web + inline jobs in a browser, portal subdomains on `*.localhost` | same as above | every PR |
+| `pnpm test:live` | real OpenAI / Claude / GitHub / email | — | by hand; a missing key means "not run", never "passed" |
+
+## Phase 4 — Verification foundation
+
+- [ ] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
+- [ ] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
+- [ ] Fake embeddings: OpenAI-shaped `fetch` with hand-written vectors, so duplicate thresholds are tested exactly
+- [ ] `pnpm test:db`: migrate a template database once, clone it per Vitest worker (`CREATE DATABASE … TEMPLATE`); parallel and isolated. CI uses a `pgvector/pgvector:pg17` service; locally a `tuti_test` role with CREATEDB on the shared server
+- [ ] Test helpers (one shared set): sign up through Better Auth, create project / board / post / team member, call a server action as a given user
+- [ ] Authorization matrix: a typed list of every server action, checked by the compiler so new actions can't be missed; each must reject signed-out users, other projects' members, and too-low roles
+- [ ] Backfill tests for what's already built (until now only run by hand): SSO (happy path, same `sub`, replay, expiry, bad signature, open redirect), team rules (last owner, owners-only), board renames and redirects, post numbers, merging, duplicate suggestions, filters
+- [ ] Playwright: production build + inline jobs, portal hosts on `*.localhost`; core journeys (sign up → create project → post → vote → team comments and changes status → merge duplicate); numbered screenshot checkpoints, uploaded with the report on failure and for UI PRs
+- [ ] CI (GitHub Actions): lint, typecheck, unit, db, e2e, build as separate checks; turbo cache; a new push cancels the old run; `.only` fails CI; `no-console` in server and worker code
+- [ ] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
+- [ ] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
+
+## Phase 5 — Open source
+
+- [ ] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); fix before going public
+- [ ] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
+- [ ] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
+- [ ] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, no force pushes
+- [ ] Review bots: CodeRabbit (free for public repos); Dependabot security updates
+- [ ] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
+- [ ] Dogfood: Tuti's own feedback portal for Tuti
+
+## Phase 6 — First real users
+
+- [ ] Email over SMTP (any provider, self-hosters included): magic links, invitations, notifications; tests capture mail in memory
+- [ ] Landing page (no tests; checked by build and screenshot)
+- [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
+- [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel
+
+## The "shipped loop" (Phases 7–11)
 
 Code is the source of truth. One GitHub connection feeds everything after it: a
 merged PR or a release closes the feedback it fixes, writes the changelog, proposes
@@ -120,41 +162,51 @@ Rules for every AI feature: optional (off without an API key, like embeddings),
 nothing customer-facing publishes without a team member's approval, every answer
 or proposal shows its sources.
 
-## Phase 5 — GitHub + auto-close
+## Phase 7 — GitHub + auto-close
 
-- [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to Hatchet jobs (`github-pr`, `github-release`)
+- [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to jobs (`github-pr`, `github-release`)
 - [ ] `PostLink`: post ↔ PR / issue / release, with source (manual, reference, suggested)
 - [ ] Linking: references in PR title/body/commits (`tuti#123` or a post URL); embedding-based suggestions (PR text vs. open posts) the team confirms, same pattern as duplicate suggestions; manual "Link PR" on the post view
 - [ ] Status rules per project: linked PR opened → In progress; release containing it (GitHub compare between tags) → Completed. Default closes on release, not merge — merged isn't shipped. Option to close on merge for projects without releases
-- [ ] Notify voters and commenters when their post ships (needs Phase 4 email)
+- [ ] Optional PR comment listing the feedback a PR completes and its vote count
+- [ ] Notify voters and commenters when their post ships
+- [ ] Tests: [emulate](https://emulate.dev) GitHub emulator (app installs, signed webhooks, PRs, compare, releases) for db and E2E journeys; a `test:live` check against a real test repo
 
-## Phase 5.5 — Changelog, drafted from GitHub
+## Phase 8 — Roadmap + changelog, drafted from GitHub
 
 The team edits and publishes; Tuti does the first draft from what actually merged.
 
-- [ ] Entries (draft → published) on the portal at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX"
-- [ ] Running draft: every merged PR is added to the next unpublished entry, so the draft is ready when it's time to ship; a GitHub release (or "Ship" by hand) closes it out
+- [ ] Public roadmap on the portal: columns by status (Planned, In progress, Completed)
+- [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX"
+- [ ] Running draft: every merged PR is added to the next unpublished entry; a GitHub release (or "Ship" by hand) closes it out
 - [ ] AI drafting: rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
 - [ ] Per-project style: a few example entries + tone notes the drafts follow
 - [ ] Editor helpers: regenerate a section, shorten, "explain for non-developers"
 - [ ] Optional: write the published notes back to the GitHub release body
 - [ ] Without GitHub: write entries by hand and pick the posts they complete
+- [ ] Tests: a model fake (scripted responses, checks every request, fails on unused steps) for drafting flows; a few real-model quality cases in `test:live` (no internal jargon, every completed post mentioned)
 
-## Phase 6 — Help center
+## Phase 9 — Widget + SDK (MIT)
+
+- [ ] One script tag: give feedback (with duplicate suggestions), see what's new; signs users in with the existing JWT SSO
+- [ ] Tests: E2E on a fixture host page
+
+## Phase 10 — Help center
 
 - [ ] Collections and articles (markdown, revision history), team editor in `/app`
 - [ ] Portal `/help`: public, indexable; private articles for SSO users
-- [ ] Search over article chunks with pgvector (reuses the embeddings pipeline)
+- [ ] Search over article chunks with pgvector (reuses the embeddings pipeline); in the widget too
 
-## Phase 7 — AI answers
+## Phase 11 — AI answers
 
 - [ ] Answers from published articles, changelog and public posts only, with citations; says "I don't know" below a relevance threshold instead of guessing
-- [ ] Ask box on portal `/help` first; in-app via the widget later
+- [ ] On portal `/help` and in the widget
 - [ ] No answer → "Post this as feedback" (prefilled, with duplicate suggestions)
-- [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 8)
+- [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 12)
 - [ ] Claude for generation (Haiku for cost, Sonnet where quality matters); per-project usage cap
+- [ ] Tests: model fake for flows; `test:live` quality cases graded on facts (cites the right article, refuses when nothing matches)
 
-## Phase 8 — Self-updating docs
+## Phase 12 — Self-updating docs
 
 Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 (docs-as-code) can come later if someone asks.
@@ -163,10 +215,12 @@ Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 - [ ] On merged PRs: find affected articles by embedding the PR text + diff, propose edits or a new article; the agent reads the repo read-only through the GitHub App
 - [ ] From gaps: cluster unanswered questions, draft an article from them plus the code
 - [ ] Opt-in scheduled check that each article's claims still match the code (expensive; weekly at most)
+- [ ] Tests: emulate GitHub repo contents + model fake; `test:live` cases on a fixture repo
 
 ## Later
 
-- [ ] Roadmap view
-- [ ] Embeddable widget + MIT SDK (feedback, help, AI answers in one script tag)
+- [ ] A proper parrot illustration (Phase 3.5 leftover)
 - [ ] Support inbox, or hand-off to Intercom / Zendesk / Help Scout first
 - [ ] More sources: GitLab, Linear, Jira; Slack notifications
+- [ ] Preview deployments per PR
+- [ ] Custom domains for portals
