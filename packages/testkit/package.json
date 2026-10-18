@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./postgres": "./src/postgres.ts"
+    "./postgres": "./src/postgres.ts",
+    "./smtp": "./src/smtp-fake.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -13,7 +14,11 @@
   "devDependencies": {
     "@testcontainers/postgresql": "^12.2.1",
     "@tuti/typescript-config": "workspace:*",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^22",
+    "@types/smtp-server": "^3.5.13",
+    "mailparser": "^3.9.40",
+    "smtp-server": "^3.19.23",
     "typescript": "^6.0.3"
   }
 }

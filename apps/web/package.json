@@ -12,6 +12,7 @@
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@tuti/db": "workspace:*",
+    "@tuti/email": "workspace:*",
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
     "better-auth": "^1.7.7",

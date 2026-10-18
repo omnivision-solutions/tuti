@@ -30,7 +30,7 @@ export function AuthForm({ mode, redirectTo, next }: { mode: "sign-in" | "sign-u
     setPending(true);
     setError(undefined);
     const { error } = isSignUp
-      ? await authClient.signUp.email({ email, password, name: String(form.get("name")) })
+      ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: next ?? redirectTo })
       : await authClient.signIn.email({ email, password });
     setPending(false);
 

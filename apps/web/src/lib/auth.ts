@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { sendEmail, verifyEmail } from "@tuti/email";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
@@ -24,6 +25,19 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
+  },
+  // Verify ownership of the email address (invites are sent to addresses).
+  // Signing in doesn't need it; the link signs people in if they aren't yet.
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    expiresIn: 24 * 60 * 60,
+    sendVerificationEmail: async ({ user, url }) => {
+      // A failed email mustn't fail the sign-up; it can be sent again.
+      await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) }).catch((error: unknown) =>
+        console.error("Sending the verification email failed", error),
+      );
+    },
   },
   // nextCookies must stay last: lets server actions set auth cookies.
   plugins: [jwtSso(), nextCookies()],
