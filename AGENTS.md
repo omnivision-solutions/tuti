@@ -20,6 +20,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - Every change that alters behaviour comes with a test that fails without it. Bug fixes start with that failing test.
 - Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
 - Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
+- A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.
 - Test data uses `e2e-…@example.com` emails.
 - Marketing pages get no tests; check them with a build and a screenshot.
 
