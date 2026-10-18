@@ -53,8 +53,9 @@ for dir in "$work/artifact"/*/; do
     (( $(stat -c %s "$file") <= 5000000 )) || { echo "Skipping large file: $journey/$name"; continue; }
     head -c 8 "$file" | cmp -s - <(printf '\x89PNG\r\n\x1a\n') || { echo "Skipping non-PNG: $journey/$name"; continue; }
 
+    # Cached for a day: a copy outlives the bucket's 30-day expiry by at most that.
     aws s3 cp "$file" "s3://$S3_BUCKET/$prefix/$journey/$name" --endpoint-url "$S3_ENDPOINT" \
-      --content-type image/png --cache-control "public, max-age=31536000, immutable" --only-show-errors
+      --content-type image/png --cache-control "public, max-age=86400" --only-show-errors
     url="$base_url/$prefix/$journey/$name"
     section+="<a href=\"$url\"><img src=\"$url\" width=\"240\" alt=\"${name%.png}\" title=\"${name%.png}\"></a> "
     found=$((found + 1))
