@@ -124,7 +124,7 @@ Test layers (set up in Phase 4):
 - [ ] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
 - [ ] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
 - [ ] Fake embeddings: OpenAI-shaped `fetch` with hand-written vectors, so duplicate thresholds are tested exactly
-- [ ] `pnpm test:db`: migrate a template database once, clone it per Vitest worker (`CREATE DATABASE … TEMPLATE`); parallel and isolated. CI uses a `pgvector/pgvector:pg17` service; locally a `tuti_test` role with CREATEDB on the shared server
+- [ ] `pnpm test:db`: Testcontainers starts `pgvector/pgvector:pg17` (locally and in CI, needs Docker), migrates a template database once and clones it per Vitest worker (`CREATE DATABASE … TEMPLATE`); parallel and isolated, never touches a shared database
 - [ ] Test helpers (one shared set): sign up through Better Auth, create project / board / post / team member, call a server action as a given user
 - [ ] Authorization matrix: a typed list of every server action, checked by the compiler so new actions can't be missed; each must reject signed-out users, other projects' members, and too-low roles
 - [ ] Backfill tests for what's already built (until now only run by hand): SSO (happy path, same `sub`, replay, expiry, bad signature, open redirect), team rules (last owner, owners-only), board renames and redirects, post numbers, merging, duplicate suggestions, filters
@@ -135,9 +135,10 @@ Test layers (set up in Phase 4):
 
 ## Phase 5 — Open source
 
-- [ ] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); fix before going public
+- [ ] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); if anything turns up, rewrite or squash history before going public (approved)
 - [ ] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
 - [ ] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
+- [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [ ] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, no force pushes
 - [ ] Review bots: CodeRabbit (free for public repos); Dependabot security updates
 - [ ] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
@@ -145,7 +146,7 @@ Test layers (set up in Phase 4):
 
 ## Phase 6 — First real users
 
-- [ ] Email over SMTP (any provider, self-hosters included): magic links, invitations, notifications; tests capture mail in memory
+- [ ] Email: Nodemailer over SMTP (any provider, self-hosters included) behind one `sendEmail()`; templates in React Email; magic links, invitations, notifications; tests capture mail in memory
 - [ ] Landing page (no tests; checked by build and screenshot)
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
 - [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel
