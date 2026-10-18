@@ -130,8 +130,8 @@ Test layers (set up in Phase 4):
 - [ ] Backfill tests for what's already built (until now only run by hand): SSO (happy path, same `sub`, replay, expiry, bad signature, open redirect), team rules (last owner, owners-only), board renames and redirects, post numbers, merging, duplicate suggestions, filters
 - [ ] Playwright: production build + inline jobs, portal hosts on `*.localhost`; core journeys (sign up → create project → post → vote → team comments and changes status → merge duplicate); numbered screenshot checkpoints, uploaded with the report on failure and for UI PRs
 - [ ] CI (GitHub Actions): lint, typecheck, unit, db, e2e, build as separate checks; turbo cache; a new push cancels the old run; `.only` fails CI; `no-console` in server and worker code
-- [ ] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
-- [ ] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
+- [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
+- [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
 
 ## Phase 5 — Open source
 

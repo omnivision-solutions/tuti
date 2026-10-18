@@ -1,3 +1,39 @@
+# Tuti
+
+Open-source feedback, roadmap and changelog tool. The plan and its checklist live in
+`docs/plan.md`; tick items in the PR that delivers them. Design rules: `docs/design.md`.
+
+## Checks
+
+| Command | What it runs |
+| --- | --- |
+| `pnpm test` | Unit tests (Vitest). Offline: no database, OpenAI or Hatchet, whatever is in `.env` |
+| `pnpm typecheck` | TypeScript across the monorepo |
+| `pnpm lint` | ESLint |
+| `pnpm build` | Production builds |
+
+CI runs all of them on every PR. Run the ones your change touches before pushing.
+
+## Tests
+
+- Every change that alters behaviour comes with a test that fails without it. Bug fixes start with that failing test.
+- Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
+- Test data uses `e2e-…@example.com` emails and cleans up after itself. Never point tests at a shared or production database.
+- Marketing pages get no tests; check them with a build and a screenshot.
+
+## Pull requests
+
+- One topic per PR, small enough to review in a few minutes. Squash-merged into `main`.
+- The description says **Why** (the product reason), **What changed**, and **How tested**. Describe results in words; don't paste tool output.
+- New user-facing text: quote it in the description and say why it's needed.
+- UI changes: include a screenshot of the changed screen.
+- A failing check you believe is unrelated: prove it by restoring the touched files to `main` and rerunning that test; say so in the PR.
+- After opening a PR, follow `.claude/skills/pr-watch/SKILL.md`: stay with it until checks and review bots finish and every finding is answered.
+
+## Public repository
+
+Tuti will be open source: treat everything tracked, and every commit message, PR, issue and comment, as public. No secrets, `.env` files, real user data, private hostnames, account or project ids, or local paths. Use placeholders.
+
 <!-- BEGIN:turborepo-agent-rules -->
 
 # This is NOT the Turborepo you know
