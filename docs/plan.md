@@ -121,7 +121,7 @@ Test layers (set up in Phase 4):
 
 ## Phase 4 — Verification foundation
 
-- [ ] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
+- [x] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
 - [ ] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
 - [ ] Fake embeddings: OpenAI-shaped `fetch` with hand-written vectors, so duplicate thresholds are tested exactly
 - [ ] `pnpm test:db`: Testcontainers starts `pgvector/pgvector:pg17` (locally and in CI, needs Docker), migrates a template database once and clones it per Vitest worker (`CREATE DATABASE … TEMPLATE`); parallel and isolated, never touches a shared database

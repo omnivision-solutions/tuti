@@ -18,10 +18,11 @@ function first(value: string | string[] | undefined): string | undefined {
 }
 
 export function parsePostFilters(searchParams: Record<string, string | string[] | undefined>) {
-  const statusParam = first(searchParams.status);
+  const param = first(searchParams.status);
+  const statusParam = param && Object.hasOwn(STATUS_PARAMS, param) ? param : undefined;
   const sortParam = first(searchParams.sort);
   return {
-    statusParam: statusParam && statusParam in STATUS_PARAMS ? statusParam : "all",
+    statusParam: statusParam ?? "all",
     status: statusParam ? STATUS_PARAMS[statusParam] : undefined,
     sort: (sortParam === "new" ? "new" : "top") as Sort,
     board: first(searchParams.board),
