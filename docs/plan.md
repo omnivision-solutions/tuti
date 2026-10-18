@@ -122,8 +122,8 @@ Test layers (set up in Phase 4):
 ## Phase 4 — Verification foundation
 
 - [x] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
-- [ ] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
-- [ ] Fake embeddings: OpenAI-shaped `fetch` with hand-written vectors, so duplicate thresholds are tested exactly
+- [x] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
+- [x] Fake embeddings: a local OpenAI embeddings server (`@tuti/testkit`, via `OPENAI_BASE_URL`) with hand-written vectors, so duplicate thresholds are tested exactly
 - [ ] `pnpm test:db`: Testcontainers starts `pgvector/pgvector:pg17` (locally and in CI, needs Docker), migrates a template database once and clones it per Vitest worker (`CREATE DATABASE … TEMPLATE`); parallel and isolated, never touches a shared database
 - [ ] Test helpers (one shared set): sign up through Better Auth, create project / board / post / team member, call a server action as a given user
 - [ ] Authorization matrix: a typed list of every server action, checked by the compiler so new actions can't be missed; each must reject signed-out users, other projects' members, and too-low roles

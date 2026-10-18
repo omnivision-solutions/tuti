@@ -1,0 +1,21 @@
+{
+  "name": "@tuti/jobs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tuti/db": "workspace:*",
+    "@tuti/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@tuti/typescript-config": "workspace:*",
+    "@types/node": "^22",
+    "typescript": "^6.0.3"
+  }
+}
