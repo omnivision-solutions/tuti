@@ -120,15 +120,25 @@ Rules for every AI feature: optional (off without an API key, like embeddings),
 nothing customer-facing publishes without a team member's approval, every answer
 or proposal shows its sources.
 
-## Phase 5 — GitHub + changelog (auto-close)
+## Phase 5 — GitHub + auto-close
 
 - [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to Hatchet jobs (`github-pr`, `github-release`)
 - [ ] `PostLink`: post ↔ PR / issue / release, with source (manual, reference, suggested)
 - [ ] Linking: references in PR title/body/commits (`tuti#123` or a post URL); embedding-based suggestions (PR text vs. open posts) the team confirms, same pattern as duplicate suggestions; manual "Link PR" on the post view
 - [ ] Status rules per project: linked PR opened → In progress; release containing it (GitHub compare between tags) → Completed. Default closes on release, not merge — merged isn't shipped. Option to close on merge for projects without releases
-- [ ] Changelog: entries (draft → published) on the portal at `/changelog`; a release creates a draft entry with its linked posts and an AI-written summary; posts show "Shipped in vX"
-- [ ] Without GitHub: "Ship" a changelog entry by hand and pick the posts it completes
 - [ ] Notify voters and commenters when their post ships (needs Phase 4 email)
+
+## Phase 5.5 — Changelog, drafted from GitHub
+
+The team edits and publishes; Tuti does the first draft from what actually merged.
+
+- [ ] Entries (draft → published) on the portal at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX"
+- [ ] Running draft: every merged PR is added to the next unpublished entry, so the draft is ready when it's time to ship; a GitHub release (or "Ship" by hand) closes it out
+- [ ] AI drafting: rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
+- [ ] Per-project style: a few example entries + tone notes the drafts follow
+- [ ] Editor helpers: regenerate a section, shorten, "explain for non-developers"
+- [ ] Optional: write the published notes back to the GitHub release body
+- [ ] Without GitHub: write entries by hand and pick the posts they complete
 
 ## Phase 6 — Help center
 
