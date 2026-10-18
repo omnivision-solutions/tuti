@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 
+import { SCREENSHOTS_DIR } from "./checkpoint";
 import { APP_URL, serverEnv } from "./env";
 
 /**
@@ -9,6 +11,7 @@ import { APP_URL, serverEnv } from "./env";
  * first; `pnpm test:e2e` does), with background jobs running inline.
  */
 export default async function globalSetup() {
+  rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
