@@ -46,7 +46,7 @@ Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base
   `<project>.localhost:3100`), later custom domains. Boards at `/b/<board>`,
   posts at `/p/<title>-<number>`, SSO at `/sso`.
 - Sessions are per host (no cookies on `.tuti.so`), so portal sign-ins (incl. SSO)
-  only apply to that portal.
+  only apply to that portal. Accounts are global; only sessions are per host.
 
 - [x] Config: `APP_URL` + `PORTAL_URL_TEMPLATE` (Infisical dev/prod, `.env.example`, startup check, turbo)
 - [x] `proxy.ts`: route portal hosts to internal portal routes; block portal routes on the apex
@@ -127,7 +127,7 @@ Test layers (set up in Phase 4):
 - [x] `pnpm test:db`: Testcontainers starts `pgvector/pgvector:pg17` (locally and in CI, needs Docker), migrates a template database once and clones it per test file (`CREATE DATABASE … TEMPLATE`); parallel and isolated, never touches a shared database
 - [x] Test helpers (`apps/web/src/test/helpers.ts`): sign up through Better Auth, create project / team member, call a server action as a given user (`actAs`), read where an action redirected
 - [x] Authorization matrix (`apps/web/src/server/authorization.db.test.ts`): a typed list of every server action, checked by the compiler so new actions can't be missed; each must reject signed-out users, other projects' teams (also with their own slug and our ids), other projects' SSO users on portal actions, and too-low roles, without changing any data, and must work for the lowest allowed level
-- [ ] Backfill tests for what's already built (until now only run by hand): SSO (happy path, same `sub`, replay, expiry, bad signature, open redirect), board renames and redirects, merging, duplicate suggestions, filters (done: team rules, post numbers)
+- [ ] Backfill tests for what's already built (until now only run by hand): SSO (happy path, same `sub`, replay, expiry, bad signature, open redirect; SSO users can't create projects or accept invites, since they're project-only identities, not dashboard accounts), board renames and redirects, merging, duplicate suggestions, filters (done: team rules, post numbers)
 - [ ] Playwright: production build + inline jobs, portal hosts on `*.localhost`; core journeys (sign up → create project → post → vote → team comments and changes status → merge duplicate); numbered screenshot checkpoints, uploaded with the report on failure and for UI PRs
 - [ ] CI (GitHub Actions): lint, typecheck, unit, db, e2e, build as separate checks; turbo cache; a new push cancels the old run; `.only` fails CI; `no-console` in server and worker code
 - [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
@@ -147,6 +147,9 @@ Test layers (set up in Phase 4):
 ## Phase 6 — First real users
 
 - [ ] Email: Nodemailer over SMTP (any provider, self-hosters included) behind one `sendEmail()`; templates in React Email; magic links, invitations, notifications; tests capture mail in memory
+- [ ] Verify email on sign-up (link by email). Without it anyone can register someone else's address, so nothing may trust an unverified email
+- [ ] Invites by email address: owners/admins enter an email and a role; Tuti sends the link and also shows it to copy (installs without SMTP). Only a signed-in account with that email can accept; opening the emailed link proves they own the inbox, so it also marks the address verified. Replaces link-only invites
+- [ ] One account everywhere: people sign in once on the apex and see every project they're on (as today). On a portal, "Continue as <name>" signs them in with that same account: the portal sends them to the apex, which returns a one-time code (short-lived, single use, bound to that portal) that the portal exchanges for its own session. No cookie is ever shared with `*.tuti.so`: one bad portal page (or a custom domain) must never expose team sessions. Projects can still offer their own sign-in on their portal (SSO, email)
 - [ ] Landing page (no tests; checked by build and screenshot)
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
 - [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel
