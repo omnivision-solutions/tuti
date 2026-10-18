@@ -108,10 +108,55 @@ for 4 hours).
 - [ ] Landing page
 - [ ] Production deployment: Dockerfiles (`infisical run` only when a token is set), Coolify apps, prod values in Infisical
 
+## The "shipped loop" (Phases 5–8)
+
+Code is the source of truth. One GitHub connection feeds everything after it: a
+merged PR or a release closes the feedback it fixes, writes the changelog, proposes
+doc updates, and the AI answers from those docs. Questions the AI can't answer
+become doc drafts or feedback posts. (Inspired by Ferndesk's self-updating docs and
+opendesk's help center + AI; neither closes feedback from releases.)
+
+Rules for every AI feature: optional (off without an API key, like embeddings),
+nothing customer-facing publishes without a team member's approval, every answer
+or proposal shows its sources.
+
+## Phase 5 — GitHub + changelog (auto-close)
+
+- [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to Hatchet jobs (`github-pr`, `github-release`)
+- [ ] `PostLink`: post ↔ PR / issue / release, with source (manual, reference, suggested)
+- [ ] Linking: references in PR title/body/commits (`tuti#123` or a post URL); embedding-based suggestions (PR text vs. open posts) the team confirms, same pattern as duplicate suggestions; manual "Link PR" on the post view
+- [ ] Status rules per project: linked PR opened → In progress; release containing it (GitHub compare between tags) → Completed. Default closes on release, not merge — merged isn't shipped. Option to close on merge for projects without releases
+- [ ] Changelog: entries (draft → published) on the portal at `/changelog`; a release creates a draft entry with its linked posts and an AI-written summary; posts show "Shipped in vX"
+- [ ] Without GitHub: "Ship" a changelog entry by hand and pick the posts it completes
+- [ ] Notify voters and commenters when their post ships (needs Phase 4 email)
+
+## Phase 6 — Help center
+
+- [ ] Collections and articles (markdown, revision history), team editor in `/app`
+- [ ] Portal `/help`: public, indexable; private articles for SSO users
+- [ ] Search over article chunks with pgvector (reuses the embeddings pipeline)
+
+## Phase 7 — AI answers
+
+- [ ] Answers from published articles, changelog and public posts only, with citations; says "I don't know" below a relevance threshold instead of guessing
+- [ ] Ask box on portal `/help` first; in-app via the widget later
+- [ ] No answer → "Post this as feedback" (prefilled, with duplicate suggestions)
+- [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 8)
+- [ ] Claude for generation (Haiku for cost, Sonnet where quality matters); per-project usage cap
+
+## Phase 8 — Self-updating docs
+
+Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
+(docs-as-code) can come later if someone asks.
+
+- [ ] Proposals: a diff against the current article (or a new draft) with the reason and source PR; team approves, edits or dismisses
+- [ ] On merged PRs: find affected articles by embedding the PR text + diff, propose edits or a new article; the agent reads the repo read-only through the GitHub App
+- [ ] From gaps: cluster unanswered questions, draft an article from them plus the code
+- [ ] Opt-in scheduled check that each article's claims still match the code (expensive; weekly at most)
+
 ## Later
 
 - [ ] Roadmap view
-- [ ] Changelog
-- [ ] Help center / docs
-- [ ] Support inbox
-- [ ] Embeddable widget + MIT SDK
+- [ ] Embeddable widget + MIT SDK (feedback, help, AI answers in one script tag)
+- [ ] Support inbox, or hand-off to Intercom / Zendesk / Help Scout first
+- [ ] More sources: GitLab, Linear, Jira; Slack notifications
