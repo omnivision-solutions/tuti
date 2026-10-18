@@ -154,7 +154,7 @@ Test layers (set up in Phase 4):
 - [ ] Landing page (no tests; checked by build and screenshot)
 - [ ] Production logging: a small logger for server and worker code (JSON in production), then lint `no-console` there
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
-- [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel
+- [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel. DNS wildcards only cover whole labels, so once `*.tuti.so` goes to production each dev portal (`<project>--dev.tuti.so`) needs its own DNS record to the tunnel. Cloudflare Access protects only `dev.tuti.so` and `*--dev.tuti.so`; customer portals stay public
 
 ## The "shipped loop" (Phases 7–11)
 
