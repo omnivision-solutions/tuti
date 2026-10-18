@@ -8,6 +8,7 @@ Open-source feedback, roadmap and changelog tool. The plan and its checklist liv
 | Command | What it runs |
 | --- | --- |
 | `pnpm test` | Unit tests (Vitest). Offline: no database, OpenAI or Hatchet, whatever is in `.env` |
+| `pnpm test:db` | Database tests (`*.db.test.ts`): server actions and jobs against a throwaway Postgres (Testcontainers, needs Docker) |
 | `pnpm typecheck` | TypeScript across the monorepo |
 | `pnpm lint` | ESLint |
 | `pnpm build` | Production builds |
@@ -18,7 +19,8 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 
 - Every change that alters behaviour comes with a test that fails without it. Bug fixes start with that failing test.
 - Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
-- Test data uses `e2e-…@example.com` emails and cleans up after itself. Never point tests at a shared or production database.
+- Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
+- Test data uses `e2e-…@example.com` emails.
 - Marketing pages get no tests; check them with a build and a screenshot.
 
 ## Pull requests
