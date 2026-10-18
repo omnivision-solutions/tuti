@@ -11,6 +11,8 @@
 set -euo pipefail
 
 marker="<!-- tuti-e2e-screenshots -->"
+# The comment to update is the one this workflow posted (override to test locally).
+author="${COMMENT_AUTHOR:-github-actions[bot]}"
 base_url="${PUBLIC_BASE_URL%/}"
 case "$base_url" in https://*) ;; *) echo "PUBLIC_BASE_URL must use https" >&2; exit 1 ;; esac
 
@@ -67,7 +69,7 @@ if (( found == 0 )); then
 fi
 
 comment=$(gh api --paginate "repos/$REPO/issues/$pr/comments" \
-  --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$marker\"))) | .id" | tail -n 1)
+  --jq ".[] | select(.user.login == \"$author\" and (.body | contains(\"$marker\"))) | .id" | tail -n 1)
 payload=$(jq -n --arg body "$body" '{body: $body}')
 if [[ -n "$comment" ]]; then
   gh api --method PATCH "repos/$REPO/issues/comments/$comment" --input - <<<"$payload" >/dev/null
