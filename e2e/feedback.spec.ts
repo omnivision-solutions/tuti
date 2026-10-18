@@ -47,6 +47,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await submitFeedback(bo, "Night theme for the editor");
   await checkpoint(bo, "portal-two-posts");
   await bo.getByRole("link", { name: "Dark mode" }).click();
+  // The board list has vote buttons too: vote only once the post page is open.
+  await bo.waitForURL(/\/p\/dark-mode-1$/);
   await bo.getByRole("button", { name: "Upvote" }).click();
   await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
 
