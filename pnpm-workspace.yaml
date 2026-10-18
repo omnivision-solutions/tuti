@@ -10,6 +10,8 @@ allowBuilds:
   esbuild: true
   "@hatchet-dev/typescript-sdk": false
   protobufjs: false
+  cpu-features: false
+  ssh2: false
 
 minimumReleaseAgeExclude:
   - "@next/env@16.3.8"
