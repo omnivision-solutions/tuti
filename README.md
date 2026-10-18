@@ -12,7 +12,7 @@ Open-source feature voting & product feedback. Collect feature requests, let use
 | Web | [Next.js 16](https://nextjs.org) (App Router), Tailwind CSS 4 |
 | Auth | [Better Auth](https://better-auth.com) (email + password for now) |
 | Database | PostgreSQL via [Prisma 7](https://www.prisma.io) (`@prisma/adapter-pg`) |
-| Background jobs | [Hatchet](https://hatchet.run) (Hatchet Cloud) |
+| Background jobs | [Hatchet](https://hatchet.run) (Hatchet Cloud or self-hosted), or inline |
 | Language | TypeScript 6 |
 
 ## Layout
@@ -36,13 +36,13 @@ the web app instead, so small installs and tests don't need Hatchet.
 
 ## Getting started
 
-Requirements: Node 22.12+, pnpm (`corepack enable`), a PostgreSQL database, and a [Hatchet Cloud](https://cloud.onhatchet.run) account.
+Requirements: Node 22.12+, pnpm (`corepack enable`), a PostgreSQL database, and a [Hatchet](https://hatchet.run) server: Hatchet Cloud or self-hosted, configured only through `HATCHET_CLIENT_*` env vars (or none, with `JOBS_DRIVER=inline`).
 
 ```bash
 pnpm install
 
 # Env files — fill in DATABASE_URL everywhere, BETTER_AUTH_SECRET (openssl rand -base64 32),
-# and HATCHET_CLIENT_TOKEN (Hatchet Cloud → Settings → API Tokens)
+# and HATCHET_CLIENT_TOKEN (your Hatchet dashboard → Settings → API Tokens)
 cp packages/db/.env.example packages/db/.env
 cp apps/web/.env.example apps/web/.env
 cp apps/worker/.env.example apps/worker/.env

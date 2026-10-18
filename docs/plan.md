@@ -10,7 +10,7 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 - [x] Email/password auth, create project, public board with posting + voting
 - [x] `post-created` background job (web → Hatchet → worker)
 - [x] Secrets: Infisical "Tuti" project, `pnpm env:pull`, app stays secrets-manager-agnostic
-- [x] Dev environment: `tuti_dev` database, Hatchet Cloud dev tenant, https://dev.tuti.so tunnel
+- [x] Dev environment: `tuti_dev` database, Hatchet dev tenant, https://dev.tuti.so tunnel
 - [x] End-to-end tests passing on dev (web + worker)
 
 ## Phase 1 — JWT SSO ✅
