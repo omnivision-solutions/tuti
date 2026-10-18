@@ -119,7 +119,7 @@ Test layers (set up in Phase 4):
 | `pnpm test:e2e` | production build of web + inline jobs in a browser, portal subdomains on `*.localhost` | same as above | every PR |
 | `pnpm test:live` | real OpenAI / Claude / GitHub / email | — | by hand; a missing key means "not run", never "passed" |
 
-## Phase 4 — Verification foundation
+## Phase 4 — Verification foundation ✅
 
 - [x] Vitest at the root; a setup file removes `DATABASE_URL`, `OPENAI_API_KEY` and `HATCHET_CLIENT_*` so tests can't reach real services by accident; a test checks that
 - [x] `JOBS_DRIVER=inline`: `enqueue()` runs the worker task in-process (tests, E2E, and small self-hosted installs without Hatchet)
@@ -129,7 +129,7 @@ Test layers (set up in Phase 4):
 - [x] Authorization matrix (`apps/web/src/server/authorization.db.test.ts`): a typed list of every server action, checked by the compiler so new actions can't be missed; each must reject signed-out users, other projects' teams (also with their own slug and our ids), other projects' SSO users on portal actions, and too-low roles, without changing any data, and must work for the lowest allowed level
 - [x] Backfill tests for what's already built (until now only run by hand): team rules, post numbers, SSO (incl. SSO users being refused dashboard actions), board renames and redirects, merging, duplicate suggestions; filters in the Playwright journey
 - [x] Playwright (`pnpm test:e2e`): production build + inline jobs + a throwaway Postgres, portal hosts on `*.localhost`; journey: sign up → create project → two people post and vote on the portal → team merges the duplicate, comments, plans it → portal and team lists show the result and filter by status; numbered screenshot checkpoints in the report (a CI artifact)
-- [ ] CI (GitHub Actions): lint, typecheck, unit, db, e2e, build as separate checks; turbo cache; a new push cancels the old run; `.only` fails CI; `no-console` in server and worker code
+- [x] CI (GitHub Actions): lint, typecheck, unit, db, e2e and build as separate required checks; a new push cancels the old run; `.only` fails CI (Vitest and Playwright)
 - [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
 - [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
 
@@ -151,6 +151,7 @@ Test layers (set up in Phase 4):
 - [ ] Invites by email address: owners/admins enter an email and a role; Tuti sends the link and also shows it to copy (installs without SMTP). Only a signed-in account with that email can accept; opening the emailed link proves they own the inbox, so it also marks the address verified. Replaces link-only invites
 - [ ] One account everywhere: people sign in once on the apex and see every project they're on (as today). On a portal, "Continue as <name>" signs them in with that same account: the portal sends them to the apex, which returns a one-time code (short-lived, single use, bound to that portal) that the portal exchanges for its own session. No cookie is ever shared with `*.tuti.so`: one bad portal page (or a custom domain) must never expose team sessions. Projects can still offer their own sign-in on their portal (SSO, email)
 - [ ] Landing page (no tests; checked by build and screenshot)
+- [ ] Production logging: a small logger for server and worker code (JSON in production), then lint `no-console` there
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
 - [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel
 
@@ -226,5 +227,6 @@ Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 - [ ] A proper parrot illustration (Phase 3.5 leftover)
 - [ ] Support inbox, or hand-off to Intercom / Zendesk / Help Scout first
 - [ ] More sources: GitLab, Linear, Jira; Slack notifications
+- [ ] Turbo cache in CI, once jobs get slow (each takes 1–2 minutes now)
 - [ ] Preview deployments per PR
 - [ ] Custom domains for portals
