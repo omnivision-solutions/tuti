@@ -33,7 +33,8 @@
     },
     "typecheck": {
       "dependsOn": [
-        "^db:generate"
+        "^db:generate",
+        "db:generate"
       ]
     },
     "lint": {},

@@ -14,10 +14,12 @@
     "db:generate": "turbo run db:generate",
     "db:migrate": "pnpm --filter @tuti/db db:migrate",
     "db:studio": "pnpm --filter @tuti/db db:studio",
+    "test": "vitest run",
     "env:pull": "sh scripts/env-pull.sh"
   },
   "devDependencies": {
     "turbo": "^2.11.6",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5"
   }
 }
