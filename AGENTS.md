@@ -9,6 +9,7 @@ Open-source feedback, roadmap and changelog tool. The plan and its checklist liv
 | --- | --- |
 | `pnpm test` | Unit tests (Vitest). Offline: no database, OpenAI or Hatchet, whatever is in `.env` |
 | `pnpm test:db` | Database tests (`*.db.test.ts`): server actions and jobs against a throwaway Postgres (Testcontainers, needs Docker) |
+| `pnpm test:e2e` | Browser journeys (Playwright, `e2e/`) against the production build, a throwaway Postgres and inline jobs; portals on `<project>.localhost`. Needs Docker and `pnpm exec playwright install chromium` once |
 | `pnpm typecheck` | TypeScript across the monorepo |
 | `pnpm lint` | ESLint |
 | `pnpm build` | Production builds |
@@ -22,6 +23,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
 - A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.
 - Test data uses `e2e-…@example.com` emails.
+- A change to a user-facing flow updates its journey in `e2e/` (or adds one). Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.
 - Marketing pages get no tests; check them with a build and a screenshot.
 
 ## Pull requests

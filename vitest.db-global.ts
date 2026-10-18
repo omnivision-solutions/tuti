@@ -1,6 +1,4 @@
-import { execFileSync } from "node:child_process";
-
-import { PostgreSqlContainer } from "@testcontainers/postgresql";
+import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import type { TestProject } from "vitest/node";
 
 declare module "vitest" {
@@ -16,14 +14,9 @@ declare module "vitest" {
  * (see vitest.db-setup.ts), so files run in parallel without sharing data.
  */
 export default async function setup(project: TestProject) {
-  const container = await new PostgreSqlContainer("pgvector/pgvector:pg17").withDatabase("tuti_template").start();
-  execFileSync("node_modules/.bin/prisma", ["migrate", "deploy"], {
-    cwd: "packages/db",
-    env: { ...process.env, DATABASE_URL: container.getConnectionUri() },
-    stdio: "pipe",
-  });
-  const admin = new URL(container.getConnectionUri());
+  const postgres = await startMigratedPostgres("tuti_template");
+  const admin = new URL(postgres.url);
   admin.pathname = "/postgres";
   project.provide("adminDatabaseUrl", admin.href);
-  return () => container.stop();
+  return postgres.stop;
 }
