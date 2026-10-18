@@ -10,7 +10,7 @@ import { generateInvitationToken, hashInvitationToken, INVITATION_TTL_DAYS } fro
 import { canAssignRole, isAdminRole } from "@/lib/roles";
 
 import { getMembership } from "./membership";
-import { getSession } from "./session";
+import { getAccountSession, getSession } from "./session";
 
 type Result = { error?: string };
 
@@ -63,7 +63,7 @@ export async function revokeInvitation(projectSlug: string, invitationId: string
 }
 
 export async function acceptInvitation(token: string): Promise<Result> {
-  const session = await getSession();
+  const session = await getAccountSession();
   if (!session) {
     return { error: "Sign in to accept this invite" };
   }
