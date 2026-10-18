@@ -15,10 +15,13 @@ marker="<!-- tuti-e2e-screenshots -->"
 author="${COMMENT_AUTHOR:-github-actions[bot]}"
 base_url="${PUBLIC_BASE_URL%/}"
 case "$base_url" in https://*) ;; *) echo "PUBLIC_BASE_URL must use https" >&2; exit 1 ;; esac
+# Uploads are signed with the storage keys: https only (plain http just for a local mock).
+case "$S3_ENDPOINT" in https://* | http://127.0.0.1:* | http://localhost:*) ;; *) echo "S3_ENDPOINT must use https" >&2; exit 1 ;; esac
 
 # The pull request this run was for, if it's still that PR's latest commit.
 pr=$(gh pr list --repo "$REPO" --state open --search "$HEAD_SHA" --json number,headRefOid \
   --jq "[.[] | select(.headRefOid == \"$HEAD_SHA\")][0].number // empty")
+still_latest() { [[ $(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid) == "$HEAD_SHA" ]]; }
 if [[ -z "$pr" ]]; then
   echo "No open pull request has $HEAD_SHA as its latest commit; nothing to post."
   exit 0
@@ -68,6 +71,11 @@ if (( found == 0 )); then
   exit 0
 fi
 
+# A newer commit may have arrived while uploading; its own run will post instead.
+if ! still_latest; then
+  echo "#$pr has a newer commit than $HEAD_SHA now; not posting."
+  exit 0
+fi
 comment=$(gh api --paginate "repos/$REPO/issues/$pr/comments" \
   --jq ".[] | select(.user.login == \"$author\" and (.body | contains(\"$marker\"))) | .id" | tail -n 1)
 payload=$(jq -n --arg body "$body" '{body: $body}')
