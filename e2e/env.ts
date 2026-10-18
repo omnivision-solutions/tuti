@@ -1,0 +1,16 @@
+const PORT = 3200;
+export const APP_URL = `http://localhost:${PORT}`;
+
+/** A project's portal; *.localhost resolves to this machine in Chromium. */
+export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
+
+export const serverEnv = {
+  PORT: String(PORT),
+  APP_URL,
+  PORTAL_URL_TEMPLATE: `http://{project}.localhost:${PORT}`,
+  BETTER_AUTH_SECRET: "e2e-secret-at-least-32-characters-long",
+  JOBS_DRIVER: "inline",
+  // Empty, not unset: Next.js would otherwise fill them from a local .env file.
+  OPENAI_API_KEY: "",
+  HATCHET_CLIENT_TOKEN: "",
+};

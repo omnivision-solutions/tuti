@@ -1,6 +1,7 @@
 {
   "name": "tuti",
   "private": true,
+  "type": "module",
   "license": "AGPL-3.0-only",
   "packageManager": "pnpm@12.8.1",
   "engines": {
@@ -16,13 +17,14 @@
     "db:studio": "pnpm --filter @tuti/db db:studio",
     "test": "vitest run --project unit",
     "test:db": "vitest run --project db",
+    "test:e2e": "turbo run build --filter=@tuti/web && playwright test",
     "env:pull": "sh scripts/env-pull.sh"
   },
   "devDependencies": {
-    "@testcontainers/postgresql": "^12.2.1",
+    "@playwright/test": "^1.64.1",
+    "@tuti/testkit": "workspace:*",
     "@types/pg": "^8.23.1",
     "pg": "^8.23.0",
-    "testcontainers": "^12.2.1",
     "turbo": "^2.11.6",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"
