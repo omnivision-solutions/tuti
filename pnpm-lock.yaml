@@ -184,6 +184,9 @@ importers:
       '@tuti/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@tuti/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@tuti/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -266,6 +269,9 @@ importers:
       '@tuti/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@tuti/jobs':
+        specifier: workspace:*
+        version: link:../../packages/jobs
       '@tuti/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -314,6 +320,25 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/jobs:
+    dependencies:
+      '@tuti/db':
+        specifier: workspace:*
+        version: link:../db
+      '@tuti/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@tuti/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/shared:
     dependencies:
       '@hatchet-dev/typescript-sdk':
@@ -322,6 +347,21 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@tuti/testkit':
+        specifier: workspace:*
+        version: link:../testkit
+      '@tuti/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22
+        version: 22.20.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/testkit:
     devDependencies:
       '@tuti/typescript-config':
         specifier: workspace:*

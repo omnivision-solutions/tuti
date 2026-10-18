@@ -5,7 +5,7 @@
 import { prisma } from "@tuti/db";
 import { assertEnv } from "@tuti/shared";
 
-import { detectDuplicates, embedPosts } from "../duplicates";
+import { detectDuplicates, embedPosts } from "@tuti/jobs";
 
 assertEnv(["DATABASE_URL", "OPENAI_API_KEY"]);
 

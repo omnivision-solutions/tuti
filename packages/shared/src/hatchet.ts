@@ -1,7 +1,5 @@
 import { HatchetClient } from "@hatchet-dev/typescript-sdk";
 
-import { jobs, type JobInput, type JobKey } from "./jobs";
-
 let client: HatchetClient | undefined;
 
 /**
@@ -13,8 +11,3 @@ export function getHatchet(): HatchetClient {
   return client;
 }
 
-/** Enqueue a background job without waiting for its result. */
-export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>) {
-  const job = jobs[key];
-  return getHatchet().runNoWait(job.name, job.input.parse(input));
-}

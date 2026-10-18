@@ -23,13 +23,16 @@ apps/
   worker/     Hatchet worker (background tasks)
 packages/
   db/         Prisma schema, migrations and the shared client
+  jobs/       Background job handlers and enqueue()
   shared/     Code shared by web + worker: job contracts, Hatchet client, env helpers
+  testkit/    Test helpers and fakes (e.g. a local OpenAI embeddings server)
   typescript-config/
 ```
 
-Background jobs are defined as contracts (name + zod input) in `packages/shared/src/jobs.ts`.
-The web app enqueues them with `enqueue("postCreated", {...})`; the worker implements them in `apps/worker/src/tasks/`.
-This keeps worker code out of the web bundle.
+Background jobs are defined as contracts (name + zod input) in `packages/shared/src/jobs.ts`
+and implemented in `packages/jobs`. The web app starts them with `enqueue("postCreated", {...})`
+(from `@tuti/jobs`); the worker runs them on Hatchet. With `JOBS_DRIVER=inline` they run inside
+the web app instead, so small installs and tests don't need Hatchet.
 
 ## Getting started
 

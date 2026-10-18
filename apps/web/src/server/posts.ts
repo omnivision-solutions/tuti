@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/shared/hatchet";
+import { enqueue } from "@tuti/jobs";
 import { refresh } from "next/cache";
 import { z } from "zod";
 

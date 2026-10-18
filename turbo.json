@@ -10,7 +10,9 @@
     "PORTAL_URL_TEMPLATE",
     "BETTER_AUTH_*",
     "HATCHET_CLIENT_*",
-    "OPENAI_API_KEY"
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "JOBS_DRIVER"
   ],
   "tasks": {
     "db:generate": {
