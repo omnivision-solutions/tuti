@@ -9,7 +9,7 @@ export function VerifyEmail({ name, url }: { name: string; url: string }) {
     <Layout preview="Confirm your email address to finish setting up your account.">
       <Text style={{ fontSize: 16, color: colors.text }}>Hi {name},</Text>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        Confirm that this is your email address. Teams can then invite you by email.
+        Confirm that this is your email address to finish setting up your Tuti account.
       </Text>
       <Button
         href={url}
