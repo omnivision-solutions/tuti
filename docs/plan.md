@@ -30,7 +30,7 @@ email, so one project can't take over accounts in another.
 
 ## Phase 1.5 — UI foundation: shadcn/ui ✅
 
-Components live in `apps/web/src/components/ui` (like Transcript LOL), on **Base UI**
+Components live in `apps/web/src/components/ui`, on **Base UI**
 (`base-nova` style), lucide icons, `next-themes` for light/dark.
 
 - [x] Initialise shadcn in `apps/web` (Tailwind 4, CSS variables, light/dark)
@@ -135,8 +135,8 @@ Test layers (set up in Phase 4):
 
 ## Phase 5 — Open source
 
-- [ ] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); if anything turns up, rewrite or squash history before going public (approved)
-- [ ] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
+- [x] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); if anything turns up, rewrite or squash history before going public (approved)
+- [x] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
 - [ ] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [ ] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, no force pushes
