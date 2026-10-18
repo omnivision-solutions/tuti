@@ -39,7 +39,7 @@ lives in `/shared`, which the others import.
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
-Use separate Hatchet Cloud tenants/tokens for `dev` and `prod`, so local runs never
+Use separate Hatchet tenants/tokens for `dev` and `prod`, so local runs never
 pick up production jobs.
 
 `DATABASE_URL` (dev) points at a `tuti_dev` database and role on a shared Postgres

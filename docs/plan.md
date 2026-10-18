@@ -10,7 +10,7 @@ Living checklist. Items get ticked as they land; finished phases stay for histor
 - [x] Email/password auth, create project, public board with posting + voting
 - [x] `post-created` background job (web → Hatchet → worker)
 - [x] Secrets: Infisical "Tuti" project, `pnpm env:pull`, app stays secrets-manager-agnostic
-- [x] Dev environment: `tuti_dev` database, Hatchet Cloud dev tenant, https://dev.tuti.so tunnel
+- [x] Dev environment: `tuti_dev` database, Hatchet dev tenant, https://dev.tuti.so tunnel
 - [x] End-to-end tests passing on dev (web + worker)
 
 ## Phase 1 — JWT SSO ✅
@@ -139,8 +139,8 @@ Test layers (set up in Phase 4):
 - [x] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
 - [ ] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
-- [ ] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, no force pushes
-- [ ] Review bots: CodeRabbit (free for public repos); Dependabot security updates
+- [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
+- [ ] Review bots: CodeRabbit (free for public repos); Dependabot security updates (done)
 - [ ] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 
