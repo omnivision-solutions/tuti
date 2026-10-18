@@ -130,7 +130,7 @@ Test layers (set up in Phase 4):
 - [x] Backfill tests for what's already built (until now only run by hand): team rules, post numbers, SSO (incl. SSO users being refused dashboard actions), board renames and redirects, merging, duplicate suggestions; filters in the Playwright journey
 - [x] Playwright (`pnpm test:e2e`): production build + inline jobs + a throwaway Postgres, portal hosts on `*.localhost`; journey: sign up → create project → two people post and vote on the portal → team merges the duplicate, comments, plans it → portal and team lists show the result and filter by status; numbered screenshot checkpoints in the report (a CI artifact)
 - [x] CI (GitHub Actions): lint, typecheck, unit, db, e2e and build as separate required checks; a new push cancels the old run; `.only` fails CI (Vitest and Playwright)
-- [ ] Screenshots on PRs: after CI, a trusted workflow uploads the journey screenshots to S3-compatible storage (R2) and posts them in one PR comment (like rakazo, which uses Hetzner Object Storage)
+- [x] Screenshots on PRs: after CI, a trusted workflow uploads the journey screenshots to S3-compatible storage (R2 bucket `tuti-ci`, public at `ci.tuti.so`, 30-day expiry) and posts them in one PR comment (like rakazo, which uses Hetzner Object Storage)
 - [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
 - [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
 
