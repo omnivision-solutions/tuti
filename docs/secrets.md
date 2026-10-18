@@ -20,9 +20,9 @@ It's optional.
 
 ## Maintainers: Infisical
 
-Source of truth is the **Tuti** project on self-hosted Infisical at
-https://secrets.odev.us (project id `5bc28b50-3524-44d4-a145-33846604efd6`).
-Same conventions as Vidkraken and Transcript LOL.
+Source of truth is the maintainers' **Tuti** project on a self-hosted Infisical.
+`pnpm env:pull` needs its location: set `INFISICAL_API_URL` and `INFISICAL_PROJECT_ID`
+in your shell or in a gitignored `.env.infisical.local` at the repo root.
 
 Environments: **`dev`** (what local `.env` files are generated from) and **`prod`**
 (what deployed apps load).
@@ -34,7 +34,7 @@ lives in `/shared`, which the others import.
 
 | Folder | Holds | Local file (dev) |
 |---|---|---|
-| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings; currently borrowed from the Transcript LOL project) | — |
+| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings) | — |
 | `/web` ← shared | `BETTER_AUTH_SECRET`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
@@ -42,10 +42,8 @@ lives in `/shared`, which the others import.
 Use separate Hatchet Cloud tenants/tokens for `dev` and `prod`, so local runs never
 pick up production jobs.
 
-`DATABASE_URL` (dev) points at the `tuti_dev` database and role on "Database - Server 2"
-(the Postgres from the Shared Infra project; the superuser is only used to create
-roles and databases). It uses `sslmode=no-verify`: the connection is encrypted, but the
-server's certificate is self-signed, so it isn't verified.
+`DATABASE_URL` (dev) points at a `tuti_dev` database and role on a shared Postgres
+(its superuser is only used to create roles and databases).
 
 The dev databases have pgvector installed by the superuser in an `extensions` schema
 (`CREATE SCHEMA extensions; CREATE EXTENSION vector SCHEMA extensions;`
@@ -71,12 +69,11 @@ the secret in Infisical, or put it in `apps/web/.env.local` (gitignored, loaded 
 top of `.env` by Next.js).
 
 The script passes `--projectId` and `--domain` explicitly, because the CLI ignores
-`.infisical.json` when it authenticates with a machine token (as on the t3code box,
-whose `infisical` wrapper uses the `t3code-box` identity).
+`.infisical.json` when it authenticates with a machine token.
 
 ### Deployed apps
 
-Planned, matching the other projects: each Docker image starts under
+Planned: each Docker image starts under
 `infisical run --env=prod --path=/<app> --silent -- …` **only when `INFISICAL_TOKEN`
 is set**, so the same image still works for self-hosters with plain env vars.
 The host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN` and
