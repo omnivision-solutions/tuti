@@ -21,7 +21,7 @@ case "$S3_ENDPOINT" in https://* | http://127.0.0.1:* | http://localhost:*) ;; *
 
 # The pull request this run was for: the open PR from the run's branch (in a fork too;
 # the workflow_run event lists no PRs for forks), if the tested commit is still its latest.
-pr=$(gh api "repos/$REPO/pulls?state=open&head=$HEAD_OWNER:$HEAD_BRANCH" \
+pr=$(gh api --method GET "repos/$REPO/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" \
   --jq "[.[] | select(.head.sha == \"$HEAD_SHA\")][0].number // empty")
 still_latest() { [[ $(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid) == "$HEAD_SHA" ]]; }
 if [[ -z "$pr" ]]; then
