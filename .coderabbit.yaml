@@ -6,6 +6,9 @@ reviews:
   poem: false
   in_progress_fortune: false
   sequence_diagrams: false
+  auto_review:
+    # Review every push: pr-watch waits for a review of the PR's latest commit.
+    auto_pause_after_reviewed_commits: 0
   path_instructions:
     - path: "apps/web/src/server/**"
       instructions: >-

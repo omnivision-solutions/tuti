@@ -23,14 +23,16 @@ This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It revi
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
    A comment is answered only when you've replied after its latest edit.
-   - Resolving: once a bot's finding is fixed or answered, resolve its thread (CodeRabbit often resolves its own after the fix lands; `@coderabbitai resolve` resolves all of its threads). A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
+   - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the GraphQL `resolveReviewThread` mutation; `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
+   - Thread state isn't in the REST comment list. Check it with:
+     `gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{author{login} path body}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>`
 4. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
 
 ## Merge when all of these hold
 
 - Every required check passed on the current head commit.
-- CodeRabbit has finished reviewing that commit (its status isn't pending), or says it skipped it.
-- Every review comment has a reply, every thread is resolved, and no review is "changes requested".
+- CodeRabbit's status on that commit is a success, or it has said it skipped the commit. Pending, failed or missing means not reviewed yet.
+- Every review comment has a reply, the GraphQL query above shows no unresolved thread, and no review is "changes requested".
 - The PR description still matches what the PR does.
 
 Then `gh pr merge <n> --squash --delete-branch`, update local `main`, and in T3 Code call `unwatch_pull_request` if you're handing back to the user.
