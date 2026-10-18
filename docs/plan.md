@@ -137,11 +137,11 @@ Test layers (set up in Phase 4):
 
 - [x] Scan the whole git history for secrets and private infrastructure details (gitleaks + a manual pass); if anything turns up, rewrite or squash history before going public (approved)
 - [x] Move maintainer-only notes (Infisical host and ids, servers) out of `docs/secrets.md`
-- [ ] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
+- [x] README for self-hosters (Postgres with pgvector and pg_trgm, which a superuser must enable; Hatchet optional via inline jobs), CONTRIBUTING.md, SECURITY.md, issue templates
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
 - [ ] Review bots: CodeRabbit (free for public repos); Dependabot security updates (done)
-- [ ] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
+- [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 
 ## Phase 6 — First real users

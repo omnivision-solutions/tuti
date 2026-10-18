@@ -37,7 +37,9 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 
 ## Public repository
 
-Tuti will be open source: treat everything tracked, and every commit message, PR, issue and comment, as public. No secrets, `.env` files, real user data, private hostnames, account or project ids, or local paths. Use placeholders.
+Tuti is open source: everything tracked, and every commit message, PR, issue and comment, is public. No secrets, `.env` files, real user data, private hostnames, account or project ids, or local paths. Use placeholders.
+
+CI runs pull requests from forks, so it must never need secrets, and workflows never check out or run a pull request's code under `pull_request_target` (it has write access and secrets).
 
 <!-- BEGIN:turborepo-agent-rules -->
 
