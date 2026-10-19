@@ -9,6 +9,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
+import * as github from "./github";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -32,6 +33,7 @@ import * as webhooks from "./webhooks";
 const modules = {
   "api-keys": apiKeys,
   boards,
+  github,
   invitations,
   "manage-posts": managePosts,
   media,
@@ -78,6 +80,9 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  github: {
+    disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
   },
   invitations: {
     createInvitation: {
@@ -227,6 +232,9 @@ afterAll(() => Promise.all([s3.close(), receiver.close()]));
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
+/** Installation ids are unique: one per fixture. */
+let installations = 0;
+
 /** A project with one of everything the actions work on. */
 async function createFixture() {
   const project = await createProject(users.OWNER);
@@ -291,6 +299,9 @@ async function createFixture() {
   });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
+  });
+  await prisma.githubInstallation.create({
+    data: { projectId, installationId: ++installations, accountLogin: "acme", createdById: users.OWNER.id },
   });
   return {
     slug: project.slug,
