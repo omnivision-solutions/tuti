@@ -17,6 +17,8 @@
     "@tuti/db": "workspace:*",
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
+    "aws4fetch": "^1.0.20",
+    "sharp": "^0.35.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {

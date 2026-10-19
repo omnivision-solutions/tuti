@@ -30,3 +30,12 @@ export async function listMyProjects(userId: string) {
   });
   return memberships.map((m) => ({ ...m.project, role: m.role }));
 }
+
+/**
+ * Users who came in through a project's SSO belong to that project: their
+ * identity is vouched for by its app only, so they can't act in other projects.
+ */
+export async function canActIn(userId: string, projectId: string): Promise<boolean> {
+  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { projectId: true } });
+  return !identity || identity.projectId === projectId;
+}

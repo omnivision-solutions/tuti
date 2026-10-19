@@ -5,13 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./hatchet": "./src/hatchet.ts"
+    "./hatchet": "./src/hatchet.ts",
+    "./storage": "./src/storage.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hatchet-dev/typescript-sdk": "^1.33.2",
+    "aws4fetch": "^1.0.20",
     "zod": "^4.6.5"
   },
   "devDependencies": {

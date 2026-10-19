@@ -13,6 +13,10 @@ export const jobs = {
       postId: z.string(),
     }),
   },
+  imageUploaded: {
+    name: "image-uploaded",
+    input: z.object({ mediaId: z.string() }),
+  },
 } as const;
 
 export type JobKey = keyof typeof jobs;

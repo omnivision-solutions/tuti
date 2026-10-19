@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
-import { beforeAll, expect, test } from "vitest";
+import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -9,6 +10,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import * as boards from "./boards";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
+import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
 import * as posts from "./posts";
 import * as projects from "./projects";
@@ -29,6 +31,7 @@ const modules = {
   boards,
   invitations,
   "manage-posts": managePosts,
+  media,
   "portal-handoff": portalHandoff,
   posts,
   projects,
@@ -114,6 +117,16 @@ const matrix: Matrix = {
       call: (slug, f) => managePosts.dismissDuplicate(slug, f.suggestionId),
     },
   },
+  media: {
+    // Anyone who may post in the project may upload; finishing and status are the uploader's own.
+    createUpload: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug) => media.createUpload(slug, { type: "image/png", size: 1000 }),
+    },
+    finishUpload: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.finishUpload(f.mediaId) },
+    uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
+  },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.
     continueToPortal: {
@@ -166,10 +179,15 @@ const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
 /** Who's acting: a role on the project's team, or someone from outside it. */
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
+let s3: S3Fake;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
+  s3 = await startS3Fake();
+  for (const [name, value] of Object.entries(s3.env)) {
+    vi.stubEnv(name, value);
+  }
   const [OWNER, ADMIN, MEMBER, outsider, ssoUser] = await Promise.all(
     ["Owner", "Admin", "Member", "Outsider", "SSO user"].map((name) => signUp(name)),
   );
@@ -181,6 +199,8 @@ beforeAll(async () => {
     data: { projectId: otherProject.id, externalId: "ext-1", userId: users.ssoUser.id },
   });
 });
+
+afterAll(() => s3.close());
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
@@ -229,8 +249,12 @@ async function createFixture() {
       expiresAt: new Date(Date.now() + 60_000),
     },
   });
+  // An upload by the account that's allowed to act as "signed in", waiting to be finished.
+  const upload = await prisma.media.create({ data: { projectId, uploaderId: users.outsider.id, size: 4 } });
+  s3.objects.set(`uploads/${upload.id}`, { body: Buffer.from("fake"), contentType: "image/png" });
   return {
     slug: project.slug,
+    mediaId: upload.id,
     emailInvitationId: emailInvitation.id,
     boardId: board.id,
     emptyBoardId: emptyBoard.id,

@@ -8,16 +8,8 @@ import { z } from "zod";
 
 import { contentFromForm } from "./content";
 import type { FormState } from "./form-state";
+import { canActIn } from "./membership";
 import { getSession } from "./session";
-
-/**
- * Users who came in through a project's SSO belong to that project: their
- * identity is vouched for by its app only, so they can't act in other projects.
- */
-async function canActIn(userId: string, projectId: string): Promise<boolean> {
-  const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { projectId: true } });
-  return !identity || identity.projectId === projectId;
-}
 
 const createPostSchema = z.object({
   projectSlug: z.string(),
