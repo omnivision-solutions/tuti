@@ -42,7 +42,7 @@ export const mergePost = defineOperation({
   path: "/posts/{number}/merge",
   scope: "write",
   access: "team",
-  input: z.object({ number: postNumber, into: postNumber }),
+  input: z.object({ number: postNumber, into: z.number().int().positive() }),
   run: async ({ projectId }, input) => {
     const [post, target] = await Promise.all([findPost(projectId, input.number), findPost(projectId, input.into)]);
     const into = await mergePosts(post.id, target.id);

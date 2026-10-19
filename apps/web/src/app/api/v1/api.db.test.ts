@@ -237,6 +237,10 @@ describe("changing", () => {
         { projectId: project.id, postId: night.id, userId: owner.id },
       ],
     });
+    // A JSON body's numbers must be numbers (true would otherwise count as 1).
+    for (const into of [true, "1"]) {
+      expect((await send("POST", "/posts/2/merge", { into }, writeKey)).status).toBe(400);
+    }
     expect(await send("POST", "/posts/2/merge", { into: 1 }, writeKey)).toEqual({ status: 200, body: { merged: 2, into: 1 } });
     expect((await prisma.post.findUniqueOrThrow({ where: { id: dark.id } })).voteCount).toBe(2);
     expect((await api("/posts/2")).body.mergedInto).toBe(1);
