@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { createServer } from "node:net";
-import type { AddressInfo } from "node:net";
 
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { beforeEach, describe, expect, test } from "vitest";
+import { startSmtpFake } from "@tuti/testkit/smtp";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/unsubscribe/confirm/route";
 import { upsertProjectUser } from "@/lib/sso";
@@ -139,29 +138,55 @@ describe("when a post ships", () => {
     expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 0, queued: 0 });
   });
 
-  test("a run whose claim was taken over mid-send leaves the new owner's claim alone", async () => {
-    const author = await verified("Author");
-    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Slow mail" });
-    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
-    await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED" } });
-    const row = { postId_userId: { postId, userId: author.id } };
-    const takenOverAt = new Date(Date.now() + 60_000);
-    // A mail server that, while this run is sending, lets another run take the claim over, then fails the send.
-    const server = createServer(async (socket) => {
-      await prisma.shippedEmail.update({ where: row, data: { claimedAt: takenOverAt } });
-      socket.destroy();
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const port = process.env.SMTP_PORT;
-    process.env.SMTP_PORT = String((server.address() as AddressInfo).port);
-    try {
-      await expect(handlers.postShipped({ postId }, { info: () => {}, warn: () => {} })).rejects.toThrow();
-    } finally {
-      process.env.SMTP_PORT = port;
-      server.close();
+  describe("a send in flight", () => {
+    /** A completed post by a verified author, whose email goes to a separate SMTP fake with `onEmail`. */
+    type Claim = { claimedAt: Date; sentAt: Date | null };
+    type Where = { postId_userId: { postId: string; userId: string } };
+    async function sending(onEmail: (claim: () => Promise<Claim>, where: Where) => Promise<void>) {
+      const author = await verified("Author");
+      const post = await call(createPost, as(author.id), { board: "feature-requests", title: `Slow mail ${randomUUID()}` });
+      const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+      await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED" } });
+      const where = { postId_userId: { postId, userId: author.id } };
+      const claim = () => prisma.shippedEmail.findUniqueOrThrow({ where, select: { claimedAt: true, sentAt: true } });
+      const fake = await startSmtpFake({ onEmail: () => onEmail(claim, where) });
+      const port = process.env.SMTP_PORT;
+      process.env.SMTP_PORT = String(fake.port);
+      try {
+        return { run: await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} }).catch((e: Error) => e), claim };
+      } finally {
+        process.env.SMTP_PORT = port;
+        await fake.close();
+      }
     }
-    // Its failure didn't release the other run's claim.
-    expect(await prisma.shippedEmail.findUnique({ where: row })).toMatchObject({ claimedAt: takenOverAt, sentAt: null });
+
+    test("keeps its claim fresh, so no other run takes it over, however long it takes", async () => {
+      vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+      let before: Date | undefined;
+      try {
+        const { run, claim } = await sending(async (current) => {
+          before = (await current()).claimedAt;
+          vi.advanceTimersByTime(60_000); // a minute into the send
+          await vi.waitUntil(async () => (await current()).claimedAt > before!, { timeout: 5000 });
+        });
+        expect(run).toEqual({ emailed: 1 });
+        const after = await claim();
+        expect(after.claimedAt > before!).toBe(true);
+        expect(after.sentAt).not.toBeNull(); // marked sent under its renewed claim
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test("leaves a claim another run took over alone when its send fails", async () => {
+      const takenOverAt = new Date(Date.now() + 60_000);
+      const { run, claim } = await sending(async (_claim, where) => {
+        await prisma.shippedEmail.update({ where, data: { claimedAt: takenOverAt } });
+        throw new Error("Mailbox unavailable");
+      });
+      expect(run).toBeInstanceOf(Error);
+      expect(await claim()).toEqual({ claimedAt: takenOverAt, sentAt: null });
+    });
   });
 
   test("people who unsubscribed (one click from their mail app) don't hear about it", async () => {

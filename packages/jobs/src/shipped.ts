@@ -10,6 +10,9 @@ const LATE_MINUTES = 10;
 /** After a day, a post's emails aren't news anymore. */
 const RESUBMIT_FOR_HOURS = 24;
 
+/** Well under LATE_MINUTES, so a live run's claim never looks abandoned. */
+const RENEW_MS = 60_000;
+
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
 /**
@@ -29,6 +32,44 @@ async function claim(postId: string, userId: string): Promise<Date | null> {
     data: { claimedAt },
   });
   return taken.count === 1 ? claimedAt : null;
+}
+
+/**
+ * Sends while holding a claim: renews it every minute meanwhile, so it's only
+ * taken over once this run is gone, however long the send takes. Then marks it
+ * sent, or (if the send failed) releases it for a retry. Both touch only this
+ * run's claim: one taken over is someone else's. Returns the send's error, if any.
+ */
+async function whileClaimed(claim: { postId: string; userId: string; claimedAt: Date }, send: () => Promise<unknown>) {
+  const { postId, userId } = claim;
+  let current = claim.claimedAt;
+  let renewing = Promise.resolve();
+  const renew = async () => {
+    const next = new Date();
+    const { count } = await prisma.shippedEmail.updateMany({ where: { postId, userId, claimedAt: current }, data: { claimedAt: next } });
+    if (count === 1) {
+      current = next;
+    }
+  };
+  const heartbeat = setInterval(() => (renewing = renewing.then(renew, renew)), RENEW_MS);
+  let error: Error | null = null;
+  try {
+    await send();
+  } catch (e) {
+    error = e as Error;
+  } finally {
+    clearInterval(heartbeat);
+    await renewing.catch(() => {});
+  }
+  const mine = { postId, userId, claimedAt: current };
+  if (error) {
+    await prisma.shippedEmail.deleteMany({ where: mine });
+    return error;
+  }
+  // Sent: never released from here on. If saving this fails, the claim stays unsent and is
+  // taken over later, which may email them twice; better than not at all.
+  await prisma.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
+  return null;
 }
 
 /**
@@ -78,11 +119,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     if (!claimedAt) {
       continue;
     }
-    const mine = { postId, userId: person.id, claimedAt };
     const token = encodeURIComponent(person.unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
-    try {
-      await sendEmail({
+    const error = await whileClaimed({ postId, userId: person.id, claimedAt }, () =>
+      sendEmail({
         to: address,
         ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl }),
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
@@ -90,17 +130,13 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
           "List-Unsubscribe": `<${origin}/unsubscribe/confirm?token=${token}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
-      });
-    } catch (error) {
-      // Not sent: released, so the job's retry emails them.
-      await prisma.shippedEmail.deleteMany({ where: mine });
+      }),
+    );
+    if (error) {
       failed++;
-      log.warn(`couldn't email that post ${postId} shipped: ${(error as Error).message}`);
+      log.warn(`couldn't email that post ${postId} shipped: ${error.message}`);
       continue;
     }
-    // Sent: never released from here on. If saving this fails, the claim stays unsent and is
-    // taken over later, which may email them twice; better than not at all.
-    await prisma.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
     emailed++;
   }
   if (failed > 0) {
