@@ -38,7 +38,10 @@ test("read-only keys get the read tools; tools return the same data as the API",
   const { tools } = await client.listTools();
   const readTools = operations.filter((o) => o.scope === "read").map(toolName);
   expect(tools.map((t) => t.name).sort()).toEqual(readTools.sort());
-  expect(readTools).toEqual(expect.arrayContaining(["boards_list", "posts_list", "posts_get", "comments_list"]));
+  // Named too, so a scope change can't drop one from both sides of the check above.
+  expect(readTools).toEqual(
+    expect.arrayContaining(["project_get", "team_list", "boards_list", "posts_list", "posts_get", "comments_list", "duplicates_list"]),
+  );
   expect(tools.find((t) => t.name === "posts_list")).toMatchObject({
     annotations: { readOnlyHint: true },
     inputSchema: { type: "object", properties: { status: { enum: expect.arrayContaining(["planned"]) } } },
