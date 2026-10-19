@@ -28,6 +28,30 @@ describe("in production", () => {
     expect(Date.parse(entry.time)).not.toBeNaN();
   });
 
+  test("fields can't overwrite the level or message, and odd values never make logging throw", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const cyclic: Record<string, unknown> = { name: "loop" };
+    cyclic.self = cyclic;
+    const throwing = Object.defineProperty({}, "boom", {
+      enumerable: true,
+      get() {
+        throw new Error("getter");
+      },
+    });
+
+    log.error("Failed", { level: "info", message: "spoofed", count: 10n, cyclic });
+    expect(JSON.parse(String(stderr.mock.calls[0]![0]))).toMatchObject({
+      level: "error",
+      message: "Failed",
+      count: "10",
+      cyclic: { name: "loop", self: "[Circular]" },
+    });
+
+    expect(() => log.error("Still logged", { throwing })).not.toThrow();
+    expect(JSON.parse(String(stderr.mock.calls[1]![0]))).toMatchObject({ message: "Still logged", fieldsError: true });
+  });
+
   test("info goes to stdout", () => {
     vi.stubEnv("NODE_ENV", "production");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
