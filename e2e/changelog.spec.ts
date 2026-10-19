@@ -66,12 +66,15 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await ada.goto("/changelog");
   await expect(ada.getByText("Nothing here yet")).toBeVisible();
 
+  // Publishing keeps an edit that isn't saved yet (and publishes what's saved).
+  await team.getByLabel("Title").fill("Dark mode is here, at last");
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
   await dialog.getByRole("button", { name: "Publish" }).click();
   await expect(team.getByText("Published", { exact: true }).first()).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
+  await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
 
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();

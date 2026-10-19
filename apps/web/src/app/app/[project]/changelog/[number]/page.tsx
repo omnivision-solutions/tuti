@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { aiEnabled } from "@tuti/shared";
@@ -29,7 +31,6 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       tags: true,
       publishedAt: true,
       collecting: true,
-      updatedAt: true,
       posts: { select: { post: { select: { number: true } } } },
     },
   });
@@ -61,9 +62,12 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           />
         }
       />
-      {/* A new version (e.g. an AI draft) starts the form afresh. */}
+      {/*
+        New saved text (an AI draft, a save, a merged pull request added to the running draft)
+        starts the form afresh; publishing or unpublishing keeps unsaved edits.
+      */}
       <ChangelogForm
-        key={entry.updatedAt.getTime()}
+        key={createHash("sha256").update(JSON.stringify([entry.title, entry.content])).digest("base64url")}
         projectSlug={slug}
         entry={{
           number: entry.number,
