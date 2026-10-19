@@ -11,7 +11,9 @@ import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
 import { postNumberFromParam, postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
+import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
+import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/p/[post]">) {
@@ -63,7 +65,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
-          {post.body && <RichText doc={displayDoc(post)} className="rich-text break-words" />}
+          {!isEmptyDoc(displayDoc(post)) && (
+            <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+          )}
         </div>
       </article>
 

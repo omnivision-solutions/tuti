@@ -72,3 +72,44 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await expect(link).toHaveAttribute("rel", "noopener noreferrer nofollow ugc");
   await checkpoint(ada, "portal-rich-post");
 });
+
+test("someone adds a screenshot to a post, resized and aligned", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  // A real picture to upload: a screenshot of the landing page.
+  await owner.goto("/");
+  const screenshot = await owner.screenshot();
+
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/b/feature-requests");
+  await ada.getByLabel("Title").fill("Make the hero smaller");
+  await ada.getByRole("textbox", { name: "Details" }).click();
+  await ada.keyboard.type("It takes the whole screen:");
+  await ada.locator('input[type="file"]').setInputFiles({ name: "hero.png", mimeType: "image/png", buffer: screenshot });
+
+  // Once processed, the image shows in the editor; selecting it shows its controls.
+  const editorImage = ada.getByRole("textbox", { name: "Details" }).locator("img");
+  await expect(editorImage).toHaveJSProperty("complete", true);
+  await expect.poll(() => editorImage.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await editorImage.click();
+  const controls = ada.getByRole("group", { name: "Image" });
+  await controls.getByRole("button", { name: "Medium" }).click();
+  await controls.getByRole("button", { name: "Align right" }).click();
+  await controls.getByRole("button", { name: "Alt text" }).click();
+  const altDialog = ada.getByRole("dialog", { name: "Describe the image" });
+  await altDialog.getByLabel("Alt text").fill("The landing page hero filling the screen");
+  await altDialog.getByRole("button", { name: "Save" }).click();
+  await checkpoint(ada, "portal-post-image-editor");
+  await ada.getByRole("button", { name: "Submit feedback" }).click();
+
+  await ada.getByRole("link", { name: "Make the hero smaller" }).click();
+  const figure = ada.getByRole("main").locator("figure.rich-image");
+  await expect(figure).toHaveAttribute("data-width", "50");
+  await expect(figure).toHaveAttribute("data-align", "right");
+  const image = figure.getByRole("img", { name: "The landing page hero filling the screen" });
+  await expect(image).toHaveAttribute("srcset", /480\.webp 480w/);
+  await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await checkpoint(ada, "portal-post-with-image");
+});

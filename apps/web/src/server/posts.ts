@@ -6,7 +6,7 @@ import { log } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { contentFromForm } from "./content";
+import { attachMedia, contentFromForm } from "./content";
 import type { FormState } from "./form-state";
 import { canActIn } from "./membership";
 import { getSession } from "./session";
@@ -34,10 +34,6 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const content = contentFromForm(formData, "post", MAX_TEXT_LENGTH);
-  if (content.error !== undefined) {
-    return { error: content.error };
-  }
 
   const board = await prisma.board.findFirst({
     where: { slug: parsed.data.boardSlug, project: { slug: parsed.data.projectSlug } },
@@ -45,6 +41,10 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
   });
   if (!board || !(await canActIn(session.user.id, board.projectId))) {
     return { error: "Board not found" };
+  }
+  const content = await contentFromForm(formData, "post", { projectId: board.projectId, maxLength: MAX_TEXT_LENGTH });
+  if (content.error !== undefined) {
+    return { error: content.error };
   }
 
   const post = await prisma.$transaction(async (tx) => {
@@ -70,6 +70,7 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
       select: { id: true },
     });
   });
+  await attachMedia(content.mediaIds);
 
   // Background work must never block or fail the user's request.
   try {
@@ -131,13 +132,6 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const content = contentFromForm(formData, "comment", MAX_TEXT_LENGTH);
-  if (content.error !== undefined) {
-    return { error: content.error };
-  }
-  if (content.text === "") {
-    return { error: "Write something first" };
-  }
 
   const post = await prisma.post.findUnique({
     where: { id: parsed.data.postId },
@@ -148,6 +142,13 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
   }
   if (post.duplicateOfId) {
     return { error: "This post was merged into another one; comment there instead" };
+  }
+  const content = await contentFromForm(formData, "comment", { projectId: post.projectId, maxLength: MAX_TEXT_LENGTH });
+  if (content.error !== undefined) {
+    return { error: content.error };
+  }
+  if (content.text === "") {
+    return { error: "Write something first" };
   }
 
   await prisma.$transaction([

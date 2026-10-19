@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { fromPlainText, isEmptyDoc, parseDoc, toPlainText } from "./document";
+import { fromPlainText, isEmptyDoc, mediaIdsIn, parseDoc, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
 import { RichText } from "./react";
 
@@ -11,6 +11,11 @@ const p = (...content: object[]) => ({ type: "paragraph", content });
 const text = (value: string, marks?: object[]) => ({ type: "text", text: value, ...(marks && { marks }) });
 const link = (href: string) => ({ type: "link", attrs: { href } });
 const video = (provider: string, id: string) => ({ type: "video", attrs: { provider, id } });
+const MEDIA_ID = "clx0abcdefghijklmnopqrstu";
+const image = (attrs: object = {}) => ({
+  type: "image",
+  attrs: { mediaId: MEDIA_ID, width: "50", align: "right", alt: "A chart", w: 1200, h: 800, ...attrs },
+});
 const list = (...items: string[]) => ({
   type: "bulletList",
   content: items.map((item) => ({ type: "listItem", content: [p(text(item))] })),
@@ -123,6 +128,7 @@ describe("plain text", () => {
   test("empty text is an empty document", () => {
     expect(isEmptyDoc(fromPlainText("  \n\n "))).toBe(true);
     expect(isEmptyDoc(doc(video("vimeo", "76979871")))).toBe(false);
+    expect(isEmptyDoc(doc({ type: "image", attrs: { mediaId: "clx0abcdefghijklmnopqrstu", alt: "" } }))).toBe(false);
   });
 });
 
@@ -149,5 +155,48 @@ describe("RichText", () => {
 
   test("skips nodes it doesn't know", () => {
     expect(html(doc({ type: "script", content: [text("alert(1)")] }, p(text("ok"))))).toBe("<div><p>ok</p></div>");
+  });
+});
+
+describe("images", () => {
+  test("posts may have uploaded images, sized and aligned; comments may not", () => {
+    const result = parseDoc("post", doc(image()));
+    expect(result.ok && result.doc.content?.[0]).toEqual(image());
+    expect(parseDoc("comment", doc(image()))).toMatchObject({ ok: false });
+  });
+
+  test.each([
+    ["an unknown width", { width: "33" }],
+    ["an unknown alignment", { align: "justify" }],
+    ["a made-up media id", { mediaId: "../../etc/passwd" }],
+    ["alt text that's too long", { alt: "x".repeat(301) }],
+  ])("refuses %s", (_name, attrs) => {
+    expect(parseDoc("post", doc(image(attrs)))).toEqual({ ok: false, error: "This image can't be used here." });
+  });
+
+  test("finds and updates the images in a document", () => {
+    const content = { type: "doc", content: [image(), p(text("x")), image()] };
+    expect(mediaIdsIn(content)).toEqual([MEDIA_ID]);
+    updateImages(content, () => ({ w: 300, h: 200 }));
+    expect(content.content[0]).toMatchObject({ attrs: { w: 300, h: 200 } });
+    expect(toPlainText(content)).toBe("A chart\nx\nA chart");
+  });
+
+  test("renders a responsive image from the media host, at its share of the column", () => {
+    const out = renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaBaseUrl: "https://media.example" }));
+    expect(out).toContain('<figure class="rich-image" data-width="50" data-align="right">');
+    expect(out).toContain(`src="https://media.example/m/${MEDIA_ID}/960.webp"`);
+    expect(out).toContain(
+      `srcSet="https://media.example/m/${MEDIA_ID}/480.webp 480w, https://media.example/m/${MEDIA_ID}/960.webp 960w, https://media.example/m/${MEDIA_ID}/1200.webp 1200w"`,
+    );
+    expect(out).toContain('sizes="(max-width: 768px) 100vw, 384px"');
+    expect(out).toContain('width="1200" height="800" alt="A chart" loading="lazy"');
+  });
+
+  test("without a media host, or without a size, images are left out", () => {
+    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()) }))).toBe("<div></div>");
+    expect(
+      renderToStaticMarkup(createElement(RichText, { doc: doc(image({ w: null })), mediaBaseUrl: "https://media.example" })),
+    ).toBe("<div></div>");
   });
 });

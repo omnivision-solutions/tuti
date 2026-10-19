@@ -3,6 +3,7 @@ import type { Schema } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
+import { imageKey, imageWidths } from "./media";
 
 /**
  * What each kind of content may contain. The editor, the server-side validation
@@ -15,8 +16,76 @@ export type Profile = (typeof PROFILES)[number];
 declare module "@tiptap/core" {
   interface Commands<ReturnType> {
     video: { setVideo: (video: { provider: string; id: string }) => ReturnType };
+    image: { setImage: (image: { mediaId: string; w: number; h: number }) => ReturnType };
   }
 }
+
+/** How wide an image is shown, as a share of the text column. */
+export const IMAGE_SIZES = ["25", "50", "75", "100"] as const;
+export const IMAGE_ALIGNMENTS = ["left", "center", "right"] as const;
+export const MAX_ALT_LENGTH = 300;
+
+/** Uploaded media ids (cuid). */
+export const isMediaId = (value: unknown): value is string => typeof value === "string" && /^[a-z0-9]{20,32}$/.test(value);
+
+/**
+ * An uploaded image (see media.ts), shown at a share of the column's width and
+ * aligned left, center or right. `w` and `h` are its size in pixels, so pages
+ * reserve its space before it loads; the server sets them from the upload.
+ */
+export const ImageNode = Node.create<{ mediaBaseUrl?: string }>({
+  name: "image",
+  group: "block",
+  atom: true,
+  draggable: true,
+  addOptions() {
+    return { mediaBaseUrl: undefined };
+  },
+  addAttributes() {
+    return {
+      mediaId: { default: null },
+      width: { default: "100" },
+      align: { default: "center" },
+      alt: { default: "" },
+      w: { default: null },
+      h: { default: null },
+    };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "figure[data-image]",
+        getAttrs: (element) => ({
+          mediaId: element.getAttribute("data-media-id"),
+          width: element.getAttribute("data-width") ?? "100",
+          align: element.getAttribute("data-align") ?? "center",
+          alt: element.querySelector("img")?.getAttribute("alt") ?? "",
+        }),
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const { mediaId, width, align, alt, w, h } = node.attrs as Record<string, unknown>;
+    const base = this.options.mediaBaseUrl;
+    const src = base && isMediaId(mediaId) && typeof w === "number" ? `${base}/${imageKey(mediaId, editorWidth(w))}` : "";
+    return [
+      "figure",
+      { "data-image": "", "data-media-id": String(mediaId), "data-width": String(width), "data-align": String(align), class: "rich-image" },
+      ["img", { src, alt: String(alt ?? ""), width: String(w ?? ""), height: String(h ?? "") }],
+    ];
+  },
+  addCommands() {
+    return {
+      setImage:
+        (image) =>
+        ({ commands }) =>
+          commands.insertContent({ type: this.name, attrs: image }),
+    };
+  },
+});
+
+/** The stored size the editor shows: big enough for the column, no bigger. */
+const editorWidth = (w: number) => imageWidths(w).find((width) => width >= 960) ?? w;
 
 /** A video from an allowed provider, stored as provider + id and embedded from a known URL. */
 export const VideoEmbed = Node.create({
@@ -77,7 +146,7 @@ const textOnly = {
   },
 } as const;
 
-export function extensions(profile: Profile): Extensions {
+export function extensions(profile: Profile, { mediaBaseUrl }: { mediaBaseUrl?: string } = {}): Extensions {
   switch (profile) {
     case "comment":
       return [
@@ -91,7 +160,7 @@ export function extensions(profile: Profile): Extensions {
         }),
       ];
     case "post":
-      return [StarterKit.configure(textOnly), VideoEmbed];
+      return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaBaseUrl })];
   }
 }
 

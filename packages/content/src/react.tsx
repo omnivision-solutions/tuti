@@ -2,44 +2,59 @@ import type { JSONContent } from "@tiptap/core";
 import { Fragment, type ReactNode } from "react";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
+import { imageKey, imageWidths } from "./media";
+import { isMediaId } from "./profiles";
+
+/** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
+const COLUMN_WIDTH = 768;
 
 /**
  * Renders stored content as React elements, never through HTML strings, so text
  * can't become markup. Anything unknown is skipped; unsafe links render as text.
  * Content is validated when it's saved too (parseDoc); this is the second line.
  */
-export function RichText({ doc, className }: { doc: JSONContent; className?: string }) {
-  return <div className={className}>{children(doc)}</div>;
+export function RichText({
+  doc,
+  className,
+  mediaBaseUrl,
+}: {
+  doc: JSONContent;
+  className?: string;
+  /** Where uploaded images are served from (MEDIA_PUBLIC_URL); without it, images are left out. */
+  mediaBaseUrl?: string | null;
+}) {
+  return <div className={className}>{children(doc, mediaBaseUrl ?? undefined)}</div>;
 }
 
-function children(node: JSONContent): ReactNode[] {
-  return (node.content ?? []).map((child, i) => renderNode(child, i));
+function children(node: JSONContent, media: string | undefined): ReactNode[] {
+  return (node.content ?? []).map((child, i) => renderNode(child, i, media));
 }
 
-function renderNode(node: JSONContent, key: number): ReactNode {
+function renderNode(node: JSONContent, key: number, media: string | undefined): ReactNode {
+  const inner = () => children(node, media);
   switch (node.type) {
     case "text":
       return renderText(node, key);
     case "paragraph":
-      return <p key={key}>{children(node)}</p>;
+      return <p key={key}>{inner()}</p>;
     case "hardBreak":
       return <br key={key} />;
     case "bulletList":
-      return <ul key={key}>{children(node)}</ul>;
+      return <ul key={key}>{inner()}</ul>;
     case "orderedList": {
       const start = Number(node.attrs?.start);
       return (
         <ol key={key} start={Number.isInteger(start) && start > 1 ? start : undefined}>
-          {children(node)}
+          {inner()}
         </ol>
       );
     }
     case "listItem":
-      return <li key={key}>{children(node)}</li>;
+      return <li key={key}>{inner()}</li>;
     case "codeBlock":
       return (
         <pre key={key}>
-          <code>{children(node)}</code>
+          <code>{inner()}</code>
         </pre>
       );
     case "video": {
@@ -56,6 +71,29 @@ function renderNode(node: JSONContent, key: number): ReactNode {
           />
         </div>
       ) : null;
+    }
+    case "image": {
+      const { mediaId, width, align, alt, w, h } = node.attrs ?? {};
+      if (!media || !isMediaId(mediaId) || !Number.isInteger(w) || !Number.isInteger(h)) {
+        return null;
+      }
+      const url = (size: number) => `${media}/${imageKey(mediaId, size)}`;
+      const widths = imageWidths(w);
+      const share = Number(width) || 100;
+      return (
+        <figure key={key} className="rich-image" data-width={String(width)} data-align={String(align)}>
+          <img
+            src={url(widths.find((size) => size >= 960) ?? w)}
+            srcSet={widths.map((size) => `${url(size)} ${size}w`).join(", ")}
+            sizes={`(max-width: ${COLUMN_WIDTH}px) 100vw, ${Math.round((COLUMN_WIDTH * share) / 100)}px`}
+            width={w}
+            height={h}
+            alt={typeof alt === "string" ? alt : ""}
+            loading="lazy"
+            decoding="async"
+          />
+        </figure>
+      );
     }
     default:
       return null;

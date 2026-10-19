@@ -23,7 +23,8 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const server = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, PUT, HEAD, DELETE");
-    res.setHeader("Access-Control-Allow-Headers", "content-type");
+    // Whatever the browser asks for (journeys add headers of their own, like x-forwarded-for).
+    res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ?? "content-type");
     if (req.method === "OPTIONS") {
       res.writeHead(204).end();
       return;
