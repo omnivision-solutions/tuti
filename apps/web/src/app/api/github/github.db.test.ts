@@ -659,6 +659,23 @@ describe("shipping", () => {
       expect(all[0]!.body.split("\n").sort()).toEqual([60, 61, 62, 63].map((n) => `PR ${n} (${repo}#${n})`));
     });
 
+    test("merges and releases arriving together: each PR lands once, at most one draft collects, one release names it", async () => {
+      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      github.repo(repo, { releases: [], pulls: {} });
+      await deliver(merged(70, "First"));
+      await Promise.all([
+        deliver(published("v5.0", "2026-08-01T00:00:00Z")),
+        deliver(published("v5.1", "2026-08-02T00:00:00Z")),
+        deliver(merged(71, "Second")),
+        deliver(merged(72, "Third")),
+      ]);
+      const all = await drafts();
+      expect(all.filter((d) => d.collecting).length).toBeLessThanOrEqual(1);
+      expect(["Release v5.0", "Release v5.1"]).toContain(all[0]!.title);
+      const lines = all.flatMap((d) => d.body.split("\n")).filter(Boolean).sort();
+      expect(lines).toEqual([`First (${repo}#70)`, `Second (${repo}#71)`, `Third (${repo}#72)`]);
+    });
+
     test("a draft the team renamed keeps its name; one published by hand stops collecting", async () => {
       await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
       github.repo(repo, { releases: [], pulls: {} });

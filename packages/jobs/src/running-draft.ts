@@ -19,12 +19,21 @@ export const skipsChangelog = (labels: string[]) => labels.some((label) => SKIP_
 
 type PullRequest = { repo: string; number: number; url: string; title: string };
 
+/**
+ * Locks a project's row for the rest of the transaction. Everything that changes
+ * which draft is running (adding a merged PR, a release closing it, publishing it)
+ * takes this first, so they happen one after another. False if there's no such project.
+ */
+export async function lockProject(tx: Prisma.TransactionClient, projectId: string): Promise<boolean> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM project WHERE id = ${projectId} FOR UPDATE`;
+  return rows.length === 1;
+}
+
 /** Adds a merged pull request to the running draft (once, however often GitHub delivers it). Returns whether it was added. */
 export async function addToRunningDraft(projectId: string, pr: PullRequest): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
-    // Locks the project row: one merge at a time finds (or makes) the running draft.
-    const [project] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM project WHERE id = ${projectId} FOR UPDATE`;
-    if (!project) {
+    // One at a time (see lockProject): the draft found here is still the running one when it's written.
+    if (!(await lockProject(tx, projectId))) {
       return false;
     }
     const entry = (await tx.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { id: true } })) ?? (await newDraft(tx, projectId));
@@ -84,12 +93,17 @@ function withPullRequest(doc: Doc, pr: PullRequest): Doc {
 
 /** A release closes the running draft: named after the release (unless the team named it), and the next merge starts a new one. */
 export async function closeRunningDraft(projectId: string, releaseName: string): Promise<number | null> {
-  const draft = await prisma.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { id: true, number: true } });
-  if (!draft) {
-    return null;
-  }
-  const { count } = await prisma.changelogEntry.updateMany({ where: { id: draft.id, collecting: true }, data: { collecting: false } });
-  // Only a title nobody changed (checked as it's written, in case the team renames it meanwhile).
-  await prisma.changelogEntry.updateMany({ where: { id: draft.id, title: RUNNING_DRAFT_TITLE }, data: { title: releaseName.slice(0, 120) } });
-  return count === 1 ? draft.number : null;
+  return prisma.$transaction(async (tx) => {
+    if (!(await lockProject(tx, projectId))) {
+      return null;
+    }
+    const draft = await tx.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { id: true, number: true } });
+    if (!draft) {
+      return null;
+    }
+    await tx.changelogEntry.update({ where: { id: draft.id }, data: { collecting: false } });
+    // Only a title nobody changed (checked as it's written).
+    await tx.changelogEntry.updateMany({ where: { id: draft.id, title: RUNNING_DRAFT_TITLE }, data: { title: releaseName.slice(0, 120) } });
+    return draft.number;
+  });
 }

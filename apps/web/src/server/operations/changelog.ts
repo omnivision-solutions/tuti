@@ -1,5 +1,5 @@
 import { type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
-import { enqueue, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
+import { enqueue, lockProject, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -265,6 +265,8 @@ export const publishChangelogEntry = defineOperation({
     // One transaction: published, its posts completed (and due for their shipped
     // emails), and the webhook deliveries saved. Sending happens after it commits.
     const shipped = await prisma.$transaction(async (tx) => {
+      // After any merge being added to this (running) draft, and before the next (see lockProject).
+      await lockProject(tx, projectId);
       // Only the first publish counts (a repeated call changes nothing).
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
