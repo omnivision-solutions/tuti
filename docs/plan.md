@@ -175,6 +175,21 @@ later if asked for); team members and portal users can upload images; default li
 - [ ] Tests: profile validation (unit), upload limits, quota and rate (database tests with an S3 fake), image pipeline on fixture images, journeys (a post with a resized and aligned image and a video embed; a changelog email rendered and screenshotted)
 - [ ] Later: video uploads (transcoding), if people ask
 
+## Phase 6.6 — API and MCP for everything
+
+Every feature is an **operation** defined once (name, zod input, output, permission,
+handler) and exposed three ways from that definition: the app (server actions call it),
+a REST API and an MCP server, so they can't drift apart. Built before the shipped loop
+so every later feature is API-first. (Asked for 2026-10-19.)
+
+- [ ] Operations layer: server actions become thin wrappers over operations that take an explicit actor (a signed-in user, or an API key acting as itself or on behalf of a project's user)
+- [ ] Project API keys: created in settings, scoped read or read + write, shown once, stored hashed, revocable, rate-limited per key
+- [ ] REST API `/api/v1/…` generated from the operations, with an OpenAPI spec and a docs page; operations for everything built so far: projects (read), boards, posts, votes, comments, statuses, merging, duplicate suggestions, team (read), users from SSO, media
+- [ ] MCP server (`/mcp`, Streamable HTTP, official SDK): every operation is a tool (search and triage feedback, change status, merge duplicates; later draft changelogs, search help articles); API key as bearer token, OAuth later (for Claude.ai connectors)
+- [ ] Authorization matrix covers every operation on every surface (UI, REST, MCP), checked by the compiler like today's server actions
+- [ ] From then on (AGENTS.md rule): every feature PR adds its operations, so it ships in the UI, REST and MCP together
+- [ ] Tests: operations (database tests), OpenAPI matches the routes, MCP tools through the SDK's in-memory client, a journey that creates a key in the UI and calls the API with it
+
 ## The "shipped loop" (Phases 7–11)
 
 Code is the source of truth. One GitHub connection feeds everything after it: a
@@ -202,7 +217,7 @@ or proposal shows its sources.
 The team edits and publishes; Tuti does the first draft from what actually merged.
 
 - [ ] Public roadmap on the portal: columns by status (Planned, In progress, Completed)
-- [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX"
+- [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX". Written in the rich editor (`changelog` profile, Phase 6.5); published entries can go out as an email to voters and subscribers, rendered from the same content
 - [ ] Running draft: every merged PR is added to the next unpublished entry; a GitHub release (or "Ship" by hand) closes it out
 - [ ] AI drafting: rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
 - [ ] Per-project style: a few example entries + tone notes the drafts follow
@@ -214,11 +229,13 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 ## Phase 9 — Widget + SDK (MIT)
 
 - [ ] One script tag: give feedback (with duplicate suggestions), see what's new; signs users in with the existing JWT SSO
+- [ ] Help center inside the widget: search and read articles, rendered from the same stored content as the help center, inside a Shadow DOM so the host site's CSS can't break it and ours can't leak (asked for 2026-10-19)
+- [ ] The widget talks to the public API (Phase 6.6), no private endpoints
 - [ ] Tests: E2E on a fixture host page
 
 ## Phase 10 — Help center
 
-- [ ] Collections and articles (markdown, revision history), team editor in `/app`
+- [ ] Collections and articles (rich editor, `article` profile from Phase 6.5; revision history), team editor in `/app`
 - [ ] Portal `/help`: public, indexable; private articles for SSO users
 - [ ] Search over article chunks with pgvector (reuses the embeddings pipeline); in the widget too
 
