@@ -31,6 +31,7 @@ model User {
   invitationsCreated  Invitation[] @relation("InvitationCreatedBy")
   invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
+  media               Media[]
 
   @@unique([email])
   @@map("user")
@@ -114,6 +115,7 @@ model Project {
   ssoIdentities        SsoIdentity[]
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
+  media                Media[]
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
@@ -174,6 +176,41 @@ model SsoTokenUse {
   @@id([projectId, jti])
   @@index([expiresAt])
   @@map("sso_token_use")
+}
+
+enum MediaStatus {
+  /// Waiting for the browser to upload the file.
+  UPLOADING
+  /// Uploaded; the image job is checking and re-encoding it.
+  PROCESSING
+  READY
+  /// Not an image we accept, or processing failed. The file is gone.
+  FAILED
+}
+
+/// An uploaded image (see @tuti/content media.ts for where its files live).
+model Media {
+  id         String      @id @default(cuid())
+  projectId  String
+  uploaderId String
+  status     MediaStatus @default(UPLOADING)
+  /// Bytes counted against the project's quota: the declared upload size until
+  /// processed, then the size of the files kept.
+  size       Int
+  /// After processing (longest side at most 2400px).
+  width      Int?
+  height     Int?
+  /// Set when saved content uses it; uploads never used are deleted after a day.
+  attachedAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader User    @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([uploaderId, createdAt])
+  @@index([attachedAt, createdAt])
+  @@map("media")
 }
 
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
