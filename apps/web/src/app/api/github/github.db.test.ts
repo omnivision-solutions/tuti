@@ -354,8 +354,14 @@ describe("pull requests", () => {
         title: "Theme switcher",
       });
       await call(dismissLinkSuggestion, team(), { id: second!.id });
+      // A new post since: suggested next time, next to the dismissed one, which stays dismissed.
+      openai.setVector("Dim the UI", [1, 0]);
+      const third = await prisma.post.create({
+        data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 3, title: "Dim the UI", body: "" },
+      });
+      await embedPosts([third]);
       await deliver(pullRequest("edited", 61, "Theme switcher", ""));
-      expect(await pending()).toEqual([]);
+      expect(await pending()).toEqual([{ post: 3, pr: 61 }]);
       expect(await prisma.postLink.findMany({ where: { projectId: project.id }, select: { source: true, postId: true } })).toEqual([
         { source: "SUGGESTED", postId: expect.any(String) },
       ]);
