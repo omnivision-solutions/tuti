@@ -12,7 +12,7 @@ import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 export { signWebhook } from "./webhooks";
 export { lockProject, RUNNING_DRAFT_TITLE } from "./running-draft";
 
-export { articleChanged } from "./articles";
+export { articleChanged, embedPublishedArticles } from "./articles";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
 export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";

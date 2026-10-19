@@ -4,6 +4,8 @@ import { embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral }
 export type HelpSearchResult = { slug: string; title: string; snippet: string };
 
 const SNIPPET_LENGTH = 200;
+/** How long a search waits for its query's embedding before it matches words only. */
+const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
 /**
  * A project's published help articles that match a query, best first, each with a
@@ -11,21 +13,26 @@ const SNIPPET_LENGTH = 200;
  * (embeddings, see the articleChanged job) come first, with that section. Then come
  * articles that contain the query's words (Postgres full-text search), with the
  * passage around them: all there is without a key, and with one it still finds exact
- * terms, articles not embedded yet, and everything while OpenAI is down.
+ * terms, articles not embedded yet, and everything while OpenAI is down or slow.
  */
-export async function searchHelp(projectId: string, query: string, limit: number): Promise<HelpSearchResult[]> {
+export async function searchHelp(
+  projectId: string,
+  query: string,
+  limit: number,
+  embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
+): Promise<HelpSearchResult[]> {
   const [byMeaning, byWords] = await Promise.all([
-    embeddingsEnabled() ? meaningMatches(projectId, query, limit) : [],
+    embeddingsEnabled() ? meaningMatches(projectId, query, limit, embedTimeoutMs) : [],
     wordMatches(projectId, query, limit),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
   return [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number): Promise<HelpSearchResult[]> {
+async function meaningMatches(projectId: string, query: string, limit: number, timeoutMs: number): Promise<HelpSearchResult[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query]);
+    const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
     vector = toVectorLiteral(embedding!);
   } catch (error) {
     log.warn("Embedding a help search failed; matching words only", { error });

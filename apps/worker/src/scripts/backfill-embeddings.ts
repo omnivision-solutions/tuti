@@ -5,7 +5,7 @@
 import { prisma } from "@tuti/db";
 import { assertEnv } from "@tuti/shared";
 
-import { articleChanged, detectDuplicates, embedPosts } from "@tuti/jobs";
+import { detectDuplicates, embedPosts, embedPublishedArticles } from "@tuti/jobs";
 
 assertEnv(["DATABASE_URL", "OPENAI_API_KEY"]);
 
@@ -24,9 +24,10 @@ for (const post of posts) {
 console.log(`${posts.length} posts: embedded ${embedded}, ${suggestions} new duplicate suggestion(s)`);
 
 // Published help articles, for search (unchanged ones are skipped).
-const articles = await prisma.article.findMany({ where: { publishedAt: { not: null } }, select: { id: true } });
-for (const { id } of articles) {
-  await articleChanged({ articleId: id }, { info: () => {}, warn: console.warn });
-}
-console.log(`${articles.length} published articles embedded for search`);
+const { articles, failed } = await embedPublishedArticles({ info: () => {}, warn: console.warn });
+console.log(`${articles} published articles embedded for search, ${failed.length} failed`);
 await prisma.$disconnect();
+if (failed.length > 0) {
+  console.error(`${failed.length} article(s) weren't embedded; run this again`);
+  process.exitCode = 1;
+}

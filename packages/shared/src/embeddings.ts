@@ -42,7 +42,8 @@ export function toVectorLiteral(vector: number[]): string {
   return `[${vector.join(",")}]`;
 }
 
-export async function embed(texts: string[]): Promise<number[][]> {
+/** `signal` cancels the request, e.g. `AbortSignal.timeout(…)` where someone is waiting for it. */
+export async function embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
@@ -52,6 +53,7 @@ export async function embed(texts: string[]): Promise<number[][]> {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+    signal,
   });
   const json = (await response.json()) as {
     data?: { index: number; embedding: number[] }[];
