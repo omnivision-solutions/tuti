@@ -41,4 +41,10 @@ test("an admin creates an API key, reads posts with it, then revokes it", async 
   await expect(owner.getByText("Zapier revoked")).toBeVisible();
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   expect((await posts()).status).toBe(401);
+
+  // The docs list every endpoint, generated from the same operations.
+  await owner.goto("/docs/api");
+  await expect(owner.getByRole("heading", { name: "API", level: 1 })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: /POST \/api\/v1\/posts$/ })).toBeVisible();
+  await checkpoint(owner, "api-docs");
 });

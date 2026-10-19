@@ -26,6 +26,8 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   /** Who may run it when signed in: the project's team, or anyone who may post in the project. Keys count as the team. */
   access: "team" | "anyone";
   input: I;
+  /** An example request body or query, for the docs. */
+  example?: Record<string, unknown>;
   run: (context: { actor: Actor; projectId: string }, input: z.infer<I>) => Promise<O>;
 };
 

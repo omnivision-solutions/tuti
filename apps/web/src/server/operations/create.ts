@@ -70,6 +70,12 @@ export const createPost = defineOperation({
     ...content,
     author,
   }),
+  example: {
+    board: "feature-requests",
+    title: "Dark mode",
+    body: "The dashboard is too bright at night.",
+    author: { id: "user-42", name: "Sam", email: "sam@example.com" },
+  },
   run: async (context, input) => {
     const { projectId } = context;
     const board = await prisma.board.findFirst({ where: { projectId, slug: input.board }, select: { id: true } });
@@ -128,6 +134,7 @@ export const createComment = defineOperation({
   scope: "write",
   access: "anyone",
   input: z.object({ number: postNumber, ...content, author }),
+  example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
     const { projectId } = context;
     const post = await findPost(projectId, input.number);
