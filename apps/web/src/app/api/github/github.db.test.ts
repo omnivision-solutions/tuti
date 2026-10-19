@@ -346,12 +346,15 @@ describe("pull requests", () => {
       await posts({ title: "Dark mode", vector: [1, 0] }, { title: "Night theme", vector: [1, 0] });
       openai.setVector("Theme switcher", [1, 0]);
       await deliver(pullRequest("opened", 61, "Theme switcher", ""));
+      // Renamed on GitHub: the waiting suggestions follow.
+      await deliver(pullRequest("edited", 61, "Theme picker", ""));
       const [first, second] = (await call(listLinkSuggestions, team(), {})).suggestions;
+      expect([first!.pullRequest.title, second!.pullRequest.title]).toEqual(["Theme picker", "Theme picker"]);
 
       expect(await call(acceptLinkSuggestion, team(), { id: first!.id })).toMatchObject({
         kind: "pull_request",
         url: "https://github.com/acme/app/pull/61",
-        title: "Theme switcher",
+        title: "Theme picker",
       });
       await call(dismissLinkSuggestion, team(), { id: second!.id });
       // A new post since: suggested next time, next to the dismissed one, which stays dismissed.

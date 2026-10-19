@@ -99,6 +99,11 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
       log.warn(`couldn't comment on ${input.repo}#${input.number}: ${(error as Error).message}`);
     }
   }
+  // A renamed pull request: suggestions waiting for the team show its new title.
+  await prisma.linkSuggestion.updateMany({
+    where: { projectId, url: input.url, status: "PENDING" },
+    data: { title: input.title },
+  });
   let suggested = 0;
   if (embeddingsEnabled()) {
     try {
