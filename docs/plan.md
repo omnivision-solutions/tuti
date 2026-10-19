@@ -237,7 +237,6 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] The widget talks to the public API (Phase 6.6), no private endpoints
 - [ ] What's new: unseen badge for announced changelog entries, seen state per identified user (across devices) (from the Ferndesk review, 2026-10-19)
 - [ ] Small SDK: `identify` (JWT), `open`, `openArticle` (also as a `data-` attribute for contextual help buttons), `hideLauncher`, `locale`, changelog unseen status; launcher, colours and up to 5 quick links set in `/app`; display as launcher, sidebar or inline (from the Ferndesk review, 2026-10-19)
-- [ ] Contact form in the widget (emails the team, with attachments), the fallback when the help center and AI don't answer (from the Ferndesk review, 2026-10-19)
 - [ ] Tests: E2E on a fixture host page
 
 ## Phase 10 — Help center
@@ -264,7 +263,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] No answer → "Post this as feedback" (prefilled, with duplicate suggestions)
 - [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 12)
 - [ ] Assistant settings per project: tone, answer length, standing instructions, off-limits topics; replies in the asker's language; may show article images (from the Ferndesk review, 2026-10-19)
-- [ ] Escalation: "Contact us" sends the team an email with an AI summary of the conversation (next to "Post this as feedback") (from the Ferndesk review, 2026-10-19)
+- [ ] Escalation to a person, when the project has set it up: hand the conversation to live chat or email support, with an AI summary of it (next to "Post this as feedback"). No separate contact form: the AI answers first and escalation covers the rest (decided 2026-10-19; replaces the widget contact form from the Ferndesk review)
 - [ ] Coverage stats: answered / partly / not answered / escalated, per period (from the Ferndesk review, 2026-10-19)
 - [ ] Models through OpenRouter (decided 2026-10-19; `OPENROUTER_API_KEY`, any OpenAI-compatible endpoint for self-hosters): Claude Haiku for cost, Sonnet where quality matters; per-project usage cap
 - [ ] Tests: model fake for flows; `test:live` quality cases graded on facts (cites the right article, refuses when nothing matches)
