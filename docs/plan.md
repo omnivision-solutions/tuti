@@ -218,7 +218,7 @@ or proposal shows its sources.
 
 The team edits and publishes; Tuti does the first draft from what actually merged.
 
-- [ ] Public roadmap on the portal: columns by status (Planned, In progress, Completed)
+- [x] Public roadmap on the portal: columns by status (Planned, In progress, Completed). Done: `/roadmap` on every portal (a "Roadmap" tab after the boards), most voted first, Completed by most recently finished, up to 50 per column, merged duplicates left out; `roadmap.get` operation
 - [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX". Written in the rich editor (`changelog` profile, Phase 6.5); published entries can go out as an email to voters and subscribers, rendered from the same content
 - [ ] Running draft: every merged PR is added to the next unpublished entry; a GitHub release (or "Ship" by hand) closes it out
 - [ ] AI drafting (through OpenRouter, like Phase 11): rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)

@@ -97,6 +97,14 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(bo.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await checkpoint(bo, "portal-filtered");
 
+  // The portal's roadmap shows it as planned, with both votes.
+  await bo.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
+  const planned = bo.getByRole("region", { name: "Planned" });
+  await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", "/p/dark-mode-1");
+  await expect(planned).toContainText("2 votes · Feature requests");
+  await expect(bo.getByRole("region", { name: "In progress" })).toContainText("Nothing here yet.");
+  await checkpoint(bo, "portal-roadmap");
+
   // So does the team's feedback list; the merged duplicate isn't listed.
   await team.goto(`/app/${slug}?status=planned`);
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();

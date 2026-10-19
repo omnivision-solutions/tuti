@@ -140,3 +140,41 @@ export const listComments = defineOperation({
     };
   },
 });
+
+/** The roadmap's columns, in order: what's planned, being built, and done (newest first). */
+export const ROADMAP = [
+  { status: "PLANNED", key: "planned" },
+  { status: "IN_PROGRESS", key: "inProgress" },
+  { status: "COMPLETED", key: "completed" },
+] as const satisfies readonly { status: PostStatus; key: string }[];
+
+/** Each column's posts: most voted first, except Completed (most recently finished first). Up to 50 each. */
+export async function roadmapColumns(projectId: string) {
+  return Promise.all(
+    ROADMAP.map(({ status }) =>
+      prisma.post.findMany({
+        where: { projectId, status, duplicateOfId: null },
+        orderBy: status === "COMPLETED" ? [{ updatedAt: "desc" }] : [{ voteCount: "desc" }, { createdAt: "desc" }],
+        take: 50,
+        select: { ...postSummarySelect, board: { select: { slug: true, name: true } } },
+      }),
+    ),
+  );
+}
+
+export const getRoadmap = defineOperation({
+  name: "roadmap.get",
+  summary: "The public roadmap: planned, in progress and completed posts",
+  method: "GET",
+  path: "/roadmap",
+  scope: "read",
+  access: "anyone",
+  input: z.object({}),
+  run: async ({ projectId }) => {
+    const [columns, slug] = await Promise.all([roadmapColumns(projectId), projectSlug(projectId)]);
+    return Object.fromEntries(ROADMAP.map(({ key }, i) => [key, columns[i]!.map((post) => summary(post, slug))])) as Record<
+      (typeof ROADMAP)[number]["key"],
+      ReturnType<typeof summary>[]
+    >;
+  },
+});
