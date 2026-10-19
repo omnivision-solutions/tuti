@@ -26,7 +26,26 @@ export async function searchHelp(
     wordMatches(projectId, query, limit),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
-  return [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
+  const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
+  logSearch(projectId, query, results.length);
+  return results;
+}
+
+/** A query as the team's insights count it: trimmed, one space between words, lower case. */
+const normalizeQuery = (query: string) => query.trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
+
+/**
+ * Records a search for the team's insights (no results is a failed search). Not awaited
+ * and never throws, so logging can't slow search down or break it.
+ */
+function logSearch(projectId: string, query: string, results: number) {
+  const normalized = normalizeQuery(query);
+  if (!normalized) {
+    return;
+  }
+  prisma.helpSearch
+    .create({ data: { projectId, query: normalized, results } })
+    .catch((error: unknown) => log.warn("Logging a help search failed", { projectId, error }));
 }
 
 async function meaningMatches(projectId: string, query: string, limit: number, timeoutMs: number): Promise<HelpSearchResult[]> {

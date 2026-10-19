@@ -39,9 +39,14 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         title="Help center"
         description="Articles that answer your users' questions. Published ones show in your portal's help center."
         actions={
-          <Link href={`/app/${slug}/help/new`} className={buttonVariants()}>
-            New article
-          </Link>
+          <>
+            <Link href={`/app/${slug}/help/insights`} className={buttonVariants({ variant: "outline" })}>
+              Insights
+            </Link>
+            <Link href={`/app/${slug}/help/new`} className={buttonVariants()}>
+              New article
+            </Link>
+          </>
         }
       />
       {articles.length === 0 ? (

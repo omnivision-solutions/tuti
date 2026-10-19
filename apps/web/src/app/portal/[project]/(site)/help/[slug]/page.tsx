@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ArticleActions } from "@/components/article-actions";
+import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { portalUrl } from "@/lib/hosts";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
@@ -39,6 +40,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
       </div>
       <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/help/${slug}.md`} />
       <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+      <ArticleFeedback projectSlug={project} slug={slug} />
     </article>
   );
 }

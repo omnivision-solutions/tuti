@@ -110,14 +110,14 @@ async function freeSlug(
   return candidate;
 }
 
-// "new" is the team's new-article page (/app/<project>/help/new), so no article can have it.
+// "new" and "insights" are the team's pages under /app/<project>/help, so no article can have them.
 const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
   freeSlug(
     title,
     "article",
     (prefix) =>
       tx.article.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
-    ["new"],
+    ["new", "insights"],
   );
 
 const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
