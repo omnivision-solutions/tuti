@@ -255,7 +255,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] Per-project branding for portals and the help center: logo (light/dark), favicon, primary colour, header and footer links; "Powered by Tuti" can be turned off (from the Ferndesk review, 2026-10-19)
 - [ ] Access: a fully private portal; reader groups from the SSO token's attributes (e.g. plan = enterprise) that restrict collections and articles, shown locked or hidden; magic-link sign-in for portal users (from the Ferndesk review, 2026-10-19)
 - [ ] Custom domains for portals and the help center (CNAME + automatic TLS), moved up from Later: a help center is worth little for SEO on a tuti.so subdomain (from the Ferndesk review, 2026-10-19)
-- [ ] Export everything as a ZIP of Markdown (no lock-in) (from the Ferndesk review, 2026-10-19)
+- [x] Export everything as a ZIP of Markdown (no lock-in) (from the Ferndesk review, 2026-10-19). Done: "Export as Markdown" in settings (owners and admins), streamed as `<project>-export-<date>.zip`: help articles by collection, changelog entries and posts by board (with their comments), drafts included, each with YAML front matter, and a README; people by display name only. Images stay links to where they're hosted (not in the ZIP). Not an API operation: operations answer JSON and are open to the whole team
 
 ## Phase 11 — AI answers
 

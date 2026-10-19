@@ -24,6 +24,7 @@
     "@playwright/test": "^1.64.1",
     "@tuti/testkit": "workspace:*",
     "@types/pg": "^8.23.1",
+    "fflate": "^0.8.3",
     "pg": "^8.23.0",
     "turbo": "^2.11.6",
     "typescript": "^6.0.3",

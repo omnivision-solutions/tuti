@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
+import { strFromU8, unzipSync } from "fflate";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-test("an admin creates an API key, reads posts with it, then revokes it", async ({ browser }, testInfo) => {
+test("an admin creates an API key, reads posts with it, revokes it and exports the project", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -41,6 +43,16 @@ test("an admin creates an API key, reads posts with it, then revokes it", async 
   await expect(owner.getByText("Zapier revoked")).toBeVisible();
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   expect((await posts()).status).toBe(401);
+
+  // Everything can also leave as Markdown files in a ZIP.
+  const exportButton = owner.getByRole("link", { name: "Export as Markdown" });
+  await exportButton.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "settings-export", { fullPage: false });
+  const [download] = await Promise.all([owner.waitForEvent("download"), exportButton.click()]);
+  expect(download.suggestedFilename()).toBe(`${slug}-export-${new Date().toISOString().slice(0, 10)}.zip`);
+  const files = unzipSync(new Uint8Array(await readFile((await download.path())!)));
+  expect(Object.keys(files)).toEqual(expect.arrayContaining(["README.md", "posts/feature-requests/1-dark-mode.md"]));
+  expect(strFromU8(files["posts/feature-requests/1-dark-mode.md"]!)).toContain('author: "Ada"');
 
   // The docs list every endpoint, generated from the same operations.
   await owner.goto("/docs/api");
