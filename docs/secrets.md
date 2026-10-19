@@ -73,11 +73,17 @@ The script passes `--projectId` and `--domain` explicitly, because the CLI ignor
 
 ### Deployed apps
 
-Planned: each Docker image starts under
+Each Docker image starts under
 `infisical run --env=prod --path=/<app> --silent -- …` **only when `INFISICAL_TOKEN`
 is set**, so the same image still works for self-hosters with plain env vars.
-The host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN` and
-`INFISICAL_PROJECT_ID`, with one read-only machine identity per app
-(`tuti-web`, `tuti-worker`).
+The goal is that the host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN`
+and `INFISICAL_PROJECT_ID`, with one read-only machine identity per app
+(`tuti-web`, `tuti-worker`). Until those identities exist, Coolify holds a copy of
+the prod values as runtime-only env vars: change them in Infisical, then copy them
+over.
+
+`main` deploys itself once CI passes (`.github/workflows/deploy.yml`). The workflow
+runs in the `production` environment (main only), whose secrets are the Coolify URL
+and a deploy-only Coolify token.
 
 Builds don't need secrets (no `infisical run` in the build stage).
