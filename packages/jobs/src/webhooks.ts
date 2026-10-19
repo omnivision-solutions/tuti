@@ -2,11 +2,15 @@ import { createHmac } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
-import { checkWebhookUrl } from "@tuti/shared/webhook-url";
+import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
+import { Agent, fetch } from "undici";
 
 import type { JobLogger, JobResult } from "./index";
 
 const TIMEOUT_MS = 10_000;
+
+/** Connects only to public addresses, checked when connecting (see publicOnlyLookup). */
+const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 
 /**
  * `Tuti-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.
@@ -40,6 +44,7 @@ export async function webhookDelivery(input: JobInput<"webhookDelivery">, log: J
       body,
       redirect: "manual",
       signal: AbortSignal.timeout(TIMEOUT_MS),
+      ...(process.env.WEBHOOK_ALLOW_PRIVATE_URLS !== "true" && { dispatcher: publicOnly }),
       headers: {
         "content-type": "application/json",
         "user-agent": "Tuti-Webhooks/1",
@@ -49,11 +54,15 @@ export async function webhookDelivery(input: JobInput<"webhookDelivery">, log: J
       },
     });
     status = response.status;
+    // The answer's body isn't used; closing it frees the connection right away.
+    await response.body?.cancel().catch(() => {});
     if (!response.ok) {
       error = `Answered ${response.status}`;
     }
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    // fetch reports connection errors (like a private address) as its cause.
+    const cause = e instanceof Error && e.cause instanceof Error ? e.cause : e;
+    error = cause instanceof Error ? cause.message : String(cause);
   }
 
   await prisma.webhookDelivery.update({

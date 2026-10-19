@@ -23,7 +23,11 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
       id: true,
       url: true,
       events: true,
-      deliveries: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true, deliveredAt: true, lastError: true } },
+      deliveries: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { createdAt: true, deliveredAt: true, lastError: true, attempts: true },
+      },
     },
   });
   const keys = await prisma.apiKey.findMany({

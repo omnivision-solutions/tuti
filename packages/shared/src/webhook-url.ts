@@ -1,13 +1,14 @@
+import { lookup as lookupCallback, type LookupAddress, type LookupAllOptions } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { BlockList, isIP } from "node:net";
+import { BlockList, isIP, type LookupFunction } from "node:net";
 
 /**
  * Webhook URLs are entered by customers and called by our servers, so they must
  * never reach our own network (cloud metadata, databases, internal services).
  * Checked when a webhook is saved and again before every delivery, since DNS can
- * change. ponytail: the request resolves the name again, so a rebinding DNS server
- * could still swap the address in between; pin the address in the connection if
- * that ever matters.
+ * change. Deliveries also connect through `publicOnlyLookup`, which checks the
+ * addresses the connection actually uses, so a DNS server can't answer one way for
+ * the check and another for the connection (DNS rebinding).
  *
  * Self-hosters calling their own internal services can allow private addresses
  * with WEBHOOK_ALLOW_PRIVATE_URLS=true (tests do too).
@@ -31,6 +32,9 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
   ["::", 128],
   ["::1", 128],
+  // NAT64: translated to IPv4, which may be private.
+  ["64:ff9b::", 96],
+  ["64:ff9b:1::", 48],
   ["fc00::", 7],
   ["fe80::", 10],
   ["ff00::", 8],
@@ -76,3 +80,25 @@ export async function checkWebhookUrl(url: string): Promise<void> {
     throw new Error("Webhook URLs must point to a public address");
   }
 }
+
+/**
+ * A DNS lookup for connections (undici's `connect.lookup`) that refuses private
+ * addresses, so the address checked is the address connected to.
+ */
+export const publicOnlyLookup: LookupFunction = (hostname, options, callback) => {
+  lookupCallback(hostname, { ...options, all: true } as LookupAllOptions, (error, addresses: LookupAddress[]) => {
+    if (error) {
+      callback(error, "", 0);
+      return;
+    }
+    if (addresses.length === 0 || addresses.some((a) => isPrivate(a.address))) {
+      callback(Object.assign(new Error("Webhook URLs must point to a public address"), { code: "EPRIVATE" }), "", 0);
+      return;
+    }
+    if (options.all) {
+      (callback as unknown as (error: null, addresses: LookupAddress[]) => void)(null, addresses);
+    } else {
+      callback(null, addresses[0]!.address, addresses[0]!.family);
+    }
+  });
+};

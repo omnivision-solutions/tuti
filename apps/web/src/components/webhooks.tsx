@@ -18,25 +18,16 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { timeAgo } from "@/lib/format";
-import { WEBHOOK_EVENTS, type WebhookEvent } from "@/lib/webhook-events";
+import { type DeliverySummary, lastDeliveryText, WEBHOOK_EVENTS, type WebhookEvent } from "@/lib/webhook-events";
 import { createWebhook, deleteWebhook, sendTestWebhook } from "@/server/webhooks";
 
 export type WebhookView = {
   id: string;
   url: string;
   events: string[];
-  lastDelivery: { createdAt: Date; deliveredAt: Date | null; lastError: string | null } | null;
+  lastDelivery: DeliverySummary | null;
 };
 
-function lastDeliveryText(delivery: WebhookView["lastDelivery"]): string {
-  if (!delivery) {
-    return "no deliveries yet";
-  }
-  return delivery.deliveredAt
-    ? `last delivered ${timeAgo(delivery.deliveredAt)}`
-    : `last delivery failed ${timeAgo(delivery.createdAt)}: ${delivery.lastError ?? "no answer"}`;
-}
 
 export function Webhooks({ projectSlug, webhooks }: { projectSlug: string; webhooks: WebhookView[] }) {
   const [secret, setSecret] = useState<string>();

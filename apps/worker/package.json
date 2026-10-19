@@ -19,6 +19,7 @@
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
     "sharp": "^0.35.5",
+    "undici": "^7.30.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
