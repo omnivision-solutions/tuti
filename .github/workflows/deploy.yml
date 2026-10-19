@@ -38,17 +38,23 @@ jobs:
         run: |
           set -euo pipefail
           api() { curl -fsS -H "Authorization: Bearer $COOLIFY_TOKEN" "$@"; }
-          ids=$(api -X POST "$COOLIFY_URL/api/v1/deploy?uuid=$APPS" | jq -r '.deployments[].deployment_uuid')
+          ids=$(api -X POST "$COOLIFY_URL/api/v1/deploy?uuid=$APPS" | jq -r '.deployments[]?.deployment_uuid // empty')
+          wanted=$(tr ',' '\n' <<<"$APPS" | grep -c .)
+          started=$(grep -c . <<<"$ids" || true)
+          [ "$started" = "$wanted" ] || { echo "::error::Coolify started $started of $wanted deployments"; exit 1; }
+          # Both deployments share one deadline, inside the job's timeout.
+          deadline=$((SECONDS + 25 * 60))
           for id in $ids; do
-            for _ in $(seq 1 100); do
+            while :; do
               status=$(api "$COOLIFY_URL/api/v1/deployments/$id" | jq -r .status)
               case "$status" in
                 finished) echo "Deployment finished"; break ;;
-                queued|in_progress) sleep 15 ;;
+                queued|in_progress) ;;
                 *) echo "::error::Deployment ended as $status"; exit 1 ;;
               esac
+              [ "$SECONDS" -lt "$deadline" ] || { echo "::error::Deployment still $status after 25 minutes"; exit 1; }
+              sleep 15
             done
-            [ "$status" = finished ] || { echo "::error::Deployment still $status after 25 minutes"; exit 1; }
           done
 
       - name: Smoke test
