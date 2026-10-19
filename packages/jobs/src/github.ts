@@ -179,11 +179,18 @@ export async function githubRelease(input: JobInput<"githubRelease">, log: JobLo
   }
 
   const api = await installationApi(input.installationId);
-  const releases = await api.list<GithubRelease>(`/repos/${input.repo}/releases`, (page) => page as GithubRelease[], 3);
+  const RELEASE_PAGES = 20;
+  const releases = await api.list<GithubRelease>(`/repos/${input.repo}/releases`, (page) => page as GithubRelease[], RELEASE_PAGES);
   const previous = releases
     .filter((r) => !r.draft && r.published_at && r.tag_name !== input.tag)
     .filter((r) => Date.parse(r.published_at!) < Date.parse(input.publishedAt))
     .sort((a, b) => Date.parse(b.published_at!) - Date.parse(a.published_at!))[0];
+  // Without a previous release this counts as the repo's first, which ships everything merged so far.
+  // If the list may have been cut off, the real previous release could be missing: complete nothing.
+  if (!previous && releases.length >= RELEASE_PAGES * 100) {
+    log.warn(`${input.repo} ${input.tag}: couldn't find the previous release among ${releases.length}; nothing completed`);
+    return { completed: 0, skipped: true };
+  }
   /** Whether a commit is part of a tag (the tag is it, or comes after it). */
   const contains = async (tag: string, sha: string) => {
     const comparison = await api.find<{ status: string }>(

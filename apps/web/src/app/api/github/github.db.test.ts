@@ -350,6 +350,20 @@ describe("shipping", () => {
     expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
   });
 
+  test("if the previous release can't be found among very many, nothing is completed rather than guessing", async () => {
+    // 2,000 releases published after this one (a delayed job), none before it.
+    const later = Array.from({ length: 2000 }, (_, i) => ({ tag_name: `v9.${i}`, published_at: "2026-09-01T00:00:00Z" }));
+    github.repo(repo, {
+      history: ["a", "b"],
+      tags: { "v1.0": "b" },
+      releases: [...later, { tag_name: "v1.0", published_at: "2026-03-01T00:00:00Z" }],
+      pulls: { 40: { merged_at: "2026-02-01T00:00:00Z", merge_commit_sha: "a" } },
+    });
+    await linkedPosts([{ status: "IN_PROGRESS", pull: 40 }]);
+    await deliver(published("v1.0", "2026-03-01T00:00:00Z"));
+    expect(await statuses()).toEqual(["IN_PROGRESS"]);
+  });
+
   test("projects without releases complete posts when the pull request is merged instead", async () => {
     await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
     github.repo(repo, { releases: [{ tag_name: "v9", published_at: "2026-05-01T00:00:00Z" }], pulls: {} });
