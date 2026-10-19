@@ -2,8 +2,15 @@ import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
-import { type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import {
+  type ModelFake,
+  type S3Fake,
+  startModelFake,
+  startS3Fake,
+  startWebhookReceiver,
+  type WebhookReceiver,
+} from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
 import { generateSsoSecret } from "@/lib/sso";
@@ -61,6 +68,8 @@ type Case = {
   takesIds?: true;
   /** Users who signed in through another project's SSO can't do this (they only exist on that portal). */
   refusesSsoUsers?: true;
+  /** Runs before the allowed call only (e.g. scripting the model's reply). */
+  before?: () => void;
   call: (slug: string, fixture: Fixture) => Promise<unknown>;
 };
 
@@ -96,6 +105,11 @@ const matrix: Matrix = {
         form.set("title", "From the matrix");
         return changelog.saveChangelogEntry(slug, null, {}, form);
       },
+    },
+    draftChangelogEntry: {
+      allowed: "MEMBER",
+      before: () => model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." })),
+      call: (slug) => changelog.draftChangelogEntry(slug, 2),
     },
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
@@ -263,6 +277,7 @@ const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
 let s3: S3Fake;
+let model: ModelFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
@@ -272,7 +287,8 @@ beforeAll(async () => {
   // Webhook fixtures deliver to a local fake receiver.
   receiver = await startWebhookReceiver();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  for (const [name, value] of Object.entries(s3.env)) {
+  model = await startModelFake();
+  for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
   const [OWNER, ADMIN, MEMBER, outsider, ssoUser] = await Promise.all(
@@ -287,7 +303,9 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close()]));
+// Refused calls never reach the model; allowed ones use the reply they scripted.
+afterEach(() => model.done());
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
@@ -367,8 +385,13 @@ async function createFixture() {
       similarity: 0.6,
     },
   });
-  await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 1 } });
-  await prisma.changelogEntry.create({ data: { projectId, number: 1, title: "Matrix entry", publishedAt: new Date() } });
+  await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 2 } });
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId, number: 1, title: "Matrix entry", publishedAt: new Date() },
+      { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
+    ],
+  });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
@@ -485,5 +508,6 @@ test.each(cases)("$name", async ({ rule }) => {
   expect(await snapshot()).toEqual(before);
 
   actAs(userFor(allowedActor(rule)));
+  rule.before?.();
   expect(await outcome(rule.call(fixture.slug, fixture))).not.toMatch(/^error: /);
 });

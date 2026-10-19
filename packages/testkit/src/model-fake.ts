@@ -1,0 +1,119 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
+export const FAKE_MODEL_KEY = "sk-or-test-fake";
+
+/** What a request asked: its model and messages. */
+export type ModelRequest = { model: string; system: string; user: string };
+
+/** A scripted answer: a reply (status 200) or an error status. */
+type Step = { status: number; content?: string; during?: () => Promise<unknown> };
+
+export type ModelFake = {
+  /** Base URL to use as OPENROUTER_BASE_URL. */
+  url: string;
+  /** OPENROUTER_API_KEY and OPENROUTER_BASE_URL for an app that uses this fake. */
+  env: Record<string, string>;
+  /** Every chat completion request, in order. */
+  requests: ModelRequest[];
+  /**
+   * The next request gets this reply (steps are used in order). `during` runs while
+   * that request waits for it, e.g. a save racing the model. Also `POST /_fake/replies {content}`.
+   */
+  reply(content: string, during?: () => Promise<unknown>): void;
+  /** The next request fails with this HTTP status. */
+  fail(status: number): void;
+  /** Throws if a step wasn't used or a request came with no step left. */
+  done(): void;
+  close(): Promise<void>;
+};
+
+/**
+ * A local stand-in for an OpenAI-compatible chat completions API (OpenRouter).
+ * Tests script its replies; a request with nothing scripted fails (500) and
+ * makes `done()` throw, like a step nobody used.
+ */
+export async function startModelFake(): Promise<ModelFake> {
+  const steps: Step[] = [];
+  const requests: ModelRequest[] = [];
+  const unexpected: string[] = [];
+
+  const server = createServer((req, res) => {
+    const send = (status: number, body: unknown) => {
+      res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+    };
+    let raw = "";
+    req.on("data", (chunk) => (raw += chunk));
+    req.on("end", async () => {
+      if (req.headers.authorization !== `Bearer ${FAKE_MODEL_KEY}`) {
+        return send(401, { error: { message: "bad API key" } });
+      }
+      let body: { model?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown };
+      try {
+        body = JSON.parse(raw) as typeof body;
+      } catch {
+        return send(400, { error: { message: "expected JSON" } });
+      }
+      // Lets tests in another process (E2E journeys) script replies.
+      if (req.method === "POST" && req.url === "/_fake/replies") {
+        if (typeof body.content !== "string") {
+          return send(400, { error: { message: "expected {content}" } });
+        }
+        steps.push({ status: 200, content: body.content });
+        return send(204, null);
+      }
+      if (req.method !== "POST" || req.url !== "/chat/completions") {
+        unexpected.push(`${req.method} ${req.url}`);
+        return send(404, { error: { message: `unexpected ${req.method} ${req.url}` } });
+      }
+      const message = (role: string) => body.messages?.find((m) => m.role === role)?.content;
+      const [system, user] = [message("system"), message("user")];
+      if (typeof body.model !== "string" || typeof system !== "string" || typeof user !== "string") {
+        unexpected.push(`a request without a model, a system and a user message: ${raw.slice(0, 200)}`);
+        return send(400, { error: { message: "expected a model, a system and a user message" } });
+      }
+      requests.push({ model: body.model, system, user });
+      const step = steps.shift();
+      if (!step) {
+        unexpected.push(`a request with no reply scripted: ${user.slice(0, 200)}`);
+        return send(500, { error: { message: "the model fake has no reply scripted" } });
+      }
+      await step.during?.();
+      if (step.status !== 200) {
+        return send(step.status, { error: { message: "fake failure" } });
+      }
+      send(200, {
+        id: `fake-${requests.length}`,
+        object: "chat.completion",
+        model: body.model,
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: step.content } }],
+      });
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}`;
+
+  return {
+    url,
+    env: { OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: url },
+    requests,
+    reply(content, during) {
+      steps.push({ status: 200, content, during });
+    },
+    fail(status) {
+      steps.push({ status });
+    },
+    done() {
+      const problems = [
+        ...unexpected.splice(0),
+        ...steps.splice(0).map((step) => `an unused step: ${step.content ?? `status ${step.status}`}`),
+      ];
+      if (problems.length > 0) {
+        throw new Error(`The model fake got:\n${problems.join("\n")}`);
+      }
+    },
+    close: () => new Promise((resolve) => server.close(() => resolve())),
+  };
+}

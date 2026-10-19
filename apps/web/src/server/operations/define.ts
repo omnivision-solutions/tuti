@@ -38,7 +38,7 @@ export const defineOperation = <const N extends string, I extends z.ZodType, O>(
 /** An expected failure, with the HTTP status the API answers with. */
 export class OperationError extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 429,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 429 | 502 | 503,
     readonly code: string,
     message: string,
   ) {
