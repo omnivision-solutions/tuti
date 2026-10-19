@@ -6,6 +6,7 @@ import { log } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { contentFromForm } from "./content";
 import type { FormState } from "./form-state";
 import { getSession } from "./session";
 
@@ -22,8 +23,10 @@ const createPostSchema = z.object({
   projectSlug: z.string(),
   boardSlug: z.string(),
   title: z.string().trim().min(3, "Title is too short").max(120),
-  body: z.string().trim().max(5000),
 });
+
+/** Longest plain text a post or comment may have (rich content is capped by size too). */
+const MAX_TEXT_LENGTH = 5000;
 
 export async function createPost(_prev: FormState, formData: FormData): Promise<FormState> {
   const session = await getSession();
@@ -35,10 +38,13 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
     projectSlug: formData.get("projectSlug"),
     boardSlug: formData.get("boardSlug"),
     title: formData.get("title"),
-    body: formData.get("body") ?? "",
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const content = contentFromForm(formData, "post", MAX_TEXT_LENGTH);
+  if (content.error !== undefined) {
+    return { error: content.error };
   }
 
   const board = await prisma.board.findFirst({
@@ -64,7 +70,8 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
         authorId: session.user.id,
         number,
         title: parsed.data.title,
-        body: parsed.data.body,
+        body: content.text,
+        content: content.doc,
         voteCount: 1,
         votes: { create: { userId: session.user.id, projectId: board.projectId } },
       },
@@ -120,7 +127,6 @@ export async function toggleVote(postId: string): Promise<FormState> {
 
 const addCommentSchema = z.object({
   postId: z.string().min(1),
-  body: z.string().trim().min(1, "Write something first").max(5000),
 });
 
 /** Comments from portal users and from the team (the team badge is shown when rendering). */
@@ -129,9 +135,16 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
   if (!session) {
     return { error: "Sign in to comment" };
   }
-  const parsed = addCommentSchema.safeParse({ postId: formData.get("postId"), body: formData.get("body") });
+  const parsed = addCommentSchema.safeParse({ postId: formData.get("postId") });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const content = contentFromForm(formData, "comment", MAX_TEXT_LENGTH);
+  if (content.error !== undefined) {
+    return { error: content.error };
+  }
+  if (content.text === "") {
+    return { error: "Write something first" };
   }
 
   const post = await prisma.post.findUnique({
@@ -147,7 +160,7 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
 
   await prisma.$transaction([
     prisma.comment.create({
-      data: { projectId: post.projectId, postId: post.id, authorId: session.user.id, body: parsed.data.body },
+      data: { projectId: post.projectId, postId: post.id, authorId: session.user.id, body: content.text, content: content.doc },
     }),
     prisma.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } }),
   ]);

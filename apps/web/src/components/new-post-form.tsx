@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 
+import { RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
@@ -17,6 +17,8 @@ const SUGGEST_DELAY_MS = 300;
 
 export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; boardSlug: string }) {
   const formRef = useRef<HTMLFormElement>(null);
+  // Bumped after each post, to start the next one with an empty editor.
+  const [submitted, setSubmitted] = useState(0);
   const [similar, setSimilar] = useState<SimilarPost[]>([]);
   const latestQuery = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -25,6 +27,7 @@ export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; b
     const result = await createPost(prev, formData);
     if (!result.error) {
       formRef.current?.reset();
+      setSubmitted((n) => n + 1);
       latestQuery.current++;
       setSimilar([]);
     }
@@ -93,8 +96,14 @@ export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; b
             )}
 
             <Field>
-              <FieldLabel htmlFor="post-body">Details</FieldLabel>
-              <Textarea id="post-body" name="body" placeholder="Any more details?" rows={3} />
+              <FieldLabel id="post-body-label">Details</FieldLabel>
+              <RichEditor
+                key={submitted}
+                profile="post"
+                name="content"
+                labelledBy="post-body-label"
+                placeholder="Any more details?"
+              />
             </Field>
             <Button type="submit" disabled={pending} className="self-end">
               {pending ? "Posting…" : "Submit feedback"}

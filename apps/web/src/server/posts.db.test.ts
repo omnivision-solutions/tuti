@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { createPost } from "./posts";
+import { addComment, createPost } from "./posts";
 
 function postForm(projectSlug: string, title: string) {
   const form = new FormData();
@@ -49,4 +49,77 @@ test("signed-out visitors can't post", async () => {
   actAs(null);
   expect(await createPost({}, postForm(project.slug, "Dark mode"))).toEqual({ error: "Sign in to post feedback" });
   expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(0);
+});
+
+describe("rich content", () => {
+  const doc = (...content: object[]) => JSON.stringify({ type: "doc", content });
+  const p = (text: string, marks?: object[]) => ({ type: "paragraph", content: [{ type: "text", text, ...(marks && { marks }) }] });
+  const video = { type: "video", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } };
+  const list = { type: "bulletList", content: [{ type: "listItem", content: [p("one")] }] };
+
+  async function setup() {
+    const owner = await signUp();
+    const project = await createProject(owner);
+    actAs(owner);
+    return project;
+  }
+
+  async function comment(postId: string, fields: Record<string, string>) {
+    const form = new FormData();
+    form.set("postId", postId);
+    for (const [key, value] of Object.entries(fields)) {
+      form.set(key, value);
+    }
+    return addComment({}, form);
+  }
+
+  test("a post stores its document and the plain text of it", async () => {
+    const project = await setup();
+    const form = postForm(project.slug, "Dark mode");
+    form.set("content", doc(p("Please", [{ type: "bold" }]), list, video));
+    expect(await createPost({}, form)).toEqual({});
+
+    const post = await prisma.post.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(post.content).toMatchObject({ type: "doc", content: [{ type: "paragraph" }, { type: "bulletList" }, video] });
+    expect(post.body).toBe("Please\none\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ");
+  });
+
+  test("plain text still works, as a document", async () => {
+    const project = await setup();
+    const form = postForm(project.slug, "Dark mode");
+    form.set("body", "First\n\nSecond");
+    await createPost({}, form);
+    const post = await prisma.post.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(post.body).toBe("First\nSecond");
+    expect(post.content).toMatchObject({ type: "doc", content: [{ type: "paragraph" }, { type: "paragraph" }] });
+  });
+
+  test.each([
+    ["a heading", doc({ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "x" }] }), "This content has something that isn't allowed here."],
+    ["a javascript: link", doc(p("x", [{ type: "link", attrs: { href: "javascript:alert(1)" } }])), "Links must start with http://, https:// or mailto:."],
+    ["a video from elsewhere", doc({ type: "video", attrs: { provider: "evil", id: "x" } }), "Only YouTube, Vimeo and Loom videos can be embedded."],
+    ["too much text", doc(p("x".repeat(5001))), "Keep it under 5,000 characters"],
+  ])("a post with %s is refused", async (_name, content, error) => {
+    const project = await setup();
+    const form = postForm(project.slug, "Dark mode");
+    form.set("content", content);
+    expect(await createPost({}, form)).toEqual({ error });
+    expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("comments allow formatting and links, but not lists or videos, and can't be empty", async () => {
+    const project = await setup();
+    await createPost({}, postForm(project.slug, "Dark mode"));
+    const post = await prisma.post.findFirstOrThrow({ where: { projectId: project.id } });
+
+    expect(await comment(post.id, { content: doc(p("Agreed, see", [{ type: "link", attrs: { href: "https://example.com" } }])) })).toEqual({});
+    expect(await comment(post.id, { content: doc(list) })).toEqual({ error: "This content has something that isn't allowed here." });
+    expect(await comment(post.id, { content: doc(video) })).toEqual({ error: "This content has something that isn't allowed here." });
+    expect(await comment(post.id, { content: doc({ type: "paragraph" }) })).toEqual({ error: "Write something first" });
+    expect(await comment(post.id, { body: "  " })).toEqual({ error: "Write something first" });
+
+    const comments = await prisma.comment.findMany({ where: { postId: post.id } });
+    expect(comments.map((c) => c.body)).toEqual(["Agreed, see"]);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).commentCount).toBe(1);
+  });
 });

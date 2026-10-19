@@ -152,3 +152,42 @@
     @apply font-heading;
   }
 }
+/* Rich content (@tuti/content): rendered posts and comments, and the editor. */
+@layer components {
+  .rich-text {
+    @apply flex flex-col gap-3;
+  }
+  .rich-text :where(ul) {
+    @apply list-disc pl-6;
+  }
+  .rich-text :where(ol) {
+    @apply list-decimal pl-6;
+  }
+  .rich-text :where(li > p) {
+    @apply my-0.5;
+  }
+  .rich-text :where(a) {
+    @apply text-primary underline underline-offset-4;
+  }
+  .rich-text :where(code) {
+    @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.9em];
+  }
+  .rich-text :where(pre) {
+    @apply overflow-x-auto rounded-lg bg-muted p-3 text-sm;
+  }
+  .rich-text :where(pre code) {
+    @apply bg-transparent p-0;
+  }
+  .rich-text :where(.rich-video) {
+    @apply aspect-video w-full overflow-hidden rounded-lg bg-muted;
+  }
+  .rich-text :where(.rich-video iframe) {
+    @apply size-full border-0;
+  }
+  .rich-text :where(.ProseMirror-selectednode) {
+    @apply ring-2 ring-ring;
+  }
+  .rich-text :where(p.is-editor-empty:first-child)::before {
+    @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
+  }
+}
