@@ -46,9 +46,17 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(team, "team-verify-email-banner");
   const email = await latestEmailTo(team.email);
   expect(email.subject).toBe("Verify your email for Tuti");
-  await team.goto(linkIn(email, `${APP_URL}/api/auth/verify-email`));
-  await team.waitForURL(`**/app/${slug}`); // /app opens the last project
-  await expect(banner).toHaveCount(0);
+  // Verified in another tab: this one notices when it's back in focus, without reloading.
+  const otherTab = await team.context().newPage();
+  await otherTab.goto(linkIn(email, `${APP_URL}/api/auth/verify-email`));
+  await otherTab.waitForURL(`**/app/${slug}`); // /app opens the last project
+  await otherTab.close();
+  await team.bringToFront();
+  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
+  await expect(async () => {
+    await team.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(banner).toHaveCount(0, { timeout: 500 });
+  }).toPass({ timeout: 15_000 });
 
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
