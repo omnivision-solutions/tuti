@@ -46,10 +46,21 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect(replay.getByText("This sign-in link was already used.")).toBeVisible();
   await checkpoint(replay, "portal-sso-error");
 
-  // Once SSO is disabled, even a fresh token is refused.
-  owner.once("dialog", (dialog) => dialog.accept()); // a native confirm() for now
-  await owner.getByRole("button", { name: "Disable" }).click();
-  await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
+  // Rotating the secret (after confirming) shows a new one; tokens signed with the old one stop working.
+  await owner.getByRole("button", { name: "Rotate secret" }).click();
+  const rotateDialog = owner.getByRole("alertdialog", { name: "Rotate the SSO secret?" });
+  await checkpoint(owner, "team-rotate-sso-confirm", { fullPage: false });
+  await rotateDialog.getByRole("button", { name: "Rotate secret" }).click();
+  await expect(owner.getByText("SSO secret rotated")).toBeVisible();
+  const newSecret = await secretAlert.locator("code").innerText();
+  expect(newSecret).not.toBe(secret);
   await replay.goto(`/sso?token=${ssoToken(secret, { sub: "user-42" })}`);
+  await expect(replay).toHaveURL(/code=invalid_token$/);
+
+  // Once SSO is disabled (after confirming), even a token signed with the current secret is refused.
+  await owner.getByRole("button", { name: "Disable" }).click();
+  await owner.getByRole("alertdialog", { name: "Disable single sign-on?" }).getByRole("button", { name: "Disable SSO" }).click();
+  await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
+  await replay.goto(`/sso?token=${ssoToken(newSecret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
 });
