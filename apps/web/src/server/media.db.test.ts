@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createUpload, finishUpload, uploadStatus } from "./media";
+import { createPost } from "./posts";
 
 let s3: S3Fake;
 let owner: TestUser;
@@ -192,8 +193,9 @@ describe("finishing", () => {
 });
 
 describe("cleanup", () => {
+  const day = 24 * 60 * 60 * 1000;
+
   test("uploads no saved content uses are deleted after a day, with their files", async () => {
-    const day = 24 * 60 * 60 * 1000;
     const media = (fields: { attachedAt?: Date; createdAt: Date }) =>
       prisma.media.create({
         data: { projectId: project.id, uploaderId: ada.id, size: 10, status: "READY", width: 1200, height: 800, ...fields },
@@ -210,11 +212,56 @@ describe("cleanup", () => {
     }
 
     const log = { info: () => {}, warn: () => {} };
-    expect(await handlers.cleanupMedia({}, log)).toEqual({ deleted: 1 });
+    expect(await handlers.cleanupMedia({}, log)).toEqual({ deleted: 1, failedFiles: 0 });
 
     const left = await prisma.media.findMany({ where: { projectId: project.id }, select: { id: true } });
     expect(left.map((m) => m.id).sort()).toEqual([used.id, recent.id].sort());
     expect(mediaKeys(unused).filter((key) => s3.objects.has(key))).toEqual([]);
     expect(mediaKeys(used).every((key) => s3.objects.has(key))).toBe(true);
+  });
+
+  test("a file that can't be deleted doesn't hold up the others", async () => {
+    const old = () =>
+      prisma.media.create({
+        data: { projectId: project.id, uploaderId: ada.id, size: 10, width: 480, createdAt: new Date(Date.now() - 2 * day) },
+      });
+    const [stuck, fine] = [await old(), await old()];
+    for (const m of [stuck, fine]) {
+      for (const key of mediaKeys(m)) {
+        s3.objects.set(key, { body: Buffer.from("x"), contentType: "image/webp" });
+      }
+    }
+    s3.failDeletes.add(imageKey(stuck.id, 480));
+
+    expect(await handlers.cleanupMedia({}, { info: () => {}, warn: () => {} })).toEqual({ deleted: 2, failedFiles: 1 });
+    expect(mediaKeys(fine).filter((key) => s3.objects.has(key))).toEqual([]);
+    expect(await prisma.media.count({ where: { id: { in: [stuck.id, fine.id] } } })).toBe(0);
+  });
+
+  test("an upload claimed by the cleanup can't be used by a post saved afterwards", async () => {
+    const old = await prisma.media.create({
+      data: { projectId: project.id, uploaderId: ada.id, size: 10, status: "READY", width: 480, height: 320, createdAt: new Date(Date.now() - 2 * day) },
+    });
+    // The post's content was checked while the upload still existed…
+    const form = new FormData();
+    form.set("projectSlug", project.slug);
+    form.set("boardSlug", "feature-requests");
+    form.set("title", "Screenshot");
+    form.set(
+      "content",
+      JSON.stringify({ type: "doc", content: [{ type: "image", attrs: { mediaId: old.id, width: "100", align: "center", alt: "" } }] }),
+    );
+    const realFindMany = prisma.media.findMany.bind(prisma.media);
+    vi.spyOn(prisma.media, "findMany").mockImplementationOnce((async (args: never) => {
+      const found = await realFindMany(args);
+      // …then the cleanup claimed it before the post was saved.
+      await handlers.cleanupMedia({}, { info: () => {}, warn: () => {} });
+      return found;
+    }) as never);
+
+    expect(await createPost({}, form)).toEqual({
+      error: "An image is still uploading or can't be used here. Wait for it, or remove it.",
+    });
+    expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(0);
   });
 });

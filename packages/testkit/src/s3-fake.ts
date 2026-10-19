@@ -9,6 +9,8 @@ export type S3Fake = {
   env: Record<string, string>;
   /** Stored objects by key. */
   objects: Map<string, { body: Buffer; contentType: string }>;
+  /** Keys whose DELETE answers 500, to test failures. */
+  failDeletes: Set<string>;
   close(): Promise<void>;
 };
 
@@ -19,6 +21,7 @@ export type S3Fake = {
  */
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
+  const failDeletes = new Set<string>();
 
   const server = createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -56,6 +59,10 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
           res.end(req.method === "GET" ? object.body : undefined);
           return;
         case "DELETE":
+          if (failDeletes.has(key)) {
+            res.writeHead(500).end();
+            return;
+          }
           objects.delete(key);
           res.writeHead(204).end();
           return;
@@ -71,6 +78,7 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
     url,
     bucket,
     objects,
+    failDeletes,
     env: {
       MEDIA_S3_ENDPOINT: url,
       MEDIA_S3_BUCKET: bucket,

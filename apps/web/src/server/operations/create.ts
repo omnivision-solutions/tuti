@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { upsertProjectUser } from "@/lib/sso";
 
-import { attachMedia, displayDoc, readContent } from "../content";
+import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, postSummarySelect, projectSlug, summary } from "./read";
 
@@ -45,6 +45,18 @@ async function authorId(context: { actor: Actor; projectId: string }, input: z.i
   return upsertProjectUser(context.projectId, input.id, { name: input.name, email: input.email });
 }
 
+/** Saves content; an upload claimed by the cleanup meanwhile rolls the save back (see `attachMedia`). */
+async function saving<T>(save: () => Promise<T>): Promise<T> {
+  try {
+    return await save();
+  } catch (error) {
+    if (error instanceof MediaGoneError) {
+      throw new OperationError(409, "media_gone", error.message);
+    }
+    throw error;
+  }
+}
+
 export const createPost = defineOperation({
   name: "posts.create",
   summary: "Create a post, as the key's creator or on behalf of someone from your app (`author`)",
@@ -70,7 +82,8 @@ export const createPost = defineOperation({
     }
     const userId = await authorId(context, input.author);
 
-    const post = await prisma.$transaction(async (tx) => {
+    const post = await saving(() =>
+      prisma.$transaction(async (tx) => {
       // Locks the project row, so concurrent posts get distinct numbers.
       const { postCount: number } = await tx.project.update({
         where: { id: projectId },
@@ -78,7 +91,7 @@ export const createPost = defineOperation({
         select: { postCount: true },
       });
       // Authors automatically upvote their own post.
-      return tx.post.create({
+      const created = await tx.post.create({
         data: {
           projectId,
           boardId: board.id,
@@ -92,8 +105,10 @@ export const createPost = defineOperation({
         },
         select: { ...postSummarySelect, id: true },
       });
-    });
-    await attachMedia(text.mediaIds);
+      await attachMedia(tx, projectId, text.mediaIds);
+      return created;
+      }),
+    );
 
     // Background work must never block or fail the request.
     try {
@@ -128,13 +143,18 @@ export const createComment = defineOperation({
     }
     const userId = await authorId(context, input.author);
 
-    const [comment] = await prisma.$transaction([
-      prisma.comment.create({
-        data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc },
-        select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+    const comment = await saving(() =>
+      prisma.$transaction(async (tx) => {
+        const created = await tx.comment.create({
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc },
+          select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+        });
+        await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
+        // Comments can't have images yet (see the comment profile); this keeps them safe from cleanup once they can.
+        await attachMedia(tx, projectId, text.mediaIds);
+        return created;
       }),
-      prisma.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } }),
-    ]);
+    );
     const team = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
     return {
       id: comment.id,
