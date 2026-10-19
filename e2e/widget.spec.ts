@@ -63,6 +63,11 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
     });
   expect((await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"] })).ok).toBe(true);
   expect((await api("/changelog/1/publish", {})).ok).toBe(true);
+  // Ten quiet entries after it: the announcement still shows in What's new (it's what the dot is about).
+  for (let n = 2; n <= 11; n++) {
+    expect((await api("/changelog", { title: `Quiet fix ${n}`, body: "Small things." })).ok).toBe(true);
+    expect((await api(`/changelog/${n}/publish`, { announce: false })).ok).toBe(true);
+  }
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/b/feature-requests");

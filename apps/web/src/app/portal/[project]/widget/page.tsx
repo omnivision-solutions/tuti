@@ -80,14 +80,18 @@ async function Feedback({ slug, board }: { slug: string; board?: string }) {
 }
 
 async function WhatsNew({ slug }: { slug: string }) {
-  const [entries, announced] = await Promise.all([
+  const [recent, announced] = await Promise.all([
     publishedEntries(slug, { take: 10 }),
     prisma.changelogEntry.findFirst({
       where: { project: { slug }, announced: true, publishedAt: { not: null } },
       orderBy: { publishedAt: "desc" },
-      select: { publishedAt: true },
+      select: { number: true, publishedAt: true },
     }),
   ]);
+  // The latest announcement is always in the list (after newer quiet ones if need be): it's
+  // what the button's "new" dot is about, and opening this tab marks it seen.
+  const missing = announced && !recent.some((entry) => entry.number === announced.number);
+  const entries = missing ? [...recent, ...(await publishedEntries(slug, { number: announced.number, take: 1 }))] : recent;
   const seen = <WidgetSeen at={announced?.publishedAt?.toISOString() ?? null} />;
   if (entries.length === 0) {
     return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;

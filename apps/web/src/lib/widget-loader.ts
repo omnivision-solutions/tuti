@@ -61,7 +61,6 @@ export function widgetLoader(portalTemplate: string): string {
     position: "absolute", top: "-2px", right: "-2px", width: "12px", height: "12px", borderRadius: "999px",
     background: "oklch(0.705 0.187 47.6)", border: "2px solid #fff", display: "none"
   });
-  button.style.position = "fixed";
   button.appendChild(dot);
   function storage(fn) {
     try { return fn(window.localStorage); } catch (error) { return null; }
