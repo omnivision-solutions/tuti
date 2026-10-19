@@ -7,7 +7,7 @@ export default async function UnsubscribePage(props: PageProps<"/portal/[project
   const found = await findOptOut(slug, value);
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-4 py-12">
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4 py-12">
       {!found ? (
         <>
           <h1 className="font-heading text-2xl font-bold">This link doesn&apos;t work</h1>
