@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 
+import { keepingFields } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ export function CreateProjectForm({ portalExample }: { portalExample: string }) 
   const [state, action, pending] = useActionState<FormState, FormData>(createProject, {});
 
   return (
-    <form action={action}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="project-name">Name</FieldLabel>

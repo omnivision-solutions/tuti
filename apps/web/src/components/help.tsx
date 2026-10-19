@@ -1,7 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
-import { type FormEvent, startTransition, useActionState, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { RichEditor } from "@/components/rich-editor";
@@ -22,18 +22,9 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
 import { deleteArticle, deleteCollection, publishArticle, saveArticle, saveCollection, unpublishArticle } from "@/server/help";
-
-/**
- * Runs a form's action without React's reset of the form afterwards (which `<form action>` does
- * even when the save is refused), so a rejected save keeps what was typed.
- */
-const keepingFields = (action: (formData: FormData) => void) => (event: FormEvent<HTMLFormElement>) => {
-  event.preventDefault();
-  const formData = new FormData(event.currentTarget);
-  startTransition(() => action(formData));
-};
 
 type Article = { slug: string; title: string; content: Doc; collection: string | null };
 type CollectionOption = { slug: string; name: string };
@@ -60,7 +51,7 @@ export function ArticleForm({
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
 
   return (
-    <form onSubmit={keepingFields(action)}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="article-title">Title</FieldLabel>
@@ -204,7 +195,7 @@ export function CollectionDialog({
         {collection ? "Edit" : "New collection"}
       </DialogTrigger>
       <DialogContent>
-        <form onSubmit={keepingFields(action)}>
+        <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>{collection ? "Edit collection" : "New collection"}</DialogTitle>
           </DialogHeader>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -72,7 +73,7 @@ export function NewPostForm({
   return (
     <Card>
       <CardContent>
-        <form ref={formRef} action={action}>
+        <form ref={formRef} {...keepingFields(action)}>
           <input type="hidden" name="projectSlug" value={projectSlug} />
           <input type="hidden" name="boardSlug" value={boardSlug} />
           <FieldGroup>
