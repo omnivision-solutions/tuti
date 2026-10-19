@@ -13,4 +13,6 @@ export const serverEnv = {
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
   OPENAI_API_KEY: "",
   HATCHET_CLIENT_TOKEN: "",
+  SMTP_USERNAME: "",
+  SMTP_PASSWORD: "",
 };

@@ -4,17 +4,19 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
+import { latestEmailTo, linkIn } from "./mail";
 
 /** A new browser session that signed up at `baseUrl` (the app or a portal). */
-async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page> {
+async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page & { email: string }> {
   const page = await (await browser.newContext({ baseURL: baseUrl })).newPage();
+  const email = `e2e-${randomUUID()}@example.com`;
   await page.goto("/sign-up");
   await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Sign up" }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
-  return page;
+  return Object.assign(page, { email });
 }
 
 async function submitFeedback(page: Page, title: string) {
@@ -35,6 +37,18 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("button", { name: "Create project" }).click();
   await team.waitForURL(`**/app/${slug}`);
   await checkpoint(team, "team-new-project");
+
+  // Until they verify their email, the dashboard asks them to; the emailed link does it.
+  const banner = team.getByRole("alert").filter({ hasText: "Verify your email" });
+  await expect(banner).toContainText(team.email);
+  await team.getByRole("button", { name: "Resend email" }).click();
+  await expect(team.getByRole("button", { name: "Sent" })).toBeDisabled();
+  await checkpoint(team, "team-verify-email-banner");
+  const email = await latestEmailTo(team.email);
+  expect(email.subject).toBe("Verify your email for Tuti");
+  await team.goto(linkIn(email, `${APP_URL}/api/auth/verify-email`));
+  await team.waitForURL(`**/app/${slug}`); // /app opens the last project
+  await expect(banner).toHaveCount(0);
 
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");

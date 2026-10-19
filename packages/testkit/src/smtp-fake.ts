@@ -15,8 +15,11 @@ export type SmtpFake = {
   close(): Promise<void>;
 };
 
-/** A local SMTP server that keeps what it receives, for tests (SMTP_HOST / SMTP_PORT). */
-export async function startSmtpFake(): Promise<SmtpFake> {
+/**
+ * A local SMTP server that keeps what it receives, for tests (SMTP_HOST / SMTP_PORT).
+ * `onEmail` sees each email as it arrives (e.g. to share it with other processes).
+ */
+export async function startSmtpFake({ onEmail }: { onEmail?: (email: CapturedEmail) => void } = {}): Promise<SmtpFake> {
   const emails: CapturedEmail[] = [];
   const server = new SMTPServer({
     authOptional: true,
@@ -27,13 +30,15 @@ export async function startSmtpFake(): Promise<SmtpFake> {
         const to = (Array.isArray(mail.to) ? mail.to : mail.to ? [mail.to] : []).flatMap((a) =>
           a.value.map((v) => v.address ?? ""),
         );
-        emails.push({
+        const email = {
           from: mail.from?.text ?? "",
           to,
           subject: mail.subject ?? "",
           text: mail.text ?? "",
           html: typeof mail.html === "string" ? mail.html : "",
-        });
+        };
+        emails.push(email);
+        onEmail?.(email);
         callback();
       } catch (error) {
         callback(error as Error);
