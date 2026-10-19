@@ -1,10 +1,14 @@
+import { RichText } from "@tuti/content/react";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
+import { displayDoc } from "@/server/content";
 
 export type CommentView = {
   id: string;
   body: string;
+  content: unknown;
   createdAt: Date;
   author: { id: string; name: string; image: string | null };
 };
@@ -31,7 +35,7 @@ export function CommentList({ comments, teamUserIds }: { comments: CommentView[]
                 {timeAgo(comment.createdAt)}
               </time>
             </div>
-            <p className="text-sm whitespace-pre-wrap break-words">{comment.body}</p>
+            <RichText doc={displayDoc(comment)} className="rich-text text-sm break-words" />
           </div>
         </li>
       ))}

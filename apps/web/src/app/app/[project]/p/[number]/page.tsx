@@ -18,6 +18,8 @@ import { timeAgo } from "@/lib/format";
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
+import { RichText } from "@tuti/content/react";
+import { displayDoc } from "@/server/content";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -38,7 +40,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         duplicateOf: { select: { number: true, title: true } },
         comments: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, body: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
+          select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
         },
       },
     }),
@@ -123,7 +125,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         </Card>
       )}
 
-      {post.body && <p className="whitespace-pre-wrap break-words">{post.body}</p>}
+      {post.body && <RichText doc={displayDoc(post)} className="rich-text break-words" />}
 
       {suggestions.length > 0 && (
         <DuplicateSuggestions
