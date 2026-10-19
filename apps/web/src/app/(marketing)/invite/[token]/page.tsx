@@ -61,8 +61,8 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
         )}
         {otherAccount ? (
           <p>
-            You&apos;re signed in as <span className="text-foreground">{session.user.email}</span>. Sign in with{" "}
-            {invitedEmail} to accept it.
+            You&apos;re signed in as <span className="text-foreground">{session.user.email}</span>. Sign in with the
+            invited address to accept it.
           </p>
         ) : session ? (
           <p>
@@ -84,7 +84,7 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
           </>
         ) : otherAccount ? (
           <Link href={`/sign-in?${authQuery(invitedEmail)}`} className={buttonVariants()}>
-            Sign in as {invitedEmail}
+            Use another account
           </Link>
         ) : alreadyMember ? (
           <Link href={`/app/${invitation.projectSlug}`} className={buttonVariants()}>

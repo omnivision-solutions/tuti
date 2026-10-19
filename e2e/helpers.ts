@@ -1,0 +1,40 @@
+import { randomInt, randomUUID } from "node:crypto";
+
+import type { Browser, Page } from "@playwright/test";
+
+export type TestPage = Page & { email: string };
+
+/**
+ * A new browser session for one person. Each gets its own client IP (Better Auth
+ * reads a single-address X-Forwarded-For), so journeys running in parallel don't
+ * share its per-IP sign-up limit.
+ */
+export async function newPerson(browser: Browser, baseUrl: string): Promise<Page> {
+  const ip = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
+  const context = await browser.newContext({ baseURL: baseUrl, extraHTTPHeaders: { "x-forwarded-for": ip } });
+  return context.newPage();
+}
+
+/** A new browser session that signed up at `baseUrl` (the app or a portal). */
+export async function signUp(
+  browser: Browser,
+  baseUrl: string,
+  name: string,
+  email = `e2e-${randomUUID()}@example.com`,
+): Promise<TestPage> {
+  const page = await newPerson(browser, baseUrl);
+  await page.goto("/sign-up");
+  await fillSignUp(page, name, email);
+  await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
+  return Object.assign(page, { email });
+}
+
+/** Fills and submits the sign-up form on the current page (the email may be prefilled). */
+export async function fillSignUp(page: Page, name: string, email?: string) {
+  await page.getByLabel("Name").fill(name);
+  if (email) {
+    await page.getByLabel("Email").fill(email);
+  }
+  await page.getByLabel("Password").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Sign up" }).click();
+}

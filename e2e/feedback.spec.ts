@@ -1,23 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { type Browser, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
+import { signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
-
-/** A new browser session that signed up at `baseUrl` (the app or a portal). */
-async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page & { email: string }> {
-  const page = await (await browser.newContext({ baseURL: baseUrl })).newPage();
-  const email = `e2e-${randomUUID()}@example.com`;
-  await page.goto("/sign-up");
-  await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("correct horse battery staple");
-  await page.getByRole("button", { name: "Sign up" }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
-  return Object.assign(page, { email });
-}
 
 async function submitFeedback(page: Page, title: string) {
   await page.getByLabel("Title").fill(title);
