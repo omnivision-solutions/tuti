@@ -22,6 +22,7 @@ import * as boards from "./boards";
 import * as changelog from "./changelog";
 import * as github from "./github";
 import * as help from "./help";
+import * as helpReaders from "./help-readers";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -49,6 +50,7 @@ const modules = {
   boards,
   github,
   help,
+  "help-readers": helpReaders,
   invitations,
   "manage-posts": managePosts,
   media,
@@ -141,6 +143,11 @@ const matrix: Matrix = {
     deleteArticle: { allowed: "MEMBER", call: (slug) => help.deleteArticle(slug, "matrix-article") },
     saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
+  },
+  // Anyone may answer under a published article and count its view, signed in or not.
+  "help-readers": {
+    answerArticle: { allowed: "public", call: (slug) => helpReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
+    countArticleView: { allowed: "public", call: (slug) => helpReaders.countArticleView(slug, "matrix-article") },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },

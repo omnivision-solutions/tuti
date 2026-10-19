@@ -144,6 +144,7 @@ model Project {
   articles             Article[]
   articleChunks        ArticleChunk[]
   collections          Collection[]
+  helpSearches         HelpSearch[]
 
   @@map("project")
 }
@@ -806,10 +807,59 @@ model Article {
   project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collection Collection?    @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   chunks     ArticleChunk[]
+  feedback   ArticleFeedback[]
+  viewDays   ArticleViewDay[]
 
   @@unique([projectId, slug])
   @@index([collectionId])
   @@map("article")
+}
+
+/// A reader's answer to "Was this helpful?" under a published article: one per reader
+/// and article, the latest answer wins. No IP addresses or user agents.
+model ArticleFeedback {
+  articleId String
+  /// The signed-in user's id (or the user an API key answered for), or an anonymous
+  /// reader's first-party cookie id (a random UUID).
+  readerId  String
+  helpful   Boolean
+  /// What was missing; only with a "No".
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, readerId])
+  @@map("article_feedback")
+}
+
+/// How often an article's portal page was viewed on a day (UTC): a counter per article
+/// and day, not a row per view.
+model ArticleViewDay {
+  articleId String
+  day       DateTime @db.Date
+  views     Int
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, day])
+  @@map("article_view_day")
+}
+
+/// A help center search: its normalized query and how many articles it found (0 is a
+/// failed search). Nothing about who searched.
+model HelpSearch {
+  id        String   @id @default(cuid())
+  projectId String
+  query     String
+  results   Int
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("help_search")
 }
 
 /// A section of a published article (a heading and the text up to the next one, capped

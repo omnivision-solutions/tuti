@@ -30,6 +30,7 @@ import {
   updateArticle,
   updateCollection,
 } from "./help";
+import { answerArticle, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -53,6 +54,8 @@ const all = [
   listArticles,
   getArticle,
   searchArticles,
+  answerArticle,
+  getHelpInsights,
   createArticle,
   updateArticle,
   publishArticle,

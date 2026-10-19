@@ -118,6 +118,27 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await visitor.getByRole("link", { name: "All articles" }).click();
   await expect(visitor.getByRole("region", { name: "Getting started" })).toBeVisible();
 
+  // The visitor (signed out) says the article didn't help, and what was missing.
+  await visitor.getByRole("link", { name: "Inviting your team" }).click();
+  const helpful = visitor.getByRole("region", { name: "Was this helpful?" });
+  await helpful.getByRole("button", { name: "No" }).click();
+  await helpful.getByLabel("What were you looking for? (optional)").fill("How do I invite by email?");
+  await checkpoint(visitor, "portal-help-article-feedback");
+  await helpful.getByRole("button", { name: "Send" }).click();
+  await expect(helpful.getByText("Thanks for letting us know.")).toBeVisible();
+
+  // The team sees it in the help center's insights, with the article's views and the search that found nothing.
+  await team.getByRole("link", { name: "Help center" }).first().click();
+  await team.waitForURL(`**/app/${slug}/help`);
+  await team.getByRole("link", { name: "Insights" }).click();
+  await team.waitForURL(`**/app/${slug}/help/insights`);
+  await expect(team.getByText("The last 30 days: 2 article views, 2 searches, 1 failed search.")).toBeVisible();
+  await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
+  await expect(team.getByText("How do I invite by email?")).toBeVisible();
+  await expect(team.getByText("refunds", { exact: true })).toBeVisible();
+  await expect(team.getByText("1 search", { exact: true })).toBeVisible();
+  await checkpoint(team, "team-help-insights");
+
   // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.getByRole("link", { name: "Help center" }).first().click();
   await team.waitForURL(`**/app/${slug}/help`);
