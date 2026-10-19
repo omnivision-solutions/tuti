@@ -288,6 +288,8 @@ model PostLink {
   @@unique([postId, url])
   @@index([projectId, repo, number])
   @@map("post_link")
+}
+
 /// An endpoint that gets a project's events (signed, retried; see packages/jobs/src/webhooks.ts).
 model Webhook {
   id          String            @id @default(cuid())
