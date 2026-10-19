@@ -77,8 +77,16 @@ export const toApiStatus = (status: PostStatus) => status.toLowerCase();
 
 /** The post's public URL on its project's portal (PORTAL_URL_TEMPLATE, e.g. https://{project}.tuti.so). */
 export function portalPostUrl(projectSlug: string, post: { title: string; number: number }) {
-  const portal = (process.env.PORTAL_URL_TEMPLATE ?? "").replace("{project}", projectSlug).replace(/\/$/, "");
-  return `${portal}${postPath(post)}`;
+  return `${portalOrigin(projectSlug)}${postPath(post)}`;
+}
+
+/** A project's portal origin from PORTAL_URL_TEMPLATE (required, like in the web app). */
+export function portalOrigin(projectSlug: string): string {
+  const template = process.env.PORTAL_URL_TEMPLATE;
+  if (!template?.includes("{project}")) {
+    throw new Error("PORTAL_URL_TEMPLATE must be set and contain {project}");
+  }
+  return new URL(template.replace("{project}", projectSlug)).origin;
 }
 
 export const postSummary = (post: PostRow, projectSlug: string) => ({

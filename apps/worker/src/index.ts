@@ -3,7 +3,7 @@ import { assertEnv, jobs, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
-assertEnv(["DATABASE_URL"]);
+assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
 
 const hatchet = getHatchet();
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {

@@ -1,21 +1,23 @@
 import { prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
-import { emitEvent, postSummary, postSummarySelect, toApiStatus } from "./events";
+import { emitEvent, portalOrigin, postSummary, postSummarySelect, toApiStatus } from "./events";
 import type { JobLogger, JobResult } from "./index";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Post numbers a pull request mentions: `tuti#12` (as its own word), or a post's
- * URL on this project's portal (https://<project>.<host>/p/<title>-12).
+ * URL on this project's portal: exactly its host (from PORTAL_URL_TEMPLATE), so
+ * look-alikes like <project>.github.io don't count.
  */
 export function referencedPosts(text: string, projectSlug: string): number[] {
   const numbers = new Set<number>();
   for (const match of text.matchAll(/(?<![\w#/-])tuti#(\d{1,9})(?!\w)/gi)) {
     numbers.add(Number(match[1]));
   }
-  const portal = new RegExp(`https?://${escapeRegExp(projectSlug)}\\.[^/\\s)>\\]]+/p/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w-])`, "gi");
+  const host = new URL(portalOrigin(projectSlug)).host;
+  const portal = new RegExp(`https?://${escapeRegExp(host)}/p/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w./-])`, "gi");
   for (const match of text.matchAll(portal)) {
     numbers.add(Number(match[1]));
   }
@@ -65,11 +67,16 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
       },
     });
     if ((input.action === "opened" || input.action === "reopened") && NOT_STARTED.has(post.status)) {
-      const updated = await prisma.post.update({
-        where: { id: post.id },
+      // Only from the status we read: the team may have changed it meanwhile, or a
+      // redelivery of this event may have got here first.
+      const { count } = await prisma.post.updateMany({
+        where: { id: post.id, status: post.status },
         data: { status: "IN_PROGRESS" },
-        select: postSummarySelect,
       });
+      if (count === 0) {
+        continue;
+      }
+      const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
       await emitEvent(projectId, "post.status_changed", {
         post: postSummary(updated, project.slug),
         previousStatus: toApiStatus(post.status),
