@@ -31,7 +31,7 @@ This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It revi
 ## Merge when all of these hold
 
 - Every required check passed on the current head commit.
-- CodeRabbit's status on that commit is a success, or it has said it skipped the commit. Pending, failed or missing means not reviewed yet.
+- CodeRabbit's status on that commit is a success, or it has said it skipped the commit. Pending, failed or missing means not reviewed yet: check that the status is there, not only that nothing failed (a check that filters for failures passes when the status is missing).
 - Every review comment has a reply, the GraphQL query above shows no unresolved thread, and no review is "changes requested".
 - The PR description still matches what the PR does.
 

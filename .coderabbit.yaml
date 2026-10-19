@@ -13,6 +13,9 @@ reviews:
   auto_review:
     # Review every push: pr-watch waits for a review of the PR's latest commit.
     auto_pause_after_reviewed_commits: 0
+    # Stacked PRs target another PR's branch, not main; review those too.
+    base_branches:
+      - ".*"
   path_instructions:
     - path: "apps/web/src/server/**"
       instructions: >-
