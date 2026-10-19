@@ -144,7 +144,8 @@ export default function ApiDocsPage() {
 
 // body: the raw request body as a string, before parsing it.
 function verify(body, header, secret) {
-  const { t, v1 } = Object.fromEntries(header.split(",").map((part) => part.split("=")));
+  const { t, v1 } = Object.fromEntries((header ?? "").split(",").map((part) => part.split("=")));
+  if (!/^\\d+$/.test(t ?? "") || !/^[0-9a-f]{64}$/.test(v1 ?? "")) return false; // missing or malformed
   if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false; // older than 5 minutes
   const expected = createHmac("sha256", secret).update(\`\${t}.\${body}\`).digest("hex");
   return v1.length === expected.length && timingSafeEqual(Buffer.from(v1), Buffer.from(expected));
