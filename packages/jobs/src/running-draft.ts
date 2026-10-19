@@ -29,11 +29,16 @@ export async function lockProject(tx: Prisma.TransactionClient, projectId: strin
   return rows.length === 1;
 }
 
-/** Adds a merged pull request to the running draft (once, however often GitHub delivers it). Returns whether it was added. */
+/** Adds a merged pull request to the running draft (once per project, however often GitHub delivers it). Returns whether it was added. */
 export async function addToRunningDraft(projectId: string, pr: PullRequest): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     // One at a time (see lockProject): the draft found here is still the running one when it's written.
     if (!(await lockProject(tx, projectId))) {
+      return false;
+    }
+    // Already in an entry (this draft or an earlier, closed one): a redelivery adds it nowhere.
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
+    if (known) {
       return false;
     }
     const entry = (await tx.changelogEntry.findFirst({ where: { projectId, collecting: true }, select: { id: true } })) ?? (await newDraft(tx, projectId));

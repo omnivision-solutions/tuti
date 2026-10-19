@@ -641,12 +641,13 @@ describe("shipping", () => {
       };
       expect(content.content).toEqual([expect.objectContaining({ type: "bulletList", content: [expect.anything(), expect.anything()] })]);
 
-      // The release names and closes it; the next merge starts a new one.
+      // The release names and closes it; the next merge starts a new one, and a late redelivery of #40 goes nowhere.
       await deliver(published("v2.0", "2026-06-01T00:00:00Z"));
       await deliver(merged(43, "Exports"));
-      expect((await drafts()).map(({ number, title, collecting }) => ({ number, title, collecting }))).toEqual([
-        { number: 1, title: "Release v2.0", collecting: false },
-        { number: 2, title: "Next release", collecting: true },
+      await deliver(merged(40, "Dark mode"));
+      expect((await drafts()).map(({ number, title, collecting, body }) => ({ number, title, collecting, body }))).toEqual([
+        { number: 1, title: "Release v2.0", collecting: false, body: `Dark mode (${repo}#40)\nFaster search (${repo}#42)` },
+        { number: 2, title: "Next release", collecting: true, body: `Exports (${repo}#43)` },
       ]);
     });
 
