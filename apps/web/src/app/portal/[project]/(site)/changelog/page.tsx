@@ -6,15 +6,19 @@ import { ChangelogEntryView } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
+import { portalUrl } from "@/lib/hosts";
 import { Separator } from "@/components/ui/separator";
 import { publishedEntries } from "@/server/changelog-queries";
 
 const PAGE_SIZE = 20;
 
-/** Feed readers find the RSS feed from the page. */
-export const metadata = {
-  alternates: { types: { "application/rss+xml": [{ url: "/changelog/rss.xml", title: "Changelog" }] } },
-};
+/** Feed readers find the RSS feed from the page: a full URL on the project's portal. */
+export async function generateMetadata(props: PageProps<"/portal/[project]/changelog">) {
+  const { project: slug } = await props.params;
+  return {
+    alternates: { types: { "application/rss+xml": [{ url: `${portalUrl(slug)}/changelog/rss.xml`, title: "Changelog" }] } },
+  };
+}
 
 /** What shipped, newest first, a page at a time (`?page=2` for older ones). */
 export default async function ChangelogPage(props: PageProps<"/portal/[project]/changelog">) {

@@ -60,7 +60,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(entry).toContainText("Switch themes from your profile menu.");
   await checkpoint(ada, "portal-changelog");
   // Feed readers find it too.
-  await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", /\/changelog\/rss\.xml$/);
+  await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
   await entry.getByRole("link", { name: "Dark mode", exact: true }).click();

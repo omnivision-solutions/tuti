@@ -4,8 +4,13 @@ import { prisma } from "@tuti/db";
 import { portalUrl } from "@/lib/hosts";
 import { publishedEntries } from "@/server/changelog-queries";
 
+/** Characters XML 1.0 forbids (most control characters): one would make the whole feed invalid. */
+const FORBIDDEN = /[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+
 const xml = (text: string) =>
-  text.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!);
+  text
+    .replace(FORBIDDEN, "")
+    .replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!);
 
 /** The portal's changelog as an RSS 2.0 feed: the latest published entries. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/changelog/rss.xml">) {

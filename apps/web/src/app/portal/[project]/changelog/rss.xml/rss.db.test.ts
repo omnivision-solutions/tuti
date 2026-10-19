@@ -10,7 +10,7 @@ test("the changelog feed lists published entries only, newest first, with text t
   const project = await createProject(owner);
   const entry = (number: number, title: string, publishedAt: Date | null, extra: object = {}) =>
     prisma.changelogEntry.create({ data: { projectId: project.id, number, title, body: "", publishedAt, ...extra } });
-  await entry(1, "Older", new Date("2026-01-01T10:00:00Z"));
+  await entry(1, "Old\u000Ber", new Date("2026-01-01T10:00:00Z")); // a control character XML forbids
   await entry(2, "Draft only", null);
   await entry(3, "Tags & <things>", new Date("2026-02-01T10:00:00Z"), {
     tags: ["NEW", "BREAKING"],
