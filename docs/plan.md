@@ -187,7 +187,7 @@ so every later feature is API-first. (Asked for 2026-10-19.)
 - [ ] Project API keys: created in settings, scoped read or read + write, shown once, stored hashed, revocable, rate-limited per key
 - [ ] REST API `/api/v1/…` generated from the operations, with an OpenAPI spec and a docs page; operations for everything built so far: projects (read), boards, posts, votes, comments, statuses, merging, duplicate suggestions, team (read), users from SSO, media
 - [ ] MCP server (`/mcp`, Streamable HTTP, official SDK): every operation is a tool (search and triage feedback, change status, merge duplicates; later draft changelogs, search help articles); API key as bearer token, OAuth later (for Claude.ai connectors)
-- [ ] Signed webhooks with retries (post created, status changed, changelog published, article updated) (from the Ferndesk review, 2026-10-19)
+- [ ] Signed webhooks with retries (post created, status changed, changelog published, article updated); each event has a stable id, sent on every retry (`Tuti-Event-Id` header and in the body), so receivers can ignore one they've already handled; documented as at-least-once delivery (from the Ferndesk review, 2026-10-19)
 - [ ] Authorization matrix covers every operation on every surface (UI, REST, MCP), checked by the compiler like today's server actions
 - [ ] From then on (AGENTS.md rule): every feature PR adds its operations, so it ships in the UI, REST and MCP together
 - [ ] Tests: operations (database tests), OpenAPI matches the routes, MCP tools through the SDK's in-memory client, a journey that creates a key in the UI and calls the API with it
