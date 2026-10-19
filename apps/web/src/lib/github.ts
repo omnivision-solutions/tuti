@@ -15,14 +15,23 @@ export type GithubConfig = {
 
 export function githubConfig(): GithubConfig | null {
   const env = process.env;
-  if (!env.GITHUB_APP_SLUG || !env.GITHUB_APP_CLIENT_ID || !env.GITHUB_APP_CLIENT_SECRET || !env.GITHUB_WEBHOOK_SECRET) {
+  // All or nothing: connecting without the App's ID and key would fail later, at the first release.
+  const required = [
+    env.GITHUB_APP_SLUG,
+    env.GITHUB_APP_CLIENT_ID,
+    env.GITHUB_APP_CLIENT_SECRET,
+    env.GITHUB_WEBHOOK_SECRET,
+    env.GITHUB_APP_ID,
+    env.GITHUB_APP_PRIVATE_KEY,
+  ];
+  if (required.some((value) => !value)) {
     return null;
   }
   return {
-    appSlug: env.GITHUB_APP_SLUG,
-    clientId: env.GITHUB_APP_CLIENT_ID,
-    clientSecret: env.GITHUB_APP_CLIENT_SECRET,
-    webhookSecret: env.GITHUB_WEBHOOK_SECRET,
+    appSlug: env.GITHUB_APP_SLUG!,
+    clientId: env.GITHUB_APP_CLIENT_ID!,
+    clientSecret: env.GITHUB_APP_CLIENT_SECRET!,
+    webhookSecret: env.GITHUB_WEBHOOK_SECRET!,
     url: (env.GITHUB_URL || "https://github.com").replace(/\/$/, ""),
     apiUrl: (env.GITHUB_API_URL || "https://api.github.com").replace(/\/$/, ""),
   };

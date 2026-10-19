@@ -133,7 +133,10 @@ describe("webhook", () => {
     expect(await prisma.githubInstallation.count({ where: { projectId: project.id } })).toBe(0);
   });
 
-  test("without the App configured, the endpoints don't exist", async () => {
+  test("without the App fully configured, the endpoints don't exist", async () => {
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", ""); // everything else is set
+    expect(await deliver(github.webhook("ping", {}))).toBe(404);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     vi.stubEnv("GITHUB_WEBHOOK_SECRET", "");
     expect(await deliver(github.webhook("ping", {}))).toBe(404);
     for (const route of [install, setup, callback]) {
