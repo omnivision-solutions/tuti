@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         body: pr.body ?? "",
         url: pr.html_url,
         merged: pr.merged ?? false,
+        labels: (pr.labels ?? []).map((label) => label.name),
       });
     } catch (error) {
       log.error("Handling a GitHub pull request failed", { error, repo: repository.full_name, number: pr.number });
@@ -74,6 +75,13 @@ type GithubReleaseEvent = {
 const PR_ACTIONS = new Set(["opened", "reopened", "edited", "synchronize", "closed"]);
 
 type GithubPullRequestEvent = {
-  pull_request: { number: number; title: string; body: string | null; html_url: string; merged?: boolean };
+  pull_request: {
+    number: number;
+    title: string;
+    body: string | null;
+    html_url: string;
+    merged?: boolean;
+    labels?: { name: string }[];
+  };
   repository: { full_name: string };
 };

@@ -687,12 +687,16 @@ model ChangelogEntry {
   tags        ChangelogTag[]
   /// Null while it's a draft.
   publishedAt DateTime?
+  /// The running draft: merged pull requests are added to it until a release (or
+  /// publishing it) closes it. At most one per project (a partial unique index).
+  collecting  Boolean        @default(false)
   createdById String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
 
-  project Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  posts   ChangelogEntryPost[]
+  project      Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  posts        ChangelogEntryPost[]
+  pullRequests ChangelogEntryPullRequest[]
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
@@ -710,4 +714,20 @@ model ChangelogEntryPost {
   @@id([entryId, postId])
   @@index([postId])
   @@map("changelog_entry_post")
+}
+
+/// A merged pull request added to a changelog entry's running draft (once each).
+model ChangelogEntryPullRequest {
+  entryId   String
+  url       String
+  /// owner/name
+  repo      String
+  number    Int
+  title     String
+  createdAt DateTime @default(now())
+
+  entry ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, url])
+  @@map("changelog_entry_pull_request")
 }

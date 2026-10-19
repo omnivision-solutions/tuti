@@ -8,6 +8,7 @@ import { signValue, verifyValue } from "@/lib/github";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
+import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 
 import { GET as callback } from "./callback/route";
@@ -590,5 +591,109 @@ describe("shipping", () => {
     // Releases don't complete anything for these projects.
     await deliver(published("v9", "2026-05-01T00:00:00Z"));
     expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
+  });
+
+  describe("the changelog's running draft", () => {
+    const merged = (number: number, title: string, labels: string[] = []) =>
+      github.webhook("pull_request", {
+        action: "closed",
+        installation: { id: installationId },
+        repository: { full_name: repo },
+        pull_request: {
+          number,
+          title,
+          body: "",
+          html_url: `https://github.com/${repo}/pull/${number}`,
+          merged: true,
+          labels: labels.map((name) => ({ name })),
+        },
+      });
+    const drafts = async () =>
+      (
+        await prisma.changelogEntry.findMany({
+          where: { projectId: project.id },
+          orderBy: { number: "asc" },
+          select: { number: true, title: true, body: true, collecting: true, publishedAt: true, posts: { select: { post: { select: { number: true } } } } },
+        })
+      ).map((e) => ({ ...e, posts: e.posts.map(({ post }) => post.number) }));
+
+    test("merged pull requests gather in one draft, once each; internal work stays out; a release closes it", async () => {
+      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      github.repo(repo, { releases: [], pulls: {} });
+      await linkedPosts([{ status: "IN_PROGRESS", pull: 40 }]);
+
+      await deliver(merged(40, "Dark mode"));
+      await deliver(merged(40, "Dark mode")); // redelivered
+      await deliver(merged(41, "Bump eslint", ["deps"]));
+      await deliver(merged(42, "Faster search"));
+      expect(await drafts()).toEqual([
+        {
+          number: 1,
+          title: "Next release",
+          body: `Dark mode (${repo}#40)\nFaster search (${repo}#42)`,
+          collecting: true,
+          publishedAt: null,
+          posts: [1],
+        },
+      ]);
+      const content = (await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).content as {
+        content: { type: string; content: unknown[] }[];
+      };
+      expect(content.content).toEqual([expect.objectContaining({ type: "bulletList", content: [expect.anything(), expect.anything()] })]);
+
+      // The release names and closes it; the next merge starts a new one, and a late redelivery of #40 goes nowhere.
+      await deliver(published("v2.0", "2026-06-01T00:00:00Z"));
+      await deliver(merged(43, "Exports"));
+      await deliver(merged(40, "Dark mode"));
+      expect((await drafts()).map(({ number, title, collecting, body }) => ({ number, title, collecting, body }))).toEqual([
+        { number: 1, title: "Release v2.0", collecting: false, body: `Dark mode (${repo}#40)\nFaster search (${repo}#42)` },
+        { number: 2, title: "Next release", collecting: true, body: `Exports (${repo}#43)` },
+      ]);
+    });
+
+    test("merges arriving at once still make one draft with all of them", async () => {
+      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      github.repo(repo, { releases: [], pulls: {} });
+      await Promise.all([60, 61, 62, 63].map((n) => deliver(merged(n, `PR ${n}`))));
+      const all = await drafts();
+      expect(all).toHaveLength(1);
+      expect(all[0]!.body.split("\n").sort()).toEqual([60, 61, 62, 63].map((n) => `PR ${n} (${repo}#${n})`));
+    });
+
+    test("merges and releases arriving together: each PR lands once, at most one draft collects, one release names it", async () => {
+      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      github.repo(repo, { releases: [], pulls: {} });
+      await deliver(merged(70, "First"));
+      await Promise.all([
+        deliver(published("v5.0", "2026-08-01T00:00:00Z")),
+        deliver(published("v5.1", "2026-08-02T00:00:00Z")),
+        deliver(merged(71, "Second")),
+        deliver(merged(72, "Third")),
+      ]);
+      const all = await drafts();
+      expect(all.filter((d) => d.collecting).length).toBeLessThanOrEqual(1);
+      expect(["Release v5.0", "Release v5.1"]).toContain(all[0]!.title);
+      const lines = all.flatMap((d) => d.body.split("\n")).filter(Boolean).sort();
+      expect(lines).toEqual([`First (${repo}#70)`, `Second (${repo}#71)`, `Third (${repo}#72)`]);
+    });
+
+    test("a draft the team renamed keeps its name; one published by hand stops collecting", async () => {
+      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      github.repo(repo, { releases: [], pulls: {} });
+      await deliver(merged(50, "Dark mode"));
+      await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { title: "Themes!" } });
+      await deliver(published("v3.0", "2026-07-01T00:00:00Z"));
+      expect((await drafts())[0]).toMatchObject({ title: "Themes!", collecting: false });
+
+      await deliver(merged(51, "Search"));
+      const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+      await call(publishChangelogEntry, team, { number: 2 });
+      await deliver(merged(52, "Exports"));
+      expect((await drafts()).map(({ number, collecting, publishedAt }) => ({ number, collecting, published: publishedAt !== null }))).toEqual([
+        { number: 1, collecting: false, published: false },
+        { number: 2, collecting: false, published: true },
+        { number: 3, collecting: true, published: false },
+      ]);
+    });
   });
 });

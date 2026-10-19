@@ -9,6 +9,7 @@ import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
+export { lockProject } from "./running-draft";
 
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";

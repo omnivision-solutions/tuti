@@ -22,7 +22,15 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
   const entries = await prisma.changelogEntry.findMany({
     where: { projectId: membership.project.id },
     orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
-    select: { number: true, title: true, tags: true, publishedAt: true, updatedAt: true, _count: { select: { posts: true } } },
+    select: {
+      number: true,
+      title: true,
+      tags: true,
+      publishedAt: true,
+      collecting: true,
+      updatedAt: true,
+      _count: { select: { posts: true, pullRequests: true } },
+    },
   });
   const newEntry = (
     <Link href={`/app/${slug}/changelog/new`} className={buttonVariants()}>
@@ -32,7 +40,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
 
   return (
     <>
-      <PageHeader title="Changelog" description="What shipped, for the people who asked. Published entries show on your portal." actions={newEntry} />
+      <PageHeader
+        title="Changelog"
+        description="What shipped, for the people who asked. Published entries show on your portal. With GitHub connected, merged pull requests gather in a draft until the next release."
+        actions={newEntry}
+      />
       {entries.length === 0 ? (
         <EmptyState title="No entries yet" description="Write what shipped and pick the posts it completes." />
       ) : (
@@ -47,11 +59,14 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                       {entry.title}
                     </Link>
                   }
-                  badges={entry.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary">
-                      {TAG_LABELS[tag.toLowerCase() as TagName]}
-                    </Badge>
-                  ))}
+                  badges={[
+                    ...(entry.collecting ? [<Badge key="collecting">Collecting merged PRs</Badge>] : []),
+                    ...entry.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary">
+                        {TAG_LABELS[tag.toLowerCase() as TagName]}
+                      </Badge>
+                    )),
+                  ]}
                   meta={`${entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : "Draft"} · ${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`}
                 />
               ))}

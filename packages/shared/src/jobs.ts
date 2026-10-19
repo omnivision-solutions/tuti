@@ -57,6 +57,8 @@ export const jobs = {
       body: z.string(),
       url: z.string(),
       merged: z.boolean().default(false),
+      /** Label names; some keep a merged pull request out of the changelog's running draft. */
+      labels: z.array(z.string()).default([]),
     }),
   },
   /** A release was published on a connected repo: the posts whose pull requests it ships become Completed. */

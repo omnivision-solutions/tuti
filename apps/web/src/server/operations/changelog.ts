@@ -1,5 +1,5 @@
 import { type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
-import { enqueue, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
+import { enqueue, lockProject, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -37,8 +37,10 @@ const entrySelect = {
   content: true,
   tags: true,
   publishedAt: true,
+  collecting: true,
   createdAt: true,
   posts: { select: { post: { select: { id: true, number: true, title: true, status: true } } } },
+  pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
@@ -50,10 +52,14 @@ function entryView(entry: EntryRow, slug: string) {
     title: entry.title,
     status: entry.publishedAt ? ("published" as const) : ("draft" as const),
     publishedAt: entry.publishedAt?.toISOString() ?? null,
+    /** The running draft: merged pull requests are being added to it. */
+    collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
     body: entry.body,
     content: displayDoc(entry),
     posts: entry.posts.map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
+    /** Merged pull requests the running draft collected. */
+    pullRequests: entry.pullRequests,
     url: `${portal}/changelog/${entry.number}`,
     createdAt: entry.createdAt.toISOString(),
   };
@@ -259,10 +265,13 @@ export const publishChangelogEntry = defineOperation({
     // One transaction: published, its posts completed (and due for their shipped
     // emails), and the webhook deliveries saved. Sending happens after it commits.
     const shipped = await prisma.$transaction(async (tx) => {
+      // After any merge being added to this (running) draft, and before the next (see lockProject).
+      await lockProject(tx, projectId);
       // Only the first publish counts (a repeated call changes nothing).
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
-        data: { publishedAt: new Date() },
+        // Published by hand, it stops collecting: the next merge starts a new draft.
+        data: { publishedAt: new Date(), collecting: false },
       });
       if (count === 0) {
         return null;
