@@ -3,6 +3,7 @@ import { embed, embeddingsEnabled, LINK_MIN_SIMILARITY, type JobInput, toVectorL
 
 import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { installationApi } from "./github-api";
+import { addToRunningDraft, closeRunningDraft, skipsChangelog } from "./running-draft";
 import type { JobLogger, JobResult } from "./index";
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -263,13 +264,21 @@ export async function completeOnMerge(input: JobInput<"githubPullRequest">, log:
     where: { installationId: input.installationId },
     select: { closeOn: true, project: { select: { id: true, slug: true } } },
   });
-  if (!installation || installation.closeOn !== "MERGE" || !input.merged) {
+  if (!installation || !input.merged) {
     return { skipped: true };
+  }
+  // Every merged pull request goes into the changelog's running draft, unless it's labelled as internal work.
+  const drafted =
+    !skipsChangelog(input.labels) &&
+    (await addToRunningDraft(installation.project.id, { repo: input.repo, number: input.number, url: input.url, title: input.title }));
+  if (installation.closeOn !== "MERGE") {
+    log.info(`${input.repo}#${input.number} merged${drafted ? ", added to the changelog draft" : ""}`);
+    return { drafted };
   }
   const posts = await linkedPosts(installation.project.id, input.repo, [input.number]);
   const completed = await moveTo("COMPLETED", installation.project, posts);
-  log.info(`${input.repo}#${input.number} merged: ${completed} post(s) completed`);
-  return { completed };
+  log.info(`${input.repo}#${input.number} merged: ${completed} post(s) completed${drafted ? ", added to the changelog draft" : ""}`);
+  return { completed, drafted };
 }
 
 type GithubPull = { merged_at: string | null; merge_commit_sha: string | null };
@@ -287,8 +296,13 @@ export async function githubRelease(input: JobInput<"githubRelease">, log: JobLo
     where: { installationId: input.installationId },
     select: { closeOn: true, project: { select: { id: true, slug: true } } },
   });
-  if (!installation || installation.closeOn !== "RELEASE") {
+  if (!installation) {
     return { skipped: true };
+  }
+  // The release closes the changelog's running draft, whatever completes posts.
+  const closed = await closeRunningDraft(installation.project.id, input.name);
+  if (installation.closeOn !== "RELEASE") {
+    return { closedDraft: closed ?? 0 };
   }
   const { project } = installation;
   const candidates = await prisma.postLink.findMany({
