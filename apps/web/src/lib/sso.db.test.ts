@@ -5,12 +5,13 @@ import { SignJWT } from "jose";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { GET } from "@/app/portal/[project]/sso/route";
-import { createInvitation, acceptInvitation } from "@/server/invitations";
+import { acceptInvitation } from "@/server/invitations";
 import { createProject as createProjectAction } from "@/server/projects";
 import { getSession } from "@/server/session";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
+import { hashInvitationToken } from "./invitations";
 import { generateSsoSecret } from "./sso";
 
 let slug: string;
@@ -156,11 +157,19 @@ describe("SSO users only exist in their project's portal", () => {
   test("they can't join a team, even with an invite", async () => {
     const owner = await signUp("Inviting owner");
     const project = await createProject(owner);
-    actAs(owner);
-    const { url } = await createInvitation(project.slug, "MEMBER");
+    // A link-only invite (no email), which any signed-in account could otherwise accept.
+    const token = randomUUID();
+    await prisma.invitation.create({
+      data: {
+        projectId: project.id,
+        tokenHash: hashInvitationToken(token),
+        createdById: owner.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
 
     actAs(await ssoUser());
-    expect(await acceptInvitation(url!.split("/").at(-1)!)).toEqual({ error: "Sign in to accept this invite" });
+    expect(await acceptInvitation(token)).toEqual({ error: "Sign in to accept this invite" });
     expect(await prisma.teamMember.count({ where: { projectId: project.id } })).toBe(1);
   });
 });

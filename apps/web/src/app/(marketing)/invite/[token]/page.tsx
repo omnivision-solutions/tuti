@@ -19,6 +19,8 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
   const { token } = await props.params;
   const [invitation, session] = await Promise.all([getInvitation(token), getSession()]);
   const here = `/invite/${token}`;
+  const authQuery = (email: string | null) =>
+    new URLSearchParams({ next: here, ...(email && { email }) }).toString();
 
   if (invitation.status !== "valid") {
     return (
@@ -33,6 +35,8 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
     );
   }
 
+  const invitedEmail = invitation.email;
+  const otherAccount = session && invitedEmail && session.user.email.toLowerCase() !== invitedEmail;
   const alreadyMember =
     session &&
     (await prisma.teamMember.findFirst({
@@ -49,25 +53,39 @@ export default async function InvitePage(props: PageProps<"/invite/[token]">) {
           <strong>{ROLE_LABELS[invitation.role].toLowerCase()}</strong>.
         </CardDescription>
       </CardHeader>
-      <CardContent className="text-sm text-muted-foreground">
-        {session ? (
-          <>
+      <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
+        {invitedEmail && (
+          <p>
+            This invite is for <span className="text-foreground">{invitedEmail}</span>.
+          </p>
+        )}
+        {otherAccount ? (
+          <p>
+            You&apos;re signed in as <span className="text-foreground">{session.user.email}</span>. Sign in with{" "}
+            {invitedEmail} to accept it.
+          </p>
+        ) : session ? (
+          <p>
             Signed in as <span className="text-foreground">{session.user.email}</span>.
-          </>
+          </p>
         ) : (
-          "Sign in or create an account to accept."
+          <p>Sign in or create an account to accept.</p>
         )}
       </CardContent>
       <CardFooter className="flex gap-2">
         {!session ? (
           <>
-            <Link href={`/sign-up?next=${encodeURIComponent(here)}`} className={buttonVariants()}>
+            <Link href={`/sign-up?${authQuery(invitedEmail)}`} className={buttonVariants()}>
               Create account
             </Link>
-            <Link href={`/sign-in?next=${encodeURIComponent(here)}`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={`/sign-in?${authQuery(invitedEmail)}`} className={buttonVariants({ variant: "outline" })}>
               Sign in
             </Link>
           </>
+        ) : otherAccount ? (
+          <Link href={`/sign-in?${authQuery(invitedEmail)}`} className={buttonVariants()}>
+            Sign in as {invitedEmail}
+          </Link>
         ) : alreadyMember ? (
           <Link href={`/app/${invitation.projectSlug}`} className={buttonVariants()}>
             You&apos;re already on the team — open project

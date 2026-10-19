@@ -2,6 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 
 export const INVITATION_TTL_DAYS = 7;
 
+/** Invites per project per day: inviting sends email to any address, so it's capped. */
+export const DAILY_INVITE_LIMIT = 20;
+
 export function generateInvitationToken(): string {
   return randomBytes(24).toString("base64url");
 }

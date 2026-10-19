@@ -179,6 +179,8 @@ model SsoTokenUse {
 model Invitation {
   id           String    @id @default(cuid())
   projectId    String
+  /// Who it's for (lowercase): only an account with this email can accept. Null for older link-only invites.
+  email        String?
   role         TeamRole  @default(MEMBER)
   tokenHash    String    @unique
   createdById  String
@@ -193,6 +195,7 @@ model Invitation {
   acceptedBy User?   @relation("InvitationAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
 
   @@index([projectId])
+  @@index([projectId, email])
   @@map("invitation")
 }
 

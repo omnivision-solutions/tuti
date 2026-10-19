@@ -10,9 +10,8 @@ import { request } from "./next-headers";
 
 export type TestUser = { id: string; email: string; cookie: string };
 
-/** Signs up a new user through Better Auth. */
-export async function signUp(name = "Test user"): Promise<TestUser> {
-  const email = `e2e-${randomUUID()}@example.com`;
+/** Signs up a new user through Better Auth (with a random e2e-…@example.com address unless given one). */
+export async function signUp(name = "Test user", email = `e2e-${randomUUID()}@example.com`): Promise<TestUser> {
   const { headers, response } = await auth.api.signUpEmail({
     body: { email, name, password: "correct horse battery staple" },
     returnHeaders: true,
