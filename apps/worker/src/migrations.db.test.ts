@@ -23,6 +23,8 @@ test("a database it can't query stops the worker at once instead of looking like
 });
 
 test("a new database without a migrations table yet means waiting, not an error", async () => {
-  vi.spyOn(prisma, "$queryRaw").mockResolvedValueOnce([{ exists: false }]);
-  await expect(waitForMigration(latest, { every: 10, max: 60_000 })).resolves.toBeUndefined();
+  const query = vi.spyOn(prisma, "$queryRaw").mockResolvedValue([{ exists: false }]);
+  await expect(waitForMigration(latest, { every: 10, max: 50 })).rejects.toThrow(`doesn't have migration ${latest}`);
+  expect(query.mock.calls.length).toBeGreaterThan(1); // it kept checking
+  query.mockRestore();
 });
