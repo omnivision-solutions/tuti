@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
-import { DisconnectGithubButton } from "@/components/github-connection";
+import { CloseOnSelect, DisconnectGithubButton } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
@@ -30,7 +30,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const github = githubConfig();
   const installation = await prisma.githubInstallation.findUnique({
     where: { projectId: project.id },
-    select: { accountLogin: true },
+    select: { accountLogin: true, closeOn: true },
   });
   const webhooks = await prisma.webhook.findMany({
     where: { projectId: project.id },
@@ -60,7 +60,8 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle>GitHub</CardTitle>
           <CardDescription>
-            Pull requests that mention a post (tuti#12, or the post&apos;s link) link to it and move it to In progress.
+            Pull requests that mention a post (tuti#12, or the post&apos;s link) link to it and move it to In progress;
+            shipping them completes it.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
@@ -72,12 +73,15 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           {!github ? (
             <p className="text-muted-foreground">GitHub isn&apos;t set up on this server (see GITHUB_APP_* in .env.example).</p>
           ) : installation ? (
+            <>
             <div className="flex flex-wrap items-center gap-3">
               <span>
                 Connected to <strong>@{installation.accountLogin}</strong>. Choose its repositories on GitHub.
               </span>
               <DisconnectGithubButton projectSlug={project.slug} />
             </div>
+            <CloseOnSelect projectSlug={project.slug} closeOn={installation.closeOn} />
+            </>
           ) : (
             <a
               href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`}
