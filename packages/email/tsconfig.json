@@ -1,0 +1,5 @@
+{
+  "extends": "@tuti/typescript-config/node.json",
+  "compilerOptions": { "jsx": "react-jsx" },
+  "include": ["src"]
+}

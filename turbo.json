@@ -12,7 +12,9 @@
     "HATCHET_CLIENT_*",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
-    "JOBS_DRIVER"
+    "JOBS_DRIVER",
+    "SMTP_*",
+    "EMAIL_FROM"
   ],
   "tasks": {
     "db:generate": {

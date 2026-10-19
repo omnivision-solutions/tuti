@@ -9,6 +9,7 @@ import { createInvitation, acceptInvitation } from "@/server/invitations";
 import { createProject as createProjectAction } from "@/server/projects";
 import { getSession } from "@/server/session";
 import { actAs, createProject, signUp } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 
 import { generateSsoSecret } from "./sso";
 
@@ -62,6 +63,8 @@ test("signs a new user in and sends them to the requested page", async () => {
 
   actAs({ id: identity!.userId, email: "", cookie: result.cookie });
   expect((await getSession())?.user.id).toBe(identity!.userId);
+  // Their email is a placeholder: no verification email goes out.
+  expect(mailbox.emails.filter((e) => e.to.includes(identity!.user.email))).toEqual([]);
 });
 
 test("the same `sub` is the same user, with an updated profile", async () => {

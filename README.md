@@ -93,6 +93,7 @@ pnpm --filter @tuti/worker start          # worker (skip with JOBS_DRIVER=inline
 | `BETTER_AUTH_SECRET` | Random secret for sessions: `openssl rand -base64 32` |
 | `HATCHET_CLIENT_TOKEN` | Hatchet API token (web and worker), or set `JOBS_DRIVER=inline` instead |
 | `OPENAI_API_KEY` | Optional: duplicate detection with embeddings |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider. Without `SMTP_HOST` emails are written to the log |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the
 required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.
