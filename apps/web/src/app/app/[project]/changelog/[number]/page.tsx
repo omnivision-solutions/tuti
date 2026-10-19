@@ -59,6 +59,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           content: displayDoc(entry) as Doc,
           tags: entry.tags.map((t) => t.toLowerCase() as TagName),
           posts: listed,
+          published: entry.publishedAt !== null,
         }}
         posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
         mediaBaseUrl={mediaPublicUrl()}

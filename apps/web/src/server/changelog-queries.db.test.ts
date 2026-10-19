@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 
-import { completablePosts } from "./changelog-queries";
+import { completablePosts, publishedEntries } from "./changelog-queries";
 
 test("an entry's form always offers the posts it lists, however old, but not merged ones", async () => {
   const owner = await signUp();
@@ -23,4 +23,18 @@ test("an entry's form always offers the posts it lists, however old, but not mer
   expect(numbers).toContain(1); // listed, old and Open
   expect(numbers).not.toContain(2); // merged away
   expect(numbers).toHaveLength(101); // the 100 most recent, plus #1
+});
+
+test("published entries come a page at a time, newest first", async () => {
+  const owner = await signUp();
+  const project = await createProject(owner);
+  for (let n = 1; n <= 5; n++) {
+    await prisma.changelogEntry.create({
+      data: { projectId: project.id, number: n, title: `Entry ${n}`, publishedAt: new Date(Date.UTC(2026, 0, n)) },
+    });
+  }
+  const titles = async (skip: number) => (await publishedEntries(project.slug, { take: 2, skip })).map((e) => e.title);
+  expect(await titles(0)).toEqual(["Entry 5", "Entry 4"]);
+  expect(await titles(2)).toEqual(["Entry 3", "Entry 2"]);
+  expect(await titles(4)).toEqual(["Entry 1"]);
 });

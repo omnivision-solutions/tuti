@@ -27,14 +27,15 @@ export async function completablePosts(projectId: string, listed: number[] = [])
   return [...alreadyListed.filter((p) => !shown.has(p.number)), ...recent];
 }
 
-/**
- * A project's published changelog entries, newest first (or one of them, with `number`).
- * ponytail: the portal shows the latest 50; add pages when a project has more.
- */
-export async function publishedEntries(projectSlug: string, { number, take = 50 }: { number?: number; take?: number } = {}) {
+/** A project's published changelog entries, newest first (or one of them, with `number`), `take` from `skip`. */
+export async function publishedEntries(
+  projectSlug: string,
+  { number, take = 50, skip = 0 }: { number?: number; take?: number; skip?: number } = {},
+) {
   const entries = await prisma.changelogEntry.findMany({
     where: { project: { slug: projectSlug }, publishedAt: { not: null }, ...(number !== undefined && { number }) },
     orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    skip,
     take,
     select: {
       number: true,

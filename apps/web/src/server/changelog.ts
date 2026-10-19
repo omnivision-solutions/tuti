@@ -28,7 +28,8 @@ export async function saveChangelogEntry(
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
     tags: formData.getAll("tags").map(String) as ("new" | "improved" | "fixed" | "breaking")[],
-    posts: formData.getAll("posts").map(Number),
+    // Published entries show their posts read-only, so the form doesn't send them.
+    posts: formData.has("postsEditable") ? formData.getAll("posts").map(Number) : undefined,
   };
   let created: number | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {

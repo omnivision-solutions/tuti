@@ -30,7 +30,7 @@ import type { FormState } from "@/server/form-state";
 export const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
 export type TagName = keyof typeof TAG_LABELS;
 
-type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[] };
+type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[]; published: boolean };
 type PostOption = { number: number; title: string; status: string };
 
 /** Writes a new entry (`entry` null) or edits one: title, tags, text and the posts it completes. */
@@ -95,29 +95,47 @@ export function ChangelogForm({
         </Field>
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Posts it completes</legend>
-          <p className="text-sm text-muted-foreground">Publishing marks them Completed and tells the people who asked.</p>
-          {posts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No planned, in-progress or completed posts yet.</p>
-          ) : (
-            <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
-              {posts.map((post) => (
-                <li key={post.number}>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      name="posts"
-                      value={post.number}
-                      defaultChecked={entry?.posts.includes(post.number)}
-                      className="size-4 accent-primary"
-                    />
-                    <span className="min-w-0 flex-1 truncate">
+          {entry?.published ? (
+            <>
+              <p className="text-sm text-muted-foreground">Unpublish the entry to change these.</p>
+              <ul className="flex flex-col gap-1 text-sm">
+                {posts
+                  .filter((post) => entry.posts.includes(post.number))
+                  .map((post) => (
+                    <li key={post.number}>
                       #{post.number} {post.title}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{post.status}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
+                    </li>
+                  ))}
+              </ul>
+            </>
+          ) : (
+            <>
+              <input type="hidden" name="postsEditable" value="1" />
+              <p className="text-sm text-muted-foreground">Publishing marks them Completed and tells the people who asked.</p>
+              {posts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No planned, in-progress or completed posts yet.</p>
+              ) : (
+                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
+                  {posts.map((post) => (
+                    <li key={post.number}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="posts"
+                          value={post.number}
+                          defaultChecked={entry?.posts.includes(post.number)}
+                          className="size-4 accent-primary"
+                        />
+                        <span className="min-w-0 flex-1 truncate">
+                          #{post.number} {post.title}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{post.status}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </fieldset>
         <Button type="submit" disabled={pending} className="self-end">
@@ -167,7 +185,7 @@ export function ChangelogEntryActions({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => run(deleteChangelogEntry, "Deleted")}>
+            <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(deleteChangelogEntry, "Deleted")}>
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -191,7 +209,9 @@ export function ChangelogEntryActions({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => run(publishChangelogEntry, "Published")}>Publish</AlertDialogAction>
+              <AlertDialogAction disabled={pending} onClick={() => run(publishChangelogEntry, "Published")}>
+                Publish
+              </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
