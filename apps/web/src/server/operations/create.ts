@@ -6,6 +6,7 @@ import { z } from "zod";
 import { upsertProjectUser } from "@/lib/sso";
 
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
+import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { findPost, postNumber, postSummarySelect, projectSlug, summary } from "./read";
 
@@ -122,7 +123,9 @@ export const createPost = defineOperation({
     } catch (error) {
       log.error("Enqueueing the post-created job failed", { error, postId: post.id });
     }
-    return summary(post, await projectSlug(projectId));
+    const created = summary(post, await projectSlug(projectId));
+    await emitEvent(projectId, "post.created", created);
+    return created;
   },
 });
 
@@ -163,12 +166,15 @@ export const createComment = defineOperation({
       }),
     );
     const team = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
-    return {
+    const created = {
       id: comment.id,
       author: { name: comment.author.name, team: !!team },
       body: comment.body,
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),
     };
+    const { url, number, title } = summary(post, await projectSlug(projectId));
+    await emitEvent(projectId, "comment.created", { post: { number, title, url }, comment: created });
+    return created;
   },
 });

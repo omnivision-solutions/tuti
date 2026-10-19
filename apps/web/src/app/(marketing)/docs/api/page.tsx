@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { appUrl } from "@/lib/hosts";
+import { WEBHOOK_EVENTS } from "@/lib/webhook-events";
 import { operations } from "@/server/operations";
 import { inputSchema, pathParams } from "@/server/operations/openapi";
 
@@ -98,6 +99,57 @@ export default function ApiDocsPage() {
         </p>
         <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
           <code>{`claude mcp add --transport http tuti ${appUrl().origin}/mcp \\\n  --header "Authorization: Bearer $TUTI_API_KEY"`}</code>
+        </pre>
+      </section>
+
+      <section className="flex flex-col gap-2" aria-labelledby="webhooks-heading" id="webhooks">
+        <h2 id="webhooks-heading" className="text-xl font-bold tracking-tight">
+          Webhooks
+        </h2>
+        <p className="text-sm">
+          Add endpoints in <strong>Settings → Webhooks</strong>. Tuti sends a POST with a JSON body for each event you
+          pick: {Object.entries(WEBHOOK_EVENTS).map(([event, label], i) => (
+            <span key={event}>
+              {i > 0 && ", "}
+              <code className="font-mono">{event}</code> ({label.toLowerCase()})
+            </span>
+          ))}
+          , plus <code className="font-mono">ping</code> from &quot;Send test&quot;.
+        </p>
+        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+          <li>
+            Headers: <code className="font-mono">Tuti-Event-Id</code>, <code className="font-mono">Tuti-Event-Type</code>{" "}
+            and <code className="font-mono">Tuti-Signature</code>.
+          </li>
+          <li>
+            Answer with any 2xx within 10 seconds. Anything else is retried with growing gaps for about a day, always
+            with the same event id: deliveries are at least once, so skip events whose id you&apos;ve already handled.
+          </li>
+          <li>Redirects aren&apos;t followed, and endpoints must be public HTTPS URLs.</li>
+        </ul>
+        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+          <code>{`{
+  "id": "evt_…",
+  "type": "post.created",
+  "createdAt": "2026-10-19T09:30:00.000Z",
+  "project": { "slug": "acme", "name": "Acme" },
+  "data": { "number": 12, "title": "Dark mode", "status": "open", … }
+}`}</code>
+        </pre>
+        <p className="text-sm">
+          Check the signature with the webhook&apos;s secret before trusting a request (Node):
+        </p>
+        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+          <code>{`import { createHmac, timingSafeEqual } from "node:crypto";
+
+// body: the raw request body as a string, before parsing it.
+function verify(body, header, secret) {
+  const { t, v1 } = Object.fromEntries((header ?? "").split(",").map((part) => part.split("=")));
+  if (!/^\\d+$/.test(t ?? "") || !/^[0-9a-f]{64}$/.test(v1 ?? "")) return false; // missing or malformed
+  if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false; // older than 5 minutes
+  const expected = createHmac("sha256", secret).update(\`\${t}.\${body}\`).digest("hex");
+  return v1.length === expected.length && timingSafeEqual(Buffer.from(v1), Buffer.from(expected));
+}`}</code>
         </pre>
       </section>
 

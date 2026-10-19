@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
+import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,20 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
     // Team members who aren't owners/admins get the same response as outsiders.
     notFound();
   }
+  const webhooks = await prisma.webhook.findMany({
+    where: { projectId: project.id },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      url: true,
+      events: true,
+      deliveries: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { createdAt: true, deliveredAt: true, lastError: true, attempts: true },
+      },
+    },
+  });
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -52,6 +67,22 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardHeader>
         <CardContent>
           <ApiKeys projectSlug={project.slug} keys={keys} apiUrl={`${appUrl().origin}/api/v1`} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Webhooks</CardTitle>
+          <CardDescription>
+            Tuti sends a signed POST to your endpoint when something happens, and retries for about a day until it
+            answers with a 2xx.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Webhooks
+            projectSlug={project.slug}
+            webhooks={webhooks.map(({ deliveries, ...webhook }) => ({ ...webhook, lastDelivery: deliveries[0] ?? null }))}
+          />
         </CardContent>
       </Card>
     </>

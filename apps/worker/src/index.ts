@@ -7,11 +7,18 @@ assertEnv(["DATABASE_URL"]);
 
 const hatchet = getHatchet();
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
-  const job: { name: string; input: (typeof jobs)[JobKey]["input"]; cron?: string } = jobs[key];
+  const job: {
+    name: string;
+    input: (typeof jobs)[JobKey]["input"];
+    cron?: string;
+    retries?: number;
+    backoff?: { factor: number; maxSeconds: number };
+  } = jobs[key];
   return hatchet.task({
     name: job.name,
     inputValidator: job.input,
-    retries: 3,
+    retries: job.retries ?? 3,
+    ...(job.backoff && { backoff: job.backoff }),
     ...(job.cron && { on: { cron: job.cron } }),
     fn: (input, ctx) => handlers[key](input as never, ctx.logger),
   });

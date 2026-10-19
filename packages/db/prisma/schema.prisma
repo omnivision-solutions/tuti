@@ -32,6 +32,7 @@ model User {
   invitationsAccepted Invitation[]    @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
   apiKeysCreated      ApiKey[]
+  webhooksCreated     Webhook[]
   media               Media[]
 
   @@unique([email])
@@ -118,6 +119,7 @@ model Project {
   portalHandoffs       PortalHandoff[]
   apiKeys              ApiKey[]
   postLinks            PostLink[]
+  webhooks             Webhook[]
   media                Media[]
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
@@ -286,6 +288,46 @@ model PostLink {
   @@unique([postId, url])
   @@index([projectId, repo, number])
   @@map("post_link")
+}
+
+/// An endpoint that gets a project's events (signed, retried; see packages/jobs/src/webhooks.ts).
+model Webhook {
+  id          String            @id @default(cuid())
+  projectId   String
+  url         String
+  /// Signs every delivery (HMAC-SHA256). Shown once when the webhook is created.
+  secret      String
+  /// Event types it gets, e.g. "post.created".
+  events      String[]
+  createdById String
+  createdAt   DateTime          @default(now())
+
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+  @@map("webhook")
+}
+
+/// One event for one webhook. `eventId` is the same on every retry, so receivers can skip repeats.
+model WebhookDelivery {
+  id          String    @id @default(cuid())
+  webhookId   String
+  eventId     String
+  event       String
+  payload     Json
+  attempts    Int       @default(0)
+  /// HTTP status of the last attempt (null when it didn't get a response).
+  lastStatus  Int?
+  lastError   String?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@map("webhook_delivery")
 }
 
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
