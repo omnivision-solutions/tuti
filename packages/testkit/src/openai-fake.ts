@@ -43,7 +43,21 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
       }
       // Lets tests in another process (E2E journeys) give texts their vectors.
       if (req.method === "POST" && req.url === "/fixtures") {
-        const { text, vector } = JSON.parse(raw) as { text: string; vector: number[] };
+        let fixture: { text?: unknown; vector?: unknown };
+        try {
+          fixture = JSON.parse(raw) as typeof fixture;
+        } catch {
+          return send(400, { error: { message: "expected JSON" } });
+        }
+        const { text, vector } = fixture;
+        if (
+          typeof text !== "string" ||
+          !Array.isArray(vector) ||
+          vector.length > FIXTURE_DIMENSIONS ||
+          !vector.every((n) => typeof n === "number" && Number.isFinite(n))
+        ) {
+          return send(400, { error: { message: `expected {text, vector} with at most ${FIXTURE_DIMENSIONS} numbers` } });
+        }
         setVector(text, vector);
         return send(204, null);
       }
