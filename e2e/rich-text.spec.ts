@@ -87,12 +87,26 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await ada.getByLabel("Title").fill("Make the hero smaller");
   await ada.getByRole("textbox", { name: "Details" }).click();
   await ada.keyboard.type("It takes the whole screen:");
+  // The upload is slowed down, so submitting while it runs is held back instead of posting without it.
+  await ada.context().route("**/*", async (route) => {
+    if (route.request().method() === "PUT") {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    await route.continue();
+  });
   await ada.locator('input[type="file"]').setInputFiles({ name: "hero.png", mimeType: "image/png", buffer: screenshot });
+  await expect(ada.getByText("Uploading image…")).toBeVisible();
+  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await expect(ada.getByText("Wait for the image to finish uploading, then try again.")).toBeVisible();
 
   // Once processed, the image shows in the editor; selecting it shows its controls.
   const editorImage = ada.getByRole("textbox", { name: "Details" }).locator("img");
   await expect(editorImage).toHaveJSProperty("complete", true);
   await expect.poll(() => editorImage.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  // Nothing was posted meanwhile, and the form still has what was typed.
+  await expect(ada.getByText("Feedback posted")).toHaveCount(0);
+  await expect(ada.getByLabel("Title")).toHaveValue("Make the hero smaller");
+  await expect(ada.getByRole("link", { name: "Make the hero smaller" })).toHaveCount(0);
   await editorImage.click();
   const controls = ada.getByRole("group", { name: "Image" });
   await controls.getByRole("button", { name: "Medium" }).click();

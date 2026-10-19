@@ -80,6 +80,8 @@ export function RichEditor({
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
+  /** Someone tried to submit while images were uploading. */
+  const [held, setHeld] = useState(false);
   const canUpload = profile !== "comment" && !!uploads;
 
   const addImages = async (editor: Editor, files: File[]) => {
@@ -87,6 +89,7 @@ export function RichEditor({
       return;
     }
     setUploadError(undefined);
+    setHeld(false);
     for (const file of files) {
       setUploading((n) => n + 1);
       const result = await uploadImage(uploads.projectSlug, file);
@@ -156,8 +159,25 @@ export function RichEditor({
     }
   }, [editor, invalid, describedBy]);
 
+  // While an image uploads, its form doesn't submit (it would save without the image). Stopped
+  // on the form itself, before React's handler for the form's action or onSubmit sees the event.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const form = root.current?.closest("form");
+    if (!form || uploading === 0) {
+      return;
+    }
+    const hold = (event: SubmitEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setHeld(true);
+    };
+    form.addEventListener("submit", hold);
+    return () => form.removeEventListener("submit", hold);
+  }, [uploading]);
+
   return (
-    <div className="flex w-full flex-col gap-1">
+    <div ref={root} className="flex w-full flex-col gap-1">
       <div
         className={cn(
           "w-full rounded-lg border border-input transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30",
@@ -176,11 +196,16 @@ export function RichEditor({
         <input type="hidden" name={name} value={value} />
         {editor && <EditorDialog editor={editor} kind={prompt} onClose={() => setPrompt(null)} />}
       </div>
-      {uploading > 0 && (
-        <p role="status" className="text-sm text-muted-foreground">
-          Uploading {uploading === 1 ? "image" : `${uploading} images`}…
-        </p>
-      )}
+      {uploading > 0 &&
+        (held ? (
+          <p role="alert" className="text-sm text-destructive">
+            Wait for the {uploading === 1 ? "image" : "images"} to finish uploading, then try again.
+          </p>
+        ) : (
+          <p role="status" className="text-sm text-muted-foreground">
+            Uploading {uploading === 1 ? "image" : `${uploading} images`}…
+          </p>
+        ))}
       {uploadError && (
         <p role="alert" className="text-sm text-destructive">
           {uploadError}

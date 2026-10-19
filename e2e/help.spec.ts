@@ -26,6 +26,11 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // A draft: title, collection, a heading, text and a table.
   await team.getByRole("link", { name: "New article" }).click();
+  // A refused save keeps what was typed.
+  await team.getByLabel("Title").fill("Hi");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await expect(team.getByText("Title is too short")).toBeVisible();
+  await expect(team.getByLabel("Title")).toHaveValue("Hi");
   await team.getByLabel("Title").fill("Inviting your team");
   await team.getByLabel("Collection").click();
   await team.getByRole("option", { name: "Getting started" }).click();
@@ -93,6 +98,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(deleting).toContainText("Its articles stay, without a collection.");
   await deleting.getByRole("button", { name: "Delete" }).click();
   await expect(deleting.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await expect(deleting.getByRole("button", { name: "Cancel" })).toBeDisabled();
   await expect(team.getByText("Getting started deleted")).toBeVisible();
   await team.unroute("**/*");
   await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
