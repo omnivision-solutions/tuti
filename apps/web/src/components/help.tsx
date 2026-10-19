@@ -248,6 +248,7 @@ export function DeleteCollectionButton({ projectSlug, slug, name }: { projectSlu
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
+            disabled={pending}
             onClick={() =>
               startTransition(async () => {
                 const result = await deleteCollection(projectSlug, slug);

@@ -77,4 +77,25 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(visitor).toHaveTitle("Inviting your team · Acme");
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", /^Who can invite Owners and admins send invites/);
   await checkpoint(visitor, "portal-help-article");
+
+  // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
+  await team.getByRole("link", { name: "Help center" }).first().click();
+  await team.waitForURL(`**/app/${slug}/help`);
+  await expect(team.getByText("1 article", { exact: true })).toBeVisible();
+  await team.route("**/*", async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    await route.continue();
+  });
+  await team.getByRole("button", { name: "Delete" }).click();
+  const deleting = team.getByRole("alertdialog");
+  await expect(deleting).toContainText("Its articles stay, without a collection.");
+  await deleting.getByRole("button", { name: "Delete" }).click();
+  await expect(deleting.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await expect(team.getByText("Getting started deleted")).toBeVisible();
+  await team.unroute("**/*");
+  await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await visitor.goto("/help");
+  await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
 });
