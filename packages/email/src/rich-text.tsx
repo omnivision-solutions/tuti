@@ -1,5 +1,5 @@
 import { Button } from "@react-email/components";
-import { type Doc, isMediaId, isSafeLink, isVideo } from "@tuti/content";
+import { type Doc, isMediaId, isPixelSize, isSafeLink, isVideo } from "@tuti/content";
 import { emailImageKey, EMAIL_IMAGE_WIDTH } from "@tuti/content/media";
 import { Fragment, type ReactNode } from "react";
 
@@ -106,7 +106,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
       ) : null;
     case "image": {
       const { mediaId, width, align, alt, w, h } = node.attrs ?? {};
-      if (!ctx.media || !isMediaId(mediaId) || !Number.isInteger(w) || !Number.isInteger(h) || w <= 0) {
+      if (!ctx.media || !isMediaId(mediaId) || !isPixelSize(w) || !isPixelSize(h)) {
         return null;
       }
       // The email JPEG is at most EMAIL_IMAGE_WIDTH wide; show it at the image's share of the column.

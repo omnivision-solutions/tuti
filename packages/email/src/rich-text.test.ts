@@ -82,10 +82,12 @@ describe("EmailRichText", () => {
     expect(await html(doc(image({ w: 200, h: 100 })), MEDIA)).toMatch(/width="200" height="100"/);
   });
 
-  test("images are left out without a media URL or with a bad id", async () => {
+  test("images are left out without a media URL, with a bad id or without a real size", async () => {
     expect(await html(doc(image()))).not.toContain("<img");
     expect(await html(doc(image({ mediaId: "../../etc/passwd" })), MEDIA)).not.toContain("<img");
-    expect(await html(doc(image({ w: 0 })), MEDIA)).not.toContain("<img");
+    for (const size of [{ w: 0 }, { h: 0 }, { w: -1200 }, { h: 1.5 }, { w: null }]) {
+      expect(await html(doc(image(size)), MEDIA)).not.toContain("<img");
+    }
   });
 
   test("videos become a link to the entry, never an iframe", async () => {
