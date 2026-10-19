@@ -157,6 +157,41 @@ Test layers (set up in Phase 4):
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy. Done: Dockerfiles for web and worker (pruned, non-root, migrations at start, settings from env or Infisical), built in CI on every PR
 - [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel. DNS wildcards only cover whole labels, so once `*.tuti.so` goes to production each dev portal (`<project>--dev.tuti.so`) needs its own DNS record to the tunnel. Cloudflare Access protects only `dev.tuti.so` and `*--dev.tuti.so`; customer portals stay public
 
+## Phase 6.5 — Rich content (editor + media)
+
+One editor and one content format for posts, comments, changelog entries and help
+center articles, each allowing only what it needs (posts get no buttons). Changelog
+entries also become emails. Decided 2026-10-19: video by link embeds first (uploads
+later if asked for); team members and portal users can upload images; default limits
+10 MB per image for the team, 5 MB for portal users, 1 GB per project (all configurable).
+
+- [ ] `@tuti/content`: Tiptap (MIT core) schema with one profile per use: `comment` (bold, italic, links, code), `post` (+ lists, code blocks, images, video embeds), `changelog` (+ headings, callouts, buttons, dividers), `article` (everything in `changelog` incl. headings, + tables, steps, code with a filename and tabs, collapsible details, file attachments, table of contents built from the headings). No custom HTML in any profile. Content is stored as ProseMirror JSON, never HTML; the server validates it against the profile and rejects anything the profile doesn't allow; plain text is derived for search, embeddings and previews
+- [ ] Safe links, one shared policy (tested): links only `http`, `https` and `mailto` (no `javascript:` or `data:`), opened with `rel="noopener noreferrer"`; video embeds only from an allowlist (YouTube, Loom, Vimeo) checked on the server, stored as provider + video id and rendered from a known embed URL in a sandboxed iframe, never the raw URL
+- [ ] Rendering from the same JSON: HTML on the server for pages, React Email for emails (images as JPEG, video embeds as a thumbnail linking to the post, email-safe buttons)
+- [ ] Editor component: toolbar per profile, paste or drop images, per-image width (25/50/75/100%) and alignment (left/center/right), video embeds by URL (YouTube, Loom, Vimeo)
+- [ ] Posts and comments move to rich text; existing plain-text bodies are converted by a migration
+- [ ] Uploads: straight from the browser to S3-compatible storage with presigned URLs (R2 for tuti.so; any S3 for self-hosters, `MEDIA_*` env vars), served from a separate media domain that never sees session cookies. Limits enforced on the server: file size per role, project quota, per-user upload rate; SVG refused; files checked by content, not name
+- [ ] Image pipeline (background job): re-encode with `sharp`, strip EXIF (location data), max 2400px, WebP sizes for pages plus a JPEG for email, width and height stored so pages don't jump; originals deleted after processing
+- [ ] Cleanup: uploads never attached to content are deleted after a day; deleting content frees its media and quota
+- [ ] Tests: profile validation (unit), upload limits, quota and rate (database tests with an S3 fake), image pipeline on fixture images, journeys (a post with a resized and aligned image and a video embed; a changelog email rendered and screenshotted)
+- [ ] Later: video uploads (transcoding), if people ask
+
+## Phase 6.6 — API and MCP for everything
+
+Every feature is an **operation** defined once (name, zod input, output, permission,
+handler) and exposed three ways from that definition: the app (server actions call it),
+a REST API and an MCP server, so they can't drift apart. Built before the shipped loop
+so every later feature is API-first. (Asked for 2026-10-19.)
+
+- [ ] Operations layer: server actions become thin wrappers over operations that take an explicit actor (a signed-in user, or an API key acting as itself or on behalf of a project's user)
+- [ ] Project API keys: created in settings, scoped read or read + write, shown once, stored hashed, revocable, rate-limited per key
+- [ ] REST API `/api/v1/…` generated from the operations, with an OpenAPI spec and a docs page; operations for everything built so far: projects (read), boards, posts, votes, comments, statuses, merging, duplicate suggestions, team (read), users from SSO, media
+- [ ] MCP server (`/mcp`, Streamable HTTP, official SDK): every operation is a tool (search and triage feedback, change status, merge duplicates; later draft changelogs, search help articles); API key as bearer token, OAuth later (for Claude.ai connectors)
+- [ ] Signed webhooks with retries (post created, status changed, changelog published, article updated); each event has a stable id, sent on every retry (`Tuti-Event-Id` header and in the body), so receivers can ignore one they've already handled; documented as at-least-once delivery (from the Ferndesk review, 2026-10-19)
+- [ ] Authorization matrix covers every operation on every surface (UI, REST, MCP), checked by the compiler like today's server actions
+- [ ] From then on (AGENTS.md rule): every feature PR adds its operations, so it ships in the UI, REST and MCP together
+- [ ] Tests: operations (database tests), OpenAPI matches the routes, MCP tools through the SDK's in-memory client, a journey that creates a key in the UI and calls the API with it
+
 ## The "shipped loop" (Phases 7–11)
 
 Code is the source of truth. One GitHub connection feeds everything after it: a
@@ -184,25 +219,43 @@ or proposal shows its sources.
 The team edits and publishes; Tuti does the first draft from what actually merged.
 
 - [ ] Public roadmap on the portal: columns by status (Planned, In progress, Completed)
-- [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX"
+- [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX". Written in the rich editor (`changelog` profile, Phase 6.5); published entries can go out as an email to voters and subscribers, rendered from the same content
 - [ ] Running draft: every merged PR is added to the next unpublished entry; a GitHub release (or "Ship" by hand) closes it out
-- [ ] AI drafting: rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
+- [ ] AI drafting (through OpenRouter, like Phase 11): rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
 - [ ] Per-project style: a few example entries + tone notes the drafts follow
 - [ ] Editor helpers: regenerate a section, shorten, "explain for non-developers"
 - [ ] Optional: write the published notes back to the GitHub release body
 - [ ] Without GitHub: write entries by hand and pick the posts they complete
+- [ ] A "Breaking" tag next to New / Improved / Fixed; reader reactions on entries; an RSS feed for `/changelog` (from the Ferndesk review, 2026-10-19)
+- [ ] Publishing asks "announce it" or "publish quietly"; announced entries show in the widget as unseen (Phase 9) (from the Ferndesk review, 2026-10-19)
 - [ ] Tests: a model fake (scripted responses, checks every request, fails on unused steps) for drafting flows; a few real-model quality cases in `test:live` (no internal jargon, every completed post mentioned)
 
 ## Phase 9 — Widget + SDK (MIT)
 
 - [ ] One script tag: give feedback (with duplicate suggestions), see what's new; signs users in with the existing JWT SSO
+- [ ] Help center inside the widget: search and read articles, rendered from the same stored content as the help center, inside a Shadow DOM so the host site's selectors can't reach it and ours can't leak; the host element gets `all: initial` and the widget sets its own font, colours and sizes, since inherited properties still cross the boundary (asked for 2026-10-19)
+- [ ] The widget talks to the public API (Phase 6.6), no private endpoints
+- [ ] What's new: unseen badge for announced changelog entries, seen state per identified user (across devices) (from the Ferndesk review, 2026-10-19)
+- [ ] Small SDK: `identify` (JWT), `open`, `openArticle` (also as a `data-` attribute for contextual help buttons), `hideLauncher`, `locale`, changelog unseen status; launcher, colours and up to 5 quick links set in `/app`; display as launcher, sidebar or inline (from the Ferndesk review, 2026-10-19)
+- [ ] Contact form in the widget (emails the team, with attachments), the fallback when the help center and AI don't answer (from the Ferndesk review, 2026-10-19)
 - [ ] Tests: E2E on a fixture host page
 
 ## Phase 10 — Help center
 
-- [ ] Collections and articles (markdown, revision history), team editor in `/app`
+- [ ] Collections and articles (rich editor, `article` profile from Phase 6.5; revision history), team editor in `/app`
 - [ ] Portal `/help`: public, indexable; private articles for SSO users
 - [ ] Search over article chunks with pgvector (reuses the embeddings pipeline); in the widget too
+- [ ] Structure: sections (top tabs) → collections (nestable) → articles, ordered by drag and drop (from the Ferndesk review, 2026-10-19)
+- [ ] Drafts with a diff before publishing; restore an earlier version or a deleted article; optional "Updated" date (from the Ferndesk review, 2026-10-19)
+- [ ] Listing per article: everywhere / unlisted (link only) / hidden / AI only (used by answers, not listed) (from the Ferndesk review, 2026-10-19)
+- [ ] Redirects when an article's URL changes (same pattern as boards and posts) (from the Ferndesk review, 2026-10-19)
+- [ ] Found by search engines and AI tools: server-rendered pages, sitemap, per-article title and meta description, generated OG images, `llms.txt`, each article also at `/articles/<slug>.md`; restricted pages are noindex (from the Ferndesk review, 2026-10-19)
+- [ ] Reader actions: copy as Markdown, open in ChatGPT / Claude; ⌘K search with "ask AI" in the same box (from the Ferndesk review, 2026-10-19)
+- [ ] Article feedback (thumbs up/down with an optional comment) and search logging (hits and misses), shown as analytics: views, top articles, failed searches; these feed Phases 11 and 12 (from the Ferndesk review, 2026-10-19)
+- [ ] Per-project branding for portals and the help center: logo (light/dark), favicon, primary colour, header and footer links; "Powered by Tuti" can be turned off (from the Ferndesk review, 2026-10-19)
+- [ ] Access: a fully private portal; reader groups from the SSO token's attributes (e.g. plan = enterprise) that restrict collections and articles, shown locked or hidden; magic-link sign-in for portal users (from the Ferndesk review, 2026-10-19)
+- [ ] Custom domains for portals and the help center (CNAME + automatic TLS), moved up from Later: a help center is worth little for SEO on a tuti.so subdomain (from the Ferndesk review, 2026-10-19)
+- [ ] Export everything as a ZIP of Markdown (no lock-in) (from the Ferndesk review, 2026-10-19)
 
 ## Phase 11 — AI answers
 
@@ -210,7 +263,10 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] On portal `/help` and in the widget
 - [ ] No answer → "Post this as feedback" (prefilled, with duplicate suggestions)
 - [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 12)
-- [ ] Claude for generation (Haiku for cost, Sonnet where quality matters); per-project usage cap
+- [ ] Assistant settings per project: tone, answer length, standing instructions, off-limits topics; replies in the asker's language; may show article images (from the Ferndesk review, 2026-10-19)
+- [ ] Escalation: "Contact us" sends the team an email with an AI summary of the conversation (next to "Post this as feedback") (from the Ferndesk review, 2026-10-19)
+- [ ] Coverage stats: answered / partly / not answered / escalated, per period (from the Ferndesk review, 2026-10-19)
+- [ ] Models through OpenRouter (decided 2026-10-19; `OPENROUTER_API_KEY`, any OpenAI-compatible endpoint for self-hosters): Claude Haiku for cost, Sonnet where quality matters; per-project usage cap
 - [ ] Tests: model fake for flows; `test:live` quality cases graded on facts (cites the right article, refuses when nothing matches)
 
 ## Phase 12 — Self-updating docs
@@ -222,6 +278,10 @@ Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 - [ ] On merged PRs: find affected articles by embedding the PR text + diff, propose edits or a new article; the agent reads the repo read-only through the GitHub App
 - [ ] From gaps: cluster unanswered questions, draft an article from them plus the code
 - [ ] Opt-in scheduled check that each article's claims still match the code (expensive; weekly at most)
+- [ ] PR screening controls: sensitivity (strict / balanced / eager), project guidance text, skip reverts, log "no docs change needed", dismiss with a reason (from the Ferndesk review, 2026-10-19)
+- [ ] Verification statuses per article (up to date / needs review / can't verify) and "not an issue" remembered, so the check doesn't re-flag the same claim (from the Ferndesk review, 2026-10-19)
+- [ ] Audit report: inputs are failed searches, thumbs-down articles, unanswered questions and the most-voted feedback posts (Tuti has the feedback natively; Ferndesk reads it from Featurebase) (from the Ferndesk review, 2026-10-19)
+- [ ] "Ask the agent": a free-form task on an article or collection with sources (a PR, a link, a file), producing a proposal like the automatic ones (from the Ferndesk review, 2026-10-19)
 - [ ] Tests: emulate GitHub repo contents + model fake; `test:live` cases on a fixture repo
 
 ## Later
@@ -231,4 +291,12 @@ Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 - [ ] More sources: GitLab, Linear, Jira; Slack notifications
 - [ ] Turbo cache in CI, once jobs get slow (each takes 1–2 minutes now)
 - [ ] Preview deployments per PR
-- [ ] Custom domains for portals
+- [ ] AI translations of the help center and widget, with a glossary; keep a locale on articles from the start (from the Ferndesk review, 2026-10-19)
+- [ ] Import from other help centers (crawl a public URL, keep URLs with redirects) and feedback boards (Canny, Featurebase) (from the Ferndesk review, 2026-10-19)
+- [ ] A generic "support endpoint" (JSON of conversations) as a source for docs gaps, before any native helpdesk integration (from the Ferndesk review, 2026-10-19)
+- [ ] Slack and Linear: start an agent task ("draft docs from this thread") (from the Ferndesk review, 2026-10-19)
+- [ ] Help center under a subfolder of the customer's site (`/help` via a proxy), after custom domains (from the Ferndesk review, 2026-10-19)
+- [ ] More reader sign-in: OIDC, shared password; SAML/SCIM for teams (from the Ferndesk review, 2026-10-19)
+- [ ] Reader MCP (search and ask the help center from AI tools) once Phase 11 exists (from the Ferndesk review, 2026-10-19)
+
+Not planned, from the Ferndesk review (reasons): automated screenshots (browser automation with customer credentials, beta even there), an image editor (OS tools cover it), API reference pages and playground (another product), a Chrome extension (support-agent tooling), native ingestion from many helpdesks (the generic endpoint first), email-to-agent, multiple changelogs per project.
