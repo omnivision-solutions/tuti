@@ -368,7 +368,7 @@ describe("pull requests", () => {
       await expect(call(acceptLinkSuggestion, team(), { id: second!.id })).rejects.toMatchObject({ status: 404 });
     });
 
-    test("dismissing the three closest posts makes room for the next one", async () => {
+    test("at most three wait at a time; dismissing them makes room for the next", async () => {
       await posts(
         { title: "Dark mode", vector: [1, 0] },
         { title: "Night theme", vector: [1, 0] },
@@ -377,6 +377,7 @@ describe("pull requests", () => {
       );
       openai.setVector("Theme switcher", [1, 0]);
       await deliver(pullRequest("opened", 64, "Theme switcher", ""));
+      await deliver(pullRequest("edited", 64, "Theme switcher", "")); // still 3 waiting, not 4
       const first = (await call(listLinkSuggestions, team(), {})).suggestions;
       expect(first.map((s) => s.post.number).sort()).toEqual([1, 2, 3]);
       for (const suggestion of first) {

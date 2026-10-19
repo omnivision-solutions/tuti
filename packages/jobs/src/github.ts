@@ -110,6 +110,8 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   return { linked: posts.length, started, commented, suggested };
 }
 
+const MAX_SUGGESTIONS = 3;
+
 /**
  * Posts a pull request may be about without mentioning them: open posts whose
  * text is close to the PR's (embeddings), for the team to link or dismiss.
@@ -117,6 +119,12 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
  * or merged aren't suggested. Returns how many new suggestions were added.
  */
 async function suggestLinks(input: JobInput<"githubPullRequest">, projectId: string): Promise<number> {
+  // Up to 3 waiting at a time per pull request; dismissing some makes room for others.
+  const waiting = await prisma.linkSuggestion.count({ where: { projectId, url: input.url, status: "PENDING" } });
+  const room = MAX_SUGGESTIONS - waiting;
+  if (room <= 0) {
+    return 0;
+  }
   const [vector] = await embed([`${input.title}\n\n${input.body}`.trim().slice(0, 8000)]);
   const literal = toVectorLiteral(vector!);
   const matches = await prisma.$queryRaw<{ postId: string; similarity: number }[]>`
@@ -127,10 +135,10 @@ async function suggestLinks(input: JobInput<"githubPullRequest">, projectId: str
       AND p."duplicateOfId" IS NULL
       AND p.status NOT IN ('COMPLETED', 'CLOSED')
       AND NOT EXISTS (SELECT 1 FROM post_link l WHERE l."postId" = p.id AND l.url = ${input.url})
-      -- Already suggested (or dismissed): leaves room in the 3 for posts not yet suggested.
+      -- Already suggested (or dismissed): the room is for posts not suggested yet.
       AND NOT EXISTS (SELECT 1 FROM link_suggestion s WHERE s."postId" = p.id AND s.url = ${input.url})
     ORDER BY e.embedding <=> ${literal}::vector
-    LIMIT 3`;
+    LIMIT ${room}`;
   const likely = matches.filter((m) => m.similarity >= LINK_MIN_SIMILARITY);
   if (likely.length === 0) {
     return 0;
