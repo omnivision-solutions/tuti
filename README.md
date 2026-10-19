@@ -75,15 +75,16 @@ See [docs/secrets.md](docs/secrets.md) (maintainers use Infisical via `pnpm env:
 
 ## Self-hosting
 
-There's no Docker image yet (it's planned). Until then:
+Two Docker images, built from the repo root:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm build
-pnpm --filter @tuti/db db:deploy          # apply migrations
-pnpm --filter @tuti/web start             # web, on $PORT (default 3000)
-pnpm --filter @tuti/worker start          # worker (skip with JOBS_DRIVER=inline)
+docker build -f apps/web/Dockerfile -t tuti-web .        # dashboard, portals, API; applies migrations at start
+docker build -f apps/worker/Dockerfile -t tuti-worker .  # background jobs (skip with JOBS_DRIVER=inline)
 ```
+
+Run them with the variables below (the web container listens on port 3000). Without
+Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tuti/db db:deploy`,
+`pnpm --filter @tuti/web start` and `pnpm --filter @tuti/worker start`.
 
 | Variable | |
 |---|---|

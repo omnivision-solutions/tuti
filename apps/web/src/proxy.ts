@@ -12,8 +12,12 @@ import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
  * The auth API (/api/*) is served on every host so sessions stay per host.
  */
 export function proxy(request: NextRequest) {
-  const target = resolveHost(request.headers.get("host"));
   const { pathname } = request.nextUrl;
+  // Health checks come from inside the host (e.g. localhost:3000), not a known hostname.
+  if (pathname === "/api/health") {
+    return NextResponse.next();
+  }
+  const target = resolveHost(request.headers.get("host"));
 
   if (target.kind === "portal") {
     if (pathname.startsWith("/api/")) {

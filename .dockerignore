@@ -1,0 +1,20 @@
+# Dependencies and build outputs are made inside the image
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+packages/db/src/generated
+
+# Secrets come from the environment (or Infisical) at run time, never from files
+**/.env*
+!**/.env.example
+
+# Not needed in the image
+.git
+docs
+e2e
+e2e-mail
+e2e-screenshots
+test-results
+playwright-report
+**/*.log
