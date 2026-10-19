@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/format";
 import { postPath } from "@/lib/post-urls";
 
-const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
+export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
 
 export type PublishedEntry = {
   number: number;

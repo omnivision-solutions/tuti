@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { TAG_LABELS, type TagName } from "@/components/changelog";
+import { TAG_LABELS } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -63,7 +63,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                     ...(entry.collecting ? [<Badge key="collecting">Collecting merged PRs</Badge>] : []),
                     ...entry.tags.map((tag) => (
                       <Badge key={tag} variant="secondary">
-                        {TAG_LABELS[tag.toLowerCase() as TagName]}
+                        {TAG_LABELS[tag]}
                       </Badge>
                     )),
                   ]}

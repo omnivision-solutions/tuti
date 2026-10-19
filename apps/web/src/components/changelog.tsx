@@ -28,7 +28,7 @@ import {
 } from "@/server/changelog";
 import type { FormState } from "@/server/form-state";
 
-export const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
+const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
 export type TagName = keyof typeof TAG_LABELS;
 
 type Entry = { number: number; title: string; content: Doc; tags: TagName[]; posts: number[]; published: boolean };
