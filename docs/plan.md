@@ -188,9 +188,9 @@ so every later feature is API-first. (Asked for 2026-10-19.)
 - [ ] REST API `/api/v1/…` generated from the operations (done: JSON errors `{error:{code,message}}`, Bearer keys, `/api/v1/openapi.json` (OpenAPI 3.1) and `/docs/api`, both generated from the operations), with an OpenAPI spec and a docs page; operations for everything built so far: projects (read), boards, posts, votes, comments, statuses, merging, duplicate suggestions, team (read), users from SSO, media
 - [x] MCP server (`/mcp`, Streamable HTTP, official SDK, stateless): every operation is a tool (`posts_list`, …; read-only keys see only read tools; errors come back as tool errors) (search and triage feedback, change status, merge duplicates; later draft changelogs, search help articles); API key as bearer token, OAuth later (for Claude.ai connectors)
 - [x] Signed webhooks with retries (post created, status changed, comment created now; changelog published and article updated with Phases 8 and 10): settings card with "Send test", HMAC-SHA256 `Tuti-Signature: t=…,v1=…`, 8 retries with backoff over about a day, public HTTPS endpoints only (private and metadata addresses refused when saved and before each delivery, redirects not followed); each event has a stable id, sent on every retry (`Tuti-Event-Id` header and in the body), so receivers can ignore one they've already handled; documented as at-least-once delivery (from the Ferndesk review, 2026-10-19)
-- [ ] Authorization matrix covers every operation on every surface (UI, REST, MCP), checked by the compiler like today's server actions
-- [ ] From then on (AGENTS.md rule): every feature PR adds its operations, so it ships in the UI, REST and MCP together
-- [ ] Tests: operations (database tests), OpenAPI matches the routes, MCP tools through the SDK's in-memory client, a journey that creates a key in the UI and calls the API with it
+- [x] Authorization matrix covers every operation on every surface (UI, REST, MCP), checked by the compiler like today's server actions: `operations.db.test.ts` (read-only key reads but can't write, read and write key runs everything, another project's key reaches nothing), MCP's tool list per key, and the server actions matrix for the app
+- [x] From then on (AGENTS.md rule): every feature PR adds its operations, so it ships in the UI, REST and MCP together
+- [x] Tests: operations (database tests), OpenAPI matches the routes, MCP tools through the SDK's in-memory client, a journey that creates a key in the UI and calls the API with it
 
 ## The "shipped loop" (Phases 7–11)
 

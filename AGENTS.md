@@ -22,6 +22,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
 - Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
 - A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.
+- Features are operations (`apps/web/src/server/operations`): defined once, they're served in the REST API, MCP and the API docs, and the app calls them from thin server actions. A new operation goes into the operations matrix (`apps/web/src/server/operations/operations.db.test.ts`); typecheck fails until it does.
 - Emails the app sends land in a local SMTP fake: in database tests read them with `mailbox` (`apps/web/src/test/mailbox.ts`), in journeys with `latestEmailTo` (`e2e/mail.ts`).
 - Test data uses `e2e-…@example.com` emails.
 - A change to a user-facing flow updates its journey in `e2e/` (or adds one). While a dialog is open the page behind it is hidden from role queries, so after a dialog action wait for its result (a toast, the URL) before asserting that something is gone. Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.

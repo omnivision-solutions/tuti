@@ -31,7 +31,9 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   run: (context: { actor: Actor; projectId: string }, input: z.infer<I>) => Promise<O>;
 };
 
-export const defineOperation = <I extends z.ZodType, O>(operation: Operation<I, O>) => operation;
+/** Keeps the name as a literal type, so lists of operations (like the authorization matrix) are checked by name. */
+export const defineOperation = <const N extends string, I extends z.ZodType, O>(operation: Operation<I, O> & { name: N }) =>
+  operation;
 
 /** An expected failure, with the HTTP status the API answers with. */
 export class OperationError extends Error {

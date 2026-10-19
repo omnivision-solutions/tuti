@@ -6,8 +6,7 @@ import { getPost, listBoards, listComments, listPosts } from "./read";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
-/** Every operation the API serves. */
-export const operations: Operation[] = [
+const all = [
   listBoards,
   listPosts,
   getPost,
@@ -18,7 +17,13 @@ export const operations: Operation[] = [
   mergePost,
   addLink,
   removeLink,
-] as Operation[];
+] as const;
+
+/** Every operation, served in the app, the REST API and MCP. */
+export const operations: Operation[] = all as unknown as Operation[];
+
+/** Every operation's name, e.g. "posts.list". */
+export type OperationName = (typeof all)[number]["name"];
 
 /** The operation for a request, with the values from its path (e.g. {number}). */
 export function matchOperation(method: string, path: string) {
