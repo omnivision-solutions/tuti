@@ -42,6 +42,10 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       where: { id: membership.project.id },
       select: { changelogTone: true, changelogExampleIds: true },
     }));
+  // The picked examples that are still published.
+  const examples = style
+    ? entries.filter((e) => e.publishedAt && style.changelogExampleIds.includes(e.id)).map((e) => e.number)
+    : [];
   const newEntry = (
     <Link href={`/app/${slug}/changelog/new`} className={buttonVariants()}>
       New entry
@@ -94,9 +98,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
           </CardHeader>
           <CardContent>
             <ChangelogStyleForm
+              // A fresh form when the examples change underneath it (one unpublished, say), so stale picks don't count.
+              key={examples.join(",")}
               projectSlug={slug}
               tone={style.changelogTone}
-              examples={entries.filter((e) => e.publishedAt && style.changelogExampleIds.includes(e.id)).map((e) => e.number)}
+              examples={examples}
               published={entries.filter((e) => e.publishedAt).map(({ number, title }) => ({ number, title }))}
             />
           </CardContent>
