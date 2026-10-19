@@ -19,3 +19,11 @@ test("sign-in tokens go to the panel only, on the portal's origin, when it asks"
   // Messages count only from the panel's own window and origin.
   expect(script).toContain("event.source !== frame.contentWindow || event.origin !== origin");
 });
+
+test("the new-updates dot asks the app when the latest announcement was and remembers what this browser has seen", () => {
+  const script = widgetLoader("https://{project}.tuti.example");
+  expect(script).toContain('fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))');
+  expect(script).toContain('var seenKey = "tuti:seen:" + slug;');
+  // Storage can be blocked; reading or writing it never breaks the widget.
+  expect(script).toContain("try { return fn(window.localStorage); } catch (error) { return null; }");
+});

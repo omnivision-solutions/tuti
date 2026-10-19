@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
+import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
@@ -79,12 +80,21 @@ async function Feedback({ slug, board }: { slug: string; board?: string }) {
 }
 
 async function WhatsNew({ slug }: { slug: string }) {
-  const entries = await publishedEntries(slug, { take: 10 });
+  const [entries, announced] = await Promise.all([
+    publishedEntries(slug, { take: 10 }),
+    prisma.changelogEntry.findFirst({
+      where: { project: { slug }, announced: true, publishedAt: { not: null } },
+      orderBy: { publishedAt: "desc" },
+      select: { publishedAt: true },
+    }),
+  ]);
+  const seen = <WidgetSeen at={announced?.publishedAt?.toISOString() ?? null} />;
   if (entries.length === 0) {
     return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;
   }
   return (
     <div className="flex flex-col gap-8">
+      {seen}
       {entries.map((entry) => (
         <ChangelogEntryView key={entry.number} entry={entry} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" />
       ))}

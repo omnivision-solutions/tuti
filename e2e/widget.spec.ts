@@ -73,6 +73,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // On another site the portal's cookies aren't sent, so the widget asks to sign in (in a new tab).
   await ada.goto(sitePage("customer.localhost", slug));
   const launcher = ada.getByRole("button", { name: "Feedback" });
+  // The entry was announced, and this browser hasn't seen it: the button says so.
+  await expect(launcher).toHaveAccessibleName("Feedback, new updates");
+  await checkpoint(ada, "widget-new-updates");
   await launcher.click();
   await expect(launcher).toHaveAttribute("aria-expanded", "true");
   const widget = ada.frameLocator('iframe[title="Feedback"]');
@@ -85,6 +88,12 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
   await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
   await checkpoint(ada, "widget-whats-new");
+  // Seen now, here and after a reload.
+  await expect(launcher).toHaveAccessibleName("Feedback");
+  await ada.reload();
+  await expect(launcher).toHaveAccessibleName("Feedback");
+  await launcher.click();
+  await expect(widget.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
   // Escape closes it and gives focus back to the button.
   await ada.keyboard.press("Escape");

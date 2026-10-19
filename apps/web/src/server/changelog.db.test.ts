@@ -182,6 +182,13 @@ describe("changelog entries", () => {
     });
   });
 
+  test("publishing announces by default; quietly, it doesn't", async () => {
+    await call(createChangelogEntry, as(owner), { title: "Loud", body: "x" });
+    await call(createChangelogEntry, as(owner), { title: "Quiet", body: "x" });
+    expect(await call(publishChangelogEntry, as(owner), { number: 1 })).toMatchObject({ announced: true });
+    expect(await call(publishChangelogEntry, as(owner), { number: 2, announce: false })).toMatchObject({ announced: false });
+  });
+
   test("text a changelog can't hold is refused", async () => {
     await expect(
       call(createChangelogEntry, as(owner), {
