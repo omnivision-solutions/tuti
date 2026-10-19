@@ -39,7 +39,11 @@ describe("toMarkdown", () => {
         ),
       ),
     );
-    expect(out).toBe("Use **bold _and italic_**, `` x = `y` `` or [the docs](https://example.com/a%20%28b%29)");
+    expect(out).toBe("Use **bold *and italic***, `` x = `y` `` or [the docs](https://example.com/a%20%28b%29)");
+  });
+
+  test("italic inside a word stays italic", () => {
+    expect(toMarkdown(doc(p(text("snake"), text("case", italic))))).toBe("snake*case*");
   });
 
   test("unsafe links are text", () => {
@@ -47,8 +51,8 @@ describe("toMarkdown", () => {
   });
 
   test("text that looks like markup is escaped", () => {
-    const out = toMarkdown(doc(p(text("# not a heading")), p(text("1. not a list")), p(text("a *b* [c](d) <script> snake_case \\"))));
-    expect(out).toBe("\\# not a heading\n\n1\\. not a list\n\na \\*b\\* \\[c\\](d) \\<script> snake\\_case \\\\");
+    const out = toMarkdown(doc(p(text("# not a heading")), p(text("1. not a list")), p(text("a *b* [c](d) <script> snake_case &copy; Q&A \\"))));
+    expect(out).toBe("\\# not a heading\n\n1\\. not a list\n\na \\*b\\* \\[c\\](d) \\<script> snake\\_case \\&copy; Q&A \\\\");
   });
 
   test("bullet and ordered lists, nested", () => {

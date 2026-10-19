@@ -3,10 +3,13 @@ import { prisma } from "@tuti/db";
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 
-/** A sitemap holds up to 50,000 URLs; the rest of them are pages and boards. */
-const MAX_POSTS = 45_000;
+// Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
+export const dynamic = "force-dynamic";
 
-const newest = (dates: Date[]) => (dates.length > 0 ? new Date(Math.max(...dates.map(Number))) : undefined);
+/** The most URLs a sitemap may list. */
+const MAX_URLS = 50_000;
+
+const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a && a > b ? a : b), undefined);
 
 /**
  * The portal's public pages for search engines: home, boards, posts, the
@@ -19,11 +22,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     where: { slug },
     select: {
       boards: { orderBy: { createdAt: "asc" }, select: { id: true, slug: true, updatedAt: true } },
-      // ponytail: newest 45,000 posts only; a sitemap index of several files when a portal has more.
       posts: {
         where: { duplicateOfId: null },
         orderBy: { updatedAt: "desc" },
-        take: MAX_POSTS,
+        take: MAX_URLS,
         select: { boardId: true, number: true, title: true, updatedAt: true },
       },
       changelogEntries: { where: { publishedAt: { not: null } }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
@@ -40,13 +42,15 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       path: `/b/${board.slug}`,
       lastmod: newest([board.updatedAt, ...project.posts.filter((post) => post.boardId === board.id).map((post) => post.updatedAt)]),
     })),
-    ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt })),
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
     { path: "/help", lastmod: newest(project.articles.map((article) => article.updatedAt)) },
     ...project.articles.map((article) => ({ path: `/help/${article.slug}`, lastmod: article.updatedAt })),
-  ];
+    // Posts last, newest first: past the limit, the oldest are the ones left out.
+    // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
+    ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt })),
+  ].slice(0, MAX_URLS);
   const portal = portalUrl(slug);
   const sitemap = [
     '<?xml version="1.0" encoding="UTF-8"?>',

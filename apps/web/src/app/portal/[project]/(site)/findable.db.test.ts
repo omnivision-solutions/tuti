@@ -111,6 +111,22 @@ test("the sitemap lists the portal's public pages with when they changed, and no
   expect((await sitemap(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);
 });
 
+test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts are left out, never the help center", async () => {
+  const project = await helpCenter();
+  const portal = `http://${project.slug}.localhost:3100`;
+  await prisma.$executeRaw`
+    INSERT INTO post (id, "projectId", "boardId", "authorId", number, title, "updatedAt")
+    SELECT 'sitemap-' || n, ${project.id}, ${project.boards[0]!.id}, ${project.team[0]!.userId}, n, 'Post', timestamp '2026-01-01' + n * interval '1 second'
+    FROM generate_series(1, 50000) AS n`;
+
+  const xml = await (await sitemap(request, { params: Promise.resolve({ project: project.slug }) })).text();
+  const urls = [...xml.matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1]);
+  expect(urls).toHaveLength(50_000);
+  expect(urls).toContain(`${portal}/help/inviting-your-team`);
+  expect(urls).toContain(`${portal}/p/post-50000`);
+  expect(urls).not.toContain(`${portal}/p/post-1`);
+});
+
 test("robots.txt welcomes crawlers and points to the sitemap", async () => {
   const project = await helpCenter();
   const response = await robots(request, { params: Promise.resolve({ project: project.slug }) });

@@ -97,11 +97,12 @@ function block(node: JSONContent, ctx: Context): string {
 }
 
 type OpenMark = { type: string; href?: string };
-const DELIMITERS: Record<string, string> = { bold: "**", italic: "_" };
+// `*`, not `_`: CommonMark ignores `_` inside a word (snake*case* is italic, snake_case_ isn't).
+const DELIMITERS: Record<string, string> = { bold: "**", italic: "*" };
 
 /**
- * A text block's content. Marks that run across text nodes stay open (`**a _b_**`,
- * not `**a****_b_**`), and spaces at their edges move outside them, where
+ * A text block's content. Marks that run across text nodes stay open (`**a *b***`,
+ * not `**a*****b***`), and spaces at their edges move outside them, where
  * CommonMark needs them.
  */
 function inline(node: JSONContent, ctx: Context): string {
@@ -161,8 +162,8 @@ function inline(node: JSONContent, ctx: Context): string {
   );
 }
 
-/** Characters that are markup anywhere in a line. */
-const escape = (text: string) => text.replace(/[\\`*_[\]<]/g, "\\$&");
+/** Characters that are markup anywhere in a line, and `&` where it would start an entity (`&copy;`). */
+const escape = (text: string) => text.replace(/[\\`*_[\]<]|&(?=#?[a-z0-9]+;)/gi, "\\$&");
 
 function codeSpan(text: string): string {
   const ticks = "`".repeat(Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length)) + 1);
