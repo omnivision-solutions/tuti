@@ -38,7 +38,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   const videoDialog = ada.getByRole("dialog", { name: "Embed a video" });
   await videoDialog.getByLabel("Video link").fill("https://example.com/not-a-video");
   await videoDialog.getByRole("button", { name: "Embed video" }).click();
-  await expect(videoDialog.getByText("Paste a YouTube, Vimeo or Loom link.")).toBeVisible();
+  await expect(videoDialog.getByLabel("Video link")).toHaveAccessibleDescription("Paste a YouTube, Vimeo or Loom link.");
   await videoDialog.getByLabel("Video link").fill("https://youtu.be/dQw4w9WgXcQ");
   await videoDialog.getByRole("button", { name: "Embed video" }).click();
   await expect(videoDialog).toHaveCount(0);
@@ -53,8 +53,14 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await expect(article.getByRole("listitem")).toHaveText(["Less glare", "Saves battery"]);
   await expect(article.locator("iframe")).toHaveAttribute("src", "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ");
 
+  // An empty comment is refused, and the editor says why to screen readers too.
+  const comment = ada.getByRole("textbox", { name: "Comment" });
+  await ada.getByRole("button", { name: "Comment", exact: true }).click();
+  await expect(comment).toHaveAttribute("aria-invalid", "true");
+  await expect(comment).toHaveAccessibleDescription("Write something first");
+
   // A comment with a link typed without https://.
-  await ada.getByRole("textbox", { name: "Comment" }).click();
+  await comment.click();
   await ada.keyboard.type("Like ");
   await ada.getByRole("button", { name: "Link" }).click();
   const linkDialog = ada.getByRole("dialog", { name: "Add a link" });

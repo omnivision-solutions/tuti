@@ -15,7 +15,7 @@ import {
   SquareCodeIcon,
   VideoIcon,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -34,6 +34,7 @@ export function RichEditor({
   label,
   labelledBy,
   invalid,
+  describedBy,
 }: {
   profile: Profile;
   name: string;
@@ -42,27 +43,38 @@ export function RichEditor({
   label?: string;
   labelledBy?: string;
   invalid?: boolean;
+  /** Id of the element with the error text, while `invalid`. */
+  describedBy?: string;
 }) {
   const [value, setValue] = useState("");
   const [prompt, setPrompt] = useState<"link" | "video" | null>(null);
+  // The editor reads its attributes on every update; this effect keeps the error state current.
+  const aria = useRef<Record<string, string>>({});
   const editor = useEditor({
     extensions: [...extensions(profile), Placeholder.configure({ placeholder })],
     immediatelyRender: false,
     editorProps: {
-      attributes: {
+      attributes: () => ({
         role: "textbox",
         "aria-multiline": "true",
         ...(label && { "aria-label": label }),
         ...(labelledBy && { "aria-labelledby": labelledBy }),
-        ...(invalid && { "aria-invalid": "true" }),
+        ...aria.current,
         class: "rich-text min-h-20 px-2.5 py-2 text-base outline-none md:text-sm",
-      },
+      }),
     },
     onUpdate: ({ editor }) => {
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
     },
   });
+
+  useEffect(() => {
+    aria.current = invalid ? { "aria-invalid": "true", ...(describedBy && { "aria-describedby": describedBy }) } : {};
+    if (editor && !editor.isDestroyed) {
+      editor.view.dispatch(editor.state.tr);
+    }
+  }, [editor, invalid, describedBy]);
 
   return (
     <div
@@ -179,6 +191,7 @@ function normaliseHref(input: string): string {
 
 function UrlDialog({ editor, kind, onClose }: { editor: Editor; kind: "link" | "video" | null; onClose: () => void }) {
   const inputId = useId();
+  const errorId = useId();
   const [error, setError] = useState<string>();
   const isLink = kind === "link";
 
@@ -230,10 +243,11 @@ function UrlDialog({ editor, kind, onClose }: { editor: Editor; kind: "link" | "
               autoComplete="off"
               placeholder={isLink ? "https://example.com" : "https://www.youtube.com/watch?v=…"}
               aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
               required
               autoFocus
             />
-            {error && <FieldError>{error}</FieldError>}
+            {error && <FieldError id={errorId}>{error}</FieldError>}
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={close}>
