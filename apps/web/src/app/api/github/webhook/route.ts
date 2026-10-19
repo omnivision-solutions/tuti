@@ -40,6 +40,8 @@ export async function POST(request: Request) {
       });
     } catch (error) {
       log.error("Handling a GitHub pull request failed", { error, repo: repository.full_name, number: pr.number });
+      // Not acknowledged, so GitHub shows the delivery as failed and it can be redelivered.
+      return Response.json({ error: "Couldn't handle the pull request" }, { status: 503 });
     }
   }
   return Response.json({ ok: true });

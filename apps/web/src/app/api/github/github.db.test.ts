@@ -212,6 +212,14 @@ describe("pull requests", () => {
     expect((await linksAndStatuses())[0]).toMatchObject({ status: "COMPLETED" });
   });
 
+  test("if the pull request can't be handled, GitHub isn't told it was (so it can be redelivered)", async () => {
+    await postsWithStatus("OPEN");
+    vi.spyOn(prisma.githubInstallation, "findUnique").mockRejectedValueOnce(new Error("database down"));
+    expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(503);
+    expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(200); // redelivered
+    expect((await linksAndStatuses())[0]).toMatchObject({ status: "IN_PROGRESS" });
+  });
+
   test("edits add new mentions without changing statuses; other installations are ignored", async () => {
     await postsWithStatus("OPEN", "OPEN");
     await deliver(pullRequest("edited", 43, "Export", "Now also tuti#2"));
