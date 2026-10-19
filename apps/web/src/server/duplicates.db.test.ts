@@ -102,7 +102,10 @@ describe("after a post is created", () => {
     openai.failNext(500);
     await post("Dark theme");
     expect(await suggestions()).toEqual([]);
-    expect(console.error).toHaveBeenCalledWith("Failed to enqueue post-created job", expect.any(Error));
+    expect(console.error).toHaveBeenCalledWith(
+      "Enqueueing the post-created job failed",
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
   });
 
   test("without an OpenAI key nothing is embedded or sent", async () => {

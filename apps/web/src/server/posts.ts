@@ -2,6 +2,7 @@
 
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
@@ -75,7 +76,7 @@ export async function createPost(_prev: FormState, formData: FormData): Promise<
   try {
     await enqueue("postCreated", { projectId: board.projectId, postId: post.id });
   } catch (error) {
-    console.error("Failed to enqueue post-created job", error);
+    log.error("Enqueueing the post-created job failed", { error, postId: post.id });
   }
 
   refresh();

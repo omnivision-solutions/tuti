@@ -1,6 +1,7 @@
 import { render } from "@react-email/render";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { ReactElement } from "react";
+import { log } from "@tuti/shared";
 
 /** SMTP from SMTP_HOST, SMTP_PORT (default 587; 465 means TLS from the start), SMTP_USERNAME, SMTP_PASSWORD. */
 function smtp(): Transporter {
@@ -33,7 +34,7 @@ export async function sendEmail({
 }) {
   const [html, text] = await Promise.all([render(body), render(body, { plainText: true })]);
   if (!process.env.SMTP_HOST) {
-    console.info(`[email not sent: SMTP_HOST is not set]\nTo: ${to}\nSubject: ${subject}\n\n${text}\n`);
+    log.info("Email not sent: SMTP_HOST is not set", { to, subject, text });
     return;
   }
   // The sender must be an address the SMTP provider lets this install use, so there's no default.

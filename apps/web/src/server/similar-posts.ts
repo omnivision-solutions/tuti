@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { embed, embeddingsEnabled, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
+import { embed, embeddingsEnabled, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
 export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string };
@@ -60,7 +60,7 @@ async function embeddingMatches(projectId: string, query: string): Promise<Simil
     const [embedding] = await embed([query]);
     vector = toVectorLiteral(embedding!);
   } catch (error) {
-    console.error("similar posts: embedding the query failed, using title matches only", error);
+    log.warn("Embedding a typed title failed; using title matches only", { error });
     return [];
   }
   return prisma.$queryRaw<SimilarPost[]>`

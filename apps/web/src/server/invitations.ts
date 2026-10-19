@@ -2,6 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
+import { log } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -96,7 +97,7 @@ export async function createInvitation(
       }),
     });
   } catch (error) {
-    console.error("Sending the invite email failed", error);
+    log.error("Sending the invite email failed", { error });
     emailSent = false;
   }
   refresh();

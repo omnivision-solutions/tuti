@@ -1,4 +1,4 @@
-import { jobs, type JobInput, type JobKey } from "@tuti/shared";
+import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
 import { postCreated } from "./post-created";
@@ -24,7 +24,7 @@ export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>): Pro
   const job = jobs[key];
   const parsed = job.input.parse(input) as JobInput<K>;
   if (process.env.JOBS_DRIVER === "inline") {
-    await handlers[key](parsed, console);
+    await handlers[key](parsed, log);
     return;
   }
   await getHatchet().runNoWait(job.name, parsed);
