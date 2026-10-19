@@ -11,6 +11,8 @@ import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
 import { postNumberFromParam, postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
+import { RichText } from "@tuti/content/react";
+import { displayDoc } from "@/server/content";
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/p/[post]">) {
   const { project: projectSlug, post: param } = await props.params;
@@ -28,7 +30,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       votes: { where: { userId: session?.user.id ?? "" }, select: { userId: true } },
       comments: {
         orderBy: { createdAt: "asc" },
-        select: { id: true, body: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
+        select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
       },
       project: { select: { team: { select: { userId: true } } } },
       duplicateOf: { select: { number: true, title: true } },
@@ -51,7 +53,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
     <div className="flex flex-col gap-6">
       <BackLink href={`/b/${post.board.slug}`}>{post.board.name}</BackLink>
 
-      <article className="flex gap-4">
+      <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <h1 className="text-2xl font-bold tracking-tight break-words">{post.title}</h1>
@@ -61,7 +63,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
-          {post.body && <p className="whitespace-pre-wrap break-words">{post.body}</p>}
+          {post.body && <RichText doc={displayDoc(post)} className="rich-text break-words" />}
         </div>
       </article>
 
