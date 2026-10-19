@@ -121,7 +121,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   return { linked: posts.length, started, commented, suggested };
 }
 
-/** Commit messages of a pull request (GitHub lists up to 250 commits). */
+/** Commit messages of a pull request. GitHub lists at most 250 per pull request; 3 pages of 100 cover them. */
 async function commitMessages(input: JobInput<"githubPullRequest">): Promise<string[]> {
   const api = await installationApi(input.installationId);
   type Commit = { commit: { message: string } };
