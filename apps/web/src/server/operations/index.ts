@@ -1,6 +1,6 @@
 import type { Operation } from "./define";
 import { createComment, createPost } from "./create";
-import { addLink, removeLink } from "./links";
+import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
@@ -21,6 +21,9 @@ const all = [
   mergePost,
   addLink,
   removeLink,
+  listLinkSuggestions,
+  acceptLinkSuggestion,
+  dismissLinkSuggestion,
   setVote,
   listDuplicates,
   dismissDuplicate,

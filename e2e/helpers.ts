@@ -2,17 +2,17 @@ import { randomInt, randomUUID } from "node:crypto";
 
 import type { Browser, Page } from "@playwright/test";
 
-export type TestPage = Page & { email: string };
+export type TestPage = Page & { email: string; ip: string };
 
 /**
  * A new browser session for one person. Each gets its own client IP (Better Auth
  * reads a single-address X-Forwarded-For), so journeys running in parallel don't
  * share its per-IP sign-up limit.
  */
-export async function newPerson(browser: Browser, baseUrl: string): Promise<Page> {
+export async function newPerson(browser: Browser, baseUrl: string): Promise<Page & { ip: string }> {
   const ip = `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
   const context = await browser.newContext({ baseURL: baseUrl, extraHTTPHeaders: { "x-forwarded-for": ip } });
-  return context.newPage();
+  return Object.assign(await context.newPage(), { ip });
 }
 
 /** A new browser session that signed up at `baseUrl` (the app or a portal). */

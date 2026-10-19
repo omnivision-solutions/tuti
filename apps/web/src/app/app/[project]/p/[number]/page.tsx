@@ -45,6 +45,11 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true },
         },
+        linkSuggestions: {
+          where: { status: "PENDING" },
+          orderBy: { similarity: "desc" },
+          select: { id: true, repo: true, number: true, url: true, title: true },
+        },
         comments: {
           orderBy: { createdAt: "asc" },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -136,7 +141,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
       )}
 
-      {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
+      {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} suggestions={post.status === "COMPLETED" || post.status === "CLOSED" ? [] : post.linkSuggestions} />}
 
       {suggestions.length > 0 && (
         <DuplicateSuggestions

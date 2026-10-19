@@ -137,6 +137,16 @@ const matrix: Matrix = {
       call: (slug, f) => managePosts.addPostLink(slug, f.postId, "https://github.com/acme/app/pull/1"),
     },
     removePostLink: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.removePostLink(slug, f.postId, f.linkId) },
+    acceptLinkSuggestion: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => managePosts.acceptLinkSuggestion(slug, f.linkSuggestionId),
+    },
+    dismissLinkSuggestion: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => managePosts.dismissLinkSuggestion(slug, f.linkSuggestionId),
+    },
   },
   media: {
     // Anyone who may post in the project may upload; finishing and status are the uploader's own.
@@ -299,6 +309,17 @@ async function createFixture() {
       source: "MANUAL",
     },
   });
+  const linkSuggestion = await prisma.linkSuggestion.create({
+    data: {
+      projectId,
+      postId: post!.id,
+      repo: "acme/app",
+      number: 11,
+      url: "https://github.com/acme/app/pull/11",
+      title: "Night mode",
+      similarity: 0.6,
+    },
+  });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
@@ -308,6 +329,7 @@ async function createFixture() {
   return {
     slug: project.slug,
     linkId: link.id,
+    linkSuggestionId: linkSuggestion.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,
     mediaId: upload.id,

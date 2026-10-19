@@ -1,10 +1,14 @@
 import { prisma } from "@tuti/db";
-import { type GithubFake, startGithubFake } from "@tuti/testkit";
+import { embedPosts } from "@tuti/jobs";
+import { LINK_MIN_SIMILARITY } from "@tuti/shared";
+import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { signValue, verifyValue } from "@/lib/github";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
+import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
+import { call } from "@/server/operations/run";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
@@ -289,6 +293,130 @@ describe("pull requests", () => {
       }
       expect(github.comments("acme/app", 52)).toEqual([]);
       expect((await linksAndStatuses())[1]).toMatchObject({ status: "IN_PROGRESS", links: [expect.objectContaining({ title: "Import" })] });
+    });
+  });
+
+  describe("suggested links", () => {
+    let openai: OpenAIFake;
+    beforeAll(async () => {
+      openai = await startOpenAIFake();
+    });
+    afterAll(() => openai.close());
+    beforeEach(() => {
+      vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+      vi.stubEnv("OPENAI_BASE_URL", openai.url);
+    });
+
+    /** Posts with these titles, statuses and (embedded) vectors. */
+    async function posts(...specs: { title: string; status?: "OPEN" | "COMPLETED"; vector: number[] }[]) {
+      const board = project.boards[0]!;
+      const created = [];
+      for (const [i, spec] of specs.entries()) {
+        openai.setVector(spec.title, spec.vector);
+        created.push(
+          await prisma.post.create({
+            data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: i + 1, title: spec.title, body: "", status: spec.status ?? "OPEN" },
+          }),
+        );
+      }
+      await embedPosts(created);
+      return created;
+    }
+    const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+    const pending = async () =>
+      (await call(listLinkSuggestions, team(), {})).suggestions.map((s) => ({ post: s.post.number, pr: s.pullRequest.number }));
+
+    test("open posts close to a pull request's text are suggested; done, linked and distant ones aren't", async () => {
+      const close = LINK_MIN_SIMILARITY + 0.05;
+      await posts(
+        { title: "Dark mode", vector: [1, 0, 0] },
+        { title: "Export to CSV", vector: [0, 1, 0] }, // only LINK_MIN_SIMILARITY - 0.05 close
+        { title: "Darker theme", status: "COMPLETED", vector: [1, 0, 0] },
+        { title: "Night colours", vector: [1, 0, 0] }, // the PR mentions it: linked, not suggested
+      );
+      const far = LINK_MIN_SIMILARITY - 0.05;
+      openai.setVector("Theme switcher\n\nAlso fixes tuti#4", [close, far, Math.sqrt(1 - close ** 2 - far ** 2)]);
+
+      await deliver(pullRequest("opened", 60, "Theme switcher", "Also fixes tuti#4"));
+      await deliver(pullRequest("edited", 60, "Theme switcher", "Also fixes tuti#4")); // no second suggestion
+      expect(await pending()).toEqual([{ post: 1, pr: 60 }]);
+    });
+
+    test("the team links a suggestion, or dismisses it for good", async () => {
+      await posts({ title: "Dark mode", vector: [1, 0] }, { title: "Night theme", vector: [1, 0] });
+      openai.setVector("Theme switcher", [1, 0]);
+      await deliver(pullRequest("opened", 61, "Theme switcher", ""));
+      // Renamed on GitHub: the waiting suggestions follow.
+      await deliver(pullRequest("edited", 61, "Theme picker", ""));
+      const [first, second] = (await call(listLinkSuggestions, team(), {})).suggestions;
+      expect([first!.pullRequest.title, second!.pullRequest.title]).toEqual(["Theme picker", "Theme picker"]);
+
+      expect(await call(acceptLinkSuggestion, team(), { id: first!.id })).toMatchObject({
+        kind: "pull_request",
+        url: "https://github.com/acme/app/pull/61",
+        title: "Theme picker",
+      });
+      await call(dismissLinkSuggestion, team(), { id: second!.id });
+      // A new post since: suggested next time, next to the dismissed one, which stays dismissed.
+      openai.setVector("Dim the UI", [1, 0]);
+      const third = await prisma.post.create({
+        data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 3, title: "Dim the UI", body: "" },
+      });
+      await embedPosts([third]);
+      await deliver(pullRequest("edited", 61, "Theme switcher", ""));
+      expect(await pending()).toEqual([{ post: 3, pr: 61 }]);
+      expect(await prisma.postLink.findMany({ where: { projectId: project.id }, select: { source: true, postId: true } })).toEqual([
+        { source: "SUGGESTED", postId: expect.any(String) },
+      ]);
+      await expect(call(acceptLinkSuggestion, team(), { id: second!.id })).rejects.toMatchObject({ status: 404 });
+    });
+
+    test("at most three wait at a time; dismissing them makes room for the next", async () => {
+      await posts(
+        { title: "Dark mode", vector: [1, 0] },
+        { title: "Night theme", vector: [1, 0] },
+        { title: "Dim the UI", vector: [1, 0] },
+        { title: "Black background", vector: [0.9, Math.sqrt(1 - 0.81)] },
+      );
+      openai.setVector("Theme switcher", [1, 0]);
+      await deliver(pullRequest("opened", 64, "Theme switcher", ""));
+      await deliver(pullRequest("edited", 64, "Theme switcher", "")); // still 3 waiting, not 4
+      const first = (await call(listLinkSuggestions, team(), {})).suggestions;
+      expect(first.map((s) => s.post.number).sort()).toEqual([1, 2, 3]);
+      for (const suggestion of first) {
+        await call(dismissLinkSuggestion, team(), { id: suggestion.id });
+      }
+      await deliver(pullRequest("edited", 64, "Theme switcher", ""));
+      expect(await pending()).toEqual([{ post: 4, pr: 64 }]);
+    });
+
+    test("a suggestion goes once its post is linked another way, or done", async () => {
+      await posts({ title: "Dark mode", vector: [1, 0] }, { title: "Night theme", vector: [1, 0] }, { title: "Dim the UI", vector: [1, 0] });
+      openai.setVector("Theme switcher", [1, 0]);
+      await deliver(pullRequest("opened", 65, "Theme switcher", ""));
+      const byPost = new Map((await call(listLinkSuggestions, team(), {})).suggestions.map((s) => [s.post.number, s.id]));
+
+      // Linked by hand, and by a mention in an edit.
+      await call(addLink, team(), { number: 1, url: "https://github.com/acme/app/pull/65" });
+      await deliver(pullRequest("edited", 65, "Theme switcher", "tuti#2"));
+      // Done before anyone looked: no longer offered, and can't be accepted.
+      await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 3 } }, data: { status: "COMPLETED" } });
+
+      expect(await pending()).toEqual([]);
+      await expect(call(acceptLinkSuggestion, team(), { id: byPost.get(3)! })).rejects.toMatchObject({ status: 404 });
+      // The linked ones are gone; the done one is only hidden.
+      const left = await prisma.linkSuggestion.findMany({ where: { projectId: project.id }, select: { post: { select: { number: true } } } });
+      expect(left).toEqual([{ post: { number: 3 } }]);
+    });
+
+    test("without embeddings, or when they fail, the pull request is still handled", async () => {
+      await posts({ title: "Dark mode", vector: [1, 0] });
+      openai.failNext(500);
+      expect(await deliver(pullRequest("opened", 62, "Dark mode", "tuti#1"))).toBe(200);
+      vi.stubEnv("OPENAI_API_KEY", "");
+      expect(await deliver(pullRequest("opened", 63, "Dark mode", ""))).toBe(200);
+      expect(await pending()).toEqual([]);
+      expect((await linksAndStatuses())[0]).toMatchObject({ status: "IN_PROGRESS" });
     });
   });
 

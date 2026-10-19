@@ -132,6 +132,7 @@ model Project {
   duplicateSuggestions DuplicateSuggestion[]
   emailOptOuts         EmailOptOut[]
   githubPrComments     GithubPrComment[]
+  linkSuggestions      LinkSuggestion[]
 
   @@map("project")
 }
@@ -482,6 +483,7 @@ model Post {
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
   shippedEmails          ShippedEmail[]
+  linkSuggestions        LinkSuggestion[]
   votes                  Vote[]
   comments               Comment[]
   embedding              PostEmbedding?
@@ -628,4 +630,32 @@ model GithubPrComment {
   @@id([repo, number])
   @@index([projectId])
   @@map("github_pr_comment")
+}
+
+enum LinkSuggestionStatus {
+  PENDING
+  DISMISSED
+}
+
+/// "This pull request may be what that post asks for" (by text similarity), for the
+/// team to link (which makes a SUGGESTED link and removes this) or dismiss.
+model LinkSuggestion {
+  id         String               @id @default(cuid())
+  projectId  String
+  postId     String
+  /// owner/name
+  repo       String
+  number     Int
+  url        String
+  title      String
+  similarity Float
+  status     LinkSuggestionStatus @default(PENDING)
+  createdAt  DateTime             @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, url])
+  @@index([projectId, status])
+  @@map("link_suggestion")
 }

@@ -36,6 +36,8 @@ export default async function globalSetup() {
   const github = await startGithubFake();
   // The GitHub journey tells the fake what its install page should do (e2e/github.spec.ts).
   github.nextInstall(`${APP_URL}/api/github/setup`, { id: 424242, account: "acme-e2e", code: "e2e-install-code" });
+  // Other journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).
+  process.env.E2E_GITHUB_URL = github.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
