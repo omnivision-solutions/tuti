@@ -21,6 +21,7 @@ import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
 import * as changelog from "./changelog";
 import * as github from "./github";
+import * as help from "./help";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -47,6 +48,7 @@ const modules = {
   "api-keys": apiKeys,
   boards,
   github,
+  help,
   invitations,
   "manage-posts": managePosts,
   media,
@@ -123,6 +125,17 @@ const matrix: Matrix = {
         return changelog.saveChangelogStyle(slug, {}, form);
       },
     },
+  },
+  help: {
+    saveArticle: {
+      allowed: "MEMBER",
+      call: (slug) => help.saveArticle(slug, "matrix-draft", {}, form({ title: "Renamed by the matrix", collection: "basics" })),
+    },
+    publishArticle: { allowed: "MEMBER", call: (slug) => help.publishArticle(slug, "matrix-draft") },
+    unpublishArticle: { allowed: "MEMBER", call: (slug) => help.unpublishArticle(slug, "matrix-article") },
+    deleteArticle: { allowed: "MEMBER", call: (slug) => help.deleteArticle(slug, "matrix-article") },
+    saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
+    deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -366,8 +379,11 @@ async function createFixture() {
       expiresAt: new Date(Date.now() + 60_000),
     },
   });
-  // An upload by the account that's allowed to act as "signed in", waiting to be finished.
-  const upload = await prisma.media.create({ data: { projectId, uploaderId: users.outsider.id, size: 4 } });
+  // An upload by the account that's allowed to act as "signed in", waiting to be finished. Made two
+  // hours ago, so one per case doesn't use up that account's hourly upload limit.
+  const upload = await prisma.media.create({
+    data: { projectId, uploaderId: users.outsider.id, size: 4, createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000) },
+  });
   s3.objects.set(`uploads/${upload.id}`, { body: Buffer.from("fake"), contentType: "image/png" });
   const apiKey = await prisma.apiKey.create({
     data: { projectId, name: "Key", scope: "READ", keyHash: crypto.randomUUID(), prefix: "tuti_x", createdById: users.OWNER.id },
@@ -399,6 +415,13 @@ async function createFixture() {
     data: [
       { projectId, number: 1, title: "Matrix entry", publishedAt: new Date() },
       { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
+    ],
+  });
+  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics" } });
+  await prisma.article.createMany({
+    data: [
+      { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
+      { projectId, slug: "matrix-draft", title: "Matrix draft" },
     ],
   });
   const webhook = await prisma.webhook.create({

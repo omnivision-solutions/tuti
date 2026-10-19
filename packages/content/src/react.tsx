@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths } from "./media";
-import { isMediaId, isPixelSize } from "./profiles";
+import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
 const COLUMN_WIDTH = 768;
@@ -64,6 +64,31 @@ function renderNode(node: JSONContent, key: number, media: string | undefined): 
           <code>{inner()}</code>
         </pre>
       );
+    case "table":
+      // Wide tables scroll sideways inside the column instead of stretching the page.
+      return (
+        <div key={key} className="rich-table">
+          <table>
+            <tbody>{inner()}</tbody>
+          </table>
+        </div>
+      );
+    case "tableRow":
+      return <tr key={key}>{inner()}</tr>;
+    case "tableHeader":
+    case "tableCell": {
+      const Cell = node.type === "tableHeader" ? "th" : "td";
+      const { colspan, rowspan } = node.attrs ?? {};
+      return (
+        <Cell
+          key={key}
+          colSpan={isCellSpan(colspan) && colspan > 1 ? colspan : undefined}
+          rowSpan={isCellSpan(rowspan) && rowspan > 1 ? rowspan : undefined}
+        >
+          {inner()}
+        </Cell>
+      );
+    }
     case "video": {
       const video = node.attrs ?? {};
       return isVideo(video) ? (

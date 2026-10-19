@@ -140,6 +140,8 @@ model Project {
   githubPrComments     GithubPrComment[]
   linkSuggestions      LinkSuggestion[]
   changelogEntries     ChangelogEntry[]
+  articles             Article[]
+  collections          Collection[]
 
   @@map("project")
 }
@@ -736,4 +738,51 @@ model ChangelogEntryPullRequest {
 
   @@id([entryId, url])
   @@map("changelog_entry_pull_request")
+}
+
+/// A help center collection: a group of articles on the portal's /help.
+model Collection {
+  id          String   @id @default(cuid())
+  projectId   String
+  /// From the name, unique in the project.
+  slug        String
+  name        String
+  description String   @default("")
+  /// Collections are listed by this, then by name; new ones go last.
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  articles Article[]
+
+  @@unique([projectId, slug])
+  @@map("collection")
+}
+
+/// A help center article, at /help/<slug> on the portal once it's published.
+model Article {
+  id           String    @id @default(cuid())
+  projectId    String
+  /// From the title, unique in the project; follows the title while it's a draft.
+  slug         String
+  title        String
+  /// Plain text of the article (derived from `content`).
+  body         String    @default("")
+  /// Rich content (@tuti/content "article" profile).
+  content      Json?
+  /// Null while it's a draft.
+  publishedAt  DateTime?
+  /// At most one collection; deleting it leaves its articles uncollected.
+  collectionId String?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, slug])
+  @@index([collectionId])
+  @@map("article")
 }

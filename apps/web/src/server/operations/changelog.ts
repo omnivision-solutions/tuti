@@ -80,7 +80,7 @@ function entryView(entry: EntryRow, slug: string) {
 }
 
 /** API keys are the team's; people are when they're on the project's team. Only the team sees drafts. */
-async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
+export async function isTeam(actor: Actor, projectId: string): Promise<boolean> {
   if (actor.kind === "apiKey") {
     return true;
   }

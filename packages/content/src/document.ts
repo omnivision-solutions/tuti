@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
-import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isMediaId, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
+import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isMediaId, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
 
 /** Rich content as stored: ProseMirror JSON (never HTML). */
 export type Doc = JSONContent & { type: "doc" };
@@ -50,6 +50,14 @@ export function parseDoc(profile: Profile, input: unknown): ParseResult {
     }
     if (node.type === "image" && !isImageAttrs(node.attrs ?? {})) {
       error = "This image can't be used here.";
+    }
+    if (node.type === "tableCell" || node.type === "tableHeader") {
+      const { colspan, rowspan } = node.attrs ?? {};
+      if (!isCellSpan(colspan) || !isCellSpan(rowspan)) {
+        error = "This table can't be used here.";
+      }
+      // Column widths aren't shown anywhere.
+      node.attrs = { colspan, rowspan, colwidth: null };
     }
     for (const mark of node.marks ?? []) {
       if (mark.type === "link") {
