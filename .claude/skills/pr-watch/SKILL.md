@@ -7,7 +7,7 @@ description: Stay with a pull request after opening or updating it until CI and 
 
 Passing checks alone don't mean a PR is done: review bots post after CI starts, and every finding needs an answer.
 
-This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It reviews every push, usually within a few minutes, and shows up as a `CodeRabbit` status on the commit. `main` only merges when every review thread is resolved.
+This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It reviews every push, often 10–15 minutes each and longer when several PRs are open, and shows up as a `CodeRabbit` status on the commit. `main` only merges when every review thread is resolved. Each push costs a review, so before opening or pushing: review your own diff for races, partial failures, retries and stale reads, run the full suites, and push fixes together rather than one at a time.
 
 ## Wait without polling
 
@@ -31,7 +31,11 @@ This repo's review bot is **CodeRabbit** (config in `.coderabbit.yaml`). It revi
 ## Merge when all of these hold
 
 - Every required check passed on the current head commit.
-- CodeRabbit's status on that commit is a success, or it has said it skipped the commit. Pending, failed or missing means not reviewed yet: check that the status is there, not only that nothing failed (a check that filters for failures passes when the status is missing).
+- CodeRabbit has reviewed the PR's code. Either its status on the head commit is a success (or it said it skipped the commit), or **all** of these hold:
+  - its status was a success on an earlier commit of this PR, and every finding from its reviews is answered;
+  - every push since that commit changes only tests, docs or comments, or is a rebase onto `main` that left the PR's own code as reviewed. Check it: `git diff <reviewed-sha> <head> -- . ':!*.md' ':!docs/**' ':!e2e/**' ':!**/*.test.ts' ':!**/*.test.tsx' ':!**/*.db.test.ts'` shows only comment lines; for a rebase, `git range-diff <reviewed-sha>...<head>` shows the PR's commits unchanged.
+
+  Any other change in behaviour waits for CodeRabbit's status on the head. Pending, failed or missing means not reviewed yet: check that the status is there, not only that nothing failed (a check that filters for failures passes when the status is missing).
 - Every review comment has a reply, the GraphQL query above shows no unresolved thread, and no review is "changes requested".
 - The PR description still matches what the PR does.
 

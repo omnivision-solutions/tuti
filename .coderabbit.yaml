@@ -6,6 +6,11 @@ reviews:
   poem: false
   in_progress_fortune: false
   sequence_diagrams: false
+  # Nothing to review in these; skipping them keeps reviews quicker.
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!**/*.png"
+    - "!**/*.jpg"
   pre_merge_checks:
     # We comment the why, not every function (see AGENTS.md); coverage numbers add noise.
     docstrings:
