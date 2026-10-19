@@ -21,11 +21,12 @@ const slug = (text: string, max: number) =>
 export function checkpoints(testInfo: TestInfo) {
   const folder = slug(`${basename(testInfo.file, ".spec.ts")} ${testInfo.title}`, 80);
   let step = 0;
-  return async (page: Page, name: string) => {
+  /** `fullPage: false` for dialogs: fixed overlays only cover the window, so full-page shots look broken. */
+  return async (page: Page, name: string, { fullPage = true } = {}) => {
     step += 1;
     const file = `${String(step).padStart(2, "0")}-${slug(name, 60) || "step"}.png`;
     const path = join(SCREENSHOTS_DIR, folder, file);
-    await page.screenshot({ path, fullPage: true });
+    await page.screenshot({ path, fullPage, animations: "disabled" });
     await testInfo.attach(file, { path, contentType: "image/png" });
   };
 }
