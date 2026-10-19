@@ -62,6 +62,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   await widget.getByRole("link", { name: "What's new" }).click();
   await expect(widget.getByRole("heading", { name: "Dark mode is here" })).toBeVisible();
+  await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
   await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
   await checkpoint(ada, "widget-whats-new");
 

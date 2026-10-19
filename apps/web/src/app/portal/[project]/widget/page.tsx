@@ -1,17 +1,16 @@
 import { prisma } from "@tuti/db";
-import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ChangelogEntryView } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
-import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { WidgetClose } from "@/components/widget-close";
 import { cn } from "@/lib/utils";
-import { displayDoc } from "@/server/content";
+import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -87,32 +86,14 @@ async function Feedback({ slug, board }: { slug: string; board?: string }) {
 }
 
 async function WhatsNew({ slug }: { slug: string }) {
-  const entries = await prisma.changelogEntry.findMany({
-    where: { project: { slug }, publishedAt: { not: null } },
-    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
-    take: 10,
-    select: { number: true, title: true, body: true, content: true, tags: true, publishedAt: true },
-  });
+  const entries = await publishedEntries(slug, { take: 10 });
   if (entries.length === 0) {
     return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;
   }
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       {entries.map((entry) => (
-        <article key={entry.number} className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <time dateTime={entry.publishedAt!.toISOString()}>
-              {entry.publishedAt!.toLocaleDateString("en", { dateStyle: "medium" })}
-            </time>
-            {entry.tags.map((tag) => (
-              <Badge key={tag} variant="secondary">
-                {tag.charAt(0) + tag.slice(1).toLowerCase()}
-              </Badge>
-            ))}
-          </div>
-          <h2 className="font-heading text-lg font-semibold break-words">{entry.title}</h2>
-          <RichText doc={displayDoc(entry)} mediaBaseUrl={mediaPublicUrl()} className="rich-text text-sm break-words" />
-        </article>
+        <ChangelogEntryView key={entry.number} entry={entry} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" />
       ))}
     </div>
   );

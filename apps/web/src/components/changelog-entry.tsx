@@ -19,7 +19,18 @@ export type PublishedEntry = {
 };
 
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
-export function ChangelogEntryView({ entry, mediaBaseUrl, heading = "h2" }: { entry: PublishedEntry; mediaBaseUrl: string | null; heading?: "h1" | "h2" }) {
+export function ChangelogEntryView({
+  entry,
+  mediaBaseUrl,
+  heading = "h2",
+  linkTarget,
+}: {
+  entry: PublishedEntry;
+  mediaBaseUrl: string | null;
+  heading?: "h1" | "h2";
+  /** "_blank" in the widget: links open on the portal, not in the panel. */
+  linkTarget?: "_blank";
+}) {
   const Title = heading;
   return (
     <article className="flex flex-col gap-3" aria-labelledby={`entry-${entry.number}`}>
@@ -33,7 +44,7 @@ export function ChangelogEntryView({ entry, mediaBaseUrl, heading = "h2" }: { en
       </div>
       <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
         {heading === "h2" ? (
-          <Link href={`/changelog/${entry.number}`} className="hover:underline">
+          <Link href={`/changelog/${entry.number}`} target={linkTarget} className="hover:underline">
             {entry.title}
           </Link>
         ) : (
@@ -47,7 +58,7 @@ export function ChangelogEntryView({ entry, mediaBaseUrl, heading = "h2" }: { en
           {entry.posts.map((post, i) => (
             <span key={post.number}>
               {i > 0 && ", "}
-              <Link href={postPath(post)} className="text-foreground hover:underline">
+              <Link href={postPath(post)} target={linkTarget} className="text-foreground hover:underline">
                 {post.title}
               </Link>
             </span>
