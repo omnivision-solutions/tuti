@@ -10,6 +10,11 @@ function smtp(): Transporter {
     host: process.env.SMTP_HOST,
     port,
     secure: port === 465,
+    // Each send ends within about 2 minutes (nodemailer waits up to 10 by default), so
+    // jobs that take over unfinished sends never race one still in flight.
+    connectionTimeout: 30_000,
+    greetingTimeout: 30_000,
+    socketTimeout: 60_000,
     auth: process.env.SMTP_USERNAME
       ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD }
       : undefined,

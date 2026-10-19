@@ -12,17 +12,23 @@ const RESUBMIT_FOR_HOURS = 24;
 
 const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
 
-/** Takes on emailing one person: a new claim, or one a crashed run left unsent. False when someone else has it or it's sent. */
-async function claim(postId: string, userId: string): Promise<boolean> {
-  const { count } = await prisma.shippedEmail.createMany({ data: [{ postId, userId }], skipDuplicates: true });
+/**
+ * Takes on emailing one person: a new claim, or one a crashed run left unsent.
+ * Returns the claim's time, which the run then uses to mark it sent or release
+ * it (so it never touches a claim another run took over); null when someone else
+ * has it or it's sent.
+ */
+async function claim(postId: string, userId: string): Promise<Date | null> {
+  const claimedAt = new Date();
+  const { count } = await prisma.shippedEmail.createMany({ data: [{ postId, userId, claimedAt }], skipDuplicates: true });
   if (count === 1) {
-    return true;
+    return claimedAt;
   }
   const taken = await prisma.shippedEmail.updateMany({
     where: { postId, userId, sentAt: null, claimedAt: { lt: late() } },
-    data: { claimedAt: new Date() },
+    data: { claimedAt },
   });
-  return taken.count === 1;
+  return taken.count === 1 ? claimedAt : null;
 }
 
 /**
@@ -68,10 +74,11 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     }
     sentTo.add(address.toLowerCase());
     // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
-    if (!(await claim(postId, person.id))) {
+    const claimedAt = await claim(postId, person.id);
+    if (!claimedAt) {
       continue;
     }
-    const row = { postId_userId: { postId, userId: person.id } };
+    const mine = { postId, userId: person.id, claimedAt };
     const token = encodeURIComponent(person.unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
     try {
@@ -84,19 +91,26 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
       });
-      await prisma.shippedEmail.update({ where: row, data: { sentAt: new Date() } });
-      emailed++;
     } catch (error) {
-      // Released, so the job's retry emails them.
-      await prisma.shippedEmail.delete({ where: row });
+      // Not sent: released, so the job's retry emails them.
+      await prisma.shippedEmail.deleteMany({ where: mine });
       failed++;
       log.warn(`couldn't email that post ${postId} shipped: ${(error as Error).message}`);
+      continue;
     }
+    // Sent: never released from here on. If saving this fails, the claim stays unsent and is
+    // taken over later, which may email them twice; better than not at all.
+    await prisma.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
+    emailed++;
   }
   if (failed > 0) {
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
   }
-  await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: null } });
+  // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
+  await prisma.post.updateMany({
+    where: { id: postId, shippedEmails: { none: { sentAt: null } } },
+    data: { shippedEmailsDueAt: null },
+  });
   log.info(`post ${postId} shipped: emailed ${emailed}`);
   return { emailed };
 }

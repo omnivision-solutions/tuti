@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:net";
+import type { AddressInfo } from "node:net";
 
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
@@ -123,8 +125,43 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
     expect(emailsTo(crashed.email)).toHaveLength(1);
     expect(emailsTo(busy.email)).toEqual([]);
+    // Still due while Busy's email is in flight: if that run dies too, the cron comes back for it.
+    expect(await due(postId)).not.toBeNull();
+    await prisma.shippedEmail.update({
+      where: { postId_userId: { postId, userId: busy.id } },
+      data: { claimedAt: minutesAgo(11) },
+    });
+    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: minutesAgo(11) } });
+    expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(emailsTo(busy.email)).toHaveLength(1);
+    expect(emailsTo(crashed.email)).toHaveLength(1);
     expect(await due(postId)).toBeNull();
     expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 0, queued: 0 });
+  });
+
+  test("a run whose claim was taken over mid-send leaves the new owner's claim alone", async () => {
+    const author = await verified("Author");
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Slow mail" });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED" } });
+    const row = { postId_userId: { postId, userId: author.id } };
+    const takenOverAt = new Date(Date.now() + 60_000);
+    // A mail server that, while this run is sending, lets another run take the claim over, then fails the send.
+    const server = createServer(async (socket) => {
+      await prisma.shippedEmail.update({ where: row, data: { claimedAt: takenOverAt } });
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = process.env.SMTP_PORT;
+    process.env.SMTP_PORT = String((server.address() as AddressInfo).port);
+    try {
+      await expect(handlers.postShipped({ postId }, { info: () => {}, warn: () => {} })).rejects.toThrow();
+    } finally {
+      process.env.SMTP_PORT = port;
+      server.close();
+    }
+    // Its failure didn't release the other run's claim.
+    expect(await prisma.shippedEmail.findUnique({ where: row })).toMatchObject({ claimedAt: takenOverAt, sentAt: null });
   });
 
   test("people who unsubscribed (one click from their mail app) don't hear about it", async () => {
