@@ -122,6 +122,12 @@ const matrix: Matrix = {
       takesIds: true,
       call: (slug, f) => managePosts.dismissDuplicate(slug, f.suggestionId),
     },
+    addPostLink: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => managePosts.addPostLink(slug, f.postId, "https://github.com/acme/app/pull/1"),
+    },
+    removePostLink: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.removePostLink(slug, f.postId, f.linkId) },
   },
   media: {
     // Anyone who may post in the project may upload; finishing and status are the uploader's own.
@@ -261,8 +267,20 @@ async function createFixture() {
   const apiKey = await prisma.apiKey.create({
     data: { projectId, name: "Key", scope: "READ", keyHash: crypto.randomUUID(), prefix: "tuti_x", createdById: users.OWNER.id },
   });
+  const link = await prisma.postLink.create({
+    data: {
+      projectId,
+      postId: post!.id,
+      kind: "ISSUE",
+      repo: "acme/app",
+      number: 9,
+      url: "https://github.com/acme/app/issues/9",
+      source: "MANUAL",
+    },
+  });
   return {
     slug: project.slug,
+    linkId: link.id,
     apiKeyId: apiKey.id,
     mediaId: upload.id,
     emailInvitationId: emailInvitation.id,

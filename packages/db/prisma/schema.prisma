@@ -28,8 +28,8 @@ model User {
   comments        Comment[]
   ssoIdentity     SsoIdentity?
 
-  invitationsCreated  Invitation[] @relation("InvitationCreatedBy")
-  invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
+  invitationsCreated  Invitation[]    @relation("InvitationCreatedBy")
+  invitationsAccepted Invitation[]    @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
   apiKeysCreated      ApiKey[]
   media               Media[]
@@ -117,6 +117,7 @@ model Project {
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
   apiKeys              ApiKey[]
+  postLinks            PostLink[]
   media                Media[]
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
@@ -245,6 +246,48 @@ model ApiKey {
   @@map("api_key")
 }
 
+enum PostLinkKind {
+  PULL_REQUEST
+  ISSUE
+  RELEASE
+}
+
+enum PostLinkSource {
+  /// Added by the team on the post.
+  MANUAL
+  /// Mentioned in a pull request (tuti#123 or the post's URL).
+  REFERENCE
+  /// Suggested by text similarity and confirmed by the team.
+  SUGGESTED
+}
+
+/// A post's link to GitHub: the pull request, issue or release that works on or ships it.
+model PostLink {
+  id          String         @id @default(cuid())
+  projectId   String
+  postId      String
+  kind        PostLinkKind
+  /// owner/name
+  repo        String
+  /// PR or issue number; null for releases.
+  number      Int?
+  /// Release tag; null otherwise.
+  tag         String?
+  url         String
+  /// From GitHub once the app is connected (null when added by hand).
+  title       String?
+  source      PostLinkSource
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, url])
+  @@index([projectId, repo, number])
+  @@map("post_link")
+}
+
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
 /// account into one portal. Bound to the portal and to the state cookie of the
 /// browser that asked for it; deleted when used. Only hashes are stored.
@@ -364,6 +407,8 @@ model Post {
   embedding              PostEmbedding?
   duplicateSuggestions   DuplicateSuggestion[] @relation("SuggestedDuplicate")
   duplicateOfSuggestions DuplicateSuggestion[] @relation("SuggestedOriginal")
+
+  links PostLink[]
 
   @@unique([projectId, number])
   /// Trigram index for "similar posts" suggestions (pg_trgm).

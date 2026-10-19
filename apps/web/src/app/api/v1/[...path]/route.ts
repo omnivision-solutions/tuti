@@ -25,8 +25,13 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
   }
 
   let body: unknown = {};
-  if (request.method !== "GET") {
-    body = await request.json().catch(() => null);
+  const text = request.method === "GET" ? "" : await request.text();
+  if (text.trim() !== "" || request.method === "POST" || request.method === "PATCH") {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
+    }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return error(400, "invalid_json", "Send a JSON object");
     }
