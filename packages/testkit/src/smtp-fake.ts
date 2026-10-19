@@ -3,7 +3,16 @@ import type { AddressInfo } from "node:net";
 import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
 
-export type CapturedEmail = { from: string; replyTo: string; to: string[]; subject: string; text: string; html: string };
+export type CapturedEmail = {
+  from: string;
+  replyTo: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  /** Header values by lowercase name. */
+  headers: Record<string, string>;
+};
 
 export type SmtpFake = {
   host: string;
@@ -37,6 +46,7 @@ export async function startSmtpFake({ onEmail }: { onEmail?: (email: CapturedEma
           subject: mail.subject ?? "",
           text: mail.text ?? "",
           html: typeof mail.html === "string" ? mail.html : "",
+          headers: Object.fromEntries(mail.headerLines.map((h) => [h.key, h.line.slice(h.line.indexOf(":") + 1).trim()])),
         };
         emails.push(email);
         onEmail?.(email);

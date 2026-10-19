@@ -67,6 +67,11 @@ export const jobs = {
       publishedAt: z.string(),
     }),
   },
+  /** A post became Completed: email the people behind it (once per post). */
+  postShipped: {
+    name: "post-shipped",
+    input: z.object({ postId: z.string() }),
+  },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */
   cleanupMedia: {
     name: "cleanup-media",

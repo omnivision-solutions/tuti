@@ -5,13 +5,14 @@ import { cleanupMedia } from "./cleanup";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
+import { postShipped } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
 
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
-export { emitEvent, portalPostUrl, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
+export { emitEvent, portalPostUrl, postStatusChanged, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };
 
@@ -27,6 +28,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   resubmitWebhookDeliveries,
   githubPullRequest,
   githubRelease,
+  postShipped,
 };
 
 /**

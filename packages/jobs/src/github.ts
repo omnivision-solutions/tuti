@@ -1,7 +1,7 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
-import { emitEvent, portalOrigin, postSummary, postSummarySelect, toApiStatus } from "./events";
+import { portalOrigin, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { installationApi } from "./github-api";
 import type { JobLogger, JobResult } from "./index";
 
@@ -81,10 +81,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
         continue;
       }
       const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-      await emitEvent(projectId, "post.status_changed", {
-        post: postSummary(updated, project.slug),
-        previousStatus: toApiStatus(post.status),
-      });
+      await postStatusChanged(projectId, post.id, postSummary(updated, project.slug), post.status);
       started++;
     }
   }
@@ -105,10 +102,7 @@ async function moveTo(
       continue;
     }
     const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-    await emitEvent(project.id, "post.status_changed", {
-      post: postSummary(updated, project.slug),
-      previousStatus: toApiStatus(post.status),
-    });
+    await postStatusChanged(project.id, post.id, postSummary(updated, project.slug), post.status);
     moved++;
   }
   return moved;

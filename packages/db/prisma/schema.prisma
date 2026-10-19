@@ -12,15 +12,17 @@ datasource db {
 // the domain back-relations on User are ours.
 
 model User {
-  id            String    @id
-  name          String
-  email         String
-  emailVerified Boolean   @default(false)
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  sessions      Session[]
-  accounts      Account[]
+  id               String    @id
+  name             String
+  email            String
+  emailVerified    Boolean   @default(false)
+  image            String?
+  /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
+  unsubscribeToken String    @unique @default(dbgenerated("gen_random_uuid()::text"))
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  sessions         Session[]
+  accounts         Account[]
 
   teamMemberships TeamMember[]
   posts           Post[]
@@ -34,6 +36,7 @@ model User {
   apiKeysCreated      ApiKey[]
   webhooksCreated     Webhook[]
   media               Media[]
+  emailOptOuts        EmailOptOut[]
 
   @@unique([email])
   @@map("user")
@@ -126,6 +129,7 @@ model Project {
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
   duplicateSuggestions DuplicateSuggestion[]
+  emailOptOuts         EmailOptOut[]
 
   @@map("project")
 }
@@ -444,26 +448,28 @@ model BoardRedirect {
 }
 
 model Post {
-  id            String     @id @default(cuid())
-  projectId     String
-  boardId       String
-  authorId      String
+  id               String     @id @default(cuid())
+  projectId        String
+  boardId          String
+  authorId         String
   /// Per-project number (#123), used in URLs: /p/<title>-<number>.
-  number        Int
-  title         String
+  number           Int
+  title            String
   /// Plain text of the post (derived from `content`), for previews, search and embeddings.
-  body          String     @default("")
+  body             String     @default("")
   /// The post as rich content (@tuti/content "post" profile, ProseMirror JSON).
   /// Null for posts written before rich text: their `body` is the plain text.
-  content       Json?
-  status        PostStatus @default(OPEN)
+  content          Json?
+  status           PostStatus @default(OPEN)
   /// Denormalised so boards can sort by votes without a COUNT per row.
-  voteCount     Int        @default(0)
-  commentCount  Int        @default(0)
+  voteCount        Int        @default(0)
+  commentCount     Int        @default(0)
   /// Set when this post is merged into another one; votes move to the original.
-  duplicateOfId String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  duplicateOfId    String?
+  /// When the people behind this post were emailed that it shipped (once per post).
+  shippedEmailedAt DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
   project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   board                  Board                 @relation(fields: [boardId], references: [id], onDelete: Cascade)
@@ -568,4 +574,17 @@ model DuplicateSuggestion {
   @@index([projectId, status])
   @@index([originalId])
   @@map("duplicate_suggestion")
+}
+
+/// Someone who unsubscribed from a project's emails.
+model EmailOptOut {
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@map("email_opt_out")
 }

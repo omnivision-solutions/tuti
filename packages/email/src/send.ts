@@ -19,18 +19,21 @@ function smtp(): Transporter {
 /**
  * Sends an email built from a React Email template. Without SMTP_HOST (local
  * development, installs without email) it's written to the log instead.
- * `replyTo` is where replies go (e.g. the person who sent an invite).
+ * `replyTo` is where replies go (e.g. the person who sent an invite); `headers` are
+ * extra headers (e.g. List-Unsubscribe).
  */
 export async function sendEmail({
   to,
   subject,
   body,
   replyTo,
+  headers,
 }: {
   to: string;
   subject: string;
   body: ReactElement;
   replyTo?: string;
+  headers?: Record<string, string>;
 }) {
   const [html, text] = await Promise.all([render(body), render(body, { plainText: true })]);
   if (!process.env.SMTP_HOST) {
@@ -42,5 +45,5 @@ export async function sendEmail({
   if (!from) {
     throw new Error('EMAIL_FROM is not set (e.g. "Acme Feedback <feedback@example.com>")');
   }
-  await smtp().sendMail({ from, to, subject, html, text, replyTo });
+  await smtp().sendMail({ from, to, subject, html, text, replyTo, headers });
 }
