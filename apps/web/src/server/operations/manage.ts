@@ -16,6 +16,7 @@ export const updatePost = defineOperation({
   input: z
     .object({ number: postNumber, status: z.enum(STATUSES).optional(), board: z.string().optional() })
     .refine((input) => input.status !== undefined || input.board !== undefined, "Send a status or a board"),
+  example: { status: "planned" },
   run: async ({ projectId }, input) => {
     const post = await findPost(projectId, input.number);
     let boardId: string | undefined;
@@ -43,6 +44,7 @@ export const mergePost = defineOperation({
   scope: "write",
   access: "team",
   input: z.object({ number: postNumber, into: z.number().int().positive() }),
+  example: { into: 12 },
   run: async ({ projectId }, input) => {
     const [post, target] = await Promise.all([findPost(projectId, input.number), findPost(projectId, input.into)]);
     const into = await mergePosts(post.id, target.id);

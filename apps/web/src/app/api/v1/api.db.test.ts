@@ -7,7 +7,10 @@ import { createPost as createPostOperation } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { matchOperation, operations } from "@/server/operations";
+
 import { GET, PATCH, POST } from "./[...path]/route";
+import { GET as getSpec } from "./openapi.json/route";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -327,5 +330,31 @@ describe("creating", () => {
         { board: "feature-requests", title: "Dark mode", author: { id: "user-42" } },
       ),
     ).rejects.toThrow("Only API keys can write on someone's behalf");
+  });
+});
+
+describe("OpenAPI", () => {
+  test("the public spec describes every operation, at the path that runs it", async () => {
+    const response = getSpec();
+    expect(response.status).toBe(200);
+    const spec = await response.json();
+    expect(spec).toMatchObject({ openapi: "3.1.0", servers: [{ url: "http://tuti.localhost:3100/api/v1" }] });
+
+    const described = Object.entries(spec.paths as Record<string, Record<string, { operationId: string }>>).flatMap(
+      ([path, methods]) => Object.entries(methods).map(([method, op]) => ({ path, method, name: op.operationId })),
+    );
+    expect(described.map((d) => d.name).sort()).toEqual(operations.map((o) => o.name).sort());
+    for (const { path, method, name } of described) {
+      expect(matchOperation(method.toUpperCase(), path.replace("{number}", "7"))?.operation.name).toBe(name);
+    }
+
+    const create = spec.paths["/posts"].post;
+    expect(create.requestBody.content["application/json"].schema).toMatchObject({
+      required: ["board", "title"],
+      properties: { author: { type: "object", required: ["id"] } },
+    });
+    expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
+      { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
+    ]);
   });
 });
