@@ -254,15 +254,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] Article feedback (thumbs up/down with an optional comment) and search logging (hits and misses), shown as analytics: views, top articles, failed searches; these feed Phases 11 and 12 (from the Ferndesk review, 2026-10-19)
 - [ ] Per-project branding for portals and the help center: logo (light/dark), favicon, primary colour, header and footer links; "Powered by Tuti" can be turned off (from the Ferndesk review, 2026-10-19)
 - [ ] Access: a fully private portal; reader groups from the SSO token's attributes (e.g. plan = enterprise) that restrict collections and articles, shown locked or hidden; magic-link sign-in for portal users (from the Ferndesk review, 2026-10-19)
-- [ ] AI translations of the help center and widget, with a glossary; keep a locale on articles from the start (from the Ferndesk review, 2026-10-19)
-- [ ] Import from other help centers (crawl a public URL, keep URLs with redirects) and feedback boards (Canny, Featurebase) (from the Ferndesk review, 2026-10-19)
-- [ ] A generic "support endpoint" (JSON of conversations) as a source for docs gaps, before any native helpdesk integration (from the Ferndesk review, 2026-10-19)
-- [ ] Slack and Linear: start an agent task ("draft docs from this thread") (from the Ferndesk review, 2026-10-19)
-- [ ] Help center under a subfolder of the customer's site (`/help` via a proxy), after custom domains (from the Ferndesk review, 2026-10-19)
-- [ ] More reader sign-in: OIDC, shared password; SAML/SCIM for teams (from the Ferndesk review, 2026-10-19)
-- [ ] Reader MCP (search and ask the help center from AI tools) once Phase 11 exists (from the Ferndesk review, 2026-10-19)
-
-Not planned, from the Ferndesk review (reasons): automated screenshots (browser automation with customer credentials, beta even there), an image editor (OS tools cover it), API reference pages and playground (another product), a Chrome extension (support-agent tooling), native ingestion from many helpdesks (the generic endpoint first), email-to-agent, multiple changelogs per project. and the help center (CNAME + automatic TLS), moved up from Later: a help center is worth little for SEO on a tuti.so subdomain (from the Ferndesk review, 2026-10-19)
+- [ ] Custom domains for portals and the help center (CNAME + automatic TLS), moved up from Later: a help center is worth little for SEO on a tuti.so subdomain (from the Ferndesk review, 2026-10-19)
 - [ ] Export everything as a ZIP of Markdown (no lock-in) (from the Ferndesk review, 2026-10-19)
 
 ## Phase 11 — AI answers
