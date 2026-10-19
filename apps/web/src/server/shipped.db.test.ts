@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/unsubscribe/confirm/route";
@@ -70,6 +71,30 @@ describe("when a post ships", () => {
     await setStatus(post.number, "open");
     await setStatus(post.number, "completed");
     expect(emailsTo(author.email)).toHaveLength(1);
+  });
+
+  test("a mail outage doesn't lose anyone: the retry emails those not reached, once", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Offline mode" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+
+    const port = process.env.SMTP_PORT;
+    process.env.SMTP_PORT = "1"; // nothing listens there
+    try {
+      await setStatus(post.number, "completed"); // the job fails; with inline jobs that's only logged
+      await expect(handlers.postShipped({ postId }, log)).rejects.toThrow("2 shipped email(s)");
+    } finally {
+      process.env.SMTP_PORT = port;
+    }
+    expect(emailsTo(author.email)).toEqual([]);
+
+    // Hatchet's retry.
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 2 });
+    expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 0 });
+    expect(emailsTo(author.email)).toHaveLength(1);
+    expect(emailsTo(voter.email)).toHaveLength(1);
   });
 
   test("people who unsubscribed (one click from their mail app) don't hear about it", async () => {

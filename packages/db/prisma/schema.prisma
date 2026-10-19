@@ -37,6 +37,7 @@ model User {
   webhooksCreated     Webhook[]
   media               Media[]
   emailOptOuts        EmailOptOut[]
+  shippedEmails       ShippedEmail[]
 
   @@unique([email])
   @@map("user")
@@ -448,34 +449,33 @@ model BoardRedirect {
 }
 
 model Post {
-  id               String     @id @default(cuid())
-  projectId        String
-  boardId          String
-  authorId         String
+  id            String     @id @default(cuid())
+  projectId     String
+  boardId       String
+  authorId      String
   /// Per-project number (#123), used in URLs: /p/<title>-<number>.
-  number           Int
-  title            String
+  number        Int
+  title         String
   /// Plain text of the post (derived from `content`), for previews, search and embeddings.
-  body             String     @default("")
+  body          String     @default("")
   /// The post as rich content (@tuti/content "post" profile, ProseMirror JSON).
   /// Null for posts written before rich text: their `body` is the plain text.
-  content          Json?
-  status           PostStatus @default(OPEN)
+  content       Json?
+  status        PostStatus @default(OPEN)
   /// Denormalised so boards can sort by votes without a COUNT per row.
-  voteCount        Int        @default(0)
-  commentCount     Int        @default(0)
+  voteCount     Int        @default(0)
+  commentCount  Int        @default(0)
   /// Set when this post is merged into another one; votes move to the original.
-  duplicateOfId    String?
-  /// When the people behind this post were emailed that it shipped (once per post).
-  shippedEmailedAt DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  duplicateOfId String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
   project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   board                  Board                 @relation(fields: [boardId], references: [id], onDelete: Cascade)
   author                 User                  @relation(fields: [authorId], references: [id], onDelete: Cascade)
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
+  shippedEmails          ShippedEmail[]
   votes                  Vote[]
   comments               Comment[]
   embedding              PostEmbedding?
@@ -587,4 +587,18 @@ model EmailOptOut {
 
   @@id([userId, projectId])
   @@map("email_opt_out")
+}
+
+/// Someone emailed that a post shipped: at most once per post and person, kept across retries.
+model ShippedEmail {
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([userId])
+  @@map("shipped_email")
 }

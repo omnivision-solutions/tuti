@@ -11,17 +11,9 @@ import type { JobLogger, JobResult } from "./index";
  * project's SSO), never to the team, and not to people who unsubscribed.
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
-  // Claimed first, so it's once per post: a post completed again (or a redelivered job) doesn't email twice.
-  // ponytail: a crash mid-send skips the rest; per-recipient rows if that ever matters.
-  const { count } = await prisma.post.updateMany({
-    where: { id: postId, status: "COMPLETED", duplicateOfId: null, shippedEmailedAt: null },
-    data: { shippedEmailedAt: new Date() },
-  });
-  if (count === 0) {
-    return { skipped: true };
-  }
-  const post = await prisma.post.findUniqueOrThrow({
-    where: { id: postId },
+  // Only while it's still shipped (the team may have reopened it since) and not merged away.
+  const post = await prisma.post.findFirst({
+    where: { id: postId, status: "COMPLETED", duplicateOfId: null },
     select: {
       number: true,
       title: true,
@@ -32,16 +24,20 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       comments: { select: { authorId: true } },
     },
   });
+  if (!post) {
+    return { skipped: true };
+  }
   const { projectId, project } = post;
   const ids = [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
   const people = await prisma.user.findMany({
     where: { id: { in: ids }, teamMemberships: { none: { projectId } }, emailOptOuts: { none: { projectId } } },
-    select: { email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },
+    select: { id: true, email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },
   });
 
   const origin = portalOrigin(project.slug);
   const postUrl = portalPostUrl(project.slug, post);
   const sentTo = new Set<string>();
+  let emailed = 0;
   let failed = 0;
   for (const person of people) {
     const address =
@@ -50,6 +46,11 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       continue;
     }
     sentTo.add(address.toLowerCase());
+    // One row per person, claimed before sending: a retry, a second job or the post completed again skips them.
+    const { count } = await prisma.shippedEmail.createMany({ data: [{ postId, userId: person.id }], skipDuplicates: true });
+    if (count === 0) {
+      continue;
+    }
     const token = encodeURIComponent(person.unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
     try {
@@ -62,11 +63,17 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
       });
+      emailed++;
     } catch (error) {
+      // Released, so the job's retry emails them.
+      await prisma.shippedEmail.delete({ where: { postId_userId: { postId, userId: person.id } } });
       failed++;
       log.warn(`couldn't email that post ${postId} shipped: ${(error as Error).message}`);
     }
   }
-  log.info(`post ${postId} shipped: emailed ${sentTo.size - failed}, ${failed} failed`);
-  return { emailed: sentTo.size - failed, failed };
+  if (failed > 0) {
+    throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
+  }
+  log.info(`post ${postId} shipped: emailed ${emailed}`);
+  return { emailed };
 }

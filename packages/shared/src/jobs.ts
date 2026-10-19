@@ -67,10 +67,13 @@ export const jobs = {
       publishedAt: z.string(),
     }),
   },
-  /** A post became Completed: email the people behind it (once per post). */
+  /** A post became Completed: email the people behind it (each once; a retry emails only those not reached). */
   postShipped: {
     name: "post-shipped",
     input: z.object({ postId: z.string() }),
+    retries: 5,
+    // 5s, 25s, 2m, 10m, then an hour: rides out a mail provider's outage.
+    backoff: { factor: 5, maxSeconds: 60 * 60 },
   },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */
   cleanupMedia: {
