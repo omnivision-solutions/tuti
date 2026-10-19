@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { fromPlainText, isEmptyDoc, mediaIdsIn, parseDoc, toPlainText, updateImages } from "./document";
+import { fromPlainText, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
 import { RichText } from "./react";
 
@@ -156,6 +156,39 @@ describe("plain text", () => {
     expect(isEmptyDoc(fromPlainText("  \n\n "))).toBe(true);
     expect(isEmptyDoc(doc(video("vimeo", "76979871")))).toBe(false);
     expect(isEmptyDoc(doc({ type: "image", attrs: { mediaId: "clx0abcdefghijklmnopqrstu", alt: "" } }))).toBe(false);
+  });
+});
+
+describe("chunks", () => {
+  const heading = (value: string) => ({ type: "heading", attrs: { level: 2 }, content: [text(value)] });
+
+  test("each heading starts a section with the text up to the next one", () => {
+    expect(
+      toChunks(
+        doc(p(text("Intro")), heading("Who can invite"), p(text("Owners.")), list("Admins", "Editors"), heading("Limits"), heading("Seats"), p(text("Ten."))),
+      ),
+    ).toEqual([
+      { heading: "", text: "Intro" },
+      { heading: "Who can invite", text: "Owners.\n\nAdmins\nEditors" },
+      { heading: "Limits", text: "" },
+      { heading: "Seats", text: "Ten." },
+    ]);
+  });
+
+  test("long sections are split between blocks, and a block longer than a chunk is cut", () => {
+    const third = "a".repeat(MAX_CHUNK_LENGTH / 3);
+    const chunks = toChunks(doc(heading("Long"), p(text(third)), p(text(third)), p(text(third)), p(text("b".repeat(MAX_CHUNK_LENGTH + 10)))));
+    expect(chunks).toEqual([
+      { heading: "Long", text: `${third}\n\n${third}` },
+      { heading: "Long", text: third },
+      { heading: "Long", text: "b".repeat(MAX_CHUNK_LENGTH) },
+      { heading: "Long", text: "b".repeat(10) },
+    ]);
+    expect(Math.max(...chunks.map((c) => c.text.length))).toBeLessThanOrEqual(MAX_CHUNK_LENGTH);
+  });
+
+  test("an empty document is one empty chunk, so its title can still be found", () => {
+    expect(toChunks(fromPlainText(""))).toEqual([{ heading: "", text: "" }]);
   });
 });
 

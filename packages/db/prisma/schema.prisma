@@ -142,6 +142,7 @@ model Project {
   linkSuggestions      LinkSuggestion[]
   changelogEntries     ChangelogEntry[]
   articles             Article[]
+  articleChunks        ArticleChunk[]
   collections          Collection[]
 
   @@map("project")
@@ -802,10 +803,36 @@ model Article {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection Collection?    @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  chunks     ArticleChunk[]
 
   @@unique([projectId, slug])
   @@index([collectionId])
   @@map("article")
+}
+
+/// A section of a published article (a heading and the text up to the next one, capped
+/// in length) with its embedding, for search and AI answers. Only published articles
+/// have chunks; a background job replaces all of an article's when its text changes.
+model ArticleChunk {
+  id          String                      @id @default(cuid())
+  articleId   String
+  projectId   String
+  /// Order in the article, from 0.
+  position    Int
+  /// The section's heading; "" for text before the first heading.
+  heading     String
+  text        String
+  model       String
+  /// Of all the article's chunks (the same on each), to tell when they need embedding again.
+  contentHash String
+  embedding   Unsupported("vector(1536)")
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, position])
+  @@index([projectId])
+  @@map("article_chunk")
 }

@@ -1,11 +1,11 @@
 /**
- * Embeds existing posts and suggests duplicates among them.
+ * Embeds existing posts and suggests duplicates among them, and embeds published help articles for search.
  * Run: pnpm --filter @tuti/worker backfill:embeddings
  */
 import { prisma } from "@tuti/db";
 import { assertEnv } from "@tuti/shared";
 
-import { detectDuplicates, embedPosts } from "@tuti/jobs";
+import { detectDuplicates, embedPosts, embedPublishedArticles } from "@tuti/jobs";
 
 assertEnv(["DATABASE_URL", "OPENAI_API_KEY"]);
 
@@ -22,4 +22,12 @@ for (const post of posts) {
   suggestions += await detectDuplicates(post.id);
 }
 console.log(`${posts.length} posts: embedded ${embedded}, ${suggestions} new duplicate suggestion(s)`);
+
+// Published help articles, for search (unchanged ones are skipped).
+const { articles, embedded: articlesEmbedded, failed } = await embedPublishedArticles({ info: () => {}, warn: console.warn });
+console.log(`${articles} published articles: embedded ${articlesEmbedded} for search (the rest unchanged), ${failed.length} failed`);
 await prisma.$disconnect();
+if (failed.length > 0) {
+  console.error(`${failed.length} article(s) weren't embedded; run this again`);
+  process.exitCode = 1;
+}

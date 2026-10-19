@@ -16,6 +16,8 @@ export const DUPLICATE_MIN_SIMILARITY = 0.45;
 export const TYPING_SUGGESTION_MIN_SIMILARITY = 0.4;
 /** A pull request's text vs. a post's. ponytail: not calibrated yet (PRs say "how", posts "what"); tune with real pairs. */
 export const LINK_MIN_SIMILARITY = 0.4;
+/** A search query vs. a help article's section. ponytail: not calibrated yet; tune with real queries (and the misses log). */
+export const SEARCH_MIN_SIMILARITY = 0.3;
 
 export function embeddingsEnabled(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
@@ -24,6 +26,11 @@ export function embeddingsEnabled(): boolean {
 /** What gets embedded for a post. */
 export function postEmbeddingText(post: { title: string; body: string }): string {
   return `${post.title}\n\n${post.body}`.trim().slice(0, 8000);
+}
+
+/** What gets embedded for a section of a help article: the article's title gives it context. */
+export function articleChunkText(title: string, chunk: { heading: string; text: string }): string {
+  return [title, chunk.heading, chunk.text].filter(Boolean).join("\n\n");
 }
 
 export function contentHash(text: string): string {
@@ -35,7 +42,8 @@ export function toVectorLiteral(vector: number[]): string {
   return `[${vector.join(",")}]`;
 }
 
-export async function embed(texts: string[]): Promise<number[][]> {
+/** `signal` cancels the request, e.g. `AbortSignal.timeout(…)` where someone is waiting for it. */
+export async function embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
@@ -45,6 +53,7 @@ export async function embed(texts: string[]): Promise<number[][]> {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: EMBEDDING_MODEL, input: texts }),
+    signal,
   });
   const json = (await response.json()) as {
     data?: { index: number; embedding: number[] }[];
