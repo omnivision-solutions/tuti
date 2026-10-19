@@ -219,7 +219,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] Public roadmap on the portal: columns by status (Planned, In progress, Completed)
 - [ ] Changelog entries (draft → published) at `/changelog`, with tags (New, Improved, Fixed) and the posts each entry completes; posts show "Shipped in vX". Written in the rich editor (`changelog` profile, Phase 6.5); published entries can go out as an email to voters and subscribers, rendered from the same content
 - [ ] Running draft: every merged PR is added to the next unpublished entry; a GitHub release (or "Ship" by hand) closes it out
-- [ ] AI drafting: rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
+- [ ] AI drafting (through OpenRouter, like Phase 11): rewrites PR titles/bodies into user-facing notes (what changed for users, not how), groups related PRs, leads with the posts it completes; skips internal work (labels like `chore`, `internal`, `deps`, configurable)
 - [ ] Per-project style: a few example entries + tone notes the drafts follow
 - [ ] Editor helpers: regenerate a section, shorten, "explain for non-developers"
 - [ ] Optional: write the published notes back to the GitHub release body
@@ -245,7 +245,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] On portal `/help` and in the widget
 - [ ] No answer → "Post this as feedback" (prefilled, with duplicate suggestions)
 - [ ] Question log: unanswered and thumbs-down questions become a "Gaps" list for the team (feeds Phase 12)
-- [ ] Claude for generation (Haiku for cost, Sonnet where quality matters); per-project usage cap
+- [ ] Models through OpenRouter (decided 2026-10-19; `OPENROUTER_API_KEY`, any OpenAI-compatible endpoint for self-hosters): Claude Haiku for cost, Sonnet where quality matters; per-project usage cap
 - [ ] Tests: model fake for flows; `test:live` quality cases graded on facts (cites the right article, refuses when nothing matches)
 
 ## Phase 12 — Self-updating docs
