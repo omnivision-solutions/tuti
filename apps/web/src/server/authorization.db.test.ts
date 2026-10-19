@@ -18,6 +18,7 @@ import * as projects from "./projects";
 import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
+import * as webhooks from "./webhooks";
 
 /**
  * Every server action, who may call it, and a valid call. The type lists each
@@ -40,6 +41,7 @@ const modules = {
   "similar-posts": similarPosts,
   "sso-settings": ssoSettings,
   team,
+  webhooks,
 };
 
 type Level = "public" | "signed in" | TeamRole;
@@ -184,6 +186,11 @@ const matrix: Matrix = {
     removeMember: { allowed: "ADMIN", takesIds: true, call: (slug, f) => team.removeMember(slug, f.targetMemberId) },
     leaveProject: { allowed: "MEMBER", call: (slug) => team.leaveProject(slug) },
   },
+  webhooks: {
+    createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, "http://127.0.0.1:9/hook", ["post.created"]) },
+    deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
+    sendTestWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.sendTestWebhook(slug, f.webhookId) },
+  },
 };
 
 const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
@@ -197,6 +204,8 @@ let otherProject: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
   s3 = await startS3Fake();
+  // Webhook fixtures point at a closed local port (deliveries fail fast, offline).
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
   }
@@ -278,9 +287,13 @@ async function createFixture() {
       source: "MANUAL",
     },
   });
+  const webhook = await prisma.webhook.create({
+    data: { projectId, url: "http://127.0.0.1:9/hook", secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
+  });
   return {
     slug: project.slug,
     linkId: link.id,
+    webhookId: webhook.id,
     apiKeyId: apiKey.id,
     mediaId: upload.id,
     emailInvitationId: emailInvitation.id,

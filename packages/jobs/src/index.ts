@@ -4,6 +4,9 @@ import { getHatchet } from "@tuti/shared/hatchet";
 import { cleanupMedia } from "./cleanup";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
+import { webhookDelivery } from "./webhooks";
+
+export { signWebhook } from "./webhooks";
 
 export { detectDuplicates, embedPosts } from "./duplicates";
 
@@ -17,6 +20,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   postCreated,
   imageUploaded,
   cleanupMedia,
+  webhookDelivery,
 };
 
 /**

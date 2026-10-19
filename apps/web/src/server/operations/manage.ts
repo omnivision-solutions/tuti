@@ -2,7 +2,8 @@ import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
-import { findPost, fromApiStatus, postNumber, postSummarySelect, projectSlug, STATUSES, summary } from "./read";
+import { emitEvent } from "../events";
+import { findPost, fromApiStatus, postNumber, postSummarySelect, projectSlug, STATUSES, summary, toApiStatus } from "./read";
 
 /** Team actions on posts: status, board and merging duplicates. */
 
@@ -34,7 +35,11 @@ export const updatePost = defineOperation({
       data: { ...(input.status && { status: fromApiStatus(input.status) }), ...(boardId && { boardId }) },
       select: postSummarySelect,
     });
-    return summary(updated, await projectSlug(projectId));
+    const result = summary(updated, await projectSlug(projectId));
+    if (updated.status !== post.status) {
+      await emitEvent(projectId, "post.status_changed", { post: result, previousStatus: toApiStatus(post.status) });
+    }
+    return result;
   },
 });
 

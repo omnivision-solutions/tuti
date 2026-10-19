@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./hatchet": "./src/hatchet.ts",
-    "./storage": "./src/storage.ts"
+    "./storage": "./src/storage.ts",
+    "./webhook-url": "./src/webhook-url.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
