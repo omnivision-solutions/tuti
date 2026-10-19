@@ -5,7 +5,7 @@ import { handlers } from "@tuti/jobs";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { POST as unsubscribe } from "@/app/portal/[project]/unsubscribe/confirm/route";
+import { POST as unsubscribe } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
 import { upsertProjectUser } from "@/lib/sso";
 import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";

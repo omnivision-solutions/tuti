@@ -232,12 +232,13 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 
 ## Phase 9 — Widget + SDK (MIT)
 
-- [ ] One script tag: give feedback (with duplicate suggestions), see what's new; signs users in with the existing JWT SSO
-- [ ] Help center inside the widget: search and read articles, rendered from the same stored content as the help center, inside a Shadow DOM so the host site's selectors can't reach it and ours can't leak; the host element gets `all: initial` and the widget sets its own font, colours and sizes, since inherited properties still cross the boundary (asked for 2026-10-19)
-- [ ] The widget talks to the public API (Phase 6.6), no private endpoints
+- [x] One script tag (`<script src="https://tuti.so/widget.js" data-project="acme" async>`): a Feedback button that opens the portal's `/widget` page in a panel, with two tabs: Feedback (post, with duplicate suggestions while typing) and What's new (the latest published changelog entries). Escape or the close button closes it. Signed-out people sign in on the portal in a new tab (widget v0, 2026-10-19)
+- [ ] Sign users in from the widget with the existing JWT SSO (SDK `identify`): on customers' sites the portal's session cookie doesn't reach the iframe (another site, SameSite=Lax), so until then people sign in and post on the portal
+- [ ] Help center inside the widget: search and read articles, rendered from the same stored content as the help center, inside a Shadow DOM so the host site's selectors can't reach it and ours can't leak; the host element gets `all: initial` and the widget sets its own font, colours and sizes, since inherited properties still cross the boundary (asked for 2026-10-19). Since widget v0 the panel is an iframe, which already keeps the two sites' styles apart: a tab in it may be enough
+- [x] No private endpoints and no API key in customers' pages: the panel is the portal's own `/widget` page in an iframe, using the portal's forms and server actions, so sessions stay per host. It's the only page other sites may frame; every other page sends `frame-ancestors 'none'`. (Replaces "talks to the public API", decided with widget v0, 2026-10-19)
 - [ ] What's new: unseen badge for announced changelog entries, seen state per identified user (across devices) (from the Ferndesk review, 2026-10-19)
 - [ ] Small SDK: `identify` (JWT), `open`, `openArticle` (also as a `data-` attribute for contextual help buttons), `hideLauncher`, `locale`, changelog unseen status; launcher, colours and up to 5 quick links set in `/app`; display as launcher, sidebar or inline (from the Ferndesk review, 2026-10-19)
-- [ ] Tests: E2E on a fixture host page
+- [x] Tests: E2E on a fixture host page (`e2e/widget.spec.ts`: on another site, and on the portal's own site)
 
 ## Phase 10 — Help center
 

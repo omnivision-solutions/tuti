@@ -24,7 +24,7 @@ export function appUrl(): URL {
   return new URL(required("APP_URL"));
 }
 
-function portalTemplate(): string {
+export function portalTemplate(): string {
   const template = required("PORTAL_URL_TEMPLATE");
   if (!template.includes(PLACEHOLDER)) {
     throw new Error(`PORTAL_URL_TEMPLATE must contain ${PLACEHOLDER}`);

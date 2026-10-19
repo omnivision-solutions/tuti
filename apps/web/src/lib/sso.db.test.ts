@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { GET } from "@/app/portal/[project]/sso/route";
+import { GET } from "@/app/portal/[project]/(site)/sso/route";
 import { acceptInvitation } from "@/server/invitations";
 import { createProject as createProjectAction } from "@/server/projects";
 import { getSession } from "@/server/session";

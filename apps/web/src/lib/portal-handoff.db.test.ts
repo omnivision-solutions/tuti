@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
-import { GET as startContinue } from "@/app/portal/[project]/continue/route";
+import { GET as startContinue } from "@/app/portal/[project]/(site)/continue/route";
 import { continueToPortal } from "@/server/portal-handoff";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 

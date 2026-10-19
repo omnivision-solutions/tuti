@@ -21,3 +21,12 @@ test("other paths on unknown hosts are still 404", () => {
   expect(proxy(request("localhost:3000", "/")).status).toBe(404);
   expect(proxy(request("localhost:3000", "/api/auth/get-session")).status).toBe(404);
 });
+
+test("other sites may frame a portal's /widget, and no other page", () => {
+  const framing = (host: string, path: string) => proxy(request(host, path)).headers.get("content-security-policy");
+  expect(framing("acme.tuti.example", "/widget")).toBeNull();
+  expect(framing("acme.tuti.example", "/b/ideas")).toBe("frame-ancestors 'none'");
+  expect(framing("acme.tuti.example", "/sign-in")).toBe("frame-ancestors 'none'");
+  expect(framing("tuti.example", "/widget")).toBe("frame-ancestors 'none'");
+  expect(framing("tuti.example", "/app/acme")).toBe("frame-ancestors 'none'");
+});
