@@ -30,3 +30,10 @@ test("other sites may frame a portal's /widget, and no other page", () => {
   expect(framing("tuti.example", "/widget")).toBe("frame-ancestors 'none'");
   expect(framing("tuti.example", "/app/acme")).toBe("frame-ancestors 'none'");
 });
+
+test("an article's .md URL is served by its Markdown route", () => {
+  const rewrite = (path: string) => proxy(request("acme.tuti.example", path)).headers.get("x-middleware-rewrite");
+  expect(rewrite("/help/inviting-your-team.md")).toBe("http://acme.tuti.example/portal/acme/help/inviting-your-team/md");
+  expect(rewrite("/help/inviting-your-team")).toBe("http://acme.tuti.example/portal/acme/help/inviting-your-team");
+  expect(rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
+});
