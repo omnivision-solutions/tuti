@@ -8,6 +8,7 @@ export const MAIL_DIR = "e2e-mail";
 
 function emailsTo(address: string): CapturedEmail[] {
   return readdirSync(MAIL_DIR)
+    .filter((file) => file.endsWith(".json"))
     .sort()
     .map((file) => JSON.parse(readFileSync(join(MAIL_DIR, file), "utf8")) as CapturedEmail)
     .filter((email) => email.to.includes(address));
