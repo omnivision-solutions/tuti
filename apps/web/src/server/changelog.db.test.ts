@@ -147,6 +147,23 @@ describe("changelog entries", () => {
     expect(await status(dark.number)).toBe("COMPLETED");
   });
 
+  test("publishing goes by each post's status at that moment, not as first read", async () => {
+    const dark = await post("Dark mode");
+    const where = { projectId_number: { projectId: project.id, number: dark.number } };
+    await prisma.post.update({ where, data: { status: "COMPLETED" } });
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "Dark.", posts: [dark.number] });
+    // The team reopens the post just after publishing has read the entry.
+    const read = prisma.changelogEntry.findUnique.bind(prisma.changelogEntry);
+    vi.spyOn(prisma.changelogEntry, "findUnique").mockImplementationOnce((async (args: never) => {
+      const entry = await read(args);
+      await prisma.post.update({ where, data: { status: "OPEN" } });
+      return entry;
+    }) as never);
+
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    expect(await status(dark.number)).toBe("COMPLETED");
+  });
+
   test("text a changelog can't hold is refused", async () => {
     await expect(
       call(createChangelogEntry, as(owner), {

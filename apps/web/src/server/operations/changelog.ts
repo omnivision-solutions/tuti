@@ -1,4 +1,4 @@
-import { type ChangelogTag, prisma } from "@tuti/db";
+import { type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
 import { enqueue, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -120,7 +120,7 @@ export const listChangelog = defineOperation({
     const published = input.status === "published";
     const entries = await prisma.changelogEntry.findMany({
       where: { projectId, publishedAt: published ? { not: null } : null },
-      orderBy: published ? [{ publishedAt: "desc" }, { number: "desc" }] : [{ updatedAt: "desc" }],
+      orderBy: published ? [{ publishedAt: "desc" }, { number: "desc" }] : [{ updatedAt: "desc" }, { number: "desc" }],
       skip: input.cursor,
       take: input.limit + 1,
       select: entrySelect,
@@ -261,24 +261,23 @@ export const publishChangelogEntry = defineOperation({
       }
       const deliveries: string[] = [];
       const completed: string[] = [];
-      for (const { post } of entry.posts) {
-        if (post.status === "COMPLETED" || post.status === "CLOSED") {
+      // Its posts as they are now: each locked and read in this transaction, so a status
+      // the team changed a moment ago is the one that counts.
+      const linked = await tx.changelogEntryPost.findMany({ where: { entryId: entry.id }, select: { postId: true } });
+      for (const { postId } of linked) {
+        const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
+        if (!current || current.status === "COMPLETED" || current.status === "CLOSED") {
           continue;
         }
-        const moved = await tx.post.updateMany({
-          where: { id: post.id, status: post.status },
-          data: { status: "COMPLETED", shippedEmailsDueAt: new Date() },
-        });
-        if (moved.count === 1) {
-          const updated = await tx.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-          deliveries.push(
-            ...(await recordEvent(tx, projectId, "post.status_changed", {
-              post: postSummary(updated, slug),
-              previousStatus: toApiStatus(post.status),
-            })),
-          );
-          completed.push(post.id);
-        }
+        await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+        const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
+        deliveries.push(
+          ...(await recordEvent(tx, projectId, "post.status_changed", {
+            post: postSummary(updated, slug),
+            previousStatus: toApiStatus(current.status),
+          })),
+        );
+        completed.push(postId);
       }
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
       deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", entryView(published, slug))));
