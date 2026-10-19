@@ -9,12 +9,7 @@ import { log } from "@tuti/shared";
 export async function waitForMigration(migration: string, { every = 5_000, max = 15 * 60_000 } = {}) {
   const started = Date.now();
   for (;;) {
-    const applied = await prisma.$queryRaw<{ n: number }[]>`
-      SELECT count(*)::int AS n FROM _prisma_migrations
-      WHERE migration_name = ${migration} AND finished_at IS NOT NULL AND rolled_back_at IS NULL`
-      // A new database has no migrations table until the first migration.
-      .catch(() => [{ n: 0 }]);
-    if (applied[0]!.n > 0) {
+    if (await applied(migration)) {
       return;
     }
     if (Date.now() - started >= max) {
@@ -23,4 +18,16 @@ export async function waitForMigration(migration: string, { every = 5_000, max =
     log.info("Waiting for the web app to apply the database migrations", { migration });
     await new Promise((resolve) => setTimeout(resolve, every));
   }
+}
+
+async function applied(migration: string): Promise<boolean> {
+  // A new database has no migrations table until the first migration. Other errors (unreachable, wrong password) throw.
+  const [table] = await prisma.$queryRaw<{ exists: boolean }[]>`SELECT to_regclass('_prisma_migrations') IS NOT NULL AS exists`;
+  if (!table?.exists) {
+    return false;
+  }
+  const [row] = await prisma.$queryRaw<{ n: number }[]>`
+    SELECT count(*)::int AS n FROM _prisma_migrations
+    WHERE migration_name = ${migration} AND finished_at IS NOT NULL AND rolled_back_at IS NULL`;
+  return row!.n > 0;
 }
