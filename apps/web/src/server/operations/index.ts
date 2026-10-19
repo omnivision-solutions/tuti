@@ -2,11 +2,14 @@ import type { Operation } from "./define";
 import { createComment, createPost } from "./create";
 import { addLink, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
+import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
 import { getPost, listBoards, listComments, listPosts } from "./read";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
 const all = [
+  getProject,
+  listTeam,
   listBoards,
   listPosts,
   getPost,
@@ -17,6 +20,9 @@ const all = [
   mergePost,
   addLink,
   removeLink,
+  setVote,
+  listDuplicates,
+  dismissDuplicate,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

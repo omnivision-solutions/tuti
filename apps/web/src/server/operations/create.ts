@@ -21,7 +21,7 @@ const content = {
 };
 
 /** Someone from the project's app, matched by their id there (as with SSO). */
-const author = z
+export const author = z
   .object({
     id: z.string().min(1).max(255),
     name: z.string().trim().min(1).max(100).optional(),
@@ -33,7 +33,7 @@ const author = z
  * Who writes it: the signed-in person; for an API key, someone from the project's
  * app when `author` is given (created on first sight), otherwise the key's creator.
  */
-async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
+export async function authorId(context: { actor: Actor; projectId: string }, input: z.infer<typeof author>) {
   if (context.actor.kind === "user") {
     if (input) {
       throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
