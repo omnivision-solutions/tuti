@@ -1,3 +1,6 @@
+// The editor parts (parseHTML) read DOM elements; servers importing this need the DOM types too.
+/// <reference lib="dom" />
+
 import { type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
@@ -28,6 +31,9 @@ export const MAX_ALT_LENGTH = 300;
 
 /** Uploaded media ids (cuid). */
 export const isMediaId = (value: unknown): value is string => typeof value === "string" && /^[a-z0-9]{20,32}$/.test(value);
+
+/** An image's stored width or height: a whole number of pixels, above zero. */
+export const isPixelSize = (value: unknown): value is number => Number.isInteger(value) && (value as number) > 0;
 
 /**
  * An uploaded image (see media.ts), shown at a share of the column's width and

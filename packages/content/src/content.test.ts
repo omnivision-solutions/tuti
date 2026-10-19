@@ -216,10 +216,12 @@ describe("images", () => {
     expect(out).toContain('width="1200" height="800" alt="A chart" loading="lazy"');
   });
 
-  test("without a media host, or without a size, images are left out", () => {
+  test("without a media host, or without a real size, images are left out", () => {
     expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()) }))).toBe("<div></div>");
-    expect(
-      renderToStaticMarkup(createElement(RichText, { doc: doc(image({ w: null })), mediaBaseUrl: "https://media.example" })),
-    ).toBe("<div></div>");
+    for (const size of [{ w: null }, { h: 0 }, { w: -1200 }, { h: 1.5 }]) {
+      expect(
+        renderToStaticMarkup(createElement(RichText, { doc: doc(image(size)), mediaBaseUrl: "https://media.example" })),
+      ).toBe("<div></div>");
+    }
   });
 });

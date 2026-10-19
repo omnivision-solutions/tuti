@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths } from "./media";
-import { isMediaId } from "./profiles";
+import { isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
 const COLUMN_WIDTH = 768;
@@ -81,7 +81,7 @@ function renderNode(node: JSONContent, key: number, media: string | undefined): 
     }
     case "image": {
       const { mediaId, width, align, alt, w, h } = node.attrs ?? {};
-      if (!media || !isMediaId(mediaId) || !Number.isInteger(w) || !Number.isInteger(h)) {
+      if (!media || !isMediaId(mediaId) || !isPixelSize(w) || !isPixelSize(h)) {
         return null;
       }
       const url = (size: number) => `${media}/${imageKey(mediaId, size)}`;

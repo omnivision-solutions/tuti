@@ -425,6 +425,9 @@ importers:
       '@react-email/render':
         specifier: ^2.1.1
         version: 2.1.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@tuti/content':
+        specifier: workspace:*
+        version: link:../content
       '@tuti/shared':
         specifier: workspace:*
         version: link:../shared
