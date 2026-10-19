@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 
 import { API_RATE_LIMIT, hashApiKey } from "@/lib/api-keys";
-import { type Actor, matchOperation, OperationError } from "@/server/operations";
+import { type ApiKeyActor, matchOperation, OperationError } from "@/server/operations";
 
 /**
  * The REST API: /api/v1/… → an operation (server/operations). Callers send a
@@ -51,20 +51,22 @@ async function handle(request: Request, { params }: RouteContext<"/api/v1/[...pa
 }
 
 /** The key's actor, or the error response. Counts the request against the key's rate limit. */
-async function authenticate(request: Request): Promise<Actor | Response> {
+async function authenticate(request: Request): Promise<ApiKeyActor | Response> {
   const key = /^Bearer (tuti_[A-Za-z0-9_-]{43})$/.exec(request.headers.get("authorization") ?? "")?.[1];
   if (!key) {
     return error(401, "unauthorized", "Send a project API key: Authorization: Bearer tuti_…");
   }
   const window = new Date(Math.floor(Date.now() / 60_000) * 60_000);
   // Atomic: counts this request in the key's current minute (starting a new one if needed).
-  const [found] = await prisma.$queryRaw<{ id: string; projectId: string; scope: "READ" | "WRITE"; rateCount: number }[]>`
+  const [found] = await prisma.$queryRaw<
+    { id: string; projectId: string; scope: "READ" | "WRITE"; createdById: string; rateCount: number }[]
+  >`
     UPDATE api_key
     SET "rateCount" = CASE WHEN "rateWindowStart" = ${window} THEN "rateCount" + 1 ELSE 1 END,
         "rateWindowStart" = ${window},
         "lastUsedAt" = now()
     WHERE "keyHash" = ${hashApiKey(key)} AND "revokedAt" IS NULL
-    RETURNING id, "projectId", scope, "rateCount"`;
+    RETURNING id, "projectId", scope, "createdById", "rateCount"`;
   if (!found) {
     return error(401, "unauthorized", "This API key isn't valid or was revoked");
   }
@@ -74,7 +76,13 @@ async function authenticate(request: Request): Promise<Actor | Response> {
       "Retry-After": String(retryAfter),
     });
   }
-  return { kind: "apiKey", keyId: found.id, projectId: found.projectId, scope: found.scope === "WRITE" ? "write" : "read" };
+  return {
+    kind: "apiKey",
+    keyId: found.id,
+    projectId: found.projectId,
+    scope: found.scope === "WRITE" ? "write" : "read",
+    createdById: found.createdById,
+  };
 }
 
 function error(status: number, code: string, message: string, headers?: Record<string, string>) {

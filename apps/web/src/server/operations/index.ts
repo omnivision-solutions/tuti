@@ -1,10 +1,11 @@
 import type { Operation } from "./define";
+import { mergePost, updatePost } from "./manage";
 import { getPost, listBoards, listComments, listPosts } from "./read";
 
-export { type Actor, type Operation, OperationError } from "./define";
+export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
 /** Every operation the API serves. */
-export const operations: Operation[] = [listBoards, listPosts, getPost, listComments] as Operation[];
+export const operations: Operation[] = [listBoards, listPosts, getPost, listComments, updatePost, mergePost] as Operation[];
 
 /** The operation for a request, with the values from its path (e.g. {number}). */
 export function matchOperation(method: string, path: string) {

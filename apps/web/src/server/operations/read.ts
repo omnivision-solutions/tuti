@@ -8,11 +8,11 @@ import { displayDoc } from "../content";
 import { defineOperation, OperationError } from "./define";
 
 /** Statuses as the API spells them. */
-const STATUSES = ["open", "under_review", "planned", "in_progress", "completed", "closed"] as const;
-const toApiStatus = (status: PostStatus) => status.toLowerCase() as (typeof STATUSES)[number];
-const fromApiStatus = (status: (typeof STATUSES)[number]) => status.toUpperCase() as PostStatus;
+export const STATUSES = ["open", "under_review", "planned", "in_progress", "completed", "closed"] as const;
+export const toApiStatus = (status: PostStatus) => status.toLowerCase() as (typeof STATUSES)[number];
+export const fromApiStatus = (status: (typeof STATUSES)[number]) => status.toUpperCase() as PostStatus;
 
-async function projectSlug(projectId: string) {
+export async function projectSlug(projectId: string) {
   return (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } })).slug;
 }
 
@@ -22,6 +22,7 @@ export const listBoards = defineOperation({
   method: "GET",
   path: "/boards",
   scope: "read",
+  access: "anyone",
   input: z.object({}),
   run: async ({ projectId }) => {
     const boards = await prisma.board.findMany({
@@ -33,7 +34,7 @@ export const listBoards = defineOperation({
   },
 });
 
-const postSummarySelect = {
+export const postSummarySelect = {
   number: true,
   title: true,
   status: true,
@@ -55,7 +56,7 @@ type PostRow = {
   author: { name: string };
 };
 
-const summary = (post: PostRow, slug: string) => ({
+export const summary = (post: PostRow, slug: string) => ({
   number: post.number,
   title: post.title,
   status: toApiStatus(post.status),
@@ -73,6 +74,7 @@ export const listPosts = defineOperation({
   method: "GET",
   path: "/posts",
   scope: "read",
+  access: "anyone",
   input: z.object({
     board: z.string().optional(),
     status: z.enum(STATUSES).optional(),
@@ -103,9 +105,9 @@ export const listPosts = defineOperation({
   },
 });
 
-const postNumber = z.coerce.number().int().positive();
+export const postNumber = z.coerce.number().int().positive();
 
-async function findPost(projectId: string, number: number) {
+export async function findPost(projectId: string, number: number) {
   const post = await prisma.post.findUnique({
     where: { projectId_number: { projectId, number } },
     select: { ...postSummarySelect, id: true, body: true, content: true, duplicateOf: { select: { number: true } } },
@@ -122,6 +124,7 @@ export const getPost = defineOperation({
   method: "GET",
   path: "/posts/{number}",
   scope: "read",
+  access: "anyone",
   input: z.object({ number: postNumber }),
   run: async ({ projectId }, { number }) => {
     const post = await findPost(projectId, number);
@@ -140,6 +143,7 @@ export const listComments = defineOperation({
   method: "GET",
   path: "/posts/{number}/comments",
   scope: "read",
+  access: "anyone",
   input: z.object({ number: postNumber }),
   run: async ({ projectId }, { number }) => {
     const post = await findPost(projectId, number);
