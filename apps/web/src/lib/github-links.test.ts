@@ -18,6 +18,7 @@ test.each([
   "https://github.com/acme/app",
   "https://github.com/acme/app/pull/abc",
   "https://github.com/acme/app/commit/abc123",
+  "https://github.com/acme/app/releases/tag/%ZZ",
   "javascript:alert(1)",
   "not a url",
 ])("%s isn't a link we take", (url) => {

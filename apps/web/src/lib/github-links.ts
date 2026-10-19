@@ -25,7 +25,13 @@ export function parseGitHubUrl(input: string): GitHubLink | null {
   const [, owner, name, type, number, tag] = match;
   const repo = `${owner}/${name}`;
   if (tag !== undefined) {
-    return { kind: "RELEASE", repo, number: null, tag: decodeURIComponent(tag), url: `https://github.com/${repo}/releases/tag/${tag}` };
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(tag);
+    } catch {
+      return null; // broken percent-encoding
+    }
+    return { kind: "RELEASE", repo, number: null, tag: decoded, url: `https://github.com/${repo}/releases/tag/${tag}` };
   }
   return {
     kind: type === "pull" ? "PULL_REQUEST" : "ISSUE",
