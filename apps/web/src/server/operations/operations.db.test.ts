@@ -129,6 +129,7 @@ const snapshot = () =>
     prisma.postLink.findMany({ where: { projectId: project.id } }),
     prisma.vote.findMany({ where: { projectId: project.id } }),
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
+    prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {
