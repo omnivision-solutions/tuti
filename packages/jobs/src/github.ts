@@ -56,21 +56,23 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
 
   let started = 0;
   for (const post of posts) {
-    // Linked now, so no longer a suggestion.
-    await prisma.linkSuggestion.deleteMany({ where: { postId: post.id, url: input.url } });
-    await prisma.postLink.upsert({
-      where: { postId_url: { postId: post.id, url: input.url } },
-      update: { title: input.title },
-      create: {
-        projectId,
-        postId: post.id,
-        kind: "PULL_REQUEST",
-        repo: input.repo,
-        number: input.number,
-        url: input.url,
-        title: input.title,
-        source: "REFERENCE",
-      },
+    // Linked now, so no longer a suggestion (together: a failed link keeps the suggestion).
+    await prisma.$transaction(async (tx) => {
+      await tx.linkSuggestion.deleteMany({ where: { postId: post.id, url: input.url } });
+      await tx.postLink.upsert({
+        where: { postId_url: { postId: post.id, url: input.url } },
+        update: { title: input.title },
+        create: {
+          projectId,
+          postId: post.id,
+          kind: "PULL_REQUEST",
+          repo: input.repo,
+          number: input.number,
+          url: input.url,
+          title: input.title,
+          source: "REFERENCE",
+        },
+      });
     });
     if ((input.action === "opened" || input.action === "reopened") && NOT_STARTED.has(post.status)) {
       // Only from the status we read: the team may have changed it meanwhile, or a

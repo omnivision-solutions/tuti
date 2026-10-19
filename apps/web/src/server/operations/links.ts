@@ -24,19 +24,21 @@ export const addLink = defineOperation({
       throw new OperationError(400, "invalid_input", "Paste the URL of a GitHub pull request, issue or release");
     }
     const post = await findPost(projectId, input.number);
-    // Linked by hand: no longer a suggestion.
-    await prisma.linkSuggestion.deleteMany({ where: { postId: post.id, url: github.url } });
-    const link = await prisma.postLink.upsert({
-      where: { postId_url: { postId: post.id, url: github.url } },
-      update: {},
-      create: {
-        projectId,
-        postId: post.id,
-        ...github,
-        source: "MANUAL",
-        createdById: actor.kind === "user" ? actor.userId : actor.createdById,
-      },
-      select: linkSelect,
+    // Linked by hand: no longer a suggestion (together: a failed link keeps the suggestion).
+    const link = await prisma.$transaction(async (tx) => {
+      await tx.linkSuggestion.deleteMany({ where: { postId: post.id, url: github.url } });
+      return tx.postLink.upsert({
+        where: { postId_url: { postId: post.id, url: github.url } },
+        update: {},
+        create: {
+          projectId,
+          postId: post.id,
+          ...github,
+          source: "MANUAL",
+          createdById: actor.kind === "user" ? actor.userId : actor.createdById,
+        },
+        select: linkSelect,
+      });
     });
     return linkView(link);
   },
