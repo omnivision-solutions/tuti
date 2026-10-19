@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 
 import { createApiKey } from "@/server/api-keys";
+import { operations, toolName } from "@/server/operations";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { DELETE, GET, POST } from "./route";
@@ -35,7 +36,12 @@ async function connect(scope: "READ" | "WRITE" | null) {
 test("read-only keys get the read tools; tools return the same data as the API", async () => {
   const client = await connect("READ");
   const { tools } = await client.listTools();
-  expect(tools.map((t) => t.name).sort()).toEqual(["boards_list", "comments_list", "posts_get", "posts_list"]);
+  const readTools = operations.filter((o) => o.scope === "read").map(toolName);
+  expect(tools.map((t) => t.name).sort()).toEqual(readTools.sort());
+  // Named too, so a scope change can't drop one from both sides of the check above.
+  expect(readTools).toEqual(
+    expect.arrayContaining(["project_get", "team_list", "boards_list", "posts_list", "posts_get", "comments_list", "duplicates_list"]),
+  );
   expect(tools.find((t) => t.name === "posts_list")).toMatchObject({
     annotations: { readOnlyHint: true },
     inputSchema: { type: "object", properties: { status: { enum: expect.arrayContaining(["planned"]) } } },

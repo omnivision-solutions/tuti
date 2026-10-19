@@ -394,3 +394,49 @@ describe("GitHub links", () => {
     expect((await api("/posts/1")).body.links).toEqual([]);
   });
 });
+
+describe("project, team, votes and duplicates", () => {
+  test("the project and its team (names and roles only)", async () => {
+    await createProject(owner); // another project of the same owner isn't included
+    expect((await api("/project")).body).toEqual({
+      slug: project.slug,
+      name: project.name,
+      portalUrl: `http://${project.slug}.localhost:3100`,
+    });
+    expect((await api("/team")).body).toEqual({ team: [{ name: "Olive Owner", role: "owner" }] });
+  });
+
+  test("votes are idempotent, can be taken back, and can be cast for someone from the app", async () => {
+    const writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
+    await post("Dark mode");
+    const vote = (voted: boolean, author?: object) =>
+      send("POST", "/posts/1/vote", { voted, ...(author && { author }) }, writeKey);
+
+    expect(await vote(true, { id: "user-42", name: "Sam" })).toMatchObject({ status: 200, body: { voted: true, votes: 1 } });
+    expect((await vote(true, { id: "user-42" })).body.votes).toBe(1); // again: still one vote
+    expect((await vote(true)).body.votes).toBe(2); // the key's creator
+    expect((await vote(false, { id: "user-42" })).body.votes).toBe(1);
+    expect((await vote(false, { id: "user-42" })).body.votes).toBe(1); // already taken back
+    expect((await send("POST", "/posts/1/vote", { voted: "yes" }, writeKey)).status).toBe(400);
+  });
+
+  test("possible duplicates: listed for the team, dismissed for good", async () => {
+    const writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
+    const dark = await post("Dark mode");
+    const night = await post("Night theme");
+    const suggestion = await prisma.duplicateSuggestion.create({
+      data: { projectId: project.id, postId: night.id, originalId: dark.id, similarity: 0.93 },
+    });
+    expect((await api("/duplicates")).body).toEqual({
+      duplicates: [
+        { id: suggestion.id, similarity: 0.93, post: { number: 2, title: "Night theme" }, original: { number: 1, title: "Dark mode" } },
+      ],
+    });
+    expect(await send("POST", `/duplicates/${suggestion.id}/dismiss`, {}, writeKey)).toEqual({
+      status: 200,
+      body: { dismissed: suggestion.id },
+    });
+    expect((await api("/duplicates")).body.duplicates).toEqual([]);
+    expect((await send("POST", "/duplicates/nope/dismiss", {}, writeKey)).status).toBe(404);
+  });
+});

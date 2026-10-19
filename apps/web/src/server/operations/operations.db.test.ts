@@ -20,6 +20,11 @@ import { type Operation, type OperationName, operations } from "./index";
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 /** A valid call: path values and the rest of the input. */
 const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
+  "project.get": () => ({}),
+  "team.list": () => ({}),
+  "votes.set": () => ({ number: 1, voted: true }),
+  "duplicates.list": () => ({}),
+  "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "boards.list": () => ({}),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
@@ -54,7 +59,7 @@ async function createFixture() {
   await prisma.project.update({ where: { id: project.id }, data: { postCount: 2 } });
   const board = project.boards[0]!;
   const marker = `matrix-${crypto.randomUUID()}`;
-  const [first] = await Promise.all(
+  const [first, second] = await Promise.all(
     [1, 2].map((number) =>
       prisma.post.create({
         data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title: `${marker} ${number}`, body: "" },
@@ -72,7 +77,10 @@ async function createFixture() {
       source: "MANUAL",
     },
   });
-  return { marker, linkId: link.id };
+  const suggestion = await prisma.duplicateSuggestion.create({
+    data: { projectId: project.id, postId: second!.id, originalId: first!.id, similarity: 0.9 },
+  });
+  return { marker, linkId: link.id, suggestionId: suggestion.id };
 }
 
 /** Calls an operation over REST like a client would. */
@@ -106,6 +114,7 @@ const snapshot = () =>
     prisma.comment.findMany({ where: { projectId: project.id } }),
     prisma.postLink.findMany({ where: { projectId: project.id } }),
     prisma.vote.findMany({ where: { projectId: project.id } }),
+    prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {

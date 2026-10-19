@@ -1,14 +1,12 @@
 "use server";
 
-import { prisma } from "@tuti/db";
 import { z } from "zod";
-import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
-import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import { addLink, removeLink } from "./operations/links";
 import { mergePost as mergeOperation, updatePost } from "./operations/manage";
+import { dismissDuplicate as dismissOperation } from "./operations/more";
 import { toApiStatus } from "./operations/read";
 import { asTeam, call, postNumberOf } from "./operations/run";
 
@@ -52,21 +50,11 @@ export async function mergePost(projectSlug: string, postId: string, targetPostI
   });
 }
 
-/** "Not a duplicate": hides a suggestion for good (the worker won't suggest the pair again). */
+/** "Not a duplicate": hides a suggestion for good (see the duplicates.dismiss operation). */
 export async function dismissDuplicate(projectSlug: string, suggestionId: string): Promise<FormState> {
-  const membership = await getMembership(projectSlug);
-  if (!membership) {
-    return { error: "Only the project's team can dismiss duplicates" };
-  }
-  const { count } = await prisma.duplicateSuggestion.updateMany({
-    where: { id: suggestionId, projectId: membership.project.id },
-    data: { status: "DISMISSED" },
-  });
-  if (count === 0) {
-    return { error: "Suggestion not found" };
-  }
-  refresh();
-  return {};
+  return asTeam(projectSlug, "Only the project's team can dismiss duplicates", (context) =>
+    call(dismissOperation, context, { id: String(suggestionId) }),
+  );
 }
 
 /** Links a post to a GitHub pull request, issue or release (see the links.add operation). */
