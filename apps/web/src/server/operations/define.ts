@@ -7,8 +7,11 @@ import type { z } from "zod";
 
 export type Scope = "read" | "write";
 
-/** Who's calling. An API key acts for its project. (Next: people in the app, keys on behalf of a project's user.) */
-export type Actor = { kind: "apiKey"; keyId: string; projectId: string; scope: Scope };
+/** Who's calling: someone signed in (in the app or on a portal), or a project's API key (acting as its team). */
+export type Actor =
+  | { kind: "user"; userId: string }
+  | { kind: "apiKey"; keyId: string; projectId: string; scope: Scope; createdById: string };
+export type ApiKeyActor = Extract<Actor, { kind: "apiKey" }>;
 
 export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   /** Stable name, e.g. "posts.list" (MCP tool names derive from it). */
@@ -20,6 +23,8 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   path: string;
   /** Read operations work with any key; write operations need a read + write key. */
   scope: Scope;
+  /** Who may run it when signed in: the project's team, or anyone who may post in the project. Keys count as the team. */
+  access: "team" | "anyone";
   input: I;
   run: (context: { actor: Actor; projectId: string }, input: z.infer<I>) => Promise<O>;
 };

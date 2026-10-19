@@ -5,7 +5,7 @@ import { hashApiKey } from "@/lib/api-keys";
 import { createApiKey, revokeApiKey } from "@/server/api-keys";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { GET } from "./[...path]/route";
+import { GET, PATCH, POST } from "./[...path]/route";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -26,6 +26,21 @@ async function api(path: string, apiKey: string | null = key) {
     { params: Promise.resolve({ path: url.pathname.split("/").slice(3) }) },
   );
   return { status: response.status, body: await response.json(), headers: response.headers };
+}
+
+/** A write request with a JSON body. */
+async function send(method: "PATCH" | "POST", path: string, body: unknown, apiKey = key) {
+  const url = new URL(`http://tuti.localhost:3100/api/v1${path}`);
+  const handler = method === "PATCH" ? PATCH : POST;
+  const response = await handler(
+    new Request(url, {
+      method,
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ path: url.pathname.split("/").slice(3) }) },
+  );
+  return { status: response.status, body: await response.json() };
 }
 
 async function post(title: string, fields: { votes?: number; status?: "PLANNED"; createdAt?: Date; board?: string } = {}) {
@@ -175,5 +190,65 @@ describe("reading", () => {
       expect.objectContaining({ author: { name: "Olive Owner", team: true }, body: "On it" }),
     ]);
     expect((await api("/posts/2")).status).toBe(404);
+  });
+});
+
+describe("changing", () => {
+  let writeKey: string;
+  beforeEach(async () => {
+    writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
+  });
+
+  test("read-only keys can't change anything", async () => {
+    await post("Dark mode");
+    expect(await send("PATCH", "/posts/1", { status: "planned" })).toMatchObject({
+      status: 403,
+      body: { error: { code: "forbidden" } },
+    });
+    expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id } })).status).toBe("OPEN");
+  });
+
+  test("a post's status and board", async () => {
+    await post("Dark mode");
+    await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+    expect(await send("PATCH", "/posts/1", { status: "in_progress", board: "bugs" }, writeKey)).toMatchObject({
+      status: 200,
+      body: { number: 1, status: "in_progress", board: "bugs" },
+    });
+    expect(await send("PATCH", "/posts/1", { board: "nope" }, writeKey)).toMatchObject({
+      status: 404,
+      body: { error: { message: "Board not found" } },
+    });
+    expect(await send("PATCH", "/posts/1", {}, writeKey)).toMatchObject({
+      status: 400,
+      body: { error: { message: "input: Send a status or a board" } },
+    });
+    expect(await send("PATCH", "/posts/1", "not json", writeKey)).toMatchObject({ status: 400, body: { error: { code: "invalid_json" } } });
+  });
+
+  test("merging moves votes over once, and can't be repeated or loop", async () => {
+    const dark = await post("Dark mode");
+    const night = await post("Night theme");
+    const ada = await signUp("Ada");
+    await prisma.vote.createMany({
+      data: [
+        { projectId: project.id, postId: dark.id, userId: ada.id },
+        { projectId: project.id, postId: night.id, userId: ada.id },
+        { projectId: project.id, postId: night.id, userId: owner.id },
+      ],
+    });
+    expect(await send("POST", "/posts/2/merge", { into: 1 }, writeKey)).toEqual({ status: 200, body: { merged: 2, into: 1 } });
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: dark.id } })).voteCount).toBe(2);
+    expect((await api("/posts/2")).body.mergedInto).toBe(1);
+
+    expect(await send("POST", "/posts/2/merge", { into: 1 }, writeKey)).toMatchObject({
+      status: 409,
+      body: { error: { code: "already_merged" } },
+    });
+    // Merging #1 into #2 would go to #2's original: #1 itself.
+    expect(await send("POST", "/posts/1/merge", { into: 2 }, writeKey)).toMatchObject({
+      status: 409,
+      body: { error: { code: "merge_into_itself" } },
+    });
   });
 });
