@@ -246,6 +246,8 @@ describe("pull requests", () => {
       });
       await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 2 } }, data: { voteCount: 3 } });
       await commentOn();
+      // Someone pastes our marker before we ever comment: it isn't ours, so it's left alone.
+      github.comment("acme/app", 50, "<!-- tuti:feedback -->\nnot from Tuti");
 
       await deliver(pullRequest("opened", 50, "Dark mode", "tuti#1"));
       const [first, ...more] = appComments(50);
@@ -255,13 +257,16 @@ describe("pull requests", () => {
         `- [Ping @&#8203;team \\[here\\]\\(https://e\\.vil\\) \\#9](http://${project.slug}.localhost:3100/p/ping-team-here-https-e-vil-9-1) · 1 vote`,
       );
 
-      // Someone pastes our marker; an edit links another post: our one comment is updated.
+      // Someone quotes our comment; an edit links another post: our one comment is updated.
       github.comment("acme/app", 50, `${first!.body}\n\nlooks good`);
       await deliver(pullRequest("edited", 50, "Dark mode", "tuti#1 and tuti#2"));
       expect(appComments(50)).toHaveLength(1);
       const lines = appComments(50)[0]!.body.split("\n").filter((line) => line.startsWith("- "));
       expect(lines).toEqual([expect.stringMatching(/^- \[Post 2\]\(.*\/p\/post-2-2\) · 3 votes$/), expect.stringContaining("· 1 vote")]);
-      expect(github.comments("acme/app", 50).filter((c) => !c.byApp)[0]!.body).toMatch(/looks good$/);
+      expect(github.comments("acme/app", 50).filter((c) => !c.byApp).map((c) => c.body.split("\n").at(-1))).toEqual([
+        "not from Tuti",
+        "looks good",
+      ]);
     });
 
     test("they're off by default, and without write permission only the comment is lost", async () => {
