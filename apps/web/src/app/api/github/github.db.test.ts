@@ -2,9 +2,12 @@ import { prisma } from "@tuti/db";
 import { type GithubFake, startGithubFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { signInstallState, verifyInstallState } from "@/lib/github";
+import { signValue, verifyValue } from "@/lib/github";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
+import { GET as callback } from "./callback/route";
+import { GET as install } from "./install/route";
 import { GET as setup } from "./setup/route";
 import { POST as webhook } from "./webhook/route";
 
@@ -26,66 +29,85 @@ beforeEach(async () => {
 });
 afterEach(() => vi.unstubAllEnvs());
 
-/** GitHub sends the browser back here after the install. */
-async function returnFromGithub(params: Record<string, string>) {
-  const response = await setup(new Request(`http://tuti.localhost:3100/api/github/setup?${new URLSearchParams(params)}`));
-  return response.headers.get("location");
+const APP = "http://tuti.localhost:3100";
+const location = (response: Response) => response.headers.get("location") ?? "";
+
+/**
+ * The whole connect flow, as the browser goes through it: Connect GitHub → GitHub's
+ * install page → our Setup URL (`installation_id`) → GitHub's authorize page → our
+ * callback (`code`, `state`). `code` is whoever authorizes on GitHub.
+ */
+async function connect(projectSlug: string, installationId: number, code: string) {
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`));
+  if (!location(started).startsWith(github.url)) {
+    return location(started);
+  }
+  const installCookie = started.headers.getSetCookie()[0]!.split(";")[0]!;
+  const session = request.cookie;
+  request.cookie = `${session}; ${installCookie}`;
+  const authorize = await setup(new Request(`${APP}/api/github/setup?installation_id=${installationId}&setup_action=install`));
+  request.cookie = session;
+  if (!location(authorize).startsWith(`${github.url}/login/oauth/authorize`)) {
+    return location(authorize);
+  }
+  const state = new URL(location(authorize)).searchParams.get("state")!;
+  return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(state)}`)));
 }
 
+const connected = (projectId: string) => prisma.githubInstallation.findUnique({ where: { projectId } });
+
 describe("connecting", () => {
-  test("the installer can see the installation: the project is connected", async () => {
+  test("the person who installs can see the installation: the project is connected", async () => {
     github.user("code-1", [{ id: 501, account: "acme" }]);
-    const location = await returnFromGithub({ installation_id: "501", code: "code-1", state: signInstallState(project.id) });
-    expect(location).toBe(`http://tuti.localhost:3100/app/${project.slug}/settings?github=connected`);
-    expect(await prisma.githubInstallation.findUnique({ where: { projectId: project.id } })).toMatchObject({
-      installationId: 501,
-      accountLogin: "acme",
-    });
+    expect(await connect(project.slug, 501, "code-1")).toBe(`${APP}/app/${project.slug}/settings?github=connected`);
+    expect(await connected(project.id)).toMatchObject({ installationId: 501, accountLogin: "acme" });
+  });
+
+  test("the installation may be on any page of the person's installations", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({ id: 10_000 + i, account: `org-${i}` }));
+    github.user("code-many", many);
+    expect(await connect(project.slug, 10_249, "code-many")).toMatch(/github=connected$/);
   });
 
   test("someone else's installation can't be claimed", async () => {
-    // A real user who can see installation 777, but not 501.
-    github.user("code-2", [{ id: 777, account: "mine" }]);
-    expect(await returnFromGithub({ installation_id: "501", code: "code-2", state: signInstallState(project.id) })).toMatch(
-      /github=unconfirmed$/,
-    );
-    expect(await returnFromGithub({ installation_id: "501", code: "made-up", state: signInstallState(project.id) })).toMatch(
-      /github=unconfirmed$/,
-    );
-    expect(await returnFromGithub({ installation_id: "501", state: signInstallState(project.id) })).toMatch(/github=unconfirmed$/);
-    expect(await prisma.githubInstallation.count({ where: { projectId: project.id } })).toBe(0);
+    github.user("code-2", [{ id: 777, account: "mine" }]); // can see 777, not 501
+    expect(await connect(project.slug, 501, "code-2")).toMatch(/github=unconfirmed$/);
+    expect(await connect(project.slug, 501, "made-up")).toMatch(/github=unconfirmed$/);
+    expect(await connected(project.id)).toBeNull();
   });
 
-  test("the state must be ours, fresh, and for a project the person administers", async () => {
+  test("only owners and admins start it, and the state and cookie must be ours and fresh", async () => {
     github.user("code-3", [{ id: 502, account: "acme" }]);
-    const params = { installation_id: "502", code: "code-3" };
-    expect(await returnFromGithub({ ...params, state: `${project.id}.9999999999.forged` })).toBe(
-      "http://tuti.localhost:3100/app?github=expired",
-    );
-    expect(await returnFromGithub({ ...params, state: signInstallState(project.id, Date.now() - 60 * 60 * 1000) })).toMatch(
-      /\/app\?github=expired$/,
-    );
     actAs(await addMember(project.id, "MEMBER"));
-    expect(await returnFromGithub({ ...params, state: signInstallState(project.id) })).toMatch(/\/app\?github=expired$/);
-    actAs(null);
-    expect(await returnFromGithub({ ...params, state: signInstallState(project.id) })).toMatch(/\/sign-in\?next=/);
-    expect(await prisma.githubInstallation.count({ where: { projectId: project.id } })).toBe(0);
+    expect(await connect(project.slug, 502, "code-3")).toBe(`${APP}/app?github=expired`);
+    actAs(owner);
+    // No install cookie (e.g. arriving from GitHub's settings): nothing to connect.
+    expect(location(await setup(new Request(`${APP}/api/github/setup?installation_id=502`)))).toBe(`${APP}/app?github=expired`);
+    // Forged, expired or other-purpose states.
+    for (const state of [
+      `${project.id}.502.9999999999.forged`,
+      signValue("callback", [project.id, "502"], Date.now() - 60 * 60 * 1000),
+      signValue("install", [project.id, "502"]),
+    ]) {
+      const response = await callback(new Request(`${APP}/api/github/callback?code=code-3&state=${encodeURIComponent(state)}`));
+      expect(location(response)).toBe(`${APP}/app?github=expired`);
+    }
+    expect(await connected(project.id)).toBeNull();
   });
 
   test("an installation connected to one project can't be connected to another", async () => {
     github.user("code-4", [{ id: 503, account: "acme" }]);
-    await returnFromGithub({ installation_id: "503", code: "code-4", state: signInstallState(project.id) });
+    await connect(project.slug, 503, "code-4");
     const other = await createProject(owner);
-    expect(await returnFromGithub({ installation_id: "503", code: "code-4", state: signInstallState(other.id) })).toMatch(
-      /github=taken$/,
-    );
+    expect(await connect(other.slug, 503, "code-4")).toMatch(/github=taken$/);
   });
 
-  test("states are tamper-proof", () => {
-    const state = signInstallState("project-1");
-    expect(verifyInstallState(state)).toBe("project-1");
-    expect(verifyInstallState(state.replace("project-1", "project-2"))).toBeNull();
-    expect(verifyInstallState("nonsense")).toBeNull();
+  test("signed values are tamper-proof and single-purpose", () => {
+    const value = signValue("install", ["project-1"]);
+    expect(verifyValue("install", value)).toEqual(["project-1"]);
+    expect(verifyValue("callback", value)).toBeNull();
+    expect(verifyValue("install", value.replace("project-1", "project-2"))).toBeNull();
+    expect(verifyValue("install", "nonsense")).toBeNull();
   });
 });
 
@@ -111,6 +133,8 @@ describe("webhook", () => {
   test("without the App configured, the endpoints don't exist", async () => {
     vi.stubEnv("GITHUB_WEBHOOK_SECRET", "");
     expect(await deliver(github.webhook("ping", {}))).toBe(404);
-    expect((await setup(new Request("http://tuti.localhost:3100/api/github/setup"))).status).toBe(404);
+    for (const route of [install, setup, callback]) {
+      expect((await route(new Request(`${APP}/api/github/x`))).status).toBe(404);
+    }
   });
 });

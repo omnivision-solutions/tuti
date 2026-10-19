@@ -10,8 +10,9 @@ export type GithubFake = {
   /** The GitHub user behind an OAuth `code`, and the installations they can see. */
   user(code: string, installations: { id: number; account: string }[]): void;
   /**
-   * What GitHub's install page does next: sends the browser to `setupUrl` with
-   * this installation and a user authorization code (registered with `user`).
+   * What the next install does, like GitHub: the install page sends the browser to
+   * `setupUrl` with this installation; then the authorize page sends it to the
+   * given `redirect_uri` with `code` (this user, who can see the installation) and the `state`.
    */
   nextInstall(setupUrl: string, installation: { id: number; account: string; code: string }): void;
   /** A signed webhook delivery, as GitHub would send it. */
@@ -25,6 +26,7 @@ const WEBHOOK_SECRET = "test-github-webhook-secret";
 export async function startGithubFake(): Promise<GithubFake> {
   const users = new Map<string, { id: number; account: string }[]>();
   let install: { setupUrl: string; id: number; code: string } | undefined;
+  let base = "";
 
   const server = createServer((req, res) => {
     let raw = "";
@@ -40,26 +42,35 @@ export async function startGithubFake(): Promise<GithubFake> {
       if (req.method === "GET" && url.pathname === "/user/installations") {
         const code = /^Bearer token-(.+)$/.exec(req.headers.authorization ?? "")?.[1];
         const installations = code ? users.get(code) : undefined;
-        return installations
-          ? send(200, { installations: installations.map((i) => ({ id: i.id, account: { login: i.account } })) })
-          : send(401, { message: "Bad credentials" });
+        if (!installations) {
+          return send(401, { message: "Bad credentials" });
+        }
+        // Paged like GitHub, with a Link header to the next page.
+        const perPage = Number(url.searchParams.get("per_page") ?? 30);
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const slice = installations.slice((page - 1) * perPage, page * perPage);
+        const next = page * perPage < installations.length ? `${base}/user/installations?per_page=${perPage}&page=${page + 1}` : null;
+        res.writeHead(200, { "content-type": "application/json", ...(next && { link: `<${next}>; rel="next"` }) });
+        res.end(JSON.stringify({ installations: slice.map((i) => ({ id: i.id, account: { login: i.account } })) }));
+        return;
       }
+      const redirect = (to: URL) => res.writeHead(302, { location: to.href }).end();
       if (req.method === "GET" && /^\/apps\/[^/]+\/installations\/new$/.test(url.pathname) && install) {
         const back = new URL(install.setupUrl);
-        back.search = new URLSearchParams({
-          installation_id: String(install.id),
-          setup_action: "install",
-          code: install.code,
-          state: url.searchParams.get("state") ?? "",
-        }).toString();
-        res.writeHead(302, { location: back.href }).end();
-        return;
+        back.search = new URLSearchParams({ installation_id: String(install.id), setup_action: "install" }).toString();
+        return redirect(back);
+      }
+      if (req.method === "GET" && url.pathname === "/login/oauth/authorize" && install) {
+        const back = new URL(url.searchParams.get("redirect_uri") ?? "");
+        back.search = new URLSearchParams({ code: install.code, state: url.searchParams.get("state") ?? "" }).toString();
+        return redirect(back);
       }
       send(404, { message: "Not Found" });
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  base = url;
 
   return {
     url,

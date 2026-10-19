@@ -9,7 +9,7 @@ import { SsoSettings } from "@/components/sso-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { githubConfig, signInstallState } from "@/lib/github";
+import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
@@ -80,7 +80,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             </div>
           ) : (
             <a
-              href={`${github.url}/apps/${github.appSlug}/installations/new?${new URLSearchParams({ state: signInstallState(project.id) })}`}
+              href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`}
               className={buttonVariants({ className: "self-start" })}
             >
               Connect GitHub

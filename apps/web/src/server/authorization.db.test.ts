@@ -232,6 +232,9 @@ afterAll(() => Promise.all([s3.close(), receiver.close()]));
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
+/** Installation ids are unique: one per fixture. */
+let installations = 0;
+
 /** A project with one of everything the actions work on. */
 async function createFixture() {
   const project = await createProject(users.OWNER);
@@ -298,7 +301,7 @@ async function createFixture() {
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
   await prisma.githubInstallation.create({
-    data: { projectId, installationId: Math.floor(Math.random() * 1e9), accountLogin: "acme", createdById: users.OWNER.id },
+    data: { projectId, installationId: ++installations, accountLogin: "acme", createdById: users.OWNER.id },
   });
   return {
     slug: project.slug,
