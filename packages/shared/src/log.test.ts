@@ -50,6 +50,9 @@ describe("in production", () => {
 
     expect(() => log.error("Still logged", { throwing })).not.toThrow();
     expect(JSON.parse(String(stderr.mock.calls[1]![0]))).toMatchObject({ message: "Still logged", fieldsError: true });
+    // A throwing getter on the fields object itself, too.
+    expect(() => log.error("Also logged", throwing)).not.toThrow();
+    expect(JSON.parse(String(stderr.mock.calls[2]![0]))).toMatchObject({ message: "Also logged", fieldsError: true });
   });
 
   test("info goes to stdout", () => {

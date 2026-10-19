@@ -10,11 +10,15 @@ function serialize(fields: Fields | undefined): Fields {
   return out;
 }
 
-/** JSON that never throws: BigInts become strings, repeated objects become "[Circular]". */
-function toJson(entry: Fields): string {
+/**
+ * One JSON line that never throws: BigInts become strings, repeated objects
+ * "[Circular]", and if the fields can't be read at all (e.g. a throwing getter)
+ * the entry keeps its metadata. Metadata goes last, so fields can't overwrite it.
+ */
+function toJson(fields: Fields | undefined, meta: { time: string; level: Level; message: string }): string {
   const seen = new WeakSet<object>();
   try {
-    return JSON.stringify(entry, (_key, value: unknown) => {
+    return JSON.stringify({ ...serialize(fields), ...meta }, (_key, value: unknown) => {
       if (typeof value === "bigint") {
         return value.toString();
       }
@@ -27,16 +31,14 @@ function toJson(entry: Fields): string {
       return value;
     });
   } catch {
-    // e.g. a getter that throws: still log the message, never fail the caller.
-    return JSON.stringify({ time: entry.time, level: entry.level, message: entry.message, fieldsError: true });
+    return JSON.stringify({ ...meta, fieldsError: true });
   }
 }
 
 function write(level: Level, message: string, fields?: Fields) {
   if (process.env.NODE_ENV === "production") {
     // One JSON object per line, for whatever collects the logs (Coolify, Docker, a log shipper).
-    // Logger metadata goes last, so fields can't overwrite it.
-    const line = toJson({ ...serialize(fields), time: new Date().toISOString(), level, message });
+    const line = toJson(fields, { time: new Date().toISOString(), level, message });
     (level === "info" ? process.stdout : process.stderr).write(`${line}\n`);
     return;
   }
