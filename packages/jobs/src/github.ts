@@ -56,6 +56,8 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
 
   let started = 0;
   for (const post of posts) {
+    // Linked now, so no longer a suggestion.
+    await prisma.linkSuggestion.deleteMany({ where: { postId: post.id, url: input.url } });
     await prisma.postLink.upsert({
       where: { postId_url: { postId: post.id, url: input.url } },
       update: { title: input.title },
@@ -111,8 +113,8 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
 /**
  * Posts a pull request may be about without mentioning them: open posts whose
  * text is close to the PR's (embeddings), for the team to link or dismiss.
- * Posts already linked to it, done or merged aren't suggested; dismissed
- * suggestions stay dismissed. Returns how many new suggestions were added.
+ * Posts already linked to it or suggested for it (pending or dismissed), done
+ * or merged aren't suggested. Returns how many new suggestions were added.
  */
 async function suggestLinks(input: JobInput<"githubPullRequest">, projectId: string): Promise<number> {
   const [vector] = await embed([`${input.title}\n\n${input.body}`.trim().slice(0, 8000)]);
@@ -125,6 +127,8 @@ async function suggestLinks(input: JobInput<"githubPullRequest">, projectId: str
       AND p."duplicateOfId" IS NULL
       AND p.status NOT IN ('COMPLETED', 'CLOSED')
       AND NOT EXISTS (SELECT 1 FROM post_link l WHERE l."postId" = p.id AND l.url = ${input.url})
+      -- Already suggested (or dismissed): leaves room in the 3 for posts not yet suggested.
+      AND NOT EXISTS (SELECT 1 FROM link_suggestion s WHERE s."postId" = p.id AND s.url = ${input.url})
     ORDER BY e.embedding <=> ${literal}::vector
     LIMIT 3`;
   const likely = matches.filter((m) => m.similarity >= LINK_MIN_SIMILARITY);

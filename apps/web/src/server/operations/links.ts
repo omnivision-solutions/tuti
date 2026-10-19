@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { parseGitHubUrl } from "@/lib/github-links";
@@ -24,6 +24,8 @@ export const addLink = defineOperation({
       throw new OperationError(400, "invalid_input", "Paste the URL of a GitHub pull request, issue or release");
     }
     const post = await findPost(projectId, input.number);
+    // Linked by hand: no longer a suggestion.
+    await prisma.linkSuggestion.deleteMany({ where: { postId: post.id, url: github.url } });
     const link = await prisma.postLink.upsert({
       where: { postId_url: { postId: post.id, url: github.url } },
       update: {},
@@ -58,6 +60,12 @@ export const removeLink = defineOperation({
   },
 });
 
+/** Suggestions only matter while their post is still to do: not merged, completed or closed. */
+const OPEN_SUGGESTION = {
+  status: "PENDING",
+  post: { duplicateOfId: null, status: { notIn: ["COMPLETED", "CLOSED"] } },
+} satisfies Prisma.LinkSuggestionWhereInput;
+
 /** Pull requests that may be what a post asks for (by text similarity), waiting for the team. */
 export const listLinkSuggestions = defineOperation({
   name: "linkSuggestions.list",
@@ -71,7 +79,7 @@ export const listLinkSuggestions = defineOperation({
   run: async ({ projectId }, input) => {
     const post = input.number === undefined ? null : await findPost(projectId, input.number);
     const suggestions = await prisma.linkSuggestion.findMany({
-      where: { projectId, status: "PENDING", ...(post && { postId: post.id }), post: { duplicateOfId: null } },
+      where: { projectId, ...OPEN_SUGGESTION, ...(post && { postId: post.id }) },
       orderBy: { similarity: "desc" },
       select: {
         id: true,
@@ -103,7 +111,7 @@ export const acceptLinkSuggestion = defineOperation({
   access: "team",
   input: z.object({ id: z.string().min(1) }),
   run: async ({ actor, projectId }, { id }) => {
-    const suggestion = await prisma.linkSuggestion.findFirst({ where: { id, projectId, status: "PENDING" } });
+    const suggestion = await prisma.linkSuggestion.findFirst({ where: { id, projectId, ...OPEN_SUGGESTION } });
     if (!suggestion) {
       throw new OperationError(404, "not_found", "Suggestion not found");
     }

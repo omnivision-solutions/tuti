@@ -141,7 +141,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
       )}
 
-      {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} suggestions={post.linkSuggestions} />}
+      {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} suggestions={post.status === "COMPLETED" || post.status === "CLOSED" ? [] : post.linkSuggestions} />}
 
       {suggestions.length > 0 && (
         <DuplicateSuggestions
