@@ -41,6 +41,8 @@ export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>): Pro
   const job = jobs[key];
   const parsed = job.input.parse(input) as JobInput<K>;
   if (process.env.JOBS_DRIVER === "inline") {
+    // ponytail: no `concurrencyKey` here, so overlapping runs of one key can race (e.g. two
+    // deliveries for one pull request may add a 4th suggestion or a 2nd comment); use Hatchet if that matters.
     await handlers[key](parsed, log);
     return;
   }
