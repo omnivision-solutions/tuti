@@ -18,5 +18,11 @@ export const originalKey = (mediaId: string) => `uploads/${mediaId}`;
 export const imageKey = (mediaId: string, width: number) => `m/${mediaId}/${width}.webp`;
 export const emailImageKey = (mediaId: string) => `m/${mediaId}/email.jpg`;
 
+/** Every file an upload may have in storage (the original until processed, then its sizes). */
+export function mediaKeys(media: { id: string; width: number | null }): string[] {
+  const sizes = media.width ? imageWidths(media.width).map((width) => imageKey(media.id, width)) : [];
+  return [originalKey(media.id), ...sizes, emailImageKey(media.id)];
+}
+
 /** Formats people may upload; everything is re-encoded, and SVG (which can carry scripts) is never accepted. */
 export const UPLOAD_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;

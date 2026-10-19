@@ -32,6 +32,8 @@ export function mediaStorage(): MediaStorage | null {
     secretAccessKey: env.MEDIA_S3_SECRET_ACCESS_KEY!,
     service: "s3",
     region: env.MEDIA_S3_REGION || "auto",
+    // A few quick retries on 5xx (the default is 10, with backoff).
+    retries: 3,
   });
   // Path-style URLs work with R2, S3 and local stand-ins alike.
   const objectUrl = (key: string) =>

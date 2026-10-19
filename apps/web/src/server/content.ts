@@ -1,5 +1,5 @@
 import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateImages } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 
 type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
 
@@ -18,7 +18,8 @@ export function contentFromForm(
  * checked against the profile) or, without it, plain `body` text (forms without
  * JavaScript, API clients). Images must be finished uploads from the same project;
  * their sizes come from the upload, not the request. Returns the document, its
- * plain text (for `body`) and the uploads it uses (pass them to `attachMedia` once saved).
+ * plain text (for `body`) and the uploads it uses (pass them to `attachMedia` in the
+ * transaction that saves it).
  */
 export async function readContent(
   profile: Profile,
@@ -47,7 +48,7 @@ export async function readContent(
       select: { id: true, width: true, height: true },
     });
     if (media.length !== mediaIds.length) {
-      return { error: "An image is still uploading or can't be used here. Wait for it, or remove it." };
+      return { error: MEDIA_GONE };
     }
     const sizes = new Map(media.map((m) => [m.id, { w: m.width, h: m.height }]));
     updateImages(doc, (id) => sizes.get(id)!);
@@ -55,12 +56,27 @@ export async function readContent(
   return { doc, text, mediaIds };
 }
 
-/** Marks uploads as used by saved content, so the cleanup of unused uploads keeps them. */
-export async function attachMedia(mediaIds: string[]) {
-  if (mediaIds.length > 0) {
-    await prisma.media.updateMany({ where: { id: { in: mediaIds }, attachedAt: null }, data: { attachedAt: new Date() } });
+export const MEDIA_GONE = "An image is still uploading or can't be used here. Wait for it, or remove it.";
+
+/**
+ * Marks uploads as used by content being saved, inside the transaction that saves
+ * it, so the cleanup of unused uploads keeps them. Throws (rolling the save back)
+ * if any of them is gone: the cleanup may have claimed it since it was checked.
+ */
+export async function attachMedia(tx: Prisma.TransactionClient, projectId: string, mediaIds: string[]) {
+  if (mediaIds.length === 0) {
+    return;
+  }
+  const { count } = await tx.media.updateMany({
+    where: { id: { in: mediaIds }, projectId, status: "READY" },
+    data: { attachedAt: new Date() },
+  });
+  if (count !== mediaIds.length) {
+    throw new MediaGoneError(MEDIA_GONE);
   }
 }
+
+export class MediaGoneError extends Error {}
 
 /** What to render: the stored document, or one made from the plain text of rows from before rich text. */
 export function displayDoc(row: { content: unknown; body: string }): Doc {

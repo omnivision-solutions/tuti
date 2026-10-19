@@ -1,6 +1,7 @@
 import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
+import { cleanupMedia } from "./cleanup";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
 
@@ -15,6 +16,7 @@ export type JobResult = Record<string, string | number | boolean>;
 export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => Promise<JobResult> } = {
   postCreated,
   imageUploaded,
+  cleanupMedia,
 };
 
 /**
