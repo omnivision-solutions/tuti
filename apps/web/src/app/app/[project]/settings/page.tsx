@@ -1,9 +1,11 @@
+import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
+import { ApiKeys } from "@/components/api-keys";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { portalUrl } from "@/lib/hosts";
+import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
 export default async function SettingsPage(props: PageProps<"/app/[project]/settings">) {
@@ -13,6 +15,11 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
     // Team members who aren't owners/admins get the same response as outsiders.
     notFound();
   }
+  const keys = await prisma.apiKey.findMany({
+    where: { projectId: project.id, revokedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, scope: true, prefix: true, createdAt: true, lastUsedAt: true },
+  });
 
   return (
     <>
@@ -32,6 +39,19 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             enabled={project.ssoSecret !== null}
             ssoUrl={`${portalUrl(project.slug)}/sso`}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>API keys</CardTitle>
+          <CardDescription>
+            Read this project&apos;s boards, posts and comments from your own code with the REST API. Keys are shown
+            once; revoke any you no longer use.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ApiKeys projectSlug={project.slug} keys={keys} apiUrl={`${appUrl().origin}/api/v1`} />
         </CardContent>
       </Card>
     </>

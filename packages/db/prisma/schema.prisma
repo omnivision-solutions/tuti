@@ -31,6 +31,7 @@ model User {
   invitationsCreated  Invitation[] @relation("InvitationCreatedBy")
   invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
+  apiKeysCreated      ApiKey[]
   media               Media[]
 
   @@unique([email])
@@ -115,6 +116,7 @@ model Project {
   ssoIdentities        SsoIdentity[]
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
+  apiKeys              ApiKey[]
   media                Media[]
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
@@ -211,6 +213,36 @@ model Media {
   @@index([uploaderId, createdAt])
   @@index([attachedAt, createdAt])
   @@map("media")
+}
+
+enum ApiKeyScope {
+  READ
+  /// Read and write.
+  WRITE
+}
+
+/// A project's key for the REST API and MCP. The key is shown once; only its hash is stored.
+model ApiKey {
+  id              String      @id @default(cuid())
+  projectId       String
+  name            String
+  scope           ApiKeyScope
+  keyHash         String      @unique
+  /// The key's first characters, so people can tell keys apart (tuti_ab12…).
+  prefix          String
+  createdById     String
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  /// Requests in the current minute, for the per-key rate limit.
+  rateWindowStart DateTime?
+  rateCount       Int         @default(0)
+  createdAt       DateTime    @default(now())
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("api_key")
 }
 
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
