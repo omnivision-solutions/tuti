@@ -6,6 +6,7 @@ import type { FormState } from "./form-state";
 import {
   createChangelogEntry,
   deleteChangelogEntry as deleteOperation,
+  draftChangelogEntry as draftOperation,
   publishChangelogEntry as publishOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
@@ -43,6 +44,11 @@ export async function saveChangelogEntry(
     redirect(`/app/${projectSlug}/changelog/${created}`);
   }
   return result;
+}
+
+/** Replaces a draft's text with an AI draft (see changelog.draft). */
+export async function draftChangelogEntry(projectSlug: string, number: number): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(draftOperation, context, { number: Number(number) }));
 }
 
 export async function publishChangelogEntry(projectSlug: string, number: number): Promise<FormState> {

@@ -6,6 +6,7 @@ import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from 
 import {
   createChangelogEntry,
   deleteChangelogEntry,
+  draftChangelogEntry,
   getChangelogEntry,
   listChangelog,
   publishChangelogEntry,
@@ -25,6 +26,7 @@ const all = [
   getChangelogEntry,
   createChangelogEntry,
   updateChangelogEntry,
+  draftChangelogEntry,
   publishChangelogEntry,
   unpublishChangelogEntry,
   deleteChangelogEntry,

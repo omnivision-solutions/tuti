@@ -1,7 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { RichEditor } from "@/components/rich-editor";
@@ -21,6 +21,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import {
   deleteChangelogEntry,
+  draftChangelogEntry,
   publishChangelogEntry,
   saveChangelogEntry,
   unpublishChangelogEntry,
@@ -146,13 +147,19 @@ export function ChangelogForm({
   );
 }
 
-/** Publish (or take down) and delete an entry. Publishing emails people, so it asks first, like deleting. */
+const DRAFTED = "Drafted with AI";
+
+/**
+ * Draft with AI, publish (or take down) and delete an entry. An AI draft replaces
+ * the text and publishing emails people, so they ask first, like deleting.
+ */
 export function ChangelogEntryActions({
   projectSlug,
   number,
   title,
   published,
   postCount,
+  canDraftWithAi,
 }: {
   projectSlug: string;
   number: number;
@@ -160,10 +167,14 @@ export function ChangelogEntryActions({
   published: boolean;
   /** How many posts it completes. */
   postCount: number;
+  /** AI is set up on this server and the entry is a draft. */
+  canDraftWithAi: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [running, setRunning] = useState("");
   const run = (action: typeof publishChangelogEntry, done: string) =>
     startTransition(async () => {
+      setRunning(done);
       const result = await action(projectSlug, number);
       if (result.error) {
         toast.error(result.error);
@@ -191,6 +202,28 @@ export function ChangelogEntryActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {canDraftWithAi && (
+        <AlertDialog>
+          <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>
+            {pending && running === DRAFTED ? "Drafting…" : "Draft with AI"}
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
+              <AlertDialogDescription>
+                AI writes release notes from the entry&apos;s pull requests and the posts it completes. They replace
+                the text now, including changes you haven&apos;t saved.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction disabled={pending} onClick={() => run(draftChangelogEntry, DRAFTED)}>
+                Replace the text
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
       {published ? (
         <Button variant="outline" disabled={pending} onClick={() => run(unpublishChangelogEntry, "Unpublished")}>
           Unpublish

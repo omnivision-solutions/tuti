@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startGithubFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startGithubFake, startModelFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -12,7 +12,7 @@ import { MAIL_DIR } from "./mail";
 
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
- * OpenAI fake (embeddings for duplicate detection), the S3 fake (image uploads) and the
+ * OpenAI fake (embeddings for duplicate detection), the model fake (AI drafting), the S3 fake (image uploads) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline.
  */
@@ -32,6 +32,9 @@ export default async function globalSetup() {
   const openai = await startOpenAIFake();
   // Journeys run in other processes; they set vectors through the fake's /fixtures (e2e/openai.ts).
   process.env.E2E_OPENAI_URL = openai.url;
+  const model = await startModelFake();
+  // Journeys script its replies through /_fake/replies (e2e/model.ts).
+  process.env.E2E_MODEL_URL = model.url;
   const s3 = await startS3Fake();
   const github = await startGithubFake();
   // The GitHub journey tells the fake what its install page should do (e2e/github.spec.ts).
@@ -49,6 +52,7 @@ export default async function globalSetup() {
       OPENAI_BASE_URL: openai.url,
       SMTP_HOST: smtp.host,
       SMTP_PORT: String(smtp.port),
+      ...model.env,
       ...s3.env,
       ...github.env,
       NODE_ENV: "production",
@@ -66,6 +70,8 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), s3.close(), github.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close()]);
+    // Every scripted reply was used, and nothing asked the model unscripted.
+    model.done();
   };
 }

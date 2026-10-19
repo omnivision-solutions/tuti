@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { beforeAll, expect, test } from "vitest";
+import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
 import { createApiKey } from "@/server/api-keys";
@@ -31,6 +32,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.get": () => ({ number: 1 }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
+  "changelog.draft": () => ({ number: 2 }),
   "changelog.publish": () => ({ number: 1 }),
   "changelog.unpublish": () => ({ number: 1 }),
   "changelog.delete": () => ({ number: 1 }),
@@ -49,10 +51,15 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
 };
 
 let owner: TestUser;
+let model: ModelFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
+  model = await startModelFake();
+  for (const [name, value] of Object.entries(model.env)) {
+    vi.stubEnv(name, value);
+  }
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -64,14 +71,21 @@ beforeAll(async () => {
   };
 });
 
+afterAll(() => model.close());
+// Refused calls never reach the model; the allowed one uses its reply.
+afterEach(() => model.done());
+
 /** Fresh posts #1 and #2 (with a link on #1) for each case; numbers restart per fixture. */
 async function createFixture() {
   await prisma.post.deleteMany({ where: { projectId: project.id } });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
-  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 1 } });
-  // A published entry #1, so reads find it (and unpublish has something to do).
-  await prisma.changelogEntry.create({
-    data: { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
+  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2 } });
+  // A published entry #1, so reads find it (and unpublish has something to do), and a draft #2 to draft with AI.
+  await prisma.changelogEntry.createMany({
+    data: [
+      { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
+      { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
+    ],
   });
   const board = project.boards[0]!;
   const marker = `matrix-${crypto.randomUUID()}`;
@@ -172,5 +186,8 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
 
   // A read and write key can run it.
   fixture = await createFixture();
+  if (operation.name === "changelog.draft") {
+    model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
+  }
   expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
 });

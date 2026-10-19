@@ -15,6 +15,8 @@ export const serverEnv = {
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
   // (The global setup points OPENAI_* at the local fake.)
   OPENAI_API_KEY: "",
+  // (And OPENROUTER_* at the model fake; AI_MODEL stays the default.)
+  AI_MODEL: "",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",

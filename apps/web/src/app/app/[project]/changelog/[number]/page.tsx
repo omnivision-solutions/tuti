@@ -1,5 +1,6 @@
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { aiEnabled } from "@tuti/shared";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
@@ -28,6 +29,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
       tags: true,
       publishedAt: true,
       collecting: true,
+      updatedAt: true,
       posts: { select: { post: { select: { number: true } } } },
     },
   });
@@ -55,10 +57,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             title={entry.title}
             published={entry.publishedAt !== null}
             postCount={listed.length}
+            canDraftWithAi={aiEnabled() && entry.publishedAt === null}
           />
         }
       />
+      {/* A new version (e.g. an AI draft) starts the form afresh. */}
       <ChangelogForm
+        key={entry.updatedAt.getTime()}
         projectSlug={slug}
         entry={{
           number: entry.number,

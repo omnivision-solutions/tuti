@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
+import { nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -41,6 +42,26 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
 
+  // AI rewrites the text into release notes, after asking; the title the team gave stays.
+  await nextModelReply(
+    JSON.stringify({
+      title: "Dark mode",
+      notes: "## A darker look\n\nSwitch to the dark theme from your profile menu.\n\n- Easier on the eyes at night",
+    }),
+  );
+  await team.getByRole("button", { name: "Draft with AI" }).click();
+  const confirm = team.getByRole("alertdialog");
+  await expect(confirm).toContainText("Replace the text with an AI draft?");
+  await checkpoint(team, "team-changelog-ai-draft-confirm", { fullPage: false });
+  await confirm.getByRole("button", { name: "Replace the text" }).click();
+  await expect(team.getByText("Drafted with AI")).toBeVisible();
+  await expect(editor.getByRole("heading", { name: "A darker look" })).toBeVisible();
+  await expect(editor.getByRole("listitem")).toHaveText("Easier on the eyes at night");
+  await expect(editor.getByRole("heading", { name: "Easier on the eyes" })).toHaveCount(0);
+  await expect(editor).not.toContainText("Switch themes");
+  await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here");
+  await checkpoint(team, "team-changelog-ai-draft");
+
   // Not on the portal until it's published.
   await ada.goto("/changelog");
   await expect(ada.getByText("Nothing here yet")).toBeVisible();
@@ -55,9 +76,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
   const entry = ada.getByRole("article", { name: "Dark mode is here" });
-  await expect(entry.getByRole("heading", { name: "Easier on the eyes", level: 2 })).toBeVisible();
+  await expect(entry.getByRole("heading", { name: "A darker look", level: 2 })).toBeVisible();
   await expect(entry).toContainText("New");
-  await expect(entry).toContainText("Switch themes from your profile menu.");
+  await expect(entry).toContainText("Switch to the dark theme from your profile menu.");
   await checkpoint(ada, "portal-changelog");
   // Feed readers find it too.
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);

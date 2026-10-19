@@ -1,12 +1,22 @@
 import { type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
-import { enqueue, lockProject, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
-import { log } from "@tuti/shared";
+import {
+  enqueue,
+  lockProject,
+  postSummary,
+  postSummarySelect,
+  queueDeliveries,
+  recordEvent,
+  RUNNING_DRAFT_TITLE,
+  toApiStatus,
+} from "@tuti/jobs";
+import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
+import { readReleaseNotes, releaseNotesPrompt } from "../release-notes";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectSlug } from "./read";
@@ -39,6 +49,7 @@ const entrySelect = {
   publishedAt: true,
   collecting: true,
   createdAt: true,
+  updatedAt: true,
   posts: { select: { post: { select: { id: true, number: true, title: true, status: true } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
@@ -248,6 +259,58 @@ export const updateChangelogEntry = defineOperation({
       }),
     );
     return entryView(updated, await projectSlug(projectId));
+  },
+});
+
+export const draftChangelogEntry = defineOperation({
+  name: "changelog.draft",
+  summary:
+    "Replace a draft entry's text with release notes the AI writes from its pull requests and the posts it completes (and name it, if it still has the running draft's title)",
+  method: "POST",
+  path: "/changelog/{number}/draft",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: entryNumber }),
+  run: async ({ projectId }, { number }) => {
+    if (!aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
+    }
+    const entry = await teamEntry(projectId, number);
+    if (entry.publishedAt) {
+      throw new OperationError(409, "published", "Unpublish the entry to draft its text with AI");
+    }
+    const slug = await projectSlug(projectId);
+    const { posts } = entryView(entry, slug);
+    if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
+      throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
+    }
+    let reply: string;
+    try {
+      reply = await complete(releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body }));
+    } catch (error) {
+      log.warn("AI changelog draft failed", { projectId, number, error });
+      throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
+    }
+    const draft = readReleaseNotes(reply, new Set(posts.map((post) => post.url)));
+    // Checked like anything the team saves.
+    const text = draft && (await readContent("changelog", { content: draft.doc }, { projectId, maxLength: MAX_ENTRY_LENGTH }));
+    if (!draft || !text || text.error !== undefined) {
+      log.warn("AI changelog draft unusable", { projectId, number, reply: reply.slice(0, 500) });
+      throw new OperationError(502, "ai_failed", "The AI's draft couldn't be used. Try again.");
+    }
+    // Only if nothing changed while the model wrote (a save, a merged pull request, publishing, another draft).
+    const { count } = await prisma.changelogEntry.updateMany({
+      where: { id: entry.id, updatedAt: entry.updatedAt, publishedAt: null },
+      data: {
+        body: text.text,
+        content: text.doc,
+        ...(entry.title === RUNNING_DRAFT_TITLE && draft.title && { title: draft.title }),
+      },
+    });
+    if (count === 0) {
+      throw new OperationError(409, "changed", "The entry changed while the AI was writing. Try again.");
+    }
+    return entryView(await teamEntry(projectId, number), slug);
   },
 });
 

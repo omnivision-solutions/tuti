@@ -77,7 +77,7 @@ export function openApiSpec(serverUrl: string) {
       securitySchemes: { apiKey: { type: "http", scheme: "bearer", description: "A project API key (tuti_…)" } },
       responses: {
         Error: {
-          description: "An error: 400 bad input, 401 missing or revoked key, 403 read-only key, 404 not found, 409 conflict, 429 rate limited",
+          description: "An error: 400 bad input, 401 missing or revoked key, 403 read-only key, 404 not found, 409 conflict, 429 rate limited, 502 a service Tuti uses failed (e.g. the AI model), 503 a feature isn't set up on this server",
           content: {
             "application/json": {
               schema: {
