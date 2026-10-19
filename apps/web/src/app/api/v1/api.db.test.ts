@@ -353,6 +353,11 @@ describe("OpenAPI", () => {
       required: ["board", "title"],
       properties: { author: { type: "object", required: ["id"] } },
     });
+    // posts.update needs a status or a board, as its refine says.
+    expect(spec.paths["/posts/{number}"].patch.requestBody.content["application/json"].schema.anyOf).toEqual([
+      { required: ["status"] },
+      { required: ["board"] },
+    ]);
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);

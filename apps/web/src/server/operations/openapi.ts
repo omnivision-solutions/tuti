@@ -39,6 +39,8 @@ export function openApiSpec(serverUrl: string) {
                   type: "object",
                   properties: Object.fromEntries(others.map((name) => [name, properties[name]])),
                   required: others.filter((name) => required.has(name)),
+                  // Rules across fields, declared with .meta() next to the operation's refine.
+                  ...(schema.anyOf !== undefined && { anyOf: schema.anyOf }),
                 },
               },
             },
