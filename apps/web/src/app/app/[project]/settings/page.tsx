@@ -139,6 +139,21 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           />
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Export</CardTitle>
+          <CardDescription>
+            Download your help center, changelog and feedback as Markdown files in a ZIP, drafts included. Images
+            stay links to where they&apos;re hosted.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <a href={`/app/${project.slug}/settings/export`} className={buttonVariants({ variant: "outline" })}>
+            Export as Markdown
+          </a>
+        </CardContent>
+      </Card>
     </>
   );
 }
