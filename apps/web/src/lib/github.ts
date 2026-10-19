@@ -49,7 +49,10 @@ export function verifyValue(purpose: string, value: string, now = Date.now()): s
     return null;
   }
   const expected = createHmac("sha256", signingKey(purpose)).update(parts.join(".")).digest("base64url");
-  const valid = signature.length === expected.length && timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  // Compare bytes: a crafted value can have the right number of characters but not of bytes.
+  const given = Buffer.from(signature);
+  const wanted = Buffer.from(expected);
+  const valid = given.length === wanted.length && timingSafeEqual(given, wanted);
   return valid && Number(expires) * 1000 > now ? parts.slice(0, -1) : null;
 }
 

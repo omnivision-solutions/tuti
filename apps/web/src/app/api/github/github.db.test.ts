@@ -108,6 +108,9 @@ describe("connecting", () => {
     expect(verifyValue("callback", value)).toBeNull();
     expect(verifyValue("install", value.replace("project-1", "project-2"))).toBeNull();
     expect(verifyValue("install", "nonsense")).toBeNull();
+    // As many characters as a real signature, but more bytes: refused, not a crash.
+    const [fields, expires] = [value.split(".")[0], value.split(".")[1]];
+    expect(verifyValue("install", `${fields}.${expires}.${"é".repeat(43)}`)).toBeNull();
   });
 });
 
