@@ -6,6 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 
 import { allowedHostPatterns, appUrl } from "./hosts";
+import { portalHandoff } from "./portal-handoff";
 import { jwtSso } from "./sso";
 
 export const auth = betterAuth({
@@ -47,7 +48,7 @@ export const auth = betterAuth({
     },
   },
   // nextCookies must stay last: lets server actions set auth cookies.
-  plugins: [jwtSso(), nextCookies()],
+  plugins: [jwtSso(), portalHandoff(), nextCookies()],
 });
 
 export type Session = typeof auth.$Infer.Session;

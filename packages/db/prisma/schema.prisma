@@ -30,6 +30,7 @@ model User {
 
   invitationsCreated  Invitation[] @relation("InvitationCreatedBy")
   invitationsAccepted Invitation[] @relation("InvitationAcceptedBy")
+  portalHandoffs      PortalHandoff[]
 
   @@unique([email])
   @@map("user")
@@ -112,6 +113,7 @@ model Project {
   comments             Comment[]
   ssoIdentities        SsoIdentity[]
   ssoTokenUses         SsoTokenUse[]
+  portalHandoffs       PortalHandoff[]
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
@@ -172,6 +174,23 @@ model SsoTokenUse {
   @@id([projectId, jti])
   @@index([expiresAt])
   @@map("sso_token_use")
+}
+
+/// "Continue as <name>": a one-time code from the app host that signs a Tuti
+/// account into one portal. Bound to the portal and to the state cookie of the
+/// browser that asked for it; deleted when used. Only hashes are stored.
+model PortalHandoff {
+  codeHash  String   @id
+  projectId String
+  userId    String
+  stateHash String
+  expiresAt DateTime
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("portal_handoff")
 }
 
 /// A single-use link that adds someone to a project with a given role.

@@ -9,6 +9,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import * as boards from "./boards";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
+import * as portalHandoff from "./portal-handoff";
 import * as posts from "./posts";
 import * as projects from "./projects";
 import * as similarPosts from "./similar-posts";
@@ -28,6 +29,7 @@ const modules = {
   boards,
   invitations,
   "manage-posts": managePosts,
+  "portal-handoff": portalHandoff,
   posts,
   projects,
   "similar-posts": similarPosts,
@@ -110,6 +112,14 @@ const matrix: Matrix = {
       allowed: "MEMBER",
       takesIds: true,
       call: (slug, f) => managePosts.dismissDuplicate(slug, f.suggestionId),
+    },
+  },
+  "portal-handoff": {
+    // Any Tuti account may sign in to any portal as itself.
+    continueToPortal: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug) => portalHandoff.continueToPortal(slug, "a".repeat(43), "/"),
     },
   },
   posts: {
