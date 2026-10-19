@@ -24,7 +24,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.
 - Emails the app sends land in a local SMTP fake: in database tests read them with `mailbox` (`apps/web/src/test/mailbox.ts`), in journeys with `latestEmailTo` (`e2e/mail.ts`).
 - Test data uses `e2e-…@example.com` emails.
-- A change to a user-facing flow updates its journey in `e2e/` (or adds one). Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.
+- A change to a user-facing flow updates its journey in `e2e/` (or adds one). While a dialog is open the page behind it is hidden from role queries, so after a dialog action wait for its result (a toast, the URL) before asserting that something is gone. Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.
 - Marketing pages get no tests; check them with a build and a screenshot.
 
 ## Pull requests

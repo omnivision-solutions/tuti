@@ -38,3 +38,12 @@ export async function fillSignUp(page: Page, name: string, email?: string) {
   await page.getByLabel("Password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Sign up" }).click();
 }
+
+/** Creates a project from /app/new and waits for its dashboard. */
+export async function createProject(page: Page, name: string, slug: string) {
+  await page.goto("/app/new");
+  await page.getByLabel("Name").fill(name);
+  await page.getByLabel("URL").fill(slug);
+  await page.getByRole("button", { name: "Create project" }).click();
+  await page.waitForURL(`**/app/${slug}`);
+}

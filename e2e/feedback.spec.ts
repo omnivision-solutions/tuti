@@ -67,7 +67,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.goto(`/app/${slug}/p/2`);
   await team.getByRole("button", { name: "Merge into…" }).click();
   await team.getByRole("button", { name: /Dark mode/ }).click();
-  await checkpoint(team, "team-merge-confirm");
+  await checkpoint(team, "team-merge-confirm", { fullPage: false });
   await team.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/p/1`);
 
