@@ -263,7 +263,12 @@ export const publishChangelogEntry = defineOperation({
       const completed: string[] = [];
       // Its posts as they are now: each locked and read in this transaction, so a status
       // the team changed a moment ago is the one that counts.
-      const linked = await tx.changelogEntryPost.findMany({ where: { entryId: entry.id }, select: { postId: true } });
+      // Locked in id order, so two entries sharing posts can't deadlock publishing at once.
+      const linked = await tx.changelogEntryPost.findMany({
+        where: { entryId: entry.id },
+        orderBy: { postId: "asc" },
+        select: { postId: true },
+      });
       for (const { postId } of linked) {
         const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
         if (!current || current.status === "COMPLETED" || current.status === "CLOSED") {
