@@ -3,7 +3,16 @@ import type { AddressInfo } from "node:net";
 import { simpleParser } from "mailparser";
 import { SMTPServer } from "smtp-server";
 
-export type CapturedEmail = { from: string; replyTo: string; to: string[]; subject: string; text: string; html: string };
+export type CapturedEmail = {
+  from: string;
+  replyTo: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  /** Header values by lowercase name. */
+  headers: Record<string, string>;
+};
 
 export type SmtpFake = {
   host: string;
@@ -17,9 +26,12 @@ export type SmtpFake = {
 
 /**
  * A local SMTP server that keeps what it receives, for tests (SMTP_HOST / SMTP_PORT).
- * `onEmail` sees each email as it arrives (e.g. to share it with other processes).
+ * `onEmail` sees each email as it arrives (e.g. to share it with other processes);
+ * the server answers once it's done, and refuses the email if it throws.
  */
-export async function startSmtpFake({ onEmail }: { onEmail?: (email: CapturedEmail) => void } = {}): Promise<SmtpFake> {
+export async function startSmtpFake({
+  onEmail,
+}: { onEmail?: (email: CapturedEmail) => void | Promise<void> } = {}): Promise<SmtpFake> {
   const emails: CapturedEmail[] = [];
   const server = new SMTPServer({
     authOptional: true,
@@ -37,9 +49,10 @@ export async function startSmtpFake({ onEmail }: { onEmail?: (email: CapturedEma
           subject: mail.subject ?? "",
           text: mail.text ?? "",
           html: typeof mail.html === "string" ? mail.html : "",
+          headers: Object.fromEntries(mail.headerLines.map((h) => [h.key, h.line.slice(h.line.indexOf(":") + 1).trim()])),
         };
+        await onEmail?.(email);
         emails.push(email);
-        onEmail?.(email);
         callback();
       } catch (error) {
         callback(error as Error);

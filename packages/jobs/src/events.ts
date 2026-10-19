@@ -49,6 +49,28 @@ export async function emitEvent(
   }
 }
 
+/**
+ * Every status change goes through here: it tells the project's webhooks and,
+ * when the post is now Completed, emails the people behind it (post-shipped job).
+ */
+export async function postStatusChanged(
+  projectId: string,
+  postId: string,
+  post: ReturnType<typeof postSummary>,
+  previousStatus: PostStatus,
+) {
+  await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
+  if (post.status === toApiStatus("COMPLETED")) {
+    try {
+      // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
+      await enqueue("postShipped", { postId });
+    } catch (error) {
+      log.error("Enqueueing the post-shipped job failed", { postId, error });
+    }
+  }
+}
+
 /** A post as the API and webhook payloads show it. */
 export type PostRow = {
   number: number;
