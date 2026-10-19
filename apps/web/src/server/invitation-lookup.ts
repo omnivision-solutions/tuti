@@ -41,3 +41,24 @@ export async function getInvitation(token: string): Promise<InvitationState> {
     email: invitation.email,
   };
 }
+
+/**
+ * Pending invites addressed to this account, for the dashboard. Only once its email
+ * is verified (anyone can sign up with any address), and not for projects it's on.
+ */
+export async function pendingInvitationsFor(user: { id: string; email: string; emailVerified: boolean }) {
+  if (!user.emailVerified) {
+    return [];
+  }
+  return prisma.invitation.findMany({
+    where: {
+      email: user.email.toLowerCase(),
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+      project: { team: { none: { userId: user.id } } },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, role: true, project: { select: { name: true } }, createdBy: { select: { name: true } } },
+  });
+}

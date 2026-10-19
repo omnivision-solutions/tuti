@@ -82,6 +82,17 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (_slug, f) => invitations.acceptInvitation(f.invitationToken),
     },
+    // Only for invites addressed to the account's own verified email (see invitations.db.test.ts).
+    acceptInvitationById: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (_slug, f) => invitations.acceptInvitationById(f.emailInvitationId),
+    },
+    declineInvitation: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (_slug, f) => invitations.declineInvitation(f.emailInvitationId),
+    },
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
@@ -154,6 +165,8 @@ beforeAll(async () => {
   );
   users = { OWNER: OWNER!, ADMIN: ADMIN!, MEMBER: MEMBER!, outsider: outsider!, ssoUser: ssoUser! };
   otherProject = await createProject(users.outsider);
+  // The account that's allowed to act on its own email invites (allowedActor for "signed in").
+  await prisma.user.update({ where: { id: users.outsider.id }, data: { emailVerified: true } });
   await prisma.ssoIdentity.create({
     data: { projectId: otherProject.id, externalId: "ext-1", userId: users.ssoUser.id },
   });
@@ -197,8 +210,18 @@ async function createFixture() {
       expiresAt: new Date(Date.now() + 60_000),
     },
   });
+  const emailInvitation = await prisma.invitation.create({
+    data: {
+      projectId,
+      email: users.outsider.email,
+      tokenHash: hashInvitationToken(crypto.randomUUID()),
+      createdById: users.OWNER.id,
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
   return {
     slug: project.slug,
+    emailInvitationId: emailInvitation.id,
     boardId: board.id,
     emptyBoardId: emptyBoard.id,
     postId: post!.id,
