@@ -82,8 +82,9 @@ and `INFISICAL_PROJECT_ID`, with one read-only machine identity per app
 the prod values as runtime-only env vars: change them in Infisical, then copy them
 over.
 
-`main` deploys itself once CI passes (`.github/workflows/deploy.yml`). The workflow
-runs in the `production` environment (main only), whose secrets are the Coolify URL
-and a deploy-only Coolify token.
+Coolify deploys `main` on every push, through a GitHub webhook signed with a
+shared secret (Coolify's own auto-deploy; no Coolify token lives in GitHub). `main`
+only changes through pull requests that passed CI, and Coolify keeps the running
+version until the new one passes its health check (`/api/health`).
 
 Builds don't need secrets (no `infisical run` in the build stage).
