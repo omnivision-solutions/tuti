@@ -77,6 +77,8 @@ describe("articles", () => {
     expect((await call(createArticle, as(owner, other.id), { title: "Getting started" })).slug).toBe("getting-started");
     // Titles without letters or digits still get one.
     expect((await call(createArticle, as(owner), { title: "???" })).slug).toBe("article");
+    // "new" is the team's new-article page, so an article can't have it.
+    expect((await call(createArticle, as(owner), { title: "New" })).slug).toBe("new-2");
 
     expect(await call(updateArticle, as(owner), { slug: "getting-started-2", title: "Inviting your team" })).toMatchObject({
       slug: "inviting-your-team",

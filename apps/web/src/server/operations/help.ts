@@ -93,9 +93,14 @@ async function collectionId(tx: Prisma.TransactionClient, projectId: string, slu
  * A slug from `text` that `taken` doesn't have: "getting-started", then "getting-started-2", …
  * Call it with the project locked (lockProject), so two saves can't pick the same one.
  */
-async function freeSlug(text: string, fallback: string, taken: (prefix: string) => Promise<{ slug: string }[]>) {
+async function freeSlug(
+  text: string,
+  fallback: string,
+  taken: (prefix: string) => Promise<{ slug: string }[]>,
+  reserved: string[] = [],
+) {
   const base = titleSlug(text, fallback);
-  const used = new Set((await taken(base)).map((row) => row.slug));
+  const used = new Set([...reserved, ...(await taken(base)).map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
@@ -103,9 +108,14 @@ async function freeSlug(text: string, fallback: string, taken: (prefix: string) 
   return candidate;
 }
 
+// "new" is the team's new-article page (/app/<project>/help/new), so no article can have it.
 const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
-  freeSlug(title, "article", (prefix) =>
-    tx.article.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
+  freeSlug(
+    title,
+    "article",
+    (prefix) =>
+      tx.article.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
+    ["new"],
   );
 
 const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
