@@ -3,8 +3,15 @@ import { handlers } from "@tuti/jobs";
 import { assertEnv, jobs, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
+import { waitForMigration } from "./migrations";
+
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
+
+// Set in builds (tsup.config.ts); when run from source, the developer migrates.
+if (process.env.TUTI_SCHEMA_MIGRATION) {
+  await waitForMigration(process.env.TUTI_SCHEMA_MIGRATION);
+}
 
 const hatchet = getHatchet();
 const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
