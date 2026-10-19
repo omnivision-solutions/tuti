@@ -46,5 +46,6 @@ test("an admin creates an API key, reads posts with it, then revokes it", async 
   await owner.goto("/docs/api");
   await expect(owner.getByRole("heading", { name: "API", level: 1 })).toBeVisible();
   await expect(owner.getByRole("heading", { name: /POST \/api\/v1\/posts$/ })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "MCP (for AI assistants)" })).toBeVisible();
   await checkpoint(owner, "api-docs");
 });

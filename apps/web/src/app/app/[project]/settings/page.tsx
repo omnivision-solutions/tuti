@@ -46,8 +46,8 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle>API keys</CardTitle>
           <CardDescription>
-            Read this project&apos;s boards, posts and comments from your own code with the REST API. Keys are shown
-            once; revoke any you no longer use.
+            Use this project&apos;s feedback from your own code (REST API) or an AI assistant (MCP). Keys are shown
+            once; revoke any you no longer use. <a href="/docs/api" className="text-primary underline underline-offset-4">API docs</a>
           </CardDescription>
         </CardHeader>
         <CardContent>

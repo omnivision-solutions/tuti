@@ -35,3 +35,6 @@ export function matchOperation(method: string, path: string) {
   }
   return null;
 }
+
+/** MCP tool names allow letters, digits, _ and -: posts.list → posts_list. */
+export const toolName = (operation: Operation) => operation.name.replace(".", "_");
