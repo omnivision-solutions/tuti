@@ -1,14 +1,16 @@
 import { prisma } from "@tuti/db";
+import { aiEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ChangelogStyleForm } from "@/components/changelog";
 import { TAG_LABELS } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 
@@ -23,6 +25,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     where: { projectId: membership.project.id },
     orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
     select: {
+      id: true,
       number: true,
       title: true,
       tags: true,
@@ -32,6 +35,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       _count: { select: { posts: true, pullRequests: true } },
     },
   });
+  // The writing style only matters to AI drafts.
+  const style =
+    aiEnabled() &&
+    (await prisma.project.findUniqueOrThrow({
+      where: { id: membership.project.id },
+      select: { changelogTone: true, changelogExampleIds: true },
+    }));
   const newEntry = (
     <Link href={`/app/${slug}/changelog/new`} className={buttonVariants()}>
       New entry
@@ -71,6 +81,24 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                 />
               ))}
             </ItemList>
+          </CardContent>
+        </Card>
+      )}
+      {style && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Writing style</CardTitle>
+            <CardDescription>
+              Draft with AI writes like this. It takes facts only from the entry it drafts, never from the examples.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChangelogStyleForm
+              projectSlug={slug}
+              tone={style.changelogTone}
+              examples={entries.filter((e) => e.publishedAt && style.changelogExampleIds.includes(e.id)).map((e) => e.number)}
+              published={entries.filter((e) => e.publishedAt).map(({ number, title }) => ({ number, title }))}
+            />
           </CardContent>
         </Card>
       )}

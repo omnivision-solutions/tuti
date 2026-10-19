@@ -8,10 +8,12 @@ import {
   deleteChangelogEntry,
   draftChangelogEntry,
   getChangelogEntry,
+  getChangelogStyle,
   listChangelog,
   publishChangelogEntry,
   unpublishChangelogEntry,
   updateChangelogEntry,
+  updateChangelogStyle,
 } from "./changelog";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 
@@ -30,6 +32,8 @@ const all = [
   publishChangelogEntry,
   unpublishChangelogEntry,
   deleteChangelogEntry,
+  getChangelogStyle,
+  updateChangelogStyle,
   listPosts,
   getPost,
   listComments,

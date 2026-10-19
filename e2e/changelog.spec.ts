@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
-import { nextModelReply } from "./model";
+import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -95,4 +95,31 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await ada.waitForURL(/\/p\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
+
+  // The team's writing style: tone notes, and the published entry as an example.
+  const tone = `Friendly, short sentences, no jargon (${slug}).`;
+  await team.goto(`/app/${slug}/changelog`);
+  await team.getByLabel("Tone").fill(tone);
+  await team.getByRole("checkbox", { name: "Dark mode is here" }).check();
+  await checkpoint(team, "team-changelog-style");
+  await team.getByRole("button", { name: "Save style" }).click();
+  await expect(team.getByText("Style saved")).toBeVisible();
+  await team.reload();
+  await expect(team.getByLabel("Tone")).toHaveValue(tone);
+  await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
+
+  // The next AI draft follows it.
+  await team.getByRole("link", { name: "New entry" }).click();
+  await team.getByLabel("Title").fill("Faster search");
+  await team.getByRole("textbox", { name: "What changed" }).click();
+  await team.keyboard.type("Search got quicker.");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await team.waitForURL(`**/app/${slug}/changelog/2`);
+  await nextModelReply(JSON.stringify({ title: "Faster search", notes: "Search is quicker now." }));
+  await team.getByRole("button", { name: "Draft with AI" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
+  await expect(team.getByText("Drafted with AI")).toBeVisible();
+  const asked = (await modelRequests()).find((request) => request.user.includes(tone));
+  expect(asked?.user).toContain('"title": "Dark mode is here"');
+  expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
 });

@@ -36,6 +36,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.publish": () => ({ number: 1 }),
   "changelog.unpublish": () => ({ number: 1 }),
   "changelog.delete": () => ({ number: 1 }),
+  "changelogStyle.get": () => ({}),
+  "changelogStyle.update": () => ({ tone: "Friendly", examples: [1] }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -158,6 +160,7 @@ const snapshot = () =>
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true } }),
+    prisma.project.findUnique({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
   ]);
 
 test("every operation is in this matrix", () => {

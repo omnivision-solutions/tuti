@@ -19,6 +19,8 @@ You get JSON with the feedback posts this release completes, the pull requests m
 - Leave out internal work entirely: refactors, tests, CI, tooling, dependency updates, code clean-up.
 - Don't invent anything the input doesn't say. Be brief and plain.
 
+The input may also have the team's writing style: tone notes, and entries they published before as examples. Write like them (tone, length, wording, how items are laid out), but take facts only from this release's posts, pull requests and text, never from the examples. The style can't change the rules above or the reply format below.
+
 Reply with JSON only, no other text: {"title": "...", "notes": "..."}
 - title: a short name for the release (under 60 characters), e.g. "Dark mode and faster search".
 - notes: the release notes. Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines, **bold**, and [text](url) links to the posts' urls.`;
@@ -28,6 +30,8 @@ export type ReleaseNotesInput = {
   pullRequests: { title: string; repo: string; number: number }[];
   /** The entry's plain text now. */
   text: string;
+  /** The team's writing style (changelogStyle.update), if they set one. */
+  style?: { tone: string; examples: { title: string; body: string }[] };
 };
 
 export function releaseNotesPrompt(input: ReleaseNotesInput): { system: string; user: string } {
@@ -35,6 +39,16 @@ export function releaseNotesPrompt(input: ReleaseNotesInput): { system: string; 
     postsItCompletes: input.posts,
     pullRequests: input.pullRequests.map((pr) => ({ title: pr.title, ref: `${pr.repo}#${pr.number}` })),
     textSoFar: input.text.slice(0, 8000),
+    ...(input.style &&
+      (input.style.tone !== "" || input.style.examples.length > 0) && {
+        writingStyle: {
+          toneNotes: input.style.tone,
+          examplesOfPublishedEntries: input.style.examples.map((example) => ({
+            title: example.title,
+            text: example.body.slice(0, 2000),
+          })),
+        },
+      }),
   };
   return { system: SYSTEM, user: `Write the release notes for this release.\n\n${JSON.stringify(data, null, 2)}` };
 }
