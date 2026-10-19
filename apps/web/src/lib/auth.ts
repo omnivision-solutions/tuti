@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { sendEmail, verifyEmail } from "@tuti/email";
+import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
@@ -36,7 +37,7 @@ export const auth = betterAuth({
       try {
         await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });
       } catch (error) {
-        console.error("Sending the verification email failed", error);
+        log.error("Sending the verification email failed", { error });
         // A failed email mustn't fail a sign-up (it can be sent again), but asking
         // to send it again should say it failed.
         if (request && new URL(request.url).pathname.endsWith("/send-verification-email")) {
