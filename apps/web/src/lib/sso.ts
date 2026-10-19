@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 import type { BetterAuthPlugin } from "better-auth";
@@ -66,6 +66,49 @@ function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
 }
 
+/**
+ * The User for someone from a project's app (matched by their id there, never by
+ * email), created on first sight. Only the details given are updated. Used by
+ * SSO sign-ins and by API calls made on someone's behalf.
+ */
+export async function upsertProjectUser(
+  projectId: string,
+  externalId: string,
+  details: { name?: string; image?: string | null; email?: string | null },
+): Promise<string> {
+  const where = { projectId_externalId: { projectId, externalId } };
+  const existing = await prisma.ssoIdentity.findUnique({ where, select: { userId: true } });
+  if (existing) {
+    const { email, ...profile } = details;
+    if (Object.values(profile).some((value) => value !== undefined)) {
+      await prisma.user.update({ where: { id: existing.userId }, data: profile });
+    }
+    if (email !== undefined) {
+      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email } });
+    }
+    return existing.userId;
+  }
+  try {
+    const user = await prisma.user.create({
+      data: {
+        id: randomUUID(),
+        name: details.name ?? details.email?.split("@")[0] ?? "Anonymous",
+        image: details.image ?? null,
+        email: placeholderEmail(projectId, externalId),
+        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null } },
+      },
+      select: { id: true },
+    });
+    return user.id;
+  } catch (error) {
+    // Lost a race with a concurrent first sight of the same person.
+    if (!isUniqueViolation(error)) {
+      throw error;
+    }
+    return (await prisma.ssoIdentity.findUniqueOrThrow({ where, select: { userId: true } })).userId;
+  }
+}
+
 export const jwtSso = () =>
   ({
     id: "tuti-jwt-sso",
@@ -128,46 +171,11 @@ export const jwtSso = () =>
             throw error;
           }
 
-          const profile = {
+          const userId = await upsertProjectUser(project.id, sub, {
             name: name ?? email?.split("@")[0] ?? "Anonymous",
             image: avatar ?? null,
-          };
-
-          const identity = await prisma.ssoIdentity.findUnique({
-            where: { projectId_externalId: { projectId: project.id, externalId: sub } },
-            select: { userId: true },
+            email: email ?? null,
           });
-
-          let userId = identity?.userId;
-          if (userId) {
-            await ctx.context.internalAdapter.updateUser(userId, profile);
-            await prisma.ssoIdentity.update({
-              where: { userId },
-              data: { email: email ?? null },
-            });
-          } else {
-            const user = await ctx.context.internalAdapter.createUser(
-              { ...profile, email: placeholderEmail(project.id, sub) },
-              { method: "jwt-sso" },
-            );
-            try {
-              await prisma.ssoIdentity.create({
-                data: { projectId: project.id, externalId: sub, userId: user.id, email: email ?? null },
-              });
-              userId = user.id;
-            } catch (error) {
-              // Lost a race with a concurrent first sign-in for the same sub.
-              await ctx.context.internalAdapter.deleteUser(user.id);
-              if (!isUniqueViolation(error)) {
-                throw error;
-              }
-              const existing = await prisma.ssoIdentity.findUniqueOrThrow({
-                where: { projectId_externalId: { projectId: project.id, externalId: sub } },
-                select: { userId: true },
-              });
-              userId = existing.userId;
-            }
-          }
 
           const user = await ctx.context.internalAdapter.findUserById(userId);
           if (!user) {

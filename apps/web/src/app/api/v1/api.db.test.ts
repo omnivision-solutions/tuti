@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { hashApiKey } from "@/lib/api-keys";
 import { createApiKey, revokeApiKey } from "@/server/api-keys";
+import { createPost as createPostOperation } from "@/server/operations/create";
+import { call } from "@/server/operations/run";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { GET, PATCH, POST } from "./[...path]/route";
@@ -254,5 +256,76 @@ describe("changing", () => {
       status: 409,
       body: { error: { code: "merge_into_itself" } },
     });
+  });
+});
+
+describe("creating", () => {
+  let writeKey: string;
+  beforeEach(async () => {
+    writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
+  });
+
+  test("a post as the key's creator, from plain text or a document", async () => {
+    expect(await send("POST", "/posts", { board: "feature-requests", title: "Dark mode", body: "Please" }, writeKey)).toMatchObject({
+      status: 200,
+      body: { number: 1, title: "Dark mode", votes: 1, author: { name: "Olive Owner" } },
+    });
+    const doc = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Rich", marks: [{ type: "bold" }] }] }] };
+    await send("POST", "/posts", { board: "feature-requests", title: "Export", content: doc }, writeKey);
+    expect((await api("/posts/2")).body).toMatchObject({ body: "Rich", content: doc });
+  });
+
+  test("on behalf of someone from the project's app, who is the same person each time (as with SSO)", async () => {
+    const sam = { id: "user-42", name: "Sam", email: "e2e-sam@example.com" };
+    await send("POST", "/posts", { board: "feature-requests", title: "Dark mode", author: sam }, writeKey);
+    // Later calls may send only the id: the name stays.
+    await send("POST", "/posts/1/comments", { body: "Also on mobile", author: { id: "user-42" } }, writeKey);
+
+    const identities = await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true } });
+    expect(identities).toEqual([expect.objectContaining({ externalId: "user-42", email: "e2e-sam@example.com" })]);
+    expect(identities[0]!.user.name).toBe("Sam");
+    expect((await api("/posts/1")).body.author).toEqual({ name: "Sam" });
+    expect((await api("/posts/1/comments")).body.comments).toEqual([
+      expect.objectContaining({ author: { name: "Sam", team: false }, body: "Also on mobile" }),
+    ]);
+  });
+
+  test("comments as the key's creator show as the team", async () => {
+    await post("Dark mode");
+    expect(await send("POST", "/posts/1/comments", { body: "On it" }, writeKey)).toMatchObject({
+      status: 200,
+      body: { author: { name: "Olive Owner", team: true }, body: "On it" },
+    });
+  });
+
+  test("refusals: read-only keys, unknown boards, short titles, empty or misplaced comments", async () => {
+    expect((await send("POST", "/posts", { board: "feature-requests", title: "Dark mode" })).status).toBe(403);
+    expect(await send("POST", "/posts", { board: "nope", title: "Dark mode" }, writeKey)).toMatchObject({ status: 404 });
+    expect(await send("POST", "/posts", { board: "feature-requests", title: "x" }, writeKey)).toMatchObject({
+      status: 400,
+      body: { error: { message: "title: Title is too short" } },
+    });
+    const dark = await post("Dark mode");
+    const night = await post("Night theme");
+    expect(await send("POST", "/posts/1/comments", { body: "  " }, writeKey)).toMatchObject({
+      status: 400,
+      body: { error: { message: "Write something first" } },
+    });
+    await prisma.post.update({ where: { id: night.id }, data: { duplicateOfId: dark.id } });
+    expect(await send("POST", "/posts/2/comments", { body: "Hi" }, writeKey)).toMatchObject({
+      status: 409,
+      body: { error: { code: "merged" } },
+    });
+    expect(await prisma.comment.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("people in the app can't write on someone else's behalf", async () => {
+    await expect(
+      call(
+        createPostOperation,
+        { actor: { kind: "user", userId: owner.id }, projectId: project.id },
+        { board: "feature-requests", title: "Dark mode", author: { id: "user-42" } },
+      ),
+    ).rejects.toThrow("Only API keys can write on someone's behalf");
   });
 });
