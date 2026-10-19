@@ -15,6 +15,19 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./changelog";
+import {
+  createArticle,
+  createCollection,
+  deleteArticle,
+  deleteCollection,
+  getArticle,
+  listArticles,
+  listCollections,
+  publishArticle,
+  unpublishArticle,
+  updateArticle,
+  updateCollection,
+} from "./help";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -34,6 +47,17 @@ const all = [
   deleteChangelogEntry,
   getChangelogStyle,
   updateChangelogStyle,
+  listArticles,
+  getArticle,
+  createArticle,
+  updateArticle,
+  publishArticle,
+  unpublishArticle,
+  deleteArticle,
+  listCollections,
+  createCollection,
+  updateCollection,
+  deleteCollection,
   listPosts,
   getPost,
   listComments,

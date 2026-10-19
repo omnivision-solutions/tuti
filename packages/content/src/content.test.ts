@@ -16,6 +16,12 @@ const image = (attrs: object = {}) => ({
   type: "image",
   attrs: { mediaId: MEDIA_ID, width: "50", align: "right", alt: "A chart", w: 1200, h: 800, ...attrs },
 });
+const cell = (type: string, value: string, attrs: object = {}) => ({
+  type,
+  attrs: { colspan: 1, rowspan: 1, ...attrs },
+  content: [p(text(value))],
+});
+const table = (...rows: object[][]) => ({ type: "table", content: rows.map((content) => ({ type: "tableRow", content })) });
 const list = (...items: string[]) => ({
   type: "bulletList",
   content: items.map((item) => ({ type: "listItem", content: [p(text(item))] })),
@@ -78,6 +84,16 @@ describe("parseDoc", () => {
     );
     expect(parseDoc("changelog", entry)).toMatchObject({ ok: true });
     expect(parseDoc("post", entry)).toMatchObject({ ok: false });
+  });
+
+  test("articles also have tables; changelog entries don't", () => {
+    const article = doc(table([cell("tableHeader", "Plan"), cell("tableHeader", "Seats")], [cell("tableCell", "Pro"), cell("tableCell", "10")]));
+    expect(parseDoc("article", article)).toMatchObject({ ok: true });
+    expect(parseDoc("changelog", article)).toMatchObject({ ok: false });
+    expect(parseDoc("article", doc(table([cell("tableCell", "x", { colspan: 1000 })])))).toEqual({
+      ok: false,
+      error: "This table can't be used here.",
+    });
   });
 
   test("also reads JSON strings, as forms send them", () => {
@@ -174,6 +190,12 @@ describe("RichText", () => {
     expect(out).toContain(`src="${videoEmbedUrl({ provider: "youtube", id: "dQw4w9WgXcQ" })}"`);
     expect(out).toContain('sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"');
     expect(html(doc(video("youtube", '"><script>')))).toBe("<div></div>");
+  });
+
+  test("tables render as tables, with only sane spans", () => {
+    expect(html(doc(table([cell("tableHeader", "A", { colspan: 2 })], [cell("tableCell", "B", { rowspan: "9" }), cell("tableCell", "C")])))).toBe(
+      '<div><div class="rich-table"><table><tbody><tr><th colSpan="2"><p>A</p></th></tr><tr><td><p>B</p></td><td><p>C</p></td></tr></tbody></table></div></div>',
+    );
   });
 
   test("skips nodes it doesn't know", () => {

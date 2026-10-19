@@ -3,6 +3,7 @@
 
 import { type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
+import { TableKit } from "@tiptap/extension-table";
 import StarterKit from "@tiptap/starter-kit";
 
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
@@ -11,10 +12,10 @@ import { imageKey, imageWidths } from "./media";
 /**
  * What each kind of content may contain. The editor, the server-side validation
  * and the renderers all derive from these, so they agree on every node and mark.
- * `changelog` adds headings, quotes and dividers to `post`; the article profile
- * comes with the help center (Phase 10).
+ * `changelog` adds headings, quotes and dividers to `post`; `article` (help center)
+ * adds tables to `changelog`.
  */
-export const PROFILES = ["comment", "post", "changelog"] as const;
+export const PROFILES = ["comment", "post", "changelog", "article"] as const;
 export type Profile = (typeof PROFILES)[number];
 
 declare module "@tiptap/core" {
@@ -28,6 +29,9 @@ declare module "@tiptap/core" {
 export const IMAGE_SIZES = ["25", "50", "75", "100"] as const;
 export const IMAGE_ALIGNMENTS = ["left", "center", "right"] as const;
 export const MAX_ALT_LENGTH = 300;
+
+/** A table cell's colspan or rowspan. */
+export const isCellSpan = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 1 && (value as number) <= 20;
 
 /** Uploaded media ids (cuid). */
 export const isMediaId = (value: unknown): value is string => typeof value === "string" && /^[a-z0-9]{20,32}$/.test(value);
@@ -169,11 +173,14 @@ export function extensions(profile: Profile, { mediaBaseUrl }: { mediaBaseUrl?: 
     case "post":
       return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaBaseUrl })];
     case "changelog":
+    case "article":
       return [
         // Sections under the entry's own title: h2 and h3 only.
         StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {} }),
         VideoEmbed,
         ImageNode.configure({ mediaBaseUrl }),
+        // Plain tables: no column resizing (widths aren't stored or rendered).
+        ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
       ];
   }
 }

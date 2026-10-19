@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
-/** The portal's tabs: each board, then the roadmap and the changelog (host-relative links). */
+/** The portal's tabs: each board, then the roadmap, the changelog and the help center (host-relative links). */
 export function BoardTabs({ boards }: { boards: { slug: string; name: string }[] }) {
   const pathname = usePathname();
-  const tabs = [...boards.map((board) => ({ href: `/b/${board.slug}`, name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }];
+  const tabs = [...boards.map((board) => ({ href: `/b/${board.slug}`, name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/help", name: "Help" }];
 
   return (
     <div className="border-b">

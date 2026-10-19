@@ -3,7 +3,7 @@
  * end is what identifies the post, so retitling a post never breaks old links
  * (pages redirect to the current title).
  */
-export function titleSlug(title: string): string {
+export function titleSlug(title: string, fallback = "post"): string {
   const slug = title
     .toLowerCase()
     .normalize("NFKD")
@@ -12,7 +12,7 @@ export function titleSlug(title: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 60)
     .replace(/-+$/, "");
-  return slug || "post";
+  return slug || fallback;
 }
 
 export function postPath(post: { title: string; number: number }): string {

@@ -190,6 +190,21 @@
   .rich-text :where(pre code) {
     @apply bg-transparent p-0;
   }
+  .rich-text :where(.rich-table, .tableWrapper) {
+    @apply overflow-x-auto;
+  }
+  .rich-text :where(table) {
+    @apply w-full border-collapse text-sm;
+  }
+  .rich-text :where(th, td) {
+    @apply border px-3 py-2 text-left align-top;
+  }
+  .rich-text :where(th) {
+    @apply bg-muted font-semibold;
+  }
+  .rich-text :where(.selectedCell) {
+    @apply bg-accent;
+  }
   .rich-text :where(.rich-video) {
     @apply aspect-video w-full overflow-hidden rounded-lg bg-muted;
   }

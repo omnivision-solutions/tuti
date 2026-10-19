@@ -31,6 +31,7 @@ import {
   MinusIcon,
   QuoteIcon,
   SquareCodeIcon,
+  TableIcon,
   TextIcon,
   VideoIcon,
 } from "lucide-react";
@@ -262,6 +263,7 @@ function Toolbar({
       h3: editor.isActive("heading", { level: 3 }),
       blockquote: editor.isActive("blockquote"),
       image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
+      table: editor.isActive("table"),
     }),
   });
   const chain = () => editor.chain().focus();
@@ -277,13 +279,21 @@ function Toolbar({
         active={active.link}
         onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
       />
-      {profile === "changelog" && (
+      {(profile === "changelog" || profile === "article") && (
         <>
           <Tool icon={Heading2Icon} label="Heading" active={active.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()} />
           <Tool icon={Heading3Icon} label="Subheading" active={active.h3} onClick={() => chain().toggleHeading({ level: 3 }).run()} />
           <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
           <Tool icon={MinusIcon} label="Divider" active={false} onClick={() => chain().setHorizontalRule().run()} />
         </>
+      )}
+      {profile === "article" && (
+        <Tool
+          icon={TableIcon}
+          label="Table"
+          active={active.table}
+          onClick={() => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+        />
       )}
       {profile !== "comment" && (
         <>
@@ -350,6 +360,23 @@ function Toolbar({
             />
           ))}
           <Tool icon={TextIcon} label="Alt text" active={false} onClick={() => onPrompt("alt")} />
+        </div>
+      )}
+      {active.table && (
+        <div role="group" aria-label="Table" className="flex flex-wrap items-center gap-0.5 border-l pl-1">
+          {(
+            [
+              ["Add row", () => chain().addRowAfter().run()],
+              ["Add column", () => chain().addColumnAfter().run()],
+              ["Delete row", () => chain().deleteRow().run()],
+              ["Delete column", () => chain().deleteColumn().run()],
+              ["Delete table", () => chain().deleteTable().run()],
+            ] as const
+          ).map(([label, onClick]) => (
+            <Button key={label} type="button" variant="ghost" size="sm" onMouseDown={(event) => event.preventDefault()} onClick={onClick}>
+              {label}
+            </Button>
+          ))}
         </div>
       )}
     </div>

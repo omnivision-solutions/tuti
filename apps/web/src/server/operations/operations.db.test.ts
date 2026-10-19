@@ -38,6 +38,17 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.delete": () => ({ number: 1 }),
   "changelogStyle.get": () => ({}),
   "changelogStyle.update": () => ({ tone: "Friendly", examples: [1] }),
+  "articles.list": () => ({}),
+  "articles.get": () => ({ slug: "matrix-article" }),
+  "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
+  "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
+  "articles.publish": () => ({ slug: "matrix-draft" }),
+  "articles.unpublish": () => ({ slug: "matrix-article" }),
+  "articles.delete": () => ({ slug: "matrix-article" }),
+  "collections.list": () => ({}),
+  "collections.create": () => ({ name: "Billing" }),
+  "collections.update": () => ({ slug: "basics", name: "The basics" }),
+  "collections.delete": () => ({ slug: "basics" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -87,6 +98,16 @@ async function createFixture() {
     data: [
       { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
+    ],
+  });
+  // A collection, a published article in it and a draft.
+  await prisma.article.deleteMany({ where: { projectId: project.id } });
+  await prisma.collection.deleteMany({ where: { projectId: project.id } });
+  const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics" } });
+  await prisma.article.createMany({
+    data: [
+      { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
+      { projectId: project.id, slug: "matrix-draft", title: "Matrix draft" },
     ],
   });
   const board = project.boards[0]!;
@@ -161,6 +182,8 @@ const snapshot = () =>
     prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true } }),
     prisma.project.findUnique({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
+    prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
+    prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
   ]);
 
 test("every operation is in this matrix", () => {
