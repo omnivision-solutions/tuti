@@ -129,6 +129,46 @@ export function toPlainText(node: JSONContent): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+/** About 400 tokens: long enough to hold an answer, short enough to match one question well. */
+export const MAX_CHUNK_LENGTH = 1500;
+
+export type Chunk = { heading: string; text: string };
+
+/**
+ * A document in sections for search and AI answers: each heading starts one,
+ * holding the text up to the next heading. Sections longer than MAX_CHUNK_LENGTH
+ * are split between blocks (a block longer than that on its own is cut). Always
+ * at least one chunk, so an article with only a title can still be found.
+ */
+export function toChunks(doc: JSONContent): Chunk[] {
+  const sections: { heading: string; blocks: string[] }[] = [{ heading: "", blocks: [] }];
+  for (const node of doc.content ?? []) {
+    const text = toPlainText(node);
+    if (node.type === "heading") {
+      sections.push({ heading: text, blocks: [] });
+    } else if (text) {
+      for (let i = 0; i < text.length; i += MAX_CHUNK_LENGTH) {
+        sections.at(-1)!.blocks.push(text.slice(i, i + MAX_CHUNK_LENGTH));
+      }
+    }
+  }
+  const chunks: Chunk[] = [];
+  for (const { heading, blocks } of sections) {
+    let text = "";
+    for (const block of blocks) {
+      if (text && text.length + 2 + block.length > MAX_CHUNK_LENGTH) {
+        chunks.push({ heading, text });
+        text = "";
+      }
+      text = text ? `${text}\n\n${block}` : block;
+    }
+    if (text || heading) {
+      chunks.push({ heading, text });
+    }
+  }
+  return chunks.length ? chunks : [{ heading: "", text: "" }];
+}
+
 /** Whether there's nothing in it (no text, images or videos), e.g. an untouched editor. */
 export function isEmptyDoc(doc: JSONContent): boolean {
   let embeds = false;

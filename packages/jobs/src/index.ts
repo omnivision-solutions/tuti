@@ -1,6 +1,7 @@
 import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
+import { articleChanged } from "./articles";
 import { cleanupMedia } from "./cleanup";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
@@ -11,6 +12,7 @@ import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 export { signWebhook } from "./webhooks";
 export { lockProject, RUNNING_DRAFT_TITLE } from "./running-draft";
 
+export { articleChanged } from "./articles";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
 export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
@@ -23,6 +25,7 @@ export type JobResult = Record<string, string | number | boolean>;
 /** What each background job does. The worker runs these on Hatchet; `JOBS_DRIVER=inline` runs them in-process. */
 export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => Promise<JobResult> } = {
   postCreated,
+  articleChanged,
   imageUploaded,
   cleanupMedia,
   webhookDelivery,

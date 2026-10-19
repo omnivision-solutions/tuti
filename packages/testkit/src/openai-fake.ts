@@ -17,6 +17,8 @@ export type OpenAIFake = {
   setVector(text: string, vector: number[]): void;
   /** Make the next request fail with this HTTP status. */
   failNext(status?: number): void;
+  /** Hold the answer to the next embeddings request until the returned function is called (its texts are in `inputs` already). */
+  holdNext(): () => void;
   close(): Promise<void>;
 };
 
@@ -30,6 +32,7 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
   const inputs: string[] = [];
   const models: string[] = [];
   let failStatus: number | undefined;
+  let hold: Promise<void> | undefined;
 
   const server = createServer((req, res) => {
     const send = (status: number, body: unknown) => {
@@ -77,7 +80,9 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
       inputs.push(...body.input);
       // Reverse order on purpose: callers must sort by index.
       const data = body.input.map((text, index) => ({ index, embedding: vectorFor(text) })).reverse();
-      send(200, { data });
+      const held = hold;
+      hold = undefined;
+      void (held ?? Promise.resolve()).then(() => send(200, { data }));
     });
   });
 
@@ -109,6 +114,11 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
     setVector,
     failNext(status = 500) {
       failStatus = status;
+    },
+    holdNext() {
+      let release = () => {};
+      hold = new Promise((resolve) => (release = resolve));
+      return release;
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };

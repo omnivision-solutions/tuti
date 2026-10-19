@@ -40,7 +40,7 @@ test("read-only keys get the read tools; tools return the same data as the API",
   expect(tools.map((t) => t.name).sort()).toEqual(readTools.sort());
   // Named too, so a scope change can't drop one from both sides of the check above.
   expect(readTools).toEqual(
-    expect.arrayContaining(["project_get", "team_list", "boards_list", "posts_list", "posts_get", "comments_list", "duplicates_list"]),
+    expect.arrayContaining(["project_get", "team_list", "boards_list", "posts_list", "posts_get", "comments_list", "duplicates_list", "articles_search"]),
   );
   expect(tools.find((t) => t.name === "posts_list")).toMatchObject({
     annotations: { readOnlyHint: true },

@@ -49,8 +49,9 @@ Requirements:
 - Background jobs: a [Hatchet](https://hatchet.run) server (Hatchet Cloud or self-hosted,
   configured only through `HATCHET_CLIENT_*` env vars), or none with `JOBS_DRIVER=inline`
   (jobs run inside the web app; fine for small installs).
-- Optional: an OpenAI API key for duplicate detection (`OPENAI_API_KEY`). Without it,
-  similar posts are still suggested by title.
+- Optional: an OpenAI API key for duplicate detection and help center search by meaning
+  (`OPENAI_API_KEY`). Without it, similar posts are still suggested by title and help
+  search matches words.
 
 ```bash
 pnpm install
@@ -93,7 +94,7 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `PORTAL_URL_TEMPLATE` | Where each project's portal lives, e.g. `https://{project}.feedback.example.com` (needs a wildcard DNS record and certificate) |
 | `BETTER_AUTH_SECRET` | Random secret for sessions: `openssl rand -base64 32` |
 | `HATCHET_CLIENT_TOKEN` | Hatchet API token (web and worker), or set `JOBS_DRIVER=inline` instead |
-| `OPENAI_API_KEY` | Optional: duplicate detection with embeddings |
+| `OPENAI_API_KEY` | Optional: duplicate detection and help center search with embeddings |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the

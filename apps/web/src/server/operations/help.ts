@@ -1,11 +1,13 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { lockProject } from "@tuti/jobs";
+import { enqueue, lockProject } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
 import { titleSlug } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
+import { searchHelp } from "../help-search";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -123,6 +125,15 @@ const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, nam
     tx.collection.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
   );
 
+/** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
+async function indexArticle(articleId: string) {
+  try {
+    await enqueue("articleChanged", { articleId });
+  } catch (error) {
+    log.error("Embedding an article for search failed", { articleId, error });
+  }
+}
+
 async function articleText(input: { body?: string; content?: unknown }, projectId: string) {
   const text = await readContent("article", input, { projectId, maxLength: MAX_ARTICLE_LENGTH });
   if (text.error !== undefined) {
@@ -179,6 +190,24 @@ export const getArticle = defineOperation({
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
     return articleView(article, await projectSlug(projectId));
+  },
+});
+
+export const searchArticles = defineOperation({
+  name: "articles.search",
+  summary: "Search the published help center articles: best matches first, each with the passage that matched",
+  method: "GET",
+  path: "/search/articles",
+  scope: "read",
+  access: "anyone",
+  input: z.object({
+    q: z.string().trim().min(1, "Type something to search for").max(200),
+    limit: z.coerce.number().int().min(1).max(20).default(10),
+  }),
+  example: { q: "invite my team", limit: 5 },
+  run: async ({ projectId }, input) => {
+    const [results, slug] = await Promise.all([searchHelp(projectId, input.q, input.limit), projectSlug(projectId)]);
+    return { results: results.map((result) => ({ ...result, url: `${portalUrl(slug)}/help/${result.slug}` })) };
   },
 });
 
@@ -255,6 +284,9 @@ export const updateArticle = defineOperation({
         return saved;
       }),
     );
+    if (updated.publishedAt) {
+      await indexArticle(updated.id);
+    }
     return articleView(updated, await projectSlug(projectId));
   },
 });
@@ -274,6 +306,7 @@ export const publishArticle = defineOperation({
       await lockProject(tx, projectId);
       await tx.article.updateMany({ where: { id: article.id, publishedAt: null }, data: { publishedAt: new Date() } });
     });
+    await indexArticle(article.id);
     return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId));
   },
 });
@@ -288,7 +321,11 @@ export const unpublishArticle = defineOperation({
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
-    await prisma.article.update({ where: { id: article.id }, data: { publishedAt: null } });
+    // Its chunks go with it, so search (and later AI answers) stop using it at once.
+    await prisma.$transaction([
+      prisma.article.update({ where: { id: article.id }, data: { publishedAt: null } }),
+      prisma.articleChunk.deleteMany({ where: { articleId: article.id } }),
+    ]);
     return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId));
   },
 });

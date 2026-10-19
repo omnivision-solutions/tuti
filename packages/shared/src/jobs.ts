@@ -25,6 +25,11 @@ export const jobs = {
       postId: z.string(),
     }),
   },
+  /** A help article was published or changed: embed its sections for search (or remove them if it's no longer published). */
+  articleChanged: {
+    name: "article-changed",
+    input: z.object({ articleId: z.string() }),
+  },
   imageUploaded: {
     name: "image-uploaded",
     input: z.object({ mediaId: z.string() }),

@@ -41,6 +41,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelogStyle.update": () => ({ tone: "Friendly", examples: [1] }),
   "articles.list": () => ({}),
   "articles.get": () => ({ slug: "matrix-article" }),
+  "articles.search": () => ({ q: "matrix" }),
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
   "articles.publish": () => ({ slug: "matrix-draft" }),

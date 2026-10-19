@@ -101,6 +101,23 @@ test("the team writes a help article in a collection, publishes it, and a visito
   expect(await visitor.evaluate(() => navigator.clipboard.readText())).toBe(await markdown.text());
   await checkpoint(visitor, "portal-help-article-copied");
 
+  // Search finds it with the passage that matched; a search with no match says so.
+  await visitor.goto("/help");
+  const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
+  await searchBox.fill("send invites");
+  await visitor.getByRole("button", { name: "Search" }).click();
+  await visitor.waitForURL(/\/help\?q=send\+invites$/);
+  const results = visitor.getByRole("list", { name: "Search results" });
+  await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(results).toContainText("Owners and admins send invites from the Team page.");
+  await checkpoint(visitor, "portal-help-search");
+  await searchBox.fill("refunds");
+  await searchBox.press("Enter");
+  await expect(visitor.getByText("No articles match “refunds”")).toBeVisible();
+  await checkpoint(visitor, "portal-help-search-empty");
+  await visitor.getByRole("link", { name: "All articles" }).click();
+  await expect(visitor.getByRole("region", { name: "Getting started" })).toBeVisible();
+
   // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.getByRole("link", { name: "Help center" }).first().click();
   await team.waitForURL(`**/app/${slug}/help`);
