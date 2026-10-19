@@ -16,6 +16,9 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WI
  * fresh SSO token (or a promise of one); it's called whenever the panel is ready
  * for one, and the token is sent only to the portal's origin.
  *
+ * `Tuti.open()` opens the panel; `Tuti.open({ article: "<slug>" })` opens it at a
+ * help article (for contextual help buttons).
+ *
  * A dot on the button says there's an announced changelog entry this browser hasn't
  * seen yet (what it has seen is kept in the customer site's localStorage).
  */
@@ -89,13 +92,17 @@ export function widgetLoader(portalTemplate: string): string {
   });
   var frame;
 
-  function open() {
+  // With an article's slug, opens the panel at that help article (Tuti.open({ article: "..." })).
+  function open(article) {
+    var src = portal + "/widget" + (article ? "?tab=help&article=" + encodeURIComponent(article) : "");
     if (!frame) {
       frame = document.createElement("iframe");
-      frame.src = portal + "/widget";
+      frame.src = src;
       frame.title = "Feedback";
       css(frame, { width: "100%", height: "100%", border: "0", display: "block" });
       panel.appendChild(frame);
+    } else if (article) {
+      frame.src = src;
     }
     panel.style.display = "block";
     button.setAttribute("aria-expanded", "true");
@@ -123,6 +130,10 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
+    },
+    open: function (options) {
+      var article = options && options.article;
+      open(typeof article === "string" ? article : "");
     }
   };
 

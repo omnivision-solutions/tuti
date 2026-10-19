@@ -27,3 +27,9 @@ test("the new-updates dot asks the app when the latest announcement was and reme
   // Storage can be blocked; reading or writing it never breaks the widget.
   expect(script).toContain("try { return fn(window.localStorage); } catch (error) { return null; }");
 });
+
+test("Tuti.open({ article }) opens the panel at that help article, its slug encoded into the URL", () => {
+  const script = widgetLoader("https://{project}.tuti.example");
+  expect(script).toContain('"?tab=help&article=" + encodeURIComponent(article)');
+  expect(script).toMatch(/open: function \(options\) \{\s+var article = options && options\.article;\s+open\(typeof article === "string" \? article : ""\);/);
+});
