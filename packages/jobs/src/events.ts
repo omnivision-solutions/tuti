@@ -62,6 +62,8 @@ export async function postStatusChanged(
   await emitEvent(projectId, "post.status_changed", { post, previousStatus: toApiStatus(previousStatus) });
   if (post.status === toApiStatus("COMPLETED")) {
     try {
+      // Saved first: if queueing fails, the shipped-emails-resubmit cron finds it.
+      await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
       await enqueue("postShipped", { postId });
     } catch (error) {
       log.error("Enqueueing the post-shipped job failed", { postId, error });

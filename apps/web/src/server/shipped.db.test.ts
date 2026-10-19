@@ -31,6 +31,8 @@ const verified = async (name: string) => {
 const emailsTo = (address: string) =>
   mailbox.emails.filter((e) => e.to.includes(address) && !e.subject.startsWith("Verify your email"));
 const setStatus = (number: number, status: "completed" | "open") => call(updatePost, as(owner.id), { number, status });
+const due = async (postId: string) =>
+  (await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt;
 const tokenOf = async (userId: string) =>
   (await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { unsubscribeToken: true } })).unsubscribeToken;
 
@@ -89,12 +91,40 @@ describe("when a post ships", () => {
       process.env.SMTP_PORT = port;
     }
     expect(emailsTo(author.email)).toEqual([]);
+    expect(await due(postId)).not.toBeNull();
 
     // Hatchet's retry.
     expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 2 });
     expect(await handlers.postShipped({ postId }, log)).toEqual({ emailed: 0 });
     expect(emailsTo(author.email)).toHaveLength(1);
     expect(emailsTo(voter.email)).toHaveLength(1);
+    expect(await due(postId)).toBeNull();
+  });
+
+  test("emails that were never queued, or whose run died mid-send, go out later", async () => {
+    const [author, crashed, busy] = [await verified("Author"), await verified("Crashed"), await verified("Busy")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Calendar sync" });
+    for (const user of [crashed, busy]) {
+      await call(setVote, as(user.id), { number: post.number, voted: true });
+    }
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+    // Completed, but its job never got queued; one run died before sending to Crashed, another is sending to Busy now.
+    await prisma.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: minutesAgo(11) } });
+    await prisma.shippedEmail.createMany({
+      data: [
+        { postId, userId: crashed.id, claimedAt: minutesAgo(11) },
+        { postId, userId: busy.id, claimedAt: new Date() },
+      ],
+    });
+
+    expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 1, queued: 1 });
+    expect(emailsTo(author.email)).toHaveLength(1);
+    expect(emailsTo(crashed.email)).toHaveLength(1);
+    expect(emailsTo(busy.email)).toEqual([]);
+    expect(await due(postId)).toBeNull();
+    expect(await handlers.resubmitShippedEmails({}, log)).toEqual({ found: 0, queued: 0 });
   });
 
   test("people who unsubscribed (one click from their mail app) don't hear about it", async () => {

@@ -5,7 +5,7 @@ import { cleanupMedia } from "./cleanup";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
-import { postShipped } from "./shipped";
+import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
@@ -29,6 +29,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   githubPullRequest,
   githubRelease,
   postShipped,
+  resubmitShippedEmails,
 };
 
 /**

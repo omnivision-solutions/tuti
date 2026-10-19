@@ -75,6 +75,12 @@ export const jobs = {
     // 5s, 25s, 2m, 10m, then an hour: rides out a mail provider's outage.
     backoff: { factor: 5, maxSeconds: 60 * 60 },
   },
+  /** Queues post-shipped again for posts whose emails are late (never queued, or the run died). */
+  resubmitShippedEmails: {
+    name: "shipped-emails-resubmit",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */
   cleanupMedia: {
     name: "cleanup-media",
