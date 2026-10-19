@@ -114,6 +114,15 @@ const matrix: Matrix = {
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
+    saveChangelogStyle: {
+      allowed: "MEMBER",
+      call: (slug) => {
+        const form = new FormData();
+        form.set("tone", "Friendly");
+        form.append("examples", "1");
+        return changelog.saveChangelogStyle(slug, {}, form);
+      },
+    },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },

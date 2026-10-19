@@ -287,9 +287,10 @@ export const draftChangelogEntry = defineOperation({
     if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
     }
+    const style = await changelogStyle(projectId);
     let reply: string;
     try {
-      reply = await complete(releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body }));
+      reply = await complete(releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }));
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -314,6 +315,75 @@ export const draftChangelogEntry = defineOperation({
       throw new OperationError(409, "changed", "The entry changed while the AI was writing. Try again.");
     }
     return entryView(await teamEntry(projectId, number), slug);
+  },
+});
+
+export const MAX_TONE_LENGTH = 1000;
+export const MAX_STYLE_EXAMPLES = 3;
+
+/** The team's tone notes and example entries (the ones still published, in the order picked). */
+async function changelogStyle(projectId: string) {
+  const { changelogTone, changelogExampleIds } = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { changelogTone: true, changelogExampleIds: true },
+  });
+  const entries = await prisma.changelogEntry.findMany({
+    where: { projectId, id: { in: changelogExampleIds }, publishedAt: { not: null } },
+    select: { id: true, number: true, title: true, body: true },
+  });
+  return { tone: changelogTone, examples: changelogExampleIds.flatMap((id) => entries.filter((entry) => entry.id === id)) };
+}
+
+const styleView = ({ tone, examples }: Awaited<ReturnType<typeof changelogStyle>>) => ({
+  tone,
+  examples: examples.map(({ number, title }) => ({ number, title })),
+});
+
+export const getChangelogStyle = defineOperation({
+  name: "changelogStyle.get",
+  summary: "Get the changelog's writing style: the tone notes and example entries AI drafts follow",
+  method: "GET",
+  path: "/changelog-style",
+  scope: "read",
+  access: "team",
+  input: z.object({}),
+  run: async ({ projectId }) => styleView(await changelogStyle(projectId)),
+});
+
+export const updateChangelogStyle = defineOperation({
+  name: "changelogStyle.update",
+  summary: `Set the changelog's writing style for AI drafts: tone notes, and up to ${MAX_STYLE_EXAMPLES} published entries (by number) as examples (replaces the list)`,
+  method: "PATCH",
+  path: "/changelog-style",
+  scope: "write",
+  access: "team",
+  input: z.object({
+    tone: z.string().trim().max(MAX_TONE_LENGTH, "Keep the tone notes under 1,000 characters").optional(),
+    examples: z.array(entryNumber).max(MAX_STYLE_EXAMPLES, `Pick up to ${MAX_STYLE_EXAMPLES} examples`).optional(),
+  }),
+  example: { tone: "Friendly, short sentences, no jargon. Address the reader as you.", examples: [3] },
+  run: async ({ projectId }, input) => {
+    let exampleIds: string[] | undefined;
+    if (input.examples) {
+      const numbers = [...new Set(input.examples)];
+      const entries = await prisma.changelogEntry.findMany({
+        where: { projectId, number: { in: numbers }, publishedAt: { not: null } },
+        select: { id: true, number: true },
+      });
+      const missing = numbers.filter((n) => !entries.some((entry) => entry.number === n));
+      if (missing.length > 0) {
+        throw new OperationError(400, "invalid_input", `There's no published entry ${missing.map((n) => `#${n}`).join(", ")}`);
+      }
+      exampleIds = numbers.map((n) => entries.find((entry) => entry.number === n)!.id);
+    }
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...(input.tone !== undefined && { changelogTone: input.tone }),
+        ...(exampleIds && { changelogExampleIds: exampleIds }),
+      },
+    });
+    return styleView(await changelogStyle(projectId));
   },
 });
 

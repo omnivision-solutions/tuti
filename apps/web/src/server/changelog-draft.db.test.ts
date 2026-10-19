@@ -5,10 +5,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 
 import {
   createChangelogEntry,
+  deleteChangelogEntry,
   draftChangelogEntry,
   getChangelogEntry,
+  getChangelogStyle,
   publishChangelogEntry,
+  unpublishChangelogEntry,
   updateChangelogEntry,
+  updateChangelogStyle,
 } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
@@ -82,6 +86,8 @@ test("the model gets the pull requests and posts, and its notes become the entry
   expect(request!.user).toContain(postUrl);
   expect(request!.user).toContain('"title": "Add dark theme toggle"');
   expect(request!.user).toContain('"ref": "acme/app#13"');
+  // No style set: nothing about one.
+  expect(request!.user).not.toContain("writingStyle");
   expect(entry.title).toBe("Dark mode and faster search");
   expect(entry.content).toEqual({
     type: "doc",
@@ -180,4 +186,71 @@ test("without an AI key it says AI isn't set up", async () => {
   vi.stubEnv("OPENROUTER_API_KEY", "");
   const { number } = await entryWithPullRequests();
   await expect(draft(number)).rejects.toMatchObject({ status: 503, message: "AI isn't set up on this server" });
+});
+
+const setStyle = (input: { tone?: string; examples?: number[] }) => call(updateChangelogStyle, team(), input);
+const getStyle = () => call(getChangelogStyle, team(), {});
+
+test("the writing style is saved and checked: tone notes up to 1,000 characters, up to 3 of the project's published entries", async () => {
+  expect(await getStyle()).toEqual({ tone: "", examples: [] });
+  const published = await call(createChangelogEntry, team(), { title: "Faster search", body: "Search is quicker now." });
+  await call(publishChangelogEntry, team(), { number: published.number });
+  const draft = await call(createChangelogEntry, team(), { title: "Not out yet" });
+
+  expect(await setStyle({ tone: "  Friendly, no jargon.  ", examples: [published.number] })).toEqual({
+    tone: "Friendly, no jargon.",
+    examples: [{ number: published.number, title: "Faster search" }],
+  });
+  // Each field is optional: changing one keeps the other.
+  expect(await setStyle({ tone: "Short sentences." })).toMatchObject({ examples: [{ number: published.number }] });
+
+  await expect(setStyle({ tone: "x".repeat(1001) })).rejects.toMatchObject({
+    status: 400,
+    message: "Keep the tone notes under 1,000 characters",
+  });
+  await expect(setStyle({ examples: [draft.number] })).rejects.toMatchObject({
+    status: 400,
+    message: `There's no published entry #${draft.number}`,
+  });
+  await expect(setStyle({ examples: [1, 2, 3, 4] })).rejects.toMatchObject({ status: 400, message: "Pick up to 3 examples" });
+  // Another project's published entry isn't this project's.
+  const other = await createProject(owner);
+  const theirs = { ...team(), projectId: other.id };
+  for (const title of ["First", "Second", "Third"]) {
+    await call(createChangelogEntry, theirs, { title });
+  }
+  await call(publishChangelogEntry, theirs, { number: 3 });
+  await expect(setStyle({ examples: [3] })).rejects.toMatchObject({ status: 400, message: "There's no published entry #3" });
+  expect(await call(getChangelogStyle, { ...team(), projectId: other.id }, {})).toEqual({ tone: "", examples: [] });
+  // Refused changes left it as it was.
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [{ number: published.number, title: "Faster search" }] });
+
+  // An example that's deleted drops out.
+  await call(deleteChangelogEntry, team(), { number: published.number });
+  expect(await getStyle()).toEqual({ tone: "Short sentences.", examples: [] });
+});
+
+test("drafts follow the tone notes and the examples, marked as style only", async () => {
+  const example = await call(createChangelogEntry, team(), {
+    title: "Faster search",
+    body: "Search is quicker now. You'll find posts as you type.",
+  });
+  await call(publishChangelogEntry, team(), { number: example.number });
+  const unpublished = await call(createChangelogEntry, team(), { title: "Old favourite", body: "Written our way." });
+  await call(publishChangelogEntry, team(), { number: unpublished.number });
+  await setStyle({ tone: "Friendly, short sentences. Address the reader as you.", examples: [example.number, unpublished.number] });
+  // Taken off the portal later: no longer an example.
+  await call(unpublishChangelogEntry, team(), { number: unpublished.number });
+  const { number } = await entryWithPullRequests();
+  model.reply(reply("Dark mode", "You can switch to dark mode now."));
+
+  await draft(number);
+
+  const [request] = model.requests;
+  expect(request!.system).toContain("never from the examples");
+  const data = JSON.parse(request!.user.slice(request!.user.indexOf("{"))) as Record<string, unknown>;
+  expect(data.writingStyle).toEqual({
+    toneNotes: "Friendly, short sentences. Address the reader as you.",
+    examplesOfPublishedEntries: [{ title: "Faster search", text: "Search is quicker now. You'll find posts as you type." }],
+  });
 });

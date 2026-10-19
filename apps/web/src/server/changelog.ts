@@ -10,6 +10,7 @@ import {
   publishChangelogEntry as publishOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
+  updateChangelogStyle,
 } from "./operations/changelog";
 import { asTeam, call } from "./operations/run";
 
@@ -67,4 +68,10 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
     redirect(`/app/${projectSlug}/changelog`);
   }
   return result;
+}
+
+/** Saves the writing style form: tone notes and the published entries picked as examples (see changelogStyle.update). */
+export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const input = { tone: String(formData.get("tone") ?? ""), examples: formData.getAll("examples").map(Number) };
+  return asTeam(projectSlug, DENIED, (context) => call(updateChangelogStyle, context, input));
 }

@@ -14,7 +14,7 @@ export type ModelFake = {
   url: string;
   /** OPENROUTER_API_KEY and OPENROUTER_BASE_URL for an app that uses this fake. */
   env: Record<string, string>;
-  /** Every chat completion request, in order. */
+  /** Every chat completion request, in order (also `GET /_fake/requests`). */
   requests: ModelRequest[];
   /**
    * The next request gets this reply (steps are used in order). `during` runs while
@@ -47,6 +47,10 @@ export async function startModelFake(): Promise<ModelFake> {
     req.on("end", async () => {
       if (req.headers.authorization !== `Bearer ${FAKE_MODEL_KEY}`) {
         return send(401, { error: { message: "bad API key" } });
+      }
+      // Lets tests in another process (E2E journeys) check what the app asked.
+      if (req.method === "GET" && req.url === "/_fake/requests") {
+        return send(200, requests);
       }
       let body: { model?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown };
       try {
