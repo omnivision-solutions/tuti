@@ -69,6 +69,17 @@ describe("parseDoc", () => {
     expect(result.ok && toPlainText(result.doc)).toBe("Dark mode see here\na\nb\nhttps://www.youtube.com/watch?v=dQw4w9WgXcQ");
   });
 
+  test("changelog entries also have headings, quotes and dividers", () => {
+    const entry = doc(
+      { type: "heading", attrs: { level: 2 }, content: [text("New")] },
+      { type: "blockquote", content: [p(text("Finally!"))] },
+      { type: "horizontalRule" },
+      p(text("More")),
+    );
+    expect(parseDoc("changelog", entry)).toMatchObject({ ok: true });
+    expect(parseDoc("post", entry)).toMatchObject({ ok: false });
+  });
+
   test("also reads JSON strings, as forms send them", () => {
     expect(parseDoc("comment", JSON.stringify(doc(p(text("Hi")))))).toMatchObject({ ok: true });
   });
@@ -137,6 +148,18 @@ describe("RichText", () => {
 
   test("renders text as text, never as markup", () => {
     expect(html(doc(p(text("<img src=x onerror=alert(1)>"))))).toBe("<div><p>&lt;img src=x onerror=alert(1)&gt;</p></div>");
+  });
+
+  test("headings sit under the page's title (h2, h3), with quotes and dividers", () => {
+    const out = html(
+      doc(
+        { type: "heading", attrs: { level: 1 }, content: [text("A")] },
+        { type: "heading", attrs: { level: 3 }, content: [text("B")] },
+        { type: "blockquote", content: [p(text("C"))] },
+        { type: "horizontalRule" },
+      ),
+    );
+    expect(out).toBe("<div><h2>A</h2><h3>B</h3><blockquote><p>C</p></blockquote><hr/></div>");
   });
 
   test("links get safe attributes; unsafe links render as plain text", () => {

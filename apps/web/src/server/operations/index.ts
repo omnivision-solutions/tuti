@@ -3,6 +3,15 @@ import { createComment, createPost } from "./create";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
+import {
+  createChangelogEntry,
+  deleteChangelogEntry,
+  getChangelogEntry,
+  listChangelog,
+  publishChangelogEntry,
+  unpublishChangelogEntry,
+  updateChangelogEntry,
+} from "./changelog";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -12,6 +21,13 @@ const all = [
   listTeam,
   listBoards,
   getRoadmap,
+  listChangelog,
+  getChangelogEntry,
+  createChangelogEntry,
+  updateChangelogEntry,
+  publishChangelogEntry,
+  unpublishChangelogEntry,
+  deleteChangelogEntry,
   listPosts,
   getPost,
   listComments,
