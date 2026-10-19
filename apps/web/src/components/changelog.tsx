@@ -147,8 +147,6 @@ export function ChangelogForm({
   );
 }
 
-const DRAFTED = "Drafted with AI";
-
 /**
  * Draft with AI, publish (or take down) and delete an entry. An AI draft replaces
  * the text and publishing emails people, so they ask first, like deleting.
@@ -171,14 +169,14 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  const [running, setRunning] = useState("");
-  const run = (action: typeof publishChangelogEntry, done: string) =>
+  const [drafting, setDrafting] = useState(false);
+  const run = (action: typeof publishChangelogEntry, done: string, onDone?: () => void) =>
     startTransition(async () => {
-      setRunning(done);
       const result = await action(projectSlug, number);
       if (result.error) {
         toast.error(result.error);
       } else {
+        onDone?.();
         toast.success(done);
       }
     });
@@ -203,22 +201,24 @@ export function ChangelogEntryActions({
         </AlertDialogContent>
       </AlertDialog>
       {canDraftWithAi && (
-        <AlertDialog>
-          <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>
-            {pending && running === DRAFTED ? "Drafting…" : "Draft with AI"}
-          </AlertDialogTrigger>
+        // Open while the model writes (a few seconds), closed once the new text is in.
+        <AlertDialog open={drafting} onOpenChange={setDrafting}>
+          <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Draft with AI</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>
               <AlertDialogDescription>
                 AI writes release notes from the entry&apos;s pull requests and the posts it completes. They replace
-                the text now, including changes you haven&apos;t saved.
+                the current text, including changes you haven&apos;t saved.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={pending} onClick={() => run(draftChangelogEntry, DRAFTED)}>
-                Replace the text
+              <AlertDialogAction
+                disabled={pending}
+                onClick={() => run(draftChangelogEntry, "Drafted with AI", () => setDrafting(false))}
+              >
+                {pending ? "Drafting…" : "Replace the text"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

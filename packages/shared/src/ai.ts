@@ -14,7 +14,7 @@ export function aiEnabled(): boolean {
 export async function complete({
   system,
   user,
-  maxTokens = 2000,
+  maxTokens = 4000,
   timeoutMs = 60_000,
 }: {
   system: string;
