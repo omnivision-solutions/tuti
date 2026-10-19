@@ -28,6 +28,8 @@ export type GithubFake = {
       tags?: Record<string, string>;
       releases?: { tag_name: string; draft?: boolean; published_at: string }[];
       pulls?: Record<number, { merged_at: string | null; merge_commit_sha: string | null }>;
+      /** Each pull request's commit messages, oldest first. */
+      commits?: Record<number, string[]>;
       /** The App may only read (writes answer 403, like an App without write permission). */
       readOnly?: boolean;
     },
@@ -172,6 +174,14 @@ export async function startGithubFake(): Promise<GithubFake> {
           }
           const status = headAt === baseAt ? "identical" : headAt > baseAt ? "ahead" : "behind";
           return send(200, { status, ahead_by: Math.max(0, headAt - baseAt), behind_by: Math.max(0, baseAt - headAt) });
+        }
+        const pullCommits = /^pulls\/(\d+)\/commits$/.exec(rest);
+        if (pullCommits) {
+          const messages = data?.commits?.[Number(pullCommits[1])] ?? [];
+          return paged(
+            messages.map((message, i) => ({ sha: `commit-${pullCommits[1]}-${i}`, commit: { message } })),
+            (slice) => slice,
+          );
         }
         const pull = /^pulls\/(\d+)$/.exec(rest);
         if (pull && data?.pulls?.[Number(pull[1])]) {

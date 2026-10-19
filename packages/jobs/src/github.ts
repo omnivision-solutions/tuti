@@ -29,9 +29,10 @@ export function referencedPosts(text: string, projectSlug: string): number[] {
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 
 /**
- * A pull request on a connected repo: links the posts it mentions to it, and
- * when it's opened (or reopened) moves them to In progress. Edits add links for
- * new mentions but never remove links or change statuses.
+ * A pull request on a connected repo: links the posts it mentions (in its title,
+ * description or commit messages) to it, and when it's opened (or reopened) moves
+ * them to In progress. Edits and new commits add links for new mentions but never
+ * remove links or change statuses.
  */
 export async function githubPullRequest(input: JobInput<"githubPullRequest">, log: JobLogger): Promise<JobResult> {
   if (input.action === "closed") {
@@ -45,7 +46,9 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
     return { skipped: true };
   }
   const { projectId, project } = installation;
-  const numbers = referencedPosts(`${input.title}\n${input.body}`, project.slug);
+  // Commit messages change when it's opened, reopened or pushed to; an edit only changes the title or description.
+  const commits = input.action === "edited" ? [] : await commitMessages(input);
+  const numbers = referencedPosts([input.title, input.body, ...commits].join("\n"), project.slug);
   const posts =
     numbers.length === 0
       ? []
@@ -105,7 +108,8 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
     data: { title: input.title },
   });
   let suggested = 0;
-  if (embeddingsEnabled()) {
+  // New commits don't change the pull request's text, which is what suggestions compare.
+  if (embeddingsEnabled() && input.action !== "synchronize") {
     try {
       suggested = await suggestLinks(input, projectId);
     } catch (error) {
@@ -115,6 +119,14 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   }
   log.info(`${input.repo}#${input.number}: linked ${posts.length} post(s), ${started} now in progress, ${suggested} suggested`);
   return { linked: posts.length, started, commented, suggested };
+}
+
+/** Commit messages of a pull request. GitHub lists at most 250 per pull request; 3 pages of 100 cover them. */
+async function commitMessages(input: JobInput<"githubPullRequest">): Promise<string[]> {
+  const api = await installationApi(input.installationId);
+  type Commit = { commit: { message: string } };
+  const commits = await api.list<Commit>(`/repos/${input.repo}/pulls/${input.number}/commits`, (page) => page as Commit[], 3);
+  return commits.map((c) => c.commit.message);
 }
 
 const MAX_SUGGESTIONS = 3;
