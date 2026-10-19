@@ -2,12 +2,10 @@ import { render } from "@react-email/render";
 import nodemailer, { type Transporter } from "nodemailer";
 import type { ReactElement } from "react";
 
-let transporter: Transporter | undefined;
-
 /** SMTP from SMTP_HOST, SMTP_PORT (default 587; 465 means TLS from the start), SMTP_USERNAME, SMTP_PASSWORD. */
 function smtp(): Transporter {
   const port = Number(process.env.SMTP_PORT || 587);
-  transporter ??= nodemailer.createTransport({
+  return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure: port === 465,
@@ -15,7 +13,6 @@ function smtp(): Transporter {
       ? { user: process.env.SMTP_USERNAME, pass: process.env.SMTP_PASSWORD }
       : undefined,
   });
-  return transporter;
 }
 
 /**

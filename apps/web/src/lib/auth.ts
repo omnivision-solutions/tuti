@@ -32,11 +32,17 @@ export const auth = betterAuth({
     sendOnSignUp: true,
     autoSignInAfterVerification: true,
     expiresIn: 24 * 60 * 60,
-    sendVerificationEmail: async ({ user, url }) => {
-      // A failed email mustn't fail the sign-up; it can be sent again.
-      await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) }).catch((error: unknown) =>
-        console.error("Sending the verification email failed", error),
-      );
+    sendVerificationEmail: async ({ user, url }, request) => {
+      try {
+        await sendEmail({ to: user.email, ...verifyEmail({ name: user.name, url }) });
+      } catch (error) {
+        console.error("Sending the verification email failed", error);
+        // A failed email mustn't fail a sign-up (it can be sent again), but asking
+        // to send it again should say it failed.
+        if (request && new URL(request.url).pathname.endsWith("/send-verification-email")) {
+          throw error;
+        }
+      }
     },
   },
   // nextCookies must stay last: lets server actions set auth cookies.

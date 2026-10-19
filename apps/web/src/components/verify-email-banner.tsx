@@ -11,6 +11,12 @@ import { authClient } from "@/lib/auth-client";
 /** Shown in /app until the signed-in account's email is verified. */
 export function VerifyEmailBanner({ email }: { email: string }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  // Rendered by the server while unverified; the session refreshes when the tab
+  // regains focus, so verifying in another tab hides it here too.
+  const { data } = authClient.useSession();
+  if (data?.user.emailVerified) {
+    return null;
+  }
 
   async function resend() {
     setState("sending");
