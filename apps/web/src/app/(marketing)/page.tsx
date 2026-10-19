@@ -27,7 +27,7 @@ const FEATURES = [
   {
     icon: CopyIcon,
     title: "Duplicates, found for you",
-    text: "Tuti suggests similar posts while someone types, and flags new posts that repeat an old one so you can merge them, votes included.",
+    text: "Tuti suggests similar posts while someone types. With AI turned on, it also flags new posts that repeat an old one, and merging keeps their votes.",
   },
   {
     icon: KeyRoundIcon,
