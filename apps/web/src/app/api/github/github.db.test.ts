@@ -246,8 +246,7 @@ describe("pull requests", () => {
       });
       await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 2 } }, data: { voteCount: 3 } });
       await commentOn();
-      // Someone pastes our marker before we ever comment: it isn't ours, so it's left alone.
-      github.comment("acme/app", 50, "<!-- tuti:feedback -->\nnot from Tuti");
+      github.comment("acme/app", 50, "Nice!");
 
       await deliver(pullRequest("opened", 50, "Dark mode", "tuti#1"));
       const [first, ...more] = appComments(50);
@@ -261,12 +260,19 @@ describe("pull requests", () => {
       github.comment("acme/app", 50, `${first!.body}\n\nlooks good`);
       await deliver(pullRequest("edited", 50, "Dark mode", "tuti#1 and tuti#2"));
       expect(appComments(50)).toHaveLength(1);
+      expect(appComments(50)[0]!.id).toBe(first!.id);
       const lines = appComments(50)[0]!.body.split("\n").filter((line) => line.startsWith("- "));
       expect(lines).toEqual([expect.stringMatching(/^- \[Post 2\]\(.*\/p\/post-2-2\) · 3 votes$/), expect.stringContaining("· 1 vote")]);
       expect(github.comments("acme/app", 50).filter((c) => !c.byApp).map((c) => c.body.split("\n").at(-1))).toEqual([
-        "not from Tuti",
+        "Nice!",
         "looks good",
       ]);
+
+      // Deleted on GitHub: the next change writes a new one.
+      github.deleteComments("acme/app", 50);
+      await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 1 } }, data: { voteCount: 5 } });
+      await deliver(pullRequest("edited", 50, "Dark mode", "tuti#1 and tuti#2"));
+      expect(appComments(50)).toEqual([expect.objectContaining({ body: expect.stringContaining("· 5 votes") })]);
     });
 
     test("they're off by default, and without write permission only the comment is lost", async () => {

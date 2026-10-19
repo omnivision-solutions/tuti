@@ -99,15 +99,14 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   return { linked: posts.length, started, commented };
 }
 
-/** Starts Tuti's comment on a pull request, so it finds and updates its own. */
-const COMMENT_MARKER = "<!-- tuti:feedback -->";
-
 /** Post titles are people's text: no Markdown, links, @mentions or #references in the comment. */
 const plain = (text: string) => text.replace(/[\\`*_{}[\]()<>#+\-.!|~]/g, "\\$&").replaceAll("@", "@&#8203;");
 
 /**
  * Tuti's one comment on a pull request: the feedback it completes (every post
- * linked to it), most voted first. Updated in place as more posts get linked.
+ * linked to it), most voted first. Updated in place as more posts get linked:
+ * its id is saved here, and jobs for one pull request run one at a time (see
+ * `concurrencyKey` in @tuti/shared's jobs), so two can't both write one.
  */
 async function commentFeedback(
   input: JobInput<"githubPullRequest">,
@@ -121,19 +120,29 @@ async function commentFeedback(
   const lines = posts.map(
     (post) => `- [${plain(post.title)}](${portalPostUrl(project.slug, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
   );
-  const body = `${COMMENT_MARKER}\n**Feedback this pull request completes** (${plain(project.name)})\n\n${lines.join("\n")}`;
+  const body = `**Feedback this pull request completes** (${plain(project.name)})\n\n${lines.join("\n")}`;
 
-  const api = await installationApi(input.installationId);
-  const appId = Number(process.env.GITHUB_APP_ID);
-  type Comment = { id: number; body?: string; performed_via_github_app?: { id: number } | null };
-  const comments = await api.list<Comment>(`/repos/${input.repo}/issues/${input.number}/comments`, (page) => page as Comment[]);
-  // Only our own: anyone can paste the marker into a comment.
-  const ours = comments.find((c) => c.performed_via_github_app?.id === appId && c.body?.startsWith(COMMENT_MARKER));
-  if (!ours) {
-    await api.send("POST", `/repos/${input.repo}/issues/${input.number}/comments`, { body });
-  } else if (ours.body !== body) {
-    await api.send("PATCH", `/repos/${input.repo}/issues/comments/${ours.id}`, { body });
+  const where = { repo_number: { repo: input.repo, number: input.number } };
+  const saved = await prisma.githubPrComment.findUnique({ where, select: { commentId: true, body: true } });
+  if (saved?.body === body) {
+    return;
   }
+  const api = await installationApi(input.installationId);
+  type Comment = { id: number };
+  let comment = saved
+    ? await api.send<Comment>("PATCH", `/repos/${input.repo}/issues/comments/${saved.commentId}`, { body })
+    : null;
+  // None yet, or someone deleted ours: write one.
+  comment ??= await api.send<Comment>("POST", `/repos/${input.repo}/issues/${input.number}/comments`, { body });
+  if (!comment) {
+    throw new Error("GitHub doesn't know this pull request");
+  }
+  const data = { commentId: BigInt(comment.id), body };
+  await prisma.githubPrComment.upsert({
+    where,
+    create: { repo: input.repo, number: input.number, projectId: project.id, ...data },
+    update: data,
+  });
 }
 
 /** Moves posts to a status (only from the status they're in now) and tells the project's webhooks. */

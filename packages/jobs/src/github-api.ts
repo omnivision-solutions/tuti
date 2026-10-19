@@ -29,8 +29,8 @@ export type GithubApi = {
   find<T>(path: string): Promise<T | null>;
   /** All pages of a list (following the Link header), up to `limit` pages. */
   list<T>(path: string, pick: (page: unknown) => T[], limit?: number): Promise<T[]>;
-  /** A write (POST, PATCH) with a JSON body. */
-  send(method: "POST" | "PATCH", path: string, body: unknown): Promise<void>;
+  /** A write (POST, PATCH) with a JSON body: GitHub's answer, or null when it answers 404. */
+  send<T>(method: "POST" | "PATCH", path: string, body: unknown): Promise<T | null>;
 };
 
 /** API access for one installation. */
@@ -72,13 +72,13 @@ export async function installationApi(installationId: number): Promise<GithubApi
       }
       return items;
     },
-    async send(method, path, body) {
-      const res = await request(`${apiUrl()}${path}`, false, {
+    async send<T>(method: "POST" | "PATCH", path: string, body: unknown) {
+      const res = await request(`${apiUrl()}${path}`, true, {
         method,
         body: JSON.stringify(body),
         headers: { "content-type": "application/json" },
       });
-      await res!.body?.cancel();
+      return res ? ((await res.json()) as T) : null;
     },
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -72,18 +72,21 @@ export function CloseOnSelect({ projectSlug, closeOn }: { projectSlug: string; c
 
 export function PrCommentsCheckbox({ projectSlug, on }: { projectSlug: string; on: boolean }) {
   const [pending, startTransition] = useTransition();
+  const [checked, setChecked] = useState(on);
   return (
     <label className="flex items-start gap-2">
       <input
         type="checkbox"
         className="mt-1 size-4 accent-primary"
-        defaultChecked={on}
+        checked={checked}
         disabled={pending}
         onChange={(event) => {
-          const checked = event.currentTarget.checked;
+          const wanted = event.currentTarget.checked;
+          setChecked(wanted);
           startTransition(async () => {
-            const result = await setGithubPrComments(projectSlug, checked);
+            const result = await setGithubPrComments(projectSlug, wanted);
             if (result.error) {
+              setChecked(!wanted); // back to what's saved
               toast.error(result.error);
             } else {
               toast.success("Saved");

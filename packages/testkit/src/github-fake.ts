@@ -35,6 +35,8 @@ export type GithubFake = {
   comments(fullName: string, number: number): { id: number; body: string; byApp: boolean }[];
   /** Someone else's comment, as if a person wrote it. */
   comment(fullName: string, number: number, body: string): void;
+  /** Deletes a pull request's comments, as someone on GitHub might. */
+  deleteComments(fullName: string, number: number): void;
   /** A signed webhook delivery, as GitHub would send it. */
   webhook(event: string, payload: unknown): { body: string; headers: Record<string, string> };
   close(): Promise<void>;
@@ -148,15 +150,6 @@ export async function startGithubFake(): Promise<GithubFake> {
         if (rest === "releases") {
           return paged(data?.releases ?? [], (slice) => slice);
         }
-        const listComments = /^issues\/(\d+)\/comments$/.exec(rest);
-        if (listComments) {
-          const all = commentsOn(repoPath[1]!, Number(listComments[1])).map((c) => ({
-            id: c.id,
-            body: c.body,
-            performed_via_github_app: c.byApp ? { id: Number(APP_ID) } : null,
-          }));
-          return paged(all, (slice) => slice);
-        }
         const compare = /^compare\/(.+)\.\.\.(.+)$/.exec(rest);
         if (compare && data?.history) {
           const at = (ref: string) => data.history!.indexOf(data.tags?.[ref] ?? ref);
@@ -206,6 +199,7 @@ export async function startGithubFake(): Promise<GithubFake> {
     repo: (fullName, data) => repos.set(fullName, data),
     comments: (fullName, number) => commentsOn(fullName, number).map((c) => ({ ...c })),
     comment: (fullName, number, body) => void commentsOn(fullName, number).push({ id: nextCommentId++, body, byApp: false }),
+    deleteComments: (fullName, number) => void commentsOn(fullName, number).splice(0),
     nextInstall(setupUrl, { id, account, code }) {
       users.set(code, [{ id, account }]);
       install = { setupUrl, id, code };

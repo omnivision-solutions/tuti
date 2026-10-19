@@ -131,6 +131,7 @@ model Project {
   postEmbeddings       PostEmbedding[]
   duplicateSuggestions DuplicateSuggestion[]
   emailOptOuts         EmailOptOut[]
+  githubPrComments     GithubPrComment[]
 
   @@map("project")
 }
@@ -609,4 +610,22 @@ model ShippedEmail {
   @@id([postId, userId])
   @@index([userId])
   @@map("shipped_email")
+}
+
+/// Tuti's comment on a pull request (the feedback it completes), so it's edited rather than written again.
+model GithubPrComment {
+  /// The repository's full name (owner/name) and the pull request's number.
+  repo      String
+  number    Int
+  projectId String
+  commentId BigInt
+  /// What it says now, so an unchanged list isn't written again.
+  body      String
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([repo, number])
+  @@index([projectId])
+  @@map("github_pr_comment")
 }
