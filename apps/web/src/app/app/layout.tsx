@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { listMyProjects } from "@/server/membership";
@@ -32,7 +33,10 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       />
       <SidebarInset>
         <AppHeader projects={projects} fallbackSlug={fallbackSlug} />
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">{children}</div>
+        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">
+          {!session.user.emailVerified && <VerifyEmailBanner email={session.user.email} />}
+          {children}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

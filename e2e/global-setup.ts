@@ -1,21 +1,43 @@
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
+import { startSmtpFake } from "@tuti/testkit/smtp";
 
 import { SCREENSHOTS_DIR } from "./checkpoint";
 import { APP_URL, serverEnv } from "./env";
+import { MAIL_DIR } from "./mail";
 
 /**
- * A throwaway Postgres and the production build of the web app (`pnpm build`
- * first; `pnpm test:e2e` does), with background jobs running inline.
+ * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/) and the
+ * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
+ * with background jobs running inline.
  */
 export default async function globalSetup() {
   rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
+  rmSync(MAIL_DIR, { recursive: true, force: true });
+  mkdirSync(MAIL_DIR);
+  let sent = 0;
+  const smtp = await startSmtpFake({
+    // Written under a temporary name, then renamed: readers only ever see whole files.
+    onEmail: (email) => {
+      const name = join(MAIL_DIR, `${String(++sent).padStart(5, "0")}.json`);
+      writeFileSync(`${name}.tmp`, JSON.stringify(email));
+      renameSync(`${name}.tmp`, name);
+    },
+  });
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
-    env: { ...process.env, ...serverEnv, DATABASE_URL: postgres.url, NODE_ENV: "production" },
+    env: {
+      ...process.env,
+      ...serverEnv,
+      DATABASE_URL: postgres.url,
+      SMTP_HOST: smtp.host,
+      SMTP_PORT: String(smtp.port),
+      NODE_ENV: "production",
+    },
     stdio: ["ignore", "ignore", "inherit"],
   });
 
@@ -29,6 +51,6 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await postgres.stop();
+    await Promise.all([postgres.stop(), smtp.close()]);
   };
 }

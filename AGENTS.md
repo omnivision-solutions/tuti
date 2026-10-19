@@ -22,7 +22,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - Tests are deterministic and offline. External services get a local fake (see `@tuti/testkit`), never a real key; background jobs run with `JOBS_DRIVER=inline`.
 - Database tests get a fresh database per file, so they need no cleanup. Use the helpers in `apps/web/src/test/helpers.ts` (`signUp`, `actAs`, `createProject`, …) and call server actions directly. Never point tests at a shared or production database.
 - A new server action goes into the authorization matrix (`apps/web/src/server/authorization.db.test.ts`); typecheck fails until it does.
-- Emails sent during database tests land in a local SMTP fake: read them with `mailbox` (`apps/web/src/test/mailbox.ts`).
+- Emails the app sends land in a local SMTP fake: in database tests read them with `mailbox` (`apps/web/src/test/mailbox.ts`), in journeys with `latestEmailTo` (`e2e/mail.ts`).
 - Test data uses `e2e-…@example.com` emails.
 - A change to a user-facing flow updates its journey in `e2e/` (or adds one). Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.
 - Marketing pages get no tests; check them with a build and a screenshot.

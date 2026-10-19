@@ -49,3 +49,43 @@ test("a tampered link doesn't verify anything", async () => {
   expect(response.headers.get("location")).toMatch(/error=/);
   expect(await isVerified(email)).toBe(false);
 });
+
+test("with the mail server down, signing up still works but asking to resend says it failed", async () => {
+  const { createServer } = await import("node:net");
+  const closed = createServer();
+  await new Promise<void>((resolve) => closed.listen(0, "127.0.0.1", resolve));
+  const closedPort = String((closed.address() as { port: number }).port);
+  await new Promise((resolve) => closed.close(resolve));
+
+  const origin = process.env.APP_URL!;
+  const email = `e2e-${randomUUID()}@example.com`;
+  const resend = (cookie: string) =>
+    auth.handler(
+      new Request(`${origin}/api/auth/send-verification-email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie, origin },
+        body: JSON.stringify({ email, callbackURL: "/app" }),
+      }),
+    );
+
+  const workingPort = process.env.SMTP_PORT;
+  process.env.SMTP_PORT = closedPort;
+  try {
+    const { headers } = await auth.api.signUpEmail({
+      body: { email, name: "Ada", password: "correct horse battery staple" },
+      returnHeaders: true,
+    });
+    const cookie = headers
+      .getSetCookie()
+      .map((c) => c.split(";")[0])
+      .join("; ");
+    expect(await prisma.user.count({ where: { email } })).toBe(1);
+    expect((await resend(cookie)).ok).toBe(false);
+
+    process.env.SMTP_PORT = workingPort;
+    expect((await resend(cookie)).ok).toBe(true);
+    expect((await mailbox.latestTo(email)).subject).toBe("Verify your email for Tuti");
+  } finally {
+    process.env.SMTP_PORT = workingPort;
+  }
+});

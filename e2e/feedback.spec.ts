@@ -4,17 +4,19 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 /** A new browser session that signed up at `baseUrl` (the app or a portal). */
-async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page> {
+async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page & { email: string }> {
   const page = await (await browser.newContext({ baseURL: baseUrl })).newPage();
+  const email = `e2e-${randomUUID()}@example.com`;
   await page.goto("/sign-up");
   await page.getByLabel("Name").fill(name);
-  await page.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("correct horse battery staple");
   await page.getByRole("button", { name: "Sign up" }).click();
   await page.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
-  return page;
+  return Object.assign(page, { email });
 }
 
 async function submitFeedback(page: Page, title: string) {
@@ -35,6 +37,27 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("button", { name: "Create project" }).click();
   await team.waitForURL(`**/app/${slug}`);
   await checkpoint(team, "team-new-project");
+
+  // Until they verify their email, the dashboard asks them to; the emailed link does it.
+  const banner = team.getByRole("alert").filter({ hasText: "Verify your email" });
+  await expect(banner).toContainText(team.email);
+  const emailsBefore = countEmailsTo(team.email);
+  await team.getByRole("button", { name: "Resend email" }).click();
+  await expect(team.getByRole("button", { name: "Sent" })).toBeDisabled();
+  await checkpoint(team, "team-verify-email-banner");
+  const email = await latestEmailTo(team.email, { after: emailsBefore });
+  expect(email.subject).toBe("Verify your email for Tuti");
+  // Verified in another tab: this one notices when it's back in focus, without reloading.
+  const otherTab = await team.context().newPage();
+  await otherTab.goto(linkIn(email, `${APP_URL}/api/auth/verify-email`));
+  await otherTab.waitForURL(`**/app/${slug}`); // /app opens the last project
+  await otherTab.close();
+  await team.bringToFront();
+  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
+  await expect(async () => {
+    await team.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(banner).toHaveCount(0, { timeout: 500 });
+  }).toPass({ timeout: 15_000 });
 
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");

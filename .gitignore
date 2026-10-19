@@ -22,3 +22,4 @@ packages/db/src/generated
 test-results
 playwright-report
 e2e-screenshots
+e2e-mail

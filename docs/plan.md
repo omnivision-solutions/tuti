@@ -148,7 +148,7 @@ Test layers (set up in Phase 4):
 ## Phase 6 — First real users
 
 - [x] Email: Nodemailer over SMTP (any provider, self-hosters included) behind one `sendEmail()` (`@tuti/email`), templates in React Email, written to the log when `SMTP_HOST` isn't set; database tests read mail from a local SMTP fake (`mailbox`). Templates for invites and notifications come with those features
-- [ ] Verify email on sign-up (link by email). Without it anyone can register someone else's address, so nothing may trust an unverified email. Done: the email and its link (verifies and signs in). Left: a "verify your email" banner with resend
+- [x] Verify email on sign-up (link by email). Without it anyone can register someone else's address, so nothing may trust an unverified email. The link verifies and signs in; `/app` shows a "Verify your email" banner with resend until then
 - [ ] Invites by email address: owners/admins enter an email and a role; Tuti sends the link and also shows it to copy (installs without SMTP). Only a signed-in account with that email can accept; opening the emailed link proves they own the inbox, so it also marks the address verified. Replaces link-only invites
 - [ ] One account everywhere: people sign in once on the apex and see every project they're on (as today). On a portal, "Continue as <name>" signs them in with that same account: the portal sends them to the apex, which returns a one-time code (short-lived, single use, bound to that portal) that the portal exchanges for its own session. No cookie is ever shared with `*.tuti.so`: one bad portal page (or a custom domain) must never expose team sessions. Projects can still offer their own sign-in on their portal (SSO, email)
 - [ ] Landing page (no tests; checked by build and screenshot)
