@@ -7,6 +7,7 @@ import { afterAll, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@/lib/invitations";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
@@ -28,6 +29,7 @@ import * as team from "./team";
  * lowest level allowed (so the refusals aren't just bad arguments).
  */
 const modules = {
+  "api-keys": apiKeys,
   boards,
   invitations,
   "manage-posts": managePosts,
@@ -62,6 +64,10 @@ const form = (fields: Record<string, string>) => {
 };
 
 const matrix: Matrix = {
+  "api-keys": {
+    createApiKey: { allowed: "ADMIN", call: (slug) => apiKeys.createApiKey(slug, "Zapier", "READ") },
+    revokeApiKey: { allowed: "ADMIN", takesIds: true, call: (slug, f) => apiKeys.revokeApiKey(slug, f.apiKeyId) },
+  },
   boards: {
     createBoard: { allowed: "ADMIN", call: (slug) => boards.createBoard(slug, {}, form({ name: "Ideas", slug: "ideas" })) },
     updateBoard: {
@@ -252,8 +258,12 @@ async function createFixture() {
   // An upload by the account that's allowed to act as "signed in", waiting to be finished.
   const upload = await prisma.media.create({ data: { projectId, uploaderId: users.outsider.id, size: 4 } });
   s3.objects.set(`uploads/${upload.id}`, { body: Buffer.from("fake"), contentType: "image/png" });
+  const apiKey = await prisma.apiKey.create({
+    data: { projectId, name: "Key", scope: "READ", keyHash: crypto.randomUUID(), prefix: "tuti_x", createdById: users.OWNER.id },
+  });
   return {
     slug: project.slug,
+    apiKeyId: apiKey.id,
     mediaId: upload.id,
     emailInvitationId: emailInvitation.id,
     boardId: board.id,
