@@ -7,7 +7,7 @@ import { ChangelogEntryActions, ChangelogForm, type TagName } from "@/components
 import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
-import { completablePosts } from "@/server/changelog-pages";
+import { completablePosts } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 

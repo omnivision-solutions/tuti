@@ -4,7 +4,7 @@ import { ChangelogEntryView } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Separator } from "@/components/ui/separator";
-import { publishedEntries } from "@/server/changelog-portal";
+import { publishedEntries } from "@/server/changelog-queries";
 
 /** What shipped, newest first. */
 export default async function ChangelogPage(props: PageProps<"/portal/[project]/changelog">) {

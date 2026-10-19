@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
-import { publishedEntries } from "@/server/changelog-portal";
+import { publishedEntries } from "@/server/changelog-queries";
 
 export default async function ChangelogEntryPage(props: PageProps<"/portal/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;

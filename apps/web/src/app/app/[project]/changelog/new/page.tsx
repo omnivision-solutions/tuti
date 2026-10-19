@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ChangelogForm } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS } from "@/components/post-status-badge";
-import { completablePosts } from "@/server/changelog-pages";
+import { completablePosts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 
 export default async function NewChangelogEntryPage(props: PageProps<"/app/[project]/changelog/new">) {
