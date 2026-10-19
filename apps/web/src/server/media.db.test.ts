@@ -1,5 +1,6 @@
-import { emailImageKey, imageKey, originalKey } from "@tuti/content";
+import { emailImageKey, imageKey, mediaKeys, originalKey } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -187,5 +188,33 @@ describe("finishing", () => {
     actAs(ada);
     expect(await finishUpload(created.mediaId)).toEqual({});
     expect(await finishUpload(created.mediaId)).toEqual({ error: "Upload not found" }); // only once
+  });
+});
+
+describe("cleanup", () => {
+  test("uploads no saved content uses are deleted after a day, with their files", async () => {
+    const day = 24 * 60 * 60 * 1000;
+    const media = (fields: { attachedAt?: Date; createdAt: Date }) =>
+      prisma.media.create({
+        data: { projectId: project.id, uploaderId: ada.id, size: 10, status: "READY", width: 1200, height: 800, ...fields },
+      });
+    const [unused, used, recent] = await Promise.all([
+      media({ createdAt: new Date(Date.now() - day - 60_000) }),
+      media({ createdAt: new Date(Date.now() - 2 * day), attachedAt: new Date(Date.now() - day) }),
+      media({ createdAt: new Date(Date.now() - day + 60_000) }),
+    ]);
+    for (const m of [unused, used, recent]) {
+      for (const key of mediaKeys(m)) {
+        s3.objects.set(key, { body: Buffer.from("x"), contentType: "image/webp" });
+      }
+    }
+
+    const log = { info: () => {}, warn: () => {} };
+    expect(await handlers.cleanupMedia({}, log)).toEqual({ deleted: 1 });
+
+    const left = await prisma.media.findMany({ where: { projectId: project.id }, select: { id: true } });
+    expect(left.map((m) => m.id).sort()).toEqual([used.id, recent.id].sort());
+    expect(mediaKeys(unused).filter((key) => s3.objects.has(key))).toEqual([]);
+    expect(mediaKeys(used).every((key) => s3.objects.has(key))).toBe(true);
   });
 });

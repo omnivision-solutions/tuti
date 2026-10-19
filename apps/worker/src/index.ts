@@ -6,14 +6,16 @@ import { getHatchet } from "@tuti/shared/hatchet";
 assertEnv(["DATABASE_URL"]);
 
 const hatchet = getHatchet();
-const tasks = (Object.keys(jobs) as JobKey[]).map((key) =>
-  hatchet.task({
-    name: jobs[key].name,
-    inputValidator: jobs[key].input,
+const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
+  const job: { name: string; input: (typeof jobs)[JobKey]["input"]; cron?: string } = jobs[key];
+  return hatchet.task({
+    name: job.name,
+    inputValidator: job.input,
     retries: 3,
+    ...(job.cron && { on: { cron: job.cron } }),
     fn: (input, ctx) => handlers[key](input as never, ctx.logger),
-  }),
-);
+  });
+});
 
 const worker = await hatchet.worker("tuti-worker", { workflows: tasks, slots: 20 });
 

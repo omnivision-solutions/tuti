@@ -17,7 +17,13 @@ export const jobs = {
     name: "image-uploaded",
     input: z.object({ mediaId: z.string() }),
   },
-} as const;
+  /** Runs on a schedule (the worker registers `cron`), not enqueued. */
+  cleanupMedia: {
+    name: "cleanup-media",
+    input: z.object({}),
+    cron: "17 * * * *",
+  },
+} as const satisfies Record<string, { name: string; input: z.ZodType; cron?: string }>;
 
 export type JobKey = keyof typeof jobs;
 export type JobInput<K extends JobKey> = z.infer<(typeof jobs)[K]["input"]>;
