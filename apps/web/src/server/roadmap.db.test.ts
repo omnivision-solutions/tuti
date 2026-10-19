@@ -28,7 +28,10 @@ test("the roadmap lists planned, in-progress and completed posts: most voted fir
   await prisma.post.create({
     data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 8, title: "Merged", body: "", status: "PLANNED", duplicateOfId: original.id },
   });
-  await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 6 } }, data: { title: "Shipped last" } });
+  // Finished at set times (Prisma would stamp @updatedAt itself).
+  for (const [number, finished] of [[5, "2026-01-01"], [6, "2026-02-01"]] as const) {
+    await prisma.$executeRaw`UPDATE post SET "updatedAt" = ${new Date(finished)} WHERE "projectId" = ${project.id} AND number = ${number}`;
+  }
 
   const roadmap = await call(getRoadmap, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   const titles = (column: { title: string }[]) => column.map((post) => post.title);
