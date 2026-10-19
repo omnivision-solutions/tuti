@@ -37,6 +37,14 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.keyboard.press("Enter");
   await team.keyboard.type("Switch themes from your profile menu.");
   await team.getByRole("checkbox", { name: /#1 Dark mode/ }).check();
+  // A refused save keeps what was typed and picked.
+  await team.getByLabel("Title").fill("Hi");
+  await team.getByRole("button", { name: "Save draft" }).click();
+  await expect(team.getByText("Title is too short")).toBeVisible();
+  await expect(team.getByLabel("Title")).toHaveValue("Hi");
+  await expect(team.getByRole("checkbox", { name: "New" })).toBeChecked();
+  await expect(team.getByRole("checkbox", { name: /#1 Dark mode/ })).toBeChecked();
+  await team.getByLabel("Title").fill("Dark mode is here");
   await checkpoint(team, "team-changelog-draft");
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);

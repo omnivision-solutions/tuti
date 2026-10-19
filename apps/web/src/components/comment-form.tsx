@@ -2,6 +2,7 @@
 
 import { useActionState, useId, useState } from "react";
 
+import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
@@ -21,7 +22,7 @@ export function CommentForm({ postId, placeholder = "Add a comment…" }: { post
   }, {});
 
   return (
-    <form action={action} className="flex flex-col gap-2">
+    <form onSubmit={keepingFields(action)} className="flex flex-col gap-2">
       <input type="hidden" name="postId" value={postId} />
       <Field data-invalid={state.error ? true : undefined}>
         <RichEditor

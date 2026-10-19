@@ -4,6 +4,7 @@ import type { Doc } from "@tuti/content";
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
@@ -58,7 +59,7 @@ export function ChangelogForm({
   }, {});
 
   return (
-    <form action={action}>
+    <form onSubmit={keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="entry-title">Title</FieldLabel>
@@ -173,7 +174,7 @@ export function ChangelogStyleForm({
   }, {});
 
   return (
-    <form action={action}>
+    <form onSubmit={keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="style-tone">Tone</FieldLabel>

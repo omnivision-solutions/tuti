@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { keepingFields } from "@/lib/forms";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -32,7 +33,7 @@ function ProfileForm({ name }: { name: string }) {
       </CardHeader>
       <CardContent>
         <form
-          action={(form) =>
+          onSubmit={keepingFields((form) =>
             startTransition(async () => {
               const { error } = await authClient.updateUser({ name: String(form.get("name")).trim() });
               setError(error?.message);
@@ -40,8 +41,8 @@ function ProfileForm({ name }: { name: string }) {
                 toast.success("Profile updated");
                 router.refresh();
               }
-            })
-          }
+            }),
+          )}
         >
           <FieldGroup>
             <Field data-invalid={error ? true : undefined}>
