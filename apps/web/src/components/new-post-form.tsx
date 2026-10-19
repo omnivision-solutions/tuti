@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
@@ -19,11 +20,14 @@ export function NewPostForm({
   projectSlug,
   boardSlug,
   mediaBaseUrl,
+  linkTarget,
 }: {
   projectSlug: string;
   boardSlug: string;
   /** Where uploaded images are served from; null when uploads are off. */
   mediaBaseUrl: string | null;
+  /** "_blank" in the widget: suggested posts open on the portal, not in the panel. */
+  linkTarget?: "_blank";
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
@@ -39,6 +43,7 @@ export function NewPostForm({
       setSubmitted((n) => n + 1);
       latestQuery.current++;
       setSimilar([]);
+      toast.success("Feedback posted");
     }
     return result;
   }, {});
@@ -90,6 +95,7 @@ export function NewPostForm({
                     <li key={post.id}>
                       <Link
                         href={postPath(post)}
+                        target={linkTarget}
                         className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
                       >
                         <span className="w-12 shrink-0 text-xs text-muted-foreground tabular-nums">

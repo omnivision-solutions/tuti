@@ -8,8 +8,10 @@ import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
  * Routes requests by host:
  * - app host (tuti.so): served as-is; internal /portal routes are hidden.
  * - portal hosts (<project>.tuti.so): rewritten to /portal/<project>/…, so
- *   acme.tuti.so/b/ideas renders app/portal/[project]/b/[board].
+ *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
  * The auth API (/api/*) is served on every host so sessions stay per host.
+ * Pages can't be framed by other sites (clickjacking), except a portal's
+ * /widget, which customers embed with the widget script.
  */
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -25,7 +27,8 @@ export function proxy(request: NextRequest) {
     }
     const url = request.nextUrl.clone();
     url.pathname = `/portal/${target.slug}${pathname === "/" ? "" : pathname}`;
-    return NextResponse.rewrite(url);
+    const response = NextResponse.rewrite(url);
+    return pathname === "/widget" ? response : noFraming(response);
   }
 
   if (target.kind === "app") {
@@ -42,11 +45,17 @@ export function proxy(request: NextRequest) {
         maxAge: 60 * 60 * 24 * 365,
       });
     }
-    return response;
+    return noFraming(response);
   }
 
   // Unknown host (later: custom domains).
   return new NextResponse(null, { status: 404 });
+}
+
+function noFraming(response: NextResponse): NextResponse {
+  response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+  response.headers.set("X-Frame-Options", "DENY");
+  return response;
 }
 
 export const config = {

@@ -84,6 +84,8 @@ test("server and worker code logs through `log`, not console", () => {
   }
   const offenders = sources
     .filter((file) => !file.endsWith(join("shared", "src", "log.ts")))
+    // The widget script runs on customers' pages, where the browser console is the log.
+    .filter((file) => !file.endsWith(join("web", "src", "lib", "widget-loader.ts")))
     .filter((file) => /\bconsole\.(log|info|warn|error|debug)\(/.test(readFileSync(file, "utf8")))
     .map((file) => relative(root, file));
   expect(offenders).toEqual([]);
