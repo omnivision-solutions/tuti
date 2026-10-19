@@ -4,9 +4,11 @@ import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
+import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -17,6 +19,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
     redirect("/sign-in");
   }
 
+  const invitations = await pendingInvitationsFor(session.user);
   const projects = (await listMyProjects(session.user.id)).map((project) => ({
     ...project,
     portalUrl: portalUrl(project.slug),
@@ -35,6 +38,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
         <AppHeader projects={projects} fallbackSlug={fallbackSlug} />
         <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">
           {!session.user.emailVerified && <VerifyEmailBanner email={session.user.email} />}
+          <PendingInvitations invitations={invitations} />
           {children}
         </div>
       </SidebarInset>

@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma, prisma } from "@tuti/db";
+import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -122,6 +122,7 @@ export async function revokeInvitation(projectSlug: string, invitationId: string
   return {};
 }
 
+/** Accepts an invite from its link (email invites only for that address). */
 export async function acceptInvitation(token: string): Promise<Result> {
   const session = await getAccountSession();
   if (!session) {
@@ -129,7 +130,7 @@ export async function acceptInvitation(token: string): Promise<Result> {
   }
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashInvitationToken(token) },
-    select: { id: true, email: true, role: true, projectId: true, project: { select: { slug: true } } },
+    select: invitationForJoining,
   });
   if (!invitation) {
     return { error: "This invite link isn't valid" };
@@ -137,10 +138,63 @@ export async function acceptInvitation(token: string): Promise<Result> {
   if (invitation.email && invitation.email !== session.user.email.toLowerCase()) {
     return { error: `This invite is for ${invitation.email}. Sign in with that email to accept it.` };
   }
-  const { slug } = invitation.project;
+  // The invite went to this address, so opening its link proves the inbox is theirs.
+  return join(invitation, session.user.id, { verifyEmail: Boolean(invitation.email) });
+}
 
+/**
+ * Invites addressed to the signed-in account, listed on the dashboard. Only for
+ * verified addresses: otherwise anyone could sign up as the invitee and take them.
+ */
+async function myInvitation(invitationId: string) {
+  const session = await getAccountSession();
+  if (!session?.user.emailVerified) {
+    return null;
+  }
+  const invitation = await prisma.invitation.findFirst({
+    where: { id: invitationId, email: session.user.email.toLowerCase() },
+    select: invitationForJoining,
+  });
+  return invitation ? { invitation, userId: session.user.id } : null;
+}
+
+/** Accepts an invite from the dashboard's pending invitations. */
+export async function acceptInvitationById(invitationId: string): Promise<Result> {
+  const mine = await myInvitation(invitationId);
+  if (!mine) {
+    return { error: "Invite not found" };
+  }
+  return join(mine.invitation, mine.userId, { verifyEmail: false });
+}
+
+/** "Decline" on the dashboard: the invite can't be used any more. */
+export async function declineInvitation(invitationId: string): Promise<Result> {
+  const mine = await myInvitation(invitationId);
+  if (!mine) {
+    return { error: "Invite not found" };
+  }
+  await prisma.invitation.updateMany({
+    where: { id: mine.invitation.id, acceptedAt: null, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  refresh();
+  return {};
+}
+
+const invitationForJoining = {
+  id: true,
+  email: true,
+  role: true,
+  projectId: true,
+  project: { select: { slug: true } },
+} as const;
+
+type InvitationForJoining = { id: string; email: string | null; role: TeamRole; projectId: string; project: { slug: string } };
+
+/** Claims the invite (once) and adds the user to the team, then opens the project. */
+async function join(invitation: InvitationForJoining, userId: string, { verifyEmail }: { verifyEmail: boolean }) {
   const existing = await prisma.teamMember.findUnique({
-    where: { projectId_userId: { projectId: invitation.projectId, userId: session.user.id } },
+    where: { projectId_userId: { projectId: invitation.projectId, userId } },
     select: { id: true },
   });
   if (!existing) {
@@ -149,17 +203,14 @@ export async function acceptInvitation(token: string): Promise<Result> {
         // Claim the invite atomically so it can only be used once.
         const claimed = await tx.invitation.updateMany({
           where: { id: invitation.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
-          data: { acceptedAt: new Date(), acceptedById: session.user.id },
+          data: { acceptedAt: new Date(), acceptedById: userId },
         });
         if (claimed.count !== 1) {
           throw new InvitationUnavailableError();
         }
-        await tx.teamMember.create({
-          data: { projectId: invitation.projectId, userId: session.user.id, role: invitation.role },
-        });
-        // The invite went to this address, so opening it proves the inbox is theirs.
-        if (invitation.email) {
-          await tx.user.update({ where: { id: session.user.id }, data: { emailVerified: true } });
+        await tx.teamMember.create({ data: { projectId: invitation.projectId, userId, role: invitation.role } });
+        if (verifyEmail) {
+          await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
         }
       });
     } catch (error) {
@@ -174,7 +225,7 @@ export async function acceptInvitation(token: string): Promise<Result> {
   }
   // The /app layout lists your projects; refresh it before navigating.
   revalidatePath("/app", "layout");
-  redirect(`/app/${slug}`);
+  redirect(`/app/${invitation.project.slug}`);
 }
 
 class InvitationUnavailableError extends Error {}

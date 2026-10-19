@@ -77,3 +77,49 @@ test("an invite for someone else says so", async ({ browser }, testInfo) => {
   // The sign-in form is prefilled with the invited address.
   await expect(someoneElse.getByLabel("Email")).toHaveValue(inviteeEmail);
 });
+
+test("someone with an account sees invites on the dashboard, declines one and accepts another", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const [first, second] = [`e2e-${randomUUID().slice(0, 8)}`, `e2e-${randomUUID().slice(0, 8)}`];
+
+  // Ivy already has an account and has verified her email.
+  const ivy = await signUp(browser, APP_URL, "Ivy");
+  await ivy.goto(linkIn(await latestEmailTo(ivy.email), `${APP_URL}/api/auth/verify-email`));
+
+  // An owner invites her to two projects.
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  for (const [slug, name] of [
+    [first, "Acme"],
+    [second, "Globex"],
+  ]) {
+    await owner.goto("/app/new");
+    await owner.getByLabel("Name").fill(name!);
+    await owner.getByLabel("URL").fill(slug!);
+    await owner.getByRole("button", { name: "Create project" }).click();
+    await owner.waitForURL(`**/app/${slug}`);
+    await owner.goto(`/app/${slug}/team`);
+    await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(ivy.email);
+    await owner.getByRole("button", { name: "Send invite" }).click();
+    await expect(owner.getByText(`Invite sent to ${ivy.email}`)).toBeVisible();
+  }
+
+  // Both show on her dashboard, without opening any email.
+  await ivy.goto("/app");
+  const acme = ivy.getByRole("alert").filter({ hasText: "Join Acme" });
+  const globex = ivy.getByRole("alert").filter({ hasText: "Join Globex" });
+  await expect(acme).toContainText("Olive Owner invited you to join Acme as a member.");
+  await expect(globex).toBeVisible();
+  await checkpoint(ivy, "dashboard-pending-invites");
+
+  await globex.getByRole("button", { name: "Decline" }).click();
+  await expect(globex).toHaveCount(0);
+  await acme.getByRole("button", { name: "Accept" }).click();
+  await ivy.waitForURL(`**/app/${first}`);
+  await expect(ivy.getByRole("alert").filter({ hasText: "Join" })).toHaveCount(0);
+  await checkpoint(ivy, "joined-from-dashboard");
+
+  await owner.goto(`/app/${second}/team`);
+  await expect(owner.getByText(`${ivy.email} · Member`)).toHaveCount(0); // declined: no longer pending
+});

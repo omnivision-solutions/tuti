@@ -7,7 +7,8 @@ import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@/lib/invitations";
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { acceptInvitation, createInvitation } from "./invitations";
+import { pendingInvitationsFor } from "./invitation-lookup";
+import { acceptInvitation, acceptInvitationById, createInvitation, declineInvitation } from "./invitations";
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -117,5 +118,63 @@ describe("accepting", () => {
     actAs(anyone);
     expect(await redirectTarget(acceptInvitation(token))).toBe(`/app/${project.slug}`);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: anyone.id } })).emailVerified).toBe(false);
+  });
+});
+
+describe("pending invitations on the dashboard", () => {
+  const verify = (user: TestUser) => prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+  const pendingFor = async (user: TestUser) =>
+    pendingInvitationsFor({ ...(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })) });
+
+  test("are listed only for the verified address they were sent to", async () => {
+    const email = newEmail();
+    await createInvitation(project.slug, email, "ADMIN");
+    const invitee = await signUp("Ivy", email);
+    const someoneElse = await signUp("Mallory");
+    await verify(someoneElse);
+
+    expect(await pendingFor(invitee)).toEqual([]); // not verified yet
+    expect(await pendingFor(someoneElse)).toEqual([]);
+    await verify(invitee);
+    expect(await pendingFor(invitee)).toEqual([
+      expect.objectContaining({ role: "ADMIN", project: { name: project.name }, createdBy: { name: "Olive Owner" } }),
+    ]);
+  });
+
+  test("accepting joins the team; unverified or other accounts can't", async () => {
+    const email = newEmail();
+    await createInvitation(project.slug, email, "MEMBER");
+    const invitee = await signUp("Ivy", email);
+    const [invitation] = await prisma.invitation.findMany({ where: { email } });
+    const someoneElse = await signUp("Mallory");
+    await verify(someoneElse);
+
+    actAs(invitee);
+    expect(await acceptInvitationById(invitation!.id)).toEqual({ error: "Invite not found" }); // unverified
+    actAs(someoneElse);
+    expect(await acceptInvitationById(invitation!.id)).toEqual({ error: "Invite not found" });
+    expect(await declineInvitation(invitation!.id)).toEqual({ error: "Invite not found" });
+
+    await verify(invitee);
+    actAs(invitee);
+    expect(await redirectTarget(acceptInvitationById(invitation!.id))).toBe(`/app/${project.slug}`);
+    expect(await isMember(invitee.id)).toBe(true);
+    expect(await pendingFor(invitee)).toEqual([]);
+  });
+
+  test("declining ends the invite", async () => {
+    const email = newEmail();
+    const { url } = await createInvitation(project.slug, email, "MEMBER");
+    const invitee = await signUp("Ivy", email);
+    await verify(invitee);
+    const [invitation] = await pendingFor(invitee);
+
+    actAs(invitee);
+    expect(await declineInvitation(invitation!.id)).toEqual({});
+    expect(await pendingFor(invitee)).toEqual([]);
+    expect(await acceptInvitation(tokenOf(url!))).toEqual({
+      error: "This invite has expired, was revoked, or was already used",
+    });
+    expect(await isMember(invitee.id)).toBe(false);
   });
 });
