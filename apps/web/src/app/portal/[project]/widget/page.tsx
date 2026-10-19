@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
+import { WidgetHelp } from "@/components/widget-help";
 import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
@@ -17,33 +18,40 @@ import { getSession } from "@/server/session";
 export const metadata: Metadata = { robots: { index: false } };
 
 const TABS = [
-  { href: "/widget", name: "Feedback" },
-  { href: "/widget?tab=whats-new", name: "What's new" },
-];
+  { tab: "feedback", href: "/widget", name: "Feedback" },
+  { tab: "whats-new", href: "/widget?tab=whats-new", name: "What's new" },
+  { tab: "help", href: "/widget?tab=help", name: "Help" },
+] as const;
 
 /**
- * What the widget script shows in its iframe on customers' sites: post feedback
- * and read the changelog. Outside the portal's (site) layout, so no header or
- * footer; the only page that other sites may frame (see proxy.ts). Links that
- * leave it open a new tab.
+ * What the widget script shows in its iframe on customers' sites: post feedback,
+ * read the changelog, and search and read the help center (once it has articles).
+ * Outside the portal's (site) layout, so no header or footer; the only page that
+ * other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const { project: slug } = await props.params;
-  const whatsNew = (await props.searchParams).tab === "whats-new";
+  const [{ project: slug }, { tab: tabParam, q, article }] = await Promise.all([props.params, props.searchParams]);
   const project = await prisma.project.findUnique({
     where: { slug },
-    select: { boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } } },
+    select: {
+      id: true,
+      boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
+      articles: { where: { publishedAt: { not: null } }, take: 1, select: { id: true } },
+    },
   });
   if (!project) {
     notFound();
   }
+  const hasHelp = project.articles.length > 0;
+  const tabs = TABS.filter(({ tab }) => tab !== "help" || hasHelp);
+  const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
 
   return (
     <main className="flex flex-col gap-4 p-4">
       <div className="flex items-center justify-between border-b">
         <nav className="flex gap-1" aria-label="Widget">
-          {TABS.map(({ href, name }, i) => {
-            const active = whatsNew === (i === 1);
+          {tabs.map(({ tab: key, href, name }) => {
+            const active = key === tab;
             return (
               <Link
                 key={href}
@@ -61,7 +69,16 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         </nav>
         <WidgetClose />
       </div>
-      {whatsNew ? <WhatsNew slug={slug} /> : <Feedback slug={slug} board={project.boards[0]?.slug} />}
+      {tab === "whats-new" && <WhatsNew slug={slug} />}
+      {tab === "help" && (
+        <WidgetHelp
+          projectId={project.id}
+          projectSlug={slug}
+          query={typeof q === "string" ? q.trim().slice(0, 200) : ""}
+          article={typeof article === "string" ? article : undefined}
+        />
+      )}
+      {tab === "feedback" && <Feedback slug={slug} board={project.boards[0]?.slug} />}
     </main>
   );
 }

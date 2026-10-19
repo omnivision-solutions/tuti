@@ -155,3 +155,96 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
 });
+
+test("a customer's site shows its help center in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget help test");
+  await owner.getByRole("combobox", { name: "What the key can do" }).click();
+  await owner.getByRole("option", { name: "Read and write" }).click();
+  await owner.getByRole("button", { name: "Create key" }).click();
+  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget help test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
+
+  // No published articles yet: no Help tab.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  const launcher = visitor.getByRole("button", { name: "Feedback" });
+  await launcher.click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  const tabs = widget.getByRole("navigation", { name: "Widget" });
+  await expect(tabs.getByRole("link", { name: "What's new" })).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Help" })).toHaveCount(0);
+
+  // The team publishes two articles, one in a collection.
+  const collection = await api("/collections", { name: "Getting started", description: "The basics, in five minutes." });
+  const text = (value: string) => ({ type: "text", text: value });
+  const content = {
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 2 }, content: [text("Who can invite")] },
+      { type: "paragraph", content: [text("Owners and admins send invites from the Team page.")] },
+    ],
+  };
+  const inviting = await api("/articles", { title: "Inviting your team", content, collection: collection.slug });
+  await api(`/articles/${inviting.slug}/publish`, {});
+  const exporting = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
+  await api(`/articles/${exporting.slug}/publish`, {});
+
+  // Now the widget has a Help tab: the collections and their articles, like the portal's /help.
+  await visitor.reload();
+  await launcher.click();
+  await tabs.getByRole("link", { name: "Help" }).click();
+  const section = widget.getByRole("region", { name: "Getting started" });
+  await expect(section).toContainText("The basics, in five minutes.");
+  await expect(section.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(widget.getByRole("region", { name: "More articles" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
+  await checkpoint(visitor, "widget-help");
+
+  // Search, read a result, and go back to the results.
+  const search = widget.getByRole("searchbox", { name: "Search the help center" });
+  await search.fill("invite");
+  await widget.getByRole("button", { name: "Search" }).click();
+  const results = widget.getByRole("list", { name: "Search results" });
+  await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(results.getByRole("link", { name: "Exporting your data" })).toHaveCount(0);
+  await checkpoint(visitor, "widget-help-search");
+  await results.getByRole("link", { name: "Inviting your team" }).click();
+  const article = widget.getByRole("article", { name: "Inviting your team" });
+  await expect(article.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
+  await expect(article.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
+  await expect(article.getByText("Getting started")).toBeVisible();
+  const newTab = article.getByRole("link", { name: "Open in new tab" });
+  await expect(newTab).toHaveAttribute("target", "_blank");
+  await expect(newTab).toHaveAttribute("href", `/help/${inviting.slug}`);
+  await checkpoint(visitor, "widget-help-article");
+  await article.getByRole("link", { name: "Search results" }).click();
+  await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(search).toHaveValue("invite");
+
+  // The customer's page opens the widget at an article (say, from a contextual help button).
+  await visitor.keyboard.press("Escape");
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  await visitor.evaluate(
+    (article) => (window as unknown as { Tuti: { open(options: { article: string }): void } }).Tuti.open({ article }),
+    exporting.slug,
+  );
+  await expect(launcher).toHaveAttribute("aria-expanded", "true");
+  await expect(widget.getByRole("heading", { name: "Exporting your data", level: 1 })).toBeVisible();
+  await expect(widget.getByText("Download a CSV of every post from the board's menu.")).toBeVisible();
+  await checkpoint(visitor, "widget-help-opened-at-article");
+  await widget.getByRole("link", { name: "All articles" }).click();
+  await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
+});
