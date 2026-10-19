@@ -249,3 +249,117 @@ describe("pull requests", () => {
     ).toEqual([7, 9]);
   });
 });
+
+describe("shipping", () => {
+  const deliver = async ({ body, headers }: { body: string; headers: Record<string, string> }) =>
+    (await webhook(new Request("http://tuti.localhost:3100/api/github/webhook", { method: "POST", body, headers }))).status;
+  let installationId = 5000;
+  let repo: string;
+
+  /** Posts with these statuses, each linked to the pull request with the same index in `pulls`. */
+  async function linkedPosts(posts: { status: "OPEN" | "IN_PROGRESS" | "COMPLETED"; pull: number }[]) {
+    const board = project.boards[0]!;
+    for (const [i, { status, pull }] of posts.entries()) {
+      const post = await prisma.post.create({
+        data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: i + 1, title: `Post ${i + 1}`, body: "", status },
+      });
+      await prisma.postLink.create({
+        data: {
+          projectId: project.id,
+          postId: post.id,
+          kind: "PULL_REQUEST",
+          repo,
+          number: pull,
+          url: `https://github.com/${repo}/pull/${pull}`,
+          source: "REFERENCE",
+        },
+      });
+    }
+  }
+  const statuses = async () =>
+    (await prisma.post.findMany({ where: { projectId: project.id }, orderBy: { number: "asc" }, select: { status: true } })).map(
+      (p) => p.status,
+    );
+  const published = (tag: string, publishedAt: string) =>
+    github.webhook("release", {
+      action: "published",
+      installation: { id: installationId },
+      repository: { full_name: repo },
+      release: { tag_name: tag, name: `Release ${tag}`, html_url: `https://github.com/${repo}/releases/tag/${tag}`, published_at: publishedAt },
+    });
+
+  beforeEach(async () => {
+    installationId++;
+    repo = `acme/app-${installationId}`;
+    await prisma.githubInstallation.create({
+      data: { projectId: project.id, installationId, accountLogin: "acme", createdById: owner.id },
+    });
+  });
+
+  test("a release completes the posts whose pull requests it ships, and links itself to them", async () => {
+    // #10 is merged inside v1.0...v1.1 (commit 140 of 150, so on the second page); #11 isn't merged;
+    // #12 was merged after v1.1; #10 also links a post that's already Completed.
+    const range = Array.from({ length: 150 }, (_, i) => `sha-${i}`);
+    github.repo(repo, {
+      releases: [
+        { tag_name: "v1.1", published_at: "2026-02-01T00:00:00Z" },
+        { tag_name: "v1.0", published_at: "2026-01-01T00:00:00Z" },
+      ],
+      compare: { "v1.0...v1.1": range },
+      pulls: {
+        10: { merged_at: "2026-01-15T00:00:00Z", merge_commit_sha: "sha-140" },
+        11: { merged_at: null, merge_commit_sha: null },
+        12: { merged_at: "2026-02-10T00:00:00Z", merge_commit_sha: "sha-later" },
+      },
+    });
+    await linkedPosts([
+      { status: "IN_PROGRESS", pull: 10 },
+      { status: "OPEN", pull: 11 },
+      { status: "IN_PROGRESS", pull: 12 },
+      { status: "COMPLETED", pull: 10 },
+    ]);
+
+    expect(await deliver(published("v1.1", "2026-02-01T00:00:00Z"))).toBe(200);
+    expect(await statuses()).toEqual(["COMPLETED", "OPEN", "IN_PROGRESS", "COMPLETED"]);
+    const releaseLinks = await prisma.postLink.findMany({ where: { projectId: project.id, kind: "RELEASE" }, select: { tag: true, title: true } });
+    expect(releaseLinks).toEqual([{ tag: "v1.1", title: "Release v1.1" }]);
+  });
+
+  test("a repo's first release ships every pull request merged before it", async () => {
+    github.repo(repo, {
+      releases: [{ tag_name: "v0.1", published_at: "2026-03-01T00:00:00Z" }],
+      pulls: {
+        20: { merged_at: "2026-02-01T00:00:00Z", merge_commit_sha: "a" },
+        21: { merged_at: "2026-04-01T00:00:00Z", merge_commit_sha: "b" },
+      },
+    });
+    await linkedPosts([
+      { status: "IN_PROGRESS", pull: 20 },
+      { status: "IN_PROGRESS", pull: 21 },
+    ]);
+    await deliver(published("v0.1", "2026-03-01T00:00:00Z"));
+    expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
+  });
+
+  test("projects without releases complete posts when the pull request is merged instead", async () => {
+    await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+    github.repo(repo, { releases: [{ tag_name: "v9", published_at: "2026-05-01T00:00:00Z" }], pulls: {} });
+    await linkedPosts([
+      { status: "IN_PROGRESS", pull: 30 },
+      { status: "IN_PROGRESS", pull: 31 },
+    ]);
+    const closed = (number: number, merged: boolean) =>
+      github.webhook("pull_request", {
+        action: "closed",
+        installation: { id: installationId },
+        repository: { full_name: repo },
+        pull_request: { number, title: "PR", body: "", html_url: `https://github.com/${repo}/pull/${number}`, merged },
+      });
+    await deliver(closed(30, true));
+    await deliver(closed(31, false)); // closed without merging
+    expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
+    // Releases don't complete anything for these projects.
+    await deliver(published("v9", "2026-05-01T00:00:00Z"));
+    expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
+  });
+});

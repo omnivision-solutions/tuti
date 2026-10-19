@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const { count } = await prisma.githubInstallation.deleteMany({ where: { installationId: payload.installation.id } });
     log.info("GitHub installation removed", { installationId: payload.installation.id, projects: count });
   }
-  // Pull requests: linking and status changes happen in the github-pull-request job.
+  // Pull requests: linking and status changes (and completing on merge) happen in the github-pull-request job.
   if (event === "pull_request" && PR_ACTIONS.has(payload.action ?? "") && payload.installation) {
     const { pull_request: pr, repository } = payload as unknown as GithubPullRequestEvent;
     try {
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         title: pr.title,
         body: pr.body ?? "",
         url: pr.html_url,
+        merged: pr.merged ?? false,
       });
     } catch (error) {
       log.error("Handling a GitHub pull request failed", { error, repo: repository.full_name, number: pr.number });
@@ -44,12 +45,34 @@ export async function POST(request: Request) {
       return Response.json({ error: "Couldn't handle the pull request" }, { status: 503 });
     }
   }
+  // Published releases: the github-release job completes the posts they ship.
+  if (event === "release" && payload.action === "published" && payload.installation) {
+    const { release, repository } = payload as unknown as GithubReleaseEvent;
+    try {
+      await enqueue("githubRelease", {
+        installationId: payload.installation.id,
+        repo: repository.full_name,
+        tag: release.tag_name,
+        name: release.name || release.tag_name,
+        url: release.html_url,
+        publishedAt: release.published_at ?? new Date().toISOString(),
+      });
+    } catch (error) {
+      log.error("Handling a GitHub release failed", { error, repo: repository.full_name, tag: release.tag_name });
+      return Response.json({ error: "Couldn't handle the release" }, { status: 503 });
+    }
+  }
   return Response.json({ ok: true });
 }
 
-const PR_ACTIONS = new Set(["opened", "reopened", "edited"]);
+type GithubReleaseEvent = {
+  release: { tag_name: string; name: string | null; html_url: string; published_at: string | null };
+  repository: { full_name: string };
+};
+
+const PR_ACTIONS = new Set(["opened", "reopened", "edited", "closed"]);
 
 type GithubPullRequestEvent = {
-  pull_request: { number: number; title: string; body: string | null; html_url: string };
+  pull_request: { number: number; title: string; body: string | null; html_url: string; merged?: boolean };
   repository: { full_name: string };
 };

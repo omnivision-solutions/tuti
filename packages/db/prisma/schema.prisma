@@ -331,17 +331,25 @@ model WebhookDelivery {
   @@map("webhook_delivery")
 }
 
+enum GithubCloseOn {
+  RELEASE
+  MERGE
+}
+
 /// A project's GitHub App installation: its pull requests and releases link to and
 /// close the project's posts. One installation (GitHub account) per project.
 /// ponytail: per-repo mapping if one GitHub account needs several projects.
 model GithubInstallation {
-  id             String   @id @default(cuid())
-  projectId      String   @unique
-  installationId Int      @unique
+  id             String        @id @default(cuid())
+  projectId      String        @unique
+  installationId Int           @unique
   /// The GitHub user or organisation it's installed on.
   accountLogin   String
+  /// When linked posts become Completed: when a release ships their pull request
+  /// (default: merged isn't shipped), or when it's merged (repos without releases).
+  closeOn        GithubCloseOn @default(RELEASE)
   createdById    String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime      @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

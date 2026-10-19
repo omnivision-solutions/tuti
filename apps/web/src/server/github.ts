@@ -18,3 +18,20 @@ export async function disconnectGithub(projectSlug: string): Promise<{ error?: s
   refresh();
   return {};
 }
+
+/** When linked posts become Completed: when a release ships them (default) or when their pull request is merged. */
+export async function setGithubCloseOn(projectSlug: string, closeOn: string): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change the GitHub connection" };
+  }
+  if (closeOn !== "RELEASE" && closeOn !== "MERGE") {
+    return { error: "Unknown choice" };
+  }
+  const { count } = await prisma.githubInstallation.updateMany({ where: { projectId: project.id }, data: { closeOn } });
+  if (count === 0) {
+    return { error: "GitHub isn't connected" };
+  }
+  refresh();
+  return {};
+}

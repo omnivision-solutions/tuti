@@ -52,6 +52,19 @@ export const jobs = {
       title: z.string(),
       body: z.string(),
       url: z.string(),
+      merged: z.boolean().default(false),
+    }),
+  },
+  /** A release was published on a connected repo: the posts whose pull requests it ships become Completed. */
+  githubRelease: {
+    name: "github-release",
+    input: z.object({
+      installationId: z.number().int(),
+      repo: z.string(),
+      tag: z.string(),
+      name: z.string(),
+      url: z.string(),
+      publishedAt: z.string(),
     }),
   },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */

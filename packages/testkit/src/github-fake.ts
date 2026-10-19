@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, createVerify, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -15,6 +15,18 @@ export type GithubFake = {
    * given `redirect_uri` with `code` (this user, who can see the installation) and the `state`.
    */
   nextInstall(setupUrl: string, installation: { id: number; account: string; code: string }): void;
+  /**
+   * A repository's data for the App's API (installation tokens required):
+   * releases, commits between two tags (`"v1...v2"`), and pull requests.
+   */
+  repo(
+    fullName: string,
+    data: {
+      releases?: { tag_name: string; draft?: boolean; published_at: string }[];
+      compare?: Record<string, string[]>;
+      pulls?: Record<number, { merged_at: string | null; merge_commit_sha: string | null }>;
+    },
+  ): void;
   /** A signed webhook delivery, as GitHub would send it. */
   webhook(event: string, payload: unknown): { body: string; headers: Record<string, string> };
   close(): Promise<void>;
@@ -26,6 +38,20 @@ const WEBHOOK_SECRET = "test-github-webhook-secret";
 export async function startGithubFake(): Promise<GithubFake> {
   const users = new Map<string, { id: number; account: string }[]>();
   let install: { setupUrl: string; id: number; code: string } | undefined;
+  const repos = new Map<string, Parameters<GithubFake["repo"]>[1]>();
+  // The App's key pair: the app signs JWTs with the private key, the fake checks them.
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const APP_ID = "4242";
+  const validJwt = (header: string | undefined) => {
+    const jwt = /^Bearer (.+)$/.exec(header ?? "")?.[1];
+    const [head, payload, signature] = jwt?.split(".") ?? [];
+    if (!head || !payload || !signature) {
+      return false;
+    }
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString()) as { iss?: string; exp?: number };
+    const signed = createVerify("RSA-SHA256").update(`${head}.${payload}`).verify(publicKey, signature, "base64url");
+    return signed && claims.iss === APP_ID && (claims.exp ?? 0) * 1000 > Date.now();
+  };
   let base = "";
 
   const server = createServer((req, res) => {
@@ -55,6 +81,40 @@ export async function startGithubFake(): Promise<GithubFake> {
         return;
       }
       const redirect = (to: URL) => res.writeHead(302, { location: to.href }).end();
+      const installationToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(url.pathname);
+      if (req.method === "POST" && installationToken) {
+        return validJwt(req.headers.authorization)
+          ? send(201, { token: `installation-${installationToken[1]}` })
+          : send(401, { message: "A JSON web token could not be decoded" });
+      }
+      const repoPath = /^\/repos\/([^/]+\/[^/]+)\/(.+)$/.exec(url.pathname);
+      if (req.method === "GET" && repoPath) {
+        if (!/^Bearer installation-\d+$/.test(req.headers.authorization ?? "")) {
+          return send(401, { message: "Bad credentials" });
+        }
+        const data = repos.get(repoPath[1]!);
+        const rest = decodeURIComponent(repoPath[2]!);
+        const perPage = Number(url.searchParams.get("per_page") ?? 30);
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const paged = (items: unknown[], wrap: (slice: unknown[]) => unknown) => {
+          const next = page * perPage < items.length;
+          const link = new URL(`${base}${url.pathname}`);
+          link.search = new URLSearchParams({ per_page: String(perPage), page: String(page + 1) }).toString();
+          res.writeHead(200, { "content-type": "application/json", ...(next && { link: `<${link.href}>; rel="next"` }) });
+          res.end(JSON.stringify(wrap(items.slice((page - 1) * perPage, page * perPage))));
+        };
+        if (rest === "releases") {
+          return paged(data?.releases ?? [], (slice) => slice);
+        }
+        if (rest.startsWith("compare/") && data?.compare?.[rest.slice("compare/".length)]) {
+          return paged(data.compare[rest.slice("compare/".length)]!, (slice) => ({ commits: slice.map((sha) => ({ sha })) }));
+        }
+        const pull = /^pulls\/(\d+)$/.exec(rest);
+        if (pull && data?.pulls?.[Number(pull[1])]) {
+          return send(200, data.pulls[Number(pull[1])]);
+        }
+        return send(404, { message: "Not Found" });
+      }
       if (req.method === "GET" && /^\/apps\/[^/]+\/installations\/new$/.test(url.pathname) && install) {
         const back = new URL(install.setupUrl);
         back.search = new URLSearchParams({ installation_id: String(install.id), setup_action: "install" }).toString();
@@ -81,8 +141,11 @@ export async function startGithubFake(): Promise<GithubFake> {
       GITHUB_WEBHOOK_SECRET: WEBHOOK_SECRET,
       GITHUB_URL: url,
       GITHUB_API_URL: url,
+      GITHUB_APP_ID: APP_ID,
+      GITHUB_APP_PRIVATE_KEY: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
     },
     user: (code, installations) => users.set(code, installations),
+    repo: (fullName, data) => repos.set(fullName, data),
     nextInstall(setupUrl, { id, account, code }) {
       users.set(code, [{ id, account }]);
       install = { setupUrl, id, code };

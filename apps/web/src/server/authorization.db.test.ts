@@ -83,6 +83,7 @@ const matrix: Matrix = {
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
+    setGithubCloseOn: { allowed: "ADMIN", call: (slug) => github.setGithubCloseOn(slug, "MERGE") },
   },
   invitations: {
     createInvitation: {
