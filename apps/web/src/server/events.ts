@@ -39,7 +39,8 @@ export async function emitEvent(
       try {
         await enqueue("webhookDelivery", { deliveryId: delivery.id });
       } catch (error) {
-        // With inline jobs a failed attempt lands here; it's recorded on the delivery.
+        // With inline jobs a failed attempt lands here (recorded on the delivery). If queueing
+        // failed, the webhook-resubmit job queues the delivery again.
         log.warn("Webhook delivery failed or couldn't be queued", { deliveryId: delivery.id, error });
       }
     }

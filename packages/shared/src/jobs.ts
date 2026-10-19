@@ -35,6 +35,12 @@ export const jobs = {
     // Hatchet waits factor^n seconds before retry n, capped: 5s, 25s, 2m, 10m, 52m, 4.3h, 8h, 8h ≈ 21h in all.
     backoff: { factor: 5, maxSeconds: 8 * 60 * 60 },
   },
+  /** Queues deliveries again whose job never started (e.g. queueing failed), so none is lost. */
+  resubmitWebhookDeliveries: {
+    name: "webhook-resubmit",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */
   cleanupMedia: {
     name: "cleanup-media",

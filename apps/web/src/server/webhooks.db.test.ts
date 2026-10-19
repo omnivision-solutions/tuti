@@ -1,9 +1,9 @@
 import { createHmac } from "node:crypto";
-import { createServer, type IncomingHttpHeaders } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { IncomingHttpHeaders } from "node:http";
 
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -12,32 +12,25 @@ import { changePostStatus } from "./manage-posts";
 import { addComment, createPost } from "./posts";
 import { createWebhook, deleteWebhook, sendTestWebhook } from "./webhooks";
 
-/** A receiver like a customer's: records requests and answers with `status`. */
-let received: { headers: IncomingHttpHeaders; body: string }[] = [];
-let status = 200;
+/** A receiver like a customer's (see @tuti/testkit). */
+let receiver: WebhookReceiver;
+let received: WebhookReceiver["received"];
 let receiverUrl: string;
-const receiver = createServer((req, res) => {
-  let body = "";
-  req.on("data", (chunk) => (body += chunk));
-  req.on("end", () => {
-    received.push({ headers: req.headers, body });
-    res.writeHead(status, status === 302 ? { location: "http://127.0.0.1:1/" } : {}).end();
-  });
-});
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
-  await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
-  receiverUrl = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/hook`;
+  receiver = await startWebhookReceiver();
+  receiverUrl = receiver.url;
 });
-afterAll(() => new Promise((resolve) => receiver.close(resolve)));
+afterAll(() => receiver.close());
 
 beforeEach(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  received = [];
-  status = 200;
+  receiver.received.length = 0;
+  received = receiver.received;
+  receiver.status = 200;
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
@@ -106,12 +99,12 @@ describe("deliveries", () => {
 
   test("a failing endpoint doesn't fail the post; the retry sends the same event id", async () => {
     await createWebhook(project.slug, receiverUrl, ["post.created"]);
-    status = 500;
+    receiver.status = 500;
     await post();
     const delivery = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId: project.id } } });
     expect(delivery).toMatchObject({ attempts: 1, lastStatus: 500, lastError: "Answered 500", deliveredAt: null });
 
-    status = 200;
+    receiver.status = 200;
     await handlers.webhookDelivery({ deliveryId: delivery.id }, { info: () => {}, warn: () => {} });
     expect(received.map((r) => r.headers["tuti-event-id"])).toEqual([delivery.eventId, delivery.eventId]);
     expect(await prisma.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } })).toMatchObject({
@@ -123,7 +116,7 @@ describe("deliveries", () => {
 
   test("redirects aren't followed", async () => {
     await createWebhook(project.slug, receiverUrl, ["post.created"]);
-    status = 302;
+    receiver.status = 302;
     await post();
     expect(received).toHaveLength(1);
     expect(await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId: project.id } } })).toMatchObject({
@@ -170,4 +163,24 @@ describe("settings", () => {
       lastError: "Webhook URLs must start with https://",
     });
   });
+});
+
+test("deliveries whose job never started are queued again, so none is lost", async () => {
+  await createWebhook(project.slug, receiverUrl, ["post.created"]);
+  const webhook = await prisma.webhook.findFirstOrThrow({ where: { projectId: project.id } });
+  const minutes = (n: number) => new Date(Date.now() - n * 60_000);
+  const delivery = (eventId: string, createdAt: Date, attempts = 0) =>
+    prisma.webhookDelivery.create({
+      data: { webhookId: webhook.id, eventId, event: "post.created", payload: { id: eventId }, createdAt, attempts },
+    });
+  // Queueing failed 10 minutes ago; one is just being queued; one was already tried; one is two days old.
+  await delivery("evt_lost", minutes(10));
+  await delivery("evt_new", minutes(1));
+  await delivery("evt_tried", minutes(10), 1);
+  await delivery("evt_old", minutes(48 * 60));
+
+  const log = { info: () => {}, warn: () => {} };
+  expect(await handlers.resubmitWebhookDeliveries({}, log)).toEqual({ found: 1, queued: 1 });
+  expect(received.map((r) => r.headers["tuti-event-id"])).toEqual(["evt_lost"]);
+  expect(await handlers.resubmitWebhookDeliveries({}, log)).toEqual({ found: 0, queued: 0 });
 });

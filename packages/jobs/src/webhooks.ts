@@ -5,7 +5,7 @@ import type { JobInput } from "@tuti/shared";
 import { checkWebhookUrl, publicOnlyLookup } from "@tuti/shared/webhook-url";
 import { Agent, fetch } from "undici";
 
-import type { JobLogger, JobResult } from "./index";
+import { enqueue, type JobLogger, type JobResult } from "./index";
 
 const TIMEOUT_MS = 10_000;
 
@@ -74,4 +74,44 @@ export async function webhookDelivery(input: JobInput<"webhookDelivery">, log: J
     throw new Error(`Webhook delivery failed: ${error}`);
   }
   return { delivered: true, status: status ?? 0 };
+}
+
+/** A delivery not tried after this long probably never reached the queue. */
+const UNSENT_AFTER_MINUTES = 5;
+/** Older ones are past the retry window anyway. */
+const RESUBMIT_FOR_HOURS = 24;
+
+/**
+ * The safety net for at-least-once delivery: deliveries are saved before their
+ * job is queued, so if queueing failed (or the job got lost) the row is still
+ * here, never attempted. Queues those again. A job that was merely slow may then
+ * send twice, which receivers handle by skipping repeated event ids.
+ */
+export async function resubmitWebhookDeliveries(
+  _input: JobInput<"resubmitWebhookDeliveries">,
+  log: JobLogger,
+): Promise<JobResult> {
+  const now = Date.now();
+  const unsent = await prisma.webhookDelivery.findMany({
+    where: {
+      attempts: 0,
+      deliveredAt: null,
+      createdAt: { lt: new Date(now - UNSENT_AFTER_MINUTES * 60_000), gt: new Date(now - RESUBMIT_FOR_HOURS * 3_600_000) },
+    },
+    select: { id: true },
+    take: 500,
+  });
+  let queued = 0;
+  for (const delivery of unsent) {
+    try {
+      await enqueue("webhookDelivery", { deliveryId: delivery.id });
+      queued++;
+    } catch (error) {
+      log.warn(`couldn't queue delivery ${delivery.id} again: ${(error as Error).message}`);
+    }
+  }
+  if (unsent.length > 0) {
+    log.info(`queued ${queued} of ${unsent.length} unsent webhook deliveries again`);
+  }
+  return { found: unsent.length, queued };
 }

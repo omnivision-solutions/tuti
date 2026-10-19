@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
-import { type S3Fake, startS3Fake } from "@tuti/testkit";
+import { type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
@@ -187,7 +187,7 @@ const matrix: Matrix = {
     leaveProject: { allowed: "MEMBER", call: (slug) => team.leaveProject(slug) },
   },
   webhooks: {
-    createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, "http://127.0.0.1:9/hook", ["post.created"]) },
+    createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },
     deleteWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.deleteWebhook(slug, f.webhookId) },
     sendTestWebhook: { allowed: "ADMIN", takesIds: true, call: (slug, f) => webhooks.sendTestWebhook(slug, f.webhookId) },
   },
@@ -199,12 +199,14 @@ const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
 let s3: S3Fake;
+let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
   s3 = await startS3Fake();
-  // Webhook fixtures point at a closed local port (deliveries fail fast, offline).
+  // Webhook fixtures deliver to a local fake receiver.
+  receiver = await startWebhookReceiver();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   for (const [name, value] of Object.entries(s3.env)) {
     vi.stubEnv(name, value);
@@ -221,7 +223,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => s3.close());
+afterAll(() => Promise.all([s3.close(), receiver.close()]));
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
@@ -288,7 +290,7 @@ async function createFixture() {
     },
   });
   const webhook = await prisma.webhook.create({
-    data: { projectId, url: "http://127.0.0.1:9/hook", secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
+    data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
   return {
     slug: project.slug,

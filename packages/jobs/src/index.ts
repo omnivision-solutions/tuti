@@ -4,7 +4,7 @@ import { getHatchet } from "@tuti/shared/hatchet";
 import { cleanupMedia } from "./cleanup";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
-import { webhookDelivery } from "./webhooks";
+import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
 
@@ -21,6 +21,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   imageUploaded,
   cleanupMedia,
   webhookDelivery,
+  resubmitWebhookDeliveries,
 };
 
 /**
