@@ -67,6 +67,28 @@ https://<project>.tuti.so/sso?token=<token>&redirect=<path>
 A common pattern is a route in your app, e.g. `/feedback`, that signs a token for the
 current user and redirects, so "Feedback" links in your app always sign users in.
 
+## In the widget
+
+The widget (`<script src="https://tuti.so/widget.js" data-project="acme" async>`) runs on
+your site, where Tuti's own sign-in cookie can't reach it. Give it a way to get a fresh
+token from your server, and your signed-in users post from the widget as themselves:
+
+```html
+<script>
+  window.TutiSettings = {
+    // Return a fresh token (or a promise of one) for the signed-in user.
+    identify: () => fetch("/tuti-token").then((response) => response.text()),
+  };
+</script>
+<script src="https://tuti.so/widget.js" data-project="acme" async></script>
+```
+
+`/tuti-token` is a route in your app that signs a token as in step 2. After the script
+has loaded, `Tuti.identify(getToken)` does the same. The widget calls `getToken` each time
+its panel opens a page that needs it, sends the token only to your portal, and keeps
+the session it gets in the panel for up to 12 hours. Signed-out visitors (where
+`getToken` returns nothing) can still sign in on the portal in a new tab.
+
 ## Errors
 
 If sign-in fails, the user sees an error page on your portal at `/sso/error?code=…`:

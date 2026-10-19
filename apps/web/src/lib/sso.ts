@@ -109,6 +109,61 @@ export async function upsertProjectUser(
   }
 }
 
+/**
+ * Checks a sign-in token from a project's own app (HS256 with the project's SSO
+ * secret, short-lived, used once) and finds or makes that person's user. Used by
+ * the portal's SSO sign-in and by the widget.
+ */
+export async function verifySsoToken(
+  project: { id: string; ssoSecret: string },
+  token: string,
+): Promise<{ userId: string } | { error: SsoErrorCode }> {
+  let payload: unknown;
+  try {
+    ({ payload } = await jwtVerify(token, new TextEncoder().encode(project.ssoSecret), {
+      algorithms: ["HS256"],
+      clockTolerance: CLOCK_TOLERANCE_SECONDS,
+      requiredClaims: ["sub", "jti", "iat", "exp"],
+    }));
+  } catch (error) {
+    return { error: error instanceof joseErrors.JWTExpired ? "expired_token" : "invalid_token" };
+  }
+
+  const claims = claimsSchema.safeParse(payload);
+  if (!claims.success) {
+    return { error: "invalid_claims" };
+  }
+  const { sub, jti, iat, exp, email, name, avatar } = claims.data;
+  if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
+    return { error: "token_lifetime_too_long" };
+  }
+
+  // One-time use: the primary key on (projectId, jti) rejects replays.
+  // Old rows only matter until their token would have expired anyway.
+  await prisma.ssoTokenUse.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  try {
+    await prisma.ssoTokenUse.create({
+      data: {
+        projectId: project.id,
+        jti,
+        expiresAt: new Date((exp + CLOCK_TOLERANCE_SECONDS) * 1000),
+      },
+    });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return { error: "token_already_used" };
+    }
+    throw error;
+  }
+
+  const userId = await upsertProjectUser(project.id, sub, {
+    name: name ?? email?.split("@")[0] ?? "Anonymous",
+    image: avatar ?? null,
+    email: email ?? null,
+  });
+  return { userId };
+}
+
 export const jwtSso = () =>
   ({
     id: "tuti-jwt-sso",
@@ -133,49 +188,11 @@ export const jwtSso = () =>
             throw fail("sso_not_enabled");
           }
 
-          let payload: unknown;
-          try {
-            ({ payload } = await jwtVerify(token, new TextEncoder().encode(project.ssoSecret), {
-              algorithms: ["HS256"],
-              clockTolerance: CLOCK_TOLERANCE_SECONDS,
-              requiredClaims: ["sub", "jti", "iat", "exp"],
-            }));
-          } catch (error) {
-            throw fail(error instanceof joseErrors.JWTExpired ? "expired_token" : "invalid_token");
+          const verified = await verifySsoToken({ id: project.id, ssoSecret: project.ssoSecret }, token);
+          if ("error" in verified) {
+            throw fail(verified.error);
           }
-
-          const claims = claimsSchema.safeParse(payload);
-          if (!claims.success) {
-            throw fail("invalid_claims");
-          }
-          const { sub, jti, iat, exp, email, name, avatar } = claims.data;
-          if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
-            throw fail("token_lifetime_too_long");
-          }
-
-          // One-time use: the primary key on (projectId, jti) rejects replays.
-          // Old rows only matter until their token would have expired anyway.
-          await prisma.ssoTokenUse.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-          try {
-            await prisma.ssoTokenUse.create({
-              data: {
-                projectId: project.id,
-                jti,
-                expiresAt: new Date((exp + CLOCK_TOLERANCE_SECONDS) * 1000),
-              },
-            });
-          } catch (error) {
-            if (isUniqueViolation(error)) {
-              throw fail("token_already_used");
-            }
-            throw error;
-          }
-
-          const userId = await upsertProjectUser(project.id, sub, {
-            name: name ?? email?.split("@")[0] ?? "Anonymous",
-            image: avatar ?? null,
-            email: email ?? null,
-          });
+          const { userId } = verified;
 
           const user = await ctx.context.internalAdapter.findUserById(userId);
           if (!user) {

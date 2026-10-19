@@ -4,7 +4,7 @@ import { XIcon } from "lucide-react";
 import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
-import { WIDGET_CLOSE_MESSAGE } from "@/lib/widget-loader";
+import { WIDGET_CLOSE_MESSAGE } from "@/lib/widget-messages";
 
 /** Asks the loader on the customer's page to close the widget. */
 const close = () => window.parent.postMessage(WIDGET_CLOSE_MESSAGE, "*");

@@ -1,7 +1,5 @@
 import { SLUG_PATTERN } from "./project-slugs";
-
-/** postMessage from the widget page asking the loader to close the panel. */
-export const WIDGET_CLOSE_MESSAGE = "tuti:close";
+import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "./widget-messages";
 
 /**
  * The widget loader served at /widget.js, for customers' own sites:
@@ -11,6 +9,12 @@ export const WIDGET_CLOSE_MESSAGE = "tuti:close";
  * Adds a "Feedback" button that opens the project's portal /widget page in an
  * iframe. Plain ES5 without dependencies, and it never puts data into HTML: the
  * slug is checked against SLUG_PATTERN before it becomes part of a URL.
+ *
+ * Signing people in (their account in the customer's app, through the project's
+ * JWT SSO): `Tuti.identify(getToken)` after the script loads, or
+ * `window.TutiSettings = { identify: getToken }` before it. `getToken` returns a
+ * fresh SSO token (or a promise of one); it's called whenever the panel is ready
+ * for one, and the token is sent only to the portal's origin.
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -82,9 +86,36 @@ export function widgetLoader(portalTemplate: string): string {
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") close();
   });
-  // Escape and the close button inside the panel (another origin) arrive as messages.
+  var getToken = window.TutiSettings && typeof window.TutiSettings.identify === "function" ? window.TutiSettings.identify : null;
+  window.Tuti = {
+    identify: function (fn) {
+      if (typeof fn !== "function") {
+        console.error("Tuti widget: Tuti.identify takes a function that returns a sign-in token");
+        return;
+      }
+      getToken = fn;
+    }
+  };
+
+  // Hands the panel a fresh sign-in token, only ever to the portal's origin.
+  function sendToken() {
+    if (!frame || !getToken) return;
+    var target = frame.contentWindow;
+    Promise.resolve()
+      .then(function () { return getToken(); })
+      .then(
+        function (token) {
+          if (typeof token === "string" && token) target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin);
+        },
+        function (error) { console.error("Tuti widget: identify failed", error); }
+      );
+  }
+
+  // From the panel (another origin): close (the close button, Escape) and ready-for-a-token.
   window.addEventListener("message", function (event) {
-    if (frame && event.source === frame.contentWindow && event.origin === origin && event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) close();
+    if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
+    if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) close();
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken();
   });
 
   function mount() {
