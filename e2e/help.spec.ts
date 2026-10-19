@@ -55,6 +55,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/help/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
+  expect((await visitor.request.get(`${portalUrl(slug)}/help/inviting-your-team.md`)).status()).toBe(404);
   await visitor.goto("/help");
   await expect(visitor.getByText("Nothing here yet")).toBeVisible();
 
@@ -82,6 +83,23 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(visitor).toHaveTitle("Inviting your team · Acme");
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", /^Who can invite Owners and admins send invites/);
   await checkpoint(visitor, "portal-help-article");
+
+  // AI tools get it as Markdown: at its .md URL, copied, or opened in ChatGPT or Claude with that URL.
+  const markdownUrl = `${portalUrl(slug)}/help/inviting-your-team.md`;
+  const markdown = await visitor.request.get(markdownUrl);
+  expect(markdown.headers()["content-type"]).toBe("text/markdown; charset=utf-8");
+  expect(await markdown.text()).toBe(
+    "# Inviting your team\n\n## Who can invite\n\nOwners and admins send invites from the Team page.\n\n" +
+      "| Role | Can invite |  |\n| --- | --- | --- |\n| Admin | Yes |  |\n|  |  |  |\n",
+  );
+  const prompt = encodeURIComponent(`Read ${markdownUrl} and answer questions about it.`);
+  await expect(visitor.getByRole("link", { name: "Open in ChatGPT" })).toHaveAttribute("href", `https://chatgpt.com/?q=${prompt}`);
+  await expect(visitor.getByRole("link", { name: "Open in Claude" })).toHaveAttribute("href", `https://claude.ai/new?q=${prompt}`);
+  await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await visitor.getByRole("button", { name: "Copy as Markdown" }).click();
+  await expect(visitor.getByText("Copied as Markdown")).toBeVisible();
+  expect(await visitor.evaluate(() => navigator.clipboard.readText())).toBe(await markdown.text());
+  await checkpoint(visitor, "portal-help-article-copied");
 
   // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
   await team.getByRole("link", { name: "Help center" }).first().click();

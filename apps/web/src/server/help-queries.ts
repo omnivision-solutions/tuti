@@ -1,4 +1,6 @@
+import { type Doc, toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
+import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { displayDoc } from "./content";
@@ -38,3 +40,9 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   });
   return article && { ...article, doc: displayDoc(article) };
 });
+
+/** An article as Markdown, its title as the heading: /help/<slug>.md and "Copy as Markdown". */
+export function articleMarkdown(article: { title: string; doc: Doc }): string {
+  const title = { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: article.title }] };
+  return `${toMarkdown({ type: "doc", content: [title, ...(article.doc.content ?? [])] }, { mediaBaseUrl: mediaPublicUrl() })}\n`;
+}

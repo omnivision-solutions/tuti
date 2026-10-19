@@ -3,8 +3,10 @@ import { mediaPublicUrl } from "@tuti/shared/storage";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
+import { ArticleActions } from "@/components/article-actions";
 import { BackLink } from "@/components/back-link";
-import { publishedArticle } from "@/server/help-queries";
+import { portalUrl } from "@/lib/hosts";
+import { articleMarkdown, publishedArticle } from "@/server/help-queries";
 
 /** Search results show the article's title and its first lines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/help/[slug]">): Promise<Metadata> {
@@ -35,6 +37,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
           {article.title}
         </h1>
       </div>
+      <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/help/${slug}.md`} />
       <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
     </article>
   );

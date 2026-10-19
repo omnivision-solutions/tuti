@@ -9,6 +9,8 @@ import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
  * - app host (tuti.so): served as-is; internal /portal routes are hidden.
  * - portal hosts (<project>.tuti.so): rewritten to /portal/<project>/…, so
  *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
+ *   An article's Markdown, /help/<slug>.md, goes to help/[slug]/md (a route
+ *   segment can't be part dynamic, part ".md").
  * The auth API (/api/*) is served on every host so sessions stay per host.
  * Pages can't be framed by other sites (clickjacking), except a portal's
  * /widget, which customers embed with the widget script.
@@ -26,7 +28,8 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
     const url = request.nextUrl.clone();
-    url.pathname = `/portal/${target.slug}${pathname === "/" ? "" : pathname}`;
+    const path = pathname.replace(/^\/help\/([^/]+)\.md$/, "/help/$1/md");
+    url.pathname = `/portal/${target.slug}${path === "/" ? "" : path}`;
     const response = NextResponse.rewrite(url);
     return pathname === "/widget" ? response : noFraming(response);
   }
