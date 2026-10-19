@@ -227,6 +227,25 @@ describe("pull requests", () => {
     expect((await linksAndStatuses())[0]).toMatchObject({ status: "IN_PROGRESS" });
   });
 
+  test("commit messages mention posts too; commits pushed later add links without changing statuses", async () => {
+    await postsWithStatus("OPEN", "OPEN", "OPEN");
+    github.repo("acme/app", { commits: { 47: ["Dark mode (tuti#1)", "wip"] } });
+    await deliver(pullRequest("opened", 47, "Themes", "No mentions here"));
+    // Pushed later: one commit mentions #2. An edit doesn't read commits (they haven't changed).
+    github.repo("acme/app", { commits: { 47: ["Dark mode (tuti#1)", "wip", "Night theme, closes tuti#2"] } });
+    await deliver(pullRequest("synchronize", 47, "Themes", "No mentions here"));
+    github.repo("acme/app", { commits: { 47: ["Dark mode (tuti#1)", "wip", "Night theme, closes tuti#2", "tuti#3"] } });
+    await deliver(pullRequest("edited", 47, "Themes", "Still no mentions"));
+    github.repo("acme/app", {});
+
+    const link = { url: "https://github.com/acme/app/pull/47", source: "REFERENCE", title: "Themes" };
+    expect(await linksAndStatuses()).toEqual([
+      { number: 1, status: "IN_PROGRESS", links: [link] },
+      { number: 2, status: "OPEN", links: [link] },
+      { number: 3, status: "OPEN", links: [] },
+    ]);
+  });
+
   test("edits add new mentions without changing statuses; other installations are ignored", async () => {
     await postsWithStatus("OPEN", "OPEN");
     await deliver(pullRequest("edited", 43, "Export", "Now also tuti#2"));
