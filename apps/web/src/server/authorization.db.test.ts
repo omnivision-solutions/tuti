@@ -1,10 +1,13 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
+import { SignJWT } from "jose";
 import { type S3Fake, startS3Fake, startWebhookReceiver, type WebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
+import { generateSsoSecret } from "@/lib/sso";
+import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as apiKeys from "./api-keys";
@@ -21,6 +24,7 @@ import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
 import * as webhooks from "./webhooks";
+import * as widget from "./widget";
 
 /**
  * Every server action, who may call it, and a valid call. The type lists each
@@ -46,6 +50,7 @@ const modules = {
   "sso-settings": ssoSettings,
   team,
   webhooks,
+  widget,
 };
 
 type Level = "public" | "signed in" | TeamRole;
@@ -217,6 +222,33 @@ const matrix: Matrix = {
     },
     removeMember: { allowed: "ADMIN", takesIds: true, call: (slug, f) => team.removeMember(slug, f.targetMemberId) },
     leaveProject: { allowed: "MEMBER", call: (slug) => team.leaveProject(slug) },
+  },
+  // Signed in with tokens, not sessions: anyone holding a valid one may act (see widget.db.test.ts).
+  widget: {
+    widgetSignIn: {
+      allowed: "public",
+      call: async (slug) => {
+        const secret = generateSsoSecret();
+        await prisma.project.update({ where: { slug }, data: { ssoSecret: secret } });
+        const now = Math.floor(Date.now() / 1000);
+        const jwt = await new SignJWT({ sub: "matrix-user", jti: crypto.randomUUID() })
+          .setProtectedHeader({ alg: "HS256" })
+          .setIssuedAt(now)
+          .setExpirationTime(now + 300)
+          .sign(new TextEncoder().encode(secret));
+        return widget.widgetSignIn(slug, jwt);
+      },
+    },
+    widgetCreatePost: {
+      allowed: "public",
+      call: async (slug) => {
+        const project = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        const form = new FormData();
+        form.set("boardSlug", "feature-requests");
+        form.set("title", "From the widget");
+        return widget.widgetCreatePost(slug, widgetToken(project.id, users.MEMBER.id), {}, form);
+      },
+    },
   },
   webhooks: {
     createWebhook: { allowed: "ADMIN", call: (slug) => webhooks.createWebhook(slug, receiver.url, ["post.created"]) },

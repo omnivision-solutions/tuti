@@ -21,6 +21,7 @@ export function NewPostForm({
   boardSlug,
   mediaBaseUrl,
   linkTarget,
+  submit,
 }: {
   projectSlug: string;
   boardSlug: string;
@@ -28,6 +29,8 @@ export function NewPostForm({
   mediaBaseUrl: string | null;
   /** "_blank" in the widget: suggested posts open on the portal, not in the panel. */
   linkTarget?: "_blank";
+  /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
+  submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
@@ -37,7 +40,7 @@ export function NewPostForm({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await createPost(prev, formData);
+    const result = await (submit ?? createPost)(prev, formData);
     if (!result.error) {
       formRef.current?.reset();
       setSubmitted((n) => n + 1);

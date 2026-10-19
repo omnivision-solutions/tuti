@@ -7,8 +7,8 @@ import { notFound } from "next/navigation";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
-import { buttonVariants } from "@/components/ui/button";
 import { WidgetClose } from "@/components/widget-close";
+import { WidgetFeedback } from "@/components/widget-feedback";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
@@ -69,18 +69,11 @@ async function Feedback({ slug, board }: { slug: string; board?: string }) {
   if (!board) {
     return <EmptyState title="No boards yet" description="Feedback opens once the team adds a board." />;
   }
-  // Portal sessions are per host and their cookies aren't sent to an iframe on another site,
-  // so on customers' sites people usually sign in (and post) in a new tab.
+  // Portal sessions are per host and their cookies aren't sent to an iframe on another site:
+  // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
   if (!session) {
-    return (
-      <div className="flex flex-col items-start gap-3">
-        <p className="text-sm text-muted-foreground">Sign in to post ideas and vote. It opens in a new tab.</p>
-        <a href="/sign-in" target="_blank" rel="noreferrer" className={buttonVariants()}>
-          Sign in to post feedback
-        </a>
-      </div>
-    );
+    return <WidgetFeedback projectSlug={slug} boardSlug={board} />;
   }
   return <NewPostForm projectSlug={slug} boardSlug={board} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" />;
 }

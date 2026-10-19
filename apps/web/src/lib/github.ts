@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import * as signed from "./signed";
+
 /**
  * The Tuti GitHub App (Phase 7), set up with env vars. Self-hosters register their
  * own App; GITHUB_URL and GITHUB_API_URL exist for GitHub Enterprise and tests.
@@ -38,32 +40,16 @@ export function githubConfig(): GithubConfig | null {
 }
 
 const SIGNED_TTL_SECONDS = 15 * 60;
-const signingKey = (purpose: string) => `github:${purpose}:${process.env.BETTER_AUTH_SECRET}`;
 
 /**
  * A short-lived value only we can make, for one purpose (the install cookie, the
  * OAuth state), so it can't be forged, swapped between purposes or reused later.
  */
-export function signValue(purpose: string, fields: string[], now = Date.now()): string {
-  const payload = [...fields, String(Math.floor(now / 1000) + SIGNED_TTL_SECONDS)].join(".");
-  return `${payload}.${createHmac("sha256", signingKey(purpose)).update(payload).digest("base64url")}`;
-}
+export const signValue = (purpose: string, fields: string[], now = Date.now()) =>
+  signed.signValue(`github:${purpose}`, fields, SIGNED_TTL_SECONDS, now);
 
 /** The fields of a valid, unexpired value signed for `purpose`; null otherwise. */
-export function verifyValue(purpose: string, value: string, now = Date.now()): string[] | null {
-  const parts = value.split(".");
-  const signature = parts.pop();
-  const expires = parts.at(-1);
-  if (!signature || !expires || parts.length < 2) {
-    return null;
-  }
-  const expected = createHmac("sha256", signingKey(purpose)).update(parts.join(".")).digest("base64url");
-  // Compare bytes: a crafted value can have the right number of characters but not of bytes.
-  const given = Buffer.from(signature);
-  const wanted = Buffer.from(expected);
-  const valid = given.length === wanted.length && timingSafeEqual(given, wanted);
-  return valid && Number(expires) * 1000 > now ? parts.slice(0, -1) : null;
-}
+export const verifyValue = (purpose: string, value: string, now = Date.now()) => signed.verifyValue(`github:${purpose}`, value, now);
 
 /** Webhook deliveries are signed with the App's webhook secret: `X-Hub-Signature-256: sha256=<hex>`. */
 export function verifyWebhookSignature(secret: string, body: string, header: string | null): boolean {
