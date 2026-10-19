@@ -63,6 +63,11 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
     });
   expect((await api("/changelog", { title: "Dark mode is here", body: "Switch themes from your profile menu.", tags: ["new"] })).ok).toBe(true);
   expect((await api("/changelog/1/publish", {})).ok).toBe(true);
+  // Ten quiet entries after it: the announcement still shows in What's new (it's what the dot is about).
+  for (let n = 2; n <= 11; n++) {
+    expect((await api("/changelog", { title: `Quiet fix ${n}`, body: "Small things." })).ok).toBe(true);
+    expect((await api(`/changelog/${n}/publish`, { announce: false })).ok).toBe(true);
+  }
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/b/feature-requests");
@@ -73,6 +78,9 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // On another site the portal's cookies aren't sent, so the widget asks to sign in (in a new tab).
   await ada.goto(sitePage("customer.localhost", slug));
   const launcher = ada.getByRole("button", { name: "Feedback" });
+  // The entry was announced, and this browser hasn't seen it: the button says so.
+  await expect(launcher).toHaveAccessibleName("Feedback, new updates");
+  await checkpoint(ada, "widget-new-updates");
   await launcher.click();
   await expect(launcher).toHaveAttribute("aria-expanded", "true");
   const widget = ada.frameLocator('iframe[title="Feedback"]');
@@ -85,6 +93,12 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(widget.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("target", "_blank");
   await expect(widget.getByText("Switch themes from your profile menu.")).toBeVisible();
   await checkpoint(ada, "widget-whats-new");
+  // Seen now, here and after a reload.
+  await expect(launcher).toHaveAccessibleName("Feedback");
+  await ada.reload();
+  await expect(launcher).toHaveAccessibleName("Feedback");
+  await launcher.click();
+  await expect(widget.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
   // Escape closes it and gives focus back to the button.
   await ada.keyboard.press("Escape");

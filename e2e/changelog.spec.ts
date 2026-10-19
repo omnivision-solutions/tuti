@@ -71,8 +71,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("button", { name: "Publish" }).click();
   const dialog = team.getByRole("alertdialog");
   await expect(dialog).toContainText("The post it completes becomes Completed");
-  await dialog.getByRole("button", { name: "Publish" }).click();
-  await expect(team.getByText("Published", { exact: true }).first()).toBeVisible();
+  await expect(dialog).toContainText("Announced, it also shows as new in your widget.");
+  await dialog.getByRole("button", { name: "Publish and announce" }).click();
+  await expect(team.getByText("Published and announced")).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
   // The team's list shows it with its tag.

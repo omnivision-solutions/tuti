@@ -687,6 +687,8 @@ model ChangelogEntry {
   tags        ChangelogTag[]
   /// Null while it's a draft.
   publishedAt DateTime?
+  /// Published with an announcement (the widget shows it as new), or quietly.
+  announced   Boolean        @default(false)
   /// The running draft: merged pull requests are added to it until a release (or
   /// publishing it) closes it. At most one per project (a partial unique index).
   collecting  Boolean        @default(false)

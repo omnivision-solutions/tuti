@@ -1,5 +1,5 @@
 import { SLUG_PATTERN } from "./project-slugs";
-import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "./widget-messages";
+import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WIDGET_SEEN_MESSAGE } from "./widget-messages";
 
 /**
  * The widget loader served at /widget.js, for customers' own sites:
@@ -15,6 +15,9 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } f
  * `window.TutiSettings = { identify: getToken }` before it. `getToken` returns a
  * fresh SSO token (or a promise of one); it's called whenever the panel is ready
  * for one, and the token is sent only to the portal's origin.
+ *
+ * A dot on the button says there's an announced changelog entry this browser hasn't
+ * seen yet (what it has seen is kept in the customer site's localStorage).
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -29,6 +32,8 @@ export function widgetLoader(portalTemplate: string): string {
   }
   var portal = ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
+  var api = new URL(script.src).origin;
+  var seenKey = "tuti:seen:" + slug;
   var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   var font = "600 14px/1 system-ui, -apple-system, 'Segoe UI', sans-serif";
   // Brand colours from globals.css: the host page has none of our CSS.
@@ -49,6 +54,30 @@ export function widgetLoader(portalTemplate: string): string {
     color: dark ? "oklch(0.221 0.048 151.7)" : "#fff",
     boxShadow: "0 4px 14px rgba(0, 0, 0, 0.2)"
   });
+
+  // "New" dot, for an announcement this browser hasn't seen.
+  var dot = document.createElement("span");
+  css(dot, {
+    position: "absolute", top: "-2px", right: "-2px", width: "12px", height: "12px", borderRadius: "999px",
+    background: "oklch(0.705 0.187 47.6)", border: "2px solid #fff", display: "none"
+  });
+  button.appendChild(dot);
+  function storage(fn) {
+    try { return fn(window.localStorage); } catch (error) { return null; }
+  }
+  function showNew(isNew) {
+    dot.style.display = isNew ? "block" : "none";
+    button.setAttribute("aria-label", isNew ? "Feedback, new updates" : "Feedback");
+  }
+  if (window.fetch) {
+    fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        var seen = storage(function (s) { return s.getItem(seenKey); });
+        if (data && typeof data.latest === "string" && (!seen || data.latest > seen)) showNew(true);
+      })
+      .catch(function () {});
+  }
 
   var panel = document.createElement("div");
   panel.id = "tuti-widget";
@@ -116,6 +145,11 @@ export function widgetLoader(portalTemplate: string): string {
     if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) close();
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken();
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
+      var at = event.data.at;
+      storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
+      showNew(false);
+    }
   });
 
   function mount() {

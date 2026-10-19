@@ -237,13 +237,21 @@ export function ChangelogEntryActions({
               <AlertDialogDescription>
                 It appears on your portal&apos;s changelog.
                 {postCount > 0 &&
-                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}
+                  ` ${postCount === 1 ? "The post it completes becomes" : `The ${postCount} posts it completes become`} Completed, and the people who asked get an email.`}{" "}
+                Announced, it also shows as new in your widget.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction disabled={pending} onClick={() => run(publishChangelogEntry, "Published")}>
-                Publish
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => run((slug, n) => publishChangelogEntry(slug, n, false), "Published quietly")}
+              >
+                Publish quietly
+              </Button>
+              <AlertDialogAction disabled={pending} onClick={() => run(publishChangelogEntry, "Published and announced")}>
+                Publish and announce
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -51,8 +51,10 @@ export async function draftChangelogEntry(projectSlug: string, number: number): 
   return asTeam(projectSlug, DENIED, (context) => call(draftOperation, context, { number: Number(number) }));
 }
 
-export async function publishChangelogEntry(projectSlug: string, number: number): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(publishOperation, context, { number: Number(number) }));
+export async function publishChangelogEntry(projectSlug: string, number: number, announce = true): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(publishOperation, context, { number: Number(number), announce: announce === true }),
+  );
 }
 
 export async function unpublishChangelogEntry(projectSlug: string, number: number): Promise<FormState> {

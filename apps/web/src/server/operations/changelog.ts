@@ -47,6 +47,7 @@ const entrySelect = {
   content: true,
   tags: true,
   publishedAt: true,
+  announced: true,
   collecting: true,
   createdAt: true,
   updatedAt: true,
@@ -63,6 +64,8 @@ function entryView(entry: EntryRow, slug: string) {
     title: entry.title,
     status: entry.publishedAt ? ("published" as const) : ("draft" as const),
     publishedAt: entry.publishedAt?.toISOString() ?? null,
+    /** Published with an announcement (shown as new in the widget), not quietly. */
+    announced: entry.announced,
     /** The running draft: merged pull requests are being added to it. */
     collecting: entry.collecting,
     tags: entry.tags.map((tag) => tag.toLowerCase()),
@@ -316,13 +319,15 @@ export const draftChangelogEntry = defineOperation({
 
 export const publishChangelogEntry = defineOperation({
   name: "changelog.publish",
-  summary: "Publish a changelog entry on the portal; the posts it completes become Completed",
+  summary:
+    "Publish a changelog entry on the portal; the posts it completes become Completed. Announced (the default) it shows as new in the widget; `announce: false` publishes it quietly",
   method: "POST",
   path: "/changelog/{number}/publish",
   scope: "write",
   access: "team",
-  input: z.object({ number: entryNumber }),
-  run: async ({ projectId }, { number }) => {
+  input: z.object({ number: entryNumber, announce: z.boolean().default(true) }),
+  example: { announce: true },
+  run: async ({ projectId }, { number, announce }) => {
     const entry = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
     // One transaction: published, its posts completed (and due for their shipped
@@ -334,7 +339,7 @@ export const publishChangelogEntry = defineOperation({
       const { count } = await tx.changelogEntry.updateMany({
         where: { id: entry.id, publishedAt: null },
         // Published by hand, it stops collecting: the next merge starts a new draft.
-        data: { publishedAt: new Date(), collecting: false },
+        data: { publishedAt: new Date(), collecting: false, announced: announce },
       });
       if (count === 0) {
         return null;
