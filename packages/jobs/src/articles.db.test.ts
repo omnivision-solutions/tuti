@@ -26,7 +26,7 @@ test("the backfill embeds every published article, carrying on past one that fai
     const draft = await article("draft", 3, false);
 
     openai.failNext();
-    expect(await embedPublishedArticles({ info: () => {}, warn: () => {} })).toEqual({ articles: 2, failed: [failing.id] });
+    expect(await embedPublishedArticles({ info: () => {}, warn: () => {} })).toEqual({ articles: 2, embedded: 1, failed: [failing.id] });
     const chunks = (articleId: string) => prisma.articleChunk.count({ where: { articleId } });
     expect([await chunks(failing.id), await chunks(next.id), await chunks(draft.id)]).toEqual([0, 1, 0]);
   } finally {

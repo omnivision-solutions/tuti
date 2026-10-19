@@ -63,20 +63,24 @@ export async function articleChanged({ articleId }: JobInput<"articleChanged">, 
 }
 
 /** For the backfill: embeds every published article (unchanged ones are skipped), carrying on past failures. */
-export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; failed: string[] }> {
+export async function embedPublishedArticles(log: JobLogger): Promise<{ articles: number; embedded: number; failed: string[] }> {
   const articles = await prisma.article.findMany({
     where: { publishedAt: { not: null } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true },
   });
   const failed: string[] = [];
+  let embedded = 0;
   for (const { id } of articles) {
     try {
-      await articleChanged({ articleId: id }, log);
+      const result = await articleChanged({ articleId: id }, log);
+      if (Number(result.embedded) > 0) {
+        embedded++;
+      }
     } catch (error) {
       log.warn(`article ${id} wasn't embedded: ${error instanceof Error ? error.message : String(error)}`);
       failed.push(id);
     }
   }
-  return { articles: articles.length, failed };
+  return { articles: articles.length, embedded, failed };
 }
