@@ -1,8 +1,7 @@
 import { prisma, type PostStatus } from "@tuti/db";
+import { postSummary, postSummarySelect } from "@tuti/jobs";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
-import { postPath } from "@/lib/post-urls";
 
 import { displayDoc } from "../content";
 import { defineOperation, OperationError } from "./define";
@@ -35,39 +34,9 @@ export const listBoards = defineOperation({
   },
 });
 
-export const postSummarySelect = {
-  number: true,
-  title: true,
-  status: true,
-  voteCount: true,
-  commentCount: true,
-  createdAt: true,
-  board: { select: { slug: true } },
-  author: { select: { name: true } },
-} as const;
-
-type PostRow = {
-  number: number;
-  title: string;
-  status: PostStatus;
-  voteCount: number;
-  commentCount: number;
-  createdAt: Date;
-  board: { slug: string };
-  author: { name: string };
-};
-
-export const summary = (post: PostRow, slug: string) => ({
-  number: post.number,
-  title: post.title,
-  status: toApiStatus(post.status),
-  board: post.board.slug,
-  votes: post.voteCount,
-  comments: post.commentCount,
-  author: { name: post.author.name },
-  createdAt: post.createdAt.toISOString(),
-  url: `${portalUrl(slug)}${postPath(post)}`,
-});
+// The post shape is shared with the worker, whose webhook events use it too.
+export { postSummarySelect } from "@tuti/jobs";
+export const summary = postSummary;
 
 export const listPosts = defineOperation({
   name: "posts.list",

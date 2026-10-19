@@ -2,6 +2,7 @@ import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
 import { cleanupMedia } from "./cleanup";
+import { githubPullRequest } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
@@ -9,6 +10,8 @@ import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 export { signWebhook } from "./webhooks";
 
 export { detectDuplicates, embedPosts } from "./duplicates";
+export { referencedPosts } from "./github";
+export { emitEvent, portalPostUrl, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };
 
@@ -22,6 +25,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   cleanupMedia,
   webhookDelivery,
   resubmitWebhookDeliveries,
+  githubPullRequest,
 };
 
 /**

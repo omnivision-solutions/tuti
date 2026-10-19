@@ -41,6 +41,19 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
+  /** A pull request on a connected repo was opened, reopened or edited: link and move the posts it mentions. */
+  githubPullRequest: {
+    name: "github-pull-request",
+    input: z.object({
+      installationId: z.number().int(),
+      action: z.string(),
+      repo: z.string(),
+      number: z.number().int(),
+      title: z.string(),
+      body: z.string(),
+      url: z.string(),
+    }),
+  },
   /** Runs on a schedule (the worker registers `cron`), not enqueued. */
   cleanupMedia: {
     name: "cleanup-media",
