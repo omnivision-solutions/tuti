@@ -1,5 +1,6 @@
 import type { Operation } from "./define";
 import { createComment, createPost } from "./create";
+import { addLink, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { getPost, listBoards, listComments, listPosts } from "./read";
 
@@ -15,6 +16,8 @@ export const operations: Operation[] = [
   createComment,
   updatePost,
   mergePost,
+  addLink,
+  removeLink,
 ] as Operation[];
 
 /** The operation for a request, with the values from its path (e.g. {number}). */

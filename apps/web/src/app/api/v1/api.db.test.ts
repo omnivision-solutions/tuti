@@ -9,7 +9,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 
 import { matchOperation, operations } from "@/server/operations";
 
-import { GET, PATCH, POST } from "./[...path]/route";
+import { DELETE, GET, PATCH, POST } from "./[...path]/route";
 import { GET as getSpec } from "./openapi.json/route";
 
 let owner: TestUser;
@@ -34,14 +34,14 @@ async function api(path: string, apiKey: string | null = key) {
 }
 
 /** A write request with a JSON body. */
-async function send(method: "PATCH" | "POST", path: string, body: unknown, apiKey = key) {
+async function send(method: "PATCH" | "POST" | "DELETE", path: string, body: unknown, apiKey = key) {
   const url = new URL(`http://tuti.localhost:3100/api/v1${path}`);
-  const handler = method === "PATCH" ? PATCH : POST;
+  const handler = { PATCH, POST, DELETE }[method];
   const response = await handler(
     new Request(url, {
       method,
       headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: typeof body === "string" ? body : JSON.stringify(body),
+      body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
     }),
     { params: Promise.resolve({ path: url.pathname.split("/").slice(3) }) },
   );
@@ -361,5 +361,36 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },
     ]);
+  });
+});
+
+describe("GitHub links", () => {
+  test("link a post to a PR (once), see it on the post, remove it", async () => {
+    const writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
+    await post("Dark mode");
+    const url = "https://github.com/acme/app/pull/42/files";
+
+    expect((await send("POST", "/posts/1/links", { url }, key)).status).toBe(403);
+    const added = await send("POST", "/posts/1/links", { url }, writeKey);
+    expect(added).toMatchObject({
+      status: 200,
+      body: { kind: "pull_request", repo: "acme/app", number: 42, url: "https://github.com/acme/app/pull/42" },
+    });
+    // The same link again doesn't duplicate it.
+    expect((await send("POST", "/posts/1/links", { url: "https://github.com/acme/app/pull/42" }, writeKey)).body.id).toBe(
+      added.body.id,
+    );
+    expect(await send("POST", "/posts/1/links", { url: "https://example.com/pr/1" }, writeKey)).toMatchObject({
+      status: 400,
+      body: { error: { message: "Paste the URL of a GitHub pull request, issue or release" } },
+    });
+    expect((await api("/posts/1")).body.links).toEqual([expect.objectContaining({ id: added.body.id, number: 42 })]);
+
+    expect(await send("DELETE", `/posts/1/links/${added.body.id}`, undefined, writeKey)).toEqual({
+      status: 200,
+      body: { removed: added.body.id },
+    });
+    expect((await send("DELETE", `/posts/1/links/${added.body.id}`, undefined, writeKey)).status).toBe(404);
+    expect((await api("/posts/1")).body.links).toEqual([]);
   });
 });

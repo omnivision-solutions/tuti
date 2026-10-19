@@ -6,6 +6,7 @@ import { postPath } from "@/lib/post-urls";
 
 import { displayDoc } from "../content";
 import { defineOperation, OperationError } from "./define";
+import { linkSelect, linkView } from "./link-view";
 
 /** Statuses as the API spells them. */
 export const STATUSES = ["open", "under_review", "planned", "in_progress", "completed", "closed"] as const;
@@ -129,11 +130,13 @@ export const getPost = defineOperation({
   input: z.object({ number: postNumber }),
   run: async ({ projectId }, { number }) => {
     const post = await findPost(projectId, number);
+    const links = await prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect });
     return {
       ...summary(post, await projectSlug(projectId)),
       body: post.body,
       content: displayDoc(post),
       mergedInto: post.duplicateOf?.number ?? null,
+      links: links.map(linkView),
     };
   },
 });

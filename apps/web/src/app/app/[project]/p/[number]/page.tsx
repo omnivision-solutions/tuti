@@ -10,6 +10,7 @@ import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
 import { PageHeader } from "@/components/page-header";
+import { PostLinks } from "@/components/post-links";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -40,6 +41,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         board: { select: { slug: true } },
         author: { select: { name: true } },
         duplicateOf: { select: { number: true, title: true } },
+        links: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true },
+        },
         comments: {
           orderBy: { createdAt: "asc" },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -128,8 +133,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       )}
 
       {!isEmptyDoc(displayDoc(post)) && (
-            <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
-          )}
+        <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+      )}
+
+      {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
 
       {suggestions.length > 0 && (
         <DuplicateSuggestions

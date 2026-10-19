@@ -7,6 +7,7 @@ import { refresh } from "next/cache";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
+import { addLink, removeLink } from "./operations/links";
 import { mergePost as mergeOperation, updatePost } from "./operations/manage";
 import { toApiStatus } from "./operations/read";
 import { asTeam, call, postNumberOf } from "./operations/run";
@@ -66,4 +67,17 @@ export async function dismissDuplicate(projectSlug: string, suggestionId: string
   }
   refresh();
   return {};
+}
+
+/** Links a post to a GitHub pull request, issue or release (see the links.add operation). */
+export async function addPostLink(projectSlug: string, postId: string, url: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link posts", async (context) =>
+    call(addLink, context, { number: await postNumberOf(context.projectId, postId), url: String(url) }),
+  );
+}
+
+export async function removePostLink(projectSlug: string, postId: string, linkId: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link posts", async (context) =>
+    call(removeLink, context, { number: await postNumberOf(context.projectId, postId), id: String(linkId) }),
+  );
 }
