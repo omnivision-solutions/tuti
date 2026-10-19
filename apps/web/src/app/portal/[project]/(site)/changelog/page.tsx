@@ -1,4 +1,5 @@
 import { mediaPublicUrl } from "@tuti/shared/storage";
+import { RssIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ChangelogEntryView } from "@/components/changelog-entry";
@@ -10,6 +11,11 @@ import { publishedEntries } from "@/server/changelog-queries";
 
 const PAGE_SIZE = 20;
 
+/** Feed readers find the RSS feed from the page. */
+export const metadata = {
+  alternates: { types: { "application/rss+xml": [{ url: "/changelog/rss.xml", title: "Changelog" }] } },
+};
+
 /** What shipped, newest first, a page at a time (`?page=2` for older ones). */
 export default async function ChangelogPage(props: PageProps<"/portal/[project]/changelog">) {
   const [{ project: slug }, { page: param }] = await Promise.all([props.params, props.searchParams]);
@@ -20,7 +26,15 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
   const older = found.length > PAGE_SIZE;
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Changelog" description="What's new, improved and fixed." />
+      <PageHeader
+        title="Changelog"
+        description="What's new, improved and fixed."
+        actions={
+          <a href="/changelog/rss.xml" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            <RssIcon aria-hidden /> RSS
+          </a>
+        }
+      />
       {entries.length === 0 && page === 1 ? (
         <EmptyState title="Nothing here yet" description="New features and fixes show up here as they ship." />
       ) : (
