@@ -8,7 +8,7 @@ set -e
 
 cd "$(dirname "$0")"
 if [ -n "$INFISICAL_TOKEN" ]; then
-  exec infisical run --domain="$INFISICAL_API_URL" --projectId="$INFISICAL_PROJECT_ID" \
+  exec infisical run --domain="$INFISICAL_DOMAIN" --projectId="$INFISICAL_PROJECT_ID" \
     --env="${INFISICAL_ENV:-prod}" --path=/worker --silent -- node dist/index.js
 fi
 exec node dist/index.js
