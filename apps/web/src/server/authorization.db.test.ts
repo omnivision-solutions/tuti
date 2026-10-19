@@ -67,7 +67,10 @@ const matrix: Matrix = {
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
   },
   invitations: {
-    createInvitation: { allowed: "ADMIN", call: (slug) => invitations.createInvitation(slug, "MEMBER") },
+    createInvitation: {
+      allowed: "ADMIN",
+      call: (slug) => invitations.createInvitation(slug, `e2e-${crypto.randomUUID()}@example.com`, "MEMBER"),
+    },
     revokeInvitation: {
       allowed: "ADMIN",
       takesIds: true,

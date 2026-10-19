@@ -34,7 +34,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
     ? await prisma.invitation.findMany({
         where: { projectId: project.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
-        select: { id: true, role: true, expiresAt: true, createdBy: { select: { name: true } } },
+        select: { id: true, email: true, role: true, expiresAt: true, createdBy: { select: { name: true } } },
       })
     : [];
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
@@ -107,7 +107,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
         <Card>
           <CardHeader>
             <CardTitle>Invite people</CardTitle>
-            <CardDescription>Create a single-use link and send it to the person you&apos;re inviting.</CardDescription>
+            <CardDescription>We&apos;ll email them an invite. Only that email address can accept it.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <InviteForm projectSlug={project.slug} roles={assignable} />
@@ -116,7 +116,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
                 {invitations.map((invitation) => (
                   <ItemRow
                     key={invitation.id}
-                    title={`Pending invite · ${ROLE_LABELS[invitation.role]}`}
+                    title={`${invitation.email ?? "Invite link"} · ${ROLE_LABELS[invitation.role]}`}
                     meta={`Created by ${invitation.createdBy.name} · expires ${invitation.expiresAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
                     actions={
                       canAssignRole(myRole, invitation.role) && (

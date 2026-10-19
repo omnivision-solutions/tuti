@@ -15,7 +15,17 @@ import { authClient } from "@/lib/auth-client";
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up.
  */
-export function AuthForm({ mode, redirectTo, next }: { mode: "sign-in" | "sign-up"; redirectTo: string; next?: string }) {
+export function AuthForm({
+  mode,
+  redirectTo,
+  next,
+  defaultEmail,
+}: {
+  mode: "sign-in" | "sign-up";
+  redirectTo: string;
+  next?: string;
+  defaultEmail?: string;
+}) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -59,7 +69,7 @@ export function AuthForm({ mode, redirectTo, next }: { mode: "sign-in" | "sign-u
             )}
             <Field>
               <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
+              <Input id="email" name="email" type="email" autoComplete="email" defaultValue={defaultEmail} required />
             </Field>
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="password">Password</FieldLabel>
@@ -83,7 +93,10 @@ export function AuthForm({ mode, redirectTo, next }: { mode: "sign-in" | "sign-u
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
             <Link
-              href={`${isSignUp ? "/sign-in" : "/sign-up"}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+              href={`${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
+                ...(next && { next }),
+                ...(defaultEmail && { email: defaultEmail }),
+              })}`}
               className="text-foreground underline underline-offset-4"
             >
               {isSignUp ? "Sign in" : "Create an account"}

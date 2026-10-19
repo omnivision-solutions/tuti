@@ -5,13 +5,14 @@ import { hashInvitationToken } from "@/lib/invitations";
 export type InvitationState =
   | { status: "invalid" }
   | { status: "expired" | "used" | "revoked"; projectName: string }
-  | { status: "valid"; projectName: string; projectSlug: string; role: TeamRole };
+  | { status: "valid"; projectName: string; projectSlug: string; role: TeamRole; email: string | null };
 
 /** Looks up an invite link for the accept page. */
 export async function getInvitation(token: string): Promise<InvitationState> {
   const invitation = await prisma.invitation.findUnique({
     where: { tokenHash: hashInvitationToken(token) },
     select: {
+      email: true,
       role: true,
       expiresAt: true,
       acceptedAt: true,
@@ -32,5 +33,11 @@ export async function getInvitation(token: string): Promise<InvitationState> {
   if (invitation.expiresAt < new Date()) {
     return { status: "expired", projectName };
   }
-  return { status: "valid", projectName, projectSlug: invitation.project.slug, role: invitation.role };
+  return {
+    status: "valid",
+    projectName,
+    projectSlug: invitation.project.slug,
+    role: invitation.role,
+    email: invitation.email,
+  };
 }
