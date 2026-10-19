@@ -35,3 +35,20 @@ export async function setGithubCloseOn(projectSlug: string, closeOn: string): Pr
   refresh();
   return {};
 }
+
+/** Whether Tuti comments on pull requests that link posts, listing the feedback they complete. */
+export async function setGithubPrComments(projectSlug: string, on: boolean): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change the GitHub connection" };
+  }
+  const { count } = await prisma.githubInstallation.updateMany({
+    where: { projectId: project.id },
+    data: { commentOnPullRequests: on === true },
+  });
+  if (count === 0) {
+    return { error: "GitHub isn't connected" };
+  }
+  refresh();
+  return {};
+}

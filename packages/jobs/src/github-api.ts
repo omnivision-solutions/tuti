@@ -29,6 +29,8 @@ export type GithubApi = {
   find<T>(path: string): Promise<T | null>;
   /** All pages of a list (following the Link header), up to `limit` pages. */
   list<T>(path: string, pick: (page: unknown) => T[], limit?: number): Promise<T[]>;
+  /** A write (POST, PATCH) with a JSON body. */
+  send(method: "POST" | "PATCH", path: string, body: unknown): Promise<void>;
 };
 
 /** API access for one installation. */
@@ -41,10 +43,9 @@ export async function installationApi(installationId: number): Promise<GithubApi
     throw new Error(`GitHub refused an installation token (${response.status})`);
   }
   const { token } = (await response.json()) as { token: string };
-  const request = async (url: string, notFoundIsNull = false) => {
-    const res = await fetch(url, {
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" },
-    });
+  const headers = { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" };
+  const request = async (url: string, notFoundIsNull = false, init: RequestInit = {}) => {
+    const res = await fetch(url, { ...init, headers: { ...headers, ...init.headers } });
     if (notFoundIsNull && res.status === 404) {
       return null;
     }
@@ -70,6 +71,14 @@ export async function installationApi(installationId: number): Promise<GithubApi
         url = /<([^>]+)>;\s*rel="next"/.exec(res.headers.get("link") ?? "")?.[1] ?? null;
       }
       return items;
+    },
+    async send(method, path, body) {
+      const res = await request(`${apiUrl()}${path}`, false, {
+        method,
+        body: JSON.stringify(body),
+        headers: { "content-type": "application/json" },
+      });
+      await res!.body?.cancel();
     },
   };
 }

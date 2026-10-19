@@ -27,8 +27,14 @@ export type GithubFake = {
       tags?: Record<string, string>;
       releases?: { tag_name: string; draft?: boolean; published_at: string }[];
       pulls?: Record<number, { merged_at: string | null; merge_commit_sha: string | null }>;
+      /** The App may only read (writes answer 403, like an App without write permission). */
+      readOnly?: boolean;
     },
   ): void;
+  /** Comments on a repo's issue or pull request (`byApp`: written by the App, through its installation token). */
+  comments(fullName: string, number: number): { id: number; body: string; byApp: boolean }[];
+  /** Someone else's comment, as if a person wrote it. */
+  comment(fullName: string, number: number, body: string): void;
   /** A signed webhook delivery, as GitHub would send it. */
   webhook(event: string, payload: unknown): { body: string; headers: Record<string, string> };
   close(): Promise<void>;
@@ -41,6 +47,15 @@ export async function startGithubFake(): Promise<GithubFake> {
   const users = new Map<string, { id: number; account: string }[]>();
   let install: { setupUrl: string; id: number; code: string } | undefined;
   const repos = new Map<string, Parameters<GithubFake["repo"]>[1]>();
+  const issueComments = new Map<string, { id: number; body: string; byApp: boolean }[]>();
+  let nextCommentId = 1;
+  const commentsOn = (fullName: string, number: number) => {
+    const key = `${fullName}#${number}`;
+    if (!issueComments.has(key)) {
+      issueComments.set(key, []);
+    }
+    return issueComments.get(key)!;
+  };
   // The App's key pair: the app signs JWTs with the private key, the fake checks them.
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const APP_ID = "4242";
@@ -90,6 +105,31 @@ export async function startGithubFake(): Promise<GithubFake> {
           : send(401, { message: "A JSON web token could not be decoded" });
       }
       const repoPath = /^\/repos\/([^/]+\/[^/]+)\/(.+)$/.exec(url.pathname);
+      if (repoPath && req.method !== "GET") {
+        if (!/^Bearer installation-\d+$/.test(req.headers.authorization ?? "")) {
+          return send(401, { message: "Bad credentials" });
+        }
+        if (repos.get(repoPath[1]!)?.readOnly) {
+          return send(403, { message: "Resource not accessible by integration" });
+        }
+        const { body } = JSON.parse(raw || "{}") as { body?: string };
+        const create = /^issues\/(\d+)\/comments$/.exec(repoPath[2]!);
+        if (req.method === "POST" && create && body) {
+          const comment = { id: nextCommentId++, body, byApp: true };
+          commentsOn(repoPath[1]!, Number(create[1])).push(comment);
+          return send(201, { id: comment.id, body });
+        }
+        const edit = /^issues\/comments\/(\d+)$/.exec(repoPath[2]!);
+        const existing = edit && [...issueComments.values()].flat().find((c) => c.id === Number(edit[1]));
+        if (req.method === "PATCH" && existing && body) {
+          if (!existing.byApp) {
+            return send(403, { message: "Resource not accessible by integration" });
+          }
+          existing.body = body;
+          return send(200, { id: existing.id, body });
+        }
+        return send(404, { message: "Not Found" });
+      }
       if (req.method === "GET" && repoPath) {
         if (!/^Bearer installation-\d+$/.test(req.headers.authorization ?? "")) {
           return send(401, { message: "Bad credentials" });
@@ -107,6 +147,15 @@ export async function startGithubFake(): Promise<GithubFake> {
         };
         if (rest === "releases") {
           return paged(data?.releases ?? [], (slice) => slice);
+        }
+        const listComments = /^issues\/(\d+)\/comments$/.exec(rest);
+        if (listComments) {
+          const all = commentsOn(repoPath[1]!, Number(listComments[1])).map((c) => ({
+            id: c.id,
+            body: c.body,
+            performed_via_github_app: c.byApp ? { id: Number(APP_ID) } : null,
+          }));
+          return paged(all, (slice) => slice);
         }
         const compare = /^compare\/(.+)\.\.\.(.+)$/.exec(rest);
         if (compare && data?.history) {
@@ -155,6 +204,8 @@ export async function startGithubFake(): Promise<GithubFake> {
     },
     user: (code, installations) => users.set(code, installations),
     repo: (fullName, data) => repos.set(fullName, data),
+    comments: (fullName, number) => commentsOn(fullName, number).map((c) => ({ ...c })),
+    comment: (fullName, number, body) => void commentsOn(fullName, number).push({ id: nextCommentId++, body, byApp: false }),
     nextInstall(setupUrl, { id, account, code }) {
       users.set(code, [{ id, account }]);
       install = { setupUrl, id, code };

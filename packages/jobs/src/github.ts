@@ -1,7 +1,7 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
-import { portalOrigin, postStatusChanged, postSummary, postSummarySelect } from "./events";
+import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { installationApi } from "./github-api";
 import type { JobLogger, JobResult } from "./index";
 
@@ -39,7 +39,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   }
   const installation = await prisma.githubInstallation.findUnique({
     where: { installationId: input.installationId },
-    select: { projectId: true, project: { select: { slug: true } } },
+    select: { projectId: true, commentOnPullRequests: true, project: { select: { slug: true, name: true } } },
   });
   if (!installation) {
     return { skipped: true };
@@ -85,8 +85,55 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
       started++;
     }
   }
+  let commented = false;
+  if (installation.commentOnPullRequests && posts.length > 0) {
+    try {
+      await commentFeedback(input, { id: projectId, ...project });
+      commented = true;
+    } catch (error) {
+      // Linking worked; a missing permission (or GitHub down) only costs the comment.
+      log.warn(`couldn't comment on ${input.repo}#${input.number}: ${(error as Error).message}`);
+    }
+  }
   log.info(`${input.repo}#${input.number}: linked ${posts.length} post(s), ${started} now in progress`);
-  return { linked: posts.length, started };
+  return { linked: posts.length, started, commented };
+}
+
+/** Starts Tuti's comment on a pull request, so it finds and updates its own. */
+const COMMENT_MARKER = "<!-- tuti:feedback -->";
+
+/** Post titles are people's text: no Markdown, links, @mentions or #references in the comment. */
+const plain = (text: string) => text.replace(/[\\`*_{}[\]()<>#+\-.!|~]/g, "\\$&").replaceAll("@", "@&#8203;");
+
+/**
+ * Tuti's one comment on a pull request: the feedback it completes (every post
+ * linked to it), most voted first. Updated in place as more posts get linked.
+ */
+async function commentFeedback(
+  input: JobInput<"githubPullRequest">,
+  project: { id: string; slug: string; name: string },
+) {
+  const posts = await prisma.post.findMany({
+    where: { projectId: project.id, duplicateOfId: null, links: { some: { url: input.url } } },
+    orderBy: [{ voteCount: "desc" }, { number: "asc" }],
+    select: { number: true, title: true, voteCount: true },
+  });
+  const lines = posts.map(
+    (post) => `- [${plain(post.title)}](${portalPostUrl(project.slug, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
+  );
+  const body = `${COMMENT_MARKER}\n**Feedback this pull request completes** (${plain(project.name)})\n\n${lines.join("\n")}`;
+
+  const api = await installationApi(input.installationId);
+  const appId = Number(process.env.GITHUB_APP_ID);
+  type Comment = { id: number; body?: string; performed_via_github_app?: { id: number } | null };
+  const comments = await api.list<Comment>(`/repos/${input.repo}/issues/${input.number}/comments`, (page) => page as Comment[]);
+  // Only our own: anyone can paste the marker into a comment.
+  const ours = comments.find((c) => c.performed_via_github_app?.id === appId && c.body?.startsWith(COMMENT_MARKER));
+  if (!ours) {
+    await api.send("POST", `/repos/${input.repo}/issues/${input.number}/comments`, { body });
+  } else if (ours.body !== body) {
+    await api.send("PATCH", `/repos/${input.repo}/issues/comments/${ours.id}`, { body });
+  }
 }
 
 /** Moves posts to a status (only from the status they're in now) and tells the project's webhooks. */

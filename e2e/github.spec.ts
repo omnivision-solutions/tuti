@@ -21,7 +21,11 @@ test("an admin connects the project to GitHub and disconnects it", async ({ brow
   await owner.getByRole("combobox", { name: "When linked posts become Completed" }).click();
   await owner.getByRole("option", { name: "their pull request is merged" }).click();
   await expect(owner.getByText("Saved")).toBeVisible();
+  await owner.getByRole("checkbox", { name: /Comment on pull requests/ }).check();
+  await expect(owner.getByText("Saved")).toHaveCount(2);
   await checkpoint(owner, "settings-github-connected", { fullPage: false });
+  await owner.reload();
+  await expect(owner.getByRole("checkbox", { name: /Comment on pull requests/ })).toBeChecked();
 
   await owner.getByRole("button", { name: "Disconnect" }).click();
   await expect(owner.getByText("GitHub disconnected")).toBeVisible();
