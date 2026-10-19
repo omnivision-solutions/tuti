@@ -141,3 +141,111 @@ describe("webhook", () => {
     }
   });
 });
+
+describe("pull requests", () => {
+  const deliver = async ({ body, headers }: { body: string; headers: Record<string, string> }) =>
+    (await webhook(new Request("http://tuti.localhost:3100/api/github/webhook", { method: "POST", body, headers }))).status;
+  let installationId: number;
+  const pullRequest = (action: string, number: number, title: string, body: string, installation = installationId) =>
+    github.webhook("pull_request", {
+      action,
+      installation: { id: installation },
+      repository: { full_name: "acme/app" },
+      pull_request: { number, title, body, html_url: `https://github.com/acme/app/pull/${number}` },
+    });
+
+  async function postsWithStatus(...statuses: ("OPEN" | "COMPLETED")[]) {
+    const board = project.boards[0]!;
+    for (const [i, status] of statuses.entries()) {
+      await prisma.post.create({
+        data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: i + 1, title: `Post ${i + 1}`, body: "", status },
+      });
+    }
+  }
+  const linksAndStatuses = async () =>
+    (
+      await prisma.post.findMany({
+        where: { projectId: project.id },
+        orderBy: { number: "asc" },
+        select: { number: true, status: true, links: { select: { url: true, source: true, title: true } } },
+      })
+    ).map((p) => ({ number: p.number, status: p.status, links: p.links }));
+
+  let nextInstallationId = 1000;
+  beforeEach(async () => {
+    installationId = nextInstallationId++;
+    await prisma.githubInstallation.create({
+      data: { projectId: project.id, installationId, accountLogin: "acme", createdById: owner.id },
+    });
+  });
+
+  test("a PR that mentions posts links them and, opened, moves them to In progress", async () => {
+    await postsWithStatus("OPEN", "COMPLETED", "OPEN");
+    // Tests' portals are http://<project>.localhost:3100 (PORTAL_URL_TEMPLATE).
+    const body = `Fixes tuti#1. Also http://${project.slug}.localhost:3100/p/post-2-2 and mytuti#3, not tuti#30.`;
+    expect(await deliver(pullRequest("opened", 42, "Dark mode", body))).toBe(200);
+
+    const link = { url: "https://github.com/acme/app/pull/42", source: "REFERENCE", title: "Dark mode" };
+    expect(await linksAndStatuses()).toEqual([
+      { number: 1, status: "IN_PROGRESS", links: [link] },
+      { number: 2, status: "COMPLETED", links: [link] }, // already done: linked, not reopened
+      { number: 3, status: "OPEN", links: [] }, // "mytuti#3" isn't a reference
+    ]);
+  });
+
+  test("a status the team changed meanwhile isn't overwritten, and a redelivery doesn't move it twice", async () => {
+    await postsWithStatus("OPEN");
+    const opened = pullRequest("opened", 45, "Dark mode", "tuti#1");
+    await deliver(opened);
+    await deliver(opened); // GitHub redelivers
+    expect((await linksAndStatuses())[0]).toMatchObject({ number: 1, status: "IN_PROGRESS" });
+
+    // The job reads the post as Open; the team marks it Completed before the job writes.
+    await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "OPEN" } });
+    const read = prisma.post.findMany.bind(prisma.post);
+    vi.spyOn(prisma.post, "findMany").mockImplementationOnce((async (args: never) => {
+      const posts = await read(args);
+      await prisma.post.updateMany({ where: { projectId: project.id }, data: { status: "COMPLETED" } });
+      return posts;
+    }) as never);
+    await deliver(pullRequest("reopened", 45, "Dark mode", "tuti#1"));
+    expect((await linksAndStatuses())[0]).toMatchObject({ status: "COMPLETED" });
+  });
+
+  test("if the pull request can't be handled, GitHub isn't told it was (so it can be redelivered)", async () => {
+    await postsWithStatus("OPEN");
+    vi.spyOn(prisma.githubInstallation, "findUnique").mockRejectedValueOnce(new Error("database down"));
+    expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(503);
+    expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(200); // redelivered
+    expect((await linksAndStatuses())[0]).toMatchObject({ status: "IN_PROGRESS" });
+  });
+
+  test("edits add new mentions without changing statuses; other installations are ignored", async () => {
+    await postsWithStatus("OPEN", "OPEN");
+    await deliver(pullRequest("edited", 43, "Export", "Now also tuti#2"));
+    await deliver(pullRequest("opened", 44, "Elsewhere", "tuti#1", 1));
+    expect(await linksAndStatuses()).toEqual([
+      { number: 1, status: "OPEN", links: [] },
+      { number: 2, status: "OPEN", links: [{ url: "https://github.com/acme/app/pull/43", source: "REFERENCE", title: "Export" }] },
+    ]);
+  });
+
+  test("references: own words only, on this project's portal only", async () => {
+    const { referencedPosts } = await import("@tuti/jobs");
+    expect(referencedPosts("tuti#1, (tuti#2) TUTI#3 x-tuti#4 tuti#5a #tuti#6", "acme").sort()).toEqual([1, 2, 3]);
+    expect(
+      referencedPosts(
+        [
+          "http://acme.localhost:3100/p/dark-mode-7",
+          "https://acme.localhost:3100/p/9",
+          "http://other.localhost:3100/p/x-8", // another project
+          "http://acme.localhost:3100/b/x-10", // not a post
+          "https://acme.github.io/p/x-11", // look-alike hosts
+          "https://acme.localhost:3100.evil.example/p/x-12",
+          "https://acme.com/p/x-13",
+        ].join(" "),
+        "acme",
+      ).sort((a, b) => a - b),
+    ).toEqual([7, 9]);
+  });
+});
