@@ -5,6 +5,17 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { disableSso, rotateSsoSecret } from "@/server/sso-settings";
@@ -23,9 +34,6 @@ export function SsoSettings({
   const [error, setError] = useState<string>();
 
   const rotate = () => {
-    if (enabled && !confirm("Rotate the secret? Tokens signed with the old secret stop working immediately.")) {
-      return;
-    }
     startTransition(async () => {
       const result = await rotateSsoSecret(projectSlug);
       setError(result.error);
@@ -37,9 +45,6 @@ export function SsoSettings({
   };
 
   const disable = () => {
-    if (!confirm("Disable single sign-on? Your app's sign-in links stop working immediately.")) {
-      return;
-    }
     startTransition(async () => {
       const result = await disableSso(projectSlug);
       setError(result.error);
@@ -74,12 +79,28 @@ export function SsoSettings({
       )}
 
       <div className="flex gap-2">
-        <Button onClick={rotate} disabled={pending}>
-          {enabled ? "Rotate secret" : "Enable SSO"}
-        </Button>
-        {enabled && (
-          <Button variant="outline" onClick={disable} disabled={pending}>
-            Disable
+        {enabled ? (
+          <>
+            <Confirm
+              trigger={<Button disabled={pending} />}
+              label="Rotate secret"
+              title="Rotate the SSO secret?"
+              description="Tokens signed with the old secret stop working immediately. Update your server with the new secret right away."
+              onConfirm={rotate}
+            />
+            <Confirm
+              trigger={<Button variant="outline" disabled={pending} />}
+              label="Disable"
+              title="Disable single sign-on?"
+              description="Your app's sign-in links stop working immediately. People can still sign in on the portal with email."
+              confirmLabel="Disable SSO"
+              destructive
+              onConfirm={disable}
+            />
+          </>
+        ) : (
+          <Button onClick={rotate} disabled={pending}>
+            Enable SSO
           </Button>
         )}
       </div>
@@ -109,5 +130,50 @@ redirect(\`${ssoUrl}?token=\${token}&redirect=/\`);`}
         </pre>
       </div>
     </div>
+  );
+}
+
+/** A button that asks before doing something that breaks the customer's sign-in links. */
+function Confirm({
+  trigger,
+  label,
+  title,
+  description,
+  confirmLabel = label,
+  destructive,
+  onConfirm,
+}: {
+  trigger: React.ReactElement;
+  label: string;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+}) {
+  // AlertDialogAction is a plain button: close the dialog ourselves (the settings stay on screen).
+  const [open, setOpen] = useState(false);
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger render={trigger}>{label}</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant={destructive ? "destructive" : "default"}
+            onClick={() => {
+              setOpen(false);
+              onConfirm();
+            }}
+          >
+            {confirmLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
