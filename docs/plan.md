@@ -157,6 +157,24 @@ Test layers (set up in Phase 4):
 - [ ] Production: Dockerfiles, Coolify apps, prod values in Infisical; deploy when `main` is green; a smoke test against production after each deploy
 - [ ] `*.tuti.so` points at production, `--dev` hosts stay on the tunnel. DNS wildcards only cover whole labels, so once `*.tuti.so` goes to production each dev portal (`<project>--dev.tuti.so`) needs its own DNS record to the tunnel. Cloudflare Access protects only `dev.tuti.so` and `*--dev.tuti.so`; customer portals stay public
 
+## Phase 6.5 — Rich content (editor + media)
+
+One editor and one content format for posts, comments, changelog entries and help
+center articles, each allowing only what it needs (posts get no buttons). Changelog
+entries also become emails. Decided 2026-10-19: video by link embeds first (uploads
+later if asked for); team members and portal users can upload images; default limits
+10 MB per image for the team, 5 MB for portal users, 1 GB per project (all configurable).
+
+- [ ] `@tuti/content`: Tiptap (MIT core) schema with one profile per use: `comment` (bold, italic, links, code), `post` (+ lists, code blocks, images, video embeds), `changelog` (+ headings, callouts, buttons, dividers), `article` (+ tables, table of contents). Content is stored as ProseMirror JSON, never HTML; the server validates it against the profile and rejects anything the profile doesn't allow; plain text is derived for search, embeddings and previews
+- [ ] Rendering from the same JSON: HTML on the server for pages, React Email for emails (images as JPEG, video embeds as a thumbnail linking to the post, email-safe buttons)
+- [ ] Editor component: toolbar per profile, paste or drop images, per-image width (25/50/75/100%) and alignment (left/center/right), video embeds by URL (YouTube, Loom, Vimeo)
+- [ ] Posts and comments move to rich text; existing plain-text bodies are converted by a migration
+- [ ] Uploads: straight from the browser to S3-compatible storage with presigned URLs (R2 for tuti.so; any S3 for self-hosters, `MEDIA_*` env vars), served from a separate media domain that never sees session cookies. Limits enforced on the server: file size per role, project quota, per-user upload rate; SVG refused; files checked by content, not name
+- [ ] Image pipeline (background job): re-encode with `sharp`, strip EXIF (location data), max 2400px, WebP sizes for pages plus a JPEG for email, width and height stored so pages don't jump; originals deleted after processing
+- [ ] Cleanup: uploads never attached to content are deleted after a day; deleting content frees its media and quota
+- [ ] Tests: profile validation (unit), upload limits, quota and rate (database tests with an S3 fake), image pipeline on fixture images, journeys (a post with a resized and aligned image and a video embed; a changelog email rendered and screenshotted)
+- [ ] Later: video uploads (transcoding), if people ask
+
 ## The "shipped loop" (Phases 7–11)
 
 Code is the source of truth. One GitHub connection feeds everything after it: a
