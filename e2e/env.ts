@@ -11,6 +11,7 @@ export const serverEnv = {
   BETTER_AUTH_SECRET: "e2e-secret-at-least-32-characters-long",
   JOBS_DRIVER: "inline",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.
+  // (The global setup points OPENAI_* at the local fake.)
   OPENAI_API_KEY: "",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",

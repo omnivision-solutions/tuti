@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -10,7 +11,8 @@ import { APP_URL, serverEnv } from "./env";
 import { MAIL_DIR } from "./mail";
 
 /**
- * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/) and the
+ * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
+ * OpenAI fake (embeddings for duplicate detection) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline.
  */
@@ -27,6 +29,9 @@ export default async function globalSetup() {
       renameSync(`${name}.tmp`, name);
     },
   });
+  const openai = await startOpenAIFake();
+  // Journeys run in other processes; they set vectors through the fake's /fixtures (e2e/openai.ts).
+  process.env.E2E_OPENAI_URL = openai.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
@@ -34,6 +39,8 @@ export default async function globalSetup() {
       ...process.env,
       ...serverEnv,
       DATABASE_URL: postgres.url,
+      OPENAI_API_KEY: FAKE_OPENAI_KEY,
+      OPENAI_BASE_URL: openai.url,
       SMTP_HOST: smtp.host,
       SMTP_PORT: String(smtp.port),
       NODE_ENV: "production",
@@ -51,6 +58,6 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close()]);
   };
 }

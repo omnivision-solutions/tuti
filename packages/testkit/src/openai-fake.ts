@@ -13,7 +13,7 @@ export type OpenAIFake = {
   inputs: string[];
   /** The model of each request, in order. */
   models: string[];
-  /** Give a text a specific vector (up to 64 numbers, padded with zeros). */
+  /** Give a text a specific vector (up to 64 numbers, padded with zeros); also `POST /fixtures {text, vector}`. */
   setVector(text: string, vector: number[]): void;
   /** Make the next request fail with this HTTP status. */
   failNext(status?: number): void;
@@ -38,11 +38,17 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
     let raw = "";
     req.on("data", (chunk) => (raw += chunk));
     req.on("end", () => {
-      if (req.method !== "POST" || req.url !== "/embeddings") {
-        return send(404, { error: { message: `unexpected ${req.method} ${req.url}` } });
-      }
       if (req.headers.authorization !== `Bearer ${FAKE_OPENAI_KEY}`) {
         return send(401, { error: { message: "bad API key" } });
+      }
+      // Lets tests in another process (E2E journeys) give texts their vectors.
+      if (req.method === "POST" && req.url === "/fixtures") {
+        const { text, vector } = JSON.parse(raw) as { text: string; vector: number[] };
+        setVector(text, vector);
+        return send(204, null);
+      }
+      if (req.method !== "POST" || req.url !== "/embeddings") {
+        return send(404, { error: { message: `unexpected ${req.method} ${req.url}` } });
       }
       if (failStatus) {
         const status = failStatus;
@@ -61,7 +67,12 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
     });
   });
 
-  function vectorFor(text: string): number[] {
+  function setVector(text: string, vector: number[]) {
+    if (vector.length > FIXTURE_DIMENSIONS) throw new Error(`at most ${FIXTURE_DIMENSIONS} numbers`);
+    vectors.set(text, vector);
+  }
+
+    function vectorFor(text: string): number[] {
     const vector = new Array<number>(DIMENSIONS).fill(0);
     const fixture = vectors.get(text);
     if (fixture) {
@@ -81,10 +92,7 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
     url: `http://127.0.0.1:${port}`,
     inputs,
     models,
-    setVector(text, vector) {
-      if (vector.length > FIXTURE_DIMENSIONS) throw new Error(`at most ${FIXTURE_DIMENSIONS} numbers`);
-      vectors.set(text, vector);
-    },
+    setVector,
     failNext(status = 500) {
       failStatus = status;
     },
