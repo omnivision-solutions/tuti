@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -106,6 +106,31 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(entry).toContainText("New");
   await expect(entry).toContainText("Switch to the dark theme from your profile menu.");
   await checkpoint(ada, "portal-changelog");
+  // Readers react, one of each, on and off; the team's list shows the counts.
+  const tada = entry.getByRole("button", { name: /^React with 🎉/ });
+  await expect(tada).toHaveAccessibleName("React with 🎉 (0)");
+  await tada.click();
+  await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
+  await expect(tada).toHaveAttribute("aria-pressed", "true");
+  await expect(tada).toBeEnabled();
+  await checkpoint(ada, "portal-changelog-reacted");
+  await team.goto(`/app/${slug}/changelog`);
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).filter({ hasText: "Published" })).toContainText("🎉 1");
+  // Signed out: the counts, and a nudge to sign in.
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.goto("/changelog/1");
+  const readerTada = reader.getByRole("button", { name: /^React with 🎉/ });
+  await expect(readerTada).toHaveAccessibleName("React with 🎉 (1)");
+  await expect(readerTada).toBeDisabled();
+  await expect(readerTada).toHaveAttribute("title", "Sign in to react");
+  // Taken back.
+  await tada.click();
+  await expect(tada).toHaveAccessibleName("React with 🎉 (0)");
+  await expect(tada).toHaveAttribute("aria-pressed", "false");
+  await expect(tada).toBeEnabled();
+  await reader.reload();
+  await expect(readerTada).toHaveAccessibleName("React with 🎉 (0)");
+  await reader.context().close();
   // Feed readers find it too.
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
@@ -141,4 +166,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
+
+  // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
+  await ada.goto("/changelog/1");
+  const heart = ada.getByRole("button", { name: /^React with ❤️/ });
+  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await team.goto(`/app/${slug}/changelog/1`);
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await heart.click();
+  await expect(ada.getByText("There's no changelog entry #1")).toBeVisible();
+  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await expect(heart).toHaveAttribute("aria-pressed", "false");
 });

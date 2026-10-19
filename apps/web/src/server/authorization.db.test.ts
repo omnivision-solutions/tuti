@@ -116,6 +116,11 @@ const matrix: Matrix = {
     publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
     unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
     deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
+    reactToChangelogEntry: {
+      allowed: "signed in",
+      refusesSsoUsers: true,
+      call: (slug) => changelog.reactToChangelogEntry(slug, 1, "tada", true),
+    },
     saveChangelogStyle: {
       allowed: "MEMBER",
       call: (slug) => {

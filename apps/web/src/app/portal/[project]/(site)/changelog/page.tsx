@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { portalUrl } from "@/lib/hosts";
 import { Separator } from "@/components/ui/separator";
 import { publishedEntries } from "@/server/changelog-queries";
+import { getSession } from "@/server/session";
 
 const PAGE_SIZE = 20;
 
@@ -25,7 +26,8 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
   const [{ project: slug }, { page: param }] = await Promise.all([props.params, props.searchParams]);
   const page = Math.max(1, Math.min(10_000, Number(param) || 1));
   // One more than a page, to know whether there are older ones.
-  const found = await publishedEntries(slug, { take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE });
+  const session = await getSession();
+  const found = await publishedEntries(slug, { take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id });
   const entries = found.slice(0, PAGE_SIZE);
   const older = found.length > PAGE_SIZE;
   return (
@@ -45,7 +47,7 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
         entries.map((entry, i) => (
           <div key={entry.number} className="flex flex-col gap-8">
             {i > 0 && <Separator />}
-            <ChangelogEntryView entry={entry} mediaBaseUrl={mediaPublicUrl()} />
+            <ChangelogEntryView entry={entry} mediaBaseUrl={mediaPublicUrl()} react={{ projectSlug: slug, signedIn: !!session }} />
           </div>
         ))
       )}
