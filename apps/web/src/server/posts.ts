@@ -1,86 +1,32 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
-import { log } from "@tuti/shared";
 import { refresh } from "next/cache";
-import { z } from "zod";
 
-import { attachMedia, contentFromForm } from "./content";
 import type { FormState } from "./form-state";
 import { canActIn } from "./membership";
+import { createComment as createCommentOperation, createPost as createPostOperation } from "./operations/create";
+import { asAnyone, call } from "./operations/run";
 import { getSession } from "./session";
 
-const createPostSchema = z.object({
-  projectSlug: z.string(),
-  boardSlug: z.string(),
-  title: z.string().trim().min(3, "Title is too short").max(120),
-});
-
-/** Longest plain text a post or comment may have (rich content is capped by size too). */
-const MAX_TEXT_LENGTH = 5000;
-
+/** Posts on a portal board; see the posts.create operation. */
 export async function createPost(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await getSession();
-  if (!session) {
-    return { error: "Sign in to post feedback" };
-  }
-
-  const parsed = createPostSchema.safeParse({
-    projectSlug: formData.get("projectSlug"),
-    boardSlug: formData.get("boardSlug"),
-    title: formData.get("title"),
-  });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  }
-
-  const board = await prisma.board.findFirst({
-    where: { slug: parsed.data.boardSlug, project: { slug: parsed.data.projectSlug } },
-    select: { id: true, projectId: true },
-  });
-  if (!board || !(await canActIn(session.user.id, board.projectId))) {
-    return { error: "Board not found" };
-  }
-  const content = await contentFromForm(formData, "post", { projectId: board.projectId, maxLength: MAX_TEXT_LENGTH });
-  if (content.error !== undefined) {
-    return { error: content.error };
-  }
-
-  const post = await prisma.$transaction(async (tx) => {
-    // Locks the project row, so concurrent posts get distinct numbers.
-    const { postCount: number } = await tx.project.update({
-      where: { id: board.projectId },
-      data: { postCount: { increment: 1 } },
-      select: { postCount: true },
-    });
-    // Authors automatically upvote their own post.
-    return tx.post.create({
-      data: {
-        projectId: board.projectId,
-        boardId: board.id,
-        authorId: session.user.id,
-        number,
-        title: parsed.data.title,
-        body: content.text,
-        content: content.doc,
-        voteCount: 1,
-        votes: { create: { userId: session.user.id, projectId: board.projectId } },
-      },
-      select: { id: true },
-    });
-  });
-  await attachMedia(content.mediaIds);
-
-  // Background work must never block or fail the user's request.
-  try {
-    await enqueue("postCreated", { projectId: board.projectId, postId: post.id });
-  } catch (error) {
-    log.error("Enqueueing the post-created job failed", { error, postId: post.id });
-  }
-
-  refresh();
-  return {};
+  const value = (name: string) => {
+    const field = formData.get(name);
+    return typeof field === "string" ? field : undefined;
+  };
+  return asAnyone(
+    "Sign in to post feedback",
+    "Board not found",
+    () => prisma.project.findUnique({ where: { slug: value("projectSlug") ?? "" }, select: { id: true } }),
+    (context) =>
+      call(createPostOperation, context, {
+        board: value("boardSlug") ?? "",
+        title: value("title") ?? "",
+        content: value("content") || undefined,
+        body: value("body"),
+      }),
+  );
 }
 
 export async function toggleVote(postId: string): Promise<FormState> {
@@ -118,45 +64,23 @@ export async function toggleVote(postId: string): Promise<FormState> {
   return {};
 }
 
-const addCommentSchema = z.object({
-  postId: z.string().min(1),
-});
-
-/** Comments from portal users and from the team (the team badge is shown when rendering). */
+/** Comments from portal users and from the team; see the comments.create operation. */
 export async function addComment(_prev: FormState, formData: FormData): Promise<FormState> {
-  const session = await getSession();
-  if (!session) {
-    return { error: "Sign in to comment" };
-  }
-  const parsed = addCommentSchema.safeParse({ postId: formData.get("postId") });
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
-  }
-
-  const post = await prisma.post.findUnique({
-    where: { id: parsed.data.postId },
-    select: { id: true, projectId: true, duplicateOfId: true },
-  });
-  if (!post || !(await canActIn(session.user.id, post.projectId))) {
-    return { error: "Post not found" };
-  }
-  if (post.duplicateOfId) {
-    return { error: "This post was merged into another one; comment there instead" };
-  }
-  const content = await contentFromForm(formData, "comment", { projectId: post.projectId, maxLength: MAX_TEXT_LENGTH });
-  if (content.error !== undefined) {
-    return { error: content.error };
-  }
-  if (content.text === "") {
-    return { error: "Write something first" };
-  }
-
-  await prisma.$transaction([
-    prisma.comment.create({
-      data: { projectId: post.projectId, postId: post.id, authorId: session.user.id, body: content.text, content: content.doc },
-    }),
-    prisma.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } }),
-  ]);
-  refresh();
-  return {};
+  const postId = String(formData.get("postId") ?? "");
+  const value = (name: string) => {
+    const field = formData.get(name);
+    return typeof field === "string" ? field : undefined;
+  };
+  let number = 0;
+  return asAnyone(
+    "Sign in to comment",
+    "Post not found",
+    async () => {
+      const post = await prisma.post.findUnique({ where: { id: postId }, select: { projectId: true, number: true } });
+      number = post?.number ?? 0;
+      return post && { id: post.projectId };
+    },
+    (context) =>
+      call(createCommentOperation, context, { number, content: value("content") || undefined, body: value("body") }),
+  );
 }

@@ -1,28 +1,39 @@
 import { type Doc, fromPlainText, mediaIdsIn, parseDoc, type Profile, toPlainText, updateImages } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
-/**
- * Rich content from a form: the editor's `content` (JSON, checked against the
- * profile) or, without it, plain `body` text (forms without JavaScript, API clients).
- * Images must be finished uploads from the same project; their sizes come from the
- * upload, not the form. Returns the document to store, its plain text (for `body`)
- * and the uploads it uses (pass them to `attachMedia` once it's saved).
- */
-export async function contentFromForm(
+type ContentResult = { doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string };
+
+/** Rich content from a form's `content` (the editor's JSON) or `body` (plain text) fields; see `readContent`. */
+export function contentFromForm(
   formData: FormData,
   profile: Profile,
+  options: { projectId: string; maxLength: number },
+): Promise<ContentResult> {
+  const body = formData.get("body");
+  return readContent(profile, { content: formData.get("content"), body: typeof body === "string" ? body : undefined }, options);
+}
+
+/**
+ * Rich content to store: `content` (a document, or its JSON as forms send it,
+ * checked against the profile) or, without it, plain `body` text (forms without
+ * JavaScript, API clients). Images must be finished uploads from the same project;
+ * their sizes come from the upload, not the request. Returns the document, its
+ * plain text (for `body`) and the uploads it uses (pass them to `attachMedia` once saved).
+ */
+export async function readContent(
+  profile: Profile,
+  { content: raw, body }: { content?: unknown; body?: string },
   { projectId, maxLength }: { projectId: string; maxLength: number },
-): Promise<{ doc: Doc; text: string; mediaIds: string[]; error?: never } | { error: string }> {
-  const raw = formData.get("content");
+): Promise<ContentResult> {
   let doc: Doc;
-  if (typeof raw === "string" && raw !== "") {
+  if (raw !== undefined && raw !== null && raw !== "") {
     const parsed = parseDoc(profile, raw);
     if (!parsed.ok) {
       return { error: parsed.error };
     }
     doc = parsed.doc;
   } else {
-    doc = fromPlainText(String(formData.get("body") ?? ""));
+    doc = fromPlainText(body ?? "");
   }
   const text = toPlainText(doc);
   if (text.length > maxLength) {

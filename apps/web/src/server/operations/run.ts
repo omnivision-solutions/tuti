@@ -2,15 +2,23 @@ import { prisma } from "@tuti/db";
 import { refresh } from "next/cache";
 import type { z } from "zod";
 
-import { getMembership } from "../membership";
+import { canActIn, getMembership } from "../membership";
 import { getSession } from "../session";
 import { type Actor, type Operation, OperationError } from "./define";
 
 type Context = { actor: Actor; projectId: string };
 
 /** Runs an operation with its input checked first, as every surface does. */
-export function call<I extends z.ZodType, O>(operation: Operation<I, O>, context: Context, input: z.input<I>): Promise<O> {
-  return operation.run(context, operation.input.parse(input));
+export async function call<I extends z.ZodType, O>(
+  operation: Operation<I, O>,
+  context: Context,
+  input: z.input<I>,
+): Promise<O> {
+  const parsed = operation.input.safeParse(input);
+  if (!parsed.success) {
+    throw new OperationError(400, "invalid_input", parsed.error.issues[0]?.message ?? "Invalid input");
+  }
+  return operation.run(context, parsed.data);
 }
 
 /**
@@ -28,6 +36,37 @@ export async function asTeam(
   }
   try {
     await fn({ actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id });
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  refresh();
+  return {};
+}
+
+/**
+ * For the app's server actions anyone may take in a project (posting, commenting):
+ * the signed-in user must be allowed to act there (users from another project's
+ * SSO aren't). `project` finds the project from the action's arguments.
+ */
+export async function asAnyone(
+  signedOut: string,
+  notFound: string,
+  project: () => Promise<{ id: string } | null>,
+  fn: (context: Context) => Promise<unknown>,
+): Promise<{ error?: string }> {
+  const session = await getSession();
+  if (!session) {
+    return { error: signedOut };
+  }
+  const found = await project();
+  if (!found || !(await canActIn(session.user.id, found.id))) {
+    return { error: notFound };
+  }
+  try {
+    await fn({ actor: { kind: "user", userId: session.user.id }, projectId: found.id });
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
