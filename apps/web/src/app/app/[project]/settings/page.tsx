@@ -2,20 +2,36 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
+import { DisconnectGithubButton } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { githubConfig, signInstallState } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 
+const GITHUB_RESULTS: Record<string, string> = {
+  connected: "GitHub is connected.",
+  unconfirmed: "GitHub couldn't confirm that you can use that installation. Try connecting again.",
+  taken: "That GitHub account is already connected to another project.",
+};
+
 export default async function SettingsPage(props: PageProps<"/app/[project]/settings">) {
   const { project: slug } = await props.params;
+  const { github: githubResult } = await props.searchParams;
   const project = await getAdminProject(slug);
   if (!project) {
     // Team members who aren't owners/admins get the same response as outsiders.
     notFound();
   }
+  const github = githubConfig();
+  const installation = await prisma.githubInstallation.findUnique({
+    where: { projectId: project.id },
+    select: { accountLogin: true },
+  });
   const webhooks = await prisma.webhook.findMany({
     where: { projectId: project.id },
     orderBy: { createdAt: "asc" },
@@ -39,6 +55,39 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   return (
     <>
       <PageHeader title="Settings" description="Owners and admins only." />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>GitHub</CardTitle>
+          <CardDescription>
+            Pull requests that mention a post (tuti#12, or the post&apos;s link) link to it and move it to In progress.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm">
+          {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
+            <Alert variant={githubResult === "connected" ? "default" : "destructive"}>
+              <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
+            </Alert>
+          )}
+          {!github ? (
+            <p className="text-muted-foreground">GitHub isn&apos;t set up on this server (see GITHUB_APP_* in .env.example).</p>
+          ) : installation ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span>
+                Connected to <strong>@{installation.accountLogin}</strong>. Choose its repositories on GitHub.
+              </span>
+              <DisconnectGithubButton projectSlug={project.slug} />
+            </div>
+          ) : (
+            <a
+              href={`${github.url}/apps/${github.appSlug}/installations/new?${new URLSearchParams({ state: signInstallState(project.id) })}`}
+              className={buttonVariants({ className: "self-start" })}
+            >
+              Connect GitHub
+            </a>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

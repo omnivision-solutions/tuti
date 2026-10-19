@@ -206,7 +206,7 @@ or proposal shows its sources.
 
 ## Phase 7 — GitHub + auto-close
 
-- [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to jobs (`github-pr`, `github-release`)
+- [ ] Tuti GitHub App, installed per project on chosen repos; webhook endpoint verifies the signature and hands off to jobs (`github-pr`, `github-release`). Done: "Connect GitHub" in settings (signed, short-lived state; GitHub's user authorization proves the installer can see the installation, so nobody can claim another account's), uninstalling disconnects, the webhook endpoint checks `X-Hub-Signature-256`, a GitHub fake in `@tuti/testkit`. Left: the pull request and release jobs, and registering the App for tuti.so
 - [x] `PostLink`: post ↔ PR / issue / release, with source (manual, reference, suggested); `links.add` / `links.remove` operations, shown in `posts.get`
 - [ ] Linking: references in PR title/body/commits (`tuti#123` or a post URL); embedding-based suggestions (PR text vs. open posts) the team confirms, same pattern as duplicate suggestions; manual "Link PR" on the post view (done: paste a PR, issue or release URL on the team's post view)
 - [ ] Status rules per project: linked PR opened → In progress; release containing it (GitHub compare between tags) → Completed. Default closes on release, not merge — merged isn't shipped. Option to close on merge for projects without releases

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startGithubFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -33,6 +33,9 @@ export default async function globalSetup() {
   // Journeys run in other processes; they set vectors through the fake's /fixtures (e2e/openai.ts).
   process.env.E2E_OPENAI_URL = openai.url;
   const s3 = await startS3Fake();
+  const github = await startGithubFake();
+  // The GitHub journey tells the fake what its install page should do (e2e/github.spec.ts).
+  github.nextInstall(`${APP_URL}/api/github/setup`, { id: 424242, account: "acme-e2e", code: "e2e-install-code" });
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
@@ -45,6 +48,7 @@ export default async function globalSetup() {
       SMTP_HOST: smtp.host,
       SMTP_PORT: String(smtp.port),
       ...s3.env,
+      ...github.env,
       NODE_ENV: "production",
     },
     stdio: ["ignore", "ignore", "inherit"],
@@ -60,6 +64,6 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), s3.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), s3.close(), github.close()]);
   };
 }

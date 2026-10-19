@@ -118,6 +118,7 @@ model Project {
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
   apiKeys              ApiKey[]
+  githubInstallation   GithubInstallation?
   postLinks            PostLink[]
   webhooks             Webhook[]
   media                Media[]
@@ -292,7 +293,7 @@ model PostLink {
 
 /// An endpoint that gets a project's events (signed, retried; see packages/jobs/src/webhooks.ts).
 model Webhook {
-  id          String            @id @default(cuid())
+  id          String   @id @default(cuid())
   projectId   String
   url         String
   /// Signs every delivery (HMAC-SHA256). Shown once when the webhook is created.
@@ -300,7 +301,7 @@ model Webhook {
   /// Event types it gets, e.g. "post.created".
   events      String[]
   createdById String
-  createdAt   DateTime          @default(now())
+  createdAt   DateTime @default(now())
 
   project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy  User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
@@ -328,6 +329,23 @@ model WebhookDelivery {
 
   @@index([webhookId, createdAt])
   @@map("webhook_delivery")
+}
+
+/// A project's GitHub App installation: its pull requests and releases link to and
+/// close the project's posts. One installation (GitHub account) per project.
+/// ponytail: per-repo mapping if one GitHub account needs several projects.
+model GithubInstallation {
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  installationId Int      @unique
+  /// The GitHub user or organisation it's installed on.
+  accountLogin   String
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("github_installation")
 }
 
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
