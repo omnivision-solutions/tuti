@@ -4,7 +4,7 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { latestEmailTo, linkIn } from "./mail";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 /** A new browser session that signed up at `baseUrl` (the app or a portal). */
 async function signUp(browser: Browser, baseUrl: string, name: string): Promise<Page & { email: string }> {
@@ -41,10 +41,11 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // Until they verify their email, the dashboard asks them to; the emailed link does it.
   const banner = team.getByRole("alert").filter({ hasText: "Verify your email" });
   await expect(banner).toContainText(team.email);
+  const emailsBefore = countEmailsTo(team.email);
   await team.getByRole("button", { name: "Resend email" }).click();
   await expect(team.getByRole("button", { name: "Sent" })).toBeDisabled();
   await checkpoint(team, "team-verify-email-banner");
-  const email = await latestEmailTo(team.email);
+  const email = await latestEmailTo(team.email, { after: emailsBefore });
   expect(email.subject).toBe("Verify your email for Tuti");
   // Verified in another tab: this one notices when it's back in focus, without reloading.
   const otherTab = await team.context().newPage();
