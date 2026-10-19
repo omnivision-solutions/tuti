@@ -4,3 +4,4 @@ import { startSmtpFake } from "@tuti/testkit/smtp";
 export const mailbox = await startSmtpFake();
 process.env.SMTP_HOST = mailbox.host;
 process.env.SMTP_PORT = String(mailbox.port);
+process.env.EMAIL_FROM = "Tuti Test <test@example.com>";

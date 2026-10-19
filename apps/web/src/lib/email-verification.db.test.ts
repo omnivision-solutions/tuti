@@ -89,3 +89,16 @@ test("with the mail server down, signing up still works but asking to resend say
     process.env.SMTP_PORT = workingPort;
   }
 });
+
+test("with SMTP but no EMAIL_FROM, sending fails clearly instead of using someone else's address", async () => {
+  const { sendEmail, verifyEmail } = await import("@tuti/email");
+  const from = process.env.EMAIL_FROM;
+  delete process.env.EMAIL_FROM;
+  try {
+    await expect(
+      sendEmail({ to: "e2e-nobody@example.com", ...verifyEmail({ name: "Ada", url: "https://tuti.example/" }) }),
+    ).rejects.toThrow("EMAIL_FROM is not set");
+  } finally {
+    process.env.EMAIL_FROM = from;
+  }
+});

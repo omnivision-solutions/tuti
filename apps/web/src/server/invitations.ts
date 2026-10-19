@@ -87,6 +87,7 @@ export async function createInvitation(
   try {
     await sendEmail({
       to: parsed.data.email,
+      replyTo: session.user.email, // replies reach the person who invited them
       ...inviteEmail({
         inviterName: session.user.name,
         projectName: membership.project.name,

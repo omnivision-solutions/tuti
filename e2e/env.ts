@@ -15,4 +15,5 @@ export const serverEnv = {
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
+  EMAIL_FROM: "Tuti Test <test@example.com>",
 };
