@@ -19,12 +19,12 @@ beforeEach(async () => {
 /** The SDK's own MCP client, talking to the route handlers. */
 async function connect(scope: "READ" | "WRITE" | null) {
   const key = scope && (await createApiKey(project.slug, `MCP ${scope}`, scope)).key!;
-  const handlers: Record<string, (request: Request) => Promise<Response>> = { GET, POST, DELETE };
+  const handlers: Record<string, (request: Request) => Response | Promise<Response>> = { GET, POST, DELETE };
   const transport = new StreamableHTTPClientTransport(new URL("http://tuti.localhost:3100/mcp"), {
     requestInit: key ? { headers: { authorization: `Bearer ${key}` } } : {},
     fetch: (url, init) => {
       const request = new Request(url, init);
-      return handlers[request.method]!(request);
+      return Promise.resolve(handlers[request.method]!(request));
     },
   });
   const client = new Client({ name: "test", version: "1.0.0" });
@@ -88,4 +88,10 @@ test("without a valid key there's no MCP at all", async () => {
     }),
   );
   expect(response.status).toBe(401);
+});
+
+test("there's no event stream to hold open: GET is 405", async () => {
+  const response = await GET();
+  expect(response.status).toBe(405);
+  expect(response.headers.get("allow")).toBe("POST, DELETE");
 });

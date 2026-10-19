@@ -68,4 +68,12 @@ function mcpServer(actor: ApiKeyActor) {
   return server;
 }
 
-export { handle as DELETE, handle as GET, handle as POST };
+/** Stateless: nothing to stream to clients, so no GET event stream (the SDK would hold one open). */
+function methodNotAllowed() {
+  return Response.json(
+    { jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed" }, id: null },
+    { status: 405, headers: { Allow: "POST, DELETE" } },
+  );
+}
+
+export { handle as DELETE, methodNotAllowed as GET, handle as POST };
