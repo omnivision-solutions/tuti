@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startOpenAIFake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -12,7 +12,7 @@ import { MAIL_DIR } from "./mail";
 
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
- * OpenAI fake (embeddings for duplicate detection) and the
+ * OpenAI fake (embeddings for duplicate detection), the S3 fake (image uploads) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline.
  */
@@ -32,6 +32,7 @@ export default async function globalSetup() {
   const openai = await startOpenAIFake();
   // Journeys run in other processes; they set vectors through the fake's /fixtures (e2e/openai.ts).
   process.env.E2E_OPENAI_URL = openai.url;
+  const s3 = await startS3Fake();
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
@@ -43,6 +44,7 @@ export default async function globalSetup() {
       OPENAI_BASE_URL: openai.url,
       SMTP_HOST: smtp.host,
       SMTP_PORT: String(smtp.port),
+      ...s3.env,
       NODE_ENV: "production",
     },
     stdio: ["ignore", "ignore", "inherit"],
@@ -58,6 +60,6 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), s3.close()]);
   };
 }

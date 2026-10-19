@@ -78,3 +78,8 @@ export function mediaStorage(): MediaStorage | null {
     },
   };
 }
+
+/** Where pages load media from, or null when uploads aren't set up. */
+export function mediaPublicUrl(): string | null {
+  return mediaStorage() ? process.env.MEDIA_PUBLIC_URL!.replace(/\/$/, "") : null;
+}

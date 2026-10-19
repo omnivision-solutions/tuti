@@ -184,6 +184,31 @@
   .rich-text :where(.rich-video iframe) {
     @apply size-full border-0;
   }
+  .rich-text :where(.rich-image) {
+    @apply w-full;
+  }
+  .rich-text :where(.rich-image img) {
+    @apply h-auto w-full rounded-lg border;
+  }
+  /* Small images stay readable on phones: at least half the width there. */
+  .rich-text :where(.rich-image[data-width="25"]) {
+    @apply w-1/2 sm:w-1/4;
+  }
+  .rich-text :where(.rich-image[data-width="50"]) {
+    @apply w-1/2;
+  }
+  .rich-text :where(.rich-image[data-width="75"]) {
+    @apply w-3/4;
+  }
+  .rich-text :where(.rich-image[data-align="left"]) {
+    @apply mr-auto;
+  }
+  .rich-text :where(.rich-image[data-align="center"]) {
+    @apply mx-auto;
+  }
+  .rich-text :where(.rich-image[data-align="right"]) {
+    @apply ml-auto;
+  }
   .rich-text :where(.ProseMirror-selectednode) {
     @apply ring-2 ring-ring;
   }

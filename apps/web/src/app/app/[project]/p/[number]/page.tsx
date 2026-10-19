@@ -18,7 +18,9 @@ import { timeAgo } from "@/lib/format";
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
+import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
+import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
@@ -125,7 +127,9 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         </Card>
       )}
 
-      {post.body && <RichText doc={displayDoc(post)} className="rich-text break-words" />}
+      {!isEmptyDoc(displayDoc(post)) && (
+            <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+          )}
 
       {suggestions.length > 0 && (
         <DuplicateSuggestions

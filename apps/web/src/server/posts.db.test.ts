@@ -107,6 +107,34 @@ describe("rich content", () => {
     expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(0);
   });
 
+  test("images must be finished uploads from the same project; their size comes from the upload", async () => {
+    const project = await setup();
+    const owner = await prisma.teamMember.findFirstOrThrow({ where: { projectId: project.id }, select: { userId: true } });
+    const media = (projectId: string, status: "READY" | "PROCESSING") =>
+      prisma.media.create({ data: { projectId, uploaderId: owner.userId, size: 100, status, width: 800, height: 600 } });
+    const image = (mediaId: string) => ({
+      type: "image",
+      attrs: { mediaId, width: "50", align: "center", alt: "Screenshot", w: 1, h: 1 },
+    });
+    const post = (content: string) => {
+      const form = postForm(project.slug, `Post ${crypto.randomUUID()}`);
+      form.set("content", content);
+      return createPost({}, form);
+    };
+
+    const ready = await media(project.id, "READY");
+    expect(await post(doc(image(ready.id)))).toEqual({});
+    const saved = await prisma.post.findFirstOrThrow({ where: { projectId: project.id } });
+    expect(saved.content).toEqual(JSON.parse(doc({ ...image(ready.id), attrs: { ...image(ready.id).attrs, w: 800, h: 600 } })));
+    expect((await prisma.media.findUniqueOrThrow({ where: { id: ready.id } })).attachedAt).not.toBeNull();
+
+    const error = { error: "An image is still uploading or can't be used here. Wait for it, or remove it." };
+    expect(await post(doc(image((await media(project.id, "PROCESSING")).id)))).toEqual(error);
+    const elsewhere = await createProject(await signUp());
+    expect(await post(doc(image((await media(elsewhere.id, "READY")).id)))).toEqual(error);
+    expect(await prisma.post.count({ where: { projectId: project.id } })).toBe(1);
+  });
+
   test("comments allow formatting and links, but not lists or videos, and can't be empty", async () => {
     const project = await setup();
     await createPost({}, postForm(project.slug, "Dark mode"));

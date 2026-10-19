@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -18,9 +18,15 @@ export function ContinueToPortalButton({
   name: string;
 }) {
   const [pending, startTransition] = useTransition();
+  // Disabled until hydrated: a click before then would do nothing.
+  const hydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   return (
     <Button
-      disabled={pending}
+      disabled={pending || !hydrated}
       onClick={() =>
         startTransition(async () => {
           const result = await continueToPortal(projectSlug, state, redirectPath);

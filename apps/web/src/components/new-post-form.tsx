@@ -15,7 +15,16 @@ import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
 
 const SUGGEST_DELAY_MS = 300;
 
-export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; boardSlug: string }) {
+export function NewPostForm({
+  projectSlug,
+  boardSlug,
+  mediaBaseUrl,
+}: {
+  projectSlug: string;
+  boardSlug: string;
+  /** Where uploaded images are served from; null when uploads are off. */
+  mediaBaseUrl: string | null;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
@@ -103,6 +112,7 @@ export function NewPostForm({ projectSlug, boardSlug }: { projectSlug: string; b
                 name="content"
                 labelledBy="post-body-label"
                 placeholder="Any more details?"
+                uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
               />
             </Field>
             <Button type="submit" disabled={pending} className="self-end">

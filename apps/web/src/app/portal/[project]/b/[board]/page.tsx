@@ -13,6 +13,7 @@ import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 import { postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
+import { mediaPublicUrl } from "@tuti/shared/storage";
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/b/[board]">) {
   const { project: projectSlug, board: boardSlug } = await props.params;
@@ -51,7 +52,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
       <PageHeader title={board.name} description={board.description} />
 
       {session ? (
-        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} />
+        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} mediaBaseUrl={mediaPublicUrl()} />
       ) : (
         <p className="text-sm text-muted-foreground">
           <Link href="/sign-in" className="text-foreground underline underline-offset-4">
