@@ -75,6 +75,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Published", { exact: true }).first()).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
+  // The team's list shows it with its tag.
+  await team.getByRole("link", { name: "Changelog" }).click();
+  await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("New", { exact: true })).toBeVisible();
 
   // On the portal: the entry, its tag and what it completes; the post says where it shipped.
   await ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Changelog" }).click();
