@@ -5,22 +5,19 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
-/** Board switcher on the portal (host-relative links). */
+/** The portal's tabs: each board, then the roadmap (host-relative links). */
 export function BoardTabs({ boards }: { boards: { slug: string; name: string }[] }) {
   const pathname = usePathname();
-  if (boards.length < 2) {
-    return null;
-  }
+  const tabs = [...boards.map((board) => ({ href: `/b/${board.slug}`, name: board.name })), { href: "/roadmap", name: "Roadmap" }];
 
   return (
     <div className="border-b">
-      <nav className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-6" aria-label="Boards">
-        {boards.map((board) => {
-          const href = `/b/${board.slug}`;
+      <nav className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-6" aria-label="Portal">
+        {tabs.map(({ href, name }) => {
           const active = pathname === href || pathname.endsWith(href);
           return (
             <Link
-              key={board.slug}
+              key={href}
               href={href}
               aria-current={active ? "page" : undefined}
               className={cn(
@@ -28,7 +25,7 @@ export function BoardTabs({ boards }: { boards: { slug: string; name: string }[]
                 active ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground",
               )}
             >
-              {board.name}
+              {name}
             </Link>
           );
         })}

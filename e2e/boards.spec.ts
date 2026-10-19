@@ -37,7 +37,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/b/bug-reports");
   await expect(visitor).toHaveURL(/\/b\/bugs$/);
-  const tabs = visitor.getByRole("navigation", { name: "Boards" });
+  const tabs = visitor.getByRole("navigation", { name: "Portal" });
   await expect(tabs.getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
   await expect(tabs.getByRole("link", { name: "Feature requests" })).toBeVisible();
   await expect(visitor.getByText("Something broken? Tell us here.")).toBeVisible();

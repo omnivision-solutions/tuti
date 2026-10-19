@@ -26,6 +26,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "duplicates.list": () => ({}),
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "boards.list": () => ({}),
+  "roadmap.get": () => ({}),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
