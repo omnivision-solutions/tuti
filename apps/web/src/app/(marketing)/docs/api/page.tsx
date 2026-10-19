@@ -85,6 +85,22 @@ export default function ApiDocsPage() {
         </ul>
       </section>
 
+      <section className="flex flex-col gap-2" aria-labelledby="mcp">
+        <h2 id="mcp" className="text-xl font-bold tracking-tight">
+          MCP (for AI assistants)
+        </h2>
+        <p className="text-sm">
+          Every endpoint below is also a tool on Tuti&apos;s MCP server, so assistants like Claude can search, triage
+          and answer your feedback. Add it as a remote MCP server (Streamable HTTP) at{" "}
+          <code className="rounded bg-muted px-1 font-mono">{appUrl().origin}/mcp</code> with the header{" "}
+          <code className="font-mono">Authorization: Bearer tuti_…</code>. Read only keys get only the reading
+          tools.
+        </p>
+        <pre className="overflow-x-auto rounded-lg bg-muted p-3 text-xs">
+          <code>{`claude mcp add --transport http tuti ${appUrl().origin}/mcp \\\n  --header "Authorization: Bearer $TUTI_API_KEY"`}</code>
+        </pre>
+      </section>
+
       {operations.map((operation) => {
         const schema = inputSchema(operation);
         const properties = (schema.properties ?? {}) as Record<string, Schema>;
