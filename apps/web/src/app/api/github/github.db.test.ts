@@ -233,6 +233,65 @@ describe("pull requests", () => {
     ]);
   });
 
+  describe("comments on pull requests", () => {
+    const appComments = (number: number) => github.comments("acme/app", number).filter((c) => c.byApp);
+    const commentOn = () =>
+      prisma.githubInstallation.update({ where: { installationId }, data: { commentOnPullRequests: true } });
+
+    test("one comment lists the feedback a pull request completes, most voted first, kept up to date", async () => {
+      await postsWithStatus("OPEN", "OPEN");
+      await prisma.post.update({
+        where: { projectId_number: { projectId: project.id, number: 1 } },
+        data: { title: "Ping @team [here](https://e.vil) #9", voteCount: 1 },
+      });
+      await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 2 } }, data: { voteCount: 3 } });
+      await commentOn();
+      github.comment("acme/app", 50, "Nice!");
+
+      await deliver(pullRequest("opened", 50, "Dark mode", "tuti#1"));
+      const [first, ...more] = appComments(50);
+      expect(more).toEqual([]);
+      // People's titles stay text: no mentions, links or references.
+      expect(first!.body).toContain(
+        `- [Ping @&#8203;team \\[here\\]\\(https://e\\.vil\\) \\#9](http://${project.slug}.localhost:3100/p/ping-team-here-https-e-vil-9-1) · 1 vote`,
+      );
+
+      // Someone quotes our comment; an edit links another post: our one comment is updated.
+      github.comment("acme/app", 50, `${first!.body}\n\nlooks good`);
+      await deliver(pullRequest("edited", 50, "Dark mode", "tuti#1 and tuti#2"));
+      expect(appComments(50)).toHaveLength(1);
+      expect(appComments(50)[0]!.id).toBe(first!.id);
+      const lines = appComments(50)[0]!.body.split("\n").filter((line) => line.startsWith("- "));
+      expect(lines).toEqual([expect.stringMatching(/^- \[Post 2\]\(.*\/p\/post-2-2\) · 3 votes$/), expect.stringContaining("· 1 vote")]);
+      expect(github.comments("acme/app", 50).filter((c) => !c.byApp).map((c) => c.body.split("\n").at(-1))).toEqual([
+        "Nice!",
+        "looks good",
+      ]);
+
+      // Deleted on GitHub: the next change writes a new one.
+      github.deleteComments("acme/app", 50);
+      await prisma.post.update({ where: { projectId_number: { projectId: project.id, number: 1 } }, data: { voteCount: 5 } });
+      await deliver(pullRequest("edited", 50, "Dark mode", "tuti#1 and tuti#2"));
+      expect(appComments(50)).toEqual([expect.objectContaining({ body: expect.stringContaining("· 5 votes") })]);
+    });
+
+    test("they're off by default, and without write permission only the comment is lost", async () => {
+      await postsWithStatus("OPEN", "OPEN");
+      await deliver(pullRequest("opened", 51, "Export", "tuti#1"));
+      expect(github.comments("acme/app", 51)).toEqual([]);
+
+      await commentOn();
+      github.repo("acme/app", { readOnly: true });
+      try {
+        expect(await deliver(pullRequest("opened", 52, "Import", "tuti#2"))).toBe(200);
+      } finally {
+        github.repo("acme/app", {});
+      }
+      expect(github.comments("acme/app", 52)).toEqual([]);
+      expect((await linksAndStatuses())[1]).toMatchObject({ status: "IN_PROGRESS", links: [expect.objectContaining({ title: "Import" })] });
+    });
+  });
+
   test("references: own words only, on this project's portal only", async () => {
     const { referencedPosts } = await import("@tuti/jobs");
     expect(referencedPosts("tuti#1, (tuti#2) TUTI#3 x-tuti#4 tuti#5a #tuti#6", "acme").sort()).toEqual([1, 2, 3]);

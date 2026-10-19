@@ -131,6 +131,7 @@ model Project {
   postEmbeddings       PostEmbedding[]
   duplicateSuggestions DuplicateSuggestion[]
   emailOptOuts         EmailOptOut[]
+  githubPrComments     GithubPrComment[]
 
   @@map("project")
 }
@@ -345,16 +346,19 @@ enum GithubCloseOn {
 /// close the project's posts. One installation (GitHub account) per project.
 /// ponytail: per-repo mapping if one GitHub account needs several projects.
 model GithubInstallation {
-  id             String        @id @default(cuid())
-  projectId      String        @unique
-  installationId Int           @unique
+  id                    String        @id @default(cuid())
+  projectId             String        @unique
+  installationId        Int           @unique
   /// The GitHub user or organisation it's installed on.
-  accountLogin   String
+  accountLogin          String
   /// When linked posts become Completed: when a release ships their pull request
   /// (default: merged isn't shipped), or when it's merged (repos without releases).
-  closeOn        GithubCloseOn @default(RELEASE)
-  createdById    String
-  createdAt      DateTime      @default(now())
+  closeOn               GithubCloseOn @default(RELEASE)
+  /// Comment on pull requests that link posts, listing them with their votes (needs the App's
+  /// Pull requests permission set to write).
+  commentOnPullRequests Boolean       @default(false)
+  createdById           String
+  createdAt             DateTime      @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -606,4 +610,22 @@ model ShippedEmail {
   @@id([postId, userId])
   @@index([userId])
   @@map("shipped_email")
+}
+
+/// Tuti's comment on a pull request (the feedback it completes), so it's edited rather than written again.
+model GithubPrComment {
+  /// The repository's full name (owner/name) and the pull request's number.
+  repo      String
+  number    Int
+  projectId String
+  commentId BigInt
+  /// What it says now, so an unchanged list isn't written again.
+  body      String
+  updatedAt DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([repo, number])
+  @@index([projectId])
+  @@map("github_pr_comment")
 }

@@ -1,7 +1,7 @@
 import { type PostStatus, prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
-import { portalOrigin, postStatusChanged, postSummary, postSummarySelect } from "./events";
+import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { installationApi } from "./github-api";
 import type { JobLogger, JobResult } from "./index";
 
@@ -39,7 +39,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   }
   const installation = await prisma.githubInstallation.findUnique({
     where: { installationId: input.installationId },
-    select: { projectId: true, project: { select: { slug: true } } },
+    select: { projectId: true, commentOnPullRequests: true, project: { select: { slug: true, name: true } } },
   });
   if (!installation) {
     return { skipped: true };
@@ -85,8 +85,64 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
       started++;
     }
   }
+  let commented = false;
+  if (installation.commentOnPullRequests && posts.length > 0) {
+    try {
+      await commentFeedback(input, { id: projectId, ...project });
+      commented = true;
+    } catch (error) {
+      // Linking worked; a missing permission (or GitHub down) only costs the comment.
+      log.warn(`couldn't comment on ${input.repo}#${input.number}: ${(error as Error).message}`);
+    }
+  }
   log.info(`${input.repo}#${input.number}: linked ${posts.length} post(s), ${started} now in progress`);
-  return { linked: posts.length, started };
+  return { linked: posts.length, started, commented };
+}
+
+/** Post titles are people's text: no Markdown, links, @mentions or #references in the comment. */
+const plain = (text: string) => text.replace(/[\\`*_{}[\]()<>#+\-.!|~]/g, "\\$&").replaceAll("@", "@&#8203;");
+
+/**
+ * Tuti's one comment on a pull request: the feedback it completes (every post
+ * linked to it), most voted first. Updated in place as more posts get linked:
+ * its id is saved here, and jobs for one pull request run one at a time (see
+ * `concurrencyKey` in @tuti/shared's jobs), so two can't both write one.
+ */
+async function commentFeedback(
+  input: JobInput<"githubPullRequest">,
+  project: { id: string; slug: string; name: string },
+) {
+  const posts = await prisma.post.findMany({
+    where: { projectId: project.id, duplicateOfId: null, links: { some: { url: input.url } } },
+    orderBy: [{ voteCount: "desc" }, { number: "asc" }],
+    select: { number: true, title: true, voteCount: true },
+  });
+  const lines = posts.map(
+    (post) => `- [${plain(post.title)}](${portalPostUrl(project.slug, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
+  );
+  const body = `**Feedback this pull request completes** (${plain(project.name)})\n\n${lines.join("\n")}`;
+
+  const where = { repo_number: { repo: input.repo, number: input.number } };
+  const saved = await prisma.githubPrComment.findUnique({ where, select: { commentId: true, body: true } });
+  if (saved?.body === body) {
+    return;
+  }
+  const api = await installationApi(input.installationId);
+  type Comment = { id: number };
+  let comment = saved
+    ? await api.send<Comment>("PATCH", `/repos/${input.repo}/issues/comments/${saved.commentId}`, { body })
+    : null;
+  // None yet, or someone deleted ours: write one.
+  comment ??= await api.send<Comment>("POST", `/repos/${input.repo}/issues/${input.number}/comments`, { body });
+  if (!comment) {
+    throw new Error("GitHub doesn't know this pull request");
+  }
+  const data = { commentId: BigInt(comment.id), body };
+  await prisma.githubPrComment.upsert({
+    where,
+    create: { repo: input.repo, number: input.number, projectId: project.id, ...data },
+    update: data,
+  });
 }
 
 /** Moves posts to a status (only from the status they're in now) and tells the project's webhooks. */

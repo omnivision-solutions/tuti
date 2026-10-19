@@ -13,6 +13,8 @@ type JobOptions = {
   /** Hatchet retries (default 3) and their backoff. */
   retries?: number;
   backoff?: { factor: number; maxSeconds: number };
+  /** Runs with the same key (a CEL expression over the input) run one at a time, in order. */
+  concurrencyKey?: string;
 };
 
 export const jobs = {
@@ -44,6 +46,8 @@ export const jobs = {
   /** A pull request on a connected repo was opened, reopened or edited: link and move the posts it mentions. */
   githubPullRequest: {
     name: "github-pull-request",
+    // One at a time per pull request: they may write (or edit) its one comment.
+    concurrencyKey: "input.repo + '#' + string(input.number)",
     input: z.object({
       installationId: z.number().int(),
       action: z.string(),

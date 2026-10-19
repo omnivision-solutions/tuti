@@ -1,11 +1,11 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { disconnectGithub, setGithubCloseOn } from "@/server/github";
+import { disconnectGithub, setGithubCloseOn, setGithubPrComments } from "@/server/github";
 
 export function DisconnectGithubButton({ projectSlug }: { projectSlug: string }) {
   const [pending, startTransition] = useTransition();
@@ -66,6 +66,40 @@ export function CloseOnSelect({ projectSlug, closeOn }: { projectSlug: string; c
           ))}
         </SelectContent>
       </Select>
+    </label>
+  );
+}
+
+export function PrCommentsCheckbox({ projectSlug, on }: { projectSlug: string; on: boolean }) {
+  const [pending, startTransition] = useTransition();
+  const [checked, setChecked] = useState(on);
+  return (
+    <label className="flex items-start gap-2">
+      <input
+        type="checkbox"
+        className="mt-1 size-4 accent-primary"
+        checked={checked}
+        disabled={pending}
+        onChange={(event) => {
+          const wanted = event.currentTarget.checked;
+          setChecked(wanted);
+          startTransition(async () => {
+            const result = await setGithubPrComments(projectSlug, wanted);
+            if (result.error) {
+              setChecked(!wanted); // back to what's saved
+              toast.error(result.error);
+            } else {
+              toast.success("Saved");
+            }
+          });
+        }}
+      />
+      <span>
+        Comment on pull requests with the feedback they complete
+        <span className="block text-sm text-muted-foreground">
+          One comment per pull request, listing its linked posts and their votes, kept up to date.
+        </span>
+      </span>
     </label>
   );
 }

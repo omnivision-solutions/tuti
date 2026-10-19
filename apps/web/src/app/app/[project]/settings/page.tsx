@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
-import { CloseOnSelect, DisconnectGithubButton } from "@/components/github-connection";
+import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
@@ -30,7 +30,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const github = githubConfig();
   const installation = await prisma.githubInstallation.findUnique({
     where: { projectId: project.id },
-    select: { accountLogin: true, closeOn: true },
+    select: { accountLogin: true, closeOn: true, commentOnPullRequests: true },
   });
   const webhooks = await prisma.webhook.findMany({
     where: { projectId: project.id },
@@ -81,6 +81,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
               <DisconnectGithubButton projectSlug={project.slug} />
             </div>
             <CloseOnSelect projectSlug={project.slug} closeOn={installation.closeOn} />
+            <PrCommentsCheckbox projectSlug={project.slug} on={installation.commentOnPullRequests} />
             </>
           ) : (
             <a
