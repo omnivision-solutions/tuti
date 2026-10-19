@@ -34,6 +34,9 @@ describe("inviting by email", () => {
     expect(message.subject).toBe(`Olive Owner invited you to ${project.name} on Tuti`);
     expect(message.text).toContain(`join ${project.name} on Tuti as an admin`);
     expect(message.text).toContain(result.url);
+    // Replies reach the person who sent the invite.
+    expect(message.replyTo).toBe(owner.email);
+    expect(message.from).toMatch(/Tuti Test.*<test@example.com>/);
   });
 
   test("addresses are stored in lowercase", async () => {
