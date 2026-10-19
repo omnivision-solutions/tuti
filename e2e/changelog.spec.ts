@@ -46,6 +46,17 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByRole("checkbox", { name: /#1 Dark mode/ })).toBeChecked();
   await team.getByLabel("Title").fill("Dark mode is here");
   await checkpoint(team, "team-changelog-draft");
+
+  // Submitted before the page's JavaScript runs (here: none at all), the form doesn't fall
+  // back to a GET that puts what was typed in the URL.
+  const noScript = await browser.newContext({ baseURL: APP_URL, javaScriptEnabled: false, storageState: await team.context().storageState() });
+  const early = await noScript.newPage();
+  await early.goto(`/app/${slug}/changelog/new`);
+  await early.getByLabel("Title").fill("Secret plans");
+  await early.getByRole("button", { name: "Save draft" }).click();
+  await early.waitForLoadState();
+  expect(early.url()).not.toContain("Secret");
+  await noScript.close();
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/1`);
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();

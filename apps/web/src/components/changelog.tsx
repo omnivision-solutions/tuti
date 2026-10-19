@@ -59,7 +59,7 @@ export function ChangelogForm({
   }, {});
 
   return (
-    <form onSubmit={keepingFields(action)}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="entry-title">Title</FieldLabel>
@@ -174,7 +174,7 @@ export function ChangelogStyleForm({
   }, {});
 
   return (
-    <form onSubmit={keepingFields(action)}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="style-tone">Tone</FieldLabel>

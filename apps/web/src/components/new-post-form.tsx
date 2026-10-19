@@ -73,7 +73,7 @@ export function NewPostForm({
   return (
     <Card>
       <CardContent>
-        <form ref={formRef} onSubmit={keepingFields(action)}>
+        <form ref={formRef} {...keepingFields(action)}>
           <input type="hidden" name="projectSlug" value={projectSlug} />
           <input type="hidden" name="boardSlug" value={boardSlug} />
           <FieldGroup>

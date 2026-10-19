@@ -13,7 +13,7 @@ export function CreateProjectForm({ portalExample }: { portalExample: string }) 
   const [state, action, pending] = useActionState<FormState, FormData>(createProject, {});
 
   return (
-    <form onSubmit={keepingFields(action)}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="project-name">Name</FieldLabel>

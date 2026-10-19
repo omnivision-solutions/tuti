@@ -22,7 +22,7 @@ export function CommentForm({ postId, placeholder = "Add a comment…" }: { post
   }, {});
 
   return (
-    <form onSubmit={keepingFields(action)} className="flex flex-col gap-2">
+    <form {...keepingFields(action)} className="flex flex-col gap-2">
       <input type="hidden" name="postId" value={postId} />
       <Field data-invalid={state.error ? true : undefined}>
         <RichEditor

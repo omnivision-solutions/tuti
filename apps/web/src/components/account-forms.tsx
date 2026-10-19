@@ -33,7 +33,7 @@ function ProfileForm({ name }: { name: string }) {
       </CardHeader>
       <CardContent>
         <form
-          onSubmit={keepingFields((form) =>
+          {...keepingFields((form) =>
             startTransition(async () => {
               const { error } = await authClient.updateUser({ name: String(form.get("name")).trim() });
               setError(error?.message);

@@ -56,7 +56,7 @@ export function CreateBoardForm({ projectSlug }: { projectSlug: string }) {
   }, {});
 
   return (
-    <form ref={formRef} onSubmit={keepingFields(action)}>
+    <form ref={formRef} {...keepingFields(action)}>
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="board-name">Name</FieldLabel>
@@ -120,7 +120,7 @@ export function EditBoardDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>Edit</DialogTrigger>
       <DialogContent>
-        <form onSubmit={keepingFields(action)}>
+        <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>Edit board</DialogTitle>
             <DialogDescription>If you change the URL, links to the old one keep working.</DialogDescription>

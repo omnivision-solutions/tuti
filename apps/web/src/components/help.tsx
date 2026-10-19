@@ -51,7 +51,7 @@ export function ArticleForm({
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
 
   return (
-    <form onSubmit={keepingFields(action)}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="article-title">Title</FieldLabel>
@@ -195,7 +195,7 @@ export function CollectionDialog({
         {collection ? "Edit" : "New collection"}
       </DialogTrigger>
       <DialogContent>
-        <form onSubmit={keepingFields(action)}>
+        <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>{collection ? "Edit collection" : "New collection"}</DialogTitle>
           </DialogHeader>
