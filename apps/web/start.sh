@@ -7,6 +7,11 @@
 # so the image works for anyone self-hosting.
 set -e
 
+if [ -n "$INFISICAL_TOKEN" ] && { [ -z "$INFISICAL_DOMAIN" ] || [ -z "$INFISICAL_PROJECT_ID" ]; }; then
+  echo "INFISICAL_TOKEN is set, so INFISICAL_DOMAIN and INFISICAL_PROJECT_ID are needed too" >&2
+  exit 1
+fi
+
 with_settings() {
   if [ -n "$INFISICAL_TOKEN" ]; then
     exec infisical run --domain="$INFISICAL_DOMAIN" --projectId="$INFISICAL_PROJECT_ID" \

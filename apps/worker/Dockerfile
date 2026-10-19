@@ -25,6 +25,7 @@ RUN pnpm turbo run build --filter=@tuti/worker
 RUN --mount=type=cache,id=tuti-pnpm-store,target=/pnpm-store \
     pnpm --filter=@tuti/worker deploy --prod --legacy --config.auto-install-peers=false \
       --store-dir=/pnpm-store /prod/worker \
+    && test -f /prod/worker/dist/index.js \
     && chmod +x /prod/worker/start.sh
 
 FROM base AS runner
