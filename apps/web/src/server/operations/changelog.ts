@@ -1,12 +1,12 @@
 import { type ChangelogTag, prisma } from "@tuti/db";
-import { postStatusChanged, postSummary, postSummarySelect } from "@tuti/jobs";
+import { enqueue, postSummary, postSummarySelect, queueDeliveries, recordEvent, toApiStatus } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { emitEvent } from "../events";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectSlug } from "./read";
@@ -247,28 +247,55 @@ export const publishChangelogEntry = defineOperation({
   input: z.object({ number: entryNumber }),
   run: async ({ projectId }, { number }) => {
     const entry = await teamEntry(projectId, number);
-    // Only the first publish counts (a repeated call changes nothing).
-    const { count } = await prisma.changelogEntry.updateMany({
-      where: { id: entry.id, publishedAt: null },
-      data: { publishedAt: new Date() },
-    });
-    const published = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
-    if (count === 1) {
-      // Shipped: what it completes is done (and their people hear about it).
-      for (const { post } of published.posts) {
+    // One transaction: published, its posts completed (and due for their shipped
+    // emails), and the webhook deliveries saved. Sending happens after it commits.
+    const shipped = await prisma.$transaction(async (tx) => {
+      // Only the first publish counts (a repeated call changes nothing).
+      const { count } = await tx.changelogEntry.updateMany({
+        where: { id: entry.id, publishedAt: null },
+        data: { publishedAt: new Date() },
+      });
+      if (count === 0) {
+        return null;
+      }
+      const deliveries: string[] = [];
+      const completed: string[] = [];
+      for (const { post } of entry.posts) {
         if (post.status === "COMPLETED" || post.status === "CLOSED") {
           continue;
         }
-        const moved = await prisma.post.updateMany({ where: { id: post.id, status: post.status }, data: { status: "COMPLETED" } });
+        const moved = await tx.post.updateMany({
+          where: { id: post.id, status: post.status },
+          data: { status: "COMPLETED", shippedEmailsDueAt: new Date() },
+        });
         if (moved.count === 1) {
-          const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-          await postStatusChanged(projectId, post.id, postSummary(updated, slug), post.status);
+          const updated = await tx.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
+          deliveries.push(
+            ...(await recordEvent(tx, projectId, "post.status_changed", {
+              post: postSummary(updated, slug),
+              previousStatus: toApiStatus(post.status),
+            })),
+          );
+          completed.push(post.id);
         }
       }
-      await emitEvent(projectId, "changelog.published", entryView(published, slug));
+      const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
+      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", entryView(published, slug))));
+      return { deliveries, completed };
+    });
+    if (shipped) {
+      // Anything not queued now is picked up by the webhook-resubmit and shipped-emails-resubmit jobs.
+      await queueDeliveries(shipped.deliveries);
+      for (const postId of shipped.completed) {
+        try {
+          await enqueue("postShipped", { postId });
+        } catch (error) {
+          log.warn("Couldn't queue a post's shipped emails", { postId, error });
+        }
+      }
     }
-    return entryView(published, slug);
+    return entryView(await teamEntry(projectId, number), slug);
   },
 });
 

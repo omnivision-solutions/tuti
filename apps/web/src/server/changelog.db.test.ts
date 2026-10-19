@@ -14,6 +14,18 @@ import {
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
+
+// Saving the changelog.published delivery can be made to fail, to check publishing is all or nothing.
+const failing = vi.hoisted(() => ({ event: false }));
+vi.mock("@tuti/jobs", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@tuti/jobs")>();
+  return {
+    ...real,
+    recordEvent: (...args: Parameters<typeof real.recordEvent>) =>
+      failing.event && args[2] === "changelog.published" ? Promise.reject(new Error("database down")) : real.recordEvent(...args),
+  };
+});
 
 let owner: TestUser;
 let visitor: TestUser;
@@ -88,9 +100,14 @@ describe("changelog entries", () => {
     });
     await call(createChangelogEntry, as(owner), { title: "Themes", body: "Dark and night.", posts: [open.number, done.number] });
 
+    await prisma.user.update({ where: { id: visitor.id }, data: { emailVerified: true } });
     const published = await call(publishChangelogEntry, as(owner), { number: 1 });
     expect(published).toMatchObject({ status: "published", publishedAt: expect.any(String) });
     expect(await status(open.number)).toBe("COMPLETED");
+    // Its author hears it shipped (and nothing is left due for the resubmit job).
+    expect(mailbox.emails.filter((e) => e.to.includes(visitor.email)).map((e) => e.subject)).toContain("Done: Dark mode");
+    const due = await prisma.post.findUniqueOrThrow({ where: { projectId_number: { projectId: project.id, number: open.number } } });
+    expect(due.shippedEmailsDueAt).toBeNull();
     // A second publish changes nothing: same date, no second event.
     expect(await call(publishChangelogEntry, as(owner), { number: 1 })).toMatchObject({ publishedAt: published.publishedAt });
     const deliveries = await prisma.webhookDelivery.findMany({ where: { webhookId: webhook.id }, select: { event: true, payload: true } });
@@ -106,6 +123,28 @@ describe("changelog entries", () => {
     expect(await status(open.number)).toBe("COMPLETED"); // posts keep their status
     await call(deleteChangelogEntry, as(owner), { number: 1 });
     await expect(call(getChangelogEntry, as(owner), { number: 1 })).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("publishing is all or nothing: if saving its event fails, nothing is published or completed", async () => {
+    const dark = await post("Dark mode");
+    await prisma.webhook.create({
+      data: { projectId: project.id, url: receiver.url, secret: "whsec_x", events: ["changelog.published"], createdById: owner.id },
+    });
+    await call(createChangelogEntry, as(owner), { title: "Themes", body: "Dark.", posts: [dark.number] });
+
+    failing.event = true;
+    try {
+      await expect(call(publishChangelogEntry, as(owner), { number: 1 })).rejects.toThrow("database down");
+    } finally {
+      failing.event = false;
+    }
+    expect(await call(getChangelogEntry, as(owner), { number: 1 })).toMatchObject({ status: "draft" });
+    expect(await status(dark.number)).toBe("OPEN");
+
+    // Tried again, it all happens.
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    expect(await call(publishChangelogEntry, as(owner), { number: 1 })).toMatchObject({ status: "published" });
+    expect(await status(dark.number)).toBe("COMPLETED");
   });
 
   test("text a changelog can't hold is refused", async () => {

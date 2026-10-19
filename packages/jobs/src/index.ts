@@ -12,7 +12,7 @@ export { signWebhook } from "./webhooks";
 
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
-export { emitEvent, portalPostUrl, postStatusChanged, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
+export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };
 
