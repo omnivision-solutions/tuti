@@ -16,14 +16,16 @@ export type GithubFake = {
    */
   nextInstall(setupUrl: string, installation: { id: number; account: string; code: string }): void;
   /**
-   * A repository's data for the App's API (installation tokens required):
-   * releases, commits between two tags (`"v1...v2"`), and pull requests.
+   * A repository's data for the App's API (installation tokens required): its
+   * history (commit shas, oldest first; tags name commits in it), releases and
+   * pull requests. Compare answers like GitHub for a linear history.
    */
   repo(
     fullName: string,
     data: {
+      history?: string[];
+      tags?: Record<string, string>;
       releases?: { tag_name: string; draft?: boolean; published_at: string }[];
-      compare?: Record<string, string[]>;
       pulls?: Record<number, { merged_at: string | null; merge_commit_sha: string | null }>;
     },
   ): void;
@@ -106,8 +108,15 @@ export async function startGithubFake(): Promise<GithubFake> {
         if (rest === "releases") {
           return paged(data?.releases ?? [], (slice) => slice);
         }
-        if (rest.startsWith("compare/") && data?.compare?.[rest.slice("compare/".length)]) {
-          return paged(data.compare[rest.slice("compare/".length)]!, (slice) => ({ commits: slice.map((sha) => ({ sha })) }));
+        const compare = /^compare\/(.+)\.\.\.(.+)$/.exec(rest);
+        if (compare && data?.history) {
+          const at = (ref: string) => data.history!.indexOf(data.tags?.[ref] ?? ref);
+          const [baseAt, headAt] = [at(compare[1]!), at(compare[2]!)];
+          if (baseAt < 0 || headAt < 0) {
+            return send(404, { message: "Not Found" });
+          }
+          const status = headAt === baseAt ? "identical" : headAt > baseAt ? "ahead" : "behind";
+          return send(200, { status, ahead_by: Math.max(0, headAt - baseAt), behind_by: Math.max(0, baseAt - headAt) });
         }
         const pull = /^pulls\/(\d+)$/.exec(rest);
         if (pull && data?.pulls?.[Number(pull[1])]) {

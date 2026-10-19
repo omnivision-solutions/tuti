@@ -149,9 +149,10 @@ type GithubRelease = { tag_name: string; draft: boolean; published_at: string | 
 
 /**
  * A release was published: posts linked to pull requests it ships become
- * Completed, with the release linked. "Ships" means the pull request's merge
- * commit is between the previous release and this one (GitHub's compare); for a
- * repo's first release, every pull request merged before it.
+ * Completed, with the release linked. A pull request ships in this release if its
+ * merge commit is in this release's tag but not in the previous release's (or, for
+ * a repo's first release, simply in this one). GitHub's compare of the commit with
+ * each tag tells, however many commits lie between the releases.
  */
 export async function githubRelease(input: JobInput<"githubRelease">, log: JobLogger): Promise<JobResult> {
   const installation = await prisma.githubInstallation.findUnique({
@@ -163,7 +164,13 @@ export async function githubRelease(input: JobInput<"githubRelease">, log: JobLo
   }
   const { project } = installation;
   const candidates = await prisma.postLink.findMany({
-    where: { projectId: project.id, kind: "PULL_REQUEST", repo: input.repo, number: { not: null }, post: { status: { in: NOT_DONE }, duplicateOfId: null } },
+    where: {
+      projectId: project.id,
+      kind: "PULL_REQUEST",
+      repo: input.repo,
+      number: { not: null },
+      post: { status: { in: NOT_DONE }, duplicateOfId: null },
+    },
     select: { number: true },
     distinct: ["number"],
   });
@@ -173,27 +180,29 @@ export async function githubRelease(input: JobInput<"githubRelease">, log: JobLo
 
   const api = await installationApi(input.installationId);
   const releases = await api.list<GithubRelease>(`/repos/${input.repo}/releases`, (page) => page as GithubRelease[], 3);
-  const published = releases
-    .filter((r) => !r.draft && r.published_at)
-    .sort((a, b) => Date.parse(b.published_at!) - Date.parse(a.published_at!));
-  const previous = published.find((r) => r.tag_name !== input.tag && Date.parse(r.published_at!) < Date.parse(input.publishedAt));
-  const shipped = previous
-    ? new Set(
-        await api.list<string>(
-          `/repos/${input.repo}/compare/${encodeURIComponent(previous.tag_name)}...${encodeURIComponent(input.tag)}`,
-          (page) => (page as { commits: { sha: string }[] }).commits.map((c) => c.sha),
-          10,
-        ),
-      )
-    : null;
+  const previous = releases
+    .filter((r) => !r.draft && r.published_at && r.tag_name !== input.tag)
+    .filter((r) => Date.parse(r.published_at!) < Date.parse(input.publishedAt))
+    .sort((a, b) => Date.parse(b.published_at!) - Date.parse(a.published_at!))[0];
+  /** Whether a commit is part of a tag (the tag is it, or comes after it). */
+  const contains = async (tag: string, sha: string) => {
+    const comparison = await api.find<{ status: string }>(
+      `/repos/${input.repo}/compare/${encodeURIComponent(sha)}...${encodeURIComponent(tag)}`,
+    );
+    return comparison?.status === "ahead" || comparison?.status === "identical";
+  };
 
   const numbers: number[] = [];
   for (const { number } of candidates) {
-    const pull = await api.get<GithubPull>(`/repos/${input.repo}/pulls/${number}`);
-    const inRelease = shipped
-      ? pull.merge_commit_sha !== null && shipped.has(pull.merge_commit_sha)
-      : pull.merged_at !== null && Date.parse(pull.merged_at) <= Date.parse(input.publishedAt);
-    if (pull.merged_at && inRelease) {
+    // A link may name an issue or a deleted pull request: GitHub's 404 just skips it.
+    const pull = await api.find<GithubPull>(`/repos/${input.repo}/pulls/${number}`);
+    if (!pull?.merged_at || !pull.merge_commit_sha) {
+      continue;
+    }
+    const ships =
+      (await contains(input.tag, pull.merge_commit_sha)) &&
+      !(previous && (await contains(previous.tag_name, pull.merge_commit_sha)));
+    if (ships) {
       numbers.push(number!);
     }
   }

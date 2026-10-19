@@ -297,19 +297,21 @@ describe("shipping", () => {
   });
 
   test("a release completes the posts whose pull requests it ships, and links itself to them", async () => {
-    // #10 is merged inside v1.0...v1.1 (commit 140 of 150, so on the second page); #11 isn't merged;
-    // #12 was merged after v1.1; #10 also links a post that's already Completed.
-    const range = Array.from({ length: 150 }, (_, i) => `sha-${i}`);
+    // 300 commits; v1.0 is commit 50, v1.1 is commit 290. Merge commits: #10 at 140 (in v1.1),
+    // #12 at 295 (after v1.1), #13 at 20 (already in v1.0); #14 doesn't exist (an issue's number).
+    const history = Array.from({ length: 300 }, (_, i) => `sha-${i}`);
     github.repo(repo, {
+      history,
+      tags: { "v1.0": "sha-50", "v1.1": "sha-290" },
       releases: [
         { tag_name: "v1.1", published_at: "2026-02-01T00:00:00Z" },
         { tag_name: "v1.0", published_at: "2026-01-01T00:00:00Z" },
       ],
-      compare: { "v1.0...v1.1": range },
       pulls: {
         10: { merged_at: "2026-01-15T00:00:00Z", merge_commit_sha: "sha-140" },
         11: { merged_at: null, merge_commit_sha: null },
-        12: { merged_at: "2026-02-10T00:00:00Z", merge_commit_sha: "sha-later" },
+        12: { merged_at: "2026-02-10T00:00:00Z", merge_commit_sha: "sha-295" },
+        13: { merged_at: "2025-12-20T00:00:00Z", merge_commit_sha: "sha-20" },
       },
     });
     await linkedPosts([
@@ -317,20 +319,24 @@ describe("shipping", () => {
       { status: "OPEN", pull: 11 },
       { status: "IN_PROGRESS", pull: 12 },
       { status: "COMPLETED", pull: 10 },
+      { status: "IN_PROGRESS", pull: 13 },
+      { status: "IN_PROGRESS", pull: 14 },
     ]);
 
     expect(await deliver(published("v1.1", "2026-02-01T00:00:00Z"))).toBe(200);
-    expect(await statuses()).toEqual(["COMPLETED", "OPEN", "IN_PROGRESS", "COMPLETED"]);
+    expect(await statuses()).toEqual(["COMPLETED", "OPEN", "IN_PROGRESS", "COMPLETED", "IN_PROGRESS", "IN_PROGRESS"]);
     const releaseLinks = await prisma.postLink.findMany({ where: { projectId: project.id, kind: "RELEASE" }, select: { tag: true, title: true } });
     expect(releaseLinks).toEqual([{ tag: "v1.1", title: "Release v1.1" }]);
   });
 
-  test("a repo's first release ships every pull request merged before it", async () => {
+  test("a repo's first release ships every pull request in it", async () => {
     github.repo(repo, {
+      history: ["a", "b", "c"],
+      tags: { "v0.1": "b" },
       releases: [{ tag_name: "v0.1", published_at: "2026-03-01T00:00:00Z" }],
       pulls: {
         20: { merged_at: "2026-02-01T00:00:00Z", merge_commit_sha: "a" },
-        21: { merged_at: "2026-04-01T00:00:00Z", merge_commit_sha: "b" },
+        21: { merged_at: "2026-04-01T00:00:00Z", merge_commit_sha: "c" },
       },
     });
     await linkedPosts([
