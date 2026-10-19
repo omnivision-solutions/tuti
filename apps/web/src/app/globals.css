@@ -152,7 +152,7 @@
     @apply font-heading;
   }
 }
-/* Rich content (@tuti/content): rendered posts and comments, and the editor. */
+/* Rich content (@tuti/content): rendered posts, comments and changelog entries, and the editor. */
 @layer components {
   .rich-text {
     @apply flex flex-col gap-3;
@@ -168,6 +168,18 @@
   }
   .rich-text :where(a) {
     @apply text-primary underline underline-offset-4;
+  }
+  .rich-text :where(h2) {
+    @apply mt-2 font-heading text-lg font-bold tracking-tight;
+  }
+  .rich-text :where(h3) {
+    @apply mt-1 font-heading text-base font-bold;
+  }
+  .rich-text :where(blockquote) {
+    @apply border-l-2 pl-4 text-muted-foreground;
+  }
+  .rich-text :where(hr) {
+    @apply my-2 border-border;
   }
   .rich-text :where(code) {
     @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.9em];

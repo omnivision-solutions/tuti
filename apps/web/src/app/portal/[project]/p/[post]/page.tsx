@@ -36,6 +36,13 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
       },
       project: { select: { team: { select: { userId: true } } } },
       duplicateOf: { select: { number: true, title: true } },
+      // The published changelog entry that shipped it, if any.
+      changelogEntries: {
+        where: { entry: { publishedAt: { not: null } } },
+        orderBy: { entry: { publishedAt: "desc" } },
+        take: 1,
+        select: { entry: { select: { number: true, title: true } } },
+      },
     },
   });
   if (!post) {
@@ -65,6 +72,14 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             <span>·</span>
             <time dateTime={post.createdAt.toISOString()}>{timeAgo(post.createdAt)}</time>
           </div>
+          {post.changelogEntries[0] && (
+            <p className="text-sm text-muted-foreground">
+              Shipped in{" "}
+              <Link href={`/changelog/${post.changelogEntries[0].entry.number}`} className="text-foreground hover:underline">
+                {post.changelogEntries[0].entry.title}
+              </Link>
+            </p>
+          )}
           {!isEmptyDoc(displayDoc(post)) && (
             <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
           )}
