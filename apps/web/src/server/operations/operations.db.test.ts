@@ -35,6 +35,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.add": () => ({ number: 1, url: "https://github.com/acme/app/pull/7" }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
+  "linkSuggestions.list": () => ({}),
+  "linkSuggestions.accept": (f) => ({ id: f.linkSuggestionId }),
+  "linkSuggestions.dismiss": (f) => ({ id: f.linkSuggestionId }),
 };
 
 let owner: TestUser;
@@ -80,7 +83,18 @@ async function createFixture() {
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId: project.id, postId: second!.id, originalId: first!.id, similarity: 0.9 },
   });
-  return { marker, linkId: link.id, suggestionId: suggestion.id };
+  const linkSuggestion = await prisma.linkSuggestion.create({
+    data: {
+      projectId: project.id,
+      postId: second!.id,
+      repo: "acme/app",
+      number: 11,
+      url: "https://github.com/acme/app/pull/11",
+      title: "Night mode",
+      similarity: 0.6,
+    },
+  });
+  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id };
 }
 
 /** Calls an operation over REST like a client would. */

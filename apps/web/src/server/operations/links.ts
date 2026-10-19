@@ -57,3 +57,95 @@ export const removeLink = defineOperation({
     return { removed: input.id };
   },
 });
+
+/** Pull requests that may be what a post asks for (by text similarity), waiting for the team. */
+export const listLinkSuggestions = defineOperation({
+  name: "linkSuggestions.list",
+  summary: "List suggested links: pull requests that may be what a post asks for, waiting for the team",
+  method: "GET",
+  path: "/link-suggestions",
+  scope: "read",
+  access: "team",
+  input: z.object({ number: postNumber.optional() }),
+  example: { number: 12 },
+  run: async ({ projectId }, input) => {
+    const post = input.number === undefined ? null : await findPost(projectId, input.number);
+    const suggestions = await prisma.linkSuggestion.findMany({
+      where: { projectId, status: "PENDING", ...(post && { postId: post.id }), post: { duplicateOfId: null } },
+      orderBy: { similarity: "desc" },
+      select: {
+        id: true,
+        repo: true,
+        number: true,
+        url: true,
+        title: true,
+        similarity: true,
+        post: { select: { number: true, title: true } },
+      },
+    });
+    return {
+      suggestions: suggestions.map((s) => ({
+        id: s.id,
+        post: s.post,
+        pullRequest: { repo: s.repo, number: s.number, url: s.url, title: s.title },
+        similarity: s.similarity,
+      })),
+    };
+  },
+});
+
+export const acceptLinkSuggestion = defineOperation({
+  name: "linkSuggestions.accept",
+  summary: "Link a suggested pull request to its post",
+  method: "POST",
+  path: "/link-suggestions/{id}/accept",
+  scope: "write",
+  access: "team",
+  input: z.object({ id: z.string().min(1) }),
+  run: async ({ actor, projectId }, { id }) => {
+    const suggestion = await prisma.linkSuggestion.findFirst({ where: { id, projectId, status: "PENDING" } });
+    if (!suggestion) {
+      throw new OperationError(404, "not_found", "Suggestion not found");
+    }
+    const link = await prisma.$transaction(async (tx) => {
+      await tx.linkSuggestion.delete({ where: { id } });
+      return tx.postLink.upsert({
+        where: { postId_url: { postId: suggestion.postId, url: suggestion.url } },
+        update: {},
+        create: {
+          projectId,
+          postId: suggestion.postId,
+          kind: "PULL_REQUEST",
+          repo: suggestion.repo,
+          number: suggestion.number,
+          url: suggestion.url,
+          title: suggestion.title,
+          source: "SUGGESTED",
+          createdById: actor.kind === "user" ? actor.userId : actor.createdById,
+        },
+        select: linkSelect,
+      });
+    });
+    return linkView(link);
+  },
+});
+
+export const dismissLinkSuggestion = defineOperation({
+  name: "linkSuggestions.dismiss",
+  summary: "Mark a suggested pull request as unrelated to its post (it won't be suggested again)",
+  method: "POST",
+  path: "/link-suggestions/{id}/dismiss",
+  scope: "write",
+  access: "team",
+  input: z.object({ id: z.string().min(1) }),
+  run: async ({ projectId }, { id }) => {
+    const { count } = await prisma.linkSuggestion.updateMany({
+      where: { id, projectId, status: "PENDING" },
+      data: { status: "DISMISSED" },
+    });
+    if (count === 0) {
+      throw new OperationError(404, "not_found", "Suggestion not found");
+    }
+    return { dismissed: id };
+  },
+});

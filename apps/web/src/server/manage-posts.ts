@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { addLink, removeLink } from "./operations/links";
+import { acceptLinkSuggestion as acceptSuggestion, addLink, dismissLinkSuggestion as dismissSuggestion, removeLink } from "./operations/links";
 import { mergePost as mergeOperation, updatePost } from "./operations/manage";
 import { dismissDuplicate as dismissOperation } from "./operations/more";
 import { toApiStatus } from "./operations/read";
@@ -67,5 +67,19 @@ export async function addPostLink(projectSlug: string, postId: string, url: stri
 export async function removePostLink(projectSlug: string, postId: string, linkId: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can link posts", async (context) =>
     call(removeLink, context, { number: await postNumberOf(context.projectId, postId), id: String(linkId) }),
+  );
+}
+
+/** Links a suggested pull request to its post (see the linkSuggestions.accept operation). */
+export async function acceptLinkSuggestion(projectSlug: string, suggestionId: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link posts", (context) =>
+    call(acceptSuggestion, context, { id: String(suggestionId) }),
+  );
+}
+
+/** "Not related": hides a suggested pull request for good (see the linkSuggestions.dismiss operation). */
+export async function dismissLinkSuggestion(projectSlug: string, suggestionId: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link posts", (context) =>
+    call(dismissSuggestion, context, { id: String(suggestionId) }),
   );
 }

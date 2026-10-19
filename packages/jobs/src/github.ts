@@ -1,5 +1,5 @@
 import { type PostStatus, prisma } from "@tuti/db";
-import type { JobInput } from "@tuti/shared";
+import { embed, embeddingsEnabled, LINK_MIN_SIMILARITY, type JobInput, toVectorLiteral } from "@tuti/shared";
 
 import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { installationApi } from "./github-api";
@@ -46,13 +46,13 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   }
   const { projectId, project } = installation;
   const numbers = referencedPosts(`${input.title}\n${input.body}`, project.slug);
-  if (numbers.length === 0) {
-    return { linked: 0 };
-  }
-  const posts = await prisma.post.findMany({
-    where: { projectId, number: { in: numbers }, duplicateOfId: null },
-    select: { ...postSummarySelect, id: true },
-  });
+  const posts =
+    numbers.length === 0
+      ? []
+      : await prisma.post.findMany({
+          where: { projectId, number: { in: numbers }, duplicateOfId: null },
+          select: { ...postSummarySelect, id: true },
+        });
 
   let started = 0;
   for (const post of posts) {
@@ -95,8 +95,55 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
       log.warn(`couldn't comment on ${input.repo}#${input.number}: ${(error as Error).message}`);
     }
   }
-  log.info(`${input.repo}#${input.number}: linked ${posts.length} post(s), ${started} now in progress`);
-  return { linked: posts.length, started, commented };
+  let suggested = 0;
+  if (embeddingsEnabled()) {
+    try {
+      suggested = await suggestLinks(input, projectId);
+    } catch (error) {
+      // Suggestions are a nicety: an embeddings outage doesn't fail the pull request.
+      log.warn(`couldn't suggest posts for ${input.repo}#${input.number}: ${(error as Error).message}`);
+    }
+  }
+  log.info(`${input.repo}#${input.number}: linked ${posts.length} post(s), ${started} now in progress, ${suggested} suggested`);
+  return { linked: posts.length, started, commented, suggested };
+}
+
+/**
+ * Posts a pull request may be about without mentioning them: open posts whose
+ * text is close to the PR's (embeddings), for the team to link or dismiss.
+ * Posts already linked to it, done or merged aren't suggested; dismissed
+ * suggestions stay dismissed. Returns how many new suggestions were added.
+ */
+async function suggestLinks(input: JobInput<"githubPullRequest">, projectId: string): Promise<number> {
+  const [vector] = await embed([`${input.title}\n\n${input.body}`.trim().slice(0, 8000)]);
+  const literal = toVectorLiteral(vector!);
+  const matches = await prisma.$queryRaw<{ postId: string; similarity: number }[]>`
+    SELECT e."postId", 1 - (e.embedding <=> ${literal}::vector) AS similarity
+    FROM post_embedding e
+    JOIN post p ON p.id = e."postId"
+    WHERE e."projectId" = ${projectId}
+      AND p."duplicateOfId" IS NULL
+      AND p.status NOT IN ('COMPLETED', 'CLOSED')
+      AND NOT EXISTS (SELECT 1 FROM post_link l WHERE l."postId" = p.id AND l.url = ${input.url})
+    ORDER BY e.embedding <=> ${literal}::vector
+    LIMIT 3`;
+  const likely = matches.filter((m) => m.similarity >= LINK_MIN_SIMILARITY);
+  if (likely.length === 0) {
+    return 0;
+  }
+  const { count } = await prisma.linkSuggestion.createMany({
+    data: likely.map((m) => ({
+      projectId,
+      postId: m.postId,
+      repo: input.repo,
+      number: input.number,
+      url: input.url,
+      title: input.title,
+      similarity: m.similarity,
+    })),
+    skipDuplicates: true,
+  });
+  return count;
 }
 
 /** Post titles are people's text: no Markdown, links, @mentions or #references in the comment. */

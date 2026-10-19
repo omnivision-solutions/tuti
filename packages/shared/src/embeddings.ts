@@ -14,6 +14,8 @@ export const EMBEDDING_MODEL = "text-embedding-3-small";
  */
 export const DUPLICATE_MIN_SIMILARITY = 0.45;
 export const TYPING_SUGGESTION_MIN_SIMILARITY = 0.4;
+/** A pull request's text vs. a post's. ponytail: not calibrated yet (PRs say "how", posts "what"); tune with real pairs. */
+export const LINK_MIN_SIMILARITY = 0.4;
 
 export function embeddingsEnabled(): boolean {
   return Boolean(process.env.OPENAI_API_KEY);
