@@ -1,3 +1,6 @@
+// The editor parts (parseHTML) read DOM elements; servers importing this need the DOM types too.
+/// <reference lib="dom" />
+
 import { type Extensions, getSchema, Node } from "@tiptap/core";
 import type { Schema } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
