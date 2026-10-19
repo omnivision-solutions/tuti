@@ -47,7 +47,7 @@ export async function authorId(context: { actor: Actor; projectId: string }, inp
 }
 
 /** Saves content; an upload claimed by the cleanup meanwhile rolls the save back (see `attachMedia`). */
-async function saving<T>(save: () => Promise<T>): Promise<T> {
+export async function saving<T>(save: () => Promise<T>): Promise<T> {
   try {
     return await save();
   } catch (error) {

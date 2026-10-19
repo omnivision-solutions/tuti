@@ -27,6 +27,13 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "duplicates.dismiss": (f) => ({ id: f.suggestionId }),
   "boards.list": () => ({}),
   "roadmap.get": () => ({}),
+  "changelog.list": () => ({}),
+  "changelog.get": () => ({ number: 1 }),
+  "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
+  "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
+  "changelog.publish": () => ({ number: 1 }),
+  "changelog.unpublish": () => ({ number: 1 }),
+  "changelog.delete": () => ({ number: 1 }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -60,7 +67,12 @@ beforeAll(async () => {
 /** Fresh posts #1 and #2 (with a link on #1) for each case; numbers restart per fixture. */
 async function createFixture() {
   await prisma.post.deleteMany({ where: { projectId: project.id } });
-  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2 } });
+  await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
+  await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 1 } });
+  // A published entry #1, so reads find it (and unpublish has something to do).
+  await prisma.changelogEntry.create({
+    data: { projectId: project.id, number: 1, title: "Matrix entry", publishedAt: new Date() },
+  });
   const board = project.boards[0]!;
   const marker = `matrix-${crypto.randomUUID()}`;
   const [first, second] = await Promise.all(
@@ -131,6 +143,7 @@ const snapshot = () =>
     prisma.vote.findMany({ where: { projectId: project.id } }),
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
+    prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true } }),
   ]);
 
 test("every operation is in this matrix", () => {

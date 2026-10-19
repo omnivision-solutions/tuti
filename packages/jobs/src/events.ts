@@ -18,34 +18,53 @@ export async function emitEvent(
   { only }: { only?: string } = {},
 ) {
   try {
-    const hooks = await prisma.webhook.findMany({
-      where: { projectId, ...(only ? { id: only } : { events: { has: type } }) },
-      select: { id: true },
-    });
-    if (hooks.length === 0) {
-      return;
-    }
-    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true } });
-    const eventId = `evt_${randomUUID()}`;
-    // JSON round trip: dates become strings, as receivers will see them.
-    const payload = JSON.parse(
-      JSON.stringify({ id: eventId, type, createdAt: new Date().toISOString(), project, data }),
-    ) as Prisma.InputJsonValue;
-    const deliveries = await prisma.webhookDelivery.createManyAndReturn({
-      data: hooks.map((hook) => ({ webhookId: hook.id, eventId, event: type, payload })),
-      select: { id: true },
-    });
-    for (const delivery of deliveries) {
-      try {
-        await enqueue("webhookDelivery", { deliveryId: delivery.id });
-      } catch (error) {
-        // With inline jobs a failed attempt lands here (recorded on the delivery). If queueing
-        // failed, the webhook-resubmit job queues the delivery again.
-        log.warn("Webhook delivery failed or couldn't be queued", { deliveryId: delivery.id, error });
-      }
-    }
+    await queueDeliveries(await recordEvent(prisma, projectId, type, data, { only }));
   } catch (error) {
     log.error("Emitting a webhook event failed", { projectId, type, error });
+  }
+}
+
+/**
+ * The deliveries of an event, saved (with `db`, which can be a transaction, so they
+ * commit with the change they describe) but not sent: pass their ids to
+ * `queueDeliveries` after it commits. Throws if they can't be saved.
+ */
+export async function recordEvent(
+  db: Prisma.TransactionClient,
+  projectId: string,
+  type: string,
+  data: Record<string, unknown>,
+  { only }: { only?: string } = {},
+): Promise<string[]> {
+  const hooks = await db.webhook.findMany({
+    where: { projectId, ...(only ? { id: only } : { events: { has: type } }) },
+    select: { id: true },
+  });
+  if (hooks.length === 0) {
+    return [];
+  }
+  const project = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true } });
+  const eventId = `evt_${randomUUID()}`;
+  // JSON round trip: dates become strings, as receivers will see them.
+  const payload = JSON.parse(
+    JSON.stringify({ id: eventId, type, createdAt: new Date().toISOString(), project, data }),
+  ) as Prisma.InputJsonValue;
+  const deliveries = await db.webhookDelivery.createManyAndReturn({
+    data: hooks.map((hook) => ({ webhookId: hook.id, eventId, event: type, payload })),
+    select: { id: true },
+  });
+  return deliveries.map((d) => d.id);
+}
+
+/** Sends saved deliveries. One that can't be queued now is queued again by the webhook-resubmit job. */
+export async function queueDeliveries(ids: string[]) {
+  for (const deliveryId of ids) {
+    try {
+      await enqueue("webhookDelivery", { deliveryId });
+    } catch (error) {
+      // With inline jobs a failed attempt lands here (recorded on the delivery).
+      log.warn("Webhook delivery failed or couldn't be queued", { deliveryId, error });
+    }
   }
 }
 

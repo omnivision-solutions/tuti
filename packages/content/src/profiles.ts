@@ -8,9 +8,10 @@ import { imageKey, imageWidths } from "./media";
 /**
  * What each kind of content may contain. The editor, the server-side validation
  * and the renderers all derive from these, so they agree on every node and mark.
- * Changelog and article profiles come with those features (Phases 8 and 10).
+ * `changelog` adds headings, quotes and dividers to `post`; the article profile
+ * comes with the help center (Phase 10).
  */
-export const PROFILES = ["comment", "post"] as const;
+export const PROFILES = ["comment", "post", "changelog"] as const;
 export type Profile = (typeof PROFILES)[number];
 
 declare module "@tiptap/core" {
@@ -161,6 +162,13 @@ export function extensions(profile: Profile, { mediaBaseUrl }: { mediaBaseUrl?: 
       ];
     case "post":
       return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaBaseUrl })];
+    case "changelog":
+      return [
+        // Sections under the entry's own title: h2 and h3 only.
+        StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {} }),
+        VideoEmbed,
+        ImageNode.configure({ mediaBaseUrl }),
+      ];
   }
 }
 

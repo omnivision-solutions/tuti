@@ -102,16 +102,18 @@ enum TeamRole {
 }
 
 model Project {
-  id        String   @id @default(cuid())
-  slug      String   @unique
-  name      String
+  id             String   @id @default(cuid())
+  slug           String   @unique
+  name           String
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
-  ssoSecret String?
+  ssoSecret      String?
   /// Last post number handed out; posts are numbered #1, #2, … per project.
-  postCount Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  postCount      Int      @default(0)
+  /// Last changelog entry number handed out, like postCount.
+  changelogCount Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   team                 TeamMember[]
   boards               Board[]
@@ -133,6 +135,7 @@ model Project {
   emailOptOuts         EmailOptOut[]
   githubPrComments     GithubPrComment[]
   linkSuggestions      LinkSuggestion[]
+  changelogEntries     ChangelogEntry[]
 
   @@map("project")
 }
@@ -484,6 +487,7 @@ model Post {
   duplicates             Post[]                @relation("PostDuplicates")
   shippedEmails          ShippedEmail[]
   linkSuggestions        LinkSuggestion[]
+  changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
   comments               Comment[]
   embedding              PostEmbedding?
@@ -658,4 +662,52 @@ model LinkSuggestion {
   @@unique([postId, url])
   @@index([projectId, status])
   @@map("link_suggestion")
+}
+
+// ─── Changelog (Phase 8) ─────────────────────────────────────────────────────
+
+enum ChangelogTag {
+  NEW
+  IMPROVED
+  FIXED
+  BREAKING
+}
+
+/// A changelog entry: a draft the team writes, then publishes on the portal's /changelog.
+model ChangelogEntry {
+  id          String         @id @default(cuid())
+  projectId   String
+  /// Per-project number, like posts.
+  number      Int
+  title       String
+  /// Plain text of the entry (derived from `content`).
+  body        String         @default("")
+  /// Rich content (@tuti/content "changelog" profile).
+  content     Json?
+  tags        ChangelogTag[]
+  /// Null while it's a draft.
+  publishedAt DateTime?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  posts   ChangelogEntryPost[]
+
+  @@unique([projectId, number])
+  @@index([projectId, publishedAt])
+  @@map("changelog_entry")
+}
+
+/// A post a changelog entry completes ("Shipped in …").
+model ChangelogEntryPost {
+  entryId String
+  postId  String
+
+  entry ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  post  Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, postId])
+  @@index([postId])
+  @@map("changelog_entry_post")
 }

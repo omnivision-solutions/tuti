@@ -51,6 +51,13 @@ function renderNode(node: JSONContent, key: number, media: string | undefined): 
     }
     case "listItem":
       return <li key={key}>{inner()}</li>;
+    case "heading":
+      // Under the page's own title: level 3 when asked for, otherwise 2.
+      return node.attrs?.level === 3 ? <h3 key={key}>{inner()}</h3> : <h2 key={key}>{inner()}</h2>;
+    case "blockquote":
+      return <blockquote key={key}>{inner()}</blockquote>;
+    case "horizontalRule":
+      return <hr key={key} />;
     case "codeBlock":
       return (
         <pre key={key}>
