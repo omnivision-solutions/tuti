@@ -1,4 +1,4 @@
-import { type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
+import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
 import {
   enqueue,
   lockProject,
@@ -14,10 +14,12 @@ import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
+import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
+import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, readContent } from "../content";
 import { readReleaseNotes, releaseNotesPrompt } from "../release-notes";
-import { saving } from "./create";
+import { author, authorId, saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectSlug } from "./read";
 
@@ -57,8 +59,10 @@ const entrySelect = {
 
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
-function entryView(entry: EntryRow, slug: string) {
+/** An entry for the API; `counts` when several entries' reactions were read at once. */
+async function entryView(entry: EntryRow, slug: string, counts?: (entryId: string) => ReactionCounts) {
   const portal = portalUrl(slug);
+  const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   return {
     number: entry.number,
     title: entry.title,
@@ -74,6 +78,8 @@ function entryView(entry: EntryRow, slug: string) {
     posts: entry.posts.map(({ post }) => ({ number: post.number, title: post.title, url: `${portal}${postPath(post)}` })),
     /** Merged pull requests the running draft collected. */
     pullRequests: entry.pullRequests,
+    /** How many readers reacted with each: thumbs_up 👍, heart ❤️, tada 🎉. */
+    reactions,
     url: `${portal}/changelog/${entry.number}`,
     createdAt: entry.createdAt.toISOString(),
   };
@@ -146,8 +152,10 @@ export const listChangelog = defineOperation({
       select: entrySelect,
     });
     const slug = await projectSlug(projectId);
+    const shown = entries.slice(0, input.limit);
+    const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: entries.slice(0, input.limit).map((entry) => entryView(entry, slug)),
+      entries: await Promise.all(shown.map((entry) => entryView(entry, slug, counts))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -168,6 +176,48 @@ export const getChangelogEntry = defineOperation({
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
     return entryView(entry, await projectSlug(projectId));
+  },
+});
+
+export const reactToChangelogEntry = defineOperation({
+  name: "changelog.react",
+  summary:
+    "React to a published changelog entry (thumbs_up 👍, heart ❤️ or tada 🎉) or take the reaction back, as the key's creator or on behalf of someone from your app",
+  method: "POST",
+  path: "/changelog/{number}/reactions",
+  scope: "write",
+  access: "anyone",
+  input: z.object({ number: entryNumber, reaction: z.enum(REACTIONS), reacted: z.boolean(), author }),
+  example: { reaction: "tada", reacted: true, author: { id: "user-42" } },
+  run: async (context, input) => {
+    const { projectId } = context;
+    const entry = await prisma.changelogEntry.findUnique({
+      where: { projectId_number: { projectId, number: input.number } },
+      select: { id: true, publishedAt: true },
+    });
+    if (!entry || (!entry.publishedAt && !(await isTeam(context.actor, projectId)))) {
+      throw new OperationError(404, "not_found", `There's no changelog entry #${input.number}`);
+    }
+    if (!entry.publishedAt) {
+      throw new OperationError(409, "draft", "Only published entries take reactions");
+    }
+    const reaction = {
+      entryId: entry.id,
+      userId: await authorId(context, input.author),
+      kind: input.reaction.toUpperCase() as ChangelogReactionKind,
+    };
+    // One of each per person, by the primary key: a repeat (a double click, a retry) changes nothing.
+    if (input.reacted) {
+      await prisma.changelogReaction.createMany({ data: reaction, skipDuplicates: true });
+    } else {
+      await prisma.changelogReaction.deleteMany({ where: reaction });
+    }
+    return {
+      number: input.number,
+      reaction: input.reaction,
+      reacted: input.reacted,
+      reactions: (await reactionCounts([entry.id]))(entry.id),
+    };
   },
 });
 
@@ -283,7 +333,7 @@ export const draftChangelogEntry = defineOperation({
       throw new OperationError(409, "published", "Unpublish the entry to draft its text with AI");
     }
     const slug = await projectSlug(projectId);
-    const { posts } = entryView(entry, slug);
+    const { posts } = await entryView(entry, slug);
     if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
     }
@@ -440,7 +490,7 @@ export const publishChangelogEntry = defineOperation({
         completed.push(postId);
       }
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
-      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", entryView(published, slug))));
+      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, slug))));
       return { deliveries, completed };
     });
     if (shipped) {

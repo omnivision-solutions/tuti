@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
+import { reactionSummary } from "@/lib/reactions";
+import { reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 
 /** The team's changelog: drafts first (latest edited), then what's published (newest first). */
@@ -35,6 +37,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
       _count: { select: { posts: true, pullRequests: true } },
     },
   });
+  const reactions = await reactionCounts(entries.map((e) => e.id));
   // The writing style only matters to AI drafts.
   const style =
     aiEnabled() &&
@@ -81,7 +84,13 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                       </Badge>
                     )),
                   ]}
-                  meta={`${entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : "Draft"} · ${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`}
+                  meta={[
+                    entry.publishedAt ? `Published ${formatDate(entry.publishedAt)}` : "Draft",
+                    `${entry._count.posts} ${entry._count.posts === 1 ? "post" : "posts"}`,
+                    reactionSummary(reactions(entry.id)),
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 />
               ))}
             </ItemList>

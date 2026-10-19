@@ -8,12 +8,15 @@ import {
   getChangelogEntry,
   listChangelog,
   publishChangelogEntry,
+  reactToChangelogEntry,
   unpublishChangelogEntry,
   updateChangelogEntry,
 } from "@/server/operations/changelog";
+import { reactToChangelogEntry as reactAction } from "@/server/changelog";
+import { publishedEntries } from "@/server/changelog-queries";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 // Saving the changelog.published delivery can be made to fail, to check publishing is all or nothing.
@@ -196,5 +199,93 @@ describe("changelog entries", () => {
         content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "x", marks: [{ type: "highlight" }] }] }] },
       }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("reactions", () => {
+  const react = (user: TestUser, reaction: "thumbs_up" | "heart" | "tada", reacted = true, number = 1) =>
+    call(reactToChangelogEntry, as(user), { number, reaction, reacted });
+  const reactionRows = () => prisma.changelogReaction.count({ where: { entry: { projectId: project.id } } });
+  const published = async () => {
+    await call(createChangelogEntry, as(owner), { title: "Dark mode", body: "x" });
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+  };
+
+  test("one of each per reader, toggled on and off; counts show in the reads", async () => {
+    await published();
+    const other = await signUp("Other reader");
+    expect(await react(visitor, "tada")).toMatchObject({ reacted: true, reactions: { thumbs_up: 0, heart: 0, tada: 1 } });
+    // Again changes nothing; another kind and another reader count separately.
+    await react(visitor, "tada");
+    await react(visitor, "heart");
+    expect(await react(other, "tada")).toMatchObject({ reactions: { thumbs_up: 0, heart: 1, tada: 2 } });
+
+    expect(await call(getChangelogEntry, as(visitor), { number: 1 })).toMatchObject({ reactions: { heart: 1, tada: 2 } });
+    expect((await call(listChangelog, as(visitor), {})).entries[0]).toMatchObject({ reactions: { heart: 1, tada: 2 } });
+    const [entry] = await publishedEntries(project.slug, { userId: visitor.id });
+    expect(entry).toMatchObject({ reactions: { thumbs_up: 0, heart: 1, tada: 2 } });
+    expect(entry!.reacted.sort()).toEqual(["heart", "tada"]);
+
+    expect(await react(visitor, "tada", false)).toMatchObject({ reacted: false, reactions: { heart: 1, tada: 1 } });
+    // Taking back one that isn't there changes nothing.
+    expect(await react(visitor, "tada", false)).toMatchObject({ reactions: { heart: 1, tada: 1 } });
+  });
+
+  test("a double submit counts once", async () => {
+    await published();
+    await Promise.all([react(visitor, "thumbs_up"), react(visitor, "thumbs_up"), react(visitor, "thumbs_up")]);
+    expect(await reactionRows()).toBe(1);
+    expect(await call(getChangelogEntry, as(visitor), { number: 1 })).toMatchObject({ reactions: { thumbs_up: 1 } });
+  });
+
+  test("drafts take no reactions; unpublished entries keep theirs, and deleted ones lose them", async () => {
+    await call(createChangelogEntry, as(owner), { title: "Draft", body: "x" });
+    // A draft is as good as missing to readers; the team is told why.
+    await expect(react(visitor, "tada")).rejects.toMatchObject({ status: 404 });
+    await expect(react(owner, "tada")).rejects.toMatchObject({ status: 409, message: "Only published entries take reactions" });
+    expect(await reactionRows()).toBe(0);
+
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    await react(visitor, "tada");
+    await call(unpublishChangelogEntry, as(owner), { number: 1 });
+    await expect(react(visitor, "heart")).rejects.toMatchObject({ status: 404 });
+    expect(await call(getChangelogEntry, as(owner), { number: 1 })).toMatchObject({ reactions: { tada: 1, heart: 0 } });
+
+    await call(deleteChangelogEntry, as(owner), { number: 1 });
+    expect(await reactionRows()).toBe(0);
+  });
+
+  test("a reaction lands on this project's entry only", async () => {
+    await published();
+    const otherProject = await createProject(owner);
+    await prisma.changelogEntry.create({ data: { projectId: otherProject.id, number: 1, title: "Elsewhere", publishedAt: new Date() } });
+    await react(visitor, "heart");
+    const entries = await prisma.changelogEntry.findMany({
+      where: { projectId: { in: [project.id, otherProject.id] } },
+      select: { title: true, _count: { select: { reactions: true } } },
+    });
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        { title: "Dark mode", _count: { reactions: 1 } },
+        { title: "Elsewhere", _count: { reactions: 0 } },
+      ]),
+    );
+    await expect(react(visitor, "heart", true, 2)).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("on the portal: signed out sees the way to sign in; another project's SSO users can't react", async () => {
+    await published();
+    actAs(null);
+    expect(await reactAction(project.slug, 1, "tada", true)).toEqual({ error: "Sign in to react" });
+    const ssoUser = await signUp("SSO user");
+    const otherProject = await createProject(owner);
+    await prisma.ssoIdentity.create({ data: { projectId: otherProject.id, externalId: "ext-1", userId: ssoUser.id } });
+    actAs(ssoUser);
+    expect(await reactAction(project.slug, 1, "tada", true)).toEqual({ error: "Entry not found" });
+    expect(await reactionRows()).toBe(0);
+
+    actAs(visitor);
+    expect(await reactAction(project.slug, 1, "tada", true)).toEqual({});
+    expect(await reactionRows()).toBe(1);
   });
 });

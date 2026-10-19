@@ -3,9 +3,11 @@ import { RichText } from "@tuti/content/react";
 import type { Doc } from "@tuti/content";
 import Link from "next/link";
 
+import { ChangelogReactions } from "@/components/changelog-reactions";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/format";
 import { postPath } from "@/lib/post-urls";
+import type { Reaction, ReactionCounts } from "@/lib/reactions";
 
 export const TAG_LABELS: Record<ChangelogTag, string> = { NEW: "New", IMPROVED: "Improved", FIXED: "Fixed", BREAKING: "Breaking" };
 
@@ -16,6 +18,9 @@ export type PublishedEntry = {
   publishedAt: Date;
   doc: Doc;
   posts: { number: number; title: string }[];
+  reactions: ReactionCounts;
+  /** The ones the signed-in reader left. */
+  reacted: Reaction[];
 };
 
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
@@ -24,12 +29,15 @@ export function ChangelogEntryView({
   mediaBaseUrl,
   heading = "h2",
   linkTarget,
+  react,
 }: {
   entry: PublishedEntry;
   mediaBaseUrl: string | null;
   heading?: "h1" | "h2";
   /** "_blank" in the widget: links open on the portal, not in the panel. */
   linkTarget?: "_blank";
+  /** Shows the reaction buttons (on the portal's pages, not in the widget). */
+  react?: { projectSlug: string; signedIn: boolean };
 }) {
   const Title = heading;
   return (
@@ -64,6 +72,15 @@ export function ChangelogEntryView({
             </span>
           ))}
         </p>
+      )}
+      {react && (
+        <ChangelogReactions
+          projectSlug={react.projectSlug}
+          number={entry.number}
+          counts={entry.reactions}
+          reacted={entry.reacted}
+          signedIn={react.signedIn}
+        />
       )}
     </article>
   );

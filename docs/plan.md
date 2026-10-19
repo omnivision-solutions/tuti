@@ -226,7 +226,7 @@ The team edits and publishes; Tuti does the first draft from what actually merge
 - [ ] Editor helpers: regenerate a section, shorten, "explain for non-developers"
 - [ ] Optional: write the published notes back to the GitHub release body
 - [x] Without GitHub: write entries by hand and pick the posts they complete
-- [ ] A "Breaking" tag next to New / Improved / Fixed; reader reactions on entries; an RSS feed for `/changelog` (from the Ferndesk review, 2026-10-19)
+- [x] A "Breaking" tag next to New / Improved / Fixed; reader reactions on entries; an RSS feed for `/changelog` (from the Ferndesk review, 2026-10-19). Reactions: 👍 ❤️ 🎉 on published entries (the portal's list and entry pages), one of each per signed-in reader, toggled on and off; signed out, the counts and "Sign in to react". `changelog.react` (`reacted: true/false`, so a retry can't undo it); counts in `changelog.list` / `changelog.get` and on the team's list. Drafts take none; unpublishing keeps them, deleting removes them
 - [x] Publishing asks "announce it" or "publish quietly"; announced entries show in the widget as unseen (Phase 9) (from the Ferndesk review, 2026-10-19). Done: "Publish and announce" or "Publish quietly" (`changelog.publish` takes `announce`, default true); announcing will also drive changelog emails when those come
 - [ ] Tests: a model fake (scripted responses, checks every request, fails on unused steps) for drafting flows; a few real-model quality cases in `test:live` (no internal jargon, every completed post mentioned). Done: the model fake (`startModelFake` in `@tuti/testkit`), in database tests and journeys. Left: the `test:live` cases
 

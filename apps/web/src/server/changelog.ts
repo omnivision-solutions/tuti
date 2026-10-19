@@ -1,6 +1,9 @@
 "use server";
 
+import { prisma } from "@tuti/db";
 import { redirect } from "next/navigation";
+
+import type { Reaction } from "@/lib/reactions";
 
 import type { FormState } from "./form-state";
 import {
@@ -8,13 +11,14 @@ import {
   deleteChangelogEntry as deleteOperation,
   draftChangelogEntry as draftOperation,
   publishChangelogEntry as publishOperation,
+  reactToChangelogEntry as reactOperation,
   unpublishChangelogEntry as unpublishOperation,
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
-import { asTeam, call } from "./operations/run";
+import { asAnyone, asTeam, call } from "./operations/run";
 
-/** The team's changelog actions (see the changelog.* operations). */
+/** The changelog actions: the team's, and readers' reactions (see the changelog.* operations). */
 
 const DENIED = "Only the project's team can write the changelog";
 
@@ -74,4 +78,19 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
 export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const input = { tone: String(formData.get("tone") ?? ""), examples: formData.getAll("examples").map(Number) };
   return asTeam(projectSlug, DENIED, (context) => call(updateChangelogStyle, context, input));
+}
+
+/** A reader's reaction to a published entry on the portal, or taking it back (see changelog.react). */
+export async function reactToChangelogEntry(
+  projectSlug: string,
+  number: number,
+  reaction: Reaction,
+  reacted: boolean,
+): Promise<FormState> {
+  return asAnyone(
+    "Sign in to react",
+    "Entry not found",
+    () => prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } }),
+    (context) => call(reactOperation, context, { number: Number(number), reaction, reacted: reacted === true }),
+  );
 }

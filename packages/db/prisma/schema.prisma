@@ -24,11 +24,12 @@ model User {
   sessions         Session[]
   accounts         Account[]
 
-  teamMemberships TeamMember[]
-  posts           Post[]
-  votes           Vote[]
-  comments        Comment[]
-  ssoIdentity     SsoIdentity?
+  teamMemberships    TeamMember[]
+  posts              Post[]
+  votes              Vote[]
+  comments           Comment[]
+  changelogReactions ChangelogReaction[]
+  ssoIdentity        SsoIdentity?
 
   invitationsCreated  Invitation[]    @relation("InvitationCreatedBy")
   invitationsAccepted Invitation[]    @relation("InvitationAcceptedBy")
@@ -705,10 +706,32 @@ model ChangelogEntry {
   project      Project                     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   posts        ChangelogEntryPost[]
   pullRequests ChangelogEntryPullRequest[]
+  reactions    ChangelogReaction[]
 
   @@unique([projectId, number])
   @@index([projectId, publishedAt])
   @@map("changelog_entry")
+}
+
+enum ChangelogReactionKind {
+  THUMBS_UP
+  HEART
+  TADA
+}
+
+/// A reader's reaction to a published changelog entry: one of each kind per person.
+model ChangelogReaction {
+  entryId   String
+  userId    String
+  kind      ChangelogReactionKind
+  createdAt DateTime              @default(now())
+
+  entry ChangelogEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([entryId, userId, kind])
+  @@index([userId])
+  @@map("changelog_reaction")
 }
 
 /// A post a changelog entry completes ("Shipped in …").
