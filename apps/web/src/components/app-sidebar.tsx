@@ -7,6 +7,7 @@ import {
   InboxIcon,
   LayoutListIcon,
   LogOutIcon,
+  MegaphoneIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
@@ -128,6 +129,7 @@ function projectNav(project: ProjectSummary) {
   return [
     { title: "Feedback", href: base, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
+    { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(project.role === "OWNER" || project.role === "ADMIN"
       ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }]

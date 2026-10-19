@@ -10,6 +10,7 @@ import {
   isSafeLink,
   MAX_ALT_LENGTH,
   parseVideoUrl,
+  type Doc,
   type Profile,
 } from "@tuti/content";
 import { cn } from "cn";
@@ -19,12 +20,16 @@ import {
   AlignRightIcon,
   BoldIcon,
   CodeIcon,
+  Heading2Icon,
+  Heading3Icon,
   ImageIcon,
   ItalicIcon,
   LinkIcon,
   ListIcon,
   ListOrderedIcon,
   type LucideIcon,
+  MinusIcon,
+  QuoteIcon,
   SquareCodeIcon,
   TextIcon,
   VideoIcon,
@@ -45,6 +50,7 @@ export type EditorUploads = { projectSlug: string; mediaBaseUrl: string };
  * The rich text editor for one content profile (see @tuti/content). It submits the
  * document as JSON in a hidden input called `name` (empty when there's nothing in it);
  * the server validates it against the same profile. Remount it (change its `key`) to clear it.
+ * `initial` is what it starts with (editing something saved).
  */
 export function RichEditor({
   profile,
@@ -55,6 +61,7 @@ export function RichEditor({
   invalid,
   describedBy,
   uploads,
+  initial,
 }: {
   profile: Profile;
   name: string;
@@ -66,12 +73,13 @@ export function RichEditor({
   /** Id of the element with the error text, while `invalid`. */
   describedBy?: string;
   uploads?: EditorUploads;
+  initial?: Doc;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [uploading, setUploading] = useState(0);
   const [uploadError, setUploadError] = useState<string>();
-  const canUpload = profile === "post" && !!uploads;
+  const canUpload = profile !== "comment" && !!uploads;
 
   const addImages = async (editor: Editor, files: File[]) => {
     if (!uploads) {
@@ -102,6 +110,7 @@ export function RichEditor({
       ...extensions(profile, { mediaBaseUrl: uploads?.mediaBaseUrl }),
       Placeholder.configure({ placeholder }),
     ],
+    content: initial,
     immediatelyRender: false,
     editorProps: {
       attributes: () => ({
@@ -249,6 +258,9 @@ function Toolbar({
       bulletList: editor.isActive("bulletList"),
       orderedList: editor.isActive("orderedList"),
       codeBlock: editor.isActive("codeBlock"),
+      h2: editor.isActive("heading", { level: 2 }),
+      h3: editor.isActive("heading", { level: 3 }),
+      blockquote: editor.isActive("blockquote"),
       image: editor.isActive("image") ? (editor.getAttributes("image") as { width: string; align: string }) : null,
     }),
   });
@@ -265,7 +277,15 @@ function Toolbar({
         active={active.link}
         onClick={() => (active.link ? chain().extendMarkRange("link").unsetLink().run() : onPrompt("link"))}
       />
-      {profile === "post" && (
+      {profile === "changelog" && (
+        <>
+          <Tool icon={Heading2Icon} label="Heading" active={active.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()} />
+          <Tool icon={Heading3Icon} label="Subheading" active={active.h3} onClick={() => chain().toggleHeading({ level: 3 }).run()} />
+          <Tool icon={QuoteIcon} label="Quote" active={active.blockquote} onClick={() => chain().toggleBlockquote().run()} />
+          <Tool icon={MinusIcon} label="Divider" active={false} onClick={() => chain().setHorizontalRule().run()} />
+        </>
+      )}
+      {profile !== "comment" && (
         <>
           <Tool
             icon={ListIcon}

@@ -9,6 +9,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
+import * as changelog from "./changelog";
 import * as github from "./github";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
@@ -31,6 +32,7 @@ import * as webhooks from "./webhooks";
  * lowest level allowed (so the refusals aren't just bad arguments).
  */
 const modules = {
+  changelog,
   "api-keys": apiKeys,
   boards,
   github,
@@ -80,6 +82,19 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  changelog: {
+    saveChangelogEntry: {
+      allowed: "MEMBER",
+      call: (slug) => {
+        const form = new FormData();
+        form.set("title", "From the matrix");
+        return changelog.saveChangelogEntry(slug, null, {}, form);
+      },
+    },
+    publishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.publishChangelogEntry(slug, 1) },
+    unpublishChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.unpublishChangelogEntry(slug, 1) },
+    deleteChangelogEntry: { allowed: "MEMBER", call: (slug) => changelog.deleteChangelogEntry(slug, 1) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -320,6 +335,8 @@ async function createFixture() {
       similarity: 0.6,
     },
   });
+  await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 1 } });
+  await prisma.changelogEntry.create({ data: { projectId, number: 1, title: "Matrix entry", publishedAt: new Date() } });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });

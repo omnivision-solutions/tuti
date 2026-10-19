@@ -164,6 +164,24 @@ describe("changelog entries", () => {
     expect(await status(dark.number)).toBe("COMPLETED");
   });
 
+  test("a published entry keeps the posts it completed: changing them means unpublishing first", async () => {
+    const [a, b] = [await post("Export"), await post("Import")];
+    await call(createChangelogEntry, as(owner), { title: "CSV", body: "x", posts: [a.number] });
+    await call(publishChangelogEntry, as(owner), { number: 1 });
+    await expect(call(updateChangelogEntry, as(owner), { number: 1, posts: [a.number, b.number] })).rejects.toMatchObject({
+      status: 409,
+      message: "Unpublish the entry to change the posts it completes",
+    });
+    // The same list (as a full form re-sends it) and other fields are fine.
+    expect(await call(updateChangelogEntry, as(owner), { number: 1, title: "CSV export", posts: [a.number] })).toMatchObject({
+      title: "CSV export",
+    });
+    await call(unpublishChangelogEntry, as(owner), { number: 1 });
+    expect(await call(updateChangelogEntry, as(owner), { number: 1, posts: [a.number, b.number] })).toMatchObject({
+      posts: [expect.anything(), expect.anything()],
+    });
+  });
+
   test("text a changelog can't hold is refused", async () => {
     await expect(
       call(createChangelogEntry, as(owner), {

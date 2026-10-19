@@ -194,7 +194,7 @@ export const createChangelogEntry = defineOperation({
 
 export const updateChangelogEntry = defineOperation({
   name: "changelog.update",
-  summary: "Change a changelog entry: its title, text, tags or the posts it completes (posts replace the list)",
+  summary: "Change a changelog entry: its title, text, tags or the posts it completes (posts replace the list; only while it's a draft)",
   method: "PATCH",
   path: "/changelog/{number}",
   scope: "write",
@@ -210,6 +210,14 @@ export const updateChangelogEntry = defineOperation({
   example: { tags: ["new", "improved"] },
   run: async ({ projectId }, input) => {
     const entry = await teamEntry(projectId, input.number);
+    if (entry.publishedAt && input.posts) {
+      // Publishing completed its posts; a post added now wouldn't be. Same list is fine.
+      const now = new Set(entry.posts.map(({ post }) => post.number));
+      const wanted = new Set(input.posts);
+      if (now.size !== wanted.size || [...wanted].some((n) => !now.has(n))) {
+        throw new OperationError(409, "published", "Unpublish the entry to change the posts it completes");
+      }
+    }
     const text = input.body !== undefined || input.content !== undefined ? await entryText(input, projectId) : null;
     const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
