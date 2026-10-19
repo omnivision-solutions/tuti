@@ -7,9 +7,12 @@ import { displayDoc } from "./content";
 
 /** Reads for the changelog pages: the team's editor and the portal. */
 
-/** How many of each reaction these entries have, by entry id. */
-export async function reactionCounts(entryIds: string[]): Promise<(entryId: string) => ReactionCounts> {
-  const groups = await prisma.changelogReaction.groupBy({
+/** How many of each reaction these entries have, by entry id (`db`: a transaction's client, inside one). */
+export async function reactionCounts(
+  entryIds: string[],
+  db: Pick<typeof prisma, "changelogReaction"> = prisma,
+): Promise<(entryId: string) => ReactionCounts> {
+  const groups = await db.changelogReaction.groupBy({
     by: ["entryId", "kind"],
     where: { entryId: { in: entryIds } },
     _count: { _all: true },

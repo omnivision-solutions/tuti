@@ -1,6 +1,7 @@
 "use client";
 
 import { useOptimistic, useTransition } from "react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { reactToChangelogEntry } from "@/server/changelog";
@@ -44,7 +45,11 @@ export function ChangelogReactions({
                   reacted: on ? s.reacted.filter((r) => r !== reaction) : [...s.reacted, reaction],
                 }));
                 // The state wanted, not a toggle: a repeated request can't undo it.
-                await reactToChangelogEntry(projectSlug, number, reaction, !on);
+                const result = await reactToChangelogEntry(projectSlug, number, reaction, !on);
+                // Refused, the page isn't refreshed, so the optimistic state falls back to what it was.
+                if (result.error) {
+                  toast.error(result.error);
+                }
               })
             }
           >

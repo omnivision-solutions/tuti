@@ -166,4 +166,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
+
+  // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
+  await ada.goto("/changelog/1");
+  const heart = ada.getByRole("button", { name: /^React with ❤️/ });
+  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await team.goto(`/app/${slug}/changelog/1`);
+  await team.getByRole("button", { name: "Unpublish" }).click();
+  await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
+  await heart.click();
+  await expect(ada.getByText("There's no changelog entry #1")).toBeVisible();
+  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await expect(heart).toHaveAttribute("aria-pressed", "false");
 });

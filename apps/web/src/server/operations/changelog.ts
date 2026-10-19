@@ -490,7 +490,9 @@ export const publishChangelogEntry = defineOperation({
         completed.push(postId);
       }
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
-      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, slug))));
+      // Counts read in the transaction, on its connection (a second one could wait on the pool).
+      const counts = await reactionCounts([published.id], tx);
+      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, slug, counts))));
       return { deliveries, completed };
     });
     if (shipped) {
