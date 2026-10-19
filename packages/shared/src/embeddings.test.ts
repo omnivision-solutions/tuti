@@ -36,6 +36,22 @@ describe("embed", () => {
     vi.unstubAllEnvs();
   });
 
+  test("vectors can be set over HTTP (for other processes); bad bodies get a 400", async () => {
+    const post = (body: string) =>
+      fetch(`${openai.url}/fixtures`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${FAKE_OPENAI_KEY}`, "content-type": "application/json" },
+        body,
+      });
+    expect((await post(JSON.stringify({ text: "csv export", vector: [0, 1] }))).status).toBe(204);
+    expect((await post("not json")).status).toBe(400);
+    expect((await post(JSON.stringify({ text: "csv export" }))).status).toBe(400);
+    expect((await post(JSON.stringify({ text: "x", vector: Array(65).fill(0) }))).status).toBe(400);
+    // Still serving, with the vector that was set.
+    const [vector] = await embed(["csv export"]);
+    expect(vector!.slice(0, 2)).toEqual([0, 1]);
+  });
+
   test("returns one vector per text, in input order", async () => {
     openai.setVector("dark mode", [1, 0]);
     openai.setVector("night theme", [0.8, 0.6]);
