@@ -34,7 +34,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
   }
   return (
     <article className="flex flex-col gap-6" aria-labelledby="article-title">
-      <BackLink href="/help">Help center</BackLink>
+      <BackLink href={article.section ? `/help?${new URLSearchParams({ section: article.section })}` : "/help"}>Help center</BackLink>
       <div className="flex flex-col gap-1">
         {article.collection && <p className="text-sm text-muted-foreground">{article.collection.name}</p>}
         <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">

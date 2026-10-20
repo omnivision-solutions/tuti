@@ -1,8 +1,11 @@
+import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { collectionOptions, helpCenter } from "./help-queries";
+import { collectionOptions, helpCenter, publishedArticle } from "./help-queries";
 import {
   createArticle,
   createCollection,
@@ -162,5 +165,82 @@ describe("sections", () => {
     // Whichever section came first has them all, whether they were saved before it or after.
     expect(listed.map((s) => s.collections).sort()).toEqual([0, 3]);
     expect((await call(listCollections, as(), {})).collections.every((c) => c.section === listed.find((s) => s.collections === 3)!.slug)).toBe(true);
+  });
+});
+
+describe("readers", () => {
+  /** Guides (Basics, with Billing › Invoices) and API (Endpoints), an article in no collection, and an empty section. */
+  async function sectioned() {
+    await call(createSection, as(), { name: "Guides" });
+    await call(createSection, as(), { name: "Empty" });
+    await call(createSection, as(), { name: "API" });
+    await call(createCollection, as(), { name: "Basics" });
+    await call(createCollection, as(), { name: "Billing" });
+    await call(createCollection, as(), { name: "Invoices", parent: "billing" });
+    await call(createCollection, as(), { name: "Endpoints", section: "api" });
+    await call(createCollection, as(), { name: "Unread", section: "empty" });
+    for (const [title, collection] of [
+      ["Start here", "basics"],
+      ["Downloading invoices", "invoices"],
+      ["Listing posts", "endpoints"],
+      ["Contact us", null],
+    ] as const) {
+      const { slug } = await call(createArticle, as(), { title, body: `${title}.`, collection });
+      await call(publishArticle, as(), { slug });
+    }
+    // Only a draft: Unread and its section have nothing to read.
+    await call(createArticle, as(), { title: "Not yet", collection: "unread" });
+  }
+
+  test("the help center by section: those with something to read, the first with the articles in no collection", async () => {
+    await sectioned();
+    const help = await helpCenter(project.slug);
+    expect(help.sections.map((s) => ({ slug: s.slug, collections: s.collections.map((c) => c.slug), uncollected: s.uncollected.map((a) => a.slug) }))).toEqual([
+      { slug: "guides", collections: ["basics", "billing"], uncollected: ["contact-us"] },
+      { slug: "api", collections: ["endpoints"], uncollected: [] },
+    ]);
+    expect(help.sections[0]!.collections[1]!.collections.map((c) => c.slug)).toEqual(["invoices"]);
+    // All of it too, in reading order.
+    expect(help.collections.map((c) => c.slug)).toEqual(["basics", "billing", "endpoints"]);
+
+    // An article's way back is its section's tab (a collection in another: that one's section).
+    expect((await publishedArticle(project.slug, "listing-posts"))?.section).toBe("api");
+    expect((await publishedArticle(project.slug, "downloading-invoices"))?.section).toBe("guides");
+    expect((await publishedArticle(project.slug, "contact-us"))?.section).toBeNull();
+  });
+
+  test("llms.txt has a heading per section with its collections a level down; the export a folder per section", async () => {
+    await sectioned();
+    const portal = `http://${project.slug}.localhost:3100`;
+    const params = Promise.resolve({ project: project.slug });
+    const text = await (await llms(new Request("http://x"), { params })).text();
+    expect(text).toContain(
+      [
+        "## Guides",
+        "### Basics",
+        `- [Start here](${portal}/help/start-here.md)`,
+        "### Billing",
+        "#### Invoices",
+        `- [Downloading invoices](${portal}/help/downloading-invoices.md)`,
+        "### More articles",
+        `- [Contact us](${portal}/help/contact-us.md)`,
+        "## API",
+        "### Endpoints",
+        `- [Listing posts](${portal}/help/listing-posts.md)`,
+        "## Changelog",
+      ].join("\n\n"),
+    );
+    expect(text).not.toContain("Empty");
+
+    actAs(owner);
+    const files = unzipSync(new Uint8Array(await (await exportZip(new Request("http://x"), { params })).arrayBuffer()));
+    expect(Object.keys(files).filter((file) => file.startsWith("help/")).sort()).toEqual([
+      "help/api/endpoints/listing-posts.md",
+      "help/contact-us.md",
+      "help/empty/unread/not-yet.md",
+      "help/guides/basics/start-here.md",
+      "help/guides/billing/invoices/downloading-invoices.md",
+    ]);
+    expect(strFromU8(files["help/api/endpoints/listing-posts.md"]!)).toContain('section: "API"');
   });
 });

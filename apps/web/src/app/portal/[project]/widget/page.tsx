@@ -37,7 +37,7 @@ const TABS = [
  * other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const [{ project: slug }, { tab: tabParam, q, article, title, display }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { tab: tabParam, q, article, section, title, display }] = await Promise.all([props.params, props.searchParams]);
   const [project, settings, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
@@ -122,6 +122,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           projectSlug={slug}
           query={typeof q === "string" ? q.trim().slice(0, 200) : ""}
           article={typeof article === "string" ? article : undefined}
+          section={typeof section === "string" ? section : undefined}
           hasBoard={project.boards.length > 0}
         />
       )}

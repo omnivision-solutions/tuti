@@ -57,28 +57,46 @@ export type HelpCollection = {
   collections: HelpCollection[];
 };
 
+/** A section of the help center for readers: a tab, with its collections and, on the first, the articles in none. */
+export type HelpSection = { slug: string; name: string; collections: HelpCollection[]; uncollected: { slug: string; title: string }[] };
+
 /**
  * The portal's /help (and the widget's, and llms.txt): the top-level collections in order, each with
  * its listed articles in order and then the collections in it, and the listed articles in none.
- * Collections without a listed article (in them or in the ones in them) are left out.
+ * Collections without a listed article (in them or in the ones in them) are left out. `sections`
+ * splits the same by section (the tabs), leaving out the ones with nothing to read; it's empty when
+ * the help center has no sections. The first section has the articles in no collection.
  */
 export async function helpCenter(projectSlug: string) {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
-  const [rows, uncollected] = await Promise.all([
+  const [rows, uncollected, sectionRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, parentId: true, slug: true, name: true, description: true, articles: articleSelect },
+      select: { id: true, parentId: true, sectionId: true, slug: true, name: true, description: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
+    prisma.helpSection.findMany({
+      where: { project: { slug: projectSlug } },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+      select: { id: true, slug: true, name: true },
+    }),
   ]);
-  const nest = (parentId: string | null): HelpCollection[] =>
-    rows
-      .filter((row) => row.parentId === parentId)
-      .map(({ slug, name, description, articles, id }) => ({ slug, name, description, articles, collections: nest(id) }))
-      .filter((c) => c.articles.length > 0 || c.collections.length > 0);
-  return { collections: nest(null), uncollected };
+  type Row = (typeof rows)[number];
+  const view = ({ slug, name, description, articles, id }: Row): HelpCollection => ({ slug, name, description, articles, collections: nest(id) });
+  const readable = (c: HelpCollection) => c.articles.length > 0 || c.collections.length > 0;
+  const nest = (parentId: string): HelpCollection[] => rows.filter((row) => row.parentId === parentId).map(view).filter(readable);
+  const top = rows.filter((row) => row.parentId === null).map((row) => ({ sectionId: row.sectionId, collection: view(row) })).filter((t) => readable(t.collection));
+  const sections = sectionRows
+    .map(({ id, slug, name }, index) => ({
+      slug,
+      name,
+      collections: top.filter((t) => t.sectionId === id).map((t) => t.collection),
+      uncollected: index === 0 ? uncollected : [],
+    }))
+    .filter((section) => section.collections.length > 0 || section.uncollected.length > 0);
+  return { collections: top.map((t) => t.collection), uncollected, sections: sections satisfies HelpSection[] };
 }
 
 /** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */
@@ -93,17 +111,24 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       showUpdatedDate: true,
       listing: true,
       revisedAt: true,
-      collection: { select: { name: true } },
+      collection: { select: { name: true, section: { select: { slug: true } }, parent: { select: { section: { select: { slug: true } } } } } },
       project: { select: { name: true } },
     },
   });
   if (!article) {
     return null;
   }
-  const { revisedAt, ...rest } = article;
+  const { revisedAt, collection, ...rest } = article;
   // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
   const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
-  return { ...rest, updatedAt, doc: displayDoc(article) };
+  return {
+    ...rest,
+    collection: collection && { name: collection.name },
+    /** The help center section it's in (its collection's, or that one's parent's), for the way back to it. */
+    section: (collection?.parent ? collection.parent.section : collection?.section)?.slug ?? null,
+    updatedAt,
+    doc: displayDoc(article),
+  };
 });
 
 /** An article as Markdown, its title as the heading: /help/<slug>.md and "Copy as Markdown". */

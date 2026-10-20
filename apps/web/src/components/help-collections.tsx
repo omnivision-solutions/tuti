@@ -88,3 +88,41 @@ export function HelpCollections({
     </>
   );
 }
+
+/**
+ * The help center's sections as tabs, above its collections (only with two or more). `href` links
+ * a section's tab; plain links, so they work without JavaScript.
+ */
+export function SectionTabs({
+  sections,
+  active,
+  href,
+  compact = false,
+}: {
+  sections: { slug: string; name: string }[];
+  active: string;
+  href: (slug: string) => string;
+  compact?: boolean;
+}) {
+  if (sections.length < 2) {
+    return null;
+  }
+  return (
+    <nav aria-label="Help center sections" className="flex gap-1 overflow-x-auto">
+      {sections.map((section) => (
+        <Link
+          key={section.slug}
+          href={href(section.slug)}
+          aria-current={section.slug === active ? "page" : undefined}
+          className={cn(
+            "rounded-full border px-3 py-1 whitespace-nowrap transition-colors",
+            compact ? "text-xs" : "text-sm",
+            section.slug === active ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {section.name}
+        </Link>
+      ))}
+    </nav>
+  );
+}
