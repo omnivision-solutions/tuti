@@ -127,6 +127,17 @@ model Project {
   widgetColor         String?
   widgetPosition      String   @default("bottom-right")
   widgetLinks         Json     @default("[]")
+  /// Branding for the portal and its help center (see the branding.* operations): a logo,
+  /// one for dark mode and a favicon (uploads, attached while they're used), the accent
+  /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
+  /// footer (`[{ label, url }]`, https only), and whether the footer says "Powered by tuti".
+  brandLogoId         String?
+  brandLogoDarkId     String?
+  brandFaviconId      String?
+  brandColor          String?
+  headerLinks         Json     @default("[]")
+  footerLinks         Json     @default("[]")
+  poweredBy           Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -142,7 +153,10 @@ model Project {
   githubInstallation   GithubInstallation?
   postLinks            PostLink[]
   webhooks             Webhook[]
-  media                Media[]
+  media                Media[]  @relation("projectMedia")
+  brandLogo            Media?   @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
+  brandLogoDark        Media?   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
+  brandFavicon         Media?   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
@@ -242,8 +256,12 @@ model Media {
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
-  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project  Project @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
   uploader User    @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  /// Projects whose branding uses it (see Project.brandLogoId).
+  logoOf     Project[] @relation("brandLogo")
+  logoDarkOf Project[] @relation("brandLogoDark")
+  faviconOf  Project[] @relation("brandFavicon")
 
   @@index([projectId])
   @@index([uploaderId, createdAt])

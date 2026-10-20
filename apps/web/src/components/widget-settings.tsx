@@ -31,7 +31,6 @@ export function WidgetSettings({
   links: { label: string; url: string }[];
 }) {
   const [picked, setPicked] = useState(color);
-  const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveWidgetSettings(projectSlug, prev, formData);
     if (!result.error) {
@@ -81,60 +80,87 @@ export function WidgetSettings({
             ))}
           </div>
         </fieldset>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Quick links</legend>
-          <p className="text-sm text-muted-foreground">
-            Up to {MAX_LINKS} links at the top of the widget, such as your status page or docs.
-          </p>
-          {rows.map((row, i) => (
-            <div key={row.key} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-              <Input
-                name="linkLabel"
-                aria-label={`Link ${i + 1} label`}
-                placeholder="Label"
-                defaultValue={row.label}
-                maxLength={40}
-                autoComplete="off"
-                className="sm:w-40"
-              />
-              <Input
-                name="linkUrl"
-                type="url"
-                aria-label={`Link ${i + 1} URL`}
-                placeholder="https://"
-                defaultValue={row.url}
-                autoComplete="off"
-                className="min-w-0 flex-1"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove link ${i + 1}`}
-                onClick={() => setRows(rows.filter((r) => r.key !== row.key))}
-              >
-                <XIcon />
-              </Button>
-            </div>
-          ))}
-          {rows.length < MAX_LINKS && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="self-start"
-              onClick={() => setRows([...rows, { label: "", url: "", key: Math.max(-1, ...rows.map((r) => r.key)) + 1 }])}
-            >
-              <PlusIcon />
-              Add link
-            </Button>
-          )}
-        </fieldset>
+        <LinkRows
+          name="link"
+          item="Link"
+          legend="Quick links"
+          description={`Up to ${MAX_LINKS} links at the top of the widget, such as your status page or docs.`}
+          links={links}
+        />
         {state.error && <FieldError>{state.error}</FieldError>}
         <Button type="submit" disabled={pending} className="self-end">
           {pending ? "Saving…" : "Save widget"}
         </Button>
       </FieldGroup>
     </form>
+  );
+}
+
+/**
+ * Up to 5 rows of label and https URL, sent as `<name>Label` and `<name>Url` fields
+ * (read with `linksFrom`). `item` names a row for screen readers ("Link 1 label").
+ */
+export function LinkRows({
+  name,
+  item,
+  legend,
+  description,
+  links,
+}: {
+  name: string;
+  item: string;
+  legend: string;
+  description: string;
+  links: { label: string; url: string }[];
+}) {
+  const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
+  return (
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-1 text-sm font-medium">{legend}</legend>
+      <p className="text-sm text-muted-foreground">{description}</p>
+      {rows.map((row, i) => (
+        <div key={row.key} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+          <Input
+            name={`${name}Label`}
+            aria-label={`${item} ${i + 1} label`}
+            placeholder="Label"
+            defaultValue={row.label}
+            maxLength={40}
+            autoComplete="off"
+            className="sm:w-40"
+          />
+          <Input
+            name={`${name}Url`}
+            type="url"
+            aria-label={`${item} ${i + 1} URL`}
+            placeholder="https://"
+            defaultValue={row.url}
+            autoComplete="off"
+            className="min-w-0 flex-1"
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Remove ${item.toLowerCase()} ${i + 1}`}
+            onClick={() => setRows(rows.filter((r) => r.key !== row.key))}
+          >
+            <XIcon />
+          </Button>
+        </div>
+      ))}
+      {rows.length < MAX_LINKS && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={() => setRows([...rows, { label: "", url: "", key: Math.max(-1, ...rows.map((r) => r.key)) + 1 }])}
+        >
+          <PlusIcon />
+          Add {item.toLowerCase()}
+        </Button>
+      )}
+    </fieldset>
   );
 }

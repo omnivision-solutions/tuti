@@ -1,4 +1,5 @@
 import type { Operation } from "./define";
+import { getBranding, updateBranding } from "./branding";
 import { createComment, createPost } from "./create";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
@@ -90,6 +91,8 @@ const all = [
   dismissDuplicate,
   getWidgetSettings,
   updateWidgetSettings,
+  getBranding,
+  updateBranding,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

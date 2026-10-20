@@ -12,7 +12,8 @@ export const MAX_WIDGET_LABEL_LENGTH = 30;
 export const MAX_WIDGET_LINK_LABEL_LENGTH = 40;
 const POSITIONS = ["bottom-right", "bottom-left"] as const;
 
-const link = z.object({
+/** A link for visitors: a label and a full https:// address (also the portal's header and footer links). */
+export const httpsLink = z.object({
   label: z
     .string()
     .trim()
@@ -25,7 +26,14 @@ const link = z.object({
     .pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" })),
 });
 
-export type WidgetLink = z.infer<typeof link>;
+export type WidgetLink = z.infer<typeof httpsLink>;
+
+/** A colour as `#rrggbb`, lowercased: the only form stored, so it's safe to put into CSS. */
+export const hexColor = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^#[0-9a-f]{6}$/, "Pick a colour like #12804a");
 export type WidgetSettings = {
   label: string;
   /** `#rrggbb`, or null for the brand green. */
@@ -43,7 +51,7 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
   if (!project) {
     return null;
   }
-  const links = z.array(link).safeParse(project.widgetLinks);
+  const links = z.array(httpsLink).safeParse(project.widgetLinks);
   return {
     label: project.widgetLabel,
     color: project.widgetColor,
@@ -52,15 +60,19 @@ export async function widgetSettings(where: { id: string } | { slug: string }): 
   };
 }
 
-/** Black or white, whichever reads better on a `#rrggbb` background (WCAG relative luminance). */
-export function textColorOn(hex: string): string {
+/** A `#rrggbb` colour's WCAG relative luminance, 0 (black) to 1 (white). */
+export function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
     const c = parseInt(hex.slice(i, i + 2), 16) / 255;
     return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
   });
-  const luminance = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+}
+
+/** Black or white, whichever reads better on a `#rrggbb` background. */
+export function textColorOn(hex: string): string {
   // Contrast with white is 1.05 / (L + 0.05), with black (L + 0.05) / 0.05; they're equal at L ≈ 0.179.
-  return luminance > 0.179 ? "#000000" : "#ffffff";
+  return luminance(hex) > 0.179 ? "#000000" : "#ffffff";
 }
 
 export const getWidgetSettings = defineOperation({
@@ -88,15 +100,9 @@ export const updateWidgetSettings = defineOperation({
       .min(1, "Give the button a label")
       .max(MAX_WIDGET_LABEL_LENGTH, `Keep the label under ${MAX_WIDGET_LABEL_LENGTH} characters`)
       .optional(),
-    color: z
-      .string()
-      .trim()
-      .toLowerCase()
-      .regex(/^#[0-9a-f]{6}$/, "Pick a colour like #12804a")
-      .nullable()
-      .optional(),
+    color: hexColor.nullable().optional(),
     position: z.enum(POSITIONS, { error: "Pick bottom-right or bottom-left" }).optional(),
-    links: z.array(link).max(MAX_WIDGET_LINKS, `Add up to ${MAX_WIDGET_LINKS} links`).optional(),
+    links: z.array(httpsLink).max(MAX_WIDGET_LINKS, `Add up to ${MAX_WIDGET_LINKS} links`).optional(),
   }),
   example: { label: "Help & feedback", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status", url: "https://status.example.com" }] },
   run: async ({ projectId }, input) => {

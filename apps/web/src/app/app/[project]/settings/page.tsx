@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
+import { BrandingSettings } from "@/components/branding-settings";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
@@ -13,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
+import { branding } from "@/server/operations/branding";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
 const GITHUB_RESULTS: Record<string, string> = {
@@ -49,6 +51,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
     },
   });
   const widget = (await widgetSettings({ id: project.id }))!;
+  const brand = (await branding({ id: project.id }))!;
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -110,6 +113,26 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             projectSlug={project.slug}
             enabled={project.ssoSecret !== null}
             ssoUrl={`${portalUrl(project.slug)}/sso`}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding</CardTitle>
+          <CardDescription>How your portal and help center look: your logo, favicon, colour and links.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <BrandingSettings
+            projectSlug={project.slug}
+            logo={brand.logo}
+            logoDark={brand.logoDark}
+            favicon={brand.favicon}
+            color={brand.color ?? DEFAULT_WIDGET_COLOR}
+            defaultColor={DEFAULT_WIDGET_COLOR}
+            headerLinks={brand.headerLinks}
+            footerLinks={brand.footerLinks}
+            poweredBy={brand.poweredBy}
           />
         </CardContent>
       </Card>

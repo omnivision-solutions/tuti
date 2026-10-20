@@ -72,6 +72,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
+  "branding.get": () => ({}),
+  // Like widget.update: admins only in the app (see the authorization matrix).
+  "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: false }),
 };
 
 let owner: TestUser;
@@ -201,7 +204,16 @@ const snapshot = () =>
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true } }),
     prisma.project.findUnique({
       where: { id: project.id },
-      select: { changelogTone: true, changelogExampleIds: true, widgetLabel: true, widgetColor: true, widgetLinks: true },
+      select: {
+        changelogTone: true,
+        changelogExampleIds: true,
+        widgetLabel: true,
+        widgetColor: true,
+        widgetLinks: true,
+        brandColor: true,
+        headerLinks: true,
+        poweredBy: true,
+      },
     }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),

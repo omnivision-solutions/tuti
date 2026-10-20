@@ -22,6 +22,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
+import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as github from "./github";
 import * as help from "./help";
@@ -51,6 +52,7 @@ const modules = {
   changelog,
   "api-keys": apiKeys,
   boards,
+  branding,
   github,
   help,
   "help-readers": helpReaders,
@@ -103,6 +105,12 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  branding: {
+    saveBranding: {
+      allowed: "ADMIN",
+      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com" })),
+    },
   },
   changelog: {
     saveChangelogEntry: {
