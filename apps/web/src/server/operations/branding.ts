@@ -144,10 +144,10 @@ export const updateBranding = defineOperation({
         const before = names.map((name) => current[IMAGES[name]]).filter((id) => id !== null);
         const after = names.map((name) => (input[name] !== undefined ? input[name] : current[IMAGES[name]])).filter((id) => id !== null);
         const added = [...new Set(after.filter((id) => !before.includes(id)))];
-        // New images are this project's finished uploads that nothing uses yet: an image from a post can't
-        // become the logo, or replacing the logo would release it from under the post.
+        // New images are this project's finished uploads. Content may share them (or one may be the logo
+        // just replaced): release-media checks branding and content before it releases anything.
         if (added.length > 0) {
-          const fresh = await tx.media.count({ where: { id: { in: added }, projectId, status: "READY", attachedAt: null } });
+          const fresh = await tx.media.count({ where: { id: { in: added }, projectId, status: "READY" } });
           if (fresh !== added.length) {
             throw new OperationError(400, "invalid_input", MEDIA_GONE);
           }

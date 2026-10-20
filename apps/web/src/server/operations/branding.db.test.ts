@@ -98,7 +98,7 @@ test("admins set the colour, links and Powered by; each change leaves the rest",
   expect((await update({ poweredBy: true })).poweredBy).toBe(true);
 });
 
-test("settings are checked: https links, at most 5 of each, a real colour, and images that are this project's unused uploads", async () => {
+test("settings are checked: https links, at most 5 of each, a real colour, and images that are this project's finished uploads", async () => {
   const refused = async (input: Parameters<typeof update>[0], message: string) =>
     expect(update(input)).rejects.toMatchObject({ status: 400, message });
   const links = (count: number) => Array(count).fill({ label: "Docs", url: "https://docs.example.com" });
@@ -115,11 +115,13 @@ test("settings are checked: https links, at most 5 of each, a real colour, and i
   await refused({ logo: (await uploaded({ projectId: other.id })).id }, gone);
   await refused({ logo: (await uploaded({ status: "PROCESSING" })).id }, gone);
   await refused({ favicon: "no-such-upload" }, gone);
-  // An image a post already uses: replacing the logo later would release it from under the post.
-  await refused({ logoDark: (await uploaded({ attachedAt: new Date() })).id }, gone);
 
   // Nothing was saved.
   expect(await get()).toEqual({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true });
+
+  // An image already in use (a post's, or the logo just replaced) can be the logo: release-media checks every use.
+  const inUse = await uploaded({ attachedAt: new Date() });
+  expect(await update({ logoDark: inUse.id })).toMatchObject({ logoDark: { id: inUse.id } });
 });
 
 test("images are attached while used; a replaced or removed one is released by the daily job, for the cleanup to delete", async () => {
@@ -170,6 +172,16 @@ test("two saves at once: the logo that wins is attached, the other released by t
   expect(await attached(winner)).not.toBeNull();
   expect(await attached(loser)).toBeNull();
   expect(await attached(old.id)).toBeNull();
+});
+
+test("a replaced logo can be picked again before the daily job runs", async () => {
+  const [logo, other] = [await uploaded(), await uploaded()];
+  await update({ logo: logo.id });
+  await update({ logo: other.id });
+  expect(await update({ logo: logo.id })).toMatchObject({ logo: { id: logo.id } });
+  await releaseADayLater();
+  expect(await attached(logo.id)).not.toBeNull();
+  expect(await attached(other.id)).toBeNull();
 });
 
 test("a replaced logo that a post uses stays", async () => {
