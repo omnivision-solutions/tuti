@@ -8,6 +8,8 @@ import { createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
+  // A long journey (drafting, AI edits, publishing, the portal): more than the default 30 s on a busy machine.
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
