@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type ModelFake, startModelFake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -44,6 +44,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.search": () => ({ q: "matrix" }),
   "articles.feedback": () => ({ slug: "matrix-article", helpful: false, comment: "From the matrix", author: { id: "matrix-reader" } }),
   "help.insights": () => ({}),
+  "help.ask": () => ({ q: "How do I invite my team?" }),
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
   "articles.publish": () => ({ slug: "matrix-draft" }),
@@ -69,14 +70,17 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
 
 let owner: TestUser;
 let model: ModelFake;
+let openai: OpenAIFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeAll(async () => {
   model = await startModelFake();
+  openai = await startOpenAIFake();
   for (const [name, value] of Object.entries(model.env)) {
     vi.stubEnv(name, value);
   }
+  vi.stubEnv("OPENAI_BASE_URL", openai.url);
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -88,7 +92,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => model.close());
+afterAll(() => Promise.all([model.close(), openai.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -198,6 +202,8 @@ test("every operation is in this matrix", () => {
 test.each(operations.map((operation) => ({ name: operation.name, operation })))("$name", async ({ operation }) => {
   const input = () => cases[operation.name as OperationName](fixture);
   let fixture = await createFixture();
+  // AI answers need embeddings: on for help.ask only. Nothing is close to its question, so the model isn't asked.
+  vi.stubEnv("OPENAI_API_KEY", operation.name === "help.ask" ? FAKE_OPENAI_KEY : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();

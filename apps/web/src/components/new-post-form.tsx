@@ -23,6 +23,7 @@ export function NewPostForm({
   mediaBaseUrl,
   linkTarget,
   submit,
+  defaultTitle,
 }: {
   projectSlug: string;
   boardSlug: string;
@@ -32,6 +33,8 @@ export function NewPostForm({
   linkTarget?: "_blank";
   /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
   submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
+  /** A title to start the first post with (the question from the help center's "Post this as feedback"). */
+  defaultTitle?: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
@@ -53,6 +56,18 @@ export function NewPostForm({
   }, {});
 
   useEffect(() => () => clearTimeout(timer.current), []);
+
+  // A prefilled title gets its similar posts too, once.
+  const [initialTitle] = useState(defaultTitle);
+  useEffect(() => {
+    if (initialTitle && initialTitle.trim().length >= 3) {
+      void findSimilarPosts(projectSlug, initialTitle).then((posts) => {
+        if (latestQuery.current === 0) {
+          setSimilar(posts);
+        }
+      });
+    }
+  }, [projectSlug, initialTitle]);
 
   // Look for similar posts once typing pauses; ignore replies to older queries.
   const suggest = (title: string) => {
@@ -80,8 +95,10 @@ export function NewPostForm({
             <Field data-invalid={state.error ? true : undefined}>
               <FieldLabel htmlFor="post-title">Title</FieldLabel>
               <Input
+                key={submitted}
                 id="post-title"
                 name="title"
+                defaultValue={submitted === 0 ? initialTitle : undefined}
                 placeholder="Short, descriptive title"
                 required
                 autoComplete="off"

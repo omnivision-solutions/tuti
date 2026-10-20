@@ -2,11 +2,14 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { HelpAnswer } from "@/components/help-answer";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { helpCenter } from "@/server/help-queries";
 import { searchHelp } from "@/server/help-search";
+import { MAX_POST_TITLE } from "@/server/operations/create";
+import { answersEnabled } from "@/server/operations/help-ask";
 
 export const metadata = { title: "Help center" };
 
@@ -55,6 +58,12 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   );
 }
 
+/** The new-post form on the portal's first board, with the question as the title. */
+async function feedbackHref(projectSlug: string, question: string) {
+  const board = await prisma.board.findFirst({ where: { project: { slug: projectSlug } }, orderBy: { createdAt: "asc" }, select: { slug: true } });
+  return board && `/b/${board.slug}?${new URLSearchParams({ title: question.slice(0, MAX_POST_TITLE) })}`;
+}
+
 /** The help center: a search box (`?q=`), then each collection with its published articles, then the articles in no collection. */
 export default async function HelpCenterPage(props: PageProps<"/portal/[project]/help">) {
   const [{ project: slug }, { q }] = await Promise.all([props.params, props.searchParams]);
@@ -68,6 +77,7 @@ export default async function HelpCenterPage(props: PageProps<"/portal/[project]
         <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the help center" />
         <Button type="submit">Search</Button>
       </form>
+      {query && answersEnabled() && <HelpAnswer key={query} projectSlug={slug} question={query} feedbackHref={await feedbackHref(slug, query)} />}
       {query && <SearchResults projectSlug={slug} query={query} />}
       {!query && collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />

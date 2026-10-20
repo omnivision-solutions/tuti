@@ -30,6 +30,7 @@ import {
   updateArticle,
   updateCollection,
 } from "./help";
+import { askHelp } from "./help-ask";
 import { answerArticle, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 
@@ -55,6 +56,7 @@ const all = [
   getArticle,
   searchArticles,
   answerArticle,
+  askHelp,
   getHelpInsights,
   createArticle,
   updateArticle,

@@ -8,13 +8,14 @@ import { cookies, headers } from "next/headers";
 import { portalUrl } from "@/lib/hosts";
 
 import type { FormState } from "./form-state";
+import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operations/help-ask";
 import { answerFields, saveAnswer } from "./operations/help-insights";
 import { OperationError } from "./operations";
 import { getSession } from "./session";
 
 /**
- * Readers' actions on the portal's help articles: answering "Was this helpful?" and counting
- * the view. Anyone may, signed in or not; most help readers are anonymous.
+ * Readers' actions on the portal's help center: answering "Was this helpful?", counting
+ * the view, and asking the AI. Anyone may, signed in or not; most help readers are anonymous.
  */
 
 const READER_COOKIE = "tuti_reader";
@@ -80,4 +81,41 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     FROM article a JOIN project p ON p.id = a."projectId"
     WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
+}
+
+/** "Ask AI" on the portal's /help: an answer from the published articles, or "I don't know" (see help.ask). */
+export async function askHelp(projectSlug: string, question: string): Promise<HelpAnswer | { error: string }> {
+  const input = askFields.safeParse({ q: question });
+  if (!input.success) {
+    return { error: input.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  if (!project) {
+    return { error: "Help center not found" };
+  }
+  try {
+    return await answerQuestion(project.id, await readerId(String(projectSlug)), input.data.q);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Thumbs up or down on an AI answer. Rating again replaces it. */
+export async function rateHelpAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  if (!project) {
+    return { error: "Help center not found" };
+  }
+  try {
+    await rateAnswer(project.id, String(questionId), helpful === true);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  return {};
 }

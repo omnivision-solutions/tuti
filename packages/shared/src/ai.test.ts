@@ -45,3 +45,11 @@ test("a failed request or an empty reply throws", async () => {
   model.reply("  ");
   await expect(complete({ system: "s", user: "u" })).rejects.toThrow("The AI reply had no text");
 });
+
+test("the model fake keeps a reply with a match for the request that contains it", async () => {
+  useFake();
+  model.reply("For the question", undefined, "How do I invite?");
+  model.reply("For anything");
+  expect(await complete({ system: "s", user: "Draft the notes" })).toBe("For anything");
+  expect(await complete({ system: "s", user: "Question: How do I invite?" })).toBe("For the question");
+});
