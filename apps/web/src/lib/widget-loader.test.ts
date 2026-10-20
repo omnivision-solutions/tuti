@@ -17,7 +17,8 @@ test("sign-in tokens go to the panel only, on the portal's origin, when it asks"
   expect(script).toMatch(/target\.postMessage\(\{ type: "tuti:identify", token: token \}, origin\)/);
   expect(script).not.toMatch(/postMessage\([^)]*token[^)]*"\*"\)/);
   // Messages count only from the panel's own window and origin.
-  expect(script).toContain("event.source !== frame.contentWindow || event.origin !== origin");
+  expect(script).toContain("if (!event.source || event.origin !== origin) return;");
+  expect(script).toContain("var from = frameOf(event.source);\n    if (!from) return;");
 });
 
 /** Just enough DOM to run the loader: elements with attributes, styles, children and bubbling clicks. */
@@ -80,9 +81,13 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenHere }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenHere, narrow = false, before }: {
   attributes?: Record<string, string>;
   settings?: object;
+  /** Whether the screen is narrow (max-width: 640px). */
+  narrow?: boolean;
+  /** Builds the page's own elements before the script runs. */
+  before?: (page: FakePage) => void;
   /** null: the request fails; "hang": it never answers. */
   latest?: object | null | "hang";
   /** What this person has seen on any device; "fail": the request fails. */
@@ -92,15 +97,57 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
   const windowListeners: Record<string, ((event: object) => void)[]> = {};
   const stored = new Map<string, string>(seenHere ? [["tuti:seen:acme", seenHere]] : []);
+  const mediaLists: { matches: boolean; onchange: (() => void) | null }[] = [];
+  const observers: (() => void)[] = [];
   const page = {
     documentListeners,
     windowListeners,
+    mediaLists,
+    /** The page changed: what MutationObserver tells the script. */
+    mutated() {
+      observers.forEach((callback) => callback());
+    },
+    /** The screen becomes narrow or wide. */
+    resize(narrow: boolean) {
+      for (const list of mediaLists.filter((list) => list.onchange)) {
+        list.matches = narrow;
+        list.onchange!();
+      }
+    },
+    /** A key pressed on the page. */
+    press(key: string) {
+      documentListeners.keydown?.forEach((listener) => listener({ key }));
+    },
+    /** A message from `source` (a window) on `origin`. */
+    message(source: unknown, data: unknown, origin = "https://acme.tuti.example") {
+      windowListeners.message?.forEach((listener) => listener({ source, origin, data }));
+    },
+    get backdrop() {
+      return page.body.children.find((child) => (child as FakeElement).tagName === "div" && (child as FakeElement).id !== "tuti-widget") as
+        | FakeElement
+        | undefined;
+    },
+    /** The page's inline panels. */
+    get inlineFrames() {
+      return page.document.querySelectorAll("[data-tuti-inline]").flatMap((element) => element.children as FakeElement[]);
+    },
     document: {
       activeElement: null as unknown,
       body: null as unknown as FakeElement,
       currentScript: null as unknown as FakeElement,
-      createElement: (tag: string) => new FakeElement(tag, page),
+      createElement: (tag: string) => {
+        const element = new FakeElement(tag, page);
+        // An iframe's window, for messages to and from it.
+        if (tag === "iframe") element.contentWindow = { postMessage: vi.fn() };
+        return element;
+      },
       createTextNode: (text: string) => ({ nodeValue: text }),
+      querySelectorAll: (selector: string) => {
+        const name = /^\[([\w-]+)\]$/.exec(selector)![1]!;
+        const all = (element: FakeElement): FakeElement[] =>
+          element.children.flatMap((child) => (child instanceof FakeElement ? [child, ...all(child)] : []));
+        return all(page.document.body).filter((element) => element.hasAttribute(name));
+      },
       addEventListener: (type: string, listener: (event: object) => void) => (documentListeners[type] ??= []).push(listener),
       contains: (element: FakeElement) => {
         for (let e: FakeElement | null = element; e; e = e.parent) if (e === page.document.body) return true;
@@ -109,7 +156,17 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
     },
     window: {
       TutiSettings: settings,
-      matchMedia: () => ({ matches: false }),
+      matchMedia: (query: string) => {
+        const list = { matches: narrow && query === "(max-width: 640px)", onchange: null as (() => void) | null };
+        mediaLists.push(list);
+        return list;
+      },
+      MutationObserver: class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe() {}
+      },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
       fetch: vi.fn(async (url: string) => {
@@ -163,6 +220,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   script.setAttribute("data-project", "acme");
   for (const [name, value] of Object.entries(attributes)) script.setAttribute(name, value);
   page.document.currentScript = script;
+  before?.(page);
   new Function("window", "document", "fetch", widgetLoader("https://{project}.tuti.example"))(
     page.window,
     page.document,
@@ -398,4 +456,189 @@ test("when the panel shows the announcement, it's recorded for the person, so th
   anonymous.seen("2026-10-18T10:00:00.000Z");
   await settled();
   expect(anonymous.seenRequests).toEqual([]);
+});
+
+test("by default the panel opens above the launcher, as before: no drawer, no backdrop", async () => {
+  const page = loadWidget({ narrow: true });
+  await settled();
+  page.button!.click();
+  expect(page.panel.style).toMatchObject({ display: "block", right: "20px", bottom: "76px", borderRadius: "14px" });
+  expect(page.panel.style.top).toBeUndefined();
+  expect(page.backdrop).toBeUndefined();
+  expect(page.inlineFrames).toEqual([]);
+});
+
+test("data-display or TutiSettings.display picks the mode, the attribute first; an unknown one is reported and it's the launcher", async () => {
+  const sidebar = (page: FakePage) => page.panel.style.top === "0";
+  expect(sidebar(loadWidget({ attributes: { "data-display": "sidebar" } }))).toBe(true);
+  expect(sidebar(loadWidget({ settings: { display: "sidebar" } }))).toBe(true);
+  expect(sidebar(loadWidget({ attributes: { "data-display": "launcher" }, settings: { display: "sidebar" } }))).toBe(false);
+
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const unknown = loadWidget({ attributes: { "data-display": "popup" } });
+  expect(error).toHaveBeenCalledWith("Tuti widget: display is one of launcher, sidebar or inline");
+  error.mockRestore();
+  await settled();
+  expect(sidebar(unknown)).toBe(false);
+  expect(unknown.button!.text).toBe("Feedback");
+});
+
+test("sidebar: a full-height drawer on the launcher's side; Escape closes it and focus goes back to the button", async () => {
+  const page = loadWidget({ attributes: { "data-display": "sidebar" } });
+  await settled();
+  const button = page.button!;
+  expect(page.panel.style).toMatchObject({ display: "none", top: "0", bottom: "0", right: "0", width: "min(400px, 100vw)" });
+  // Over the launcher, which sits in the same corner.
+  expect(Number(page.panel.style.zIndex)).toBeGreaterThan(Number(button.style.zIndex));
+  button.focus();
+  button.click();
+  expect(page.panel.style.display).toBe("block");
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  expect(page.document.activeElement).toBe(page.frame);
+  // Wide screen: the page stays usable beside it.
+  expect(page.backdrop!.style.display).toBe("none");
+  page.press("Escape");
+  expect(page.panel.style.display).toBe("none");
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(page.document.activeElement).toBe(button);
+
+  // On the left with a bottom-left launcher.
+  const left = loadWidget({ attributes: { "data-display": "sidebar" }, latest: { latest: null, launcher: { position: "bottom-left" } } });
+  await settled();
+  expect(left.panel.style).toMatchObject({ left: "0", right: "auto" });
+});
+
+test("sidebar on a narrow screen: a backdrop that closes the drawer, also after the screen changes", async () => {
+  const page = loadWidget({ attributes: { "data-display": "sidebar" }, narrow: true });
+  await settled();
+  const button = page.button!;
+  button.click();
+  expect(page.backdrop!.style.display).toBe("block");
+  // Under the drawer, over the page.
+  expect(page.body.children.indexOf(page.backdrop)).toBeLessThan(page.body.children.indexOf(page.panel));
+  page.backdrop!.click();
+  expect(page.panel.style.display).toBe("none");
+  expect(page.backdrop!.style.display).toBe("none");
+  expect(page.document.activeElement).toBe(button);
+
+  // Turned to landscape while open, and back.
+  page.Tuti.open();
+  page.resize(false);
+  expect(page.backdrop!.style.display).toBe("none");
+  page.resize(true);
+  expect(page.backdrop!.style.display).toBe("block");
+  // A closed drawer leaves no backdrop behind.
+  page.Tuti.close();
+  page.resize(false);
+  page.resize(true);
+  expect(page.backdrop!.style.display).toBe("none");
+});
+
+/** A data-tuti-inline element on the page, naming `tab` (empty: the default), with other `attributes`. */
+function inlineMount(page: FakePage, tab = "", attributes: Record<string, string> = {}) {
+  const element = page.body.appendChild(new FakeElement("div", page));
+  element.setAttribute("data-tuti-inline", tab);
+  for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+  return element;
+}
+
+test("inline: each data-tuti-inline element gets its own panel, at the tab it names, without a close button", async () => {
+  const page = loadWidget({
+    attributes: { "data-display": "inline" },
+    before: (page) => {
+      inlineMount(page);
+      inlineMount(page, "help");
+      // The page's own data-tab (its own tabs, say) is none of the widget's business.
+      inlineMount(page, "", { "data-tab": "whats-new" });
+    },
+  });
+  await settled();
+  // No launcher in inline mode.
+  expect(page.button).toBeUndefined();
+  expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
+    "https://acme.tuti.example/widget?display=inline",
+    "https://acme.tuti.example/widget?tab=help&display=inline",
+    "https://acme.tuti.example/widget?display=inline",
+  ]);
+  for (const frame of page.inlineFrames) {
+    expect(frame).toMatchObject({ tagName: "iframe", name: "tuti-inline", title: "Feedback" });
+    expect(frame.style).toMatchObject({ width: "100%", height: "100%", minHeight: "500px", border: "0" });
+  }
+  // The floating panel is still there for Tuti.open().
+  page.Tuti.open({ tab: "whats-new" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=whats-new");
+  expect(page.inlineFrames).toHaveLength(3);
+});
+
+test("inline mounts work in every mode, also ones added later, each mounted once; an unknown tab is reported, and it's the default", async () => {
+  const page = loadWidget({ before: (page) => void inlineMount(page, "whats-new") });
+  await settled();
+  expect(page.button!.text).toBe("Feedback");
+  expect(page.inlineFrames.map((frame) => frame.src)).toEqual(["https://acme.tuti.example/widget?tab=whats-new&display=inline"]);
+
+  // A single-page app shows one later.
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  inlineMount(page, "settings");
+  page.mutated();
+  page.mutated();
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or help");
+  error.mockRestore();
+  expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
+    "https://acme.tuti.example/widget?tab=whats-new&display=inline",
+    "https://acme.tuti.example/widget?display=inline",
+  ]);
+});
+
+test("inline panels get sign-in tokens and say what's been seen; they can't close the floating panel", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, before: (page) => void inlineMount(page) });
+  await settled();
+  const inline = page.inlineFrames[0]!;
+  const frameWindow = inline.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.message(frameWindow, { type: "tuti:ready" });
+  await settled();
+  expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: "sso-token" }, "https://acme.tuti.example");
+
+  // Only from the portal's origin, and only from the script's own frames.
+  page.message(frameWindow, { type: "tuti:seen", at: LATEST.latest }, "https://evil.example");
+  page.message({ postMessage: vi.fn() }, { type: "tuti:seen", at: LATEST.latest });
+  expect(page.Tuti.unseen()).toBe(true);
+  page.message(frameWindow, { type: "tuti:seen", at: LATEST.latest });
+  expect(page.Tuti.unseen()).toBe(false);
+
+  page.Tuti.open();
+  page.message(frameWindow, "tuti:close");
+  expect(page.panel.style.display).toBe("block");
+  page.message(page.frame!.contentWindow, "tuti:close");
+  expect(page.panel.style.display).toBe("none");
+
+  // One the page has removed is forgotten.
+  const mount = inline.parent!;
+  page.body.children.splice(page.body.children.indexOf(mount), 1);
+  mount.parent = null;
+  page.mutated();
+  page.message(frameWindow, { type: "tuti:ready" });
+  await settled();
+  expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
+});
+
+test("an inline mount the page removes and puts back (tab panels, keep-alive views) keeps its panel, which still gets tokens and says what's been seen", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, before: (page) => void inlineMount(page) });
+  await settled();
+  const mount = page.body.children[0] as FakeElement;
+  const inline = page.inlineFrames[0]!;
+  const frameWindow = inline.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.body.children.splice(0, 1);
+  mount.parent = null;
+  page.mutated();
+  page.body.appendChild(mount);
+  page.mutated();
+  // Still the one panel, not a second.
+  expect(page.inlineFrames).toEqual([inline]);
+
+  page.message(frameWindow, { type: "tuti:ready" });
+  await settled();
+  expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: "sso-token" }, "https://acme.tuti.example");
+  expect(page.Tuti.unseen()).toBe(true);
+  page.message(frameWindow, { type: "tuti:seen", at: LATEST.latest });
+  expect(page.Tuti.unseen()).toBe(false);
 });

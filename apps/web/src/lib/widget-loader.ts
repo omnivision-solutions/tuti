@@ -1,5 +1,5 @@
 import { SLUG_PATTERN } from "./project-slugs";
-import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WIDGET_SEEN_MESSAGE } from "./widget-messages";
+import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDGET_READY_MESSAGE, WIDGET_SEEN_MESSAGE } from "./widget-messages";
 
 /**
  * The widget loader served at /widget.js, for customers' own sites:
@@ -16,6 +16,13 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WI
  * after 3 seconds without it), so it doesn't change under the visitor's pointer.
  * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
  * their own button.
+ *
+ * `data-display` (or `TutiSettings.display`) picks how it shows: "launcher" (the default,
+ * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
+ * backdrop on narrow screens) or "inline" (no button). Any element with `data-tuti-inline`
+ * gets the panel in it, in every mode: its own iframe, at the tab it names
+ * (`data-tuti-inline="help"`; empty for Feedback), without a close button; elements
+ * added later get one too.
  *
  * Signing people in (their account in the customer's app, through the project's
  * JWT SSO): `Tuti.identify(getToken)` after the script loads, or
@@ -48,7 +55,13 @@ export function widgetLoader(portalTemplate: string): string {
     return;
   }
   var settings = window.TutiSettings || {};
-  var hideLauncher = script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
+  var display = script.getAttribute("data-display") || settings.display || "launcher";
+  if (display !== "launcher" && display !== "sidebar" && display !== "inline") {
+    console.error("Tuti widget: display is one of launcher, sidebar or inline");
+    display = "launcher";
+  }
+  var sidebar = display === "sidebar";
+  var hideLauncher = display === "inline" || script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
   var portal = ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
@@ -120,12 +133,31 @@ export function widgetLoader(portalTemplate: string): string {
   var panel = document.createElement("div");
   panel.id = "tuti-widget";
   css(panel, {
-    position: "fixed", right: "20px", bottom: hideLauncher ? "20px" : "76px", zIndex: "2147483000", display: "none",
-    width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 100px))",
-    borderRadius: "14px", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
+    position: "fixed", zIndex: "2147483000", display: "none", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
     background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)"
   });
-  whenBody(function () { document.body.appendChild(panel); });
+  // The sidebar: a drawer over the button, with a backdrop that closes it on narrow screens
+  // (where it covers most of the page); on wider ones the page stays usable beside it.
+  var backdrop = document.createElement("div");
+  var narrow = sidebar && window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  function showBackdrop() {
+    backdrop.style.display = narrow && narrow.matches && panel.style.display !== "none" ? "block" : "none";
+  }
+  if (sidebar) {
+    css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
+    css(backdrop, { position: "fixed", top: "0", right: "0", bottom: "0", left: "0", zIndex: "2147483001", display: "none", background: "rgba(0, 0, 0, 0.4)" });
+    backdrop.addEventListener("click", function () { close(); });
+    if (narrow) narrow.onchange = showBackdrop;
+  } else {
+    css(panel, {
+      right: "20px", bottom: hideLauncher ? "20px" : "76px", borderRadius: "14px",
+      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 100px))"
+    });
+  }
+  whenBody(function () {
+    if (sidebar) document.body.appendChild(backdrop);
+    document.body.appendChild(panel);
+  });
 
   // The button, unless the page has its own: once the settings are read, or after 3 seconds
   // without them (in their place, or styled when they come).
@@ -142,7 +174,7 @@ export function widgetLoader(portalTemplate: string): string {
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
-        css(panel, { left: "20px", right: "auto" });
+        css(panel, { left: sidebar ? "0" : "20px", right: "auto" });
       }
     }
     showLauncher();
@@ -184,6 +216,17 @@ export function widgetLoader(portalTemplate: string): string {
   }
 
   var TABS = { feedback: "", "whats-new": "?tab=whats-new", help: "?tab=help" };
+  function tabQuery(tab) {
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or help");
+    return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
+  }
+  function newFrame(src) {
+    var element = document.createElement("iframe");
+    element.src = src;
+    element.title = "Feedback";
+    css(element, { width: "100%", height: "100%", border: "0", display: "block" });
+    return element;
+  }
   var frame;
   var returnFocus;
 
@@ -191,21 +234,16 @@ export function widgetLoader(portalTemplate: string): string {
   // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
-    var tab = options && options.tab;
-    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or help");
-    var query = article ? "?tab=help&article=" + encodeURIComponent(article) : TABS.hasOwnProperty(tab) ? TABS[tab] : null;
+    var query = article ? "?tab=help&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
     if (!frame) {
-      frame = document.createElement("iframe");
-      frame.src = src;
-      frame.title = "Feedback";
-      css(frame, { width: "100%", height: "100%", border: "0", display: "block" });
-      panel.appendChild(frame);
+      frame = panel.appendChild(newFrame(src));
     } else if (query !== null) {
       frame.src = src;
     }
     if (panel.style.display === "none") returnFocus = from;
     panel.style.display = "block";
+    showBackdrop();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
@@ -213,6 +251,7 @@ export function widgetLoader(portalTemplate: string): string {
   function close() {
     if (panel.style.display === "none") return;
     panel.style.display = "none";
+    showBackdrop();
     button.setAttribute("aria-expanded", "false");
     (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }
@@ -232,6 +271,35 @@ export function widgetLoader(portalTemplate: string): string {
   });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") close();
+  });
+
+  // Inline: the panel in each of the page's data-tuti-inline elements, at the tab it names, also in
+  // ones added later (single-page apps). display=inline, and the iframe's name (which stays with
+  // it as it navigates), tell the panel there's nothing to close.
+  function mountInline() {
+    var elements = document.querySelectorAll("[data-tuti-inline]");
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i].__tutiFrame) continue;
+      var query = tabQuery(elements[i].getAttribute("data-tuti-inline"));
+      var inline = newFrame(portal + "/widget" + (query ? query + "&" : "?") + "display=inline");
+      inline.name = ${JSON.stringify(WIDGET_INLINE_NAME)};
+      inline.style.minHeight = "500px";
+      elements[i].__tutiFrame = elements[i].appendChild(inline);
+    }
+  }
+  // The panel whose window sent a message: the floating one, or that of a mount in the page now
+  // (read from the page each time, so a removed mount is forgotten and one put back counts again).
+  function frameOf(source) {
+    if (frame && frame.contentWindow === source) return frame;
+    var elements = document.querySelectorAll("[data-tuti-inline]");
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i].__tutiFrame && elements[i].__tutiFrame.contentWindow === source) return elements[i].__tutiFrame;
+    }
+    return null;
+  }
+  whenBody(function () {
+    mountInline();
+    if (window.MutationObserver) new window.MutationObserver(mountInline).observe(document.body, { childList: true, subtree: true });
   });
   var getToken = typeof settings.identify === "function" ? settings.identify : null;
   window.Tuti = {
@@ -261,10 +329,10 @@ export function widgetLoader(portalTemplate: string): string {
     }
   };
 
-  // Hands the panel a fresh sign-in token, only ever to the portal's origin.
-  function sendToken() {
-    if (!frame || !getToken) return;
-    var target = frame.contentWindow;
+  // Hands a panel a fresh sign-in token, only ever to the portal's origin.
+  function sendToken(to) {
+    if (!getToken) return;
+    var target = to.contentWindow;
     Promise.resolve()
       .then(function () { return getToken(); })
       .then(
@@ -275,11 +343,14 @@ export function widgetLoader(portalTemplate: string): string {
       );
   }
 
-  // From the panel (another origin): close (the close button, Escape) and ready-for-a-token.
+  // From a panel (another origin): close (the close button, Escape), ready-for-a-token and seen.
   window.addEventListener("message", function (event) {
-    if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
-    if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) close();
-    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken();
+    if (!event.source || event.origin !== origin) return;
+    var from = frameOf(event.source);
+    if (!from) return;
+    // Only the floating panel closes; an inline one has nothing to close.
+    if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) { if (from === frame) close(); }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken(from);
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
       remember(event.data.at);
       seenOnServer(event.data.at);
