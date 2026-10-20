@@ -119,6 +119,14 @@ model Project {
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone       String   @default("")
   changelogExampleIds String[] @default([])
+  /// The widget's launcher on customers' sites (see the widget.* operations): its
+  /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
+  /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
+  /// top of the panel (`[{ label, url }]`, https only).
+  widgetLabel         String   @default("Feedback")
+  widgetColor         String?
+  widgetPosition      String   @default("bottom-right")
+  widgetLinks         Json     @default("[]")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

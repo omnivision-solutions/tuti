@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
+import { ExternalLinkIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -13,6 +14,7 @@ import { WidgetHelp } from "@/components/widget-help";
 import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
+import { widgetSettings } from "@/server/operations/widget";
 import { getSession } from "@/server/session";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -31,15 +33,18 @@ const TABS = [
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
   const [{ project: slug }, { tab: tabParam, q, article }] = await Promise.all([props.params, props.searchParams]);
-  const project = await prisma.project.findUnique({
-    where: { slug },
-    select: {
-      id: true,
-      boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
-      articles: { where: { publishedAt: { not: null } }, take: 1, select: { id: true } },
-    },
-  });
-  if (!project) {
+  const [project, settings] = await Promise.all([
+    prisma.project.findUnique({
+      where: { slug },
+      select: {
+        id: true,
+        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
+        articles: { where: { publishedAt: { not: null } }, take: 1, select: { id: true } },
+      },
+    }),
+    widgetSettings({ slug }),
+  ]);
+  if (!project || !settings) {
     notFound();
   }
   const hasHelp = project.articles.length > 0;
@@ -69,6 +74,25 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         </nav>
         <WidgetClose />
       </div>
+      {settings.links.length > 0 && (
+        <nav aria-label="Quick links">
+          <ul className="flex flex-wrap gap-2">
+            {settings.links.map((link, i) => (
+              <li key={i}>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm break-words hover:bg-accent"
+                >
+                  {link.label}
+                  <ExternalLinkIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
       {tab === "whats-new" && <WhatsNew slug={slug} />}
       {tab === "help" && (
         <WidgetHelp

@@ -19,11 +19,14 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // A customer's site: /<project> is a page with that project's widget script tag. With the
 // project's SSO secret in `ssoSecrets`, its page signs its user in: TutiSettings.identify
 // fetches a fresh token from /token/<project>, like a customer's own server would make one.
+// `?hide-launcher` adds data-hide-launcher to the script tag.
 const ssoSecrets = new Map<string, string>();
 let site: Server;
 test.beforeAll(async () => {
   site = createServer((request, response) => {
-    const path = request.url!.slice(1);
+    const url = new URL(request.url!, "http://site");
+    const path = url.pathname.slice(1);
+    const hideLauncher = url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "";
     if (path.startsWith("token/")) {
       response.setHeader("content-type", "text/plain");
       response.end(ssoToken(ssoSecrets.get(path.slice("token/".length))!, { sub: "app-user-7", name: "Sam from Acme" }));
@@ -34,7 +37,7 @@ test.beforeAll(async () => {
       : "";
     response.setHeader("content-type", "text/html");
     response.end(`<!doctype html><title>Customer site</title><h1>Customer site</h1>${identify}
-      <script src="${APP_URL}/widget.js" data-project="${path}" async></script>`);
+      <script src="${APP_URL}/widget.js" data-project="${path}"${hideLauncher} async></script>`);
   });
   await new Promise<void>((resolve) => site.listen(0, resolve));
 });
@@ -247,4 +250,100 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await checkpoint(visitor, "widget-help-opened-at-article");
   await widget.getByRole("link", { name: "All articles" }).click();
   await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
+});
+
+type TutiSdk = { open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
+
+test("the team sets up the launcher; a customer's site shows it, opens articles from its help links and from its own button", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget launcher test");
+  await owner.getByRole("combobox", { name: "What the key can do" }).click();
+  await owner.getByRole("option", { name: "Read and write" }).click();
+  await owner.getByRole("button", { name: "Create key" }).click();
+  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget launcher test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
+  const article = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  // The launcher: a label, a colour, the left corner and a quick link (https only).
+  await owner.getByLabel("Button label").fill("Help & ideas");
+  await owner.getByLabel("Colour").fill("#5b21b6");
+  await owner.getByLabel("Bottom left").check();
+  await owner.getByRole("button", { name: "Add link" }).click();
+  await owner.getByLabel("Link 1 label").fill("Status");
+  await owner.getByLabel("Link 1 URL").fill("http://status.example.com");
+  await owner.getByRole("button", { name: "Save widget" }).click();
+  await expect(owner.getByText("Links need a full https:// address")).toBeVisible();
+  await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
+  await owner.getByRole("button", { name: "Save widget" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await checkpoint(owner, "widget-settings");
+  await owner.reload();
+  await expect(owner.getByLabel("Button label")).toHaveValue("Help & ideas");
+  await expect(owner.getByLabel("Link 1 URL")).toHaveValue("https://status.example.com");
+
+  // On the customer's site: the team's launcher, and the quick link at the top of the panel.
+  const visitor = await (await browser.newContext()).newPage();
+  const site = sitePage("customer.localhost", slug);
+  await visitor.goto(site);
+  const launcher = visitor.getByRole("button", { name: "Help & ideas" });
+  await expect(launcher).toHaveCSS("background-color", "rgb(91, 33, 182)");
+  await expect(launcher).toHaveCSS("left", "20px");
+  await checkpoint(visitor, "widget-custom-launcher");
+  await launcher.click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  const status = widget.getByRole("navigation", { name: "Quick links" }).getByRole("link", { name: "Status" });
+  await expect(status).toHaveAttribute("href", "https://status.example.com");
+  await expect(status).toHaveAttribute("target", "_blank");
+  await checkpoint(visitor, "widget-quick-links");
+  await visitor.keyboard.press("Escape");
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+
+  // A contextual help link the page adds later opens its article in the panel, not a new page.
+  await visitor.evaluate((article) => {
+    const link = document.createElement("a");
+    link.href = "/elsewhere";
+    link.textContent = "How do exports work?";
+    link.dataset.tutiArticle = article;
+    document.body.append(link);
+  }, article.slug);
+  await visitor.getByRole("link", { name: "How do exports work?" }).click();
+  await expect(widget.getByRole("heading", { name: "Exporting your data", level: 1 })).toBeVisible();
+  expect(visitor.url()).toBe(site);
+  await checkpoint(visitor, "widget-contextual-help");
+
+  // With data-hide-launcher, the page's own button opens the panel (at What's new) and closes it.
+  await visitor.goto(`${site}?hide-launcher`);
+  await visitor.waitForFunction(() => "Tuti" in window);
+  // The status is known once the settings are read, which is when the launcher would appear.
+  const unseen = await visitor.evaluate(
+    () => new Promise((resolve) => (window as unknown as { Tuti: TutiSdk }).Tuti.on("unseen", resolve)),
+  );
+  expect(unseen).toBe(false);
+  await expect(visitor.getByRole("button", { name: "Help & ideas" })).toHaveCount(0);
+  await visitor.evaluate(() => {
+    const button = document.createElement("button");
+    button.textContent = "Our feedback button";
+    button.onclick = () => (window as unknown as { Tuti: TutiSdk }).Tuti.open({ tab: "whats-new" });
+    document.body.append(button);
+  });
+  await visitor.getByRole("button", { name: "Our feedback button" }).click();
+  await expect(widget.getByText("Nothing new yet")).toBeVisible();
+  await checkpoint(visitor, "widget-own-button");
+  await visitor.evaluate(() => (window as unknown as { Tuti: TutiSdk }).Tuti.close());
+  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  await expect(visitor.getByRole("button", { name: "Our feedback button" })).toBeFocused();
 });

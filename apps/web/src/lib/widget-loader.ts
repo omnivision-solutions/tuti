@@ -6,9 +6,16 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WI
  *
  *   <script src="https://tuti.so/widget.js" data-project="acme" async></script>
  *
- * Adds a "Feedback" button that opens the project's portal /widget page in an
+ * Adds a launcher button that opens the project's portal /widget page in an
  * iframe. Plain ES5 without dependencies, and it never puts data into HTML: the
- * slug is checked against SLUG_PATTERN before it becomes part of a URL.
+ * slug is checked against SLUG_PATTERN before it becomes part of a URL. The SDK
+ * is documented in docs/widget.md.
+ *
+ * The launcher's label, colour and corner come from /api/widget/latest (set in the
+ * app), along with the latest announcement; the button appears once that's read (or
+ * after 3 seconds without it), so it doesn't change under the visitor's pointer.
+ * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
+ * their own button.
  *
  * Signing people in (their account in the customer's app, through the project's
  * JWT SSO): `Tuti.identify(getToken)` after the script loads, or
@@ -16,11 +23,14 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WI
  * fresh SSO token (or a promise of one); it's called whenever the panel is ready
  * for one, and the token is sent only to the portal's origin.
  *
- * `Tuti.open()` opens the panel; `Tuti.open({ article: "<slug>" })` opens it at a
- * help article (for contextual help buttons).
+ * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab, and
+ * `Tuti.open({ article: "<slug>" })` at a help article, as does clicking any
+ * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
+ * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
  * A dot on the button says there's an announced changelog entry this browser hasn't
- * seen yet (what it has seen is kept in the customer site's localStorage).
+ * seen yet (what it has seen is kept in the customer site's localStorage);
+ * `Tuti.unseen()` and `Tuti.on("unseen", callback)` tell the page, for its own button.
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -33,6 +43,8 @@ export function widgetLoader(portalTemplate: string): string {
     console.error("Tuti widget: set data-project to your project's URL name, e.g. data-project=\\"acme\\"");
     return;
   }
+  var settings = window.TutiSettings || {};
+  var hideLauncher = script.hasAttribute("data-hide-launcher") || settings.hideLauncher === true;
   var portal = ${JSON.stringify(portalTemplate)}.replace("{project}", slug).replace(/\\/$/, "");
   var origin = new URL(portal).origin;
   var api = new URL(script.src).origin;
@@ -44,10 +56,14 @@ export function widgetLoader(portalTemplate: string): string {
   function css(el, styles) {
     for (var key in styles) el.style[key] = styles[key];
   }
+  function whenBody(fn) {
+    if (document.body) fn(); else document.addEventListener("DOMContentLoaded", fn);
+  }
 
   var button = document.createElement("button");
+  var label = document.createTextNode("Feedback");
+  button.appendChild(label);
   button.type = "button";
-  button.textContent = "Feedback";
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "tuti-widget");
   css(button, {
@@ -68,42 +84,86 @@ export function widgetLoader(portalTemplate: string): string {
   function storage(fn) {
     try { return fn(window.localStorage); } catch (error) { return null; }
   }
-  function showNew(isNew) {
-    dot.style.display = isNew ? "block" : "none";
-    button.setAttribute("aria-label", isNew ? "Feedback, new updates" : "Feedback");
+
+  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")).
+  var unseen = false;
+  var known = false;
+  var latest = null;
+  var listeners = [];
+  function notify(callback) {
+    try { callback(unseen); } catch (error) { console.error("Tuti widget: unseen callback failed", error); }
   }
-  if (window.fetch) {
-    fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
-      .then(function (response) { return response.ok ? response.json() : null; })
-      .then(function (data) {
-        var seen = storage(function (s) { return s.getItem(seenKey); });
-        if (data && typeof data.latest === "string" && (!seen || data.latest > seen)) showNew(true);
-      })
-      .catch(function () {});
+  function setUnseen(value) {
+    var changed = !known || value !== unseen;
+    known = true;
+    unseen = value;
+    dot.style.display = value ? "block" : "none";
+    button.setAttribute("aria-label", label.nodeValue + (value ? ", new updates" : ""));
+    if (changed) for (var i = 0; i < listeners.length; i++) notify(listeners[i]);
   }
 
   var panel = document.createElement("div");
   panel.id = "tuti-widget";
   css(panel, {
-    position: "fixed", right: "20px", bottom: "76px", zIndex: "2147483000", display: "none",
+    position: "fixed", right: "20px", bottom: hideLauncher ? "20px" : "76px", zIndex: "2147483000", display: "none",
     width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 100px))",
     borderRadius: "14px", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
     background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)"
   });
-  var frame;
+  whenBody(function () { document.body.appendChild(panel); });
 
-  // With an article's slug, opens the panel at that help article (Tuti.open({ article: "..." })).
-  function open(article) {
-    var src = portal + "/widget" + (article ? "?tab=help&article=" + encodeURIComponent(article) : "");
+  // The button, unless the page has its own: once the settings are read, or after 3 seconds
+  // without them (in their place, or styled when they come).
+  var shown = false;
+  function showLauncher() {
+    if (shown || hideLauncher) return;
+    shown = true;
+    whenBody(function () { document.body.appendChild(button); });
+  }
+  setTimeout(showLauncher, 3000);
+  function setUp(launcher) {
+    if (launcher) {
+      if (typeof launcher.label === "string" && launcher.label) label.nodeValue = launcher.label;
+      if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
+      if (launcher.position === "bottom-left") {
+        css(button, { left: "20px", right: "auto" });
+        css(panel, { left: "20px", right: "auto" });
+      }
+    }
+    showLauncher();
+  }
+  (window.fetch ? fetch(api + "/api/widget/latest?project=" + encodeURIComponent(slug))
+    .then(function (response) { return response.ok ? response.json() : null; })
+    .catch(function () { return null; }) : Promise.resolve(null))
+    .then(function (data) {
+      latest = data && typeof data.latest === "string" ? data.latest : null;
+      setUp(data && data.launcher);
+      var seen = storage(function (s) { return s.getItem(seenKey); });
+      setUnseen(!!(data && typeof data.latest === "string" && (!seen || data.latest > seen)));
+    });
+
+  var TABS = { feedback: "", "whats-new": "?tab=whats-new", help: "?tab=help" };
+  var frame;
+  var returnFocus;
+
+  // Opens the panel, at a tab or a help article if asked (otherwise where it was);
+  // closing it gives focus back to \`from\`.
+  function open(options, from) {
+    var article = options && typeof options.article === "string" ? options.article : "";
+    var tab = options && options.tab;
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or help");
+    var query = article ? "?tab=help&article=" + encodeURIComponent(article) : TABS.hasOwnProperty(tab) ? TABS[tab] : null;
+    var src = portal + "/widget" + (query || "");
     if (!frame) {
       frame = document.createElement("iframe");
       frame.src = src;
       frame.title = "Feedback";
       css(frame, { width: "100%", height: "100%", border: "0", display: "block" });
       panel.appendChild(frame);
-    } else if (article) {
+    } else if (query !== null) {
       frame.src = src;
     }
+    if (panel.style.display === "none") returnFocus = from;
     panel.style.display = "block";
     button.setAttribute("aria-expanded", "true");
     frame.focus();
@@ -113,16 +173,26 @@ export function widgetLoader(portalTemplate: string): string {
     if (panel.style.display === "none") return;
     panel.style.display = "none";
     button.setAttribute("aria-expanded", "false");
-    button.focus();
+    (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }
 
   button.addEventListener("click", function () {
-    if (panel.style.display === "none") open(); else close();
+    if (panel.style.display === "none") open(null, button); else close();
+  });
+  // Contextual help: any element with data-tuti-article, now or added later.
+  document.addEventListener("click", function (event) {
+    // Modified clicks (new tab, new window, download) and ones the page already handled stay the page's.
+    if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    var target = event.target;
+    var element = target && target.closest ? target.closest("[data-tuti-article]") : null;
+    if (!element) return;
+    event.preventDefault();
+    open({ article: element.getAttribute("data-tuti-article") }, element);
   });
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") close();
   });
-  var getToken = window.TutiSettings && typeof window.TutiSettings.identify === "function" ? window.TutiSettings.identify : null;
+  var getToken = typeof settings.identify === "function" ? settings.identify : null;
   window.Tuti = {
     identify: function (fn) {
       if (typeof fn !== "function") {
@@ -132,8 +202,19 @@ export function widgetLoader(portalTemplate: string): string {
       getToken = fn;
     },
     open: function (options) {
-      var article = options && options.article;
-      open(typeof article === "string" ? article : "");
+      open(options, document.activeElement);
+    },
+    close: close,
+    unseen: function () {
+      return unseen;
+    },
+    on: function (name, callback) {
+      if (name !== "unseen" || typeof callback !== "function") {
+        console.error("Tuti widget: Tuti.on takes \\"unseen\\" and a function");
+        return;
+      }
+      listeners.push(callback);
+      if (known) notify(callback);
     }
   };
 
@@ -159,15 +240,10 @@ export function widgetLoader(portalTemplate: string): string {
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
       var at = event.data.at;
       storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
-      showNew(false);
+      // The panel may have been rendered before a newer announcement than the one it showed.
+      if (!latest || at >= latest) setUnseen(false);
     }
   });
-
-  function mount() {
-    document.body.appendChild(panel);
-    document.body.appendChild(button);
-  }
-  if (document.body) mount(); else document.addEventListener("DOMContentLoaded", mount);
 })();
 `;
 }

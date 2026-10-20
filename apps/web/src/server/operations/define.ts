@@ -23,8 +23,12 @@ export type Operation<I extends z.ZodType = z.ZodType, O = unknown> = {
   path: string;
   /** Read operations work with any key; write operations need a read + write key. */
   scope: Scope;
-  /** Who may run it when signed in: the project's team, or anyone who may post in the project. Keys count as the team. */
-  access: "team" | "anyone";
+  /**
+   * Who may run it when signed in: the project's team, only its owners and admins (project
+   * settings, like the Settings page), or anyone who may post in the project. Keys count as
+   * the team; only owners and admins create them.
+   */
+  access: "team" | "admin" | "anyone";
   input: I;
   /** An example request body or query, for the docs. */
   example?: Record<string, unknown>;

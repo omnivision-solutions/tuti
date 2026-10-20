@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { refresh } from "next/cache";
 import type { z } from "zod";
 
-import { canActIn, getMembership } from "../membership";
+import { canActIn, getAdminProject, getMembership } from "../membership";
 import { getSession } from "../session";
 import { type Actor, type Operation, OperationError } from "./define";
 
@@ -31,11 +31,29 @@ export async function asTeam(
   fn: (context: Context) => Promise<unknown>,
 ): Promise<{ error?: string }> {
   const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
-  if (!session || !membership) {
+  return asUser(session && membership && { userId: session.user.id, projectId: membership.project.id }, denied, fn);
+}
+
+/** Like asTeam, for project settings (operations with `access: "admin"`): owners and admins only, like the Settings page. */
+export async function asAdmin(
+  projectSlug: string,
+  denied: string,
+  fn: (context: Context) => Promise<unknown>,
+): Promise<{ error?: string }> {
+  const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
+  return asUser(session && project && { userId: session.user.id, projectId: project.id }, denied, fn);
+}
+
+async function asUser(
+  allowed: { userId: string; projectId: string } | null,
+  denied: string,
+  fn: (context: Context) => Promise<unknown>,
+): Promise<{ error?: string }> {
+  if (!allowed) {
     return { error: denied };
   }
   try {
-    await fn({ actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id });
+    await fn({ actor: { kind: "user", userId: allowed.userId }, projectId: allowed.projectId });
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
