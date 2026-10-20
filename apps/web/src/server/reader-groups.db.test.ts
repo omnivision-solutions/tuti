@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
+import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { helpCenter, publishedArticle } from "./help-queries";
@@ -178,6 +178,18 @@ test("each sign-in says the groups: a later token without one takes it away", as
   // A new person's first sign-in keeps them too; bad group names are refused like any bad claim.
   expect(await groupsOf(project.id, await signIn({ groups: ["beta"] }))).toEqual(["beta"]);
   await expect(signIn({ groups: ["no spaces"] })).rejects.toThrow("invalid_claims");
+});
+
+test("a first sign-in that loses the race to create the person still sets their groups", async () => {
+  for (let i = 0; i < 10; i++) {
+    const externalId = `user-${randomUUID()}`;
+    // An API call on their behalf (no groups) and their first sign-in, at the same time.
+    const [, userId] = await Promise.all([
+      upsertProjectUser(project.id, externalId, { name: "From the API" }),
+      upsertProjectUser(project.id, externalId, { groups: ["enterprise"] }),
+    ]);
+    expect(await groupsOf(project.id, userId)).toEqual(["enterprise"]);
+  }
 });
 
 test("search engines and AI tools only get what's for everyone; a restricted article's .md is never cached for others", async () => {

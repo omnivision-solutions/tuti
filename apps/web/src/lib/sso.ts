@@ -104,11 +104,12 @@ export async function upsertProjectUser(
     });
     return user.id;
   } catch (error) {
-    // Lost a race with a concurrent first sight of the same person.
+    // Lost a race with a concurrent first sight of the same person: they exist now, so this sign-in's
+    // details (its groups above all) go on them like any later one's.
     if (!isUniqueViolation(error)) {
       throw error;
     }
-    return (await prisma.ssoIdentity.findUniqueOrThrow({ where, select: { userId: true } })).userId;
+    return upsertProjectUser(projectId, externalId, details);
   }
 }
 
