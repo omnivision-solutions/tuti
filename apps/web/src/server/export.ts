@@ -110,7 +110,8 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         listing: article.listing.toLowerCase(),
         publishedAt: article.publishedAt,
         updatedAt: article.updatedAt,
-        section: section?.name ?? null,
+        // Only with sections.
+        ...(section && { section: section.name }),
         collection: article.collection?.name ?? null,
         // Its place in the collection (or among the articles in none): 0 first.
         order: article.order,
