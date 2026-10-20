@@ -119,9 +119,18 @@ export const verifyDomain = defineOperation({
       );
     }
     try {
-      const verified = await prisma.customDomain.update({ where: { projectId }, data: { verifiedAt: new Date() }, select: domainSelect });
-      forgetCustomDomain(verified.hostname);
-      return { domain: domainView(verified) };
+      // Only the domain that was checked: domain.set may have replaced it during the lookup.
+      const { count } = await prisma.customDomain.updateMany({
+        where: { projectId, hostname: domain.hostname, verificationToken: domain.verificationToken, verifiedAt: null },
+        data: { verifiedAt: new Date() },
+      });
+      const now = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
+      // Unless the same check verified it meanwhile, it's another domain (or none) now.
+      if (count === 0 && !(now?.hostname === domain.hostname && now.verificationToken === domain.verificationToken && now.verifiedAt)) {
+        throw new OperationError(409, "conflict", "The domain changed while we checked it. Check again");
+      }
+      forgetCustomDomain(domain.hostname);
+      return { domain: domainView(now!) };
     } catch (error) {
       // Another portal verified it first (the hostname is unique among verified domains).
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

@@ -6,6 +6,8 @@ export type DnsFake = {
   url: string;
   /** Sets the TXT records at `name` (none: removes them). Also `POST /_fake/txt {name, values}`, from other processes. */
   txt(name: string, values: string[]): void;
+  /** The next lookup waits for `during` before it answers, e.g. a change racing the lookup. */
+  during(fn: () => Promise<unknown>): void;
   /** Lookups fail (the resolver answers 503) until it's false again. */
   fail(failing: boolean): void;
   close(): Promise<void>;
@@ -19,6 +21,7 @@ export type DnsFake = {
 export async function startDnsFake(): Promise<DnsFake> {
   const records = new Map<string, string[]>();
   let failing = false;
+  let next: (() => Promise<unknown>) | undefined;
   const txt = (name: string, values: string[]) => {
     if (values.length > 0) {
       records.set(name.toLowerCase(), values);
@@ -42,6 +45,11 @@ export async function startDnsFake(): Promise<DnsFake> {
       txt(name, values);
       return json(200, {});
     }
+    if (next) {
+      const fn = next;
+      next = undefined;
+      await fn();
+    }
     if (failing) {
       return json(503, {});
     }
@@ -61,6 +69,9 @@ export async function startDnsFake(): Promise<DnsFake> {
   return {
     url: `http://127.0.0.1:${port}/dns-query`,
     txt,
+    during: (fn) => {
+      next = fn;
+    },
     fail: (value) => {
       failing = value;
     },

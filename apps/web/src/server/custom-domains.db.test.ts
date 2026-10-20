@@ -123,6 +123,22 @@ test("a domain someone else added but didn't verify doesn't stop its owner; once
   expect(await requestTarget(host)).toMatchObject({ slug: project.slug });
 });
 
+test("a domain changed while its record is being looked up isn't verified with the old one's record", async () => {
+  const mine = hostname();
+  const theirs = hostname();
+  await addAndPublish(mine);
+  // Someone else's domain, swapped in while the lookup for this one waits.
+  dns.during(() => call(setDomain, as(), { hostname: theirs }));
+  await expect(call(verifyDomain, as(), {})).rejects.toMatchObject({ status: 409, message: "The domain changed while we checked it. Check again" });
+  expect((await call(getDomain, as(), {})).domain).toMatchObject({ hostname: theirs, status: "pending" });
+  expect(await requestTarget(theirs)).toEqual({ kind: "unknown" });
+
+  // Two checks of the same domain at once both succeed.
+  await addAndPublish(mine);
+  const [first, second] = await Promise.all([call(verifyDomain, as(), {}), call(verifyDomain, as(), {})]);
+  expect([first.domain.status, second.domain.status]).toEqual(["verified", "verified"]);
+});
+
 test("changing or removing the domain: the old one stops answering at once", async () => {
   const [first, second] = [hostname(), hostname()];
   await addAndPublish(first);
