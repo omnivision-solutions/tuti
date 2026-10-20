@@ -7,11 +7,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { ArticleActions, ArticleForm } from "@/components/help";
+import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/help";
+import { ArticleDiff } from "@/components/line-diff";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
-import { formatDate } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 import { portalUrl } from "@/lib/hosts";
 import { displayDoc } from "@/server/content";
 import { collectionOptions } from "@/server/help-queries";
@@ -33,12 +34,15 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
       publishedAt: true,
       showUpdatedDate: true,
       listing: true,
-      collection: { select: { slug: true } },
+      collection: { select: { slug: true, name: true } },
+      changes: { select: { title: true, body: true, content: true, updatedAt: true, collection: { select: { slug: true, name: true } } } },
     },
   });
   if (!article) {
     notFound();
   }
+  // The editor shows the version saved last: a published article's unpublished changes, if it has some.
+  const edited = article.changes ?? article;
   const url = `${portalUrl(slug)}/help/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
 
@@ -76,17 +80,27 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
           </>
         }
       />
+      {article.changes && (
+        <ArticleChanges
+          projectSlug={slug}
+          slug={article.slug}
+          savedAt={article.changes.updatedAt.toISOString()}
+          saved={timeAgo(article.changes.updatedAt)}
+          diff={<ArticleDiff before={article} after={article.changes} same="Nothing: they're the same as the published version." />}
+        />
+      )}
       {/* New saved text starts the form afresh; publishing or unpublishing keeps unsaved edits. */}
       <ArticleForm
-        key={createHash("sha256").update(JSON.stringify([article.title, article.content, article.collection])).digest("base64url")}
+        key={createHash("sha256").update(JSON.stringify([edited.title, edited.content, edited.collection])).digest("base64url")}
         projectSlug={slug}
         article={{
           slug: article.slug,
-          title: article.title,
-          content: displayDoc(article) as Doc,
-          collection: article.collection?.slug ?? null,
+          title: edited.title,
+          content: displayDoc(edited) as Doc,
+          collection: edited.collection?.slug ?? null,
           showUpdatedDate: article.showUpdatedDate,
           listing,
+          published: article.publishedAt !== null,
         }}
         collections={await collectionOptions(membership.project.id)}
         mediaBaseUrl={mediaPublicUrl()}

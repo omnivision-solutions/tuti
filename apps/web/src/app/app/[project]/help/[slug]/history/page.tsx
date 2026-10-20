@@ -5,12 +5,11 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { RestoreVersionButton } from "@/components/help";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { DiffLines } from "@/components/line-diff";
+import { ArticleDiff } from "@/components/line-diff";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
-import { diffLines } from "@/lib/line-diff";
 import { getMembership } from "@/server/membership";
 import { ARTICLE_REVISIONS_KEPT, articleRevisions } from "@/server/operations/help";
 
@@ -25,11 +24,21 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
   }
   const article = await prisma.article.findFirst({
     where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
-    select: { id: true, slug: true, title: true, body: true, publishedAt: true },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      body: true,
+      publishedAt: true,
+      collection: { select: { name: true } },
+      changes: { select: { title: true, body: true, collection: { select: { name: true } } } },
+    },
   });
   if (!article) {
     notFound();
   }
+  // The current version is the one saved last: a published article's unpublished changes, if it has some.
+  const current = article.changes ?? article;
   const revisions = await articleRevisions(article.id);
   const selected = revisions.find((revision) => revision.id === selectedId);
   const href = `/app/${slug}/help/${article.slug}`;
@@ -56,7 +65,7 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
             )}
           </CardHeader>
           <CardContent>
-            <Diff before={selected} after={article} />
+            <ArticleDiff before={selected} after={current} same="No changes: it's the same as the current version." />
           </CardContent>
         </Card>
       )}
@@ -85,25 +94,5 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
         </CardContent>
       </Card>
     </>
-  );
-}
-
-/** The text's paragraphs, with those taken out since `before` struck through and those added marked. */
-function Diff({ before, after }: { before: { title: string; body: string }; after: { title: string; body: string } }) {
-  const lines = diffLines(before.body, after.body);
-  const changed = before.title !== after.title || lines.some((line) => line.kind !== "same");
-  if (!changed) {
-    return <p className="text-sm text-muted-foreground">No changes: it&apos;s the same as the current version.</p>;
-  }
-  return (
-    <div className="flex flex-col gap-1 text-sm break-words">
-      {before.title !== after.title && (
-        <p className="mb-2">
-          Title: <del className="bg-destructive/10 text-destructive">{before.title}</del>{" "}
-          <ins className="bg-soft text-soft-foreground no-underline">{after.title}</ins>
-        </p>
-      )}
-      <DiffLines lines={lines} />
-    </div>
   );
 }

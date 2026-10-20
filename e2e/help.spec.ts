@@ -9,6 +9,7 @@ import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
 test("the team writes a help article in a collection, publishes it, and a visitor reads it", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -163,7 +164,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await visitor.goto("/help");
   await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
-  // The team edits it twice; its history shows what changed since the first version.
+  // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.
   await team.getByRole("link", { name: "Inviting your team" }).click();
   await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
   const paragraph = editor.locator("p", { hasText: "Owners and admins send invites" });
@@ -189,6 +190,31 @@ test("the team writes a help article in a collection, publishes it, and a visito
     await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   }
   await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
+  const original = "Owners and admins send invites from the Team page.";
+  const edited = `${original} Members can ask them. Invites last a week.`;
+  const unpublished = team.getByRole("region", { name: "Unpublished changes" });
+  await expect(unpublished).toContainText("Readers see the published version until you publish them.");
+  await checkpoint(team, "team-help-article-unpublished-changes");
+  await visitor.goto("/help/inviting-your-team");
+  await expect(visitor.getByText(original, { exact: true })).toBeVisible();
+  await expect(visitor.getByText(/Members can ask them/)).toHaveCount(0);
+
+  // Reviewed against the published version, then published.
+  await unpublished.getByRole("button", { name: "Review changes" }).click();
+  const review = team.getByRole("dialog", { name: "Review changes" });
+  await expect(review.getByRole("deletion")).toHaveText(original);
+  await expect(review.getByRole("insertion")).toHaveText(edited);
+  await checkpoint(team, "team-help-article-review-changes", { fullPage: false });
+  await review.getByRole("button", { name: "Publish changes" }).click();
+  await expect(team.getByText("Changes published")).toBeVisible();
+  await expect(unpublished).toHaveCount(0);
+  await visitor.goto("/help/inviting-your-team");
+  await expect(visitor.getByText(edited, { exact: true })).toBeVisible();
+  // Changed since it was published, so readers see when.
+  await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
+  await checkpoint(visitor, "portal-help-article-updated");
+
+  // Its history shows what changed since the first version.
   await team.getByRole("link", { name: "History" }).click();
   await team.waitForURL(`**/app/${slug}/help/inviting-your-team/history`);
   const versions = team.getByRole("link", { name: /^Saved / });
@@ -196,27 +222,27 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await versions.nth(2).click();
   await team.waitForURL(/\/history\?revision=/);
   const changes = team.getByRole("region", { name: "Changes since this version" });
-  await expect(changes.getByRole("deletion")).toHaveText("Owners and admins send invites from the Team page.");
-  await expect(changes.getByRole("insertion")).toHaveText(
-    "Owners and admins send invites from the Team page. Members can ask them. Invites last a week.",
-  );
+  await expect(changes.getByRole("deletion")).toHaveText(original);
+  await expect(changes.getByRole("insertion")).toHaveText(edited);
   await checkpoint(team, "team-help-article-history");
 
-  // Restoring it publishes that text at once (it's published), as a new version.
+  // Restoring it is a save like any other (a new version): unpublished changes, which the team discards.
   await changes.getByRole("button", { name: "Restore this version" }).click();
   const restoring = team.getByRole("alertdialog");
-  await expect(restoring).toContainText("published right away");
+  await expect(restoring).toContainText("readers see it once you publish them");
   await checkpoint(team, "team-help-article-restore-confirm", { fullPage: false });
   await restoring.getByRole("button", { name: "Restore" }).click();
   await expect(team.getByText("Version restored")).toBeVisible();
   await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
-  await visitor.goto("/help/inviting-your-team");
-  await expect(visitor.getByText("Owners and admins send invites from the Team page.", { exact: true })).toBeVisible();
-  // Edited since it was published, so readers see when.
-  await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
-  await checkpoint(visitor, "portal-help-article-updated");
+  await unpublished.getByRole("button", { name: "Discard changes" }).click();
+  const discarding = team.getByRole("alertdialog");
+  await expect(discarding).toContainText("The changes stay in its history");
+  await discarding.getByRole("button", { name: "Discard changes" }).click();
+  await expect(team.getByText("Changes discarded")).toBeVisible();
+  await expect(unpublished).toHaveCount(0);
+  await expect(editor).toContainText(edited);
   await team.getByRole("link", { name: "History" }).click();
-  await expect(team.getByRole("link", { name: /^Saved / })).toHaveCount(4);
+  await expect(team.getByRole("link", { name: /^Saved / })).toHaveCount(5);
 
   // Listing: unlisted, it's gone from /help but its link still works; hidden, its page is a 404.
   await team.getByRole("link", { name: "Inviting your team" }).click();
@@ -235,6 +261,8 @@ test("the team writes a help article in a collection, publishes it, and a visito
     await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   };
   await setListing("Unlisted", "team-help-article-listing");
+  // A listing goes live at once: it's no unpublished change.
+  await expect(unpublished).toHaveCount(0);
   await expect(team.getByText("Anyone with the link can read it, but it's in no list or search. AI answers can cite it.")).toBeVisible();
   await expect(header).toContainText("Unlisted ·");
   await checkpoint(team, "team-help-article-unlisted");

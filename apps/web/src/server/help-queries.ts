@@ -48,19 +48,17 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       publishedAt: true,
       showUpdatedDate: true,
       listing: true,
+      revisedAt: true,
       collection: { select: { name: true } },
       project: { select: { name: true } },
-      // When it was last edited: its newest revision.
-      revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { createdAt: true } },
     },
   });
   if (!article) {
     return null;
   }
-  const { revisions, ...rest } = article;
-  const edited = revisions[0]?.createdAt;
-  // "Updated <date>" only after an edit since it was published, unless the team turned it off.
-  const updatedAt = article.showUpdatedDate && edited && article.publishedAt && edited > article.publishedAt ? edited : null;
+  const { revisedAt, ...rest } = article;
+  // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
+  const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
   return { ...rest, updatedAt, doc: displayDoc(article) };
 });
 

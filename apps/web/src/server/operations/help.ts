@@ -68,10 +68,12 @@ const articleSelect = {
   createdAt: true,
   updatedAt: true,
   collection: { select: { slug: true, name: true } },
+  changes: { select: { title: true, body: true, content: true, updatedAt: true, collection: { select: { slug: true, name: true } } } },
 } as const;
 type ArticleRow = Prisma.ArticleGetPayload<{ select: typeof articleSelect }>;
 
-function articleView(article: ArticleRow, projectSlug: string) {
+/** `team`: the caller is on the project's team, so it sees the article's unpublished changes. */
+function articleView({ changes, ...article }: ArticleRow, projectSlug: string, team: boolean) {
   return {
     slug: article.slug,
     title: article.title,
@@ -85,6 +87,19 @@ function articleView(article: ArticleRow, projectSlug: string) {
     body: article.body,
     content: displayDoc(article),
     url: `${portalUrl(projectSlug)}/help/${article.slug}`,
+    /**
+     * Only for the team: a published article's saved changes that readers don't see yet (null if
+     * there are none), until articles.publishChanges or articles.discardChanges.
+     */
+    ...(team && {
+      changes: changes && {
+        title: changes.title,
+        body: changes.body,
+        content: displayDoc(changes),
+        collection: changes.collection,
+        savedAt: changes.updatedAt.toISOString(),
+      },
+    }),
     createdAt: article.createdAt.toISOString(),
     updatedAt: article.updatedAt.toISOString(),
   };
@@ -189,15 +204,27 @@ const authorOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor
 export const restorableSince = () => new Date(Date.now() - DELETED_ARTICLE_DAYS * 24 * 60 * 60 * 1000);
 
 const versionSelect = { title: true, body: true, content: true, collectionId: true } as const;
+type Version = Prisma.ArticleRevisionGetPayload<{ select: typeof versionSelect }>;
+
+/** The article's published (or draft) version, and the one last saved: its unpublished changes if it has some. */
+async function versions(tx: Prisma.TransactionClient, articleId: string): Promise<{ live: Version; saved: Version }> {
+  const { changes, ...live } = await tx.article.findUniqueOrThrow({
+    where: { id: articleId },
+    select: { ...versionSelect, changes: { select: versionSelect } },
+  });
+  return { live, saved: changes ?? live };
+}
+
 const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
 
 /**
- * Records the article's current version as a revision, unless it's the same as the newest one (a
- * save that changed nothing), and lets the oldest go past ARTICLE_REVISIONS_KEPT. Call it in the
- * transaction that saved the article, with the project locked, so saves can't interleave.
+ * Records the article's version as last saved (its unpublished changes, if it has some) as a
+ * revision, unless it's the same as the newest one (a save that changed nothing), and lets the
+ * oldest go past ARTICLE_REVISIONS_KEPT. Call it in the transaction that saved the article, with
+ * the project locked, so saves can't interleave.
  */
 async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
-  const article = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: versionSelect });
+  const article = (await versions(tx, articleId)).saved;
   const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
   if (newest && isDeepStrictEqual(article, newest)) {
     return;
@@ -217,9 +244,54 @@ async function recordRevision(tx: Prisma.TransactionClient, articleId: string, a
   }
 }
 
+/** A live (not deleted) article, read again under the project's lock: it may have been retitled, published or deleted since. */
+async function lockedArticle(tx: Prisma.TransactionClient, article: { id: string; slug: string }) {
+  const current = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { title: true, publishedAt: true } });
+  if (!current) {
+    throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
+  }
+  return current;
+}
+
+/**
+ * Keeps changes to a published article as unpublished ones, on top of those saved before (the last
+ * save wins), so readers keep the published version. Changes that bring it back to the published
+ * version are none.
+ */
+async function keepChanges(tx: Prisma.TransactionClient, articleId: string, changes: Partial<Version>) {
+  const { live, saved } = await versions(tx, articleId);
+  const next = { ...saved, ...changes };
+  const data = { ...next, content: next.content ?? Prisma.DbNull };
+  await tx.articleChanges.upsert({ where: { articleId }, create: { articleId, ...data }, update: data });
+  // Compared as stored (JSON keys in Postgres' order).
+  const kept = await tx.articleChanges.findUniqueOrThrow({ where: { articleId }, select: versionSelect });
+  if (isDeepStrictEqual(kept, live)) {
+    await tx.articleChanges.delete({ where: { articleId } });
+  }
+}
+
+/**
+ * Makes an article's unpublished changes its text: live (`published`, the portal's "Updated" date
+ * moves), or its draft's as it's unpublished or deleted, so nothing saved is lost or goes live.
+ * Search sections follow once the caller enqueues the article (indexArticle).
+ */
+async function applyChanges(tx: Prisma.TransactionClient, articleId: string, published: boolean) {
+  const changes = await tx.articleChanges.findUnique({ where: { articleId }, select: versionSelect });
+  if (!changes) {
+    return;
+  }
+  await tx.article.update({
+    where: { id: articleId },
+    data: { ...changes, content: changes.content ?? Prisma.DbNull, ...(published && { revisedAt: new Date() }) },
+  });
+  await tx.articleChanges.delete({ where: { articleId } });
+}
+
 /**
  * Saves changes to a live article and records them as a revision. Call it with the project locked
- * (lockProject). A draft's slug follows its title; a published one keeps it.
+ * (lockProject). A draft's text changes at once, and its slug follows its title. A published one
+ * keeps its slug, and its title, text and collection wait as unpublished changes (unless `publish`,
+ * which makes them live with any saved before); its listing and "Updated" setting change at once.
  */
 async function saveChanges(
   tx: Prisma.TransactionClient,
@@ -227,31 +299,39 @@ async function saveChanges(
   article: { id: string; slug: string },
   authorId: string | null,
   changes: { title?: string; text?: ArticleText; collectionId?: string | null; showUpdatedDate?: boolean; listing?: ArticleListing },
+  publish = false,
 ) {
-  // Read again under the lock: it may have been retitled, published or deleted since.
-  const current = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { title: true, publishedAt: true } });
-  if (!current) {
-    throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
-  }
+  const current = await lockedArticle(tx, article);
   const { title, text, collectionId, showUpdatedDate, listing } = changes;
-  const retitled = title !== undefined && title !== current.title && !current.publishedAt;
-  const saved = await tx.article.update({
-    where: { id: article.id },
-    data: {
-      ...(title !== undefined && { title }),
-      ...(retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) }),
-      ...(text && { body: text.text, content: text.doc }),
-      ...(collectionId !== undefined && { collectionId }),
-      ...(showUpdatedDate !== undefined && { showUpdatedDate }),
-      ...(listing !== undefined && { listing }),
-    },
-    select: articleSelect,
-  });
+  const version = {
+    ...(title !== undefined && { title }),
+    ...(text && { body: text.text, content: text.doc }),
+    ...(collectionId !== undefined && { collectionId }),
+  };
+  const data: Prisma.ArticleUncheckedUpdateInput = {
+    ...(showUpdatedDate !== undefined && { showUpdatedDate }),
+    ...(listing !== undefined && { listing }),
+  };
+  if (current.publishedAt) {
+    if (Object.keys(version).length > 0) {
+      await keepChanges(tx, article.id, version);
+    }
+    if (publish) {
+      await applyChanges(tx, article.id, true);
+    }
+  } else {
+    const retitled = title !== undefined && title !== current.title;
+    Object.assign(data, version, retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) });
+  }
+  // Only when something on the article changes: its updatedAt is the sitemap's lastmod.
+  if (Object.keys(data).length > 0) {
+    await tx.article.update({ where: { id: article.id }, data });
+  }
   if (text) {
     await attachMedia(tx, projectId, text.mediaIds);
   }
   await recordRevision(tx, article.id, authorId);
-  return saved;
+  return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
 }
 
 /** An article's revisions, newest (the current version) first. */
@@ -304,7 +384,7 @@ export const listArticles = defineOperation({
     });
     const slug = await projectSlug(projectId);
     return {
-      articles: articles.slice(0, input.limit).map((article) => articleView(article, slug)),
+      articles: articles.slice(0, input.limit).map((article) => articleView(article, slug, team)),
       nextCursor: articles.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -312,20 +392,21 @@ export const listArticles = defineOperation({
 
 export const getArticle = defineOperation({
   name: "articles.get",
-  summary: "Get a help center article by its slug (drafts, hidden and AI-only articles only for the team)",
+  summary:
+    "Get a help center article by its slug (drafts, hidden and AI-only articles only for the team). The team also gets its unpublished `changes`",
   method: "GET",
   path: "/articles/{slug}",
   scope: "read",
   access: "anyone",
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
-    const article = await findArticle(projectId, input.slug);
+    const [article, team] = await Promise.all([findArticle(projectId, input.slug), isTeam(actor, projectId)]);
     // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
     const served = article?.publishedAt && SERVED.includes(article.listing);
-    if (!article || (!served && !(await isTeam(actor, projectId)))) {
+    if (!article || (!served && !team)) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
-    return articleView(article, await projectSlug(projectId));
+    return articleView(article, await projectSlug(projectId), team);
   },
 });
 
@@ -381,20 +462,26 @@ export const createArticle = defineOperation({
         return created;
       }),
     );
-    return articleView(article, await projectSlug(projectId));
+    return articleView(article, await projectSlug(projectId), true);
   },
 });
 
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a help center article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions)",
+    "Change a help center article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing and showUpdatedDate change at once",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug, ...articleFields, title: articleFields.title.optional() }),
-  example: { collection: null },
+  input: z.object({
+    slug,
+    ...articleFields,
+    title: articleFields.title.optional(),
+    /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
+    publish: z.boolean().optional(),
+  }),
+  example: { body: "Owners and admins invite from the Team page.", publish: true },
   run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
     const text = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
@@ -402,19 +489,26 @@ export const updateArticle = defineOperation({
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const collection = await collectionId(tx, projectId, input.collection);
-        return saveChanges(tx, projectId, article, authorOf(actor), {
-          title: input.title,
-          text,
-          collectionId: collection,
-          showUpdatedDate: input.showUpdatedDate,
-          listing: input.listing && toListing(input.listing),
-        });
+        return saveChanges(
+          tx,
+          projectId,
+          article,
+          authorOf(actor),
+          {
+            title: input.title,
+            text,
+            collectionId: collection,
+            showUpdatedDate: input.showUpdatedDate,
+            listing: input.listing && toListing(input.listing),
+          },
+          input.publish,
+        );
       }),
     );
-    if (updated.publishedAt) {
+    if (updated.publishedAt && input.publish) {
       await indexArticle(updated.id);
     }
-    return articleView(updated, await projectSlug(projectId));
+    return articleView(updated, await projectSlug(projectId), true);
   },
 });
 
@@ -445,7 +539,7 @@ export const listRevisions = defineOperation({
 
 export const restoreArticle = defineOperation({
   name: "articles.restore",
-  summary: `Restore a help center article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version; a published article shows it at once. Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
+  summary: `Restore a help center article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
   method: "POST",
   path: "/articles/{slug}/restore",
   scope: "write",
@@ -500,10 +594,7 @@ export const restoreArticle = defineOperation({
         );
       }),
     );
-    if (restored.publishedAt) {
-      await indexArticle(restored.id);
-    }
-    return articleView(restored, await projectSlug(projectId));
+    return articleView(restored, await projectSlug(projectId), true);
   },
 });
 
@@ -523,13 +614,83 @@ export const publishArticle = defineOperation({
       await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
     });
     await indexArticle(article.id);
-    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId));
+    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId), true);
+  },
+});
+
+const changesInput = z.object({
+  slug,
+  /**
+   * Only if the changes are still the ones saved then (their `changes.savedAt`), e.g. the ones the
+   * team reviewed: someone may have saved more since. Otherwise it's a 409.
+   */
+  savedAt: z.iso.datetime().optional(),
+});
+
+/** Checks `savedAt` against the article's changes. Call it with the project locked, so no save slips in after it. */
+async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, savedAt: string | undefined) {
+  if (savedAt === undefined) {
+    return;
+  }
+  const changes = await tx.articleChanges.findUnique({ where: { articleId }, select: { updatedAt: true } });
+  if (changes && changes.updatedAt.getTime() !== new Date(savedAt).getTime()) {
+    throw new OperationError(409, "changed", "The changes were saved again since. Reload the page to review them.");
+  }
+}
+
+export const publishChanges = defineOperation({
+  name: "articles.publishChanges",
+  summary:
+    "Publish a help center article's unpublished `changes` (see articles.update): readers, search and AI answers get them. Without changes it does nothing",
+  method: "POST",
+  path: "/articles/{slug}/publish-changes",
+  scope: "write",
+  access: "team",
+  input: changesInput,
+  run: async ({ actor, projectId }, input) => {
+    const article = await teamArticle(projectId, input.slug);
+    // One transaction, locked like a save: the changes saved last are the ones that go live.
+    const published = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await lockedArticle(tx, article);
+      await checkSavedAt(tx, article.id, input.savedAt);
+      await applyChanges(tx, article.id, true);
+      await recordRevision(tx, article.id, authorOf(actor));
+      return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
+    });
+    if (published.publishedAt) {
+      await indexArticle(article.id);
+    }
+    return articleView(published, await projectSlug(projectId), true);
+  },
+});
+
+export const discardChanges = defineOperation({
+  name: "articles.discardChanges",
+  summary:
+    "Drop a help center article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions). Without changes it does nothing",
+  method: "POST",
+  path: "/articles/{slug}/discard-changes",
+  scope: "write",
+  access: "team",
+  input: changesInput,
+  run: async ({ actor, projectId }, input) => {
+    const article = await teamArticle(projectId, input.slug);
+    const discarded = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await lockedArticle(tx, article);
+      await checkSavedAt(tx, article.id, input.savedAt);
+      await tx.articleChanges.deleteMany({ where: { articleId: article.id } });
+      await recordRevision(tx, article.id, authorOf(actor));
+      return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
+    });
+    return articleView(discarded, await projectSlug(projectId), true);
   },
 });
 
 export const unpublishArticle = defineOperation({
   name: "articles.unpublish",
-  summary: "Take a help center article off the portal (back to a draft)",
+  summary: "Take a help center article off the portal (back to a draft, with its unpublished changes as the draft's text)",
   method: "POST",
   path: "/articles/{slug}/unpublish",
   scope: "write",
@@ -537,12 +698,16 @@ export const unpublishArticle = defineOperation({
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
-    // Its chunks go with it, so search (and later AI answers) stop using it at once.
-    await prisma.$transaction([
-      prisma.article.update({ where: { id: article.id }, data: { publishedAt: null } }),
-      prisma.articleChunk.deleteMany({ where: { articleId: article.id } }),
-    ]);
-    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId));
+    // Its chunks go with it, so search and AI answers stop using it at once. Its unpublished
+    // changes become the draft's text (it's what was saved last; nothing of it goes live).
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await lockedArticle(tx, article);
+      await applyChanges(tx, article.id, false);
+      await tx.article.update({ where: { id: article.id }, data: { publishedAt: null } });
+      await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
+    });
+    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId), true);
   },
 });
 
@@ -557,8 +722,11 @@ export const deleteArticle = defineOperation({
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
     // Unpublished as it's deleted (a deleted article is never published), so it leaves the portal and search at once.
+    // Like unpublishing, its unpublished changes become its text: restored, it's the draft as last saved.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
+      await lockedArticle(tx, article);
+      await applyChanges(tx, article.id, false);
       await tx.article.updateMany({ where: { id: article.id, deletedAt: null }, data: { deletedAt: new Date(), publishedAt: null } });
       await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
     });

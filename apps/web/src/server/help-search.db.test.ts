@@ -78,7 +78,7 @@ describe("chunks", () => {
     expect(openai.inputs).toEqual(sections.map((section) => articleChunkText("Inviting your team", section)));
   });
 
-  test("a published article is embedded again when its text or title changes, not otherwise", async () => {
+  test("a published article is embedded again when changes to its text or title go live, not otherwise", async () => {
     const slug = await write("Inviting your team", inviting);
     const embedded = openai.inputs.length;
 
@@ -86,10 +86,10 @@ describe("chunks", () => {
     await call(publishArticle, as(owner), { slug });
     expect(openai.inputs).toHaveLength(embedded);
 
-    await call(updateArticle, as(owner), { slug, content: doc(h("Who can invite"), p("Only owners.")) });
+    await call(updateArticle, as(owner), { slug, content: doc(h("Who can invite"), p("Only owners.")), publish: true });
     expect(await chunks(slug)).toEqual([{ position: 0, heading: "Who can invite", text: "Only owners." }]);
 
-    await call(updateArticle, as(owner), { slug, title: "Adding teammates" });
+    await call(updateArticle, as(owner), { slug, title: "Adding teammates", publish: true });
     expect(openai.inputs.at(-1)).toBe(articleChunkText("Adding teammates", { heading: "Who can invite", text: "Only owners." }));
   });
 
@@ -112,9 +112,9 @@ describe("chunks", () => {
     const slug = await write("Inviting your team", "Anyone can invite.");
     // The next save's job waits for its embeddings while a newer save is embedded.
     const release = openai.holdNext();
-    const older = call(updateArticle, as(owner), { slug, body: "Owners can invite." });
+    const older = call(updateArticle, as(owner), { slug, body: "Owners can invite.", publish: true });
     await vi.waitFor(() => expect(openai.inputs).toContain(articleChunkText("Inviting your team", { heading: "", text: "Owners can invite." })));
-    await call(updateArticle, as(owner), { slug, body: "Owners and admins can invite." });
+    await call(updateArticle, as(owner), { slug, body: "Owners and admins can invite.", publish: true });
     expect(await chunks(slug)).toEqual([{ position: 0, heading: "", text: "Owners and admins can invite." }]);
 
     release();
