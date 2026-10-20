@@ -159,13 +159,119 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.keyboard.type("Search got quicker.");
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/changelog/2`);
-  await nextModelReply(JSON.stringify({ title: "Faster search", notes: "Search is quicker now." }));
+  await nextModelReply(
+    JSON.stringify({
+      title: "Faster search",
+      notes:
+        "Search is quicker now.\n\n## Faster search\n\nResults show up in about half the time they used to, even on big boards with lots of posts.\n\n## Better matches\n\nSearch looks at comments too.",
+    }),
+    tone,
+  );
   await team.getByRole("button", { name: "Draft with AI" }).click();
   await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
+
+  // The editor's AI helpers edit the saved text, so unsaved changes come first.
+  const text = team.getByRole("textbox", { name: "What changed" });
+  await text.getByText("Search looks at comments too.").click();
+  await team.keyboard.type(" And more");
+  const aiMenu = team.getByRole("button", { name: "Edit with AI" });
+  await aiMenu.click();
+  await team.getByRole("menuitem", { name: "Shorten", exact: true }).click();
+  await expect(team.getByText("Save your changes first: AI edits the saved text.")).toBeVisible();
+  await team.reload();
+
+  // Shorten: a preview of what changes, saved only on Accept.
+  await nextModelReply(
+    JSON.stringify({
+      notes: "Search is quicker now.\n\n## Faster search\n\nResults in half the time.\n\n## Better matches\n\nSearch looks at comments too.",
+    }),
+    tone,
+  );
+  await aiMenu.click();
+  await checkpoint(team, "team-changelog-ai-menu", { fullPage: false });
+  await team.getByRole("menuitem", { name: "Shorten", exact: true }).click();
+  const preview = team.getByRole("dialog", { name: "Shorter version" });
+  await expect(preview.locator("del")).toHaveText("Results show up in about half the time they used to, even on big boards with lots of posts.");
+  await expect(preview.locator("ins")).toHaveText("Results in half the time.");
+  await checkpoint(team, "team-changelog-ai-shorten-preview", { fullPage: false });
+  await preview.getByRole("button", { name: "Accept" }).click();
+  await expect(preview).toBeHidden();
+  await expect(text).toContainText("Results in half the time.");
+  await team.reload();
+  await expect(text).toContainText("Results in half the time.");
+  await expect(text).not.toContainText("even on big boards");
+
+  // Rewrite the section with the cursor, with an instruction; the rest stays.
+  const instruction = `Mention titles too (${slug})`;
+  await nextModelReply(JSON.stringify({ notes: "## Better matches\n\nSearch looks at post titles and comments." }), instruction);
+  await text.getByText("Search looks at comments too.").click();
+  await aiMenu.click();
+  await team.getByRole("menuitem", { name: "Rewrite this section…" }).click();
+  const ask = team.getByRole("dialog", { name: "Rewrite this section" });
+  await expect(ask).toContainText("“Better matches”, where your cursor is.");
+  await ask.getByLabel("Instruction (optional)").fill(instruction);
+  await checkpoint(team, "team-changelog-ai-rewrite-section", { fullPage: false });
+  await ask.getByRole("button", { name: "Rewrite" }).click();
+  const rewritten = team.getByRole("dialog", { name: "Rewritten section" });
+  await expect(rewritten.locator("ins")).toHaveText("Search looks at post titles and comments.");
+  await checkpoint(team, "team-changelog-ai-rewrite-preview", { fullPage: false });
+  await rewritten.getByRole("button", { name: "Accept" }).click();
+  await expect(rewritten).toBeHidden();
+  await expect(text).toContainText("Search looks at post titles and comments.");
+  await expect(text).toContainText("Results in half the time.");
+  const section = (await modelRequests()).find((request) => request.user.includes(instruction));
+  expect(section?.user).toContain('"textToEdit": "## Better matches\\n\\nSearch looks at comments too."');
+
+  // Typing while the model writes: Accept doesn't save over it (the reply is held until the typing is done).
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route(
+    `**/app/${slug}/changelog/2`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Written while you typed." }), tone);
+  await aiMenu.click();
+  await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
+  await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
+  await text.getByText("Search looks at post titles and comments.").click();
+  await team.keyboard.press("End");
+  await team.keyboard.type(" Typed meanwhile.");
+  release();
+  const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
+  await meanwhile.getByRole("button", { name: "Accept" }).click();
+  await expect(team.getByText("Save your changes first: AI edits the saved text.")).toBeVisible();
+  // Kept open, to save first and try again.
+  await expect(meanwhile).toBeVisible();
+  await meanwhile.getByRole("button", { name: "Discard" }).click();
+  await expect(meanwhile).toBeHidden();
+  await expect(text).toContainText("Search looks at post titles and comments. Typed meanwhile.");
+  await team.reload();
+  await expect(text).not.toContainText("Written while you typed.");
+  await expect(text).not.toContainText("Typed meanwhile.");
+
+  // Discarded: nothing changes.
+  await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Plain words only." }), tone);
+  await aiMenu.click();
+  await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
+  const plain = team.getByRole("dialog", { name: "Explained for non-developers" });
+  await expect(plain.locator("ins")).toHaveText("Search is quicker now. Plain words only.");
+  await plain.getByRole("button", { name: "Discard" }).click();
+  await expect(plain).toBeHidden();
+  await team.reload();
+  await expect(text).toContainText("Search looks at post titles and comments.");
+  await expect(text).not.toContainText("Plain words only.");
 
   // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
   await ada.goto("/changelog/1");

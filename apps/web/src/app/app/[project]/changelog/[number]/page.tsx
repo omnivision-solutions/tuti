@@ -79,6 +79,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
         }}
         posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
         mediaBaseUrl={mediaPublicUrl()}
+        canEditWithAi={aiEnabled()}
       />
     </>
   );

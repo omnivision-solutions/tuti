@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { RestoreVersionButton } from "@/components/help";
 import { ItemList, ItemRow } from "@/components/item-list";
+import { DiffLines } from "@/components/line-diff";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,21 +103,7 @@ function Diff({ before, after }: { before: { title: string; body: string }; afte
           <ins className="bg-soft text-soft-foreground no-underline">{after.title}</ins>
         </p>
       )}
-      {lines.map((line, index) =>
-        line.kind === "same" ? (
-          <p key={index} className="px-2 text-muted-foreground">
-            {line.text}
-          </p>
-        ) : line.kind === "removed" ? (
-          <del key={index} className="block rounded-md bg-destructive/10 px-2 text-destructive">
-            {line.text}
-          </del>
-        ) : (
-          <ins key={index} className="block rounded-md bg-soft px-2 text-soft-foreground no-underline">
-            {line.text}
-          </ins>
-        ),
-      )}
+      <DiffLines lines={lines} />
     </div>
   );
 }

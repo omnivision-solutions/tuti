@@ -119,6 +119,10 @@ model Project {
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone       String   @default("")
   changelogExampleIds String[] @default([])
+  /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
+  /// changelogAiHour, for the per-project hourly cap.
+  changelogAiHour     DateTime @default(now())
+  changelogAiCount    Int      @default(0)
   /// The widget's launcher on customers' sites (see the widget.* operations): its
   /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
   /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
