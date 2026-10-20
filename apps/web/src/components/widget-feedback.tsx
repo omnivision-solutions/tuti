@@ -7,19 +7,21 @@ import { buttonVariants } from "@/components/ui/button";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetCreatePost, widgetSignIn } from "@/server/widget";
 
-type SignedIn = { token: string; name: string };
+type SignedIn = { token: string; name: string; email: string | null };
 
 /**
- * The widget's Feedback tab when the portal's own sign-in cookie isn't there (a
- * customer's site). Asks the page for a sign-in token from the customer's app
- * (Tuti.identify), trades it for a widget token, and posts with that. Without one,
- * it offers signing in on the portal in a new tab.
+ * Who the customer's page signs in to the widget (Tuti.identify): asks the page for a sign-in
+ * token from the customer's app and trades it for a widget token (with `enabled`, so a page
+ * that only might need it doesn't ask for a token it won't use).
  */
-export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { projectSlug: string; boardSlug: string; defaultTitle?: string }) {
+export function useWidgetSignIn(projectSlug: string, enabled = true) {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
     const onMessage = async (event: MessageEvent) => {
       // Only from the page that embeds us; the token proves who it's for, whatever site that is.
       const data = event.data as { type?: unknown; token?: unknown } | null;
@@ -38,7 +40,18 @@ export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { proje
     // Ready for a token (the page may have one; nothing secret in this message).
     window.parent.postMessage({ type: WIDGET_READY_MESSAGE }, "*");
     return () => window.removeEventListener("message", onMessage);
-  }, [projectSlug]);
+  }, [projectSlug, enabled]);
+
+  return { signedIn, error };
+}
+
+/**
+ * The widget's Feedback tab when the portal's own sign-in cookie isn't there (a
+ * customer's site): posts as the person the customer's page signs in (useWidgetSignIn).
+ * Without one, it offers signing in on the portal in a new tab.
+ */
+export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { projectSlug: string; boardSlug: string; defaultTitle?: string }) {
+  const { signedIn, error } = useWidgetSignIn(projectSlug);
 
   if (signedIn) {
     const token = signedIn.token;

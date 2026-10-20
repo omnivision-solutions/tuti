@@ -20,7 +20,7 @@ beforeEach(async () => {
 const team = (projectId = project.id) => ({ actor: { kind: "user" as const, userId: owner.id }, projectId });
 const get = (projectId = project.id) => call(getAssistantSettings, team(projectId), {});
 const update = (input: z.input<typeof updateAssistantSettings.input>) => call(updateAssistantSettings, team(), input);
-const DEFAULTS = { tone: "", length: "medium", instructions: "", offLimits: [] };
+const DEFAULTS = { tone: "", length: "medium", instructions: "", offLimits: [], supportEmail: null, supportEmailPending: null };
 
 test("starts with no tone, instructions or off-limits topics, and medium answers", async () => {
   expect(await get()).toEqual(DEFAULTS);
@@ -30,8 +30,8 @@ test("the team sets each setting, trimmed; each change leaves the rest, and anot
   const other = await createProject(owner);
   expect(
     await update({ tone: "  Friendly ", length: "short", instructions: " Call it Acme. ", offLimits: [" refund ", "legal advice", "refund"] }),
-  ).toEqual({ tone: "Friendly", length: "short", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"] });
-  expect(await update({ length: "detailed" })).toEqual({ tone: "Friendly", length: "detailed", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"] });
+  ).toEqual({ tone: "Friendly", length: "short", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"], supportEmail: null, supportEmailPending: null });
+  expect(await update({ length: "detailed" })).toEqual({ tone: "Friendly", length: "detailed", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"], supportEmail: null, supportEmailPending: null });
   expect(await update({ tone: "", offLimits: [] })).toMatchObject({ tone: "", offLimits: [] });
   expect(await get(other.id)).toEqual(DEFAULTS);
 });
@@ -66,7 +66,7 @@ test("the app's form takes topics one per line, skipping empty ones; owners and 
 
   actAs(await addMember(project.id, "ADMIN"));
   expect(await saveAssistantSettings(project.slug, {}, form(" refund \r\n\n legal advice\n"))).toEqual({});
-  expect(await get()).toEqual({ tone: "Plain", length: "short", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"] });
+  expect(await get()).toEqual({ tone: "Plain", length: "short", instructions: "Call it Acme.", offLimits: ["refund", "legal advice"], supportEmail: null, supportEmailPending: null });
   expect(await saveAssistantSettings(project.slug, {}, form("?!"))).toEqual({ error: "Each topic needs a word in it" });
 });
 

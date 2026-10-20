@@ -21,7 +21,7 @@ import { updateWidgetSettings } from "./operations/widget";
 export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
-): Promise<{ token: string; name: string } | { error: string }> {
+): Promise<{ token: string; name: string; email: string | null } | { error: string }> {
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, ssoSecret: true } });
   if (!project?.ssoSecret) {
     return { error: "Single sign-on isn't set up for this project" };
@@ -30,8 +30,12 @@ export async function widgetSignIn(
   if ("error" in verified) {
     return { error: "Couldn't sign you in" };
   }
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: verified.userId }, select: { name: true } });
-  return { token: widgetToken(project.id, verified.userId), name: user.name };
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: verified.userId },
+    select: { name: true, ssoIdentity: { select: { email: true } } },
+  });
+  // The email the customer's app gave, if any (what "Ask a person" starts with).
+  return { token: widgetToken(project.id, verified.userId), name: user.name, email: user.ssoIdentity?.email ?? null };
 }
 
 /** Posts feedback from the widget as the person its token is for (like the portal's createPost). */

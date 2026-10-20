@@ -48,6 +48,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "help.insights": () => ({}),
   "help.dismissGap": () => ({ question: "How do I invite?" }),
   "help.ask": () => ({ q: "How do I invite my team?" }),
+  // A question the read and write key asked (another key's question is refused: see help-escalate.db.test.ts).
+  "help.escalate": (f) => ({ questionId: f.questionId, email: `e2e-${crypto.randomUUID()}@example.com`, note: "From the matrix" }),
   "assistant.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "assistant.update": () => ({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: ["refund"] }),
@@ -180,7 +182,15 @@ async function createFixture() {
       similarity: 0.6,
     },
   });
-  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id };
+  // "Ask a person" is on, and the read and write key just got "I don't know".
+  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
+  const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
+  // One at a time: questions count against help.ask's hourly limit per key.
+  await prisma.helpQuestion.deleteMany({ where: { projectId: project.id } });
+  const question = await prisma.helpQuestion.create({
+    data: { projectId: project.id, askerId: writeKey.id, question: "Can I pay with crypto?", source: "API", status: "NO_ANSWER" },
+  });
+  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id, questionId: question.id };
 }
 
 /** Calls an operation over REST like a client would. */
@@ -232,8 +242,11 @@ const snapshot = () =>
         assistantLength: true,
         assistantInstructions: true,
         assistantOffLimits: true,
+        supportEmail: true,
+        supportEmailPending: true,
       },
     }),
+    prisma.helpQuestion.findMany({ where: { projectId: project.id, escalatedAt: { not: null } } }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
@@ -273,6 +286,9 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   fixture = await createFixture();
   if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
+  }
+  if (operation.name === "help.escalate") {
+    model.reply("They want to pay with crypto.");
   }
   expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
 });

@@ -13,6 +13,7 @@ import { helpCenter, publishedArticle } from "@/server/help-queries";
 import { searchHelp } from "@/server/help-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
+import { askAPerson } from "@/server/operations/help-escalate";
 
 /** A widget Help URL: the list (with the search, if any) or an article. */
 function helpHref(query: string, article?: string) {
@@ -30,7 +31,8 @@ function helpHref(query: string, article?: string) {
  * The widget's Help tab: the portal's help center at panel size. A search (`q`) with the
  * portal's "Ask AI", the collections with their articles, or one article (`article`), which
  * also opens on the portal in a new tab. Article links keep the search, so going back
- * returns to the results. "Post this as feedback" opens the widget's own Feedback tab.
+ * returns to the results. "Post this as feedback" opens the widget's own Feedback tab; "Ask a person"
+ * works as on the portal.
  */
 export async function WidgetHelp({
   projectId,
@@ -64,6 +66,7 @@ export async function WidgetHelp({
           projectSlug={projectSlug}
           question={query}
           feedbackHref={hasBoard ? `/widget?${new URLSearchParams({ title: query.slice(0, MAX_POST_TITLE) })}` : null}
+          askAPerson={await askAPerson(projectSlug)}
         />
       )}
       {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} />}

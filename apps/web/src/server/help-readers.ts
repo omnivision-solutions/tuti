@@ -9,13 +9,14 @@ import { portalUrl } from "@/lib/hosts";
 
 import type { FormState } from "./form-state";
 import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operations/help-ask";
+import { escalateFields, escalateQuestion } from "./operations/help-escalate";
 import { answerFields, saveAnswer } from "./operations/help-insights";
 import { OperationError } from "./operations";
 import { getSession } from "./session";
 
 /**
  * Readers' actions on the portal's help center (and the widget's): answering "Was this helpful?", counting
- * the view, and asking the AI. Anyone may, signed in or not; most help readers are anonymous.
+ * the view, asking the AI, and passing its answer to a person. Anyone may, signed in or not; most help readers are anonymous.
  */
 
 const READER_COOKIE = "tuti_reader";
@@ -121,6 +122,33 @@ export async function rateHelpAnswer(projectSlug: string, questionId: string, he
   }
   try {
     await rateAnswer(project.id, String(questionId), helpful === true);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  return {};
+}
+
+/** "Ask a person" after an AI answer that didn't help: emails the question to the team (see help.escalate). Only the asker may. */
+export async function escalateHelp(
+  projectSlug: string,
+  questionId: string,
+  email: string,
+  note: string,
+  from: "portal" | "widget" = "portal",
+): Promise<FormState> {
+  const input = escalateFields.safeParse({ questionId, email, note });
+  if (!input.success) {
+    return { error: input.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  if (!project) {
+    return { error: "Help center not found" };
+  }
+  try {
+    await escalateQuestion(project.id, await readerId(String(projectSlug), from === "widget"), input.data, await headers());
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
