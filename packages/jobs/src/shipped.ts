@@ -75,7 +75,8 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
 /**
  * A post became Completed: emails its author, voters and commenters that it
  * shipped. Only to addresses someone vouched for (verified, or asserted by the
- * project's SSO), never to the team, and not to people who unsubscribed.
+ * project's SSO), never to the team, and not to people who unsubscribed. On a private
+ * portal, only to people who may still read it (its SSO users).
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
   // Only while it's still shipped (the team may have reopened it since) and not merged away.
@@ -86,7 +87,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       title: true,
       projectId: true,
       authorId: true,
-      project: { select: { name: true, slug: true } },
+      project: { select: { name: true, slug: true, portalAccess: true } },
       votes: { select: { userId: true } },
       comments: { select: { authorId: true } },
     },
@@ -98,7 +99,13 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const { projectId, project } = post;
   const ids = [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
   const people = await prisma.user.findMany({
-    where: { id: { in: ids }, teamMemberships: { none: { projectId } }, emailOptOuts: { none: { projectId } } },
+    where: {
+      id: { in: ids },
+      teamMemberships: { none: { projectId } },
+      emailOptOuts: { none: { projectId } },
+      // A private portal's post is only for its readers: past the team, the people its SSO signs in.
+      ...(project.portalAccess === "PRIVATE" && { ssoIdentity: { projectId } }),
+    },
     select: { id: true, email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },
   });
 

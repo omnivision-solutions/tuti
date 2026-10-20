@@ -143,6 +143,9 @@ model Project {
   headerLinks           Json         @default("[]")
   footerLinks           Json         @default("[]")
   poweredBy             Boolean      @default(true)
+  /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
+  /// when private only the project's team and the people its SSO signs in.
+  portalAccess          PortalAccess @default(PUBLIC)
   /// How the help center's AI answers (see the assistant.* operations): a tone, the answer
   /// length, standing instructions, and off-limits topics (short phrases; a question that
   /// contains one gets a fixed reply without asking the model).
@@ -1059,6 +1062,12 @@ enum HelpNoAnswerCause {
   OFF_LIMITS
   /// Asked before causes were recorded.
   UNKNOWN
+}
+
+/// Who may read a project's portal.
+enum PortalAccess {
+  PUBLIC
+  PRIVATE
 }
 
 /// How long the help center's AI answers are (each is a sentence in the prompt and a cap on the reply).

@@ -12,11 +12,12 @@ import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operat
 import { escalateFields, escalateQuestion } from "./operations/help-escalate";
 import { answerFields, saveAnswer } from "./operations/help-insights";
 import { OperationError } from "./operations";
+import { readableProject } from "./portal-access";
 import { getSession } from "./session";
 
 /**
  * Readers' actions on the portal's help center (and the widget's): answering "Was this helpful?", counting
- * the view, asking the AI, and passing its answer to a person. Anyone may, signed in or not; most help readers are anonymous.
+ * the view, asking the AI, and passing its answer to a person. Anyone who may read the portal may, signed in or not; most help readers are anonymous.
  */
 
 const READER_COOKIE = "tuti_reader";
@@ -61,7 +62,7 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Article not found" };
   }
@@ -81,7 +82,7 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
  * counter per article and day (UTC). Skips crawlers.
  */
 export async function countArticleView(projectSlug: string, slug: string): Promise<void> {
-  if (BOT.test((await headers()).get("user-agent") ?? "")) {
+  if (BOT.test((await headers()).get("user-agent") ?? "") || !(await readableProject(projectSlug))) {
     return;
   }
   await prisma.$executeRaw`
@@ -100,7 +101,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Help center not found" };
   }
@@ -116,7 +117,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
 
 /** Thumbs up or down on an AI answer. Rating again replaces it. */
 export async function rateHelpAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Help center not found" };
   }
@@ -143,7 +144,7 @@ export async function escalateHelp(
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Help center not found" };
   }

@@ -12,12 +12,14 @@ import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetHelp } from "@/components/widget-help";
+import { WidgetLocked } from "@/components/widget-locked";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/help-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { widgetSettings } from "@/server/operations/widget";
+import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -53,6 +55,18 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   }
   // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
   const css = brandCss(brand.color);
+  // A private portal shows nothing until whoever's here may read it (see portal-access.ts).
+  if (!(await mayRead(project.id))) {
+    return (
+      <main className="flex flex-col gap-4 p-4">
+        {css && <style>{css}</style>}
+        <div className="flex justify-end">
+          <WidgetClose inline={display === "inline"} />
+        </div>
+        <WidgetLocked projectSlug={slug} />
+      </main>
+    );
+  }
   // Help once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
   const hasHelp = project.articles.length > 0 || (tabParam === "help" && typeof article === "string");
   const tabs = TABS.filter(({ tab }) => tab !== "help" || hasHelp);

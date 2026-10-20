@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
@@ -10,6 +11,7 @@ import type { FormState } from "./form-state";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
+import { WIDGET_READER_COOKIE } from "./portal-access";
 import { updateWidgetSettings } from "./operations/widget";
 
 /**
@@ -34,8 +36,12 @@ export async function widgetSignIn(
     where: { id: verified.userId },
     select: { name: true, ssoIdentity: { select: { email: true } } },
   });
+  const token = widgetToken(project.id, verified.userId);
+  // Lets the panel's pages show a private portal to them (see portal-access.ts). Partitioned: kept
+  // per embedding site, never shared across sites; gone when the browser closes or the token expires.
+  (await cookies()).set(WIDGET_READER_COOKIE, token, { httpOnly: true, sameSite: "none", secure: true, partitioned: true, path: "/" });
   // The email the customer's app gave, if any (what "Ask a person" starts with).
-  return { token: widgetToken(project.id, verified.userId), name: user.name, email: user.ssoIdentity?.email ?? null };
+  return { token, name: user.name, email: user.ssoIdentity?.email ?? null };
 }
 
 /** Posts feedback from the widget as the person its token is for (like the portal's createPost). */

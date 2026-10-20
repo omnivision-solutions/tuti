@@ -95,6 +95,13 @@ whether the user has seen it on another device; after the panel shows it, it cal
 `getToken` again to record that. So a user who reads What's new on their phone doesn't
 see the dot on their laptop.
 
+## Private portals
+
+With **Settings → Portal access → Private**, only your team and the people your app signs in
+this way can read the portal, its help center, changelog and feeds; everyone else gets the
+sign-in page, and sign-up is off. In the widget, the panel asks visitors to sign in until
+`getToken` gives it a token, then shows the portal to them.
+
 ## Errors
 
 If sign-in fails, the user sees an error page on your portal at `/sso/error?code=…`:

@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { canReadPortal } from "./portal-access";
 import { getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
@@ -34,8 +35,9 @@ export async function listMyProjects(userId: string) {
 /**
  * Users who came in through a project's SSO belong to that project: their
  * identity is vouched for by its app only, so they can't act in other projects.
+ * Nobody acts on a private portal they may not read (see portal-access.ts).
  */
 export async function canActIn(userId: string, projectId: string): Promise<boolean> {
   const identity = await prisma.ssoIdentity.findUnique({ where: { userId }, select: { projectId: true } });
-  return !identity || identity.projectId === projectId;
+  return (!identity || identity.projectId === projectId) && (await canReadPortal({ id: projectId }, userId));
 }

@@ -1,5 +1,6 @@
+import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { CircleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, LockIcon } from "lucide-react";
 
 import { AuthForm } from "@/components/auth-form";
 import { PasswordChangedAlert } from "@/components/password-reset-forms";
@@ -7,11 +8,20 @@ import { TutiMark } from "@/components/tuti-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { safeRedirectPath } from "@/lib/redirects";
+import { canReadPortal } from "@/server/portal-access";
+import { getSession } from "@/server/session";
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const [{ project }, { continue: handoff, link, next, reset }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
   const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
+  const [portal, session] = await Promise.all([
+    prisma.project.findUnique({ where: { slug: project }, select: { name: true, portalAccess: true } }),
+    getSession(),
+  ]);
+  const isPrivate = portal?.portalAccess === "PRIVATE";
+  // Signed in with an account that may not read it (e.g. one made by signing up while it was public).
+  const refused = isPrivate && session && !(await canReadPortal({ slug: project }, session.user.id)) ? session.user.email : null;
 
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-4">
@@ -22,6 +32,16 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
             {link === "failed"
               ? "That sign-in link has expired or was already used. Ask for a new one."
               : "That sign-in didn't work. Try again."}
+          </AlertDescription>
+        </Alert>
+      )}
+      {portal && isPrivate && (!session || refused) && (
+        <Alert>
+          <LockIcon />
+          <AlertDescription className="break-words">
+            {refused
+              ? `${portal.name} is private, and ${refused} doesn't have access. Sign in with another account, or ask the team for access.`
+              : `${portal.name} is private. Sign in to see it.`}
           </AlertDescription>
         </Alert>
       )}
@@ -41,6 +61,8 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
         // Sign-in links and password resets need email that really goes out.
         linkProject={emailConfigured() ? project : undefined}
         forgotPassword={emailConfigured()}
+        // Accounts made here can't read a private portal.
+        signUp={!isPrivate}
       />
     </div>
   );

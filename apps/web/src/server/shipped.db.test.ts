@@ -76,6 +76,24 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
   });
 
+  test("on a private portal, only people who may still read it hear about it: its SSO users", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const ssoEmail = `e2e-${randomUUID()}@example.com`;
+    const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: ssoEmail });
+    // Posted and voted on while the portal was public.
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Audit log" });
+    for (const userId of [voter.id, ssoUser]) {
+      await call(setVote, as(userId), { number: post.number, voted: true });
+    }
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+
+    await setStatus(post.number, "completed");
+
+    expect(emailsTo(ssoEmail).map((email) => email.subject)).toEqual(["Done: Audit log"]);
+    expect(emailsTo(author.email)).toEqual([]);
+    expect(emailsTo(voter.email)).toEqual([]);
+  });
+
   test("a mail outage doesn't lose anyone: the retry emails those not reached, once", async () => {
     const [author, voter] = [await verified("Author"), await verified("Voter")];
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Offline mode" });

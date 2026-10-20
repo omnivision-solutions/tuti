@@ -8,7 +8,8 @@ import { textColorOn, widgetSettings } from "@/server/operations/widget";
  * the launcher can show it's new to this visitor, and how the launcher looks (its
  * label, colour and corner; the quick links are the panel's, which reads them itself).
  * Public and the same for everyone, so any site may read it, without cookies; what
- * a signed-in visitor has seen on other devices comes from /api/widget/seen.
+ * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
+ * portal says nothing about its changelog here (no latest), since anyone may ask.
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
-  const [latest, settings] = await Promise.all([latestAnnouncedAt({ slug }), widgetSettings({ slug })]);
+  const [latest, settings] = await Promise.all([latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }), widgetSettings({ slug })]);
   const launcher = settings && {
     label: settings.label,
     // Null: the loader's brand green, which has a dark-mode shade.

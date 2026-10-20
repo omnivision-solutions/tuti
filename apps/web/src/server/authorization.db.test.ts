@@ -36,6 +36,7 @@ import * as managePosts from "./manage-posts";
 import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
 import * as passwordReset from "./password-reset";
+import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
 import * as projects from "./projects";
 import * as signInLink from "./sign-in-link";
@@ -69,6 +70,7 @@ const modules = {
   media,
   "password-reset": passwordReset,
   "portal-handoff": portalHandoff,
+  "portal-settings": portalSettings,
   posts,
   projects,
   "similar-posts": similarPosts,
@@ -328,6 +330,9 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (slug) => portalHandoff.continueToPortal(slug, "a".repeat(43), "/"),
     },
+  },
+  "portal-settings": {
+    setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
   },
   posts: {
     createPost: {

@@ -4,6 +4,8 @@ import { prisma } from "@tuti/db";
 import { embed, embeddingsEnabled, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
+import { readableProject } from "./portal-access";
+
 export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string };
 
 const querySchema = z.string().trim().min(3).max(120);
@@ -23,7 +25,7 @@ export async function findSimilarPosts(projectSlug: string, title: string): Prom
   if (!query.success) {
     return [];
   }
-  const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return [];
   }
