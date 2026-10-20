@@ -110,6 +110,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "publishedAt: 2026-03-01T10:00:00.000Z",
       "updatedAt: 2026-03-02T10:00:00.000Z",
       'collection: "Getting started"',
+      "order: 0",
       "---",
       "",
       "Owners can invite.",
@@ -118,7 +119,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "",
     ].join("\n"),
   );
-  expect(files["help/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\n---\n\nNot yet\.\n$/);
+  expect(files["help/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\norder: 0\n---\n\nNot yet\.\n$/);
 
   expect(files["changelog/2-dark-mode.md"]).toBe(
     '---\ntitle: "Dark mode"\nstatus: "published"\npublishedAt: 2026-03-05T10:00:00.000Z\ntags: ["new","improved"]\ncompletes: [7]\n---\n\nIt\'s here.\n',
@@ -162,4 +163,23 @@ test("a project with more rows than one batch exports all of them", async () => 
   actAs(owner);
   const files = await unzip(await exportOf(slug));
   expect(Object.keys(files).filter((path) => path.startsWith("posts/"))).toHaveLength(205);
+});
+
+test("a collection in another is a folder in its folder, and each article says its place", async () => {
+  const owner = await signUp();
+  const { id: projectId, slug } = await createProject(owner);
+  const billing = await prisma.collection.create({ data: { projectId, slug: "billing", name: "Billing" } });
+  const invoices = await prisma.collection.create({ data: { projectId, slug: "invoices", name: "Invoices", parentId: billing.id } });
+  await prisma.article.createMany({
+    data: [
+      { projectId, slug: "card-payments", title: "Card payments", collectionId: billing.id },
+      { projectId, slug: "downloading", title: "Downloading", collectionId: invoices.id, order: 1 },
+    ],
+  });
+  actAs(owner);
+  const files = await unzip(await exportOf(slug));
+  expect(Object.keys(files).filter((path) => path.startsWith("help/"))).toEqual(
+    expect.arrayContaining(["help/billing/card-payments.md", "help/billing/invoices/downloading.md"]),
+  );
+  expect(files["help/billing/invoices/downloading.md"]).toContain('collection: "Invoices"\norder: 1\n');
 });

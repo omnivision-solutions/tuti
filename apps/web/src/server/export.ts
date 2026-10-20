@@ -86,11 +86,13 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         publishedAt: true,
         listing: true,
         updatedAt: true,
-        collection: { select: { slug: true, name: true } },
+        order: true,
+        collection: { select: { slug: true, name: true, parent: { select: { slug: true } } } },
       },
     }),
   )) {
-    const folder = article.collection ? `help/${article.collection.slug}` : "help";
+    // A collection in another is a folder in its folder (collections go 2 levels deep at most).
+    const folder = ["help", article.collection?.parent?.slug, article.collection?.slug].filter(Boolean).join("/");
     yield [
       `${folder}/${article.slug}.md`,
       frontMatter({
@@ -101,6 +103,8 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         publishedAt: article.publishedAt,
         updatedAt: article.updatedAt,
         collection: article.collection?.name ?? null,
+        // Its place in the collection (or among the articles in none): 0 first.
+        order: article.order,
       }) + body(article),
     ];
   }
@@ -186,7 +190,7 @@ function readme(projectName: string, exportedAt: Date): string {
 
 Exported from Tuti on ${exportedAt.toISOString()}.
 
-- \`help/\`: help center articles, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (articles in no collection are directly in \`help/\`).
+- \`help/\`: help center articles, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (a collection in another is a folder in its folder; articles in no collection are directly in \`help/\`). \`order\` in the front matter is an article's place in its collection.
 - \`changelog/\`: changelog entries, drafts included, as \`<number>-<title>.md\`.
 - \`posts/\`: feedback posts in a folder per board, as \`<number>-<title>.md\`, with their comments at the end.
 

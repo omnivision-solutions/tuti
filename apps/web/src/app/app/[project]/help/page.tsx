@@ -4,7 +4,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, DeleteCollectionButton, RestoreDeletedButton } from "@/components/help";
+import { CollectionDialog, RestoreDeletedButton } from "@/components/help";
+import { HelpStructure } from "@/components/help-structure";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -12,12 +13,21 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
+import { inTreeOrder } from "@/server/help-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/help";
 
+const structureArticle = { slug: true, title: true, publishedAt: true } as const;
+const structureView = (article: { slug: string; title: string; publishedAt: Date | null }) => ({
+  slug: article.slug,
+  title: article.title,
+  published: article.publishedAt !== null,
+});
+
 /**
  * The team's help center: articles (drafts first, then latest edited), the collections they're
- * grouped in, and articles deleted lately (which can be restored).
+ * grouped in with their articles in the order readers see them (rearranged here), and articles
+ * deleted lately (which can be restored).
  */
 export default async function TeamHelpPage(props: PageProps<"/app/[project]/help">) {
   const { project: slug } = await props.params;
@@ -26,7 +36,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, collections, deleted] = await Promise.all([
+  const [articles, collections, uncollected, deleted] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -42,7 +52,20 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     prisma.collection.findMany({
       where: { projectId },
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { slug: true, name: true, description: true, _count: { select: { articles: { where: { deletedAt: null } } } } },
+      select: {
+        id: true,
+        parentId: true,
+        slug: true,
+        name: true,
+        description: true,
+        parent: { select: { slug: true } },
+        articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
+      },
+    }),
+    prisma.article.findMany({
+      where: { projectId, deletedAt: null, collectionId: null },
+      orderBy: [{ order: "asc" }, { title: "asc" }],
+      select: structureArticle,
     }),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -105,31 +128,33 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
           </CardContent>
         </Card>
       )}
-      <Card>
+      <Card role="region" aria-labelledby="help-collections">
         <CardHeader>
-          <CardTitle>Collections</CardTitle>
-          <CardDescription>Group articles by topic. Your help center lists them in this order.</CardDescription>
+          <CardTitle id="help-collections">Collections</CardTitle>
+          <CardDescription>
+            Group articles by topic, with collections inside collections if you need them. Your help center lists them in this order:
+            drag them into place, or use the arrows.
+          </CardDescription>
           <CardAction>
-            <CollectionDialog projectSlug={slug} />
+            <CollectionDialog
+              projectSlug={slug}
+              parents={collections.filter((c) => c.parentId === null).map((c) => ({ slug: c.slug, name: c.name }))}
+            />
           </CardAction>
         </CardHeader>
-        {collections.length > 0 && (
+        {(collections.length > 0 || uncollected.length > 0) && (
           <CardContent>
-            <ItemList>
-              {collections.map((collection) => (
-                <ItemRow
-                  key={collection.slug}
-                  title={collection.name}
-                  meta={`${collection._count.articles} ${collection._count.articles === 1 ? "article" : "articles"}`}
-                  actions={
-                    <>
-                      <CollectionDialog projectSlug={slug} collection={collection} />
-                      <DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} />
-                    </>
-                  }
-                />
-              ))}
-            </ItemList>
+            <HelpStructure
+              projectSlug={slug}
+              collections={inTreeOrder(collections).map((c) => ({
+                slug: c.slug,
+                name: c.name,
+                description: c.description,
+                parent: c.parent?.slug ?? null,
+                articles: c.articles.map(structureView),
+              }))}
+              uncollected={uncollected.map(structureView)}
+            />
           </CardContent>
         )}
       </Card>

@@ -62,7 +62,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.restore": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   "collections.list": () => ({}),
   "collections.create": () => ({ name: "Billing" }),
-  "collections.update": () => ({ slug: "basics", name: "The basics" }),
+  "articles.reorder": () => ({ slug: "matrix-draft", collection: "basics", position: 0 }),
+  "collections.update": () => ({ slug: "basics", name: "The basics", parent: "guides" }),
+  "collections.reorder": () => ({ slug: "guides", parent: "basics", position: 0 }),
   "collections.delete": () => ({ slug: "basics" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
@@ -128,6 +130,8 @@ async function createFixture() {
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
   const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics" } });
+  // Another, to move one into the other.
+  await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1 } });
   await prisma.article.createMany({
     data: [
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

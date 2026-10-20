@@ -7,8 +7,22 @@ import { displayDoc } from "./content";
 
 /** Reads for the help center pages: the team's editor and the portal. */
 
-export function collectionOptions(projectId: string) {
-  return prisma.collection.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } });
+/**
+ * Collections in reading order: each top-level one, then the ones in it (collections go 2 levels
+ * deep at most). `sorted` is by order, then name.
+ */
+export function inTreeOrder<T extends { id: string; parentId: string | null }>(sorted: T[]): T[] {
+  return sorted.filter((c) => c.parentId === null).flatMap((top) => [top, ...sorted.filter((c) => c.parentId === top.id)]);
+}
+
+/** The editor's collection picker: in reading order, a collection in another named with it ("Billing › Invoices"). */
+export async function collectionOptions(projectId: string) {
+  const collections = await prisma.collection.findMany({
+    where: { projectId },
+    orderBy: [{ order: "asc" }, { name: "asc" }],
+    select: { id: true, parentId: true, slug: true, name: true, parent: { select: { name: true } } },
+  });
+  return inTreeOrder(collections).map((c) => ({ slug: c.slug, name: c.parent ? `${c.parent.name} › ${c.name}` : c.name }));
 }
 
 /**
@@ -23,18 +37,37 @@ export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies P
 /** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
 export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLISTED"] } } satisfies Prisma.ArticleWhereInput;
 
-/** The portal's /help (and the widget's, and llms.txt): collections in order with their listed articles, and the listed articles in none. */
+export type HelpCollection = {
+  slug: string;
+  name: string;
+  description: string;
+  articles: { slug: string; title: string }[];
+  /** The collections in it, in order. */
+  collections: HelpCollection[];
+};
+
+/**
+ * The portal's /help (and the widget's, and llms.txt): the top-level collections in order, each with
+ * its listed articles in order and then the collections in it, and the listed articles in none.
+ * Collections without a listed article (in them or in the ones in them) are left out.
+ */
 export async function helpCenter(projectSlug: string) {
-  const articleSelect = { where: listedArticle, orderBy: { title: "asc" }, select: { slug: true, title: true } } as const;
-  const [collections, uncollected] = await Promise.all([
+  const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
+  const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
+  const [rows, uncollected] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { slug: true, name: true, description: true, articles: articleSelect },
+      select: { id: true, parentId: true, slug: true, name: true, description: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
   ]);
-  return { collections: collections.filter((c) => c.articles.length > 0), uncollected };
+  const nest = (parentId: string | null): HelpCollection[] =>
+    rows
+      .filter((row) => row.parentId === parentId)
+      .map(({ slug, name, description, articles, id }) => ({ slug, name, description, articles, collections: nest(id) }))
+      .filter((c) => c.articles.length > 0 || c.collections.length > 0);
+  return { collections: nest(null), uncollected };
 }
 
 /** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */

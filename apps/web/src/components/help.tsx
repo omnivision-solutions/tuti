@@ -391,13 +391,16 @@ export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { p
   );
 }
 
-/** Adds a collection, or (with `collection`) renames one and changes its description. */
+/** Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and changes its description. */
 export function CollectionDialog({
   projectSlug,
   collection,
+  parents = [],
 }: {
   projectSlug: string;
   collection?: { slug: string; name: string; description: string };
+  /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
+  parents?: CollectionOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -409,6 +412,7 @@ export function CollectionDialog({
     return result;
   }, {});
   const id = collection?.slug ?? "new";
+  const parentItems = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -444,6 +448,23 @@ export function CollectionDialog({
                 placeholder="Optional, shown in your help center"
               />
             </Field>
+            {!collection && parents.length > 0 && (
+              <Field>
+                <FieldLabel id="collection-parent-label">Parent collection</FieldLabel>
+                <Select name="parent" items={parentItems} defaultValue={null}>
+                  <SelectTrigger className="w-full" aria-labelledby="collection-parent-label">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parentItems.map((item) => (
+                      <SelectItem key={item.value ?? ""} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
@@ -456,7 +477,18 @@ export function CollectionDialog({
   );
 }
 
-export function DeleteCollectionButton({ projectSlug, slug, name }: { projectSlug: string; slug: string; name: string }) {
+export function DeleteCollectionButton({
+  projectSlug,
+  slug,
+  name,
+  hasChildren = false,
+}: {
+  projectSlug: string;
+  slug: string;
+  name: string;
+  /** It has collections in it, which move up to the top level. */
+  hasChildren?: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
@@ -464,7 +496,9 @@ export function DeleteCollectionButton({ projectSlug, slug, name }: { projectSlu
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
-          <AlertDialogDescription>Its articles stay, without a collection.</AlertDialogDescription>
+          <AlertDialogDescription>
+            Its articles stay, without a collection.{hasChildren && " The collections in it move up to the top level."}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>

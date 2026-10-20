@@ -6,6 +6,7 @@ import Link from "next/link";
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
 import { HelpAnswer } from "@/components/help-answer";
+import { HelpCollections } from "@/components/help-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { helpCenter, publishedArticle } from "@/server/help-queries";
@@ -99,46 +100,10 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
   );
 }
 
-function ArticleLinks({ articles }: { articles: { slug: string; title: string }[] }) {
-  return (
-    <ul className="flex flex-col gap-1.5">
-      {articles.map((article) => (
-        <li key={article.slug}>
-          <Link href={helpHref("", article.slug)} className="break-words text-primary hover:underline">
-            {article.title}
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Like the portal's /help: each collection with its published articles, then the articles in none. */
+/** Like the portal's /help: each collection with its published articles and the collections in it, then the articles in none. */
 async function Collections({ projectSlug }: { projectSlug: string }) {
   const { collections, uncollected } = await helpCenter(projectSlug);
-  return (
-    <>
-      {collections.map((collection) => (
-        <section key={collection.slug} aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
-          <h2 id={`collection-${collection.slug}`} className="font-heading font-bold tracking-tight break-words">
-            {collection.name}
-          </h2>
-          {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
-          <ArticleLinks articles={collection.articles} />
-        </section>
-      ))}
-      {uncollected.length > 0 && (
-        <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
-          {collections.length > 0 && (
-            <h2 id="more-articles" className="font-heading font-bold tracking-tight">
-              More articles
-            </h2>
-          )}
-          <ArticleLinks articles={uncollected} />
-        </section>
-      )}
-    </>
-  );
+  return <HelpCollections collections={collections} uncollected={uncollected} href={(slug) => helpHref("", slug)} compact />;
 }
 
 async function WidgetArticle({ projectSlug, slug, back, backLabel }: { projectSlug: string; slug: string; back: string; backLabel: string }) {

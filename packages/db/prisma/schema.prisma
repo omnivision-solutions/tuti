@@ -856,17 +856,23 @@ model Collection {
   slug        String
   name        String
   description String   @default("")
-  /// Collections are listed by this, then by name; new ones go last.
+  /// Among its siblings (same parent), collections are listed by this, then by name; new ones go last.
   order       Int      @default(0)
+  /// The collection it's in, in the same project. At most 2 levels: a collection with a parent has
+  /// no children (checked under the project's lock). Deleting the parent moves its children up a level.
+  parentId    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    Collection?       @relation("CollectionParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Collection[]      @relation("CollectionParent")
   articles  Article[]
   revisions ArticleRevision[]
   changes   ArticleChanges[]
 
   @@unique([projectId, slug])
+  @@index([parentId])
   @@map("collection")
 }
 
@@ -909,6 +915,8 @@ model Article {
   revisedAt       DateTime?
   /// At most one collection; deleting it leaves its articles uncollected.
   collectionId    String?
+  /// Among the articles in its collection (or in none), listed by this, then by title; new ones go last.
+  order           Int            @default(0)
   createdById     String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

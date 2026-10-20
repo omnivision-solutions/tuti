@@ -185,6 +185,8 @@ const matrix: Matrix = {
     restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => help.restoreArticle(slug, "matrix-draft", f.revisionId) },
     saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
+    moveCollection: { allowed: "MEMBER", call: (slug) => help.moveCollection(slug, "guides", "basics", 0) },
+    moveArticle: { allowed: "MEMBER", call: (slug) => help.moveArticle(slug, "matrix-draft", "basics", 0) },
     dismissHelpGap: { allowed: "MEMBER", call: (slug) => help.dismissHelpGap(slug, "How do I invite?") },
   },
   // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
@@ -502,6 +504,7 @@ async function createFixture() {
     ],
   });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics" } });
+  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1 } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

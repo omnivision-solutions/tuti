@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { HelpAnswer } from "@/components/help-answer";
+import { HelpCollections } from "@/components/help-collections";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,20 +13,6 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
 
 export const metadata = { title: "Help center" };
-
-function ArticleLinks({ articles }: { articles: { slug: string; title: string }[] }) {
-  return (
-    <ul className="flex flex-col gap-1.5">
-      {articles.map((article) => (
-        <li key={article.slug}>
-          <Link href={`/help/${article.slug}`} className="break-words text-primary hover:underline">
-            {article.title}
-          </Link>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /** Published articles matching `query`, each with the passage that matched. */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
@@ -82,25 +69,7 @@ export default async function HelpCenterPage(props: PageProps<"/portal/[project]
       {!query && collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
-      {collections.map((collection) => (
-        <section key={collection.slug} aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
-          <h2 id={`collection-${collection.slug}`} className="font-heading text-lg font-bold tracking-tight break-words">
-            {collection.name}
-          </h2>
-          {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
-          <ArticleLinks articles={collection.articles} />
-        </section>
-      ))}
-      {uncollected.length > 0 && (
-        <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
-          {collections.length > 0 && (
-            <h2 id="more-articles" className="font-heading text-lg font-bold tracking-tight">
-              More articles
-            </h2>
-          )}
-          <ArticleLinks articles={uncollected} />
-        </section>
-      )}
+      <HelpCollections collections={collections} uncollected={uncollected} href={(article) => `/help/${article}`} />
     </div>
   );
 }
