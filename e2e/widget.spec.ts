@@ -409,10 +409,28 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await ai.getByRole("button", { name: "Not helpful" }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
 
-  // Not helpful: they ask a person, starting with the email the customer's site signed them in with.
+  // Not helpful: they ask a person. The customer's site is slow to sign them in, and they type an
+  // address before it does: the email it signs them in with doesn't replace what they typed.
+  const typed = `e2e-typed-${slug}@example.com`;
+  let tokenAsked!: () => void;
+  const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
+  let releaseToken!: () => void;
+  const released = new Promise<void>((resolve) => (releaseToken = resolve));
+  await visitor.route("**/token/**", async (route) => {
+    tokenAsked();
+    await released;
+    await route.continue();
+  });
   await ai.getByRole("button", { name: "Ask a person" }).click();
   const form = ai.getByRole("form", { name: "Ask a person" });
-  await expect(form.getByLabel("Your email")).toHaveValue(samEmail(slug));
+  await asked;
+  await form.getByLabel("Your email").fill(typed);
+  // The panel trades the token (a server action) once the page hands it over.
+  const signedIn = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  releaseToken();
+  await signedIn;
+  await visitor.unroute("**/token/**");
+  await expect(form.getByLabel("Your email")).toHaveValue(typed);
   await form.getByLabel("Anything to add? (optional)").fill("I'm on the free plan.");
   await checkpoint(visitor, "widget-help-ask-a-person");
   await nextModelReply("They want to add a colleague on the free plan.", question);
@@ -421,7 +439,7 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
   await checkpoint(visitor, "widget-help-asked-a-person");
   const sent = await latestEmailTo(support, { after: before });
-  expect(sent.replyTo).toBe(samEmail(slug));
+  expect(sent.replyTo).toBe(typed);
   expect(sent.text).toContain("They want to add a colleague on the free plan.");
   expect(sent.text).toContain("Owners and admins send invites from the Team page.");
   expect(sent.text).toContain("marked not helpful");
@@ -435,6 +453,10 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "widget-help-ai-no-answer");
+  // Asking a person here starts with the email the customer's site signed them in with.
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
+  await ai.getByRole("button", { name: "Cancel" }).click();
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);

@@ -168,6 +168,8 @@ export function HelpAnswer({
 function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { projectSlug: string; questionId: string; defaultEmail: string; widget: boolean }) {
   const [open, setOpen] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  /** The email as the visitor typed it; null until they type. */
+  const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   // In the widget on a customer's site, the page may sign its visitor in: start with their email.
@@ -209,15 +211,15 @@ function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { project
       <Field>
         <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>
         <Input
-          // Remounted with the widget's signed-in email once it arrives.
-          key={signedIn?.email ?? ""}
           id={`${id}-email`}
           name="email"
           type="email"
           required
           maxLength={320}
           autoComplete="email"
-          defaultValue={defaultEmail || signedIn?.email || ""}
+          // What they typed wins; until they type, the widget's signed-in email fills it in when it arrives.
+          value={typed ?? (defaultEmail || signedIn?.email || "")}
+          onChange={(event) => setTyped(event.target.value)}
         />
       </Field>
       <Field>
