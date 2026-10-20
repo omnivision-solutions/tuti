@@ -134,3 +134,90 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(someoneElse.getByText("That sign-in link has expired or was already used. Ask for a new one.")).toBeVisible();
   await expect(someoneElse.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 });
+
+test("a team member who forgot their password resets it by email and signs in with the new one", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  // Signed in on one device…
+  const olive = await signUp(browser, APP_URL, "Olive Owner");
+  await olive.waitForURL(/\/app/);
+
+  // …and forgot the password on another.
+  const laptop = await newPerson(browser, APP_URL);
+  await laptop.goto("/sign-in");
+  await laptop.getByRole("link", { name: "Forgot your password?" }).click();
+  await laptop.waitForURL("**/forgot-password");
+  await laptop.getByLabel("Email").fill(olive.email);
+  await checkpoint(laptop, "app-forgot-password");
+  await laptop.getByRole("button", { name: "Email me a link" }).click();
+  await expect(laptop.getByText(`If there's an account for ${olive.email}, we've sent it a link`)).toBeVisible();
+  await checkpoint(laptop, "app-forgot-password-sent");
+
+  const message = await latestEmailTo(olive.email);
+  expect(message.subject).toBe("Reset your password");
+  await laptop.goto(linkIn(message, `${APP_URL}/reset-password?`));
+  await expect(laptop.getByText("Set a new password")).toBeVisible();
+  await expect(laptop.getByText(`for ${olive.email}`)).toBeVisible();
+  await laptop.getByLabel("New password", { exact: true }).fill("a brand new passphrase");
+  await laptop.getByLabel("Confirm new password").fill("a different passphrase");
+  await laptop.getByRole("button", { name: "Set new password" }).click();
+  await expect(laptop.getByText("The passwords don't match.")).toBeVisible();
+  await laptop.getByLabel("Confirm new password").fill("a brand new passphrase");
+  await checkpoint(laptop, "app-set-new-password");
+  await laptop.getByRole("button", { name: "Set new password" }).click();
+
+  await laptop.waitForURL("**/sign-in?reset=done");
+  await expect(laptop.getByText("Your password was changed. Sign in with the new one.")).toBeVisible();
+  await laptop.getByLabel("Email").fill(olive.email);
+  await laptop.getByLabel("Password").fill("a brand new passphrase");
+  await checkpoint(laptop, "app-sign-in-after-reset");
+  await laptop.getByRole("button", { name: "Sign in" }).click();
+  await laptop.waitForURL(/\/app/);
+  expect((await latestEmailTo(olive.email)).subject).toBe("Your password was changed");
+
+  // The other device was signed out.
+  await olive.reload();
+  await olive.waitForURL(/\/sign-in/);
+});
+
+test("a portal user who forgot their password resets it on the portal and signs in there", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.getByRole("button", { name: "Account" }).click();
+  await ada.getByRole("menuitem", { name: "Sign out" }).click();
+
+  await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  await ada.getByRole("link", { name: "Forgot your password?" }).click();
+  await ada.waitForURL("**/forgot-password");
+  // There's nothing to come back to here after signing in.
+  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+  await ada.getByLabel("Email").fill(ada.email);
+  await checkpoint(ada, "portal-forgot-password");
+  await ada.getByRole("button", { name: "Email me a link" }).click();
+  await expect(ada.getByText(`If there's an account for ${ada.email}, we've sent it a link`)).toBeVisible();
+
+  const message = await latestEmailTo(ada.email);
+  expect(message.subject).toBe("Reset your password");
+  expect(message.text).toContain("your account on Acme");
+  const link = linkIn(message, `${portalUrl(slug)}/reset-password?`);
+  await ada.goto(link);
+  // The link's token doesn't travel on in the sign-in link.
+  await expect(ada.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/sign-in");
+  await ada.getByLabel("New password", { exact: true }).fill("a brand new passphrase");
+  await ada.getByLabel("Confirm new password").fill("a brand new passphrase");
+  await checkpoint(ada, "portal-set-new-password");
+  await ada.getByRole("button", { name: "Set new password" }).click();
+  await ada.waitForURL("**/sign-in?reset=done");
+  await ada.getByLabel("Email").fill(ada.email);
+  await ada.getByLabel("Password").fill("a brand new passphrase");
+  await checkpoint(ada, "portal-sign-in-after-reset");
+  await ada.getByRole("button", { name: "Sign in" }).click();
+  await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
+
+  // The link worked once.
+  await ada.goto(link);
+  await ada.waitForURL("**/forgot-password?link=failed");
+  await expect(ada.getByText("That link has expired or was already used. Ask for a new one.")).toBeVisible();
+});

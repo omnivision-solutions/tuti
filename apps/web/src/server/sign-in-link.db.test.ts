@@ -198,7 +198,7 @@ test("an address gets a limited number of links an hour, on any portal", async (
   for (let i = 0; i < SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR; i++) {
     expect(await ask(email)).toEqual({ sentTo: email });
   }
-  const refused = { error: "We've sent a lot of sign-in links to this address in the last hour. Try again later." };
+  const refused = { error: "We've sent a lot of emails to this address in the last hour. Try again later." };
   expect(await ask(email)).toEqual(refused);
   // The same on another portal, and in another case.
   const other = await createProject(await signUp("Other owner"));
@@ -216,7 +216,7 @@ test("a portal sends a limited number of links an hour", async () => {
     data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR }, (_, i) => ({ projectId: project.id, emailHash: `h${i}` })),
   });
   const email = newAddress();
-  expect(await ask(email)).toEqual({ error: "This site has sent a lot of sign-in links in the last hour. Try again later." });
+  expect(await ask(email)).toEqual({ error: "This site has sent a lot of emails in the last hour. Try again later." });
   expect(mailbox.emails.filter((e) => e.to.includes(email))).toEqual([]);
 });
 

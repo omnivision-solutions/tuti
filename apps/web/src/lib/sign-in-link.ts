@@ -8,6 +8,11 @@
  */
 
 export const SIGN_IN_LINK_MINUTES = 15;
+/** How long a password reset link works (server/password-reset.ts). */
+export const PASSWORD_RESET_MINUTES = 60;
+
+// Hourly limits for emailed links, sign-in and password reset links together (server/email-link-limits.ts).
+// "Portal" is any site: each portal, and the app host.
 export const SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR = 5;
 // ponytail: one IP can be a whole office behind NAT; raise it (or make it per project) if real visitors hit it.
 export const SIGN_IN_LINKS_PER_CLIENT_PER_HOUR = 10;

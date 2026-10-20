@@ -16,7 +16,8 @@ import { emailSignInLink } from "@/server/sign-in-link";
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
- * that can send email) adds "Email me a sign-in link".
+ * that can send email) adds "Email me a sign-in link"; `forgotPassword` (a host that can
+ * send email) adds "Forgot your password?".
  */
 export function AuthForm({
   mode,
@@ -24,12 +25,14 @@ export function AuthForm({
   next,
   defaultEmail,
   linkProject,
+  forgotPassword,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
   next?: string;
   defaultEmail?: string;
   linkProject?: string;
+  forgotPassword?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -116,7 +119,14 @@ export function AuthForm({
               {linkError && <FieldError>{linkError}</FieldError>}
             </Field>
             <Field data-invalid={error ? true : undefined}>
-              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                {forgotPassword && !isSignUp && (
+                  <Link href="/forgot-password" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                    Forgot your password?
+                  </Link>
+                )}
+              </div>
               <Input
                 id="password"
                 name="password"
