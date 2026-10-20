@@ -80,7 +80,7 @@ export const updateWidgetSettings = defineOperation({
   method: "PATCH",
   path: "/widget",
   scope: "write",
-  access: "team",
+  access: "admin",
   input: z.object({
     label: z
       .string()

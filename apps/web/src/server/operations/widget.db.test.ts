@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { saveWidgetSettings } from "../widget";
 import { call } from "./run";
@@ -88,6 +88,23 @@ test("the app's form saves the settings, skipping empty link rows and refusing h
   });
   expect(await saveWidgetSettings(project.slug, {}, form([["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
   expect(await saveWidgetSettings(project.slug, {}, form([["", "https://docs.example.com"]]))).toEqual({ error: "Give each link a label" });
+});
+
+test("the widget is a project setting: members can't change it, admins can", async () => {
+  const form = () => {
+    const data = new FormData();
+    data.set("label", "Help");
+    data.set("color", "#5b21b6");
+    data.set("position", "bottom-left");
+    return data;
+  };
+  actAs(await addMember(project.id, "MEMBER"));
+  expect(await saveWidgetSettings(project.slug, {}, form())).toEqual({ error: "Only project owners and admins can change the widget" });
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ label: "Feedback", color: null });
+
+  actAs(await addMember(project.id, "ADMIN"));
+  expect(await saveWidgetSettings(project.slug, {}, form())).toEqual({});
+  expect(await call(getWidgetSettings, team(), {})).toMatchObject({ label: "Help", color: "#5b21b6" });
 });
 
 test("links stored some other way never reach the widget unless they're valid", async () => {

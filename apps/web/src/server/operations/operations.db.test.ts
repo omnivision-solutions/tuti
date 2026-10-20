@@ -69,6 +69,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "linkSuggestions.accept": (f) => ({ id: f.linkSuggestionId }),
   "linkSuggestions.dismiss": (f) => ({ id: f.linkSuggestionId }),
   "widget.get": () => ({}),
+  // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
 };
 

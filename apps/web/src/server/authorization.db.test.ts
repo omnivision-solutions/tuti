@@ -306,7 +306,7 @@ const matrix: Matrix = {
       },
     },
     saveWidgetSettings: {
-      allowed: "MEMBER",
+      allowed: "ADMIN",
       call: (slug) => widget.saveWidgetSettings(slug, {}, form({ label: "Help", color: "#5b21b6", position: "bottom-left" })),
     },
     widgetCreatePost: {

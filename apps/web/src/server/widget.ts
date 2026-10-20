@@ -8,7 +8,7 @@ import { verifySsoToken } from "@/lib/sso";
 import type { FormState } from "./form-state";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
-import { asTeam, call } from "./operations/run";
+import { asAdmin, call } from "./operations/run";
 import { updateWidgetSettings } from "./operations/widget";
 
 /**
@@ -74,7 +74,7 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links,
   };
-  return asTeam(projectSlug, "Only the project's team can change the widget", (context) =>
+  return asAdmin(projectSlug, "Only project owners and admins can change the widget", (context) =>
     call(updateWidgetSettings, context, input),
   );
 }
