@@ -194,6 +194,7 @@ model Project {
   collections          Collection[]
   helpSections         HelpSection[]
   portalReaders        PortalReader[]
+  portalReaderEmails   PortalReaderEmail[]
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
   helpGapDismissals    HelpGapDismissal[]
@@ -454,6 +455,23 @@ model PortalReader {
 
   @@unique([projectId, email])
   @@map("portal_reader")
+}
+
+/// An email to a new reader of a private portal, kept a day for the send limits (per project, and
+/// per address across projects), so removing and adding someone again can't send more.
+model PortalReaderEmail {
+  id        String   @id @default(cuid())
+  /// Null once the project is deleted: the row still counts for the address.
+  projectId String?
+  /// SHA-256 of the lowercase address (hashSecret, as sign_in_link), not the address.
+  emailHash String
+  createdAt DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([emailHash, createdAt])
+  @@map("portal_reader_email")
 }
 
 model PortalHandoff {

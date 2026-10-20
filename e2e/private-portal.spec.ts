@@ -112,6 +112,9 @@ test("the team lets someone outside it read the private portal by email: they're
 
   // Removed, they get the sign-in page again.
   await readers.getByRole("button", { name: `Remove ${email}` }).click();
+  const confirm = owner.getByRole("alertdialog");
+  await expect(confirm).toContainText("They can't read the portal until you add them again.");
+  await confirm.getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${email} removed`)).toBeVisible();
   await reader.goto("/roadmap");
   await expect(reader.getByText(`Acme is private, and ${email} doesn't have access.`, { exact: false })).toBeVisible();

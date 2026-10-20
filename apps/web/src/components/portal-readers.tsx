@@ -4,6 +4,17 @@ import { useActionState, useRef, useTransition } from "react";
 import { toast } from "sonner";
 
 import { ItemList, ItemRow } from "@/components/item-list";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,12 +37,15 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
     if (!result.error) {
       form.current?.reset();
       const added = result.added ?? 0;
+      const emailed = result.emailed ?? 0;
       toast.success(
         added === 0
           ? "They're already readers"
-          : result.emailed
+          : emailed === added
             ? `${plural(added, "reader")} added; we emailed them a link`
-            : `${plural(added, "reader")} added`,
+            : emailed > 0
+              ? `${plural(added, "reader")} added; we emailed ${emailed} of them (the rest are past today's email limit)`
+              : `${plural(added, "reader")} added`,
       );
     }
     return result;
@@ -87,23 +101,33 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
 function RemoveReaderButton({ projectSlug, email }: { projectSlug: string; email: string }) {
   const [pending, startTransition] = useTransition();
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      aria-label={`Remove ${email}`}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await removePortalReader(projectSlug, email);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(`${email} removed`);
-          }
-        })
-      }
-    >
-      Remove
-    </Button>
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Remove ${email}`} />}>Remove</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="break-all">Remove {email}?</AlertDialogTitle>
+          <AlertDialogDescription>They can&apos;t read the portal until you add them again. Their account stays.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await removePortalReader(projectSlug, email);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success(`${email} removed`);
+                }
+              })
+            }
+          >
+            Remove
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

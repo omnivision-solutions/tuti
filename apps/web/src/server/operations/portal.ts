@@ -1,10 +1,11 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, portalReaderEmail, sendEmail } from "@tuti/email";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
+import { hashSecret } from "@/lib/portal-handoff";
 
 import { emailAddress } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -24,7 +25,7 @@ export async function portalAccess(projectId: string): Promise<{ access: PortalA
 
 export const getPortal = defineOperation({
   name: "portal.get",
-  summary: "Get who may read the portal: public (anyone) or private (only the team and people your app signs in with SSO)",
+  summary: "Get who may read the portal: public (anyone) or private (only the team, people your app signs in with SSO and readers added by email)",
   method: "GET",
   path: "/portal",
   scope: "read",
@@ -36,7 +37,7 @@ export const getPortal = defineOperation({
 export const updatePortal = defineOperation({
   name: "portal.update",
   summary:
-    "Set who may read the portal: public (anyone), or private (only the team and people your app signs in with SSO; its pages, feeds, widget and AI answers ask everyone else to sign in)",
+    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in)",
   method: "PATCH",
   path: "/portal",
   scope: "write",
@@ -52,6 +53,9 @@ export const updatePortal = defineOperation({
 /** Readers added at once, and at most per project. */
 export const READERS_PER_ADD = 20;
 export const MAX_READERS = 2000;
+/** Emails to new readers a day: per project, and per address across projects (removing and adding someone again counts). */
+export const READER_EMAILS_PER_PROJECT_PER_DAY = 100;
+export const READER_EMAILS_PER_ADDRESS_PER_DAY = 3;
 
 const readerView = (reader: { email: string; createdAt: Date; addedBy: { name: string } | null }) => ({
   email: reader.email,
@@ -80,7 +84,7 @@ export const listPortalReaders = defineOperation({
 
 export const addPortalReaders = defineOperation({
   name: "portalReaders.add",
-  summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). On a private portal, each new one is emailed a link to it unless \`notify\` is false. Addresses already there are left as they are`,
+  summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). On a private portal, each new one is emailed a link to it unless \`notify\` is false (up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal, and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one, and \`emailed\` says how many were sent). Addresses already there are left as they are`,
   method: "POST",
   path: "/portal/readers",
   scope: "write",
@@ -92,8 +96,10 @@ export const addPortalReaders = defineOperation({
   example: { emails: ["e2e-reader@example.com"] },
   run: async ({ actor, projectId }, input) => {
     const emails = [...new Set(input.emails)];
-    // Under the project's lock, so adds at the same time can't go past the limit together.
-    const added = await prisma.$transaction(async (tx) => {
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true } });
+    const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();
+    // Under the project's lock, so adds at the same time can't go past the limits together.
+    const { added, toEmail } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const existing = new Set(
         (await tx.portalReader.findMany({ where: { projectId, email: { in: emails } }, select: { email: true } })).map((r) => r.email),
@@ -104,12 +110,11 @@ export const addPortalReaders = defineOperation({
       }
       const addedById = actor.kind === "user" ? actor.userId : actor.createdById;
       await tx.portalReader.createMany({ data: fresh.map((email) => ({ projectId, email, addedById })) });
-      return fresh;
+      return { added: fresh, toEmail: notify ? await claimReaderEmails(tx, projectId, fresh) : [] };
     });
 
-    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true } });
     let emailed = 0;
-    if (input.notify && project.portalAccess === "PRIVATE" && added.length > 0) {
+    if (toEmail.length > 0) {
       const inviter = await prisma.user.findUnique({
         where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
         select: { name: true, email: true },
@@ -117,7 +122,7 @@ export const addPortalReaders = defineOperation({
       const url = `${portalUrl(project.slug)}/sign-in`;
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
-        added.map((email) =>
+        toEmail.map((email) =>
           sendEmail({
             to: email,
             replyTo: inviter?.email,
@@ -130,11 +135,38 @@ export const addPortalReaders = defineOperation({
           log.error("Emailing a new portal reader failed", { error: result.reason });
         }
       }
-      emailed = emailConfigured() ? sent.filter((result) => result.status === "fulfilled").length : 0;
+      emailed = sent.filter((result) => result.status === "fulfilled").length;
     }
     return { added, emailed };
   },
 });
+
+/**
+ * Which of `emails` (new readers) may be emailed now, within the day's limits (per project, and
+ * per address across projects, so a project made for it can't mail anyone much), each recorded
+ * before it's sent. Call it with the project locked.
+ */
+async function claimReaderEmails(tx: Prisma.TransactionClient, projectId: string, emails: string[]) {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await tx.portalReaderEmail.deleteMany({ where: { createdAt: { lt: since } } });
+  let left = READER_EMAILS_PER_PROJECT_PER_DAY - (await tx.portalReaderEmail.count({ where: { projectId, createdAt: { gt: since } } }));
+  const claimed: string[] = [];
+  // Addresses in a fixed order, so two projects adding the same ones can't wait on each other.
+  for (const email of [...emails].sort()) {
+    if (left <= 0) {
+      break;
+    }
+    const emailHash = hashSecret(email);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(4, hashtext(${emailHash}))`;
+    if ((await tx.portalReaderEmail.count({ where: { emailHash, createdAt: { gt: since } } })) >= READER_EMAILS_PER_ADDRESS_PER_DAY) {
+      continue;
+    }
+    await tx.portalReaderEmail.create({ data: { projectId, emailHash } });
+    claimed.push(email);
+    left--;
+  }
+  return claimed;
+}
 
 export const removePortalReader = defineOperation({
   name: "portalReaders.remove",

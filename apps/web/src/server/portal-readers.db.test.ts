@@ -7,7 +7,17 @@ import { createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
-import { addPortalReaders, listPortalReaders, MAX_READERS, removePortalReader, updatePortal } from "./operations/portal";
+import { hashSecret } from "@/lib/portal-handoff";
+
+import {
+  addPortalReaders,
+  listPortalReaders,
+  MAX_READERS,
+  READER_EMAILS_PER_ADDRESS_PER_DAY,
+  READER_EMAILS_PER_PROJECT_PER_DAY,
+  removePortalReader,
+  updatePortal,
+} from "./operations/portal";
 import { call } from "./operations/run";
 import { canReadPortal } from "./portal-access";
 import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
@@ -76,6 +86,38 @@ test("limits: an address each, up to 20 at once and 2,000 in all", async () => {
   });
   // Exactly up to it is fine.
   expect((await call(addPortalReaders, as(), { emails: [address()], notify: false })).added).toHaveLength(1);
+});
+
+test("emails to new readers are limited per day: per address across projects (removing and adding again counts), and per portal", async () => {
+  const email = address();
+  const other = await createProject(owner);
+  await prisma.project.update({ where: { id: other.id }, data: { portalAccess: "PRIVATE" } });
+  const inOther = { actor: as().actor, projectId: other.id };
+  for (let i = 0; i < READER_EMAILS_PER_ADDRESS_PER_DAY; i++) {
+    const context = i % 2 === 0 ? as() : inOther;
+    expect(await call(addPortalReaders, context, { emails: [email] })).toEqual({ added: [email], emailed: 1 });
+    await call(removePortalReader, context, { email });
+  }
+  // Past it they're still added, without an email.
+  expect(await call(addPortalReaders, as(), { emails: [email] })).toEqual({ added: [email], emailed: 0 });
+  expect(sentTo(email)).toHaveLength(READER_EMAILS_PER_ADDRESS_PER_DAY);
+  // Only addresses are kept for it, as hashes.
+  expect(await prisma.portalReaderEmail.count({ where: { emailHash: hashSecret(email) } })).toBe(READER_EMAILS_PER_ADDRESS_PER_DAY);
+
+  // The portal's own limit: one left today.
+  await prisma.portalReaderEmail.createMany({
+    data: Array.from({ length: READER_EMAILS_PER_PROJECT_PER_DAY - 1 - (await prisma.portalReaderEmail.count({ where: { projectId: project.id } })) }, () => ({
+      projectId: project.id,
+      emailHash: hashSecret(address()),
+    })),
+  });
+  const [first, second] = [address(), address()];
+  expect(await call(addPortalReaders, as(), { emails: [first, second] })).toMatchObject({ added: [first, second], emailed: 1 });
+  expect(sentTo(first).length + sentTo(second).length).toBe(1);
+  // A day later, it's counted again from zero.
+  await prisma.portalReaderEmail.updateMany({ data: { createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) } });
+  const later = address();
+  expect(await call(addPortalReaders, as(), { emails: [later] })).toEqual({ added: [later], emailed: 1 });
 });
 
 test("a reader without an account signs in with an emailed link and reads the portal; removed, they can't", async () => {
