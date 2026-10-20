@@ -50,10 +50,10 @@ test("readers are added by email (lowercase, once each) and emailed a link to th
   // Again: already there, nobody emailed twice.
   expect(await call(addPortalReaders, as(), { emails: [grace] })).toEqual({ added: [], emailed: 0 });
   expect(sentTo(grace)).toHaveLength(1);
-  expect((await call(listPortalReaders, as(), {})).readers).toMatchObject([
-    { email: ada, addedBy: "Olive Owner" },
-    { email: grace, addedBy: "Olive Owner" },
-  ]);
+  // Added together: the same time, then by address.
+  expect((await call(listPortalReaders, as(), {})).readers).toMatchObject(
+    [ada, grace].sort().map((email) => ({ email, addedBy: "Olive Owner" })),
+  );
 
   // Not when asked not to, nor while the portal is public (there's nothing to give access to).
   const quiet = address();
