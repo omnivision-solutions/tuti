@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -298,22 +298,127 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(team.getByText("Restored “Inviting your team” as a draft")).toBeVisible();
   await expect(team.getByRole("region", { name: "Recently deleted" })).toHaveCount(0);
   await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
-  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
+  // In the list of articles, and in the collections' structure.
+  await expect(team.getByText("Draft", { exact: true })).toHaveCount(2);
   await checkpoint(team, "team-help-article-restored");
 });
+
+test("the team arranges the help center: a collection in another, moves with the keyboard and by dragging, and the portal follows", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const name of ["Getting started", "Billing"]) {
+    await api("/collections", { name });
+  }
+  for (const [title, collection] of [
+    ["Inviting your team", "getting-started"],
+    ["Your first board", "getting-started"],
+    ["Card payments", "billing"],
+    ["Downloading invoices", "billing"],
+  ]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+
+  // A collection in Billing.
+  await team.goto(`/app/${slug}/help`);
+  await team.getByRole("button", { name: "New collection" }).click();
+  const dialog = team.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Invoices");
+  await dialog.getByLabel("Parent collection").click();
+  await team.getByRole("option", { name: "Billing" }).click();
+  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await expect(team.getByText("Collection added")).toBeVisible();
+  const structure = team.getByRole("region", { name: "Collections" });
+  await expect(structure.getByRole("list", { name: "Collections in Billing" })).toContainText("Invoices");
+
+  // An article goes in it from its "Move to…" menu.
+  await structure.getByRole("button", { name: "Move Downloading invoices to…" }).click();
+  await team.getByRole("menuitem", { name: "Billing › Invoices" }).click();
+  await expect(team.getByText("Downloading invoices moved")).toBeVisible();
+  await expect(structure.getByRole("list", { name: "Articles in Invoices" })).toContainText("Downloading invoices");
+
+  // With the keyboard: Billing up to the top, then "Your first board" before "Inviting your team".
+  const billingUp = structure.getByRole("button", { name: "Move Billing up" });
+  await billingUp.focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByText("Billing moved")).toBeVisible();
+  // It's first now: its up arrow is off, and focus is on its down arrow.
+  await expect(billingUp).toBeDisabled();
+  await expect(structure.getByRole("button", { name: "Move Billing down" })).toBeFocused();
+  await structure.getByRole("button", { name: "Move Your first board up" }).focus();
+  await team.keyboard.press("Enter");
+  await expect(team.getByText("Your first board moved")).toBeVisible();
+  await expect(structure.getByRole("list", { name: "Articles in Getting started" }).getByRole("listitem")).toHaveText([
+    /^Your first board/,
+    /^Inviting your team/,
+  ]);
+  await checkpoint(team, "team-help-structure");
+  await team.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(team, "team-help-structure-phone");
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // The portal follows: Billing first with Invoices in it, then Getting started in its new order.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/help");
+  const main = visitor.getByRole("main");
+  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
+  const billing = main.getByRole("region", { name: "Billing" });
+  await expect(billing.getByRole("heading", { level: 3 })).toHaveText(["Invoices"]);
+  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("link")).toHaveText(["Downloading invoices"]);
+  await expect(main.getByRole("region", { name: "Getting started" }).getByRole("link")).toHaveText(["Your first board", "Inviting your team"]);
+  await checkpoint(visitor, "portal-help-nested");
+
+  // Dragged by its row: Getting started back above Billing.
+  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
+  await row("Getting started").dragTo(row("Billing"), { targetPosition: { x: 40, y: 2 } });
+  await expect(team.getByText("Getting started moved")).toBeVisible();
+  await visitor.reload();
+  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+
+  // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the button that started it.
+  // The drag's move is done once its refreshed rows are in (they stream in after its toast; the buttons are off until
+  // then). Only then is the collection deleted, so the page still shows it.
+  const moveTo = structure.getByRole("button", { name: "Move Inviting your team to…" });
+  await expect(moveTo).toBeEnabled();
+  await api("/collections/billing", {}, "DELETE");
+  await moveTo.focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Billing", exact: true }).press("Enter");
+  await expect(team.getByText("There's no collection “billing”")).toBeVisible();
+  await expect(moveTo).toBeFocused();
+});
+
+/** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
+async function apiFor(team: Page, slug: string) {
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
+  await team.getByRole("combobox", { name: "What the key can do" }).click();
+  await team.getByRole("option", { name: "Read and write" }).click();
+  await team.getByRole("button", { name: "Create key" }).click();
+  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  return async (path: string, body: object, method = "POST") => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method,
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
+}
 
 test("a visitor asks the help center's AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
-  await team.goto(`/app/${slug}/settings`);
-  await team.getByRole("textbox", { name: "Key name" }).fill("Help answers test");
-  await team.getByRole("combobox", { name: "What the key can do" }).click();
-  await team.getByRole("option", { name: "Read and write" }).click();
-  await team.getByRole("button", { name: "Create key" }).click();
-  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help answers test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
+  const api = await apiFor(team, slug);
 
   // How the AI answers: a tone, short answers, and a topic it doesn't touch.
   await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
@@ -325,15 +430,6 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await team.reload();
   await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
   await checkpoint(team, "team-ai-answers-settings");
-  const api = async (path: string, body: object) => {
-    const response = await fetch(`${APP_URL}/api/v1${path}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    expect(response.ok).toBe(true);
-    return (await response.json()) as { slug: string };
-  };
 
   // A published article whose only section is close to the visitor's question.
   const question = "How do I add a colleague to my project?";

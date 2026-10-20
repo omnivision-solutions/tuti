@@ -10,7 +10,7 @@ import { portalUrl } from "@/lib/hosts";
 import { titleSlug } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { listedArticle } from "../help-queries";
+import { inTreeOrder, listedArticle } from "../help-queries";
 import { searchHelp } from "../help-search";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
@@ -65,6 +65,7 @@ const articleSelect = {
   deletedAt: true,
   showUpdatedDate: true,
   listing: true,
+  order: true,
   createdAt: true,
   updatedAt: true,
   collection: { select: { slug: true, name: true } },
@@ -84,6 +85,8 @@ function articleView({ changes, ...article }: ArticleRow, projectSlug: string, t
     /** Only in the list of deleted articles. */
     ...(article.deletedAt && { deletedAt: article.deletedAt.toISOString() }),
     collection: article.collection,
+    /** Its place among the articles in its collection (or in none): readers list them by this, then by title. */
+    order: article.order,
     body: article.body,
     content: displayDoc(article),
     url: `${portalUrl(projectSlug)}/help/${article.slug}`,
@@ -117,14 +120,6 @@ async function teamArticle(projectId: string, slug: string) {
   return article;
 }
 
-async function teamCollection(projectId: string, slug: string) {
-  const collection = await prisma.collection.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true } });
-  if (!collection) {
-    throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
-  }
-  return collection;
-}
-
 /**
  * The id for a collection slug (null for none, undefined to leave it), only from this project.
  * Read with the project locked, so the collection can't be deleted before the article is saved.
@@ -138,6 +133,27 @@ async function collectionId(tx: Prisma.TransactionClient, projectId: string, slu
     throw new OperationError(400, "invalid_input", `There's no collection “${slug}”`);
   }
   return collection.id;
+}
+
+/** Where an article moving into collection `collectionId` (null: none) goes: last. */
+async function lastArticle(tx: Prisma.TransactionClient, projectId: string, collectionId: string | null) {
+  const last = await tx.article.aggregate({ where: { projectId, collectionId, deletedAt: null }, _max: { order: true } });
+  return (last._max.order ?? -1) + 1;
+}
+
+/** Numbers the rows 0, 1, … in the order of `ids`, in one statement. */
+async function renumber(tx: Prisma.TransactionClient, table: "article" | "collection", ids: string[]) {
+  await tx.$executeRaw`
+    UPDATE ${Prisma.raw(`"${table}"`)} t SET "order" = n.place - 1
+    FROM unnest(${ids}::text[]) WITH ORDINALITY AS n(id, place)
+    WHERE t.id = n.id`;
+}
+
+/** `id` at `position` (0 first; past the end or undefined, last) among `siblings`, the others in their order. */
+function placed(siblings: { id: string }[], id: string, position: number | undefined) {
+  const ids = siblings.map((sibling) => sibling.id).filter((sibling) => sibling !== id);
+  ids.splice(Math.min(position ?? ids.length, ids.length), 0, id);
+  return ids;
 }
 
 /**
@@ -246,7 +262,10 @@ async function recordRevision(tx: Prisma.TransactionClient, articleId: string, a
 
 /** A live (not deleted) article, read again under the project's lock: it may have been retitled, published or deleted since. */
 async function lockedArticle(tx: Prisma.TransactionClient, article: { id: string; slug: string }) {
-  const current = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { title: true, publishedAt: true } });
+  const current = await tx.article.findFirst({
+    where: { id: article.id, deletedAt: null },
+    select: { title: true, publishedAt: true, collectionId: true },
+  });
   if (!current) {
     throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
   }
@@ -280,9 +299,15 @@ async function applyChanges(tx: Prisma.TransactionClient, articleId: string, pub
   if (!changes) {
     return;
   }
+  const article = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { projectId: true, collectionId: true } });
   await tx.article.update({
     where: { id: articleId },
-    data: { ...changes, content: changes.content ?? Prisma.DbNull, ...(published && { revisedAt: new Date() }) },
+    data: {
+      ...changes,
+      content: changes.content ?? Prisma.DbNull,
+      ...(published && { revisedAt: new Date() }),
+      ...(changes.collectionId !== article.collectionId && { order: await lastArticle(tx, article.projectId, changes.collectionId) }),
+    },
   });
   await tx.articleChanges.delete({ where: { articleId } });
 }
@@ -321,7 +346,13 @@ async function saveChanges(
     }
   } else {
     const retitled = title !== undefined && title !== current.title;
-    Object.assign(data, version, retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) });
+    const moved = collectionId !== undefined && collectionId !== current.collectionId;
+    Object.assign(
+      data,
+      version,
+      retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) },
+      moved && { order: await lastArticle(tx, projectId, collectionId) },
+    );
   }
   // Only when something on the article changes: its updatedAt is the sitemap's lastmod.
   if (Object.keys(data).length > 0) {
@@ -451,6 +482,7 @@ export const createArticle = defineOperation({
             body: text.text,
             content: text.doc,
             collectionId: collection ?? null,
+            order: await lastArticle(tx, projectId, collection ?? null),
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
             createdById: authorOf(actor),
@@ -734,58 +766,156 @@ export const deleteArticle = defineOperation({
   },
 });
 
+
+const position = z.number().int().min(0).max(10_000);
+
+export const reorderArticle = defineOperation({
+  name: "articles.reorder",
+  summary:
+    "Move a help center article within its collection, or into another (`collection`, null for none), at `position` (0 first; left out, last); the others keep their order around it. Readers list articles in this order. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
+  method: "POST",
+  path: "/articles/{slug}/reorder",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, collection: slug.nullable().optional(), position: position.optional() }),
+  example: { collection: "basics", position: 0 },
+  run: async ({ actor, projectId }, input) => {
+    const article = await teamArticle(projectId, input.slug);
+    // One transaction under the project's lock: moves at the same time renumber one after the other, never over each other.
+    const moved = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const current = await lockedArticle(tx, article);
+      const target = input.collection === undefined ? current.collectionId : ((await collectionId(tx, projectId, input.collection)) ?? null);
+      if (target !== current.collectionId) {
+        await tx.article.update({ where: { id: article.id }, data: { collectionId: target } });
+        // Publishing the changes later mustn't move it back.
+        if ((await tx.articleChanges.count({ where: { articleId: article.id } })) > 0) {
+          await keepChanges(tx, article.id, { collectionId: target });
+        }
+        await recordRevision(tx, article.id, authorOf(actor));
+      }
+      const siblings = await tx.article.findMany({
+        where: { projectId, collectionId: target, deletedAt: null },
+        orderBy: [{ order: "asc" }, { title: "asc" }],
+        select: { id: true },
+      });
+      await renumber(tx, "article", placed(siblings, article.id, input.position));
+      return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
+    });
+    return articleView(moved, await projectSlug(projectId), true);
+  },
+});
+
 const collectionSelect = {
   id: true,
   slug: true,
   name: true,
   description: true,
   order: true,
+  parentId: true,
+  parent: { select: { slug: true } },
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-const collectionView = ({ slug, name, description, order, _count }: CollectionRow) => ({
+const collectionView = ({ slug, name, description, order, parent, _count }: CollectionRow) => ({
   slug,
   name,
   description,
+  /** The collection it's in (its slug), or null at the top level. */
+  parent: parent?.slug ?? null,
   order,
   articles: _count.articles,
 });
 
+const siblingOrder: Prisma.CollectionOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
+
+/** Collection `slug`, read under the project's lock (it may have been renamed or deleted since the caller looked). */
+async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
+  const collection = await tx.collection.findUnique({
+    where: { projectId_slug: { projectId, slug } },
+    select: { id: true, name: true, parentId: true },
+  });
+  if (!collection) {
+    throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
+  }
+  return collection;
+}
+
+/**
+ * The id of collection `slug` (null: the top level) for `collection` (undefined: a new one) to go
+ * in. Call it with the project locked. Collections go 2 levels deep at most: the parent must be at
+ * the top level, and a collection with collections in it stays there. That also rules out cycles.
+ */
+async function parentFor(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  collection: { id: string; name: string } | undefined,
+  slug: string | null,
+) {
+  if (slug === null) {
+    return null;
+  }
+  const parent = await tx.collection.findUnique({
+    where: { projectId_slug: { projectId, slug } },
+    select: { id: true, name: true, parentId: true },
+  });
+  if (!parent) {
+    throw new OperationError(400, "invalid_input", `There's no collection “${slug}”`);
+  }
+  if (parent.id === collection?.id) {
+    throw new OperationError(400, "invalid_input", "A collection can't go inside itself");
+  }
+  if (parent.parentId !== null) {
+    throw new OperationError(400, "invalid_input", `Collections go 2 levels deep at most, and “${parent.name}” is inside another`);
+  }
+  if (collection && (await tx.collection.count({ where: { parentId: collection.id } })) > 0) {
+    throw new OperationError(400, "invalid_input", `Collections go 2 levels deep at most, and “${collection.name}” has collections in it`);
+  }
+  return parent.id;
+}
+
+/** Puts collection `id` in `parentId` at `position` among the collections there (see `placed`). Call it with the project locked. */
+async function placeCollection(tx: Prisma.TransactionClient, projectId: string, id: string, parentId: string | null, at?: number) {
+  await tx.collection.update({ where: { id }, data: { parentId } });
+  const siblings = await tx.collection.findMany({ where: { projectId, parentId }, orderBy: siblingOrder, select: { id: true } });
+  await renumber(tx, "collection", placed(siblings, id, at));
+}
+
 export const listCollections = defineOperation({
   name: "collections.list",
-  summary: "List the help center's collections, in order, with how many articles each has",
+  summary:
+    "List the help center's collections in order (each top-level one, then the ones in it), with the collection each is in (`parent`) and how many articles each has",
   method: "GET",
   path: "/collections",
   scope: "read",
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const collections = await prisma.collection.findMany({
-      where: { projectId },
-      orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: collectionSelect,
-    });
-    return { collections: collections.map(collectionView) };
+    const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: siblingOrder, select: collectionSelect });
+    return { collections: inTreeOrder(collections).map(collectionView) };
   },
 });
 
 export const createCollection = defineOperation({
   name: "collections.create",
-  summary: "Add a help center collection (after the others); its slug comes from the name",
+  summary:
+    "Add a help center collection, at the top level or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name",
   method: "POST",
   path: "/collections",
   scope: "write",
   access: "team",
-  input: z.object({ ...collectionFields, description: collectionFields.description.default("") }),
+  input: z.object({ ...collectionFields, description: collectionFields.description.default(""), parent: slug.nullable().optional() }),
   example: { name: "Getting started", description: "The basics, in five minutes." },
   run: async ({ projectId }, input) =>
     collectionView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const last = await tx.collection.aggregate({ where: { projectId }, _max: { order: true } });
+        const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
+        const last = await tx.collection.aggregate({ where: { projectId, parentId }, _max: { order: true } });
         return tx.collection.create({
           data: {
             projectId,
+            parentId,
             slug: await freeCollectionSlug(tx, projectId, input.name),
             name: input.name,
             description: input.description,
@@ -799,7 +929,8 @@ export const createCollection = defineOperation({
 
 export const updateCollection = defineOperation({
   name: "collections.update",
-  summary: "Rename a help center collection (its slug follows the name), change its description or its place in the order",
+  summary:
+    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -808,14 +939,22 @@ export const updateCollection = defineOperation({
     slug,
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
-    order: z.number().int().min(0).max(10_000).optional(),
+    parent: slug.nullable().optional(),
+    order: position.optional(),
   }),
-  example: { name: "Basics" },
-  run: async ({ projectId }, input) => {
-    const { id } = await teamCollection(projectId, input.slug);
-    return collectionView(
+  example: { name: "Basics", parent: null },
+  run: async ({ projectId }, input) =>
+    collectionView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
+        const collection = await lockedCollection(tx, projectId, input.slug);
+        const { id } = collection;
+        if (input.parent !== undefined) {
+          const parentId = await parentFor(tx, projectId, collection, input.parent);
+          if (parentId !== collection.parentId) {
+            await placeCollection(tx, projectId, id, parentId);
+          }
+        }
         return tx.collection.update({
           where: { id },
           data: {
@@ -826,24 +965,62 @@ export const updateCollection = defineOperation({
           select: collectionSelect,
         });
       }),
-    );
-  },
+    ),
+});
+
+export const reorderCollection = defineOperation({
+  name: "collections.reorder",
+  summary:
+    "Move a help center collection among its siblings, or into another collection (`parent`, null for the top level; 2 levels deep at most), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
+  method: "POST",
+  path: "/collections/{slug}/reorder",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, parent: slug.nullable().optional(), position: position.optional() }),
+  example: { parent: null, position: 0 },
+  run: async ({ projectId }, input) =>
+    collectionView(
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const collection = await lockedCollection(tx, projectId, input.slug);
+        const parentId = input.parent === undefined ? collection.parentId : await parentFor(tx, projectId, collection, input.parent);
+        await placeCollection(tx, projectId, collection.id, parentId, input.position);
+        return tx.collection.findUniqueOrThrow({ where: { id: collection.id }, select: collectionSelect });
+      }),
+    ),
 });
 
 export const deleteCollection = defineOperation({
   name: "collections.delete",
-  summary: "Delete a help center collection; its articles stay, without a collection",
+  summary: "Delete a help center collection; the collections in it move up a level, in its place, and its articles stay, without a collection",
   method: "DELETE",
   path: "/collections/{slug}",
   scope: "write",
   access: "team",
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
-    const { id } = await teamCollection(projectId, input.slug);
-    // Locked, so an article being saved into it lands first (and is let go) or finds it gone.
+    // Locked, so an article or collection being saved into it lands first (and is let go) or finds it gone.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      await tx.collection.deleteMany({ where: { id } });
+      const collection = await lockedCollection(tx, projectId, input.slug);
+      const children = await tx.collection.findMany({ where: { parentId: collection.id }, orderBy: siblingOrder, select: { id: true } });
+      if (children.length > 0) {
+        const siblings = await tx.collection.findMany({ where: { projectId, parentId: collection.parentId }, orderBy: siblingOrder, select: { id: true } });
+        await tx.collection.updateMany({ where: { parentId: collection.id }, data: { parentId: collection.parentId } });
+        await renumber(
+          tx,
+          "collection",
+          siblings.flatMap((sibling) => (sibling.id === collection.id ? children : [sibling])).map((sibling) => sibling.id),
+        );
+      }
+      // Its articles go last among those in no collection, in their order (the delete then lets them go).
+      const articlesIn = (collectionId: string | null) =>
+        tx.article.findMany({ where: { projectId, collectionId, deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: { id: true } });
+      const inIt = await articlesIn(collection.id);
+      if (inIt.length > 0) {
+        await renumber(tx, "article", [...(await articlesIn(null)), ...inIt].map((article) => article.id));
+      }
+      await tx.collection.delete({ where: { id: collection.id } });
     });
     return { deleted: input.slug };
   },

@@ -2,7 +2,7 @@ import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
-import { helpCenter } from "@/server/help-queries";
+import { type HelpCollection, helpCenter } from "@/server/help-queries";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
 const heading = (level: number, value: string) => ({ type: "heading", attrs: { level }, content: [text(value)] });
@@ -33,15 +33,18 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const { collections, uncollected } = await helpCenter(slug);
   const articleLinks = (articles: { slug: string; title: string }[]) =>
     links(articles.map((article) => ({ name: article.title, url: `${portal}/help/${article.slug}.md` })));
+  // A collection's heading, its articles, then the collections in it a level down.
+  const section = (collection: HelpCollection, level: number): object[] => [
+    heading(level, collection.name),
+    ...(collection.description ? [paragraph(collection.description)] : []),
+    ...(collection.articles.length > 0 ? [articleLinks(collection.articles)] : []),
+    ...collection.collections.flatMap((child) => section(child, level + 1)),
+  ];
 
   const content = [
     heading(1, project.name),
     { type: "blockquote", content: [paragraph(`Help center, changelog and feedback for ${project.name}.`)] },
-    ...collections.flatMap((collection) => [
-      heading(2, collection.name),
-      ...(collection.description ? [paragraph(collection.description)] : []),
-      articleLinks(collection.articles),
-    ]),
+    ...collections.flatMap((collection) => section(collection, 2)),
     ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Help center"), articleLinks(uncollected)] : []),
     heading(2, "Changelog"),
     links([{ name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` }]),

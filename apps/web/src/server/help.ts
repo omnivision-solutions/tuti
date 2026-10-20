@@ -13,6 +13,8 @@ import {
   discardChanges as discardChangesOperation,
   publishArticle as publishOperation,
   publishChanges as publishChangesOperation,
+  reorderArticle,
+  reorderCollection,
   restoreArticle as restoreOperation,
   unpublishArticle as unpublishOperation,
   updateArticle,
@@ -90,12 +92,24 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
   return { ...result, slug: restored };
 }
 
-/** Adds a collection (`slug` null) or renames collection `slug` and changes its description. */
+/** Adds a collection (`slug` null), in the one the form's `parent` names if any, or renames collection `slug` and changes its description. */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = { name: String(formData.get("name") ?? ""), description: String(formData.get("description") ?? "") };
   return asTeam(projectSlug, DENIED, (context) =>
-    slug === null ? call(createCollection, context, input) : call(updateCollection, context, { slug: String(slug), ...input }),
+    slug === null
+      ? call(createCollection, context, { ...input, parent: String(formData.get("parent") ?? "") || null })
+      : call(updateCollection, context, { slug: String(slug), ...input }),
   );
+}
+
+/** A drop or a move button in the help center's structure: collection `slug` into `parent` (null: the top level; undefined: where it is) at `position`. */
+export async function moveCollection(projectSlug: string, slug: string, parent: string | null | undefined, position?: number): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(reorderCollection, context, { slug: String(slug), parent, position }));
+}
+
+/** Like moveCollection, for article `slug`: into `collection` (null: none; undefined: where it is) at `position`. */
+export async function moveArticle(projectSlug: string, slug: string, collection: string | null | undefined, position?: number): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(reorderArticle, context, { slug: String(slug), collection, position }));
 }
 
 export async function deleteCollection(projectSlug: string, slug: string): Promise<FormState> {
