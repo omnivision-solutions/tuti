@@ -30,6 +30,7 @@ import type { FormState } from "@/server/form-state";
 import {
   deleteArticle,
   deleteCollection,
+  deleteSection,
   discardArticleChanges,
   dismissHelpGap,
   publishArticle,
@@ -37,6 +38,7 @@ import {
   restoreArticle,
   saveArticle,
   saveCollection,
+  saveSection,
   unpublishArticle,
 } from "@/server/help";
 
@@ -396,11 +398,14 @@ export function CollectionDialog({
   projectSlug,
   collection,
   parents = [],
+  sections = [],
 }: {
   projectSlug: string;
   collection?: { slug: string; name: string; description: string };
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
   parents?: CollectionOption[];
+  /** The sections a new top-level one can go in, the first by default. */
+  sections?: CollectionOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -413,6 +418,7 @@ export function CollectionDialog({
   }, {});
   const id = collection?.slug ?? "new";
   const parentItems = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
+  const sectionItems = sections.map((s) => ({ value: s.slug, label: s.name }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -465,6 +471,24 @@ export function CollectionDialog({
                 </Select>
               </Field>
             )}
+            {!collection && sectionItems.length > 0 && (
+              <Field>
+                <FieldLabel id="collection-section-label">Section</FieldLabel>
+                <Select name="section" items={sectionItems} defaultValue={sectionItems[0].value}>
+                  <SelectTrigger className="w-full" aria-labelledby="collection-section-label">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectionItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s section.</FieldDescription>}
+              </Field>
+            )}
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
@@ -512,6 +536,112 @@ export function DeleteCollectionButton({
                   toast.error(result.error);
                 } else {
                   toast.success(`${name} deleted`);
+                }
+              })
+            }
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Adds a section (`section` undefined) or renames one. The first one takes the collections there
+ * are, which the dialog says.
+ */
+export function SectionDialog({ projectSlug, section, first = false }: { projectSlug: string; section?: CollectionOption; first?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveSection(projectSlug, section?.slug ?? null, prev, formData);
+    if (!result.error) {
+      setOpen(false);
+      toast.success(section ? "Section saved" : "Section added");
+    }
+    return result;
+  }, {});
+  const id = section?.slug ?? "new";
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant={section ? "ghost" : "outline"} size="sm" aria-label={section ? `Rename ${section.name}` : undefined} />}>
+        {section ? "Rename" : "New section"}
+      </DialogTrigger>
+      <DialogContent>
+        <form {...keepingFields(action)}>
+          <DialogHeader>
+            <DialogTitle>{section ? "Rename section" : "New section"}</DialogTitle>
+            {!section && (
+              <DialogDescription>
+                Sections are tabs at the top of your help center, each with its own collections
+                {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <FieldGroup className="my-4">
+            <Field data-invalid={state.error ? true : undefined}>
+              <FieldLabel htmlFor={`section-name-${id}`}>Name</FieldLabel>
+              <Input
+                id={`section-name-${id}`}
+                name="name"
+                defaultValue={section?.name}
+                placeholder="Guides"
+                maxLength={40}
+                required
+                aria-invalid={state.error ? true : undefined}
+              />
+              {state.error && <FieldError>{state.error}</FieldError>}
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="submit" disabled={pending}>
+              {section ? "Save" : "Add section"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function DeleteSectionButton({
+  projectSlug,
+  section,
+  movesTo,
+}: {
+  projectSlug: string;
+  section: CollectionOption;
+  /** The section its collections go to (null: it's the last one). */
+  movesTo: string | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${section.name}`} />}>
+        Delete
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete {section.name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {movesTo
+              ? `Its collections move to ${movesTo}, with their articles.`
+              : "It's the last section, so your help center goes back to one page with all your collections."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await deleteSection(projectSlug, section.slug);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success(`${section.name} deleted`);
                 }
               })
             }

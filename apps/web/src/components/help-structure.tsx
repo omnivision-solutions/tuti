@@ -5,10 +5,10 @@ import { ArrowDownIcon, ArrowUpIcon, FolderInputIcon, GripVerticalIcon } from "l
 import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CollectionDialog, DeleteCollectionButton } from "@/components/help";
+import { CollectionDialog, DeleteCollectionButton, DeleteSectionButton, SectionDialog } from "@/components/help";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { moveArticle, moveCollection } from "@/server/help";
+import { moveArticle, moveCollection, moveSection } from "@/server/help";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
 type StructureCollection = {
@@ -17,14 +17,18 @@ type StructureCollection = {
   description: string;
   /** The collection it's in, or null at the top level. */
   parent: string | null;
+  /** At the top level, the section it's in (null without sections). */
+  section: string | null;
   articles: StructureArticle[];
 };
+type StructureSection = { slug: string; name: string };
 
-type Kind = "collection" | "article";
-/** A row things can be dropped on: a collection, an article (in `collection`), or the articles in no collection. */
+type Kind = "section" | "collection" | "article";
+/** A row things can be dropped on: a section, a collection, an article (in `collection`), or the articles in no collection. */
 type Over = { kind: Kind | "uncollected"; slug: string; collection?: string | null };
 type Where = "before" | "after" | "into";
-type Move = { kind: Kind; slug: string; name: string; into: string | null; position?: number };
+/** A move: into collection `into` (null: the top level, or no collection), at the top level in `section` (undefined: where it is). */
+type Move = { kind: Kind; slug: string; name: string; into: string | null; section?: string; position?: number };
 type Drop = Move & { where: Where };
 
 const rowKey = (over: Over) => `${over.kind}:${over.slug}`;
@@ -113,19 +117,21 @@ function Row({
 }
 
 /**
- * The help center's structure for the team: collections (2 levels deep at most), each with its
- * articles and then the collections in it, and the articles in no collection, in the order readers
- * see them. Rows are dragged into place, or moved with each row's buttons (up, down, and "Move to…"
- * another collection), which work from the keyboard. A drop or a button is one move, applied at once
- * on the server under the project's lock.
+ * The help center's structure for the team: its sections if it has some (readers' tabs), each with
+ * its collections (2 levels deep at most), each with its articles and then the collections in it,
+ * and the articles in no collection, in the order readers see them. Rows are dragged into place, or
+ * moved with each row's buttons (up, down, and "Move to…" another collection or section), which work
+ * from the keyboard. A drop or a button is one move, applied at once on the server under the project's lock.
  */
 export function HelpStructure({
   projectSlug,
+  sections,
   collections,
   uncollected,
 }: {
   projectSlug: string;
-  /** Each top-level collection, then the ones in it. */
+  sections: StructureSection[];
+  /** Each top-level collection (by section), then the ones in it. */
   collections: StructureCollection[];
   uncollected: StructureArticle[];
 }) {
@@ -147,9 +153,11 @@ export function HelpStructure({
     const other = document.getElementById(otherButton(id));
     // At the top or the bottom now, its own button is disabled, so the other one gets focus.
     (button instanceof HTMLButtonElement && button.disabled && other ? other : button)?.focus();
-  }, [pending, collections, uncollected]);
+  }, [pending, sections, collections, uncollected]);
 
   const childrenOf = (parent: string | null) => collections.filter((c) => c.parent === parent);
+  /** The collections next to `c`: in its parent, or at the top level of its section. */
+  const siblingsOf = (c: StructureCollection) => (c.parent === null ? childrenOf(null).filter((s) => s.section === c.section) : childrenOf(c.parent));
   const articlesIn = (collection: string | null) =>
     collection === null ? uncollected : (collections.find((c) => c.slug === collection)?.articles ?? []);
   const label = (c: StructureCollection) => {
@@ -157,11 +165,15 @@ export function HelpStructure({
     return parent ? `${parent.name} › ${c.name}` : c.name;
   };
 
-  const move = ({ kind, slug, name, into, position }: Move, focus?: string) => {
+  const move = ({ kind, slug, name, into, section, position }: Move, focus?: string) => {
     refocus.current = focus ?? null;
     startTransition(async () => {
       const result =
-        kind === "collection" ? await moveCollection(projectSlug, slug, into, position) : await moveArticle(projectSlug, slug, into, position);
+        kind === "section"
+          ? await moveSection(projectSlug, slug, position ?? sections.length)
+          : kind === "collection"
+            ? await moveCollection(projectSlug, slug, into, position, section)
+            : await moveArticle(projectSlug, slug, into, position);
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -178,13 +190,27 @@ export function HelpStructure({
     const rect = event.currentTarget.getBoundingClientRect();
     const y = (event.clientY - rect.top) / rect.height;
     const side: Where = y < 0.5 ? "before" : "after";
+    if (dragging.kind === "section") {
+      const dragged = sections.find((s) => s.slug === dragging.slug);
+      if (!dragged || over.kind !== "section") {
+        return null;
+      }
+      return { kind: "section", slug: dragged.slug, name: dragged.name, into: null, position: positionAt(sections, dragged.slug, over.slug, side), where: side };
+    }
     if (dragging.kind === "collection") {
       const dragged = collections.find((c) => c.slug === dragging.slug);
-      const row = over.kind === "collection" ? collections.find((c) => c.slug === over.slug) : undefined;
-      if (!dragged || !row) {
+      if (!dragged) {
         return null;
       }
       const base = { kind: dragging.kind, slug: dragged.slug, name: dragged.name };
+      // On a section: last at its top level.
+      if (over.kind === "section") {
+        return { ...base, into: null, section: over.slug, where: "into" };
+      }
+      const row = over.kind === "collection" ? collections.find((c) => c.slug === over.slug) : undefined;
+      if (!row) {
+        return null;
+      }
       // Only a collection with none in it goes inside another: into a top-level one (its middle), or next to one inside.
       const flat = childrenOf(dragged.slug).length === 0;
       if (row.parent === null && flat && y > 0.25 && y < 0.75) {
@@ -193,7 +219,13 @@ export function HelpStructure({
       if (row.parent !== null && !flat) {
         return null;
       }
-      return { ...base, into: row.parent, position: positionAt(childrenOf(row.parent), dragged.slug, row.slug, side), where: side };
+      return {
+        ...base,
+        into: row.parent,
+        section: row.parent === null ? (row.section ?? undefined) : undefined,
+        position: positionAt(siblingsOf(row), dragged.slug, row.slug, side),
+        where: side,
+      };
     }
     const dragged = [...collections.flatMap((c) => c.articles), ...uncollected].find((a) => a.slug === dragging.slug);
     if (!dragged) {
@@ -203,6 +235,9 @@ export function HelpStructure({
     if (over.kind === "article") {
       const collection = over.collection ?? null;
       return { ...base, into: collection, position: positionAt(articlesIn(collection), dragged.slug, over.slug, side), where: side };
+    }
+    if (over.kind === "section") {
+      return null;
     }
     // On a collection, or on "Not in a collection": last there.
     return { ...base, into: over.kind === "uncollected" ? null : over.slug, where: "into" };
@@ -298,6 +333,11 @@ export function HelpStructure({
           const base = { kind: "collection" as const, slug: collection.slug, name: collection.name };
           const places = [
             ...(collection.parent === null ? [] : [{ label: "Top level", move: () => move({ ...base, into: null }, `${id}-to`) }]),
+            ...(collection.parent === null
+              ? sections
+                  .filter((s) => s.slug !== collection.section)
+                  .map((s) => ({ label: `Section: ${s.name}`, move: () => move({ ...base, into: null, section: s.slug }, `${id}-to`) }))
+              : []),
             ...(inside.length > 0
               ? []
               : childrenOf(null)
@@ -343,10 +383,53 @@ export function HelpStructure({
       </ul>
     );
 
+  const sectionRows = (list: StructureSection[]) => (
+    <ul aria-label="Sections" className="flex flex-col gap-2">
+      {list.map((section, index) => {
+        const id = `move-section-${section.slug}`;
+        const over: Over = { kind: "section", slug: section.slug };
+        const base = { kind: "section" as const, slug: section.slug, name: section.name, into: null };
+        const inSection = childrenOf(null).filter((c) => c.section === section.slug);
+        const count = inSection.length;
+        return (
+          <li key={section.slug}>
+            <Row
+              draggable={!pending}
+              drop={dropAt(over)}
+              handlers={handlers(over)}
+              actions={
+                <>
+                  <MoveButtons
+                    id={id}
+                    name={section.name}
+                    disabled={pending}
+                    // eslint-disable-next-line react-hooks/refs -- move() runs on click, not during render
+                    up={index > 0 ? () => move({ ...base, position: index - 1 }, `${id}-up`) : undefined}
+                    down={index < list.length - 1 ? () => move({ ...base, position: index + 1 }, `${id}-down`) : undefined}
+                    places={[]}
+                  />
+                  <SectionDialog projectSlug={projectSlug} section={section} />
+                  <DeleteSectionButton projectSlug={projectSlug} section={section} movesTo={(list[index - 1] ?? list[index + 1])?.name ?? null} />
+                </>
+              }
+            >
+              <span className="font-heading font-bold tracking-tight break-words">{section.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {`Section · ${count} ${count === 1 ? "collection" : "collections"}`}
+                {index === 0 && uncollected.length > 0 && " · also lists the articles in no collection"}
+              </span>
+            </Row>
+            {count > 0 && <div className="ml-2 border-l pl-3">{collectionRows(inSection, `Collections in ${section.name}`)}</div>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   const uncollectedRow: Over = { kind: "uncollected", slug: "" };
   return (
     <div className="flex flex-col gap-2" aria-busy={pending}>
-      {collectionRows(childrenOf(null), "Collections")}
+      {sections.length > 0 ? sectionRows(sections) : collectionRows(childrenOf(null), "Collections")}
       {(uncollected.length > 0 || dragging?.kind === "article") && (
         <div>
           <Row draggable={false} drop={dropAt(uncollectedRow)} handlers={handlers(uncollectedRow)}>

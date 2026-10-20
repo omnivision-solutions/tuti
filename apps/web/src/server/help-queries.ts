@@ -15,11 +15,22 @@ export function inTreeOrder<T extends { id: string; parentId: string | null }>(s
   return sorted.filter((c) => c.parentId === null).flatMap((top) => [top, ...sorted.filter((c) => c.parentId === top.id)]);
 }
 
+/**
+ * Collections sorted for inTreeOrder: by section (the tabs' order), then by their order there. The
+ * ones inside others have no section of their own, and inTreeOrder only keeps their order among siblings.
+ */
+export const readingOrder: Prisma.CollectionOrderByWithRelationInput[] = [
+  { section: { order: "asc" } },
+  { section: { name: "asc" } },
+  { order: "asc" },
+  { name: "asc" },
+];
+
 /** The editor's collection picker: in reading order, a collection in another named with it ("Billing › Invoices"). */
 export async function collectionOptions(projectId: string) {
   const collections = await prisma.collection.findMany({
     where: { projectId },
-    orderBy: [{ order: "asc" }, { name: "asc" }],
+    orderBy: readingOrder,
     select: { id: true, parentId: true, slug: true, name: true, parent: { select: { name: true } } },
   });
   return inTreeOrder(collections).map((c) => ({ slug: c.slug, name: c.parent ? `${c.parent.name} › ${c.name}` : c.name }));
@@ -57,7 +68,7 @@ export async function helpCenter(projectSlug: string) {
   const [rows, uncollected] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
-      orderBy: [{ order: "asc" }, { name: "asc" }],
+      orderBy: readingOrder,
       select: { id: true, parentId: true, slug: true, name: true, description: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),

@@ -8,22 +8,26 @@ import type { FormState } from "./form-state";
 import {
   createArticle,
   createCollection,
+  createSection,
   deleteArticle as deleteArticleOperation,
   deleteCollection as deleteCollectionOperation,
+  deleteSection as deleteSectionOperation,
   discardChanges as discardChangesOperation,
   publishArticle as publishOperation,
   publishChanges as publishChangesOperation,
   reorderArticle,
   reorderCollection,
+  reorderSection,
   restoreArticle as restoreOperation,
   unpublishArticle as unpublishOperation,
   updateArticle,
   updateCollection,
+  updateSection,
 } from "./operations/help";
 import { dismissHelpGap as dismissGapOperation } from "./operations/help-insights";
 import { asTeam, call } from "./operations/run";
 
-/** The team's help center actions (see the articles.* and collections.* operations). */
+/** The team's help center actions (see the articles.*, collections.* and sections.* operations). */
 
 const DENIED = "Only the project's team can edit the help center";
 
@@ -92,19 +96,51 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
   return { ...result, slug: restored };
 }
 
-/** Adds a collection (`slug` null), in the one the form's `parent` names if any, or renames collection `slug` and changes its description. */
+/**
+ * Adds a collection (`slug` null), in the one the form's `parent` names if any, else in the form's
+ * `section` (if the help center has sections), or renames collection `slug` and changes its description.
+ */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = { name: String(formData.get("name") ?? ""), description: String(formData.get("description") ?? "") };
+  const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
     slug === null
-      ? call(createCollection, context, { ...input, parent: String(formData.get("parent") ?? "") || null })
+      ? call(createCollection, context, { ...input, parent, section: parent ? undefined : String(formData.get("section") ?? "") || undefined })
       : call(updateCollection, context, { slug: String(slug), ...input }),
   );
 }
 
-/** A drop or a move button in the help center's structure: collection `slug` into `parent` (null: the top level; undefined: where it is) at `position`. */
-export async function moveCollection(projectSlug: string, slug: string, parent: string | null | undefined, position?: number): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(reorderCollection, context, { slug: String(slug), parent, position }));
+/**
+ * A drop or a move button in the help center's structure: collection `slug` into `parent` (null: the
+ * top level; undefined: where it is), at the top level in `section` (undefined: the one it's in), at `position`.
+ */
+export async function moveCollection(
+  projectSlug: string,
+  slug: string,
+  parent: string | null | undefined,
+  position?: number,
+  section?: string,
+): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(reorderCollection, context, { slug: String(slug), parent, position, section: section === undefined ? undefined : String(section) }),
+  );
+}
+
+/** Adds a section (`slug` null) or renames section `slug`. */
+export async function saveSection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
+  const name = String(formData.get("name") ?? "");
+  return asTeam(projectSlug, DENIED, (context) =>
+    slug === null ? call(createSection, context, { name }) : call(updateSection, context, { slug: String(slug), name }),
+  );
+}
+
+/** A section's up and down buttons: section `slug` to `position`. */
+export async function moveSection(projectSlug: string, slug: string, position: number): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(reorderSection, context, { slug: String(slug), position }));
+}
+
+export async function deleteSection(projectSlug: string, slug: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(deleteSectionOperation, context, { slug: String(slug) }));
 }
 
 /** Like moveCollection, for article `slug`: into `collection` (null: none; undefined: where it is) at `position`. */
