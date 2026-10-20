@@ -44,7 +44,7 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
           : emailed === added
             ? `${plural(added, "reader")} added; we emailed them a link`
             : emailed > 0
-              ? `${plural(added, "reader")} added; we emailed ${emailed} of them (the rest are past today's email limit)`
+              ? `${plural(added, "reader")} added; we emailed ${emailed} of them`
               : `${plural(added, "reader")} added`,
       );
     }
