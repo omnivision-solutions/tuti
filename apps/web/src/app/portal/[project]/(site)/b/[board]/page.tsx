@@ -7,6 +7,7 @@ import { ListFilters } from "@/components/list-filters";
 import { NewPostForm } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
@@ -58,9 +59,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
         <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} mediaBaseUrl={mediaPublicUrl()} defaultTitle={title} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          <Link href="/sign-in" className="text-foreground underline underline-offset-4">
+          <SignInLink className="text-foreground underline underline-offset-4">
             Sign in
-          </Link>{" "}
+          </SignInLink>{" "}
           to post feedback and vote.
         </p>
       )}

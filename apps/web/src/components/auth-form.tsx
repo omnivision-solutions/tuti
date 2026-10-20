@@ -9,27 +9,61 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { SIGN_IN_LINK_MINUTES } from "@/lib/sign-in-link";
+import { emailSignInLink } from "@/server/sign-in-link";
 
 /**
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
- * is carried over when switching between sign-in and sign-up.
+ * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
+ * that can send email) adds "Email me a sign-in link".
  */
 export function AuthForm({
   mode,
   redirectTo,
   next,
   defaultEmail,
+  linkProject,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
   next?: string;
   defaultEmail?: string;
+  linkProject?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
+  const [linkError, setLinkError] = useState<string>();
+  const [sentTo, setSentTo] = useState<string>();
   const [pending, setPending] = useState(false);
   const isSignUp = mode === "sign-up";
+
+  async function emailLink(form: HTMLFormElement) {
+    const email = form.elements.namedItem("email") as HTMLInputElement;
+    if (!linkProject || !email.reportValidity()) {
+      return;
+    }
+    setPending(true);
+    setError(undefined);
+    setLinkError(undefined);
+    const result = await emailSignInLink(linkProject, next ?? redirectTo, new FormData(form));
+    setPending(false);
+    setLinkError(result.error);
+    setSentTo(result.sentTo);
+  }
+
+  if (sentTo) {
+    return (
+      <Card className="mx-auto w-full max-w-sm">
+        <CardHeader>
+          <CardTitle>Check your email</CardTitle>
+          <CardDescription className="break-words">
+            We sent a sign-in link to {sentTo}. It works once, for the next {SIGN_IN_LINK_MINUTES} minutes.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,6 +73,7 @@ export function AuthForm({
 
     setPending(true);
     setError(undefined);
+    setLinkError(undefined);
     const { error } = isSignUp
       ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: next ?? redirectTo })
       : await authClient.signIn.email({ email, password });
@@ -67,9 +102,18 @@ export function AuthForm({
                 <Input id="name" name="name" autoComplete="name" required />
               </Field>
             )}
-            <Field>
+            <Field data-invalid={linkError ? true : undefined}>
               <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" defaultValue={defaultEmail} required />
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                defaultValue={defaultEmail}
+                required
+                aria-invalid={linkError ? true : undefined}
+              />
+              {linkError && <FieldError>{linkError}</FieldError>}
             </Field>
             <Field data-invalid={error ? true : undefined}>
               <FieldLabel htmlFor="password">Password</FieldLabel>
@@ -90,6 +134,17 @@ export function AuthForm({
           <Button type="submit" disabled={pending} className="w-full">
             {pending ? "…" : isSignUp ? "Sign up" : "Sign in"}
           </Button>
+          {linkProject && !isSignUp && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              className="w-full"
+              onClick={(event) => emailLink(event.currentTarget.form!)}
+            >
+              Email me a sign-in link
+            </Button>
+          )}
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
             <Link

@@ -96,6 +96,7 @@ Docker: `pnpm install --frozen-lockfile && pnpm build`, then `pnpm --filter @tut
 | `HATCHET_CLIENT_TOKEN` | Hatchet API token (web and worker), or set `JOBS_DRIVER=inline` instead |
 | `OPENAI_API_KEY` | Optional: duplicate detection and help center search with embeddings |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `EMAIL_FROM` | Email (sign-up verification, invites) over any SMTP provider (Resend, SES, Postmark, your own server…). `EMAIL_FROM` is required with `SMTP_HOST`. Port 587 by default; some hosts block 465. Without `SMTP_HOST` emails are written to the log |
+| `TRUSTED_IP_HEADER` | Optional: the header your proxy sets to the visitor's IP address (e.g. `cf-connecting-ip` behind Cloudflare), for a per-visitor limit on portal sign-in links. Only a keyed hash of the address is stored, for an hour. Without it there's no per-visitor limit |
 
 Every app's `.env.example` lists its variables; the web app refuses to start without the
 required ones. Put the app behind a proxy that passes `Host` and `X-Forwarded-*` headers.

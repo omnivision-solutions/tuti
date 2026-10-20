@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { BoardTabs } from "@/components/board-tabs";
+import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -82,9 +83,9 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
         {session ? (
           <UserMenu name={session.user.name} image={session.user.image ?? null} />
         ) : (
-          <Link href="/sign-in" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
             Sign in
-          </Link>
+          </SignInLink>
         )}
       </header>
       <BoardTabs boards={project.boards} newChangelog={newChangelog} />

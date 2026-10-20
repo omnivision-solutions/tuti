@@ -1,5 +1,6 @@
 export { changelogEmail } from "./changelog-email";
 export { inviteEmail } from "./invite-email";
-export { sendEmail } from "./send";
+export { emailConfigured, sendEmail } from "./send";
 export { shippedEmail } from "./shipped-email";
+export { signInLinkEmail } from "./sign-in-link-email";
 export { verifyEmail } from "./verify-email";

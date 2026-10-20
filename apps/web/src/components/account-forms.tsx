@@ -20,7 +20,7 @@ export function AccountForms({ name }: { name: string }) {
   );
 }
 
-function ProfileForm({ name }: { name: string }) {
+export function ProfileForm({ name }: { name: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();

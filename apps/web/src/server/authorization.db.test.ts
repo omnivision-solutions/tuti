@@ -35,6 +35,7 @@ import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
 import * as posts from "./posts";
 import * as projects from "./projects";
+import * as signInLink from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
 import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
@@ -67,6 +68,7 @@ const modules = {
   posts,
   projects,
   "similar-posts": similarPosts,
+  "sign-in-link": signInLink,
   "sso-settings": ssoSettings,
   team,
   webhooks,
@@ -312,6 +314,15 @@ const matrix: Matrix = {
   },
   "similar-posts": {
     findSimilarPosts: { allowed: "public", call: (slug) => similarPosts.findSimilarPosts(slug, "Dark mode please") },
+  },
+  // Signing in: anyone may ask for a link; only the address's owner can use it (see sign-in-link.db.test.ts).
+  "sign-in-link": {
+    emailSignInLink: {
+      allowed: "public",
+      call: (slug) => signInLink.emailSignInLink(slug, "/", form({ email: `e2e-${crypto.randomUUID()}@example.com` })),
+    },
+    // The emailed token is the permission (a dead one goes back to the sign-in page).
+    confirmSignInLink: { allowed: "public", call: () => signInLink.confirmSignInLink(form({ token: "not-a-token", next: "/" })) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },

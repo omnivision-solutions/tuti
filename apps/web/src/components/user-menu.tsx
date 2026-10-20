@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOutIcon } from "lucide-react";
+import { LogOutIcon, UserIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -38,6 +39,10 @@ export function UserMenu({ name, image }: { name: string; image: string | null }
           <DropdownMenuLabel className="truncate">{name}</DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/account" />}>
+          <UserIcon />
+          Account settings
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={async () => {
             await authClient.signOut();

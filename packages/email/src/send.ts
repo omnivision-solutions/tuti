@@ -16,6 +16,9 @@ function smtp(): Transporter {
   });
 }
 
+/** Whether emails really go out (without SMTP_HOST they're only logged). */
+export const emailConfigured = () => !!process.env.SMTP_HOST;
+
 /**
  * Sends an email built from a React Email template. Without SMTP_HOST (local
  * development, installs without email) it's written to the log instead.
@@ -36,7 +39,7 @@ export async function sendEmail({
   headers?: Record<string, string>;
 }) {
   const [html, text] = await Promise.all([render(body), render(body, { plainText: true })]);
-  if (!process.env.SMTP_HOST) {
+  if (!emailConfigured()) {
     log.info("Email not sent: SMTP_HOST is not set", { to, subject, text });
     return;
   }
