@@ -120,10 +120,20 @@ export function HelpAnswer({
           </div>
         </>
       )}
-      {answer?.status === "no_answer" && (
+      {(answer?.status === "no_answer" || answer?.status === "off_limits") && (
         <div className="flex flex-col gap-1">
-          <p className="font-semibold">I don&apos;t know</p>
-          <p className="text-sm text-muted-foreground">Nothing in the help center answers that yet. Post it as feedback so the team sees it.</p>
+          {answer.status === "no_answer" ? (
+            <>
+              <p className="font-semibold">I don&apos;t know</p>
+              <p className="text-sm text-muted-foreground">Nothing in the help center answers that yet. Post it as feedback so the team sees it.</p>
+            </>
+          ) : (
+            // A topic the team put off-limits: a fixed reply, the AI wasn't asked.
+            <>
+              <p className="font-semibold">I can&apos;t help with that here.</p>
+              <p className="text-sm text-muted-foreground">Post it as feedback so the team sees it.</p>
+            </>
+          )}
           {feedbackHref && (
             <Link href={feedbackHref} className={buttonVariants({ variant: "outline", className: "mt-2 self-start" })}>
               Post this as feedback

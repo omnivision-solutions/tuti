@@ -35,6 +35,7 @@ import {
   updateCollection,
 } from "./help";
 import { markChangelogSeen } from "./changelog-seen";
+import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askHelp } from "./help-ask";
 import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
@@ -65,6 +66,8 @@ const all = [
   searchArticles,
   answerArticle,
   askHelp,
+  getAssistantSettings,
+  updateAssistantSettings,
   getHelpInsights,
   dismissHelpGap,
   createArticle,

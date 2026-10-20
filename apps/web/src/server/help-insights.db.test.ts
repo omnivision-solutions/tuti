@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, prisma } from "@tuti/db";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import HelpInsightsPage from "@/app/app/[project]/help/insights/page";
@@ -206,12 +207,44 @@ describe("gaps", () => {
 
     // Most asked first; each shown as last asked, with the latest answer that got a thumbs-down.
     const [crypto, exporting, ...rest] = await gaps();
-    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, lastAsked: expect.any(String), answer: "Only by card." });
-    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, lastAsked: expect.any(String), answer: "From the board's menu." });
+    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, lastAsked: expect.any(String), answer: "Only by card.", cause: null });
+    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, lastAsked: expect.any(String), answer: "From the board's menu.", cause: null });
     expect(rest).toEqual([]);
     expect(Date.parse(crypto!.lastAsked)).toBeGreaterThan(minutesAgo(11).getTime());
     expect(Date.parse(crypto!.lastAsked)).toBeLessThan(minutesAgo(9).getTime());
     expect(await gaps(other.id)).toEqual([expect.objectContaining({ question: "Is there a dark mode?", noAnswer: 1, notHelpful: 0, answer: null })]);
+  });
+
+  test("each gap says why its latest “I don't know” happened, as a label on the insights page", async () => {
+    await prisma.helpQuestion.createMany({
+      data: [
+        asked("Can I pay with crypto?", { cause: "NO_RELEVANT_SECTION", createdAt: minutesAgo(30) }),
+        asked("can I pay with crypto?", { cause: "OFF_LIMITS", createdAt: minutesAgo(20) }),
+        // A later thumbs-down on an answer has no cause: the latest "I don't know" still counts.
+        asked("Can I pay with crypto?", { status: "ANSWERED", answer: "By card.", helpful: false, createdAt: minutesAgo(10) }),
+        asked("How do I export?", { cause: "NO_VALID_CITATION" }),
+        asked("Is there SSO?", { cause: "SOURCE_UNPUBLISHED" }),
+        asked("Is there an API?", { cause: "NO_RELEVANT_SECTION" }),
+        // Asked before causes were recorded (the migration marks those UNKNOWN): no label.
+        asked("Is there a dark mode?", { cause: "UNKNOWN" }),
+      ],
+    });
+    expect(Object.fromEntries((await gaps()).map((gap) => [gap.question, gap.cause]))).toEqual({
+      "Can I pay with crypto?": "off_limits",
+      "How do I export?": "no_valid_citation",
+      "Is there SSO?": "source_unpublished",
+      "Is there an API?": "no_relevant_section",
+      "Is there a dark mode?": "unknown",
+    });
+
+    actAs(owner);
+    const html = renderToStaticMarkup(await HelpInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+    const row = (question: string) => html.slice(html.indexOf(question), html.indexOf("Write an article", html.indexOf(question)));
+    expect(row("Can I pay with crypto?")).toContain("Off-limits");
+    expect(row("How do I export?")).toContain("AI found no answer");
+    expect(row("Is there SSO?")).toContain("Article unpublished");
+    expect(row("Is there an API?")).toContain("No matching article");
+    expect(row("Is there a dark mode?")).not.toMatch(/Off-limits|AI found no answer|Article unpublished|No matching article/);
   });
 
   test("dismissing hides a question (whatever its case and spacing) until it's asked again; only the team may, and only in its project", async () => {

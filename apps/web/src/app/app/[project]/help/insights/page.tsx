@@ -14,7 +14,15 @@ import { helpInsights, INSIGHTS_DAYS } from "@/server/operations/help-insights";
 
 export const metadata = { title: "Help center insights" };
 
-const plural = (count: number, one: string, many: string) => `${count.toLocaleString("en")} ${count === 1 ? one : many}`;
+/** Why a gap's latest question got "I don't know" (none for questions asked before causes were kept). */
+const CAUSES: Record<string, string> = {
+  no_relevant_section: "No matching article",
+  no_valid_citation: "AI found no answer",
+  source_unpublished: "Article unpublished",
+  off_limits: "Off-limits",
+};
+
+const plural =(count: number, one: string, many: string) => `${count.toLocaleString("en")} ${count === 1 ? one : many}`;
 
 function helpfulness(helpful: number, notHelpful: number) {
   const answers = helpful + notHelpful;
@@ -53,6 +61,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
                   key={gap.question}
                   wideActions
                   title={gap.question}
+                  badges={gap.cause && CAUSES[gap.cause] && <Badge variant="secondary">{CAUSES[gap.cause]}</Badge>}
                   meta={
                     <>
                       {[

@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
+import { AssistantSettings } from "@/components/assistant-settings";
 import { BrandingSettings } from "@/components/branding-settings";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
@@ -14,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
+import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
@@ -52,6 +54,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   });
   const widget = (await widgetSettings({ id: project.id }))!;
   const brand = (await branding({ id: project.id }))!;
+  const assistant = await assistantSettings(project.id);
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -156,6 +159,19 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             position={widget.position}
             links={widget.links}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI answers</CardTitle>
+          <CardDescription>
+            How the help center&apos;s AI answers questions. It only ever answers from your published articles; these
+            settings can&apos;t change that.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AssistantSettings projectSlug={project.slug} settings={assistant} />
         </CardContent>
       </Card>
 
