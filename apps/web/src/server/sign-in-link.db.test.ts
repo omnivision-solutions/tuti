@@ -246,6 +246,28 @@ test("a visitor gets a limited number of links an hour, quietly, before they can
   expect(sentTo(email)).toBe(1);
 });
 
+test("an IPv6 visitor is their whole /64: rotating addresses in it doesn't get more links", async () => {
+  process.env.TRUSTED_IP_HEADER = "cf-connecting-ip";
+  for (let i = 0; i < SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
+    const email = newAddress();
+    await askFrom(`2001:db8:0:42::${(i + 1).toString(16)}`, email);
+    expect(sentTo(email)).toBe(1);
+  }
+  const rotated = newAddress();
+  await askFrom("2001:0DB8:0:42:dead:beef:0:1", rotated);
+  expect(sentTo(rotated)).toBe(0);
+  // The next /64 is someone else.
+  const neighbour = newAddress();
+  await askFrom("2001:db8:0:43::1", neighbour);
+  expect(sentTo(neighbour)).toBe(1);
+  // A value that isn't an IP address gets no per-visitor limit (rather than one shared key).
+  for (let i = 0; i <= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
+    const email = newAddress();
+    await askFrom("unknown", email);
+    expect(sentTo(email)).toBe(1);
+  }
+});
+
 test("visitors are told apart only by the trusted header, and only a keyed hash of their address is stored", async () => {
   // Not configured: headers anyone can send are ignored, so there's no per-visitor limit.
   for (let i = 0; i <= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {

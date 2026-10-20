@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
+import { clientKey } from "@/lib/client-ip";
 import { resolveHost } from "@/lib/hosts";
 import { hashSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
@@ -103,9 +104,10 @@ export async function confirmSignInLink(form: FormData) {
 }
 
 let warnedNoIpHeader = false;
+let warnedBadIp = false;
 
 /**
- * Who's asking, for the per-visitor limit: an HMAC of their IP address (keyed with the
+ * Who's asking, for the per-visitor limit: an HMAC of their IP address (an IPv6 address's /64, keyed with the
  * auth secret, so the stored hash can't be matched against a list of addresses), read
  * only from TRUSTED_IP_HEADER, a header the proxy sets. Without it there's no
  * per-visitor limit: X-Forwarded-For and the like can be anything the visitor sends.
@@ -121,7 +123,19 @@ async function clientHash(requestHeaders: Headers): Promise<string | null> {
   }
   // The proxy's own value is the last one if it appends to a list.
   const ip = requestHeaders.get(header)?.split(",").at(-1)?.trim();
-  return ip ? createHmac("sha256", (await auth.$context).secret).update(ip).digest("hex") : null;
+  if (!ip) {
+    return null;
+  }
+  // One visitor per IPv4 address or IPv6 /64.
+  const key = clientKey(ip);
+  if (!key) {
+    if (!warnedBadIp) {
+      warnedBadIp = true;
+      log.warn("TRUSTED_IP_HEADER doesn't hold an IP address: no per-visitor limit for such requests", { header });
+    }
+    return null;
+  }
+  return createHmac("sha256", (await auth.$context).secret).update(key).digest("hex");
 }
 
 /**
