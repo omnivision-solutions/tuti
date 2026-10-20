@@ -15,7 +15,7 @@ type SignedIn = { token: string; name: string };
  * (Tuti.identify), trades it for a widget token, and posts with that. Without one,
  * it offers signing in on the portal in a new tab.
  */
-export function WidgetFeedback({ projectSlug, boardSlug }: { projectSlug: string; boardSlug: string }) {
+export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { projectSlug: string; boardSlug: string; defaultTitle?: string }) {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
 
@@ -52,6 +52,7 @@ export function WidgetFeedback({ projectSlug, boardSlug }: { projectSlug: string
           mediaBaseUrl={null}
           linkTarget="_blank"
           submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
+          defaultTitle={defaultTitle}
         />
       </div>
     );

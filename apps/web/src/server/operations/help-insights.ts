@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { author, authorId } from "./create";
@@ -60,12 +60,15 @@ export const answerArticle = defineOperation({
   run: async (context, input) => saveAnswer(context.projectId, await authorId(context, input.author), input),
 });
 
+/** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */
+const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
+
 /** The team's numbers for the last INSIGHTS_DAYS days (help.insights and the app's insights page). */
 export async function helpInsights(projectId: string) {
   // Whole days (UTC), today included, so daily view counts and timestamps cover the same span.
   const since = new Date(new Date().toISOString().slice(0, 10));
   since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
-  const [views, articles, comments, searches, failed, topFailed] = await Promise.all([
+  const [views, articles, comments, searches, failed, topFailed, gaps] = await Promise.all([
     prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null }, day: { gte: since } }, _sum: { views: true } }),
     prisma.$queryRaw<{ slug: string; title: string; views: number; helpful: number; notHelpful: number }[]>`
       SELECT * FROM (
@@ -94,6 +97,25 @@ export async function helpInsights(projectId: string) {
       orderBy: [{ _count: { query: "desc" } }, { query: "asc" }],
       take: 10,
     }),
+    // Gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped by
+    // normalized question, without what the team dismissed (as asked up to the dismissal).
+    prisma.$queryRaw<{ question: string; noAnswer: number; notHelpful: number; lastAsked: Date; answer: string | null }[]>`
+      SELECT
+        (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
+        count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
+        count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful",
+        max(q."createdAt") AS "lastAsked",
+        (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
+      FROM (
+        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM help_question
+        WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
+      ) q
+      WHERE NOT EXISTS (
+        SELECT 1 FROM help_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
+      )
+      GROUP BY q.key
+      ORDER BY count(*) DESC, max(q."createdAt") DESC
+      LIMIT 20`,
   ]);
   return {
     since: since.toISOString(),
@@ -105,12 +127,36 @@ export async function helpInsights(projectId: string) {
       failed,
       topFailed: topFailed.map(({ query, _count }) => ({ query, count: _count._all })),
     },
+    gaps: gaps.map((gap) => ({ ...gap, lastAsked: gap.lastAsked.toISOString() })),
   };
 }
 
+export const gapFields = z.object({ question: z.string().trim().min(1).max(300) });
+
+/** Hides a question from the Gaps list, as asked until now; asked again later, it's back. */
+export async function dismissGap(projectId: string, question: string) {
+  await prisma.$executeRaw`
+    INSERT INTO help_gap_dismissal ("projectId", question, "dismissedAt")
+    VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now())
+    ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = now()`;
+  return { dismissed: question };
+}
+
+export const dismissHelpGap = defineOperation({
+  name: "help.dismissGap",
+  summary: "Dismiss a question from the gaps in help.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
+  method: "POST",
+  path: "/help/gaps/dismiss",
+  scope: "write",
+  access: "team",
+  input: gapFields,
+  example: { question: "Can I pay with crypto?" },
+  run: ({ projectId }, { question }) => dismissGap(projectId, question),
+});
+
 export const getHelpInsights = defineOperation({
   name: "help.insights",
-  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments and the searches that found nothing`,
+  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped (case and spacing don't matter)`,
   method: "GET",
   path: "/help/insights",
   scope: "read",

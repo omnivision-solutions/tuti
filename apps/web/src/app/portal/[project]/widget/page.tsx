@@ -14,6 +14,7 @@ import { WidgetHelp } from "@/components/widget-help";
 import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
+import { MAX_POST_TITLE } from "@/server/operations/create";
 import { widgetSettings } from "@/server/operations/widget";
 import { getSession } from "@/server/session";
 
@@ -32,7 +33,7 @@ const TABS = [
  * other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const [{ project: slug }, { tab: tabParam, q, article }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { tab: tabParam, q, article, title }] = await Promise.all([props.params, props.searchParams]);
   const [project, settings] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
@@ -100,14 +101,18 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           projectSlug={slug}
           query={typeof q === "string" ? q.trim().slice(0, 200) : ""}
           article={typeof article === "string" ? article : undefined}
+          hasBoard={project.boards.length > 0}
         />
       )}
-      {tab === "feedback" && <Feedback slug={slug} board={project.boards[0]?.slug} />}
+      {tab === "feedback" && (
+        <Feedback slug={slug} board={project.boards[0]?.slug} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
+      )}
     </main>
   );
 }
 
-async function Feedback({ slug, board }: { slug: string; board?: string }) {
+/** The new-post form, starting with `title` (a question from Help's "Post this as feedback"). */
+async function Feedback({ slug, board, title }: { slug: string; board?: string; title?: string }) {
   if (!board) {
     return <EmptyState title="No boards yet" description="Feedback opens once the team adds a board." />;
   }
@@ -115,9 +120,9 @@ async function Feedback({ slug, board }: { slug: string; board?: string }) {
   // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
   if (!session) {
-    return <WidgetFeedback projectSlug={slug} boardSlug={board} />;
+    return <WidgetFeedback projectSlug={slug} boardSlug={board} defaultTitle={title} />;
   }
-  return <NewPostForm projectSlug={slug} boardSlug={board} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" />;
+  return <NewPostForm projectSlug={slug} boardSlug={board} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" defaultTitle={title} />;
 }
 
 async function WhatsNew({ slug }: { slug: string }) {

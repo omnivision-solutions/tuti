@@ -24,9 +24,11 @@ export const MAX_ARTICLE_LENGTH = 50_000;
  */
 export const ARTICLE_REVISIONS_KEPT = 50;
 
+export const MAX_ARTICLE_TITLE = 120;
+
 const slug = z.string().trim().min(1).max(80);
 const articleFields = {
-  title: z.string().trim().min(3, "Title is too short").max(120),
+  title: z.string().trim().min(3, "Title is too short").max(MAX_ARTICLE_TITLE),
   /** Plain text; ignored when `content` is sent. */
   body: z.string().max(MAX_ARTICLE_LENGTH).optional(),
   /** Rich content (the editor's JSON, "article" profile). */

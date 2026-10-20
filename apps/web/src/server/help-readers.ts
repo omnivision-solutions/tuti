@@ -14,7 +14,7 @@ import { OperationError } from "./operations";
 import { getSession } from "./session";
 
 /**
- * Readers' actions on the portal's help center: answering "Was this helpful?", counting
+ * Readers' actions on the portal's help center (and the widget's): answering "Was this helpful?", counting
  * the view, and asking the AI. Anyone may, signed in or not; most help readers are anonymous.
  */
 
@@ -27,8 +27,13 @@ const BOT = /bot|crawl|spider|slurp|preview/i;
  * Who answers: the signed-in user, or else an anonymous reader known by a random id in a
  * first-party cookie (set on their first answer). That's the limit: one answer per reader
  * and article. Clearing cookies gets another; Tuti keeps no IP address to stop that.
+ *
+ * In the widget (an iframe on the customer's site) a Lax cookie is neither sent nor stored, so
+ * there it's `SameSite=None` and partitioned (CHIPS): kept per embedding site, never shared
+ * across sites. A browser that refuses even that gets a new id per question, which only the
+ * project's hourly limit then counts.
  */
-async function readerId(projectSlug: string) {
+async function readerId(projectSlug: string, widget = false) {
   const session = await getSession();
   if (session) {
     return session.user.id;
@@ -41,8 +46,8 @@ async function readerId(projectSlug: string) {
   const id = randomUUID();
   jar.set(READER_COOKIE, id, {
     httpOnly: true,
-    sameSite: "lax",
-    secure: portalUrl(projectSlug).startsWith("https:"),
+    // SameSite=None and Partitioned need Secure (browsers accept it from http://localhost too).
+    ...(widget ? { sameSite: "none", secure: true, partitioned: true } : { sameSite: "lax", secure: portalUrl(projectSlug).startsWith("https:") }),
     maxAge: 60 * 60 * 24 * 365,
     path: "/",
   });
@@ -83,8 +88,9 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 
-/** "Ask AI" on the portal's /help: an answer from the published articles, or "I don't know" (see help.ask). */
-export async function askHelp(projectSlug: string, question: string): Promise<HelpAnswer | { error: string }> {
+/** "Ask AI" on the portal's /help or in the widget: an answer from the published articles, or "I don't know" (see help.ask). */
+export async function askHelp(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<HelpAnswer | { error: string }> {
+  const widget = from === "widget";
   const input = askFields.safeParse({ q: question });
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
@@ -94,7 +100,7 @@ export async function askHelp(projectSlug: string, question: string): Promise<He
     return { error: "Help center not found" };
   }
   try {
-    return await answerQuestion(project.id, await readerId(String(projectSlug)), input.data.q);
+    return await answerQuestion(project.id, await readerId(String(projectSlug), widget), input.data.q, widget ? "WIDGET" : "PORTAL");
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };

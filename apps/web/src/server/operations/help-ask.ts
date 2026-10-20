@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type HelpQuestionSource, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
@@ -84,7 +84,7 @@ function sourcesOf(sections: AnswerSection[], slug: string): HelpAnswer["sources
 }
 
 /** Logs the question, or refuses it (429) if the asker or the project asked too often in the last hour. */
-async function logQuestion(projectId: string, askerId: string, question: string) {
+async function logQuestion(projectId: string, askerId: string, question: string, source: HelpQuestionSource) {
   return prisma.$transaction(async (tx) => {
     // One at a time per project, so concurrent questions can't overrun the limits together.
     await lockProject(tx, projectId);
@@ -100,21 +100,22 @@ async function logQuestion(projectId: string, askerId: string, question: string)
       throw new OperationError(429, "rate_limited", "This help center has had a lot of questions in the last hour. Try again later.");
     }
     // FAILED until it's answered, so a question that never finishes stays logged as failed.
-    return tx.helpQuestion.create({ data: { projectId, askerId, question }, select: { id: true } });
+    return tx.helpQuestion.create({ data: { projectId, askerId, question, source }, select: { id: true } });
   });
 }
 
-/** Answers a question from the project's published articles (help.ask and the portal's "Ask AI"). */
+/** Answers a question from the project's published articles (help.ask, and "Ask AI" on the portal and in the widget). */
 export async function answerQuestion(
   projectId: string,
   askerId: string,
   question: string,
+  source: HelpQuestionSource,
   timeoutMs = ANSWER_TIMEOUT_MS,
 ): Promise<HelpAnswer> {
   if (!answersEnabled()) {
     throw new OperationError(503, "ai_unavailable", "AI answers aren't set up on this server");
   }
-  const { id } = await logQuestion(projectId, askerId, question);
+  const { id } = await logQuestion(projectId, askerId, question, source);
   const [sections, slug] = await Promise.all([answerSections(projectId, question, ANSWER_SECTIONS, EMBED_TIMEOUT_MS), projectSlug(projectId)]);
   const finish = async (
     status: HelpAnswer["status"],
@@ -174,5 +175,5 @@ export const askHelp = defineOperation({
   access: "anyone",
   input: askFields,
   example: { q: "How do I invite my team?" },
-  run: ({ actor, projectId }, input) => answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q),
+  run: ({ actor, projectId }, input) => answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API"),
 });

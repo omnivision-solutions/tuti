@@ -2,9 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
+import { DismissGapButton } from "@/components/help";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
@@ -36,6 +38,50 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
         title="Insights"
         description={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
       />
+      <Card>
+        <CardHeader>
+          <CardTitle>Gaps</CardTitle>
+          <CardDescription>Questions the AI couldn’t answer, or whose answer got a thumbs-down: topics to write about.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {insights.gaps.length === 0 ? (
+            empty("No gaps: every question got an answer.")
+          ) : (
+            <ItemList>
+              {insights.gaps.map((gap) => (
+                <ItemRow
+                  key={gap.question}
+                  wideActions
+                  title={gap.question}
+                  meta={
+                    <>
+                      {[
+                        gap.noAnswer > 0 && `${gap.noAnswer} unanswered`,
+                        gap.notHelpful > 0 && `${gap.notHelpful} not helpful`,
+                        timeAgo(new Date(gap.lastAsked)),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                      {gap.answer && <p className="mt-1 break-words whitespace-pre-line">Answer: {gap.answer}</p>}
+                    </>
+                  }
+                  actions={
+                    <>
+                      <Link
+                        href={`/app/${slug}/help/new?${new URLSearchParams({ title: gap.question })}`}
+                        className={buttonVariants({ variant: "outline", size: "sm" })}
+                      >
+                        Write an article
+                      </Link>
+                      <DismissGapButton projectSlug={slug} question={gap.question} />
+                    </>
+                  }
+                />
+              ))}
+            </ItemList>
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Top articles</CardTitle>

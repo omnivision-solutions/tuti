@@ -33,7 +33,7 @@ import {
   updateCollection,
 } from "./help";
 import { askHelp } from "./help-ask";
-import { answerArticle, getHelpInsights } from "./help-insights";
+import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
@@ -61,6 +61,7 @@ const all = [
   answerArticle,
   askHelp,
   getHelpInsights,
+  dismissHelpGap,
   createArticle,
   updateArticle,
   publishArticle,

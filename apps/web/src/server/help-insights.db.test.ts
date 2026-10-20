@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 
-import { prisma } from "@tuti/db";
-import { beforeEach, expect, test, vi } from "vitest";
+import { type Prisma, prisma } from "@tuti/db";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import HelpInsightsPage from "@/app/app/[project]/help/insights/page";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
+import { dismissHelpGap } from "./help";
 import { answerArticle, countArticleView } from "./help-readers";
 import { searchHelp } from "./help-search";
 import { answerArticle as answerOperation, getHelpInsights } from "./operations/help-insights";
@@ -168,8 +169,85 @@ test("insights: views, helpfulness per article, the latest “No” comments and
         { query: "sso", count: 1 },
       ],
     },
+    gaps: [],
   });
   expect((await insights(other.id)).views).toBe(1);
+});
+
+describe("gaps", () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+  const asked = (question: string, data: Partial<Prisma.HelpQuestionCreateManyInput> = {}) => ({
+    projectId: project.id,
+    askerId: randomUUID(),
+    question,
+    source: "PORTAL" as const,
+    status: "NO_ANSWER" as const,
+    ...data,
+  });
+  const gaps = async (projectId = project.id) => (await insights(projectId)).gaps;
+
+  test("unanswered and thumbs-down questions of the last 30 days, grouped by normalized question, with counts, the latest date and the answer that didn't help", async () => {
+    const other = await createProject(owner);
+    await prisma.helpQuestion.createMany({
+      data: [
+        asked("Can I pay with crypto?", { createdAt: minutesAgo(30) }),
+        asked("  can i PAY   with\tcrypto? ", { createdAt: minutesAgo(20) }),
+        asked("Can I pay with crypto?", { status: "ANSWERED", answer: "Yes, with Bitcoin.", helpful: false, createdAt: minutesAgo(15) }),
+        asked("Can I pay with crypto?", { status: "ANSWERED", answer: "Only by card.", helpful: false, createdAt: minutesAgo(10) }),
+        asked("How do I export?", { status: "ANSWERED", answer: "From the board's menu.", helpful: false, createdAt: minutesAgo(5) }),
+        // Not gaps: answered (helpful, or not rated), failed, too old, or another project's.
+        asked("Can I pay with crypto?", { status: "ANSWERED", answer: "By card.", helpful: true }),
+        asked("How do I invite?", { status: "ANSWERED", answer: "From the Team page." }),
+        asked("Is there an API?", { status: "FAILED" }),
+        asked("Do you have SSO?", { createdAt: new Date(Date.now() - 40 * 86_400_000) }),
+        asked("Is there a dark mode?", { projectId: other.id }),
+      ],
+    });
+
+    // Most asked first; each shown as last asked, with the latest answer that got a thumbs-down.
+    const [crypto, exporting, ...rest] = await gaps();
+    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, lastAsked: expect.any(String), answer: "Only by card." });
+    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, lastAsked: expect.any(String), answer: "From the board's menu." });
+    expect(rest).toEqual([]);
+    expect(Date.parse(crypto!.lastAsked)).toBeGreaterThan(minutesAgo(11).getTime());
+    expect(Date.parse(crypto!.lastAsked)).toBeLessThan(minutesAgo(9).getTime());
+    expect(await gaps(other.id)).toEqual([expect.objectContaining({ question: "Is there a dark mode?", noAnswer: 1, notHelpful: 0, answer: null })]);
+  });
+
+  test("dismissing hides a question (whatever its case and spacing) until it's asked again; only the team may, and only in its project", async () => {
+    const other = await createProject(owner);
+    await prisma.helpQuestion.createMany({
+      data: [
+        asked("Can I pay with crypto?", { createdAt: minutesAgo(5) }),
+        asked("How do I export?", { createdAt: minutesAgo(5) }),
+        asked("Can I pay with crypto?", { projectId: other.id, createdAt: minutesAgo(5) }),
+      ],
+    });
+
+    // Not by someone outside the team.
+    actAs(await signUp("Outsider"));
+    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the help center" });
+    actAs(null);
+    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the help center" });
+    expect(await prisma.helpGapDismissal.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(0);
+
+    actAs(await addMember(project.id, "MEMBER"));
+    expect(await dismissHelpGap(project.slug, "  CAN I pay with   crypto?")).toEqual({});
+    expect((await gaps()).map((gap) => gap.question)).toEqual(["How do I export?"]);
+    // Another project's gaps stay.
+    expect((await gaps(other.id)).map((gap) => gap.question)).toEqual(["Can I pay with crypto?"]);
+
+    // Asked again after the dismissal: back, counting only the new question.
+    await prisma.helpGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: minutesAgo(1) } });
+    await prisma.helpQuestion.create({ data: asked("can i pay with crypto?") });
+    expect((await gaps()).map((gap) => [gap.question, gap.noAnswer])).toEqual([
+      ["can i pay with crypto?", 1],
+      ["How do I export?", 1],
+    ]);
+    // Dismissing it again hides it again.
+    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({});
+    expect((await gaps()).map((gap) => gap.question)).toEqual(["How do I export?"]);
+  });
 });
 
 test("only the project's team sees the insights page", async () => {
