@@ -100,6 +100,21 @@ describe("when a post ships", () => {
     expect(emailsTo(voter.email)).toEqual([]);
   });
 
+  test("on a private portal, a reader domain's verified addresses hear about it", async () => {
+    const author = await verified("Author");
+    const colleague = await signUp("Colleague", `e2e-${randomUUID()}@example.org`);
+    await prisma.user.update({ where: { id: colleague.id }, data: { emailVerified: true } });
+    await prisma.portalReader.create({ data: { projectId: project.id, email: "@example.org" } });
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "SAML" });
+    await call(setVote, as(colleague.id), { number: post.number, voted: true });
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+
+    await setStatus(post.number, "completed");
+
+    expect(emailsTo(colleague.email).map((email) => email.subject)).toEqual(["Done: SAML"]);
+    expect(emailsTo(author.email)).toEqual([]);
+  });
+
   test("a mail outage doesn't lose anyone: the retry emails those not reached, once", async () => {
     const [author, voter] = [await verified("Author"), await verified("Voter")];
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Offline mode" });
