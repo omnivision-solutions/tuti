@@ -76,16 +76,22 @@ class FakeElement {
 
 type FakePage = ReturnType<typeof loadWidget>;
 
-/** Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering `latest`. */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null } }: {
+/**
+ * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
+ * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
+ */
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenHere }: {
   attributes?: Record<string, string>;
   settings?: object;
   /** null: the request fails; "hang": it never answers. */
   latest?: object | null | "hang";
+  /** What this person has seen on any device; "fail": the request fails. */
+  seen?: string | null | "fail";
+  seenHere?: string;
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
   const windowListeners: Record<string, ((event: object) => void)[]> = {};
-  const stored = new Map<string, string>();
+  const stored = new Map<string, string>(seenHere ? [["tuti:seen:acme", seenHere]] : []);
   const page = {
     documentListeners,
     windowListeners,
@@ -106,7 +112,11 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       matchMedia: () => ({ matches: false }),
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
-      fetch: vi.fn(async () => {
+      fetch: vi.fn(async (url: string) => {
+        if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
+          if (seen === "fail") throw new TypeError("Failed to fetch");
+          return { ok: true, json: async () => ({ seen }) };
+        }
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
         return { ok: true, json: async () => latest };
@@ -124,8 +134,22 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
     get frame() {
       return page.panel.children[0] as FakeElement | undefined;
     },
+    /** Calls to /api/widget/seen. */
+    get seenRequests() {
+      return (page.window.fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([url]) => String(url).includes("/api/widget/seen"));
+    },
+    get stored() {
+      return stored;
+    },
+    /** The panel saying the visitor has seen announcements up to `at`. */
+    seen(at: string) {
+      page.windowListeners.message?.forEach((listener) =>
+        listener({ source: (page.frame as unknown as { contentWindow?: unknown }).contentWindow, origin: "https://acme.tuti.example", data: { type: "tuti:seen", at } }),
+      );
+    },
     get Tuti() {
       return page.window.Tuti as {
+        identify(getToken: () => unknown): void;
         open(options?: object): void;
         close(): void;
         unseen(): boolean;
@@ -294,4 +318,84 @@ test("an announcement this browser has seen isn't unseen", async () => {
   await settled();
   expect(page.Tuti.unseen()).toBe(false);
   expect(calls).toEqual([false]);
+});
+
+const token = () => Promise.resolve("sso-token");
+const LATEST = { latest: "2026-10-18T10:00:00.000Z", launcher: null };
+
+test("someone the page signs in who saw the announcement on another device doesn't see it as new here; this browser remembers", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, seen: "2026-10-19T08:00:00.000Z", seenHere: "2026-10-01T00:00:00.000Z" });
+  const calls: boolean[] = [];
+  page.Tuti.on("unseen", (unseen) => calls.push(unseen));
+  await settled();
+  // Worked out once, with what they've seen anywhere: no dot that comes and goes.
+  expect(calls).toEqual([false]);
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(page.seenRequests).toEqual([
+    ["https://app.tuti.example/api/widget/seen?project=acme", { headers: { authorization: "Bearer sso-token" } }],
+  ]);
+  // The later of the two times.
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-19T08:00:00.000Z");
+});
+
+test("the later of this browser's time and the person's counts; without a newer one, it's still new", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, seen: "2026-10-01T00:00:00.000Z", seenHere: "2026-10-05T00:00:00.000Z" });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  expect(page.stored.get("tuti:seen:acme")).toBe("2026-10-05T00:00:00.000Z");
+});
+
+test("nobody signed in, or seen in this browser already: no request about the person", async () => {
+  const anonymous = loadWidget({ latest: LATEST });
+  const seenHere = loadWidget({ settings: { identify: token }, latest: LATEST, seenHere: "2026-10-18T10:00:00.000Z" });
+  await settled();
+  expect(anonymous.Tuti.unseen()).toBe(true);
+  expect(seenHere.Tuti.unseen()).toBe(false);
+  expect([...anonymous.seenRequests, ...seenHere.seenRequests]).toEqual([]);
+});
+
+test("if the person's time can't be read (no token, or the request fails), this browser's counts", async () => {
+  const failed = loadWidget({ settings: { identify: token }, latest: LATEST, seen: "fail" });
+  const noToken = loadWidget({ settings: { identify: () => null }, latest: LATEST, seen: "2026-10-19T08:00:00.000Z" });
+  await settled();
+  expect(failed.Tuti.unseen()).toBe(true);
+  expect(noToken.Tuti.unseen()).toBe(true);
+  expect(noToken.seenRequests).toEqual([]);
+});
+
+test("signed in after the status was worked out (Tuti.identify), it's checked again", async () => {
+  const page = loadWidget({ latest: LATEST, seen: "2026-10-19T08:00:00.000Z" });
+  const calls: boolean[] = [];
+  page.Tuti.on("unseen", (unseen) => calls.push(unseen));
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(token);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+  expect(calls).toEqual([true, false]);
+});
+
+test("when the panel shows the announcement, it's recorded for the person, so their other devices know", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, seen: null });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.open({ tab: "whats-new" });
+  page.seen("2026-10-18T10:00:00.000Z");
+  expect(page.Tuti.unseen()).toBe(false);
+  await settled();
+  expect(page.seenRequests.at(-1)).toEqual([
+    "https://app.tuti.example/api/widget/seen?project=acme",
+    {
+      method: "POST",
+      headers: { authorization: "Bearer sso-token", "content-type": "application/json" },
+      body: JSON.stringify({ at: "2026-10-18T10:00:00.000Z" }),
+    },
+  ]);
+  // Not for visitors the page doesn't sign in.
+  const anonymous = loadWidget({ latest: LATEST });
+  await settled();
+  anonymous.Tuti.open({ tab: "whats-new" });
+  anonymous.seen("2026-10-18T10:00:00.000Z");
+  await settled();
+  expect(anonymous.seenRequests).toEqual([]);
 });

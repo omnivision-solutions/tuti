@@ -31,6 +31,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.list": () => ({}),
   "changelog.get": () => ({ number: 1 }),
   "changelog.react": () => ({ number: 1, reaction: "tada", reacted: true }),
+  "changelog.seen": () => ({ at: "2026-10-20T09:00:00Z", author: { id: "matrix-reader" } }),
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
   "changelog.draft": () => ({ number: 2 }),
@@ -221,6 +222,7 @@ const snapshot = () =>
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),
+    prisma.changelogSeen.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {

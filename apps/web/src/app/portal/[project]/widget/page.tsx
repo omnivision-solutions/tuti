@@ -6,12 +6,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryView } from "@/components/changelog-entry";
+import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetHelp } from "@/components/widget-help";
-import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/help-queries";
@@ -133,19 +133,22 @@ async function Feedback({ slug, board, title }: { slug: string; board?: string; 
 }
 
 async function WhatsNew({ slug }: { slug: string }) {
-  const [recent, announced] = await Promise.all([
+  const [recent, announced, session] = await Promise.all([
     publishedEntries(slug, { take: 10 }),
     prisma.changelogEntry.findFirst({
       where: { project: { slug }, announced: true, publishedAt: { not: null } },
       orderBy: { publishedAt: "desc" },
       select: { number: true, publishedAt: true },
     }),
+    // Only on the portal's own site: elsewhere its cookies aren't sent, and the page's script
+    // records it for people it signs in (Tuti.identify).
+    getSession(),
   ]);
   // The latest announcement is always in the list (after newer quiet ones if need be): it's
   // what the button's "new" dot is about, and opening this tab marks it seen.
   const missing = announced && !recent.some((entry) => entry.number === announced.number);
   const entries = missing ? [...recent, ...(await publishedEntries(slug, { number: announced.number, take: 1 }))] : recent;
-  const seen = <WidgetSeen at={announced?.publishedAt?.toISOString() ?? null} />;
+  const seen = <ChangelogSeen projectSlug={slug} at={announced?.publishedAt?.toISOString() ?? null} signedIn={!!session} widget />;
   if (entries.length === 0) {
     return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;
   }
