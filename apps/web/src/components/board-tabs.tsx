@@ -29,7 +29,8 @@ export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: st
               )}
             >
               {name}
-              {href === "/changelog" && newChangelog && (
+              {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
+              {href === "/changelog" && newChangelog && !active && (
                 <span className="ml-1.5 rounded-full bg-highlight px-1.5 py-0.5 text-xs font-medium text-highlight-foreground">New</span>
               )}
             </Link>

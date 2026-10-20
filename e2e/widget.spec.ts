@@ -133,9 +133,21 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   const changelogTab = ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ });
   await expect(changelogTab).toContainText("New");
   await checkpoint(ada, "portal-changelog-new");
+  // On the changelog itself it isn't new any more, even before her visit is recorded (held here).
+  let releaseSeen = () => {};
+  await ada.route("**/changelog", async (route) => {
+    if (route.request().method() === "POST") {
+      await new Promise<void>((resolve) => (releaseSeen = resolve));
+    }
+    await route.continue();
+  });
   await changelogTab.click();
   await expect(ada.getByRole("article", { name: "Dark mode is here" })).toBeVisible();
-  await expect(changelogTab).not.toContainText("New");
+  await expect(changelogTab).toHaveText("Changelog");
+  const recorded = ada.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/changelog"));
+  releaseSeen();
+  await recorded;
+  await ada.unroute("**/changelog");
   const otherDevice = await (await browser.newContext({ storageState: await ada.context().storageState() })).newPage();
   await otherDevice.goto(`${portalUrl(slug)}/roadmap`);
   await expect(otherDevice.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toHaveText("Changelog");
