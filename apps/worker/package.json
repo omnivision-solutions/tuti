@@ -8,7 +8,8 @@
     "build": "tsup",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "typecheck": "tsc --noEmit",
-    "backfill:embeddings": "tsx --env-file-if-exists=.env src/scripts/backfill-embeddings.ts"
+    "backfill:embeddings": "tsx --env-file-if-exists=.env src/scripts/backfill-embeddings.ts",
+    "release:media": "tsx --env-file-if-exists=.env src/scripts/release-media.ts"
   },
   "dependencies": {
     "@hatchet-dev/typescript-sdk": "^1.33.2",

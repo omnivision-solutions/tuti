@@ -236,7 +236,8 @@ model Media {
   /// After processing (longest side at most 2400px).
   width      Int?
   height     Int?
-  /// Set when saved content uses it; uploads never used are deleted after a day.
+  /// Set (again) whenever content using it is saved; cleared by the release-media job once
+  /// no content uses it. Uploads without it are deleted a day after they were uploaded.
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
