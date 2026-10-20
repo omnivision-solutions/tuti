@@ -143,6 +143,8 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(wes.getByText("Check your email")).toBeVisible();
   await wes.goto(linkIn(await latestEmailTo(wesEmail), `${portalUrl(slug)}/sign-in/link?`));
   await wes.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  // The portal's home page sends people on to its first board.
+  await expect(wes).toHaveURL(`${portalUrl(slug)}/b/feature-requests`);
   await expect(wes.getByRole("navigation", { name: "Portal" })).toBeVisible();
   await expect(wes.getByRole("button", { name: "Account" })).toBeVisible();
 });
