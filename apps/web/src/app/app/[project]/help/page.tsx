@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/help";
@@ -29,7 +30,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
-      select: { slug: true, title: true, publishedAt: true, collection: { select: { name: true } } },
+      select: { slug: true, title: true, publishedAt: true, listing: true, collection: { select: { name: true } } },
     }),
     prisma.collection.findMany({
       where: { projectId },
@@ -81,7 +82,11 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
                     </Link>
                   }
                   badges={article.collection && <Badge variant="secondary">{article.collection.name}</Badge>}
-                  meta={article.publishedAt ? `Published ${formatDate(article.publishedAt)}` : "Draft"}
+                  meta={
+                    article.publishedAt
+                      ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
+                      : "Draft"
+                  }
                 />
               ))}
             </ItemList>

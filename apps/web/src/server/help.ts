@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 
+import type { Listing } from "@/lib/article-listing";
+
 import type { FormState } from "./form-state";
 import {
   createArticle,
@@ -29,6 +31,8 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     body: formData.get("content") ? undefined : "",
     collection: String(formData.get("collection") ?? "") || null,
     showUpdatedDate: formData.get("showUpdatedDate") === "on",
+    // Checked by the operation (an unknown listing is a 400).
+    listing: (formData.get("listing") || undefined) as Listing | undefined,
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {

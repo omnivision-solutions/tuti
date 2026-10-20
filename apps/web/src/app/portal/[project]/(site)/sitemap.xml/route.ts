@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
+import { listedArticle } from "@/server/help-queries";
 
 // Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
 export const dynamic = "force-dynamic";
@@ -14,7 +15,8 @@ const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a &&
 /**
  * The portal's public pages for search engines: home, boards, posts, the
  * roadmap, the changelog and the help center, each with when it last changed.
- * Merged posts (they redirect), drafts and the sign-in pages are left out.
+ * Merged posts (they redirect), drafts, articles that aren't listed everywhere and the
+ * sign-in pages are left out.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/sitemap.xml">) {
   const { project: slug } = await params;
@@ -29,7 +31,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         select: { boardId: true, number: true, title: true, updatedAt: true },
       },
       changelogEntries: { where: { publishedAt: { not: null } }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
-      articles: { where: { publishedAt: { not: null } }, orderBy: { slug: "asc" }, select: { slug: true, updatedAt: true } },
+      articles: { where: listedArticle, orderBy: { slug: "asc" }, select: { slug: true, updatedAt: true } },
     },
   });
   if (!project) {

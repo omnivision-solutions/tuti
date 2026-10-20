@@ -1,14 +1,16 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { Prisma, prisma } from "@tuti/db";
+import { type ArticleListing, Prisma, prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS, enqueue, lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
+import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { portalUrl } from "@/lib/hosts";
 import { titleSlug } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
+import { listedArticle } from "../help-queries";
 import { searchHelp } from "../help-search";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
@@ -26,6 +28,10 @@ export const ARTICLE_REVISIONS_KEPT = 50;
 
 export const MAX_ARTICLE_TITLE = 120;
 
+const toListing = (listing: Listing) => listing.toUpperCase() as ArticleListing;
+/** Listings whose page and .md anyone may read (see servedArticle). */
+const SERVED: ArticleListing[] = ["EVERYWHERE", "UNLISTED"];
+
 const slug = z.string().trim().min(1).max(80);
 const articleFields = {
   title: z.string().trim().min(3, "Title is too short").max(MAX_ARTICLE_TITLE),
@@ -37,6 +43,12 @@ const articleFields = {
   collection: slug.nullable().optional(),
   /** Show "Updated <date>" on the portal when it's edited after it was published (default true). */
   showUpdatedDate: z.boolean().optional(),
+  /**
+   * Where it's served once published (default everywhere): `everywhere`; `unlisted` (readable at its
+   * link, in no list or search; AI answers cite it); `hidden` (nowhere public); `ai_only` (only a
+   * source for AI answers, named without a link).
+   */
+  listing: z.enum(LISTINGS).optional(),
 };
 const collectionFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
@@ -52,6 +64,7 @@ const articleSelect = {
   publishedAt: true,
   deletedAt: true,
   showUpdatedDate: true,
+  listing: true,
   createdAt: true,
   updatedAt: true,
   collection: { select: { slug: true, name: true } },
@@ -65,6 +78,7 @@ function articleView(article: ArticleRow, projectSlug: string) {
     status: article.publishedAt ? ("published" as const) : ("draft" as const),
     publishedAt: article.publishedAt?.toISOString() ?? null,
     showUpdatedDate: article.showUpdatedDate,
+    listing: article.listing.toLowerCase() as Listing,
     /** Only in the list of deleted articles. */
     ...(article.deletedAt && { deletedAt: article.deletedAt.toISOString() }),
     collection: article.collection,
@@ -212,14 +226,14 @@ async function saveChanges(
   projectId: string,
   article: { id: string; slug: string },
   authorId: string | null,
-  changes: { title?: string; text?: ArticleText; collectionId?: string | null; showUpdatedDate?: boolean },
+  changes: { title?: string; text?: ArticleText; collectionId?: string | null; showUpdatedDate?: boolean; listing?: ArticleListing },
 ) {
   // Read again under the lock: it may have been retitled, published or deleted since.
   const current = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { title: true, publishedAt: true } });
   if (!current) {
     throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
   }
-  const { title, text, collectionId, showUpdatedDate } = changes;
+  const { title, text, collectionId, showUpdatedDate, listing } = changes;
   const retitled = title !== undefined && title !== current.title && !current.publishedAt;
   const saved = await tx.article.update({
     where: { id: article.id },
@@ -229,6 +243,7 @@ async function saveChanges(
       ...(text && { body: text.text, content: text.doc }),
       ...(collectionId !== undefined && { collectionId }),
       ...(showUpdatedDate !== undefined && { showUpdatedDate }),
+      ...(listing !== undefined && { listing }),
     },
     select: articleSelect,
   });
@@ -258,7 +273,7 @@ export function articleRevisions(articleId: string) {
 export const listArticles = defineOperation({
   name: "articles.list",
   summary:
-    "List help center articles by title: published ones, the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
+    "List help center articles by title: published ones (listed everywhere; the team sees every listing), the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
   method: "GET",
   path: "/articles",
   scope: "read",
@@ -270,11 +285,13 @@ export const listArticles = defineOperation({
   }),
   example: { status: "published", limit: 20 },
   run: async ({ actor, projectId }, input) => {
-    if (input.status !== "published" && !(await isTeam(actor, projectId))) {
+    const team = await isTeam(actor, projectId);
+    if (input.status !== "published" && !team) {
       throw new OperationError(403, "forbidden", `Only the project's team sees ${input.status === "draft" ? "drafts" : "deleted articles"}`);
     }
     const query: Record<typeof input.status, Pick<Prisma.ArticleFindManyArgs, "where" | "orderBy">> = {
-      published: { where: { publishedAt: { not: null }, deletedAt: null }, orderBy: [{ title: "asc" }, { slug: "asc" }] },
+      // Like the portal's lists, but the team sees unlisted, hidden and AI-only ones too.
+      published: { where: team ? { publishedAt: { not: null }, deletedAt: null } : listedArticle, orderBy: [{ title: "asc" }, { slug: "asc" }] },
       draft: { where: { publishedAt: null, deletedAt: null }, orderBy: [{ updatedAt: "desc" }, { slug: "asc" }] },
       deleted: { where: { deletedAt: { gte: restorableSince() } }, orderBy: [{ deletedAt: "desc" }, { slug: "asc" }] },
     };
@@ -295,7 +312,7 @@ export const listArticles = defineOperation({
 
 export const getArticle = defineOperation({
   name: "articles.get",
-  summary: "Get a help center article by its slug (drafts only for the team)",
+  summary: "Get a help center article by its slug (drafts, hidden and AI-only articles only for the team)",
   method: "GET",
   path: "/articles/{slug}",
   scope: "read",
@@ -303,8 +320,9 @@ export const getArticle = defineOperation({
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
     const article = await findArticle(projectId, input.slug);
-    // A draft is as good as missing to everyone but the team.
-    if (!article || (!article.publishedAt && !(await isTeam(actor, projectId)))) {
+    // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
+    const served = article?.publishedAt && SERVED.includes(article.listing);
+    if (!article || (!served && !(await isTeam(actor, projectId)))) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
     return articleView(article, await projectSlug(projectId));
@@ -353,6 +371,7 @@ export const createArticle = defineOperation({
             content: text.doc,
             collectionId: collection ?? null,
             showUpdatedDate: input.showUpdatedDate,
+            listing: input.listing && toListing(input.listing),
             createdById: authorOf(actor),
           },
           select: articleSelect,
@@ -369,7 +388,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a help center article: its title, text or collection (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions)",
+    "Change a help center article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -388,6 +407,7 @@ export const updateArticle = defineOperation({
           text,
           collectionId: collection,
           showUpdatedDate: input.showUpdatedDate,
+          listing: input.listing && toListing(input.listing),
         });
       }),
     );

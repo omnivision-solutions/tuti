@@ -818,14 +818,26 @@ model Collection {
 }
 
 /// A help center article, at /help/<slug> on the portal once it's published.
+/// Where a published article is served. A draft is served nowhere, whatever it says.
+enum ArticleListing {
+  /// Its page, the help center's lists, search, the sitemap, llms.txt and AI answers.
+  EVERYWHERE
+  /// Readable by its link (page and .md) and cited by AI answers, but in no list, search, sitemap or llms.txt.
+  UNLISTED
+  /// Kept published but served nowhere public: no page, list, search or AI answers.
+  HIDDEN
+  /// Only a source for AI answers, which name it without a link: no page, list or search.
+  AI_ONLY
+}
+
 model Article {
-  id              String    @id @default(cuid())
+  id              String         @id @default(cuid())
   projectId       String
   /// From the title, unique in the project; follows the title while it's a draft.
   slug            String
   title           String
   /// Plain text of the article (derived from `content`).
-  body            String    @default("")
+  body            String         @default("")
   /// Rich content (@tuti/content "article" profile).
   content         Json?
   /// Null while it's a draft.
@@ -836,12 +848,14 @@ model Article {
   /// slug is free for other articles.
   deletedAt       DateTime?
   /// Show "Updated <date>" on the portal when it was edited after it was published.
-  showUpdatedDate Boolean   @default(true)
+  showUpdatedDate Boolean        @default(true)
+  /// Where a published article is served (see ArticleListing).
+  listing         ArticleListing @default(EVERYWHERE)
   /// At most one collection; deleting it leaves its articles uncollected.
   collectionId    String?
   createdById     String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collection Collection?       @relation(fields: [collectionId], references: [id], onDelete: SetNull)
@@ -952,19 +966,19 @@ enum HelpQuestionSource {
 /// what the team's Gaps list reads, and what the hourly rate limits count.
 /// No IP addresses.
 model HelpQuestion {
-  id         String           @id @default(cuid())
+  id         String             @id @default(cuid())
   projectId  String
   /// The signed-in user's id, an anonymous reader's first-party cookie id, or the API key's id.
   askerId    String
   question   String
   source     HelpQuestionSource
-  status     HelpAnswerStatus @default(FAILED)
+  status     HelpAnswerStatus   @default(FAILED)
   answer     String?
   /// The articles the answer cites.
-  articleIds String[]         @default([])
+  articleIds String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
   helpful    Boolean?
-  createdAt  DateTime         @default(now())
+  createdAt  DateTime           @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

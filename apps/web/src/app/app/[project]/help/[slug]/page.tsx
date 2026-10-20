@@ -10,6 +10,7 @@ import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleForm } from "@/components/help";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
+import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate } from "@/lib/format";
 import { portalUrl } from "@/lib/hosts";
 import { displayDoc } from "@/server/content";
@@ -31,6 +32,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
       content: true,
       publishedAt: true,
       showUpdatedDate: true,
+      listing: true,
       collection: { select: { slug: true } },
     },
   });
@@ -38,6 +40,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
     notFound();
   }
   const url = `${portalUrl(slug)}/help/${article.slug}`;
+  const listing = article.listing.toLowerCase() as Listing;
 
   return (
     <>
@@ -48,9 +51,17 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
           article.publishedAt ? (
             <>
               Published {formatDate(article.publishedAt)} ·{" "}
-              <Link href={url} target="_blank" className="break-all underline underline-offset-4">
-                {url}
-              </Link>
+              {listing === "hidden" || listing === "ai_only" ? (
+                // No page to link to.
+                LISTING_LABELS[listing]
+              ) : (
+                <>
+                  {listing === "unlisted" && "Unlisted · "}
+                  <Link href={url} target="_blank" className="break-all underline underline-offset-4">
+                    {url}
+                  </Link>
+                </>
+              )}
             </>
           ) : (
             "Draft"
@@ -75,6 +86,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
           content: displayDoc(article) as Doc,
           collection: article.collection?.slug ?? null,
           showUpdatedDate: article.showUpdatedDate,
+          listing,
         }}
         collections={await collectionOptions(membership.project.id)}
         mediaBaseUrl={mediaPublicUrl()}

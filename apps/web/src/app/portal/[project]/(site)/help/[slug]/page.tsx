@@ -21,6 +21,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/help/
   return {
     title: `${article.title} · ${article.project.name}`,
     description: text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text,
+    // Unlisted: for people with the link, not search engines.
+    ...(article.listing === "UNLISTED" && { robots: { index: false } }),
   };
 }
 

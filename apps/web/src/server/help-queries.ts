@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown } from "@tuti/content";
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
@@ -12,35 +12,42 @@ export function collectionOptions(projectId: string) {
 }
 
 /**
- * What readers may see: published articles. A deleted article is never published (a check
- * constraint), so `publishedAt` alone would do; `deletedAt` says so where it's read.
+ * What readers may see: published articles, as far as each one's listing lets them. A deleted
+ * article is never published (a check constraint), so `publishedAt` alone would do; `deletedAt`
+ * says so where it's read. Raw SQL readers (help-search.ts, help-readers.ts, help-insights.ts)
+ * spell the same out.
  */
-const published = { publishedAt: { not: null }, deletedAt: null };
+const published = { publishedAt: { not: null }, deletedAt: null } as const;
+/** In the help center's lists, search, the sitemap and llms.txt: listed everywhere. */
+export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies Prisma.ArticleWhereInput;
+/** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
+export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLISTED"] } } satisfies Prisma.ArticleWhereInput;
 
-/** The portal's /help: collections in order with their published articles, and the published articles in none. */
+/** The portal's /help (and the widget's, and llms.txt): collections in order with their listed articles, and the listed articles in none. */
 export async function helpCenter(projectSlug: string) {
-  const articleSelect = { where: published, orderBy: { title: "asc" }, select: { slug: true, title: true } } as const;
+  const articleSelect = { where: listedArticle, orderBy: { title: "asc" }, select: { slug: true, title: true } } as const;
   const [collections, uncollected] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
       select: { slug: true, name: true, description: true, articles: articleSelect },
     }),
-    prisma.article.findMany({ ...articleSelect, where: { ...published, project: { slug: projectSlug }, collectionId: null } }),
+    prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
   ]);
   return { collections: collections.filter((c) => c.articles.length > 0), uncollected };
 }
 
-/** A published article on the portal, once per request (its page and its metadata both read it). */
+/** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */
 export const publishedArticle = cache(async (projectSlug: string, slug: string) => {
   const article = await prisma.article.findFirst({
-    where: { project: { slug: projectSlug }, slug, ...published },
+    where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
       title: true,
       body: true,
       content: true,
       publishedAt: true,
       showUpdatedDate: true,
+      listing: true,
       collection: { select: { name: true } },
       project: { select: { name: true } },
       // When it was last edited: its newest revision.

@@ -19,10 +19,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
 import {
@@ -36,10 +37,10 @@ import {
   unpublishArticle,
 } from "@/server/help";
 
-type Article = { slug: string; title: string; content: Doc; collection: string | null; showUpdatedDate: boolean };
+type Article = { slug: string; title: string; content: Doc; collection: string | null; showUpdatedDate: boolean; listing: Listing };
 type CollectionOption = { slug: string; name: string };
 
-/** Writes a new article (`article` null) or edits one: title, collection and text. */
+/** Writes a new article (`article` null) or edits one: title, collection, listing and text. */
 export function ArticleForm({
   projectSlug,
   article,
@@ -62,6 +63,7 @@ export function ArticleForm({
     return result;
   }, {});
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
+  const [listing, setListing] = useState<Listing>(article?.listing ?? "everywhere");
 
   return (
     <form {...keepingFields(action)}>
@@ -94,6 +96,22 @@ export function ArticleForm({
               ))}
             </SelectContent>
           </Select>
+        </Field>
+        <Field>
+          <FieldLabel id="article-listing-label">Listing</FieldLabel>
+          <Select name="listing" items={LISTING_LABELS} value={listing} onValueChange={(value) => setListing(value as Listing)}>
+            <SelectTrigger className="w-full sm:w-64" aria-labelledby="article-listing-label" aria-describedby="article-listing-description">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {LISTINGS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {LISTING_LABELS[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription id="article-listing-description">{LISTING_DESCRIPTIONS[listing]}</FieldDescription>
         </Field>
         <Field>
           <FieldLabel id="article-body-label">Article</FieldLabel>

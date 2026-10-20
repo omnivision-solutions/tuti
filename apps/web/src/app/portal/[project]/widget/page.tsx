@@ -14,6 +14,7 @@ import { WidgetHelp } from "@/components/widget-help";
 import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
+import { listedArticle } from "@/server/help-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { widgetSettings } from "@/server/operations/widget";
@@ -41,7 +42,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       select: {
         id: true,
         boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
-        articles: { where: { publishedAt: { not: null } }, take: 1, select: { id: true } },
+        articles: { where: listedArticle, take: 1, select: { id: true } },
       },
     }),
     widgetSettings({ slug }),
@@ -52,7 +53,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   }
   // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
   const css = brandCss(brand.color);
-  const hasHelp = project.articles.length > 0;
+  // Help once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
+  const hasHelp = project.articles.length > 0 || (tabParam === "help" && typeof article === "string");
   const tabs = TABS.filter(({ tab }) => tab !== "help" || hasHelp);
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
 

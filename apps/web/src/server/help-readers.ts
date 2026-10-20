@@ -75,7 +75,10 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
   return {};
 }
 
-/** Counts a view of a published article: one counter per article and day (UTC). Skips crawlers. */
+/**
+ * Counts a view of a published article whose page is served (listed everywhere or unlisted): one
+ * counter per article and day (UTC). Skips crawlers.
+ */
 export async function countArticleView(projectSlug: string, slug: string): Promise<void> {
   if (BOT.test((await headers()).get("user-agent") ?? "")) {
     return;
@@ -85,6 +88,7 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     SELECT a.id, (now() AT TIME ZONE 'UTC')::date, 1
     FROM article a JOIN project p ON p.id = a."projectId"
     WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      AND a.listing IN ('EVERYWHERE', 'UNLISTED')
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 

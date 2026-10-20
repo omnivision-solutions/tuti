@@ -36,7 +36,8 @@ export type HelpAnswer = {
   status: "answered" | "no_answer" | "failed";
   /** Plain text: paragraphs separated by blank lines, "- " list items. */
   answer: string | null;
-  sources: { slug: string; title: string; url: string }[];
+  /** `url` is null for an AI-only article: it has no page, so the answer names it without a link. */
+  sources: { slug: string; title: string; url: string | null }[];
 };
 
 const SYSTEM = `You answer questions from a product's users, using only the product's help center.
@@ -80,7 +81,11 @@ function sourcesOf(sections: AnswerSection[], slug: string): HelpAnswer["sources
   const seen = new Set<string>();
   return sections
     .filter((section) => !seen.has(section.articleId) && seen.add(section.articleId))
-    .map((section) => ({ slug: section.slug, title: section.title, url: `${portalUrl(slug)}/help/${section.slug}` }));
+    .map((section) => ({
+      slug: section.slug,
+      title: section.title,
+      url: section.listing === "AI_ONLY" ? null : `${portalUrl(slug)}/help/${section.slug}`,
+    }));
 }
 
 /** Logs the question, or refuses it (429) if the asker or the project asked too often in the last hour. */
@@ -145,16 +150,28 @@ export async function answerQuestion(
     reply = await complete({ ...answerPrompt(question, sections), maxTokens: 1000, timeoutMs });
   } catch (error) {
     log.warn("AI help answer failed", { projectId, error });
-    return finish("failed", null, sections);
+    return finish("failed", null, await stillUsable(projectId, sections));
   }
   const answer = readAnswer(reply, sections);
   if (!answer) {
     return finish("no_answer");
   }
-  // An article unpublished while the model wrote may be in the answer: don't show it.
-  const articleIds = [...new Set(answer.cited.map((section) => section.articleId))];
-  const stillPublished = await prisma.article.count({ where: { id: { in: articleIds }, projectId, publishedAt: { not: null } } });
-  return stillPublished === articleIds.length ? finish("answered", answer) : finish("no_answer");
+  // An article unpublished or hidden while the model wrote may be in the answer: don't show it.
+  const cited = await stillUsable(projectId, answer.cited);
+  return cited.length === answer.cited.length ? finish("answered", { ...answer, cited }) : finish("no_answer");
+}
+
+/**
+ * The sections whose articles AI answers may still use, read again after the model's wait (they may
+ * have been unpublished or hidden since), each with its listing now (one made AI only isn't linked).
+ */
+async function stillUsable(projectId: string, sections: AnswerSection[]): Promise<AnswerSection[]> {
+  const current = await prisma.article.findMany({
+    where: { id: { in: sections.map((section) => section.articleId) }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
+    select: { id: true, listing: true },
+  });
+  const listing = new Map(current.map((article) => [article.id, article.listing]));
+  return sections.filter((section) => listing.has(section.articleId)).map((section) => ({ ...section, listing: listing.get(section.articleId)! }));
 }
 
 /** The asker's thumbs up or down on an answer; rating again replaces it. */
