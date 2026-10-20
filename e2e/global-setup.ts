@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 
 import { FAKE_OPENAI_KEY, startGithubFake, startModelFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
@@ -17,6 +18,12 @@ import { MAIL_DIR } from "./mail";
  * with background jobs running inline.
  */
 export default async function globalSetup() {
+  // A server already on the port (another checkout's run) would answer for ours, which then
+  // fails to start: the journeys would quietly test that other code. (Checked again below: the
+  // run waits for its own server to say it's listening.)
+  if (await portTaken(new URL(APP_URL))) {
+    throw new Error(`Something is already serving ${APP_URL} (another test run?). Stop it, or set E2E_PORT to a free port.`);
+  }
   rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
   rmSync(MAIL_DIR, { recursive: true, force: true });
   mkdirSync(MAIL_DIR);
@@ -57,13 +64,19 @@ export default async function globalSetup() {
       ...github.env,
       NODE_ENV: "production",
     },
-    stdio: ["ignore", "ignore", "inherit"],
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  // Next.js logs "Ready in" once *this* server listens; a server that couldn't take the port exits
+  // instead, so another run's server answering on it can't pass for ours.
+  let output = "";
+  server.stdout.on("data", (chunk: Buffer) => {
+    output = (output + chunk.toString()).slice(-4096);
   });
 
   const deadline = Date.now() + 30_000;
-  while (!(await fetch(APP_URL).then((r) => r.ok, () => false))) {
+  while (!output.includes("Ready in") || !(await fetch(APP_URL).then((r) => r.ok, () => false))) {
     if (server.exitCode !== null || Date.now() > deadline) {
-      throw new Error(`The web app didn't start on ${APP_URL} (did you run pnpm build?)`);
+      throw new Error(`The web app didn't start on ${APP_URL} (did you run pnpm build? is the port free?)`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -74,4 +87,19 @@ export default async function globalSetup() {
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };
+}
+
+/** Whether something accepts connections on the URL's port (a timeout counts as taken). */
+function portTaken({ hostname, port }: URL) {
+  return new Promise<boolean>((resolve) => {
+    const socket = createConnection({ host: hostname, port: Number(port) });
+    const done = (taken: boolean) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(taken);
+    };
+    const timer = setTimeout(() => done(true), 1_000);
+    socket.once("connect", () => done(true));
+    socket.once("error", (error: NodeJS.ErrnoException) => done(error.code !== "ECONNREFUSED"));
+  });
 }
