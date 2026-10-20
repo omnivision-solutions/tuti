@@ -286,6 +286,17 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await team.getByRole("button", { name: "Create key" }).click();
   const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help answers test now" });
   const key = (await shown.locator("code").first().innerText()).trim();
+
+  // How the AI answers: a tone, short answers, and a topic it doesn't touch.
+  await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
+  await team.getByRole("radio", { name: "Short" }).check();
+  await team.getByLabel("Standing instructions").fill("Call the product Acme.");
+  await team.getByLabel("Off-limits topics").fill("refund\nlegal advice");
+  await team.getByRole("button", { name: "Save AI answers" }).click();
+  await expect(team.getByText("AI answers saved")).toBeVisible();
+  await team.reload();
+  await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
+  await checkpoint(team, "team-ai-answers-settings");
   const api = async (path: string, body: object) => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
       method: "POST",
@@ -325,6 +336,10 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
   expect(asked[0]!.user).toContain(body);
+  // The team's settings go with it, apart from the sections.
+  expect(asked[0]!.user).toContain('"tone": "Friendly and plain"');
+  expect(asked[0]!.user).toContain('"standingInstructions": "Call the product Acme."');
+  expect(asked[0]!.system).toContain("Keep it very short");
   await ai.getByRole("button", { name: "Helpful", exact: true }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
   await source.click();
@@ -355,12 +370,23 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
 
-  // The team sees both as gaps in the insights (the answered question isn't one).
+  // An off-limits topic: the fixed reply, without asking the model.
+  const offLimits = "Can I get a Refund for last month?";
+  await visitor.goto(`/help?${new URLSearchParams({ q: offLimits })}`);
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("I can't help with that here.")).toBeVisible();
+  await expect(ai.getByRole("link", { name: "Post this as feedback" })).toBeVisible();
+  await checkpoint(visitor, "portal-help-ai-off-limits");
+  expect((await modelRequests()).filter((request) => request.user.includes(offLimits))).toEqual([]);
+
+  // The team sees them as gaps in the insights (the answered question isn't one), each with why.
   await team.goto(`/app/${slug}/help/insights`);
   // A gap's row (the failed searches list the question too).
   const gap = (text: string) => team.getByRole("listitem").filter({ hasText: text, has: team.getByRole("button", { name: "Dismiss" }) });
   await expect(gap(unrelated)).toContainText("1 unanswered");
+  await expect(gap(unrelated)).toContainText("No matching article");
   await expect(gap(another)).toBeVisible();
+  await expect(gap(offLimits)).toContainText("Off-limits");
   await expect(gap(question)).toHaveCount(0);
   await checkpoint(team, "team-help-gaps");
   // Dismissing one hides it.

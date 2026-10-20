@@ -21,6 +21,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import * as apiKeys from "./api-keys";
+import * as assistant from "./assistant";
 import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
@@ -53,6 +54,7 @@ const modules = {
   changelog,
   "changelog-seen": changelogSeen,
   "api-keys": apiKeys,
+  assistant,
   boards,
   branding,
   github,
@@ -107,6 +109,12 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  assistant: {
+    saveAssistantSettings: {
+      allowed: "ADMIN",
+      call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: "refund" })),
+    },
   },
   branding: {
     saveBranding: {

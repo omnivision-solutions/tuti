@@ -24,17 +24,17 @@ test("AI is off without an OpenRouter key", async () => {
   await expect(complete({ system: "s", user: "u" })).rejects.toThrow("OPENROUTER_API_KEY is not set");
 });
 
-test("sends the system and user messages to the configured model and returns the reply", async () => {
+test("sends the system and user messages to the configured model, with the token cap, and returns the reply", async () => {
   useFake();
   expect(aiEnabled()).toBe(true);
   model.reply("Hello");
   expect(await complete({ system: "Be brief", user: "Hi" })).toBe("Hello");
   vi.stubEnv("AI_MODEL", "acme/tiny");
   model.reply("Again");
-  expect(await complete({ system: "Be brief", user: "Hi again" })).toBe("Again");
+  expect(await complete({ system: "Be brief", user: "Hi again", maxTokens: 300 })).toBe("Again");
   expect(model.requests).toEqual([
-    { model: DEFAULT_AI_MODEL, system: "Be brief", user: "Hi" },
-    { model: "acme/tiny", system: "Be brief", user: "Hi again" },
+    { model: DEFAULT_AI_MODEL, system: "Be brief", user: "Hi", maxTokens: 4000 },
+    { model: "acme/tiny", system: "Be brief", user: "Hi again", maxTokens: 300 },
   ]);
 });
 

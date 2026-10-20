@@ -3,8 +3,8 @@ import type { AddressInfo } from "node:net";
 
 export const FAKE_MODEL_KEY = "sk-or-test-fake";
 
-/** What a request asked: its model and messages. */
-export type ModelRequest = { model: string; system: string; user: string };
+/** What a request asked: its model, messages and token cap. */
+export type ModelRequest = { model: string; system: string; user: string; maxTokens?: number };
 
 /** A scripted answer: a reply (status 200) or an error status. */
 type Step = { status: number; content?: string; during?: () => Promise<unknown>; match?: string };
@@ -54,7 +54,7 @@ export async function startModelFake(): Promise<ModelFake> {
       if (req.method === "GET" && req.url === "/_fake/requests") {
         return send(200, requests);
       }
-      let body: { model?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown };
+      let body: { model?: unknown; max_tokens?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -78,7 +78,7 @@ export async function startModelFake(): Promise<ModelFake> {
         unexpected.push(`a request without a model, a system and a user message: ${raw.slice(0, 200)}`);
         return send(400, { error: { message: "expected a model, a system and a user message" } });
       }
-      requests.push({ model: body.model, system, user });
+      requests.push({ model: body.model, system, user, ...(typeof body.max_tokens === "number" && { maxTokens: body.max_tokens }) });
       let index = steps.findIndex((step) => step.match !== undefined && user.includes(step.match));
       if (index === -1) {
         index = steps.findIndex((step) => step.match === undefined);

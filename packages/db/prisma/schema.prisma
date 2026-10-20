@@ -106,45 +106,52 @@ enum TeamRole {
 }
 
 model Project {
-  id                  String   @id @default(cuid())
-  slug                String   @unique
-  name                String
+  id                    String       @id @default(cuid())
+  slug                  String       @unique
+  name                  String
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
-  ssoSecret           String?
+  ssoSecret             String?
   /// Last post number handed out; posts are numbered #1, #2, … per project.
-  postCount           Int      @default(0)
+  postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
-  changelogCount      Int      @default(0)
+  changelogCount        Int          @default(0)
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
-  changelogTone       String   @default("")
-  changelogExampleIds String[] @default([])
+  changelogTone         String       @default("")
+  changelogExampleIds   String[]     @default([])
   /// AI edits to changelog entries (changelog.rewrite) in the hour that started at
   /// changelogAiHour, for the per-project hourly cap.
-  changelogAiHour     DateTime @default(now())
-  changelogAiCount    Int      @default(0)
+  changelogAiHour       DateTime     @default(now())
+  changelogAiCount      Int          @default(0)
   /// The widget's launcher on customers' sites (see the widget.* operations): its
   /// label, colour (`#rrggbb`; null is the brand green, with its dark-mode shade),
   /// corner ("bottom-right" or "bottom-left"), and up to 5 quick links shown at the
   /// top of the panel (`[{ label, url }]`, https only).
-  widgetLabel         String   @default("Feedback")
-  widgetColor         String?
-  widgetPosition      String   @default("bottom-right")
-  widgetLinks         Json     @default("[]")
+  widgetLabel           String       @default("Feedback")
+  widgetColor           String?
+  widgetPosition        String       @default("bottom-right")
+  widgetLinks           Json         @default("[]")
   /// Branding for the portal and its help center (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
   /// footer (`[{ label, url }]`, https only), and whether the footer says "Powered by tuti".
-  brandLogoId         String?
-  brandLogoDarkId     String?
-  brandFaviconId      String?
-  brandColor          String?
-  headerLinks         Json     @default("[]")
-  footerLinks         Json     @default("[]")
-  poweredBy           Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  brandLogoId           String?
+  brandLogoDarkId       String?
+  brandFaviconId        String?
+  brandColor            String?
+  headerLinks           Json         @default("[]")
+  footerLinks           Json         @default("[]")
+  poweredBy             Boolean      @default(true)
+  /// How the help center's AI answers (see the assistant.* operations): a tone, the answer
+  /// length, standing instructions, and off-limits topics (short phrases; a question that
+  /// contains one gets a fixed reply without asking the model).
+  assistantTone         String       @default("")
+  assistantLength       AnswerLength @default(MEDIUM)
+  assistantInstructions String       @default("")
+  assistantOffLimits    String[]     @default([])
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   team                 TeamMember[]
   boards               Board[]
@@ -158,10 +165,10 @@ model Project {
   githubInstallation   GithubInstallation?
   postLinks            PostLink[]
   webhooks             Webhook[]
-  media                Media[]  @relation("projectMedia")
-  brandLogo            Media?   @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
-  brandLogoDark        Media?   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
-  brandFavicon         Media?   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
+  media                Media[]               @relation("projectMedia")
+  brandLogo            Media?                @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
+  brandLogoDark        Media?                @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
+  brandFavicon         Media?                @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
@@ -262,8 +269,8 @@ model Media {
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
-  project  Project @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
-  uploader User    @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  project    Project   @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
+  uploader   User      @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   /// Projects whose branding uses it (see Project.brandLogoId).
   logoOf     Project[] @relation("brandLogo")
   logoDarkOf Project[] @relation("brandLogoDark")
@@ -974,6 +981,27 @@ enum HelpAnswerStatus {
   FAILED
 }
 
+/// Why a question got "I don't know" (NO_ANSWER), so the log's labels mean one thing.
+enum HelpNoAnswerCause {
+  /// No published section was close enough; the model wasn't asked.
+  NO_RELEVANT_SECTION
+  /// The model gave no answer, or cited none of the sections it was given.
+  NO_VALID_CITATION
+  /// An article it cited was unpublished or hidden while the model wrote.
+  SOURCE_UNPUBLISHED
+  /// The question names one of the project's off-limits topics; the model wasn't asked.
+  OFF_LIMITS
+  /// Asked before causes were recorded.
+  UNKNOWN
+}
+
+/// How long the help center's AI answers are (each is a sentence in the prompt and a cap on the reply).
+enum AnswerLength {
+  SHORT
+  MEDIUM
+  DETAILED
+}
+
 /// Where a question to the help center's AI was asked.
 enum HelpQuestionSource {
   /// The portal's /help.
@@ -995,6 +1023,8 @@ model HelpQuestion {
   question   String
   source     HelpQuestionSource
   status     HelpAnswerStatus   @default(FAILED)
+  /// Why it's "I don't know" (NO_ANSWER only).
+  cause      HelpNoAnswerCause?
   answer     String?
   /// The articles the answer cites.
   articleIds String[]           @default([])
