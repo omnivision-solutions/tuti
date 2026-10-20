@@ -166,14 +166,26 @@ test("the team writes a help article in a collection, publishes it, and a visito
   // The team edits it twice; its history shows what changed since the first version.
   await team.getByRole("link", { name: "Inviting your team" }).click();
   await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  const paragraph = editor.locator("p", { hasText: "Owners and admins send invites" });
   for (const sentence of [" Members can ask them.", " Invites last a week."]) {
-    await team.getByRole("textbox", { name: "Article" }).getByText("Owners and admins send invites", { exact: false }).click();
-    await team.keyboard.press("End");
+    // The caret goes to the paragraph's end (End only reaches the end of a visual line).
+    await paragraph.click();
+    await paragraph.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      getSelection()!.removeAllRanges();
+      getSelection()!.addRange(range);
+    });
     await team.keyboard.type(sentence);
     // Done once the save's response is in (a toast from the first save may still be showing at the second).
     const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    const before = await editor.elementHandle();
     await team.getByRole("button", { name: "Save", exact: true }).click();
     await saved;
+    // The saved article comes back as a new form (it's keyed on the content), maybe a moment after
+    // the save's response: edit that one, not the old editor on its way out.
+    await expect.poll(() => before!.evaluate((element) => element.isConnected)).toBe(false);
     await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   }
   await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
