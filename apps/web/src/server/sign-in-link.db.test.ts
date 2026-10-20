@@ -1,25 +1,29 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test } from "vitest";
 
-import { GET as openLink } from "@/app/portal/[project]/(site)/sign-in/link/route";
+import SignInLinkPage from "@/app/portal/[project]/(site)/sign-in/link/page";
 import { auth } from "@/lib/auth";
 import { SIGN_IN_LINK_MINUTES, SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
-import { actAs, createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, redirectTarget, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
-import { emailSignInLink } from "./sign-in-link";
+import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
 
 let project: Awaited<ReturnType<typeof createProject>>;
 
 beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
   actAs(null);
+  request.host = "";
 });
 
 const newAddress = () => `e2e-${randomUUID()}@example.com`;
 const portalHost = (slug = project.slug) => `${slug}.localhost:3100`;
+const FAILED = "/sign-in?link=failed";
 
 function ask(email: string, next = "/", slug = project.slug) {
   const form = new FormData();
@@ -34,22 +38,33 @@ async function linkTo(email: string) {
   return new URL(message.text.split(/\s+/).find((word) => word.includes("/sign-in/link?"))!);
 }
 
-/** Opens `link` in a browser on `host`: where it goes, and who it signed in. */
-async function open(link: URL, host = link.host) {
-  const slug = host.split(".")[0]!;
-  const response = await openLink(new Request(`http://${host}${link.pathname}${link.search}`, { headers: { host } }), {
-    params: Promise.resolve({ project: slug }),
-  });
-  const cookie = response.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-  const session = cookie ? await auth.api.getSession({ headers: new Headers({ cookie, host }) }) : null;
-  const location = new URL(response.headers.get("location")!, `http://${host}`);
-  return { location: location.origin === `http://${host}` ? location.pathname + location.search : location.href, user: session?.user ?? null };
+/** Opens `link` on `host`: the confirm page's text, or where it sent the browser instead. */
+async function view(link: URL, host = link.host) {
+  const page = SignInLinkPage({
+    params: Promise.resolve({ project: host.split(".")[0]! }),
+    searchParams: Promise.resolve(Object.fromEntries(link.searchParams)),
+  } as PageProps<"/portal/[project]/sign-in/link">);
+  const rendered = await page.catch((error: unknown) => error);
+  if ((rendered as { digest?: string }).digest?.startsWith("NEXT_REDIRECT;")) {
+    return { location: await redirectTarget(Promise.reject(rendered)) };
+  }
+  const html = renderToStaticMarkup(rendered as React.ReactElement).replace(/<script[^>]*>[\s\S]*?<\/script>/g, "");
+  return { text: html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() };
 }
 
-test("the email has a one-time link to this portal that signs a new address up, named after it", async () => {
+/** Clicks "Sign in" on the confirm page of `link`, on `host`: where it goes, and who it signed in. */
+async function confirm(link: URL, host = link.host) {
+  request.host = host;
+  const form = new FormData();
+  form.set("token", link.searchParams.get("token") ?? "");
+  form.set("next", link.searchParams.get("next") ?? "/");
+  const before = new Date(Date.now() - 1);
+  const location = await redirectTarget(confirmSignInLink(form));
+  const session = await prisma.session.findFirst({ where: { createdAt: { gt: before } }, include: { user: true } });
+  return { location, user: session?.user ?? null };
+}
+
+test("the email has a link to a page that asks to confirm, then signs a new address up, named after it", async () => {
   const email = newAddress();
   expect(await ask(email)).toEqual({ sentTo: email });
 
@@ -60,15 +75,28 @@ test("the email has a one-time link to this portal that signs a new address up, 
   const link = await linkTo(email);
   expect(link.origin + link.pathname).toBe(`http://${portalHost()}/sign-in/link`);
 
-  const { location, user } = await open(link);
+  expect(await view(link)).toEqual({ text: `Sign in to ${project.name} as ${email} Sign in` });
+  const { location, user } = await confirm(link);
   expect(location).toBe("/");
   expect(user).toMatchObject({ email, name: email.split("@")[0], emailVerified: true });
 
-  // Used once.
-  expect(await open(link)).toEqual({ location: "/sign-in?link=failed&error=INVALID_TOKEN", user: null });
+  // Used once: confirming again fails, and the page now sends them to ask for a new one.
+  expect(await confirm(link)).toEqual({ location: FAILED, user: null });
+  expect(await view(link)).toEqual({ location: FAILED });
 });
 
-test("an existing account gets the same answer and email, and the link signs in that account", async () => {
+test("opening the link uses nothing up (mail scanners open links too); only confirming does", async () => {
+  const email = newAddress();
+  await ask(email);
+  const link = await linkTo(email);
+  await view(link);
+  await view(link);
+  expect(await prisma.user.count({ where: { email } })).toBe(0);
+  expect(await prisma.session.count({ where: { user: { email } } })).toBe(0);
+  expect((await confirm(link)).user).toMatchObject({ email });
+});
+
+test("an existing account gets the same answer and email; the page names that address and signs in that account", async () => {
   const existing = await signUp("Ada");
   const unknown = newAddress();
   const [forExisting, forUnknown] = [await ask(existing.email), await ask(unknown)];
@@ -78,8 +106,11 @@ test("an existing account gets the same answer and email, and the link signs in 
   expect(a.subject).toBe(b.subject);
   expect(a.text.replace(/token=\S+/, "")).toBe(b.text.replace(/token=\S+/, ""));
 
-  const { user } = await open(await linkTo(existing.email));
-  expect(user).toMatchObject({ id: existing.id, name: "Ada" });
+  // The address comes from the stored link, whatever the URL says.
+  const link = await linkTo(existing.email);
+  link.searchParams.set("email", unknown);
+  expect(await view(link)).toEqual({ text: `Sign in to ${project.name} as ${existing.email} Sign in` });
+  expect((await confirm(link)).user).toMatchObject({ id: existing.id, name: "Ada" });
 });
 
 test(`a link expires after ${SIGN_IN_LINK_MINUTES} minutes`, async () => {
@@ -94,7 +125,8 @@ test(`a link expires after ${SIGN_IN_LINK_MINUTES} minutes`, async () => {
   expect(verification.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(SIGN_IN_LINK_MINUTES * 60_000);
 
   await prisma.verification.update({ where: { id: verification.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
-  expect(await open(link)).toEqual({ location: "/sign-in?link=failed&error=INVALID_TOKEN", user: null });
+  expect(await view(link)).toEqual({ location: FAILED });
+  expect(await confirm(link)).toEqual({ location: FAILED, user: null });
   expect(await prisma.user.count({ where: { email } })).toBe(0);
 });
 
@@ -104,12 +136,16 @@ test("a link only works on the portal that sent it", async () => {
   const link = await linkTo(email);
   const other = await createProject(await signUp("Other owner"));
 
-  expect(await open(link, portalHost(other.slug))).toEqual({ location: "/sign-in?link=failed", user: null });
+  expect(await view(link, portalHost(other.slug))).toEqual({ location: FAILED });
+  expect(await confirm(link, portalHost(other.slug))).toEqual({ location: FAILED, user: null });
+  // Nor on the app host, where there's no portal.
+  expect(await confirm(link, "tuti.localhost:3100")).toEqual({ location: FAILED, user: null });
   // A made-up or missing token goes the same way.
-  expect(await open(new URL(`http://${portalHost()}/sign-in/link?token=nope`))).toEqual({ location: "/sign-in?link=failed", user: null });
-  expect(await open(new URL(`http://${portalHost()}/sign-in/link`))).toEqual({ location: "/sign-in?link=failed", user: null });
+  expect(await view(new URL(`http://${portalHost()}/sign-in/link?token=nope`))).toEqual({ location: FAILED });
+  expect(await view(new URL(`http://${portalHost()}/sign-in/link`))).toEqual({ location: FAILED });
+  expect(await confirm(new URL(`http://${portalHost()}/sign-in/link?token=nope`))).toEqual({ location: FAILED, user: null });
   // Still good where it belongs.
-  expect((await open(link)).user).toMatchObject({ email });
+  expect((await confirm(link)).user).toMatchObject({ email });
 });
 
 test("it goes back to the page they came from, on this portal only", async () => {
@@ -117,7 +153,9 @@ test("it goes back to the page they came from, on this portal only", async () =>
   await ask(email, "/b/feature-requests?title=Dark+mode");
   const link = await linkTo(email);
   expect(link.searchParams.get("next")).toBe("/b/feature-requests?title=Dark+mode");
-  expect((await open(link)).location).toBe("/b/feature-requests?title=Dark+mode");
+  expect((await confirm(link)).location).toBe("/b/feature-requests?title=Dark+mode");
+  // A dead link keeps it too, for the new link they ask for.
+  expect(await view(link)).toEqual({ location: `${FAILED}&next=%2Fb%2Ffeature-requests%3Ftitle%3DDark%2Bmode` });
 
   for (const next of ["//evil.example/", "https://evil.example/", "/\t/evil.example"]) {
     const address = newAddress();
@@ -127,7 +165,8 @@ test("it goes back to the page they came from, on this portal only", async () =>
     // Nor when someone edits the link.
     const edited = new URL(asked);
     edited.searchParams.set("next", next);
-    expect(await open(edited)).toMatchObject({ location: "/", user: { email: address } });
+    expect(await view(edited)).toMatchObject({ text: expect.stringContaining(address) });
+    expect(await confirm(edited)).toMatchObject({ location: "/", user: { email: address } });
   }
 });
 

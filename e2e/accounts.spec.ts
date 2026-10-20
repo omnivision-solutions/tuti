@@ -106,7 +106,12 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   const message = await latestEmailTo(email);
   expect(message.subject).toBe("Sign in to Acme");
   const link = linkIn(message, `${portalUrl(slug)}/sign-in/link?`);
+  // Opening the link only asks to confirm (mail scanners open links too), naming the address.
   await vera.goto(link);
+  await expect(vera.getByText("Sign in to Acme")).toBeVisible();
+  await expect(vera.getByText(`as ${email}`)).toBeVisible();
+  await checkpoint(vera, "portal-sign-in-link-confirm");
+  await vera.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await vera.waitForURL(/\/b\/feature-requests\?title=/);
   await expect(vera.getByLabel("Title")).toHaveValue(title);
   await expect(vera.getByRole("button", { name: "Account" })).toBeVisible();

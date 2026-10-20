@@ -321,6 +321,8 @@ const matrix: Matrix = {
       allowed: "public",
       call: (slug) => signInLink.emailSignInLink(slug, "/", form({ email: `e2e-${crypto.randomUUID()}@example.com` })),
     },
+    // The emailed token is the permission (a dead one goes back to the sign-in page).
+    confirmSignInLink: { allowed: "public", call: () => signInLink.confirmSignInLink(form({ token: "not-a-token", next: "/" })) },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },

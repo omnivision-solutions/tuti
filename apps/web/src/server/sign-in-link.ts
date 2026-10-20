@@ -4,10 +4,13 @@ import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
+import { resolveHost } from "@/lib/hosts";
 import { hashSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 import {
@@ -15,6 +18,8 @@ import {
   SIGN_IN_LINKS_PER_PORTAL_PER_HOUR,
   type SignInLinkMetadata,
 } from "@/lib/sign-in-link";
+
+import { failedSignInLinkPath, pendingSignInLink } from "./sign-in-link-lookup";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
 
@@ -59,6 +64,34 @@ export async function emailSignInLink(
     return { error: "We couldn't send the email. Try again." };
   }
   return { sentTo: email };
+}
+
+/**
+ * "Sign in" on the page a sign-in link opens (/sign-in/link): uses the token up and
+ * signs the person in on this portal (making their account if it's new), then goes
+ * to `next`. A button rather than the link itself, so mail scanners that open links
+ * can't use it up, and so people see whose account they're signing in to.
+ */
+export async function confirmSignInLink(form: FormData) {
+  const token = String(form.get("token") ?? "");
+  const next = safeRedirectPath(String(form.get("next") ?? ""), "/");
+  const requestHeaders = await headers();
+  // The portal is the one this request came to (the session cookie is set there), never a form field.
+  const target = resolveHost(requestHeaders.get("host"));
+  let signedIn = false;
+  if (target.kind === "portal" && (await pendingSignInLink(target.slug, token))) {
+    try {
+      // Better Auth uses the token up (once, if still fresh), makes the account if needed and sets the cookie.
+      await auth.api.magicLinkVerify({ query: { token }, headers: requestHeaders });
+      signedIn = true;
+    } catch (error) {
+      // Used up or expired since the check (Better Auth's redirect error): the same as any other dead link.
+      if (!(error instanceof APIError)) {
+        log.error("Signing in with a sign-in link failed", { error });
+      }
+    }
+  }
+  redirect(signedIn ? next : failedSignInLinkPath(next));
 }
 
 /** Counts the request against the hourly limits (per address on any portal, and per portal), or says which one it's over. */
