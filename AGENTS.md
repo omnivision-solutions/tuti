@@ -9,7 +9,7 @@ Open-source feedback, roadmap and changelog tool. The plan and its checklist liv
 | --- | --- |
 | `pnpm test` | Unit tests (Vitest). Offline: no database, OpenAI or Hatchet, whatever is in `.env` |
 | `pnpm test:db` | Database tests (`*.db.test.ts`): server actions and jobs against a throwaway Postgres (Testcontainers, needs Docker) |
-| `pnpm test:e2e` | Browser journeys (Playwright, `e2e/`) against the production build, a throwaway Postgres and inline jobs; portals on `<project>.localhost`. Needs Docker and `pnpm exec playwright install chromium` once |
+| `pnpm test:e2e` | Browser journeys (Playwright, `e2e/`) against the production build, a throwaway Postgres and inline jobs; portals on `<project>.localhost`. Port 3200; set `E2E_PORT` to run two checkouts at once. Needs Docker and `pnpm exec playwright install chromium` once |
 | `pnpm typecheck` | TypeScript across the monorepo |
 | `pnpm lint` | ESLint |
 | `pnpm build` | Production builds |

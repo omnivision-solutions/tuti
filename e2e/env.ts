@@ -1,4 +1,5 @@
-const PORT = 3200;
+// Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e).
+const PORT = Number(process.env.E2E_PORT || 3200);
 export const APP_URL = `http://localhost:${PORT}`;
 
 /** A project's portal; *.localhost resolves to this machine in Chromium. */

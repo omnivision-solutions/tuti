@@ -17,6 +17,11 @@ import { MAIL_DIR } from "./mail";
  * with background jobs running inline.
  */
 export default async function globalSetup() {
+  // A server already on the port (another checkout's run) would answer for ours, which then
+  // fails to start: the journeys would quietly test that other code.
+  if (await fetch(APP_URL).then(() => true, () => false)) {
+    throw new Error(`Something is already serving ${APP_URL} (another test run?). Stop it, or set E2E_PORT to a free port.`);
+  }
   rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
   rmSync(MAIL_DIR, { recursive: true, force: true });
   mkdirSync(MAIL_DIR);
