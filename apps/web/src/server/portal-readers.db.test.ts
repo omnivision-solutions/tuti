@@ -162,6 +162,7 @@ test("a domain lets in everyone with a verified address there; nobody's emailed 
 
   for (const [entry, message] of [
     ["@gmail.com", "Anyone can get an @gmail.com address: add people from it one by one"],
+    ["@myyahoo.com", "Anyone can get an @myyahoo.com address"],
     ["@nodot", "Enter an email address, or a domain like @acme.com"],
     ["@-bad.com", "Enter an email address, or a domain like @acme.com"],
   ]) {

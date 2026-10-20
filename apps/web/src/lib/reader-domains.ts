@@ -5,15 +5,25 @@
 
 export const DOMAIN_ENTRY = /^@(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
-/** Free email providers: anyone can sign up there. */
+/**
+ * Free email providers: anyone can sign up there. A guard against the obvious mistake, not a full
+ * list: the team picks the domain, and the rest are theirs to judge.
+ */
 export const OPEN_DOMAINS = new Set([
   "gmail.com",
   "googlemail.com",
   "outlook.com",
   "hotmail.com",
+  "hotmail.co.uk",
+  "hotmail.fr",
+  "outlook.de",
   "live.com",
   "msn.com",
   "yahoo.com",
+  "myyahoo.com",
+  "yahoo.co.uk",
+  "yahoo.fr",
+  "yahoo.de",
   "ymail.com",
   "icloud.com",
   "me.com",
@@ -21,6 +31,7 @@ export const OPEN_DOMAINS = new Set([
   "aol.com",
   "proton.me",
   "protonmail.com",
+  "protonmail.ch",
   "pm.me",
   "gmx.com",
   "gmx.net",
@@ -36,6 +47,7 @@ export const OPEN_DOMAINS = new Set([
   "126.com",
   "tutanota.com",
   "tuta.io",
+  "tutamail.com",
   "fastmail.com",
   "hey.com",
 ]);
