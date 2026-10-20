@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { resolveHost } from "@/lib/hosts";
+import { requestTarget } from "@/server/custom-domains";
 import { safeRedirectPath } from "@/lib/redirects";
 import type { SignInLinkMetadata } from "@/lib/sign-in-link";
 
@@ -80,7 +80,7 @@ export async function confirmSignInLink(form: FormData): Promise<{ location: str
   const next = safeRedirectPath(String(form.get("next") ?? ""), "/");
   const requestHeaders = await headers();
   // The portal is the one this request came to (the session cookie is set there), never a form field.
-  const target = resolveHost(requestHeaders.get("host"));
+  const target = await requestTarget(requestHeaders.get("host"));
   let signedIn = false;
   if (target.kind === "portal" && (await pendingSignInLink(target.slug, token))) {
     try {

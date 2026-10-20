@@ -35,6 +35,7 @@ model User {
 
   invitationsCreated  Invitation[]      @relation("InvitationCreatedBy")
   portalReadersAdded  PortalReader[]    @relation("PortalReaderAddedBy")
+  customDomainsAdded  CustomDomain[]    @relation("CustomDomainAddedBy")
   invitationsAccepted Invitation[]      @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
   apiKeysCreated      ApiKey[]
@@ -195,6 +196,7 @@ model Project {
   helpSections         HelpSection[]
   portalReaders        PortalReader[]
   portalReaderEmails   PortalReaderEmail[]
+  customDomain         CustomDomain?
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
   helpGapDismissals    HelpGapDismissal[]
@@ -458,6 +460,28 @@ model PortalReader {
 
   @@unique([projectId, email])
   @@map("portal_reader")
+}
+
+/// A portal's own domain (help.acme.com) in place of <project>.tuti.so, one per project. It serves
+/// the portal once verified: a TXT record at _tuti.<hostname> with this project's token shows the
+/// team controls the domain's DNS. The hostname is unique only among verified ones, so adding
+/// someone else's domain first can't keep them from using it.
+model CustomDomain {
+  id                String    @id @default(cuid())
+  projectId         String    @unique
+  /// Lowercase ASCII (international names as punycode), no port.
+  hostname          String
+  /// Goes in the TXT record, so not a secret: it ties the record to this project.
+  verificationToken String
+  verifiedAt        DateTime?
+  addedById         String?
+  createdAt         DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  addedBy User?   @relation("CustomDomainAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([hostname], where: raw("\"verifiedAt\" IS NOT NULL"))
+  @@map("custom_domain")
 }
 
 /// An email to a new reader of a private portal, kept a day for the send limits (per project, and

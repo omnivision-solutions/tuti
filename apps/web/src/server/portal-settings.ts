@@ -1,6 +1,7 @@
 "use server";
 
 import type { FormState } from "./form-state";
+import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { addPortalReaders as addPortalReadersOperation, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { asAdmin, call } from "./operations/run";
 
@@ -27,4 +28,19 @@ export async function addPortalReaders(projectSlug: string, _state: FormState, f
 
 export async function removePortalReader(projectSlug: string, email: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, DENIED, (context) => call(removePortalReaderOperation, context, { email: String(email) }));
+}
+
+const DOMAIN_DENIED = "Only project owners and admins can change the portal's domain";
+
+/** Settings → Custom domain (see domain.set, domain.verify and domain.remove). */
+export async function saveCustomDomain(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asAdmin(projectSlug, DOMAIN_DENIED, (context) => call(setDomain, context, { hostname: String(formData.get("hostname") ?? "") }));
+}
+
+export async function verifyCustomDomain(projectSlug: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, DOMAIN_DENIED, (context) => call(verifyDomain, context, {}));
+}
+
+export async function removeCustomDomain(projectSlug: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, DOMAIN_DENIED, (context) => call(removeDomain, context, {}));
 }

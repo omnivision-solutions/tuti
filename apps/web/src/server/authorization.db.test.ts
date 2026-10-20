@@ -3,10 +3,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { type TeamRole, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import {
+  type DnsFake,
   FAKE_OPENAI_KEY,
   type ModelFake,
   type OpenAIFake,
   type S3Fake,
+  startDnsFake,
   startModelFake,
   startOpenAIFake,
   startS3Fake,
@@ -338,6 +340,9 @@ const matrix: Matrix = {
     setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
     addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
     removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
+    saveCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.saveCustomDomain(slug, {}, form({ hostname: `help.${slug}.example.org` })) },
+    verifyCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.verifyCustomDomain(slug) },
+    removeCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.removeCustomDomain(slug) },
   },
   posts: {
     createPost: {
@@ -450,6 +455,7 @@ const MATRIX_READER = "00000000-0000-4000-8000-00000000000a";
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
 let s3: S3Fake;
+let dns: DnsFake;
 let model: ModelFake;
 let openai: OpenAIFake;
 let receiver: WebhookReceiver;
@@ -466,6 +472,9 @@ beforeAll(async () => {
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
+  dns = await startDnsFake();
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   const [OWNER, ADMIN, MEMBER, outsider, ssoUser] = await Promise.all(
     ["Owner", "Admin", "Member", "Outsider", "SSO user"].map((name) => signUp(name)),
   );
@@ -478,7 +487,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 
@@ -571,6 +580,9 @@ async function createFixture() {
     ],
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
+  // A custom domain waiting for DNS, with its TXT record there to verify it.
+  const domain = await prisma.customDomain.create({ data: { projectId, hostname: `docs.${project.slug}.example.com`, verificationToken: "matrix" } });
+  dns.txt(`_tuti.${domain.hostname}`, ["tuti-verify=matrix"]);
   const docs = await prisma.helpSection.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", sectionId: docs.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });

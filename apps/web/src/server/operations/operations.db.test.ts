@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type DnsFake, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startDnsFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -98,11 +98,17 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "portalReaders.list": () => ({}),
   "portalReaders.add": () => ({ emails: ["e2e-matrix-reader@example.com"] }),
   "portalReaders.remove": () => ({ email: "e2e-reader@example.com" }),
+  "domain.get": () => ({}),
+  // Like portal.update: admins only in the app.
+  "domain.set": () => ({ hostname: "help.example.org" }),
+  "domain.verify": () => ({}),
+  "domain.remove": () => ({}),
 };
 
 let owner: TestUser;
 let model: ModelFake;
 let openai: OpenAIFake;
+let dns: DnsFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -113,6 +119,9 @@ beforeAll(async () => {
     vi.stubEnv(name, value);
   }
   vi.stubEnv("OPENAI_BASE_URL", openai.url);
+  dns = await startDnsFake();
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -124,7 +133,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), openai.close()]));
+afterAll(() => Promise.all([model.close(), openai.close(), dns.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -144,6 +153,10 @@ async function createFixture() {
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
   await prisma.helpSection.deleteMany({ where: { projectId: project.id } });
+  // A custom domain waiting for DNS, with its TXT record there to verify it.
+  await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
+  await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
+  dns.txt("_tuti.docs.example.com", ["tuti-verify=matrix"]);
   // A reader, to remove.
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
@@ -272,6 +285,7 @@ const snapshot = () =>
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),
+    prisma.customDomain.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {

@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ApiKeys } from "@/components/api-keys";
 import { AssistantSettings } from "@/components/assistant-settings";
 import { BrandingSettings } from "@/components/branding-settings";
+import { CustomDomainSettings } from "@/components/custom-domain";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
@@ -16,11 +17,13 @@ import { WidgetSettings } from "@/components/widget-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { customDomainTarget } from "@/lib/custom-domains";
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
+import { customDomain } from "@/server/operations/domain";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
@@ -61,6 +64,8 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const brand = (await branding({ id: project.id }))!;
   const assistant = await assistantSettings(project.id);
   const { access } = await portalAccess(project.id);
+  const domain = await customDomain(project.id);
+  const portal = new URL(portalUrl(project.slug));
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -138,6 +143,19 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           )}
         </CardContent>
       </Card>
+
+      {/* Only where the server says where customers point their domains (and for one added before that changed). */}
+      {(customDomainTarget() || domain) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Custom domain</CardTitle>
+            <CardDescription>Your portal and help center at an address of your own, like help.example.com.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CustomDomainSettings projectSlug={project.slug} domain={domain} portalAddress={portal.host} protocol={portal.protocol} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
