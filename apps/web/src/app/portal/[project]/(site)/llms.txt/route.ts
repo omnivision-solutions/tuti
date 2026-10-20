@@ -17,7 +17,7 @@ const links = (items: { name: string; url: string; note?: string | null }[]) => 
 
 /**
  * The portal for AI tools (llmstxt.org): what it is, then links to every help
- * article's Markdown, the changelog and the feedback boards. Built as a document
+ * article's Markdown (by section, if the help center has them), the changelog and the feedback boards. Built as a document
  * so names and titles are escaped like any Markdown we serve.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/llms.txt">) {
@@ -30,7 +30,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     return new Response("Not found", { status: 404 });
   }
   const portal = portalUrl(slug);
-  const { collections, uncollected } = await helpCenter(slug);
+  const { collections, uncollected, sections } = await helpCenter(slug);
   const articleLinks = (articles: { slug: string; title: string }[]) =>
     links(articles.map((article) => ({ name: article.title, url: `${portal}/help/${article.slug}.md` })));
   // A collection's heading, its articles, then the collections in it a level down.
@@ -44,8 +44,17 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const content = [
     heading(1, project.name),
     { type: "blockquote", content: [paragraph(`Help center, changelog and feedback for ${project.name}.`)] },
-    ...collections.flatMap((collection) => section(collection, 2)),
-    ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Help center"), articleLinks(uncollected)] : []),
+    ...(sections.length > 0
+      ? // A section's heading, then its collections a level down; the first has the articles in none.
+        sections.flatMap((tab) => [
+          heading(2, tab.name),
+          ...tab.collections.flatMap((collection) => section(collection, 3)),
+          ...(tab.uncollected.length > 0 ? [heading(3, "More articles"), articleLinks(tab.uncollected)] : []),
+        ])
+      : [
+          ...collections.flatMap((collection) => section(collection, 2)),
+          ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Help center"), articleLinks(uncollected)] : []),
+        ]),
     heading(2, "Changelog"),
     links([{ name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` }]),
     heading(2, "Feedback"),

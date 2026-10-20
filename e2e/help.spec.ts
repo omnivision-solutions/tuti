@@ -473,10 +473,32 @@ test("the team splits the help center into sections: the first takes the collect
   await expect(team.getByText("Section saved")).toBeVisible();
   await checkpoint(team, "team-help-sections");
 
-  // Readers' help center lists the collections by section.
+  // Readers get a tab per section with something to read, the first open; an article leads back to its tab.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/help");
-  await expect(visitor.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks", "Getting started", "Billing"]);
+  const main = visitor.getByRole("main");
+  const sectionTabs = main.getByRole("navigation", { name: "Help center sections" });
+  await expect(sectionTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
+  await expect(sectionTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
+  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
+  await checkpoint(visitor, "portal-help-sections");
+  await sectionTabs.getByRole("link", { name: "Guides" }).click();
+  await expect(visitor).toHaveURL(/\/help\?section=guides$/);
+  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await main.getByRole("link", { name: "Card payments" }).click();
+  await main.getByRole("link", { name: "Help center" }).click();
+  await expect(visitor).toHaveURL(/\/help\?section=guides$/);
+  // A search covers every section.
+  await visitor.goto("/help?q=payloads");
+  await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
+
+  // The widget's Help tab has the same tabs, at panel size.
+  await visitor.goto("/widget?tab=help");
+  const panelTabs = visitor.getByRole("navigation", { name: "Help center sections" });
+  await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
+  await panelTabs.getByRole("link", { name: "Guides" }).click();
+  await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await checkpoint(visitor, "widget-help-sections");
 
   // Deleting a section moves its collections to the one next to it.
   await structure.getByRole("button", { name: "Delete API reference" }).click();

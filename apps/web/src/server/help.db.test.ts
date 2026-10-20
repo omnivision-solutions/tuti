@@ -126,6 +126,7 @@ describe("collections", () => {
         { slug: "basics", name: "Basics", description: "", articles: [{ slug: "getting-started", title: "Getting started" }], collections: [] },
       ],
       uncollected: [{ slug: "shortcuts", title: "Shortcuts" }],
+      sections: [],
     });
 
     // Renaming moves its slug; articles follow by id.

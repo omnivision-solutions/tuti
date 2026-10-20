@@ -245,6 +245,8 @@ describe("readers", () => {
         },
       ],
       uncollected: [],
+      // No sections: one page.
+      sections: [],
     });
 
     const portal = `http://${project.slug}.localhost:3100`;

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
 import { HelpAnswer } from "@/components/help-answer";
-import { HelpCollections } from "@/components/help-collections";
+import { HelpCollections, SectionTabs } from "@/components/help-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { helpCenter, publishedArticle } from "@/server/help-queries";
@@ -15,11 +15,14 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
 import { askAPerson } from "@/server/operations/help-escalate";
 
-/** A widget Help URL: the list (with the search, if any) or an article. */
-function helpHref(query: string, article?: string) {
+/** A widget Help URL: the list (with the search, if any, or in a section) or an article. */
+function helpHref(query: string, article?: string, section?: string) {
   const params = new URLSearchParams({ tab: "help" });
   if (query) {
     params.set("q", query);
+  }
+  if (section) {
+    params.set("section", section);
   }
   if (article) {
     params.set("article", article);
@@ -39,17 +42,27 @@ export async function WidgetHelp({
   projectSlug,
   query,
   article,
+  section,
   hasBoard,
 }: {
   projectId: string;
   projectSlug: string;
   query: string;
   article?: string;
+  /** The section (tab) the list shows, or the article was opened from. */
+  section?: string;
   /** Whether the Feedback tab can take a post (the project has a board). */
   hasBoard: boolean;
 }) {
   if (article) {
-    return <WidgetArticle projectSlug={projectSlug} slug={article} back={helpHref(query)} backLabel={query ? "Search results" : "All articles"} />;
+    return (
+      <WidgetArticle
+        projectSlug={projectSlug}
+        slug={article}
+        back={helpHref(query, undefined, query ? undefined : section)}
+        backLabel={query ? "Search results" : "All articles"}
+      />
+    );
   }
   return (
     <div className="flex flex-col gap-6">
@@ -69,7 +82,7 @@ export async function WidgetHelp({
           askAPerson={await askAPerson(projectSlug)}
         />
       )}
-      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} />}
+      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} section={section} />}
     </div>
   );
 }
@@ -103,10 +116,20 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
   );
 }
 
-/** Like the portal's /help: each collection with its published articles and the collections in it, then the articles in none. */
-async function Collections({ projectSlug }: { projectSlug: string }) {
-  const { collections, uncollected } = await helpCenter(projectSlug);
-  return <HelpCollections collections={collections} uncollected={uncollected} href={(slug) => helpHref("", slug)} compact />;
+/**
+ * Like the portal's /help: each collection with its published articles and the collections in it,
+ * then the articles in none; with sections, as tabs (the first by default).
+ */
+async function Collections({ projectSlug, section: sectionParam }: { projectSlug: string; section?: string }) {
+  const help = await helpCenter(projectSlug);
+  const section = help.sections.find((s) => s.slug === sectionParam) ?? help.sections[0];
+  const { collections, uncollected } = section ?? help;
+  return (
+    <>
+      {section && <SectionTabs sections={help.sections} active={section.slug} href={(s) => helpHref("", undefined, s)} compact />}
+      <HelpCollections collections={collections} uncollected={uncollected} href={(slug) => helpHref("", slug, section?.slug)} compact />
+    </>
+  );
 }
 
 async function WidgetArticle({ projectSlug, slug, back, backLabel }: { projectSlug: string; slug: string; back: string; backLabel: string }) {
