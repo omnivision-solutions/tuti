@@ -77,7 +77,17 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
       where: { projectId, deletedAt: null, id: { gt: after } },
       orderBy: { id: "asc" },
       take,
-      select: { id: true, slug: true, title: true, body: true, content: true, publishedAt: true, updatedAt: true, collection: { select: { slug: true, name: true } } },
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        body: true,
+        content: true,
+        publishedAt: true,
+        listing: true,
+        updatedAt: true,
+        collection: { select: { slug: true, name: true } },
+      },
     }),
   )) {
     const folder = article.collection ? `help/${article.collection.slug}` : "help";
@@ -86,6 +96,8 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
       frontMatter({
         title: article.title,
         status: status(article.publishedAt),
+        // The team's own copy: every listing is in it, saying which (as the API names it).
+        listing: article.listing.toLowerCase(),
         publishedAt: article.publishedAt,
         updatedAt: article.updatedAt,
         collection: article.collection?.name ?? null,
@@ -174,7 +186,7 @@ function readme(projectName: string, exportedAt: Date): string {
 
 Exported from Tuti on ${exportedAt.toISOString()}.
 
-- \`help/\`: help center articles, drafts included, in a folder per collection (articles in no collection are directly in \`help/\`).
+- \`help/\`: help center articles, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (articles in no collection are directly in \`help/\`).
 - \`changelog/\`: changelog entries, drafts included, as \`<number>-<title>.md\`.
 - \`posts/\`: feedback posts in a folder per board, as \`<number>-<title>.md\`, with their comments at the end.
 

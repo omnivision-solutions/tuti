@@ -106,6 +106,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "---",
       'title: "Inviting \\"your\\" team"',
       'status: "published"',
+      'listing: "everywhere"',
       "publishedAt: 2026-03-01T10:00:00.000Z",
       "updatedAt: 2026-03-02T10:00:00.000Z",
       'collection: "Getting started"',
@@ -117,7 +118,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "",
     ].join("\n"),
   );
-  expect(files["help/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\npublishedAt: null\nupdatedAt: .+\ncollection: null\n---\n\nNot yet\.\n$/);
+  expect(files["help/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\n---\n\nNot yet\.\n$/);
 
   expect(files["changelog/2-dark-mode.md"]).toBe(
     '---\ntitle: "Dark mode"\nstatus: "published"\npublishedAt: 2026-03-05T10:00:00.000Z\ntags: ["new","improved"]\ncompletes: [7]\n---\n\nIt\'s here.\n',

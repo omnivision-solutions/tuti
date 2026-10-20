@@ -218,9 +218,43 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await team.getByRole("link", { name: "History" }).click();
   await expect(team.getByRole("link", { name: /^Saved / })).toHaveCount(4);
 
-  // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
+  // Listing: unlisted, it's gone from /help but its link still works; hidden, its page is a 404.
   await team.getByRole("link", { name: "Inviting your team" }).click();
   await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  // The page header's line under the title.
+  const header = team.locator("p", { hasText: /^Published / });
+  const setListing = async (name: string, shot?: string) => {
+    await team.getByLabel("Listing").click();
+    if (shot) {
+      await checkpoint(team, shot, { fullPage: false });
+    }
+    await team.getByRole("option", { name }).click();
+    const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await team.getByRole("button", { name: "Save", exact: true }).click();
+    await saved;
+    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  };
+  await setListing("Unlisted", "team-help-article-listing");
+  await expect(team.getByText("Anyone with the link can read it, but it's in no list or search. AI answers can cite it.")).toBeVisible();
+  await expect(header).toContainText("Unlisted ·");
+  await checkpoint(team, "team-help-article-unlisted");
+  await visitor.goto("/help");
+  await expect(visitor.getByText("Nothing here yet")).toBeVisible();
+  await visitor.goto("/help/inviting-your-team");
+  await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
+
+  await setListing("Hidden");
+  await expect(team.getByText("Stays published, but isn't shown anywhere, not even at its link.")).toBeVisible();
+  await expect(header).toContainText("· Hidden");
+  await checkpoint(team, "team-help-article-hidden");
+  expect((await visitor.goto("/help/inviting-your-team"))!.status()).toBe(404);
+  expect((await visitor.request.get(`${portalUrl(slug)}/help/inviting-your-team.md`)).status()).toBe(404);
+
+  await setListing("Everywhere");
+  await visitor.goto("/help");
+  await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+
+  // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
   await team.getByRole("button", { name: "Delete" }).click();
   const deletingArticle = team.getByRole("alertdialog");
   await expect(deletingArticle).toContainText("You can restore it from Recently deleted for 30 days.");

@@ -14,6 +14,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       "cache-control": "public, max-age=300",
       // Search engines index the article's page, not this copy of it.
       link: `<${portalUrl(project)}/help/${slug}>; rel="canonical"`,
+      // Unlisted: for people with the link, not search engines.
+      ...(article.listing === "UNLISTED" && { "x-robots-tag": "noindex" }),
     },
   });
 }

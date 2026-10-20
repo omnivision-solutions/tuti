@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type ArticleListing, prisma } from "@tuti/db";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
 export type HelpSearchResult = { slug: string; title: string; snippet: string };
@@ -8,7 +8,7 @@ const SNIPPET_LENGTH = 200;
 const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
 /**
- * A project's published help articles that match a query, best first, each with a
+ * A project's listed help articles (published, listed everywhere) that match a query, best first, each with a
  * snippet. With OPENAI_API_KEY set, articles with a section that means the same
  * (embeddings, see the articleChanged job) come first, with that section. Then come
  * articles that contain the query's words (Postgres full-text search), with the
@@ -68,17 +68,19 @@ async function meaningMatches(projectId: string, query: string, limit: number, t
       ORDER BY c."articleId", distance, c.position
     ) best
     JOIN article a ON a.id = best."articleId"
-    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
+    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
 }
 
-export type AnswerSection = { articleId: string; slug: string; title: string; heading: string; text: string };
+export type AnswerSection = { articleId: string; slug: string; title: string; listing: ArticleListing; heading: string; text: string };
 
 /**
  * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
- * first: what AI answers may use (help.ask). Null if the question couldn't be embedded in time.
+ * first: what AI answers may use (help.ask). Every listing but hidden: unlisted articles are
+ * public at their link anyway, and AI-only ones are there for this. Null if the question
+ * couldn't be embedded in time.
  */
 export async function answerSections(projectId: string, question: string, limit: number, timeoutMs: number): Promise<AnswerSection[] | null> {
   let vector: string;
@@ -91,10 +93,11 @@ export async function answerSections(projectId: string, question: string, limit:
   }
   // ponytail: scans all of the project's chunks, like meaningMatches.
   return prisma.$queryRaw<AnswerSection[]>`
-    SELECT a.id AS "articleId", a.slug, a.title, c.heading, c.text
+    SELECT a.id AS "articleId", a.slug, a.title, a.listing, c.heading, c.text
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
     WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      AND a.listing <> 'HIDDEN'
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
     LIMIT ${limit}`;
@@ -113,7 +116,7 @@ async function wordMatches(projectId: string, query: string, limit: number): Pro
     CROSS JOIN LATERAL (
       SELECT ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""') AS passage
     ) h
-    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND d.words @@ q
+    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND d.words @@ q
     ORDER BY ts_rank(d.words, q) DESC, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, passage, cutStart, cutEnd }) => ({

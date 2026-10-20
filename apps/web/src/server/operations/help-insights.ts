@@ -21,7 +21,7 @@ export const answerFields = z.object({
 });
 
 /**
- * Saves a reader's answer under a published article. One per reader and article: answering
+ * Saves a reader's answer under a published article whose page is served (not hidden or AI only). One per reader and article: answering
  * again changes it (so a retry or double click counts once). A "No" without a comment keeps
  * the comment the reader already left; a "Yes" drops it.
  */
@@ -36,6 +36,7 @@ export async function saveAnswer(projectId: string, readerId: string, input: z.i
     SELECT a.id, ${readerId}, ${input.helpful}, ${comment}, now()
     FROM article a
     WHERE a."projectId" = ${projectId} AND a.slug = ${input.slug} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
+      AND a.listing IN ('EVERYWHERE', 'UNLISTED')
     ON CONFLICT ("articleId", "readerId") DO UPDATE SET
       helpful = EXCLUDED.helpful,
       comment = CASE WHEN EXCLUDED.helpful THEN NULL ELSE coalesce(EXCLUDED.comment, article_feedback.comment) END,
