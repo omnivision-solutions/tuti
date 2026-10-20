@@ -63,9 +63,9 @@ class FakeElement {
   get text() {
     return this.children.map((child) => (child as { nodeValue?: string }).nodeValue ?? "").join("");
   }
-  /** A click that bubbles up to the document; says whether the default was prevented. */
-  click() {
-    const event = { target: this, defaultPrevented: false, preventDefault: () => (event.defaultPrevented = true) };
+  /** A click that bubbles up to the document (with modifier keys, or already cancelled, from `init`); says whether the default was prevented. */
+  click(init: { metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; defaultPrevented?: boolean } = {}) {
+    const event = { button: 0, ...init, target: this, defaultPrevented: init.defaultPrevented ?? false, preventDefault: () => (event.defaultPrevented = true) };
     for (const element of this.ancestors()) {
       element.listeners.click?.forEach((listener) => listener(event));
     }
@@ -239,6 +239,12 @@ test("Tuti.open({ article }) and data-tuti-article elements, also ones added lat
 
   // Other clicks are the page's own.
   expect(page.body.appendChild(new FakeElement("button", page)).click()).toBe(false);
+  expect(page.panel.style.display).toBe("none");
+  // So are a help link's clicks with a modifier key (new tab, new window, download) or that the page already handled.
+  for (const init of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }]) {
+    expect(help.click(init)).toBe(false);
+  }
+  help.click({ defaultPrevented: true });
   expect(page.panel.style.display).toBe("none");
 });
 

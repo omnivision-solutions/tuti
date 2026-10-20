@@ -179,6 +179,8 @@ export function widgetLoader(portalTemplate: string): string {
   });
   // Contextual help: any element with data-tuti-article, now or added later.
   document.addEventListener("click", function (event) {
+    // Modified clicks (new tab, new window, download) and ones the page already handled stay the page's.
+    if (event.defaultPrevented || event.button > 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     var target = event.target;
     var element = target && target.closest ? target.closest("[data-tuti-article]") : null;
     if (!element) return;
