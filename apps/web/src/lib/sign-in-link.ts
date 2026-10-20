@@ -9,6 +9,8 @@
 
 export const SIGN_IN_LINK_MINUTES = 15;
 export const SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR = 5;
+// ponytail: one IP can be a whole office behind NAT; raise it (or make it per project) if real visitors hit it.
+export const SIGN_IN_LINKS_PER_CLIENT_PER_HOUR = 10;
 // ponytail: fixed for every portal; a per-project setting if a big portal ever needs more.
 export const SIGN_IN_LINKS_PER_PORTAL_PER_HOUR = 200;
 

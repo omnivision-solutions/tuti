@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -6,7 +6,12 @@ import { beforeEach, expect, test } from "vitest";
 
 import SignInLinkPage from "@/app/portal/[project]/(site)/sign-in/link/page";
 import { auth } from "@/lib/auth";
-import { SIGN_IN_LINK_MINUTES, SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
+import {
+  SIGN_IN_LINK_MINUTES,
+  SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,
+  SIGN_IN_LINKS_PER_CLIENT_PER_HOUR,
+  SIGN_IN_LINKS_PER_PORTAL_PER_HOUR,
+} from "@/lib/sign-in-link";
 import { actAs, createProject, redirectTarget, signUp } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
@@ -19,7 +24,16 @@ beforeEach(async () => {
   project = await createProject(await signUp("Owner"));
   actAs(null);
   request.host = "";
+  request.headers = {};
+  delete process.env.TRUSTED_IP_HEADER;
 });
+
+/** Ask as a visitor from `ip`, given in Cloudflare's header (trusted when TRUSTED_IP_HEADER names it). */
+function askFrom(ip: string, email = newAddress(), extraHeaders: Record<string, string> = {}) {
+  request.headers = { "cf-connecting-ip": ip, ...extraHeaders };
+  return ask(email);
+}
+const sentTo = (email: string) => mailbox.emails.filter((e) => e.to.includes(email)).length;
 
 const newAddress = () => `e2e-${randomUUID()}@example.com`;
 const portalHost = (slug = project.slug) => `${slug}.localhost:3100`;
@@ -204,6 +218,59 @@ test("a portal sends a limited number of links an hour", async () => {
   const email = newAddress();
   expect(await ask(email)).toEqual({ error: "This site has sent a lot of sign-in links in the last hour. Try again later." });
   expect(mailbox.emails.filter((e) => e.to.includes(email))).toEqual([]);
+});
+
+test("a visitor gets a limited number of links an hour, quietly, before they can use up the portal's", async () => {
+  process.env.TRUSTED_IP_HEADER = "cf-connecting-ip";
+  // The portal has just enough room left for one visitor's limit and one more link.
+  await prisma.signInLink.createMany({
+    data: Array.from({ length: SIGN_IN_LINKS_PER_PORTAL_PER_HOUR - SIGN_IN_LINKS_PER_CLIENT_PER_HOUR - 1 }, (_, i) => ({
+      projectId: project.id,
+      emailHash: `h${i}`,
+    })),
+  });
+  for (let i = 0; i < SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
+    const email = newAddress();
+    expect(await askFrom("203.0.113.7", email)).toEqual({ sentTo: email });
+    expect(sentTo(email)).toBe(1);
+  }
+  // Over it: the same answer, but nothing is sent or counted against the portal.
+  for (let i = 0; i < 5; i++) {
+    const email = newAddress();
+    expect(await askFrom("203.0.113.7", email)).toEqual({ sentTo: email });
+    expect(sentTo(email)).toBe(0);
+  }
+  // Other visitors still get theirs.
+  const email = newAddress();
+  expect(await askFrom("198.51.100.20", email)).toEqual({ sentTo: email });
+  expect(sentTo(email)).toBe(1);
+});
+
+test("visitors are told apart only by the trusted header, and only a keyed hash of their address is stored", async () => {
+  // Not configured: headers anyone can send are ignored, so there's no per-visitor limit.
+  for (let i = 0; i <= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
+    const email = newAddress();
+    expect(await askFrom("203.0.113.7", email, { "x-forwarded-for": "203.0.113.7" })).toEqual({ sentTo: email });
+    expect(sentTo(email)).toBe(1);
+  }
+  expect(await prisma.signInLink.count({ where: { projectId: project.id, clientHash: { not: null } } })).toBe(0);
+
+  // Configured: a made-up X-Forwarded-For doesn't make a new visitor.
+  process.env.TRUSTED_IP_HEADER = "cf-connecting-ip";
+  for (let i = 0; i < SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
+    await askFrom("192.0.2.55", newAddress(), { "x-forwarded-for": `10.0.0.${i}` });
+  }
+  const email = newAddress();
+  await askFrom("192.0.2.55", email, { "x-forwarded-for": "10.0.0.99" });
+  expect(sentTo(email)).toBe(0);
+
+  const rows = await prisma.signInLink.findMany({ where: { projectId: project.id, clientHash: { not: null } } });
+  expect(rows).toHaveLength(SIGN_IN_LINKS_PER_CLIENT_PER_HOUR);
+  expect(new Set(rows.map((row) => row.clientHash)).size).toBe(1);
+  expect(rows[0]!.clientHash).toMatch(/^[0-9a-f]{64}$/);
+  // Keyed: not a plain hash anyone could match against a list of addresses.
+  expect(rows[0]!.clientHash).not.toBe(createHash("sha256").update("192.0.2.55").digest("hex"));
+  expect(JSON.stringify(await prisma.signInLink.findMany())).not.toContain("192.0.2.55");
 });
 
 test("bad input and unknown portals send nothing", async () => {

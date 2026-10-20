@@ -1,11 +1,12 @@
 /**
  * Stand-in for next/headers in database tests (mocked in vitest.db-setup.ts):
- * the "request" carries the cookie of whoever actAs() signed in (and a user agent or host, if a test sets one).
+ * the "request" carries the cookie of whoever actAs() signed in (and a user agent, host or other headers, if a test sets them).
  */
-export const request = { cookie: "", userAgent: "", host: "" };
+export const request = { cookie: "", userAgent: "", host: "", headers: {} as Record<string, string> };
 
 export async function headers() {
   return new Headers({
+    ...request.headers,
     ...(request.cookie && { cookie: request.cookie }),
     ...(request.userAgent && { "user-agent": request.userAgent }),
     ...(request.host && { host: request.host }),

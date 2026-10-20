@@ -3,6 +3,7 @@ CREATE TABLE "sign_in_link" (
     "id" TEXT NOT NULL,
     "projectId" TEXT NOT NULL,
     "emailHash" TEXT NOT NULL,
+    "clientHash" TEXT,
     "tokenHash" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -14,6 +15,9 @@ CREATE UNIQUE INDEX "sign_in_link_tokenHash_key" ON "sign_in_link"("tokenHash");
 
 -- CreateIndex
 CREATE INDEX "sign_in_link_emailHash_createdAt_idx" ON "sign_in_link"("emailHash", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "sign_in_link_clientHash_createdAt_idx" ON "sign_in_link"("clientHash", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "sign_in_link_projectId_createdAt_idx" ON "sign_in_link"("projectId", "createdAt");
