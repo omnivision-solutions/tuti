@@ -94,7 +94,7 @@ export async function answerSections(projectId: string, question: string, limit:
     SELECT a.id AS "articleId", a.slug, a.title, c.heading, c.text
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
-    WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL
+    WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
     LIMIT ${limit}`;
