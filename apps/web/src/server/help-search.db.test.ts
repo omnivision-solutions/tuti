@@ -183,6 +183,23 @@ describe("search with embeddings", () => {
     expect(await search("invites")).toEqual([]);
   });
 
+  test("a deleted article never comes back, by meaning or by words, even with chunks left over", async () => {
+    near("Inviting your team", "", "Owners send invites.", 0.9);
+    const slug = await write("Inviting your team", "Owners send invites.");
+    expect((await search(query)).map((r) => r.slug)).toEqual([slug]);
+
+    await call(deleteArticle, as(owner), { slug });
+    expect(await search(query)).toEqual([]);
+    expect(await search("invites")).toEqual([]);
+
+    // Deleted behind search's back (a deleted article can't stay published): its chunks are still there.
+    const other = await write("Inviting your team", "Owners send invites.");
+    await prisma.article.updateMany({ where: { projectId: project.id, slug: other }, data: { deletedAt: new Date(), publishedAt: null } });
+    expect(await chunks(other)).toHaveLength(1);
+    expect(await search(query)).toEqual([]);
+    expect(await search("invites")).toEqual([]);
+  });
+
   test("articles that only share words come after the ones that mean the same", async () => {
     near("Inviting your team", "", "Owners send invites.", 0.9);
     const meaning = await write("Inviting your team", "Owners send invites.");

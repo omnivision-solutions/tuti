@@ -68,7 +68,7 @@ async function meaningMatches(projectId: string, query: string, limit: number, t
       ORDER BY c."articleId", distance, c.position
     ) best
     JOIN article a ON a.id = best."articleId"
-    WHERE a."publishedAt" IS NOT NULL AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
+    WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
@@ -94,7 +94,7 @@ export async function answerSections(projectId: string, question: string, limit:
     SELECT a.id AS "articleId", a.slug, a.title, c.heading, c.text
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
-    WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL
+    WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
     LIMIT ${limit}`;
@@ -113,7 +113,7 @@ async function wordMatches(projectId: string, query: string, limit: number): Pro
     CROSS JOIN LATERAL (
       SELECT ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""') AS passage
     ) h
-    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND d.words @@ q
+    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND d.words @@ q
     ORDER BY ts_rank(d.words, q) DESC, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, passage, cutStart, cutEnd }) => ({

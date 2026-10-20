@@ -1,18 +1,23 @@
 import { prisma } from "@tuti/db";
+import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, DeleteCollectionButton } from "@/components/help";
+import { CollectionDialog, DeleteCollectionButton, RestoreDeletedButton } from "@/components/help";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate } from "@/lib/format";
+import { formatDate, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
+import { restorableSince } from "@/server/operations/help";
 
-/** The team's help center: articles (drafts first, then latest edited) and the collections they're grouped in. */
+/**
+ * The team's help center: articles (drafts first, then latest edited), the collections they're
+ * grouped in, and articles deleted lately (which can be restored).
+ */
 export default async function TeamHelpPage(props: PageProps<"/app/[project]/help">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
@@ -20,16 +25,28 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, collections] = await Promise.all([
+  const [articles, collections, deleted] = await Promise.all([
     prisma.article.findMany({
-      where: { projectId },
+      where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
       select: { slug: true, title: true, publishedAt: true, collection: { select: { name: true } } },
     }),
     prisma.collection.findMany({
       where: { projectId },
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { slug: true, name: true, description: true, _count: { select: { articles: true } } },
+      select: { slug: true, name: true, description: true, _count: { select: { articles: { where: { deletedAt: null } } } } },
+    }),
+    prisma.article.findMany({
+      where: { projectId, deletedAt: { gte: restorableSince() } },
+      orderBy: [{ deletedAt: "desc" }, { id: "asc" }],
+      select: {
+        id: true,
+        slug: true,
+        title: true,
+        deletedAt: true,
+        // Its newest version, which tells the restore which article it is (another may have had the slug).
+        revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
+      },
     }),
   ]);
 
@@ -99,6 +116,30 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
           </CardContent>
         )}
       </Card>
+      {deleted.length > 0 && (
+        <Card role="region" aria-labelledby="recently-deleted">
+          <CardHeader>
+            <CardTitle id="recently-deleted">Recently deleted</CardTitle>
+            <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ItemList>
+              {deleted.map((article) => (
+                <ItemRow
+                  key={article.id}
+                  title={article.title}
+                  meta={`Deleted ${timeAgo(article.deletedAt!)}`}
+                  actions={
+                    article.revisions[0] && (
+                      <RestoreDeletedButton projectSlug={slug} slug={article.slug} revision={article.revisions[0].id} title={article.title} />
+                    )
+                  }
+                />
+              ))}
+            </ItemList>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

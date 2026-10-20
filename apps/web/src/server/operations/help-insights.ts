@@ -35,7 +35,7 @@ export async function saveAnswer(projectId: string, readerId: string, input: z.i
     INSERT INTO article_feedback ("articleId", "readerId", helpful, comment, "updatedAt")
     SELECT a.id, ${readerId}, ${input.helpful}, ${comment}, now()
     FROM article a
-    WHERE a."projectId" = ${projectId} AND a.slug = ${input.slug} AND a."publishedAt" IS NOT NULL
+    WHERE a."projectId" = ${projectId} AND a.slug = ${input.slug} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
     ON CONFLICT ("articleId", "readerId") DO UPDATE SET
       helpful = EXCLUDED.helpful,
       comment = CASE WHEN EXCLUDED.helpful THEN NULL ELSE coalesce(EXCLUDED.comment, article_feedback.comment) END,
@@ -66,7 +66,7 @@ export async function helpInsights(projectId: string) {
   const since = new Date(new Date().toISOString().slice(0, 10));
   since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
   const [views, articles, comments, searches, failed, topFailed] = await Promise.all([
-    prisma.articleViewDay.aggregate({ where: { article: { projectId }, day: { gte: since } }, _sum: { views: true } }),
+    prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null }, day: { gte: since } }, _sum: { views: true } }),
     prisma.$queryRaw<{ slug: string; title: string; views: number; helpful: number; notHelpful: number }[]>`
       SELECT * FROM (
         SELECT a.slug, a.title,
@@ -74,13 +74,13 @@ export async function helpInsights(projectId: string) {
           (SELECT count(*) FROM article_feedback f WHERE f."articleId" = a.id AND f.helpful AND f."updatedAt" >= ${since})::int AS helpful,
           (SELECT count(*) FROM article_feedback f WHERE f."articleId" = a.id AND NOT f.helpful AND f."updatedAt" >= ${since})::int AS "notHelpful"
         FROM article a
-        WHERE a."projectId" = ${projectId}
+        WHERE a."projectId" = ${projectId} AND a."deletedAt" IS NULL
       ) s
       WHERE views + helpful + "notHelpful" > 0
       ORDER BY views DESC, helpful + "notHelpful" DESC, title
       LIMIT 20`,
     prisma.articleFeedback.findMany({
-      where: { article: { projectId }, helpful: false, comment: { not: null }, updatedAt: { gte: since } },
+      where: { article: { projectId, deletedAt: null }, helpful: false, comment: { not: null }, updatedAt: { gte: since } },
       orderBy: { updatedAt: "desc" },
       take: 10,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },

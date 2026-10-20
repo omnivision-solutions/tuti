@@ -74,7 +74,7 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
 
   for await (const article of batches((after, take) =>
     prisma.article.findMany({
-      where: { projectId, id: { gt: after } },
+      where: { projectId, deletedAt: null, id: { gt: after } },
       orderBy: { id: "asc" },
       take,
       select: { id: true, slug: true, title: true, body: true, content: true, publishedAt: true, updatedAt: true, collection: { select: { slug: true, name: true } } },

@@ -84,3 +84,18 @@ export async function embedPublishedArticles(log: JobLogger): Promise<{ articles
   }
   return { articles: articles.length, embedded, failed };
 }
+
+/** How long a deleted article can be restored; then `purgeArticles` removes it for good. */
+export const DELETED_ARTICLE_DAYS = 30;
+
+/**
+ * Removes articles deleted more than DELETED_ARTICLE_DAYS ago, with their revisions, feedback and
+ * views. Their uploads stay attached (see the Phase 6.5 cleanup item). A restore racing this wins or
+ * loses cleanly: Postgres re-checks `deletedAt` on a row restored while the delete waited for it.
+ */
+export async function purgeArticles(_input: JobInput<"purgeArticles">, log: JobLogger): Promise<JobResult> {
+  const cutoff = new Date(Date.now() - DELETED_ARTICLE_DAYS * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.article.deleteMany({ where: { deletedAt: { lt: cutoff } } });
+  log.info(`purged ${count} article(s) deleted more than ${DELETED_ARTICLE_DAYS} days ago`);
+  return { purged: count };
+}

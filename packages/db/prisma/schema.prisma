@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider        = "prisma-client"
+  previewFeatures = ["partialIndexes"]
+  output          = "../src/generated/prisma"
 }
 
 datasource db {
@@ -31,14 +32,15 @@ model User {
   changelogReactions ChangelogReaction[]
   ssoIdentity        SsoIdentity?
 
-  invitationsCreated  Invitation[]    @relation("InvitationCreatedBy")
-  invitationsAccepted Invitation[]    @relation("InvitationAcceptedBy")
+  invitationsCreated  Invitation[]      @relation("InvitationCreatedBy")
+  invitationsAccepted Invitation[]      @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
   apiKeysCreated      ApiKey[]
   webhooksCreated     Webhook[]
   media               Media[]
   emailOptOuts        EmailOptOut[]
   shippedEmails       ShippedEmail[]
+  articleRevisions    ArticleRevision[]
 
   @@unique([email])
   @@map("user")
@@ -103,22 +105,22 @@ enum TeamRole {
 }
 
 model Project {
-  id             String   @id @default(cuid())
-  slug           String   @unique
-  name           String
+  id                  String   @id @default(cuid())
+  slug                String   @unique
+  name                String
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
-  ssoSecret      String?
+  ssoSecret           String?
   /// Last post number handed out; posts are numbered #1, #2, … per project.
-  postCount      Int      @default(0)
+  postCount           Int      @default(0)
   /// Last changelog entry number handed out, like postCount.
-  changelogCount Int      @default(0)
+  changelogCount      Int      @default(0)
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone       String   @default("")
   changelogExampleIds String[] @default([])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   team                 TeamMember[]
   boards               Board[]
@@ -779,8 +781,9 @@ model Collection {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  articles Article[]
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  articles  Article[]
+  revisions ArticleRevision[]
 
   @@unique([projectId, slug])
   @@map("collection")
@@ -788,32 +791,66 @@ model Collection {
 
 /// A help center article, at /help/<slug> on the portal once it's published.
 model Article {
-  id           String    @id @default(cuid())
-  projectId    String
+  id              String    @id @default(cuid())
+  projectId       String
   /// From the title, unique in the project; follows the title while it's a draft.
-  slug         String
-  title        String
+  slug            String
+  title           String
   /// Plain text of the article (derived from `content`).
-  body         String    @default("")
+  body            String    @default("")
   /// Rich content (@tuti/content "article" profile).
-  content      Json?
+  content         Json?
   /// Null while it's a draft.
-  publishedAt  DateTime?
+  publishedAt     DateTime?
+  /// Set when it's deleted: the team can restore it (as a draft) for 30 days, then the
+  /// `purge-articles` job removes it. A deleted article is never published (a check
+  /// constraint), so everything that reads published articles leaves it out, and its
+  /// slug is free for other articles.
+  deletedAt       DateTime?
+  /// Show "Updated <date>" on the portal when it was edited after it was published.
+  showUpdatedDate Boolean   @default(true)
   /// At most one collection; deleting it leaves its articles uncollected.
-  collectionId String?
-  createdById  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  collectionId    String?
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  project    Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  collection Collection?    @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection Collection?       @relation(fields: [collectionId], references: [id], onDelete: SetNull)
   chunks     ArticleChunk[]
   feedback   ArticleFeedback[]
   viewDays   ArticleViewDay[]
+  revisions  ArticleRevision[]
 
-  @@unique([projectId, slug])
+  @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
+  @@index([deletedAt])
   @@map("article")
+}
+
+/// A saved version of an article: every save that changes its title, text or collection adds
+/// one (the newest is the current version). Restoring an old one saves it again as a new one.
+/// Only the newest ARTICLE_REVISIONS_KEPT (apps/web operations/help.ts) are kept.
+model ArticleRevision {
+  id           String   @id @default(cuid())
+  articleId    String
+  title        String
+  /// Plain text (derived from `content`), what the history's diff compares.
+  body         String   @default("")
+  content      Json?
+  collectionId String?
+  /// The person who saved it (an API key's creator for API saves).
+  authorId     String?
+  createdAt    DateTime @default(now())
+
+  article    Article     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  author     User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([articleId, createdAt])
+  @@index([collectionId])
+  @@index([authorId])
+  @@map("article_revision")
 }
 
 /// A reader's answer to "Was this helpful?" under a published article: one per reader
