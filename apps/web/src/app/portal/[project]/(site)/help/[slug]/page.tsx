@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import { ArticleActions } from "@/components/article-actions";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
+import { formatDate } from "@/lib/format";
 import { portalUrl } from "@/lib/hosts";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
 
@@ -37,6 +38,11 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
         <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">
           {article.title}
         </h1>
+        {article.updatedAt && (
+          <p className="text-sm text-muted-foreground">
+            Updated <time dateTime={article.updatedAt.toISOString()}>{formatDate(article.updatedAt)}</time>
+          </p>
+        )}
       </div>
       <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/help/${slug}.md`} />
       <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />

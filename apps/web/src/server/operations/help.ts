@@ -1,5 +1,7 @@
-import { type Prisma, prisma } from "@tuti/db";
-import { enqueue, lockProject } from "@tuti/jobs";
+import { isDeepStrictEqual } from "node:util";
+
+import { Prisma, prisma } from "@tuti/db";
+import { DELETED_ARTICLE_DAYS, enqueue, lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -10,12 +12,17 @@ import { attachMedia, displayDoc, readContent } from "../content";
 import { searchHelp } from "../help-search";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
-import { defineOperation, OperationError } from "./define";
+import { type Actor, defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
 /** The help center (Phase 10): articles the team writes, grouped in collections, published on the portal's /help. */
 
 export const MAX_ARTICLE_LENGTH = 50_000;
+/**
+ * Revisions kept per article; older ones go as new ones come. Every save is a deliberate click
+ * (the editor doesn't autosave), so each is kept rather than merged with the last.
+ */
+export const ARTICLE_REVISIONS_KEPT = 50;
 
 const slug = z.string().trim().min(1).max(80);
 const articleFields = {
@@ -26,6 +33,8 @@ const articleFields = {
   content: z.unknown().optional(),
   /** The collection's slug, or null for none. */
   collection: slug.nullable().optional(),
+  /** Show "Updated <date>" on the portal when it's edited after it was published (default true). */
+  showUpdatedDate: z.boolean().optional(),
 };
 const collectionFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
@@ -39,6 +48,8 @@ const articleSelect = {
   body: true,
   content: true,
   publishedAt: true,
+  deletedAt: true,
+  showUpdatedDate: true,
   createdAt: true,
   updatedAt: true,
   collection: { select: { slug: true, name: true } },
@@ -51,6 +62,9 @@ function articleView(article: ArticleRow, projectSlug: string) {
     title: article.title,
     status: article.publishedAt ? ("published" as const) : ("draft" as const),
     publishedAt: article.publishedAt?.toISOString() ?? null,
+    showUpdatedDate: article.showUpdatedDate,
+    /** Only in the list of deleted articles. */
+    ...(article.deletedAt && { deletedAt: article.deletedAt.toISOString() }),
     collection: article.collection,
     body: article.body,
     content: displayDoc(article),
@@ -60,8 +74,12 @@ function articleView(article: ArticleRow, projectSlug: string) {
   };
 }
 
+/** A live (not deleted) article. */
+const findArticle = (projectId: string, slug: string) =>
+  prisma.article.findFirst({ where: { projectId, slug, deletedAt: null }, select: articleSelect });
+
 async function teamArticle(projectId: string, slug: string) {
-  const article = await prisma.article.findUnique({ where: { projectId_slug: { projectId, slug } }, select: articleSelect });
+  const article = await findArticle(projectId, slug);
   if (!article) {
     throw new OperationError(404, "not_found", `There's no article “${slug}”`);
   }
@@ -110,13 +128,17 @@ async function freeSlug(
   return candidate;
 }
 
+// Deleted articles don't hold on to their slugs (a restored one takes the next free one if its own is gone).
 // "new" and "insights" are the team's pages under /app/<project>/help, so no article can have them.
 const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
   freeSlug(
     title,
     "article",
     (prefix) =>
-      tx.article.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
+      tx.article.findMany({
+        where: { projectId, slug: { startsWith: prefix }, deletedAt: null, ...(except && { id: { not: except } }) },
+        select: { slug: true },
+      }),
     ["new", "insights"],
   );
 
@@ -142,27 +164,121 @@ async function articleText(input: { body?: string; content?: unknown }, projectI
   return text;
 }
 
+type ArticleText = Awaited<ReturnType<typeof articleText>>;
+
+/** Who a save is by: the person, or the API key's creator. */
+const authorOf = (actor: Actor) => (actor.kind === "user" ? actor.userId : actor.createdById);
+
+/** Deleted articles after this can still be restored. */
+export const restorableSince = () => new Date(Date.now() - DELETED_ARTICLE_DAYS * 24 * 60 * 60 * 1000);
+
+const versionSelect = { title: true, body: true, content: true, collectionId: true } as const;
+const newestFirst: Prisma.ArticleRevisionOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
+
+/**
+ * Records the article's current version as a revision, unless it's the same as the newest one (a
+ * save that changed nothing), and lets the oldest go past ARTICLE_REVISIONS_KEPT. Call it in the
+ * transaction that saved the article, with the project locked, so saves can't interleave.
+ */
+async function recordRevision(tx: Prisma.TransactionClient, articleId: string, authorId: string | null) {
+  const article = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: versionSelect });
+  const newest = await tx.articleRevision.findFirst({ where: { articleId }, orderBy: newestFirst, select: versionSelect });
+  if (newest && isDeepStrictEqual(article, newest)) {
+    return;
+  }
+  // Timed here, after the lock, so revisions are in the order their saves were.
+  await tx.articleRevision.create({
+    data: { articleId, ...article, content: article.content ?? Prisma.DbNull, authorId, createdAt: new Date() },
+  });
+  const old = await tx.articleRevision.findMany({
+    where: { articleId },
+    orderBy: newestFirst,
+    skip: ARTICLE_REVISIONS_KEPT,
+    select: { id: true },
+  });
+  if (old.length > 0) {
+    await tx.articleRevision.deleteMany({ where: { id: { in: old.map((r) => r.id) } } });
+  }
+}
+
+/**
+ * Saves changes to a live article and records them as a revision. Call it with the project locked
+ * (lockProject). A draft's slug follows its title; a published one keeps it.
+ */
+async function saveChanges(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  article: { id: string; slug: string },
+  authorId: string | null,
+  changes: { title?: string; text?: ArticleText; collectionId?: string | null; showUpdatedDate?: boolean },
+) {
+  // Read again under the lock: it may have been retitled, published or deleted since.
+  const current = await tx.article.findFirst({ where: { id: article.id, deletedAt: null }, select: { title: true, publishedAt: true } });
+  if (!current) {
+    throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
+  }
+  const { title, text, collectionId, showUpdatedDate } = changes;
+  const retitled = title !== undefined && title !== current.title && !current.publishedAt;
+  const saved = await tx.article.update({
+    where: { id: article.id },
+    data: {
+      ...(title !== undefined && { title }),
+      ...(retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) }),
+      ...(text && { body: text.text, content: text.doc }),
+      ...(collectionId !== undefined && { collectionId }),
+      ...(showUpdatedDate !== undefined && { showUpdatedDate }),
+    },
+    select: articleSelect,
+  });
+  if (text) {
+    await attachMedia(tx, projectId, text.mediaIds);
+  }
+  await recordRevision(tx, article.id, authorId);
+  return saved;
+}
+
+/** An article's revisions, newest (the current version) first. */
+export function articleRevisions(articleId: string) {
+  return prisma.articleRevision.findMany({
+    where: { articleId },
+    orderBy: newestFirst,
+    select: {
+      id: true,
+      title: true,
+      body: true,
+      createdAt: true,
+      collection: { select: { slug: true, name: true } },
+      author: { select: { name: true } },
+    },
+  });
+}
+
 export const listArticles = defineOperation({
   name: "articles.list",
-  summary: "List help center articles by title: published ones, or the team's drafts (latest edited first)",
+  summary:
+    "List help center articles by title: published ones, the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
   method: "GET",
   path: "/articles",
   scope: "read",
   access: "anyone",
   input: z.object({
-    status: z.enum(["published", "draft"]).default("published"),
+    status: z.enum(["published", "draft", "deleted"]).default("published"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
   example: { status: "published", limit: 20 },
   run: async ({ actor, projectId }, input) => {
-    if (input.status === "draft" && !(await isTeam(actor, projectId))) {
-      throw new OperationError(403, "forbidden", "Only the project's team sees drafts");
+    if (input.status !== "published" && !(await isTeam(actor, projectId))) {
+      throw new OperationError(403, "forbidden", `Only the project's team sees ${input.status === "draft" ? "drafts" : "deleted articles"}`);
     }
-    const published = input.status === "published";
+    const query: Record<typeof input.status, Pick<Prisma.ArticleFindManyArgs, "where" | "orderBy">> = {
+      published: { where: { publishedAt: { not: null }, deletedAt: null }, orderBy: [{ title: "asc" }, { slug: "asc" }] },
+      draft: { where: { publishedAt: null, deletedAt: null }, orderBy: [{ updatedAt: "desc" }, { slug: "asc" }] },
+      deleted: { where: { deletedAt: { gte: restorableSince() } }, orderBy: [{ deletedAt: "desc" }, { slug: "asc" }] },
+    };
     const articles = await prisma.article.findMany({
-      where: { projectId, publishedAt: published ? { not: null } : null },
-      orderBy: published ? [{ title: "asc" }, { slug: "asc" }] : [{ updatedAt: "desc" }, { slug: "asc" }],
+      where: { projectId, ...query[input.status].where },
+      orderBy: query[input.status].orderBy,
       skip: input.cursor,
       take: input.limit + 1,
       select: articleSelect,
@@ -184,7 +300,7 @@ export const getArticle = defineOperation({
   access: "anyone",
   input: z.object({ slug }),
   run: async ({ actor, projectId }, input) => {
-    const article = await prisma.article.findUnique({ where: { projectId_slug: { projectId, slug: input.slug } }, select: articleSelect });
+    const article = await findArticle(projectId, input.slug);
     // A draft is as good as missing to everyone but the team.
     if (!article || (!article.publishedAt && !(await isTeam(actor, projectId)))) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
@@ -234,11 +350,13 @@ export const createArticle = defineOperation({
             body: text.text,
             content: text.doc,
             collectionId: collection ?? null,
-            createdById: actor.kind === "user" ? actor.userId : actor.createdById,
+            showUpdatedDate: input.showUpdatedDate,
+            createdById: authorOf(actor),
           },
           select: articleSelect,
         });
         await attachMedia(tx, projectId, text.mediaIds);
+        await recordRevision(tx, created.id, authorOf(actor));
         return created;
       }),
     );
@@ -248,46 +366,122 @@ export const createArticle = defineOperation({
 
 export const updateArticle = defineOperation({
   name: "articles.update",
-  summary: "Change a help center article: its title, text or collection (a draft's slug follows its title; a published one keeps it)",
+  summary:
+    "Change a help center article: its title, text or collection (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug, title: articleFields.title.optional(), body: articleFields.body, content: articleFields.content, collection: articleFields.collection }),
+  input: z.object({ slug, ...articleFields, title: articleFields.title.optional() }),
   example: { collection: null },
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
-    const text = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : null;
+    const text = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const collection = await collectionId(tx, projectId, input.collection);
-        // Read again under the lock: it may have been retitled or published since.
-        const current = await tx.article.findUnique({ where: { id: article.id }, select: { title: true, publishedAt: true } });
-        if (!current) {
-          throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
-        }
-        const retitled = input.title !== undefined && input.title !== current.title && !current.publishedAt;
-        const saved = await tx.article.update({
-          where: { id: article.id },
-          data: {
-            ...(input.title !== undefined && { title: input.title }),
-            ...(retitled && { slug: await freeArticleSlug(tx, projectId, input.title!, article.id) }),
-            ...(text && { body: text.text, content: text.doc }),
-            ...(collection !== undefined && { collectionId: collection }),
-          },
-          select: articleSelect,
+        return saveChanges(tx, projectId, article, authorOf(actor), {
+          title: input.title,
+          text,
+          collectionId: collection,
+          showUpdatedDate: input.showUpdatedDate,
         });
-        if (text) {
-          await attachMedia(tx, projectId, text.mediaIds);
-        }
-        return saved;
       }),
     );
     if (updated.publishedAt) {
       await indexArticle(updated.id);
     }
     return articleView(updated, await projectSlug(projectId));
+  },
+});
+
+export const listRevisions = defineOperation({
+  name: "articles.revisions",
+  summary: `A help center article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT} are kept)`,
+  method: "GET",
+  path: "/articles/{slug}/revisions",
+  scope: "read",
+  access: "team",
+  input: z.object({ slug }),
+  run: async ({ projectId }, input) => {
+    const article = await teamArticle(projectId, input.slug);
+    const revisions = await articleRevisions(article.id);
+    return {
+      revisions: revisions.map((revision, index) => ({
+        id: revision.id,
+        title: revision.title,
+        body: revision.body,
+        collection: revision.collection,
+        author: revision.author,
+        createdAt: revision.createdAt.toISOString(),
+        current: index === 0,
+      })),
+    };
+  },
+});
+
+export const restoreArticle = defineOperation({
+  name: "articles.restore",
+  summary: `Restore a help center article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version; a published article shows it at once. Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
+  method: "POST",
+  path: "/articles/{slug}/restore",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, revision: z.string().trim().min(1).max(100).optional() }),
+  run: async ({ actor, projectId }, input) => {
+    const restorable = { projectId, slug: input.slug, OR: [{ deletedAt: null }, { deletedAt: { gte: restorableSince() } }] };
+    let article: { id: string; slug: string; deletedAt: Date | null } | null;
+    let version: (Prisma.ArticleRevisionGetPayload<{ select: typeof versionSelect }> & { text: ArticleText }) | undefined;
+    if (input.revision !== undefined) {
+      const revision = await prisma.articleRevision.findFirst({
+        where: { id: input.revision, article: restorable },
+        select: { ...versionSelect, article: { select: { id: true, slug: true, deletedAt: true } } },
+      });
+      if (!revision) {
+        throw new OperationError(404, "not_found", `“${input.slug}” has no version “${input.revision}”`);
+      }
+      article = revision.article;
+      // Checked like any save: it must still fit the article profile, and its images must still be there.
+      version = { ...revision, text: await articleText({ content: revision.content ?? undefined, body: revision.body }, projectId) };
+    } else {
+      if (await findArticle(projectId, input.slug)) {
+        throw new OperationError(400, "invalid_input", `“${input.slug}” isn't deleted; say which \`revision\` to restore`);
+      }
+      article = await prisma.article.findFirst({
+        where: { ...restorable, deletedAt: { not: null } },
+        orderBy: { deletedAt: "desc" },
+        select: { id: true, slug: true, deletedAt: true },
+      });
+      if (!article) {
+        throw new OperationError(404, "not_found", `There's no deleted article “${input.slug}”`);
+      }
+    }
+    const { id, deletedAt } = article;
+
+    const restored = await saving(() =>
+      prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        if (deletedAt) {
+          // Back as a draft (deleting unpublished it), under its slug unless another article has it now.
+          await tx.article.updateMany({
+            where: { id, deletedAt: { not: null } },
+            data: { deletedAt: null, slug: await freeArticleSlug(tx, projectId, article.slug, id) },
+          });
+        }
+        return saveChanges(
+          tx,
+          projectId,
+          article,
+          authorOf(actor),
+          version ? { title: version.title, text: version.text, collectionId: version.collectionId } : {},
+        );
+      }),
+    );
+    if (restored.publishedAt) {
+      await indexArticle(restored.id);
+    }
+    return articleView(restored, await projectSlug(projectId));
   },
 });
 
@@ -304,7 +498,7 @@ export const publishArticle = defineOperation({
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      await tx.article.updateMany({ where: { id: article.id, publishedAt: null }, data: { publishedAt: new Date() } });
+      await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
     });
     await indexArticle(article.id);
     return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId));
@@ -332,7 +526,7 @@ export const unpublishArticle = defineOperation({
 
 export const deleteArticle = defineOperation({
   name: "articles.delete",
-  summary: "Delete a help center article",
+  summary: `Delete a help center article; the team can restore it (with articles.restore) for ${DELETED_ARTICLE_DAYS} days`,
   method: "DELETE",
   path: "/articles/{slug}",
   scope: "write",
@@ -340,12 +534,24 @@ export const deleteArticle = defineOperation({
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
     const article = await teamArticle(projectId, input.slug);
-    await prisma.article.delete({ where: { id: article.id } });
+    // Unpublished as it's deleted (a deleted article is never published), so it leaves the portal and search at once.
+    await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      await tx.article.updateMany({ where: { id: article.id, deletedAt: null }, data: { deletedAt: new Date(), publishedAt: null } });
+      await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
+    });
     return { deleted: input.slug };
   },
 });
 
-const collectionSelect = { id: true, slug: true, name: true, description: true, order: true, _count: { select: { articles: true } } } as const;
+const collectionSelect = {
+  id: true,
+  slug: true,
+  name: true,
+  description: true,
+  order: true,
+  _count: { select: { articles: { where: { deletedAt: null } } } },
+} as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
 const collectionView = ({ slug, name, description, order, _count }: CollectionRow) => ({
   slug,

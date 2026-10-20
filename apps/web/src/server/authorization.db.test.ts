@@ -144,6 +144,7 @@ const matrix: Matrix = {
     publishArticle: { allowed: "MEMBER", call: (slug) => help.publishArticle(slug, "matrix-draft") },
     unpublishArticle: { allowed: "MEMBER", call: (slug) => help.unpublishArticle(slug, "matrix-article") },
     deleteArticle: { allowed: "MEMBER", call: (slug) => help.deleteArticle(slug, "matrix-article") },
+    restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => help.restoreArticle(slug, "matrix-draft", f.revisionId) },
     saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
   },
@@ -458,6 +459,10 @@ async function createFixture() {
   const question = await prisma.helpQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", status: "ANSWERED", answer: "From the Team page." },
   });
+  // An earlier version of the draft, to restore.
+  const revision = await prisma.articleRevision.create({
+    data: { article: { connect: { projectId_slug: { projectId, slug: "matrix-draft" } } }, title: "Matrix draft, before", body: "Older" },
+  });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
@@ -481,6 +486,7 @@ async function createFixture() {
     invitationToken,
     targetMemberId: targetMember.id,
     questionId: question.id,
+    revisionId: revision.id,
   };
 }
 

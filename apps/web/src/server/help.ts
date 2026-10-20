@@ -9,6 +9,7 @@ import {
   deleteArticle as deleteArticleOperation,
   deleteCollection as deleteCollectionOperation,
   publishArticle as publishOperation,
+  restoreArticle as restoreOperation,
   unpublishArticle as unpublishOperation,
   updateArticle,
   updateCollection,
@@ -26,6 +27,7 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     content: formData.get("content") || undefined,
     body: formData.get("content") ? undefined : "",
     collection: String(formData.get("collection") ?? "") || null,
+    showUpdatedDate: formData.get("showUpdatedDate") === "on",
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -53,6 +55,18 @@ export async function deleteArticle(projectSlug: string, slug: string): Promise<
     redirect(`/app/${projectSlug}/help`);
   }
   return result;
+}
+
+/**
+ * Restores version `revision` of article `slug`, or the deleted article `slug` (its newest
+ * `revision` says which, if several had that slug) as a draft. Returns the article's slug now.
+ */
+export async function restoreArticle(projectSlug: string, slug: string, revision: string): Promise<FormState & { slug?: string }> {
+  let restored: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    restored = (await call(restoreOperation, context, { slug: String(slug), revision: String(revision) })).slug;
+  });
+  return { ...result, slug: restored };
 }
 
 /** Adds a collection (`slug` null) or renames collection `slug` and changes its description. */

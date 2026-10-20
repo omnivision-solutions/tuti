@@ -79,7 +79,7 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     INSERT INTO article_view_day ("articleId", day, views)
     SELECT a.id, (now() AT TIME ZONE 'UTC')::date, 1
     FROM article a JOIN project p ON p.id = a."projectId"
-    WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL
+    WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 

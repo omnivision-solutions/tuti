@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import { useRouter } from "next/navigation";
 import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -24,9 +25,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
-import { deleteArticle, deleteCollection, publishArticle, saveArticle, saveCollection, unpublishArticle } from "@/server/help";
+import { deleteArticle, deleteCollection, publishArticle, restoreArticle, saveArticle, saveCollection, unpublishArticle } from "@/server/help";
 
-type Article = { slug: string; title: string; content: Doc; collection: string | null };
+type Article = { slug: string; title: string; content: Doc; collection: string | null; showUpdatedDate: boolean };
 type CollectionOption = { slug: string; name: string };
 
 /** Writes a new article (`article` null) or edits one: title, collection and text. */
@@ -93,6 +94,18 @@ export function ArticleForm({
             uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
           />
         </Field>
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            name="showUpdatedDate"
+            className="mt-1 size-4 accent-primary"
+            defaultChecked={article?.showUpdatedDate ?? true}
+          />
+          <span>
+            Show the updated date
+            <span className="block text-sm text-muted-foreground">Readers see when you last changed it after it was published.</span>
+          </span>
+        </label>
         <Button type="submit" disabled={pending} className="self-end">
           {pending ? "Saving…" : article ? "Save" : "Save draft"}
         </Button>
@@ -132,7 +145,8 @@ export function ArticleActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              {published ? "It's removed from your help center, and links to it stop working." : "The draft is gone for good."}
+              {published ? "It's removed from your help center, and links to it stop working. " : ""}
+              You can restore it from Recently deleted for 30 days.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -167,6 +181,82 @@ export function ArticleActions({
         </AlertDialog>
       )}
     </div>
+  );
+}
+
+/** Makes an earlier version the current one (saved as a new version), then opens the article. */
+export function RestoreVersionButton({
+  projectSlug,
+  slug,
+  revision,
+  published,
+}: {
+  projectSlug: string;
+  slug: string;
+  revision: string;
+  published: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button disabled={pending} />}>Restore this version</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restore this version?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {published
+              ? "It replaces the current text and is published right away: readers see it at once."
+              : "It replaces the draft's current text."}{" "}
+            The current version stays in the history.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await restoreArticle(projectSlug, slug, revision);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success("Version restored");
+                  router.push(`/app/${projectSlug}/help/${result.slug}`);
+                }
+              })
+            }
+          >
+            Restore
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/** Brings a deleted article back as a draft (`revision` is its newest version, which says which article). */
+export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { projectSlug: string; slug: string; revision: string; title: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      aria-label={`Restore “${title}”`}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await restoreArticle(projectSlug, slug, revision);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success(`Restored “${title}” as a draft`);
+          }
+        })
+      }
+    >
+      Restore
+    </Button>
   );
 }
 

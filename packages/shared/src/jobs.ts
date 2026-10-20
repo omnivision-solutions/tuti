@@ -98,6 +98,12 @@ export const jobs = {
     input: z.object({}),
     cron: "17 * * * *",
   },
+  /** Removes help articles deleted more than 30 days ago (until then the team can restore them). */
+  purgeArticles: {
+    name: "purge-articles",
+    input: z.object({}),
+    cron: "43 * * * *",
+  },
 } as const satisfies Record<string, JobOptions>;
 
 export type JobKey = keyof typeof jobs;

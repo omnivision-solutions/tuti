@@ -162,6 +162,70 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/help");
   await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+
+  // The team edits it twice; its history shows what changed since the first version.
+  await team.getByRole("link", { name: "Inviting your team" }).click();
+  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  for (const sentence of [" Members can ask them.", " Invites last a week."]) {
+    await team.getByRole("textbox", { name: "Article" }).getByText("Owners and admins send invites", { exact: false }).click();
+    await team.keyboard.press("End");
+    await team.keyboard.type(sentence);
+    // Done once the save's response is in (a toast from the first save may still be showing at the second).
+    const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+    await team.getByRole("button", { name: "Save", exact: true }).click();
+    await saved;
+    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  }
+  await expect(team.getByText("Saved", { exact: true }).first()).toBeVisible();
+  await team.getByRole("link", { name: "History" }).click();
+  await team.waitForURL(`**/app/${slug}/help/inviting-your-team/history`);
+  const versions = team.getByRole("link", { name: /^Saved / });
+  await expect(versions).toHaveCount(3);
+  await versions.nth(2).click();
+  await team.waitForURL(/\/history\?revision=/);
+  const changes = team.getByRole("region", { name: "Changes since this version" });
+  await expect(changes.getByRole("deletion")).toHaveText("Owners and admins send invites from the Team page.");
+  await expect(changes.getByRole("insertion")).toHaveText(
+    "Owners and admins send invites from the Team page. Members can ask them. Invites last a week.",
+  );
+  await checkpoint(team, "team-help-article-history");
+
+  // Restoring it publishes that text at once (it's published), as a new version.
+  await changes.getByRole("button", { name: "Restore this version" }).click();
+  const restoring = team.getByRole("alertdialog");
+  await expect(restoring).toContainText("published right away");
+  await checkpoint(team, "team-help-article-restore-confirm", { fullPage: false });
+  await restoring.getByRole("button", { name: "Restore" }).click();
+  await expect(team.getByText("Version restored")).toBeVisible();
+  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await visitor.goto("/help/inviting-your-team");
+  await expect(visitor.getByText("Owners and admins send invites from the Team page.", { exact: true })).toBeVisible();
+  // Edited since it was published, so readers see when.
+  await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
+  await checkpoint(visitor, "portal-help-article-updated");
+  await team.getByRole("link", { name: "History" }).click();
+  await expect(team.getByRole("link", { name: /^Saved / })).toHaveCount(4);
+
+  // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
+  await team.getByRole("link", { name: "Inviting your team" }).click();
+  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await team.getByRole("button", { name: "Delete" }).click();
+  const deletingArticle = team.getByRole("alertdialog");
+  await expect(deletingArticle).toContainText("You can restore it from Recently deleted for 30 days.");
+  await deletingArticle.getByRole("button", { name: "Delete" }).click();
+  await team.waitForURL(`**/app/${slug}/help`);
+  const recentlyDeleted = team.getByRole("region", { name: "Recently deleted" });
+  await expect(recentlyDeleted).toContainText("Inviting your team");
+  await checkpoint(team, "team-help-recently-deleted");
+  await visitor.goto("/help/inviting-your-team");
+  await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
+
+  await recentlyDeleted.getByRole("button", { name: "Restore “Inviting your team”" }).click();
+  await expect(team.getByText("Restored “Inviting your team” as a draft")).toBeVisible();
+  await expect(team.getByRole("region", { name: "Recently deleted" })).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  await expect(team.getByText("Draft", { exact: true })).toBeVisible();
+  await checkpoint(team, "team-help-article-restored");
 });
 
 test("a visitor asks the help center's AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {

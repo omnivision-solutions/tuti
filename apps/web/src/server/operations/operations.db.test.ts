@@ -50,6 +50,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.publish": () => ({ slug: "matrix-draft" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),
   "articles.delete": () => ({ slug: "matrix-article" }),
+  "articles.revisions": () => ({ slug: "matrix-article" }),
+  "articles.restore": (f) => ({ slug: "matrix-draft", revision: f.revisionId }),
   "collections.list": () => ({}),
   "collections.create": () => ({ name: "Billing" }),
   "collections.update": () => ({ slug: "basics", name: "The basics" }),
@@ -118,6 +120,10 @@ async function createFixture() {
       { projectId: project.id, slug: "matrix-draft", title: "Matrix draft" },
     ],
   });
+  // An earlier version of the draft, to restore.
+  const revision = await prisma.articleRevision.create({
+    data: { article: { connect: { projectId_slug: { projectId: project.id, slug: "matrix-draft" } } }, title: "Matrix draft, before", body: "Older" },
+  });
   const board = project.boards[0]!;
   const marker = `matrix-${crypto.randomUUID()}`;
   const [first, second] = await Promise.all(
@@ -152,7 +158,7 @@ async function createFixture() {
       similarity: 0.6,
     },
   });
-  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id };
+  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id };
 }
 
 /** Calls an operation over REST like a client would. */
@@ -191,6 +197,7 @@ const snapshot = () =>
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true } }),
     prisma.project.findUnique({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
+    prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
   ]);
