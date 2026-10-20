@@ -90,7 +90,7 @@ export const DELETED_ARTICLE_DAYS = 30;
 
 /**
  * Removes articles deleted more than DELETED_ARTICLE_DAYS ago, with their revisions, feedback and
- * views. Their uploads stay attached (see the Phase 6.5 cleanup item). A restore racing this wins or
+ * views; `releaseMedia` then frees the uploads only they used. A restore racing this wins or
  * loses cleanly: Postgres re-checks `deletedAt` on a row restored while the delete waited for it.
  */
 export async function purgeArticles(_input: JobInput<"purgeArticles">, log: JobLogger): Promise<JobResult> {

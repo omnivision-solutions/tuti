@@ -98,6 +98,12 @@ export const jobs = {
     input: z.object({}),
     cron: "17 * * * *",
   },
+  /** Marks uploads no content uses any more as unused, so `cleanup-media` deletes them and the quota frees. */
+  releaseMedia: {
+    name: "release-media",
+    input: z.object({}),
+    cron: "29 3 * * *",
+  },
   /** Removes help articles deleted more than 30 days ago (until then the team can restore them). */
   purgeArticles: {
     name: "purge-articles",

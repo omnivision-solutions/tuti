@@ -2,7 +2,7 @@ import { jobs, log, type JobInput, type JobKey } from "@tuti/shared";
 import { getHatchet } from "@tuti/shared/hatchet";
 
 import { articleChanged, purgeArticles } from "./articles";
-import { cleanupMedia } from "./cleanup";
+import { cleanupMedia, releaseMedia } from "./cleanup";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
@@ -28,6 +28,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   articleChanged,
   imageUploaded,
   cleanupMedia,
+  releaseMedia,
   purgeArticles,
   webhookDelivery,
   resubmitWebhookDeliveries,
