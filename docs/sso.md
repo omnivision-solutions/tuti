@@ -89,6 +89,12 @@ its panel opens a page that needs it, sends the token only to your portal, and k
 the session it gets in the panel for up to 12 hours. Signed-out visitors (where
 `getToken` returns nothing) can still sign in on the portal in a new tab.
 
+What's new is per user too: when this browser hasn't seen your latest announcement, the
+script calls `getToken` once and asks Tuti (`/api/widget/seen`, on the script's own origin)
+whether the user has seen it on another device; after the panel shows it, it calls
+`getToken` again to record that. So a user who reads What's new on their phone doesn't
+see the dot on their laptop.
+
 ## Errors
 
 If sign-in fails, the user sees an error page on your portal at `/sso/error?code=…`:

@@ -30,6 +30,7 @@ model User {
   votes              Vote[]
   comments           Comment[]
   changelogReactions ChangelogReaction[]
+  changelogSeen      ChangelogSeen[]
   ssoIdentity        SsoIdentity?
 
   invitationsCreated  Invitation[]      @relation("InvitationCreatedBy")
@@ -175,6 +176,7 @@ model Project {
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
   helpGapDismissals    HelpGapDismissal[]
+  changelogSeen        ChangelogSeen[]
 
   @@map("project")
 }
@@ -769,6 +771,22 @@ model ChangelogReaction {
   @@id([entryId, userId, kind])
   @@index([userId])
   @@map("changelog_reaction")
+}
+
+/// How far someone has read a project's announcements (What's new in the widget, the
+/// portal's /changelog): announced entries published after `seenAt` are new to them.
+/// Only ever moves forward, so seeing them on one device clears them on the others.
+model ChangelogSeen {
+  projectId String
+  userId    String
+  seenAt    DateTime
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("changelog_seen")
 }
 
 /// A post a changelog entry completes ("Shipped in …").

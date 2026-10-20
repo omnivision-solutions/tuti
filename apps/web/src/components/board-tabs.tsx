@@ -5,8 +5,11 @@ import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
 
-/** The portal's tabs: each board, then the roadmap, the changelog and the help center (host-relative links). */
-export function BoardTabs({ boards }: { boards: { slug: string; name: string }[] }) {
+/**
+ * The portal's tabs: each board, then the roadmap, the changelog and the help center (host-relative links).
+ * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
+ */
+export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: string; name: string }[]; newChangelog?: boolean }) {
   const pathname = usePathname();
   const tabs = [...boards.map((board) => ({ href: `/b/${board.slug}`, name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/help", name: "Help" }];
 
@@ -26,6 +29,10 @@ export function BoardTabs({ boards }: { boards: { slug: string; name: string }[]
               )}
             >
               {name}
+              {/* Not on the changelog itself: being there is seeing it (recorded a moment later). */}
+              {href === "/changelog" && newChangelog && !active && (
+                <span className="ml-1.5 rounded-full bg-highlight px-1.5 py-0.5 text-xs font-medium text-highlight-foreground">New</span>
+              )}
             </Link>
           );
         })}

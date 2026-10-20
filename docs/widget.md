@@ -63,7 +63,7 @@ panel instead of leaving the page.
 | `Tuti.open({ article: "<slug>" })` | Opens it at a help article. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
-| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this browser hasn't seen in What's new. |
+| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
 
 ```js
@@ -73,7 +73,10 @@ Tuti.on("unseen", (unseen) => {
 ```
 
 Tuti's own button shows the same status as a dot. What a browser has seen is kept in
-your site's `localStorage` (`tuti:seen:<project>`), so it's per browser, not per user.
+your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
+`identify`, it's also kept per user, so seeing it on one device clears it on the others
+(the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
+portal, the Changelog tab says "New" until they've looked.
 
 Before the script loads, `window.TutiSettings` takes `identify` and `hideLauncher`.
 

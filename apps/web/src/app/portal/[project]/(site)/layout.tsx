@@ -11,6 +11,7 @@ import { UserMenu } from "@/components/user-menu";
 import { appUrl } from "@/lib/hosts";
 import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
+import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -31,7 +32,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
-      select: { name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+      select: { id: true, name: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
     }),
     portalBranding(slug),
   ]);
@@ -51,6 +52,8 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
       className={cn("h-8 w-auto max-w-48 object-contain object-left", className)}
     />
   );
+  // An announcement they haven't seen anywhere (here, or in the widget on any device).
+  const newChangelog = !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
   return (
     <>
@@ -84,7 +87,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </Link>
         )}
       </header>
-      <BoardTabs boards={project.boards} />
+      <BoardTabs boards={project.boards} newChangelog={newChangelog} />
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">{children}</main>
       {(brand.footerLinks.length > 0 || brand.poweredBy) && (
         <footer className="flex flex-col items-center gap-3 px-6 pb-6">

@@ -24,6 +24,7 @@ import * as apiKeys from "./api-keys";
 import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
+import * as changelogSeen from "./changelog-seen";
 import * as github from "./github";
 import * as help from "./help";
 import * as helpReaders from "./help-readers";
@@ -50,6 +51,7 @@ import * as widget from "./widget";
  */
 const modules = {
   changelog,
+  "changelog-seen": changelogSeen,
   "api-keys": apiKeys,
   boards,
   branding,
@@ -156,6 +158,9 @@ const matrix: Matrix = {
         return changelog.saveChangelogStyle(slug, {}, form);
       },
     },
+  },
+  "changelog-seen": {
+    markChangelogSeen: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => changelogSeen.markChangelogSeen(slug, new Date().toISOString()) },
   },
   help: {
     saveArticle: {

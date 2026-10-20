@@ -28,9 +28,13 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE, WI
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
- * A dot on the button says there's an announced changelog entry this browser hasn't
- * seen yet (what it has seen is kept in the customer site's localStorage);
+ * A dot on the button says there's an announced changelog entry this visitor hasn't
+ * seen yet (what this browser has seen is kept in the customer site's localStorage);
  * `Tuti.unseen()` and `Tuti.on("unseen", callback)` tell the page, for its own button.
+ * For people the page signs in it's per person, across devices: when this browser hasn't
+ * seen the latest announcement, the script asks /api/widget/seen (with a fresh token from
+ * `getToken`) whether they have elsewhere, and tells it when the panel has shown one. The
+ * later of the two times counts.
  */
 export function widgetLoader(portalTemplate: string): string {
   return `(function () {
@@ -85,11 +89,22 @@ export function widgetLoader(portalTemplate: string): string {
     try { return fn(window.localStorage); } catch (error) { return null; }
   }
 
-  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")).
+  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")):
+  // whether the latest announcement is newer than what this visitor has seen.
   var unseen = false;
   var known = false;
   var latest = null;
+  var seen = null;
   var listeners = [];
+  function isUnseen() {
+    return !!latest && (!seen || latest > seen);
+  }
+  // Seen up to \`at\` (ISO times compare as strings): kept if it's later than what this browser had.
+  function remember(at) {
+    if (seen && seen >= at) return;
+    seen = at;
+    storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
+  }
   function notify(callback) {
     try { callback(unseen); } catch (error) { console.error("Tuti widget: unseen callback failed", error); }
   }
@@ -138,9 +153,35 @@ export function widgetLoader(portalTemplate: string): string {
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
       setUp(data && data.launcher);
-      var seen = storage(function (s) { return s.getItem(seenKey); });
-      setUnseen(!!(data && typeof data.latest === "string" && (!seen || data.latest > seen)));
+      var stored = storage(function (s) { return s.getItem(seenKey); });
+      if (stored) remember(stored);
+      if (isUnseen()) checkElsewhere(); else setUnseen(false);
     });
+
+  // People the page signs in (Tuti.identify): up to when they've seen announcements on any
+  // device, or with \`at\`, that they've now seen them up to \`at\` too. A fresh token each time,
+  // sent to Tuti's API only; null without one, or if it fails.
+  function seenOnServer(at) {
+    if (!getToken || !window.fetch) return Promise.resolve(null);
+    return Promise.resolve()
+      .then(function () { return getToken(); })
+      .then(function (token) {
+        if (typeof token !== "string" || !token) return null;
+        return fetch(api + "/api/widget/seen?project=" + encodeURIComponent(slug), at
+          ? { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ at: at }) }
+          : { headers: { authorization: "Bearer " + token } })
+          .then(function (response) { return response.ok ? response.json() : null; });
+      })
+      .then(function (data) { return data && typeof data.seen === "string" ? data.seen : null; })
+      .catch(function () { return null; });
+  }
+  // Unseen in this browser: maybe they've seen it on another device.
+  function checkElsewhere() {
+    return seenOnServer().then(function (at) {
+      if (at) remember(at);
+      setUnseen(isUnseen());
+    });
+  }
 
   var TABS = { feedback: "", "whats-new": "?tab=whats-new", help: "?tab=help" };
   var frame;
@@ -200,6 +241,8 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
+      // Signed in after the status was worked out: they may have seen it elsewhere.
+      if (unseen) checkElsewhere();
     },
     open: function (options) {
       open(options, document.activeElement);
@@ -238,10 +281,10 @@ export function widgetLoader(portalTemplate: string): string {
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) close();
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken();
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
-      var at = event.data.at;
-      storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
+      remember(event.data.at);
+      seenOnServer(event.data.at);
       // The panel may have been rendered before a newer announcement than the one it showed.
-      if (!latest || at >= latest) setUnseen(false);
+      if (!isUnseen()) setUnseen(false);
     }
   });
 })();

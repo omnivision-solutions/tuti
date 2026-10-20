@@ -34,6 +34,7 @@ import {
   updateArticle,
   updateCollection,
 } from "./help";
+import { markChangelogSeen } from "./changelog-seen";
 import { askHelp } from "./help-ask";
 import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
@@ -49,6 +50,7 @@ const all = [
   listChangelog,
   getChangelogEntry,
   reactToChangelogEntry,
+  markChangelogSeen,
   createChangelogEntry,
   updateChangelogEntry,
   draftChangelogEntry,

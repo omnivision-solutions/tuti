@@ -3,12 +3,14 @@ import { RssIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ChangelogEntryView } from "@/components/changelog-entry";
+import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { portalUrl } from "@/lib/hosts";
 import { Separator } from "@/components/ui/separator";
 import { publishedEntries } from "@/server/changelog-queries";
+import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 
 const PAGE_SIZE = 20;
@@ -27,11 +29,16 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
   const page = Math.max(1, Math.min(10_000, Number(param) || 1));
   // One more than a page, to know whether there are older ones.
   const session = await getSession();
-  const found = await publishedEntries(slug, { take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id });
+  const [found, announced] = await Promise.all([
+    publishedEntries(slug, { take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
+    // The newest entries are on the first page: viewing it, a signed-in user has seen them (the nav's "New" goes).
+    session && page === 1 ? latestAnnouncedAt({ slug }) : null,
+  ]);
   const entries = found.slice(0, PAGE_SIZE);
   const older = found.length > PAGE_SIZE;
   return (
     <div className="flex flex-col gap-8">
+      {announced && <ChangelogSeen projectSlug={slug} at={announced.toISOString()} signedIn />}
       <PageHeader
         title="Changelog"
         description="What's new, improved and fixed."

@@ -128,6 +128,38 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await ada.goto("/b/feature-requests");
   await expect(ada.getByRole("link", { name: "Export to CSV" })).toBeVisible();
 
+  // Signed in on the portal, the announcement is new to her (what a browser saw on another
+  // site isn't hers): Changelog says so until she's looked, then on every device.
+  const changelogTab = ada.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ });
+  await expect(changelogTab).toContainText("New");
+  await checkpoint(ada, "portal-changelog-new");
+  // On the changelog itself it isn't new any more, even before her visit is recorded (held here).
+  let releaseSeen = () => {};
+  let seenHeld = () => {};
+  const held = new Promise<void>((resolve) => (seenHeld = resolve));
+  await ada.route("**/changelog", async (route) => {
+    if (route.request().method() === "POST") {
+      await new Promise<void>((resolve) => {
+        releaseSeen = resolve;
+        seenHeld();
+      });
+    }
+    await route.continue();
+  });
+  await changelogTab.click();
+  await expect(ada.getByRole("article", { name: "Dark mode is here" })).toBeVisible();
+  await expect(changelogTab).toHaveText("Changelog");
+  // Released only once it's actually held (the page may render before it sends the request).
+  await held;
+  const recorded = ada.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/changelog"));
+  releaseSeen();
+  await recorded;
+  await ada.unroute("**/changelog");
+  const otherDevice = await (await browser.newContext({ storageState: await ada.context().storageState() })).newPage();
+  await otherDevice.goto(`${portalUrl(slug)}/roadmap`);
+  await expect(otherDevice.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toHaveText("Changelog");
+  await otherDevice.context().close();
+
   // Other sites may frame the widget, and nothing else.
   const framing = async (path: string) => (await ada.request.get(path)).headers()["content-security-policy"];
   expect(await framing("/widget")).toBeUndefined();
@@ -159,6 +191,56 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await owner.goto(`${portalUrl(slug)}/b/feature-requests`);
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
+});
+
+test("someone a customer's site signs in sees what's new on one device, and it isn't new on their others", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget seen test");
+  await owner.getByRole("combobox", { name: "What the key can do" }).click();
+  await owner.getByRole("option", { name: "Read and write" }).click();
+  await owner.getByRole("button", { name: "Create key" }).click();
+  const key = (await owner.getByRole("alert").filter({ hasText: "Copy the key for Widget seen test now" }).locator("code").first().innerText()).trim();
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+  };
+  await api("/changelog", { title: "Calendar sync is here", body: "Your events, both ways." });
+  await api("/changelog/1/publish", {});
+
+  // Sam (signed in by the customer's site) on their phone: new, until they look.
+  const site = sitePage("customer.localhost", slug);
+  const phone = await (await browser.newContext()).newPage();
+  await phone.goto(site);
+  const launcher = phone.getByRole("button", { name: "Feedback" });
+  await expect(launcher).toHaveAttribute("aria-label", "Feedback, new updates");
+  await checkpoint(phone, "widget-new-for-signed-in-user");
+  await launcher.click();
+  const widget = phone.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: "What's new" }).click();
+  await expect(widget.getByRole("heading", { name: "Calendar sync is here" })).toBeVisible();
+  await expect(launcher).toHaveAttribute("aria-label", "Feedback");
+  await checkpoint(phone, "widget-whats-new-seen");
+
+  // On their laptop (another browser, nothing in its storage) it isn't new. It's recorded as
+  // the panel shows it, so that may take a moment.
+  const laptop = await (await browser.newContext()).newPage();
+  await expect(async () => {
+    await laptop.goto(site);
+    await expect(laptop.getByRole("button", { name: "Feedback" })).toHaveAttribute("aria-label", "Feedback", { timeout: 5_000 });
+  }).toPass();
+  await checkpoint(laptop, "widget-seen-on-another-device");
+  await phone.context().close();
+  await laptop.context().close();
 });
 
 test("a customer's site shows its help center in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
