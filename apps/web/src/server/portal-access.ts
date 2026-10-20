@@ -8,8 +8,9 @@ import { getSession } from "./session";
 
 /**
  * Who may read a project's portal (Settings → Portal access). Public: anyone. Private: only
- * its team and the people its own app signs in (SSO); signing up, a sign-in link or any other
- * Tuti account gets an account, not a way in. proxy.ts applies this to every portal page and
+ * its team, the people its own app signs in (SSO) and the readers the team added by email (once
+ * that email is verified); signing up, a sign-in link or any other Tuti account gets an account,
+ * not a way in. proxy.ts applies this to every portal page and
  * file, the widget panel and /api/widget/latest to themselves, and the readers' actions through
  * readableProject (or canActIn, for those that need an account).
  *
@@ -24,13 +25,30 @@ export async function canReadPortal(where: { id: string } | { slug: string }, us
   return !!userId && (await isPrivateReader(project.id, userId));
 }
 
-/** On the project's team, or signed in by its SSO. */
+/** On the project's team, signed in by its SSO, or one of its readers (with that email verified). */
 async function isPrivateReader(projectId: string, userId: string): Promise<boolean> {
-  const [member, sso] = await Promise.all([
+  const [member, sso, reader] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
     prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }),
+    invitedReader(projectId, userId),
   ]);
-  return !!(member || sso);
+  return !!(member || sso || reader === "verified");
+}
+
+/**
+ * Whether the user's email is on the project's readers: "verified" lets them read a private portal;
+ * "unverified" doesn't yet (anyone can sign up with any address), which the sign-in page says.
+ */
+export async function invitedReader(projectId: string, userId: string): Promise<"verified" | "unverified" | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } });
+  if (!user) {
+    return null;
+  }
+  const reader = await prisma.portalReader.findUnique({
+    where: { projectId_email: { projectId, email: user.email.toLowerCase() } },
+    select: { id: true },
+  });
+  return reader ? (user.emailVerified ? "verified" : "unverified") : null;
 }
 
 /** For proxy.ts: a request to a portal, with its cookies. A public portal (or a missing one) needs no session. */

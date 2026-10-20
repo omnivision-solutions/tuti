@@ -76,13 +76,17 @@ describe("when a post ships", () => {
     expect(emailsTo(author.email)).toHaveLength(1);
   });
 
-  test("on a private portal, only people who may still read it hear about it: its SSO users", async () => {
-    const [author, voter] = [await verified("Author"), await verified("Voter")];
+  test("on a private portal, only people who may still read it hear about it: its SSO users and verified readers", async () => {
+    const [author, voter, reader] = [await verified("Author"), await verified("Voter"), await verified("Reader")];
+    const unverified = await signUp("Unverified reader");
+    await prisma.portalReader.createMany({
+      data: [reader, unverified].map((person) => ({ projectId: project.id, email: person.email.toUpperCase() })),
+    });
     const ssoEmail = `e2e-${randomUUID()}@example.com`;
     const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: ssoEmail });
     // Posted and voted on while the portal was public.
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Audit log" });
-    for (const userId of [voter.id, ssoUser]) {
+    for (const userId of [voter.id, ssoUser, reader.id, unverified.id]) {
       await call(setVote, as(userId), { number: post.number, voted: true });
     }
     await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
@@ -90,6 +94,8 @@ describe("when a post ships", () => {
     await setStatus(post.number, "completed");
 
     expect(emailsTo(ssoEmail).map((email) => email.subject)).toEqual(["Done: Audit log"]);
+    expect(emailsTo(reader.email).map((email) => email.subject)).toEqual(["Done: Audit log"]);
+    expect(emailsTo(unverified.email)).toEqual([]);
     expect(emailsTo(author.email)).toEqual([]);
     expect(emailsTo(voter.email)).toEqual([]);
   });

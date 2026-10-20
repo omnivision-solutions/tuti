@@ -34,6 +34,7 @@ model User {
   ssoIdentity        SsoIdentity?
 
   invitationsCreated  Invitation[]      @relation("InvitationCreatedBy")
+  portalReadersAdded  PortalReader[]    @relation("PortalReaderAddedBy")
   invitationsAccepted Invitation[]      @relation("InvitationAcceptedBy")
   portalHandoffs      PortalHandoff[]
   apiKeysCreated      ApiKey[]
@@ -160,7 +161,7 @@ model Project {
   supportEmail          String?
   supportEmailPending   String?
   supportEmailTokenHash String?      @unique
-  createdAt            DateTime     @default(now())
+  createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
   team                 TeamMember[]
@@ -172,7 +173,7 @@ model Project {
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
   signInLinks          SignInLink[]
-  apiKeys             ApiKey[]
+  apiKeys              ApiKey[]
   githubInstallation   GithubInstallation?
   postLinks            PostLink[]
   webhooks             Webhook[]
@@ -192,6 +193,7 @@ model Project {
   articleChunks        ArticleChunk[]
   collections          Collection[]
   helpSections         HelpSection[]
+  portalReaders        PortalReader[]
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
   helpGapDismissals    HelpGapDismissal[]
@@ -437,6 +439,23 @@ model GithubInstallation {
 /// "Continue as <name>": a one-time code from the app host that signs a Tuti
 /// account into one portal. Bound to the portal and to the state cookie of the
 /// browser that asked for it; deleted when used. Only hashes are stored.
+/// Someone the team lets read its private portal without being on the team or signed in by its
+/// SSO: any account with this email, once the email is verified (an emailed sign-in link verifies it).
+model PortalReader {
+  id        String   @id @default(cuid())
+  projectId String
+  /// Lowercase.
+  email     String
+  addedById String?
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  addedBy User?   @relation("PortalReaderAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, email])
+  @@map("portal_reader")
+}
+
 model PortalHandoff {
   codeHash  String   @id
   projectId String
@@ -1118,24 +1137,24 @@ enum HelpQuestionSource {
 /// what the team's Gaps list reads, and what the hourly rate limits count.
 /// No IP addresses.
 model HelpQuestion {
-  id         String             @id @default(cuid())
-  projectId  String
+  id          String             @id @default(cuid())
+  projectId   String
   /// The signed-in user's id, an anonymous reader's first-party cookie id, or the API key's id.
-  askerId    String
-  question   String
-  source     HelpQuestionSource
-  status     HelpAnswerStatus   @default(FAILED)
+  askerId     String
+  question    String
+  source      HelpQuestionSource
+  status      HelpAnswerStatus   @default(FAILED)
   /// Why it's "I don't know" (NO_ANSWER only).
-  cause      HelpNoAnswerCause?
-  answer     String?
+  cause       HelpNoAnswerCause?
+  answer      String?
   /// The articles the answer cites.
-  articleIds String[]           @default([])
+  articleIds  String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
-  helpful    Boolean?
+  helpful     Boolean?
   /// When the asker passed it to the team ("Ask a person", help.escalate), and the support address it went to.
   escalatedAt DateTime?
   escalatedTo String?
-  createdAt  DateTime           @default(now())
+  createdAt   DateTime           @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
