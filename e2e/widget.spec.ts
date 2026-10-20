@@ -21,14 +21,21 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // A customer's site: /<project> is a page with that project's widget script tag. With the
 // project's SSO secret in `ssoSecrets`, its page signs its user in: TutiSettings.identify
 // fetches a fresh token from /token/<project>, like a customer's own server would make one.
-// `?hide-launcher` adds data-hide-launcher to the script tag.
+// `?hide-launcher` adds data-hide-launcher to the script tag, `?display=sidebar` (or inline)
+// data-display, and each `?inline=<tab>` an inline mount (`?inline=` without data-tab).
 const ssoSecrets = new Map<string, string>();
 let site: Server;
 test.beforeAll(async () => {
   site = createServer((request, response) => {
     const url = new URL(request.url!, "http://site");
     const path = url.pathname.slice(1);
-    const hideLauncher = url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "";
+    const word = (value: string) => value.replace(/[^a-z-]/g, "");
+    const display = url.searchParams.get("display");
+    const scriptAttributes = (url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "") + (display ? ` data-display="${word(display)}"` : "");
+    const inline = url.searchParams
+      .getAll("inline")
+      .map((tab) => `<div data-tuti-inline${tab ? ` data-tab="${word(tab)}"` : ""} style="max-width: 480px"></div>`)
+      .join("");
     if (path.startsWith("token/")) {
       response.setHeader("content-type", "text/plain");
       response.end(ssoToken(ssoSecrets.get(path.slice("token/".length))!, { sub: "app-user-7", name: "Sam from Acme" }));
@@ -38,8 +45,8 @@ test.beforeAll(async () => {
       ? `<script>window.TutiSettings = { identify: () => fetch("/token/${path}").then((r) => r.text()) };</script>`
       : "";
     response.setHeader("content-type", "text/html");
-    response.end(`<!doctype html><title>Customer site</title><h1>Customer site</h1>${identify}
-      <script src="${APP_URL}/widget.js" data-project="${path}"${hideLauncher} async></script>`);
+    response.end(`<!doctype html><title>Customer site</title><h1>Customer site</h1>${inline}${identify}
+      <script src="${APP_URL}/widget.js" data-project="${path}"${scriptAttributes} async></script>`);
   });
   await new Promise<void>((resolve) => site.listen(0, resolve));
 });
@@ -500,4 +507,60 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await visitor.evaluate(() => (window as unknown as { Tuti: TutiSdk }).Tuti.close());
   await expect(visitor.locator("#tuti-widget")).toBeHidden();
   await expect(visitor.getByRole("button", { name: "Our feedback button" })).toBeFocused();
+});
+
+test("a customer's site shows the widget inline in its page, and as a sidebar", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const site = sitePage("customer.localhost", slug);
+  const visitor = await (await browser.newContext()).newPage();
+
+  // Inline: two mounts, each with its own panel at its tab, no launcher and nothing to close.
+  await visitor.goto(`${site}?display=inline&inline=&inline=whats-new`);
+  const frames = visitor.locator("[data-tuti-inline] iframe");
+  await expect(frames).toHaveCount(2);
+  const feedback = frames.nth(0).contentFrame();
+  const whatsNew = frames.nth(1).contentFrame();
+  await expect(feedback.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  await expect(whatsNew.getByText("Nothing new yet")).toBeVisible();
+  await visitor.waitForFunction(() => "Tuti" in window);
+  await expect(visitor.getByRole("button", { name: "Feedback" })).toHaveCount(0);
+  expect((await frames.nth(0).boundingBox())!.height).toBeGreaterThanOrEqual(500);
+  await checkpoint(visitor, "widget-inline");
+  for (const frame of [feedback, whatsNew]) {
+    await expect(frame.getByRole("link", { name: "What's new" })).toBeVisible();
+    await expect(frame.getByRole("button", { name: "Close" })).toHaveCount(0);
+  }
+  // Still none after moving to another tab inside the panel.
+  await feedback.getByRole("link", { name: "What's new" }).click();
+  await expect(feedback.getByText("Nothing new yet")).toBeVisible();
+  await expect(feedback.getByRole("button", { name: "Close" })).toHaveCount(0);
+
+  // Sidebar: the launcher opens a full-height drawer; Escape closes it, back to the button.
+  await visitor.goto(`${site}?display=sidebar`);
+  const launcher = visitor.getByRole("button", { name: "Feedback" });
+  await launcher.click();
+  const drawer = visitor.locator("#tuti-widget");
+  const sidebar = drawer.locator("iframe").contentFrame();
+  await expect(sidebar.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  const viewport = visitor.viewportSize()!;
+  expect(await drawer.boundingBox()).toEqual({ x: viewport.width - 400, y: 0, width: 400, height: viewport.height });
+  await checkpoint(visitor, "widget-sidebar");
+  await visitor.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(launcher).toBeFocused();
+
+  // On a narrow screen, over a backdrop that closes it; the close button does too.
+  await visitor.setViewportSize({ width: 600, height: 800 });
+  await launcher.click();
+  await expect(sidebar.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
+  await checkpoint(visitor, "widget-sidebar-narrow", { fullPage: false });
+  await visitor.mouse.click(100, 400);
+  await expect(drawer).toBeHidden();
+  await expect(launcher).toBeFocused();
+  await launcher.click();
+  await sidebar.getByRole("button", { name: "Close" }).click();
+  await expect(drawer).toBeHidden();
 });

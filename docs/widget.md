@@ -24,6 +24,52 @@ In the Tuti app, your project's **Settings → Widget** (owners and admins) sets
 The script reads these once per page view; changes show up within a minute. The same
 settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
 
+## Display
+
+`data-display` on the script tag (or `display` in `TutiSettings`) says how the widget shows:
+
+| Value | What visitors see |
+| --- | --- |
+| `launcher` (default) | The button, which opens the panel above it. |
+| `sidebar` | The button, which opens the panel as a full-height drawer on its side (right, or left with a bottom-left button). On screens up to 640px wide the rest of the page is dimmed, and tapping it closes the drawer. |
+| `inline` | No button: the panel shows in your page, where you put it (see below). |
+
+```html
+<!-- Launcher (the default) -->
+<script src="https://tuti.so/widget.js" data-project="acme" async></script>
+
+<!-- Sidebar -->
+<script src="https://tuti.so/widget.js" data-project="acme" data-display="sidebar" async></script>
+
+<!-- Inline -->
+<div data-tuti-inline data-tab="feedback"></div>
+<script src="https://tuti.so/widget.js" data-project="acme" data-display="inline" async></script>
+```
+
+or before the script loads:
+
+```html
+<script>window.TutiSettings = { display: "sidebar" };</script>
+```
+
+The attribute wins over `TutiSettings`. In every mode, `Tuti.open()` and help links open
+the panel (in `inline` mode, the floating one, as with `data-hide-launcher`).
+
+### Inline
+
+Every element with `data-tuti-inline` gets its own panel, in any display mode, so a page can
+have a launcher and an inline panel, or several inline ones (say Feedback on one side and
+What's new on the other). `data-tab` picks its tab: `feedback` (the default), `whats-new` or
+`help`. The panel fills the element's width and height, and is at least 500px tall; give the
+element a height to make it taller. It has no close button, since there's nothing to close.
+Elements added to the page later (single-page apps) get their panel when they appear.
+
+```html
+<section style="height: 700px">
+  <div data-tuti-inline data-tab="whats-new" style="height: 100%"></div>
+</section>
+```
+
 ## Your own button
 
 To leave out Tuti's button and open the panel from your own, add `data-hide-launcher`:
@@ -61,7 +107,7 @@ panel instead of leaving the page.
 | `Tuti.open()` | Opens the panel where it was (the Feedback tab the first time). |
 | `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"help"`. |
 | `Tuti.open({ article: "<slug>" })` | Opens it at a help article. |
-| `Tuti.close()` | Closes it (as do Escape and the panel's close button). |
+| `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
 | `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
@@ -78,6 +124,6 @@ your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
 portal, the Changelog tab says "New" until they've looked.
 
-Before the script loads, `window.TutiSettings` takes `identify` and `hideLauncher`.
+Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
 
 The panel's text is in English for now; there's no `locale` setting yet.

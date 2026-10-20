@@ -8,3 +8,5 @@ export const WIDGET_READY_MESSAGE = "tuti:ready";
 export const WIDGET_IDENTIFY_MESSAGE = "tuti:identify";
 /** Panel → page: `{ type, at }`, the visitor has seen the announcements published up to `at`. */
 export const WIDGET_SEEN_MESSAGE = "tuti:seen";
+/** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
+export const WIDGET_INLINE_NAME = "tuti-inline";
