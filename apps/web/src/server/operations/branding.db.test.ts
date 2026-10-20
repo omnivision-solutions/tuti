@@ -56,6 +56,11 @@ async function uploaded(fields: { projectId?: string; status?: "READY" | "PROCES
 
 const attached = async (id: string) => (await prisma.media.findUnique({ where: { id }, select: { attachedAt: true } }))?.attachedAt ?? null;
 const cleanup = () => handlers.cleanupMedia({}, { info: () => {}, warn: () => {} });
+/** A day later, the daily release-media job: releases what nothing in the project uses any more. */
+async function releaseADayLater() {
+  await prisma.media.updateMany({ where: { projectId: project.id, attachedAt: { not: null } }, data: { attachedAt: new Date(Date.now() - 2 * DAY) } });
+  await handlers.releaseMedia({}, { info: () => {}, warn: () => {} });
+}
 
 test("a project starts with no logos or favicon, the brand green, no links, and Powered by tuti", async () => {
   expect(await get()).toEqual({
@@ -117,7 +122,7 @@ test("settings are checked: https links, at most 5 of each, a real colour, and i
   expect(await get()).toEqual({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true });
 });
 
-test("images are attached while used, and a replaced or removed one is released for the cleanup to delete", async () => {
+test("images are attached while used; a replaced or removed one is released by the daily job, for the cleanup to delete", async () => {
   const [logo, dark, favicon, newLogo] = [await uploaded(), await uploaded(), await uploaded(), await uploaded()];
   const saved = await update({ logo: logo.id, logoDark: dark.id, favicon: favicon.id });
   // Pages load the smallest stored size from the media host.
@@ -130,11 +135,21 @@ test("images are attached while used, and a replaced or removed one is released 
   await update({ logo: logo.id, logoDark: dark.id, favicon: favicon.id, color: "#5b21b6" });
   expect(await attached(logo.id)).not.toBeNull();
 
-  // A new logo replaces the old one; removing the dark logo releases it; the favicon is left alone.
+  // The daily job keeps images the branding uses.
+  await releaseADayLater();
+  for (const media of [logo, dark, favicon]) {
+    expect(await attached(media.id)).not.toBeNull();
+  }
+
+  // A new logo replaces the old one and the dark logo is removed; the favicon is left alone.
   expect(await update({ logo: newLogo.id, logoDark: null })).toMatchObject({ logo: { id: newLogo.id }, logoDark: null, favicon: { id: favicon.id } });
   expect(await attached(newLogo.id)).not.toBeNull();
+  // The daily job releases the ones nothing uses any more.
+  await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
   expect(await attached(dark.id)).toBeNull();
+  expect(await attached(newLogo.id)).not.toBeNull();
+  expect(await attached(favicon.id)).not.toBeNull();
 
   // The hourly cleanup deletes the released ones, files and all, and keeps what's in use.
   await cleanup();
@@ -144,23 +159,45 @@ test("images are attached while used, and a replaced or removed one is released 
   expect(await get()).toMatchObject({ logo: { id: newLogo.id }, favicon: { id: favicon.id } });
 });
 
-test("two saves at once: the logo that wins is attached, the other released", async () => {
+test("two saves at once: the logo that wins is attached, the other released by the daily job", async () => {
   const [old, first, second] = [await uploaded(), await uploaded(), await uploaded()];
   await update({ logo: old.id });
   await Promise.all([update({ logo: first.id }), update({ logo: second.id })]);
   const winner = (await get()).logo!.id;
   const loser = winner === first.id ? second.id : first.id;
   expect(await attached(winner)).not.toBeNull();
+  await releaseADayLater();
+  expect(await attached(winner)).not.toBeNull();
   expect(await attached(loser)).toBeNull();
   expect(await attached(old.id)).toBeNull();
+});
+
+test("a replaced logo that a post uses stays", async () => {
+  const [logo, newLogo] = [await uploaded(), await uploaded()];
+  await update({ logo: logo.id });
+  await prisma.post.create({
+    data: {
+      projectId: project.id,
+      boardId: project.boards[0]!.id,
+      authorId: owner.id,
+      number: 1,
+      title: "With the old logo",
+      content: { type: "doc", content: [{ type: "image", attrs: { mediaId: logo.id, width: "100", align: "center", alt: "", w: 480, h: 320 } }] },
+    },
+  });
+  await update({ logo: newLogo.id });
+  await releaseADayLater();
+  expect(await attached(logo.id)).not.toBeNull();
 });
 
 test("one image may be both logos; it's released only once neither uses it", async () => {
   const logo = await uploaded();
   await update({ logo: logo.id, logoDark: logo.id });
   await update({ logoDark: null });
+  await releaseADayLater();
   expect(await attached(logo.id)).not.toBeNull();
   await update({ logo: null });
+  await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
 });
 
@@ -195,6 +232,7 @@ test("the app's form saves everything: an empty image field removes it, empty li
   // An unchecked checkbox isn't sent: Powered by is off.
   expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6" }))).toEqual({});
   expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false });
+  await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
   expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }, [["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
 });

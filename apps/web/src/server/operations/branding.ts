@@ -164,13 +164,8 @@ export const updateBranding = defineOperation({
             ...(input.poweredBy !== undefined && { poweredBy: input.poweredBy }),
           },
         });
-        // Replaced images are released: the hourly cleanup-media job deletes them and frees their space.
-        // ponytail: assumes nothing else uses them (they had to be unused to be picked), but a post saved
-        // with a logo's id since would lose its image; check other uses when content can release media.
-        const released = before.filter((id) => !after.includes(id));
-        if (released.length > 0) {
-          await tx.media.updateMany({ where: { id: { in: released }, projectId }, data: { attachedAt: null } });
-        }
+        // Replaced images stay attached: the daily release-media job releases them once nothing in the
+        // project uses them (it checks content too), and cleanup-media then frees their space.
       }),
     );
     return (await branding({ id: projectId }))!;

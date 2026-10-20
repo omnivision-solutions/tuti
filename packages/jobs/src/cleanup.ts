@@ -57,8 +57,8 @@ export const RELEASE_AFTER_HOURS = 24;
  * A sweep rather than bookkeeping on every delete: it reads what's saved, so no delete or
  * edit path can forget to free something. "Uses" means an image node in any post, comment,
  * changelog entry, help article (deleted ones too, until `purgeArticles` removes them) or
- * kept article revision. A new column that holds a media id must be added to `used` below,
- * or its uploads are released and deleted.
+ * kept article revision, plus the project's branding images. A new column that holds a media
+ * id must be added to `used` below, or its uploads are released and deleted.
  *
  * Races: every save marks its uploads attached again (`attachMedia`, now), and the release
  * is one statement that only takes uploads attached before the cutoff. A save that
@@ -85,6 +85,8 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
       ),
       used AS (
         SELECT jsonb_path_query(content, '$.**.mediaId') #>> '{}' AS id FROM content WHERE content IS NOT NULL
+        -- The project's branding images (logos, favicon).
+        UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId"]) FROM project WHERE id = ${projectId}
       )
       UPDATE media SET "attachedAt" = NULL
       WHERE "projectId" = ${projectId}
