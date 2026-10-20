@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { unzipSync } from "fflate";
@@ -273,4 +275,34 @@ test("readers see “Updated” once the article is edited after it was publishe
 
   await call(updateArticle, as(owner), { slug: "exports", showUpdatedDate: false });
   expect(await publishedArticle(project.slug, "exports")).toMatchObject({ updatedAt: null, showUpdatedDate: false });
+});
+
+describe("the migration", () => {
+  // Its backfill gives each existing article a first revision. Publishing bumps updatedAt, so a
+  // published article untouched since mustn't get a later first revision (it would show "Updated").
+  test("dates a published article's first revision at its publishing, unless it was edited after", async () => {
+    const sql = readFileSync(
+      new URL("../../../../packages/db/prisma/migrations/20261020060000_article_revisions/migration.sql", import.meta.url),
+      "utf8",
+    );
+    const backfill = sql.slice(sql.indexOf('INSERT INTO "article_revision"'), sql.lastIndexOf(";") + 1);
+    for (const title of ["Untouched", "Edited later"]) {
+      await call(createArticle, as(owner), { title });
+      await call(publishArticle, as(owner), { slug: title.toLowerCase().replace(" ", "-") });
+    }
+    await prisma.$executeRaw`UPDATE "article" SET "updatedAt" = "publishedAt" + interval '5 milliseconds' WHERE "slug" = 'untouched'`;
+    await prisma.$executeRaw`UPDATE "article" SET "updatedAt" = "publishedAt" + interval '1 day' WHERE "slug" = 'edited-later'`;
+    await prisma.articleRevision.deleteMany({ where: { article: { projectId: project.id } } });
+
+    await prisma.$executeRawUnsafe(backfill);
+
+    for (const [slug, expected] of [
+      ["untouched", "publishedAt"],
+      ["edited-later", "updatedAt"],
+    ] as const) {
+      const article = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug } });
+      const [revision] = await prisma.articleRevision.findMany({ where: { articleId: article.id } });
+      expect(revision!.createdAt).toEqual(article[expected]);
+    }
+  });
 });

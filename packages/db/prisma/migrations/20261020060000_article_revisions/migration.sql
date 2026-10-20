@@ -48,8 +48,13 @@ ALTER TABLE "article_revision" ADD CONSTRAINT "article_revision_authorId_fkey" F
 -- A deleted article is never published, so whatever reads published articles leaves deleted ones out.
 ALTER TABLE "article" ADD CONSTRAINT "article_deleted_unpublished" CHECK ("deletedAt" IS NULL OR "publishedAt" IS NULL);
 
--- Each existing article's current version is its first revision.
+-- Each existing article's current version is its first revision. Publishing bumps updatedAt, so an
+-- updatedAt within a second of publishing is the publish itself, not an edit ("Updated" compares the two).
 INSERT INTO "article_revision" ("id", "articleId", "title", "body", "content", "collectionId", "authorId", "createdAt")
 SELECT gen_random_uuid()::text, a."id", a."title", a."body", a."content", a."collectionId",
-  (SELECT u."id" FROM "user" u WHERE u."id" = a."createdById"), a."updatedAt"
+  (SELECT u."id" FROM "user" u WHERE u."id" = a."createdById"),
+  CASE
+    WHEN a."publishedAt" IS NOT NULL AND a."updatedAt" < a."publishedAt" + interval '1 second' THEN a."publishedAt"
+    ELSE a."updatedAt"
+  END
 FROM "article" a;
