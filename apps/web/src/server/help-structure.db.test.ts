@@ -113,6 +113,14 @@ describe("nested collections", () => {
     expect(await tree()).toEqual(["basics", "invoices", "refunds", "account"]);
     expect(await call(getArticle, as(), { slug: article })).toMatchObject({ collection: null });
     expect(await call(getArticle, as(), { slug: "getting-a-refund" })).toMatchObject({ collection: { slug: "refunds" } });
+    // Its articles went last among those in no collection, in their order.
+    await call(createCollection, as(), { name: "Guides" });
+    for (const title of ["Zebra crossings", "Apples"]) {
+      await published(title, "guides");
+    }
+    await published("Mangoes", null);
+    await call(deleteCollection, as(), { slug: "guides" });
+    expect(await articlesIn(null)).toEqual([article, "mangoes", "zebra-crossings", "apples"]);
     // The order numbers are the new places, so moving one later lands where it says.
     expect((await prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { order: "asc" } })).map((c) => c.order)).toEqual([0, 1, 2, 3]);
   });

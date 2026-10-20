@@ -1013,6 +1013,13 @@ export const deleteCollection = defineOperation({
           siblings.flatMap((sibling) => (sibling.id === collection.id ? children : [sibling])).map((sibling) => sibling.id),
         );
       }
+      // Its articles go last among those in no collection, in their order (the delete then lets them go).
+      const articlesIn = (collectionId: string | null) =>
+        tx.article.findMany({ where: { projectId, collectionId, deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: { id: true } });
+      const inIt = await articlesIn(collection.id);
+      if (inIt.length > 0) {
+        await renumber(tx, "article", [...(await articlesIn(null)), ...inIt].map((article) => article.id));
+      }
       await tx.collection.delete({ where: { id: collection.id } });
     });
     return { deleted: input.slug };

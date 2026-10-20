@@ -379,9 +379,18 @@ test("the team arranges the help center: a collection in another, moves with the
   await expect(team.getByText("Getting started moved")).toBeVisible();
   await visitor.reload();
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+
+  // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the button that started it.
+  await api("/collections/billing", {}, "DELETE");
+  const moveTo = structure.getByRole("button", { name: "Move Inviting your team to…" });
+  await moveTo.focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Billing", exact: true }).press("Enter");
+  await expect(team.getByText("There's no collection “billing”")).toBeVisible();
+  await expect(moveTo).toBeFocused();
 });
 
-/** A read and write API key for project `slug`, made in its settings, and a POST to the API with it. */
+/** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
 async function apiFor(team: Page, slug: string) {
   await team.goto(`/app/${slug}/settings`);
   await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
@@ -390,9 +399,9 @@ async function apiFor(team: Page, slug: string) {
   await team.getByRole("button", { name: "Create key" }).click();
   const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
   const key = (await shown.locator("code").first().innerText()).trim();
-  return async (path: string, body: object) => {
+  return async (path: string, body: object, method = "POST") => {
     const response = await fetch(`${APP_URL}/api/v1${path}`, {
-      method: "POST",
+      method,
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });

@@ -132,20 +132,22 @@ export function HelpStructure({
   const [pending, startTransition] = useTransition();
   const [dragging, setDragging] = useState<{ kind: Kind; slug: string } | null>(null);
   const [target, setTarget] = useState<{ key: string; where: Where } | null>(null);
-  // The button to focus again once the moved row is back: it's disabled (so it loses focus) while the move runs.
+  // The button to focus again once the move is done, moved or refused: it's disabled while the move runs
+  // (some browsers then drop its focus), and its row may have moved.
   const refocus = useRef<string | null>(null);
 
+  // After the move, with its refreshed rows if it went through (they come in the same transition).
   useEffect(() => {
     const id = refocus.current;
-    refocus.current = null;
-    if (!id) {
+    if (pending || !id) {
       return;
     }
+    refocus.current = null;
     const button = document.getElementById(id);
     const other = document.getElementById(otherButton(id));
     // At the top or the bottom now, its own button is disabled, so the other one gets focus.
     (button instanceof HTMLButtonElement && button.disabled && other ? other : button)?.focus();
-  }, [collections, uncollected]);
+  }, [pending, collections, uncollected]);
 
   const childrenOf = (parent: string | null) => collections.filter((c) => c.parent === parent);
   const articlesIn = (collection: string | null) =>
