@@ -20,8 +20,9 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDG
  * `data-display` (or `TutiSettings.display`) picks how it shows: "launcher" (the default,
  * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
  * backdrop on narrow screens) or "inline" (no button). Any element with `data-tuti-inline`
- * gets the panel in it, in every mode: its own iframe, at its `data-tab`, without a close
- * button; elements added later get one too.
+ * gets the panel in it, in every mode: its own iframe, at the tab it names
+ * (`data-tuti-inline="help"`; empty for Feedback), without a close button; elements
+ * added later get one too.
  *
  * Signing people in (their account in the customer's app, through the project's
  * JWT SSO): `Tuti.identify(getToken)` after the script loads, or
@@ -275,7 +276,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (event.key === "Escape") close();
   });
 
-  // Inline: the panel in each of the page's data-tuti-inline elements, at its data-tab, also in
+  // Inline: the panel in each of the page's data-tuti-inline elements, at the tab it names, also in
   // ones added later (single-page apps). display=inline, and the iframe's name (which stays with
   // it as it navigates), tell the panel there's nothing to close.
   function mountInline() {
@@ -285,7 +286,7 @@ export function widgetLoader(portalTemplate: string): string {
     for (var i = 0; i < elements.length; i++) {
       if (elements[i].__tutiMounted) continue;
       elements[i].__tutiMounted = true;
-      var query = tabQuery(elements[i].getAttribute("data-tab"));
+      var query = tabQuery(elements[i].getAttribute("data-tuti-inline"));
       var inline = newFrame(portal + "/widget" + (query ? query + "&" : "?") + "display=inline");
       inline.name = ${JSON.stringify(WIDGET_INLINE_NAME)};
       inline.style.minHeight = "500px";

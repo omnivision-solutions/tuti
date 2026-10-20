@@ -42,7 +42,7 @@ settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
 <script src="https://tuti.so/widget.js" data-project="acme" data-display="sidebar" async></script>
 
 <!-- Inline -->
-<div data-tuti-inline data-tab="feedback"></div>
+<div data-tuti-inline></div>
 <script src="https://tuti.so/widget.js" data-project="acme" data-display="inline" async></script>
 ```
 
@@ -59,14 +59,15 @@ the panel (in `inline` mode, the floating one, as with `data-hide-launcher`).
 
 Every element with `data-tuti-inline` gets its own panel, in any display mode, so a page can
 have a launcher and an inline panel, or several inline ones (say Feedback on one side and
-What's new on the other). `data-tab` picks its tab: `feedback` (the default), `whats-new` or
-`help`. The panel fills the element's width and height, and is at least 500px tall; give the
+What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `help`;
+empty (`<div data-tuti-inline>`) is Feedback, and so is an unknown one, with an error in the
+browser console. The panel fills the element's width and height, and is at least 500px tall; give the
 element a height to make it taller. It has no close button, since there's nothing to close.
 Elements added to the page later (single-page apps) get their panel when they appear.
 
 ```html
 <section style="height: 700px">
-  <div data-tuti-inline data-tab="whats-new" style="height: 100%"></div>
+  <div data-tuti-inline="whats-new" style="height: 100%"></div>
 </section>
 ```
 

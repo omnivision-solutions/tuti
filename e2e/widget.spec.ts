@@ -22,7 +22,7 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // project's SSO secret in `ssoSecrets`, its page signs its user in: TutiSettings.identify
 // fetches a fresh token from /token/<project>, like a customer's own server would make one.
 // `?hide-launcher` adds data-hide-launcher to the script tag, `?display=sidebar` (or inline)
-// data-display, and each `?inline=<tab>` an inline mount (`?inline=` without data-tab).
+// data-display, and each `?inline=<tab>` an inline mount at that tab (`?inline=`: the default).
 const ssoSecrets = new Map<string, string>();
 let site: Server;
 test.beforeAll(async () => {
@@ -34,7 +34,7 @@ test.beforeAll(async () => {
     const scriptAttributes = (url.searchParams.has("hide-launcher") ? " data-hide-launcher" : "") + (display ? ` data-display="${word(display)}"` : "");
     const inline = url.searchParams
       .getAll("inline")
-      .map((tab) => `<div data-tuti-inline${tab ? ` data-tab="${word(tab)}"` : ""} style="max-width: 480px"></div>`)
+      .map((tab) => `<div data-tuti-inline="${word(tab)}" style="max-width: 480px"></div>`)
       .join("");
     if (path.startsWith("token/")) {
       response.setHeader("content-type", "text/plain");

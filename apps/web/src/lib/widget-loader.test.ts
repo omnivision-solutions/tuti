@@ -534,20 +534,22 @@ test("sidebar on a narrow screen: a backdrop that closes the drawer, also after 
   expect(page.backdrop!.style.display).toBe("none");
 });
 
-/** A data-tuti-inline element on the page, with `attributes`. */
-function inlineMount(page: FakePage, attributes: Record<string, string> = {}) {
+/** A data-tuti-inline element on the page, naming `tab` (empty: the default), with other `attributes`. */
+function inlineMount(page: FakePage, tab = "", attributes: Record<string, string> = {}) {
   const element = page.body.appendChild(new FakeElement("div", page));
-  element.setAttribute("data-tuti-inline", "");
+  element.setAttribute("data-tuti-inline", tab);
   for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
   return element;
 }
 
-test("inline: each data-tuti-inline element gets its own panel, at its data-tab, without a close button", async () => {
+test("inline: each data-tuti-inline element gets its own panel, at the tab it names, without a close button", async () => {
   const page = loadWidget({
     attributes: { "data-display": "inline" },
     before: (page) => {
       inlineMount(page);
-      inlineMount(page, { "data-tab": "help" });
+      inlineMount(page, "help");
+      // The page's own data-tab (its own tabs, say) is none of the widget's business.
+      inlineMount(page, "", { "data-tab": "whats-new" });
     },
   });
   await settled();
@@ -556,6 +558,7 @@ test("inline: each data-tuti-inline element gets its own panel, at its data-tab,
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
     "https://acme.tuti.example/widget?display=inline",
     "https://acme.tuti.example/widget?tab=help&display=inline",
+    "https://acme.tuti.example/widget?display=inline",
   ]);
   for (const frame of page.inlineFrames) {
     expect(frame).toMatchObject({ tagName: "iframe", name: "tuti-inline", title: "Feedback" });
@@ -564,18 +567,18 @@ test("inline: each data-tuti-inline element gets its own panel, at its data-tab,
   // The floating panel is still there for Tuti.open().
   page.Tuti.open({ tab: "whats-new" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=whats-new");
-  expect(page.inlineFrames).toHaveLength(2);
+  expect(page.inlineFrames).toHaveLength(3);
 });
 
-test("inline mounts work in every mode, also ones added later, each mounted once; an unknown data-tab is reported", async () => {
-  const page = loadWidget({ before: (page) => void inlineMount(page, { "data-tab": "whats-new" }) });
+test("inline mounts work in every mode, also ones added later, each mounted once; an unknown tab is reported, and it's the default", async () => {
+  const page = loadWidget({ before: (page) => void inlineMount(page, "whats-new") });
   await settled();
   expect(page.button!.text).toBe("Feedback");
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual(["https://acme.tuti.example/widget?tab=whats-new&display=inline"]);
 
   // A single-page app shows one later.
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  inlineMount(page, { "data-tab": "settings" });
+  inlineMount(page, "settings");
   page.mutated();
   page.mutated();
   expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or help");
