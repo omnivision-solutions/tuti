@@ -61,7 +61,13 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
                   key={gap.question}
                   wideActions
                   title={gap.question}
-                  badges={gap.cause && CAUSES[gap.cause] && <Badge variant="secondary">{CAUSES[gap.cause]}</Badge>}
+                  badges={
+                    <>
+                      {gap.cause && CAUSES[gap.cause] && <Badge variant="secondary">{CAUSES[gap.cause]}</Badge>}
+                      {/* Someone asked for a person: the team's support address has it. */}
+                      {gap.escalated > 0 && <Badge variant="soft">Escalated</Badge>}
+                    </>
+                  }
                   meta={
                     <>
                       {[

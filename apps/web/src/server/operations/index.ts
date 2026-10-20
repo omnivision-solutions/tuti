@@ -41,6 +41,7 @@ import {
 import { markChangelogSeen } from "./changelog-seen";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askHelp } from "./help-ask";
+import { escalateHelp } from "./help-escalate";
 import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
@@ -70,6 +71,7 @@ const all = [
   searchArticles,
   answerArticle,
   askHelp,
+  escalateHelp,
   getAssistantSettings,
   updateAssistantSettings,
   getHelpInsights,

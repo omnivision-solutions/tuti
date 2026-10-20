@@ -4,4 +4,5 @@ export { passwordChangedEmail, passwordResetEmail } from "./password-reset-email
 export { emailConfigured, sendEmail } from "./send";
 export { shippedEmail } from "./shipped-email";
 export { signInLinkEmail } from "./sign-in-link-email";
+export { escalationEmail, supportEmailConfirmEmail } from "./support-email";
 export { verifyEmail } from "./verify-email";

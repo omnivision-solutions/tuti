@@ -150,7 +150,14 @@ model Project {
   assistantLength       AnswerLength @default(MEDIUM)
   assistantInstructions String       @default("")
   assistantOffLimits    String[]     @default([])
-  createdAt             DateTime     @default(now())
+  /// Where "Ask a person" sends questions the AI couldn't help with (help.escalate): an
+  /// address that confirmed a link we emailed it; null is off. A new address waits in
+  /// supportEmailPending (with the hash of its link's token) until it's confirmed, and the
+  /// confirmed one keeps working meanwhile.
+  supportEmail          String?
+  supportEmailPending   String?
+  supportEmailTokenHash String?      @unique
+  createdAt            DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
   team                 TeamMember[]
@@ -1089,6 +1096,9 @@ model HelpQuestion {
   articleIds String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
   helpful    Boolean?
+  /// When the asker passed it to the team ("Ask a person", help.escalate), and the support address it went to.
+  escalatedAt DateTime?
+  escalatedTo String?
   createdAt  DateTime           @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

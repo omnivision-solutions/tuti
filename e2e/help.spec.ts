@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
 test("the team writes a help article in a collection, publishes it, and a visitor reads it", async ({ browser }, testInfo) => {
@@ -522,4 +523,63 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await team.waitForURL(`**/app/${slug}/help/new?title=*`);
   await expect(team.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(team, "team-help-gap-new-article");
+});
+
+test("the team confirms a support email; a visitor the AI couldn't help asks a person, and the team gets it by email", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const support = `e2e-support-${slug}@example.com`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+
+  // The support email takes questions only once it opens the link we email it.
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByLabel("Support email").fill(support);
+  await team.getByRole("button", { name: "Save support email" }).click();
+  await expect(team.getByText("Support email saved")).toBeVisible();
+  await expect(team.getByText(`Waiting for ${support} to confirm`)).toBeVisible();
+  await checkpoint(team, "team-support-email-waiting");
+  const link = linkIn(await latestEmailTo(support), `${APP_URL}/support-email?`);
+  const inbox = await newPerson(browser, APP_URL);
+  await inbox.goto(link);
+  await expect(inbox.getByText(`Send questions from Acme's help center that the AI can't answer to ${support}?`)).toBeVisible();
+  await checkpoint(inbox, "support-email-confirm");
+  await inbox.getByRole("button", { name: "Confirm" }).click();
+  await expect(inbox.getByText(`now come to ${support}`)).toBeVisible();
+  await team.reload();
+  await expect(team.getByText(`Questions go to ${support}.`)).toBeVisible();
+
+  // A visitor asks something the help center doesn't cover.
+  const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
+  const question = `Can I pay with crypto for ${slug}?`;
+  await visitor.goto(`/help?${new URLSearchParams({ q: question })}`);
+  const ai = visitor.getByRole("region", { name: "AI answer" });
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const form = ai.getByRole("form", { name: "Ask a person" });
+  // Signed in: their email is filled in.
+  await expect(form.getByLabel("Your email")).toHaveValue(visitor.email);
+  await form.getByLabel("Anything to add? (optional)").fill("We'd like to pay yearly.");
+  await checkpoint(visitor, "portal-help-ask-a-person");
+  await nextModelReply("They want to pay for Acme in crypto, yearly.", question);
+  const before = { support: countEmailsTo(support), visitor: countEmailsTo(visitor.email) };
+  await form.getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
+  await checkpoint(visitor, "portal-help-asked-a-person");
+
+  // The team gets it, to reply to the visitor directly; the visitor gets a copy.
+  const sent = await latestEmailTo(support, { after: before.support });
+  expect(sent.subject).toBe(`Question from the help center: ${question}`);
+  expect(sent.replyTo).toBe(visitor.email);
+  expect(sent.text).toContain("They want to pay for Acme in crypto, yearly.");
+  expect(sent.text).toContain("We'd like to pay yearly.");
+  const copy = await latestEmailTo(visitor.email, { after: before.visitor });
+  expect(copy.subject).toBe("Your question to Acme");
+
+  // The Gaps list says it went to a person.
+  await team.goto(`/app/${slug}/help/insights`);
+  const gap = team.getByRole("listitem").filter({ hasText: question, has: team.getByRole("button", { name: "Dismiss" }) });
+  await expect(gap).toContainText("Escalated");
+  await checkpoint(team, "team-help-gap-escalated");
 });

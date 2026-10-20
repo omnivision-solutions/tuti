@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
 import { similar } from "./openai";
 
@@ -24,6 +25,8 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // `?hide-launcher` adds data-hide-launcher to the script tag, `?display=sidebar` (or inline)
 // data-display, and each `?inline=<tab>` an inline mount at that tab (`?inline=`: the default).
 const ssoSecrets = new Map<string, string>();
+/** The email the customer's app gives for its signed-in user, per project. */
+const samEmail = (project: string) => `e2e-sam-${project}@example.com`;
 let site: Server;
 test.beforeAll(async () => {
   site = createServer((request, response) => {
@@ -38,7 +41,8 @@ test.beforeAll(async () => {
       .join("");
     if (path.startsWith("token/")) {
       response.setHeader("content-type", "text/plain");
-      response.end(ssoToken(ssoSecrets.get(path.slice("token/".length))!, { sub: "app-user-7", name: "Sam from Acme" }));
+      const project = path.slice("token/".length);
+      response.end(ssoToken(ssoSecrets.get(project)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(project) }));
       return;
     }
     const identify = ssoSecrets.has(path)
@@ -343,7 +347,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
 });
 
-test("a visitor asks the help center's AI in the widget: an answer with its source, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+test("a visitor asks the help center's AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -373,6 +377,17 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await similar(question, `Inviting your team\n\n${body}`, 0.8);
   const article = await api("/articles", { title: "Inviting your team", body });
   await api(`/articles/${article.slug}/publish`, {});
+  // "Ask a person" sends to a support email the team confirmed.
+  const support = `e2e-support-${slug}@example.com`;
+  const set = await fetch(`${APP_URL}/api/v1/assistant`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({ supportEmail: support }),
+  });
+  expect(set.ok).toBe(true);
+  await owner.goto(linkIn(await latestEmailTo(support), `${APP_URL}/support-email?`));
+  await owner.getByRole("button", { name: "Confirm" }).click();
+  await expect(owner.getByText(`now come to ${support}`)).toBeVisible();
 
   const visitor = await (await browser.newContext()).newPage();
   await visitor.goto(sitePage("customer.localhost", slug));
@@ -393,6 +408,41 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await checkpoint(visitor, "widget-help-ai-answer");
   await ai.getByRole("button", { name: "Not helpful" }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
+
+  // Not helpful: they ask a person. The customer's site is slow to sign them in, and they type an
+  // address before it does: the email it signs them in with doesn't replace what they typed.
+  const typed = `e2e-typed-${slug}@example.com`;
+  let tokenAsked!: () => void;
+  const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
+  let releaseToken!: () => void;
+  const released = new Promise<void>((resolve) => (releaseToken = resolve));
+  await visitor.route("**/token/**", async (route) => {
+    tokenAsked();
+    await released;
+    await route.continue();
+  });
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const form = ai.getByRole("form", { name: "Ask a person" });
+  await asked;
+  await form.getByLabel("Your email").fill(typed);
+  // The panel trades the token (a server action) once the page hands it over.
+  const signedIn = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  releaseToken();
+  await signedIn;
+  await visitor.unroute("**/token/**");
+  await expect(form.getByLabel("Your email")).toHaveValue(typed);
+  await form.getByLabel("Anything to add? (optional)").fill("I'm on the free plan.");
+  await checkpoint(visitor, "widget-help-ask-a-person");
+  await nextModelReply("They want to add a colleague on the free plan.", question);
+  const before = countEmailsTo(support);
+  await form.getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
+  await checkpoint(visitor, "widget-help-asked-a-person");
+  const sent = await latestEmailTo(support, { after: before });
+  expect(sent.replyTo).toBe(typed);
+  expect(sent.text).toContain("They want to add a colleague on the free plan.");
+  expect(sent.text).toContain("Owners and admins send invites from the Team page.");
+  expect(sent.text).toContain("marked not helpful");
   // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
   expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
 
@@ -403,6 +453,10 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "widget-help-ai-no-answer");
+  // Asking a person here starts with the email the customer's site signed them in with.
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
+  await ai.getByRole("button", { name: "Cancel" }).click();
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);

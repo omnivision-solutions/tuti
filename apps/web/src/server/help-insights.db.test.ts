@@ -207,8 +207,8 @@ describe("gaps", () => {
 
     // Most asked first; each shown as last asked, with the latest answer that got a thumbs-down.
     const [crypto, exporting, ...rest] = await gaps();
-    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, lastAsked: expect.any(String), answer: "Only by card.", cause: null });
-    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, lastAsked: expect.any(String), answer: "From the board's menu.", cause: null });
+    expect(crypto).toEqual({ question: "Can I pay with crypto?", noAnswer: 2, notHelpful: 2, escalated: 0, lastAsked: expect.any(String), answer: "Only by card.", cause: null });
+    expect(exporting).toEqual({ question: "How do I export?", noAnswer: 0, notHelpful: 1, escalated: 0, lastAsked: expect.any(String), answer: "From the board's menu.", cause: null });
     expect(rest).toEqual([]);
     expect(Date.parse(crypto!.lastAsked)).toBeGreaterThan(minutesAgo(11).getTime());
     expect(Date.parse(crypto!.lastAsked)).toBeLessThan(minutesAgo(9).getTime());

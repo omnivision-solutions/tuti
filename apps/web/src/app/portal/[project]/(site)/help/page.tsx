@@ -11,6 +11,7 @@ import { helpCenter } from "@/server/help-queries";
 import { searchHelp } from "@/server/help-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
+import { askAPerson } from "@/server/operations/help-escalate";
 
 export const metadata = { title: "Help center" };
 
@@ -64,7 +65,9 @@ export default async function HelpCenterPage(props: PageProps<"/portal/[project]
         <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the help center" />
         <Button type="submit">Search</Button>
       </form>
-      {query && answersEnabled() && <HelpAnswer key={query} projectSlug={slug} question={query} feedbackHref={await feedbackHref(slug, query)} />}
+      {query && answersEnabled() && (
+        <HelpAnswer key={query} projectSlug={slug} question={query} feedbackHref={await feedbackHref(slug, query)} askAPerson={await askAPerson(slug)} />
+      )}
       {query && <SearchResults projectSlug={slug} query={query} />}
       {!query && collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />

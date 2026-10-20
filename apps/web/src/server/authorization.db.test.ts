@@ -16,6 +16,7 @@ import {
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
+import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -120,6 +121,22 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => assistant.saveAssistantSettings(slug, {}, form({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: "refund" })),
     },
+    saveSupportEmail: {
+      allowed: "ADMIN",
+      call: (slug) => assistant.saveSupportEmail(slug, {}, form({ supportEmail: `e2e-${crypto.randomUUID()}@example.com` })),
+    },
+    // The emailed token is the permission (see help-escalate.db.test.ts).
+    confirmSupportEmail: {
+      allowed: "public",
+      call: async (slug) => {
+        const token = crypto.randomUUID();
+        await prisma.project.update({
+          where: { slug },
+          data: { supportEmailPending: "e2e-support-new@example.com", supportEmailTokenHash: hashSecret(token) },
+        });
+        return assistant.confirmSupportEmail(token);
+      },
+    },
   },
   branding: {
     saveBranding: {
@@ -210,6 +227,22 @@ const matrix: Matrix = {
       },
     },
     rateHelpAnswer: { allowed: "public", takesIds: true, call: (slug, f) => helpReaders.rateHelpAnswer(slug, f.questionId, false) },
+    // Only the asker (here the browser with MATRIX_READER's cookie; someone signed in is known by their account instead).
+    escalateHelp: {
+      allowed: "public",
+      takesIds: true,
+      // The summary of what they need.
+      before: () => model.reply("They want to pay with crypto."),
+      call: async (slug, f) => {
+        const cookie = request.cookie;
+        request.cookie = [cookie, `tuti_reader=${MATRIX_READER}`].filter(Boolean).join("; ");
+        try {
+          return await helpReaders.escalateHelp(slug, f.escalatableId, `e2e-${crypto.randomUUID()}@example.com`, "From the matrix");
+        } finally {
+          request.cookie = cookie;
+        }
+      },
+    },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -400,6 +433,8 @@ const matrix: Matrix = {
 };
 
 const ROLES: TeamRole[] = ["MEMBER", "ADMIN", "OWNER"];
+/** The reader cookie of the anonymous reader who asked the fixture's question that can be escalated. */
+const MATRIX_READER = "00000000-0000-4000-8000-00000000000a";
 
 /** Who's acting: a role on the project's team, or someone from outside it. */
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
@@ -536,6 +571,11 @@ async function createFixture() {
   const question = await prisma.helpQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });
+  // "Ask a person" is on, and an anonymous reader just got "I don't know".
+  await prisma.project.update({ where: { id: projectId }, data: { supportEmail: "e2e-support@example.com" } });
+  const escalatable = await prisma.helpQuestion.create({
+    data: { projectId, askerId: MATRIX_READER, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" },
+  });
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({
     data: { article: { connect: { projectId_slug: { projectId, slug: "matrix-draft" } } }, title: "Matrix draft, before", body: "Older" },
@@ -567,6 +607,7 @@ async function createFixture() {
     invitationToken,
     targetMemberId: targetMember.id,
     questionId: question.id,
+    escalatableId: escalatable.id,
     revisionId: revision.id,
   };
 }

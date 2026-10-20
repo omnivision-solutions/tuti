@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailConfigured } from "@tuti/email";
 import { notFound } from "next/navigation";
 
 import { ApiKeys } from "@/components/api-keys";
@@ -8,6 +9,7 @@ import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/com
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
+import { SupportEmailSettings } from "@/components/support-email";
 import { WidgetSettings } from "@/components/widget-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -172,6 +174,10 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardHeader>
         <CardContent>
           <AssistantSettings projectSlug={project.slug} settings={assistant} />
+          {/* "Ask a person" emails the team, so it needs email set up on this server. */}
+          {emailConfigured() && (
+            <SupportEmailSettings projectSlug={project.slug} active={assistant.supportEmail} pending={assistant.supportEmailPending} />
+          )}
         </CardContent>
       </Card>
 

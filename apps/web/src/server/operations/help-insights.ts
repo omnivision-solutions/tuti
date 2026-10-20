@@ -100,13 +100,16 @@ export async function helpInsights(projectId: string) {
     }),
     // Gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped by
     // normalized question, without what the team dismissed (as asked up to the dismissal).
-    // `cause`: why the latest "I don't know" in the group happened.
-    prisma.$queryRaw<{ question: string; noAnswer: number; notHelpful: number; lastAsked: Date; answer: string | null; cause: string | null }[]>`
+    // `cause`: why the latest "I don't know" in the group happened; `escalated`: how many were passed to the team ("Ask a person").
+    prisma.$queryRaw<
+      { question: string; noAnswer: number; notHelpful: number; escalated: number; lastAsked: Date; answer: string | null; cause: string | null }[]
+    >`
       SELECT
         (array_agg(q.question ORDER BY q."createdAt" DESC))[1] AS question,
         count(*) FILTER (WHERE q.status = 'NO_ANSWER')::int AS "noAnswer",
         (array_agg(q.cause::text ORDER BY q."createdAt" DESC) FILTER (WHERE q.status = 'NO_ANSWER'))[1] AS cause,
         count(*) FILTER (WHERE q.helpful = false)::int AS "notHelpful",
+        count(*) FILTER (WHERE q."escalatedAt" IS NOT NULL)::int AS escalated,
         max(q."createdAt") AS "lastAsked",
         (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
       FROM (
@@ -164,7 +167,7 @@ export const dismissHelpGap = defineOperation({
 
 export const getHelpInsights = defineOperation({
   name: "help.insights",
-  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter)`,
+  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (help.escalate)`,
   method: "GET",
   path: "/help/insights",
   scope: "read",

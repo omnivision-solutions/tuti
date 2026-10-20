@@ -38,7 +38,8 @@ const form = (title: string) => {
 test("the widget trades an SSO token for its own, once, and posts as that person", async () => {
   const jwt = await ssoToken("app-user-1");
   const signedIn = await widgetSignIn(project.slug, jwt);
-  expect(signedIn).toEqual({ token: expect.any(String), name: "Ada from the app" });
+  // With the email the app gave, which "Ask a person" starts with.
+  expect(signedIn).toEqual({ token: expect.any(String), name: "Ada from the app", email: expect.stringMatching(/^e2e-.*@example\.com$/) });
   expect(await widgetSignIn(project.slug, jwt)).toEqual({ error: "Couldn't sign you in" }); // used once
 
   const { token } = signedIn as { token: string };
