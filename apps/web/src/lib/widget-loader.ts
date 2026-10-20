@@ -88,6 +88,7 @@ export function widgetLoader(portalTemplate: string): string {
   // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")).
   var unseen = false;
   var known = false;
+  var latest = null;
   var listeners = [];
   function notify(callback) {
     try { callback(unseen); } catch (error) { console.error("Tuti widget: unseen callback failed", error); }
@@ -135,6 +136,7 @@ export function widgetLoader(portalTemplate: string): string {
     .then(function (response) { return response.ok ? response.json() : null; })
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
+      latest = data && typeof data.latest === "string" ? data.latest : null;
       setUp(data && data.launcher);
       var seen = storage(function (s) { return s.getItem(seenKey); });
       setUnseen(!!(data && typeof data.latest === "string" && (!seen || data.latest > seen)));
@@ -238,7 +240,8 @@ export function widgetLoader(portalTemplate: string): string {
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
       var at = event.data.at;
       storage(function (s) { if (!(s.getItem(seenKey) >= at)) s.setItem(seenKey, at); });
-      setUnseen(false);
+      // The panel may have been rendered before a newer announcement than the one it showed.
+      if (!latest || at >= latest) setUnseen(false);
     }
   });
 })();

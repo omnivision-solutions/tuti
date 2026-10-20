@@ -84,9 +84,11 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   latest?: object | null | "hang";
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
+  const windowListeners: Record<string, ((event: object) => void)[]> = {};
   const stored = new Map<string, string>();
   const page = {
     documentListeners,
+    windowListeners,
     document: {
       activeElement: null as unknown,
       body: null as unknown as FakeElement,
@@ -103,7 +105,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       TutiSettings: settings,
       matchMedia: () => ({ matches: false }),
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
-      addEventListener: () => {},
+      addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
       fetch: vi.fn(async () => {
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
@@ -267,6 +269,21 @@ test("Tuti.unseen() and Tuti.on('unseen') tell the page about an announcement th
   page.Tuti.on("unseen", (unseen) => late.push(unseen));
   expect(late).toEqual([true]);
   error.mockRestore();
+});
+
+test("the panel saying it showed an older announcement doesn't hide a newer one", async () => {
+  const page = loadWidget({ latest: { latest: "2026-10-18T10:00:00.000Z", launcher: null } });
+  await settled();
+  page.Tuti.open({ tab: "whats-new" });
+  const seen = (at: string) =>
+    page.windowListeners.message?.forEach((listener) =>
+      listener({ source: (page.frame as unknown as { contentWindow?: unknown }).contentWindow, origin: "https://acme.tuti.example", data: { type: "tuti:seen", at } }),
+    );
+  // The panel was rendered before the newest announcement was published.
+  seen("2026-10-17T10:00:00.000Z");
+  expect(page.Tuti.unseen()).toBe(true);
+  seen("2026-10-18T10:00:00.000Z");
+  expect(page.Tuti.unseen()).toBe(false);
 });
 
 test("an announcement this browser has seen isn't unseen", async () => {
