@@ -1,8 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { resolveHost } from "@/lib/hosts";
+import { portalUrl, resolveHost } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
+import { portalVisitor } from "@/server/portal-access";
 
 /**
  * Routes requests by host:
@@ -14,8 +15,12 @@ import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
  * The auth API (/api/*) is served on every host so sessions stay per host.
  * Pages can't be framed by other sites (clickjacking), except a portal's
  * /widget, which customers embed with the widget script.
+ *
+ * A private portal (server/portal-access.ts) is enforced here, the one way into every portal
+ * page and file: visitors who may not read it go to its sign-in page, with `next` to come back.
+ * (Not in the portal's layout: layouts don't run for every request, and files bypass them.)
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Health checks come from inside the host (e.g. localhost:3000), not a known hostname.
   if (pathname === "/api/health") {
@@ -27,10 +32,25 @@ export function proxy(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.next();
     }
+    const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(target.slug, request.headers);
+    if (visitor === "refused") {
+      const signIn = new URL("/sign-in", portalUrl(target.slug));
+      if (pathname !== "/") {
+        signIn.searchParams.set("next", pathname + request.nextUrl.search);
+      }
+      const response = NextResponse.redirect(signIn);
+      response.headers.set("cache-control", "private, no-store");
+      return noFraming(response);
+    }
     const url = request.nextUrl.clone();
     const path = pathname.replace(/^\/help\/([^/]+)\.md$/, "/help/$1/md");
     url.pathname = `/portal/${target.slug}${path === "/" ? "" : path}`;
     const response = NextResponse.rewrite(url);
+    if (visitor === "allowed") {
+      // A private portal's feeds and files are for this reader only: no shared cache may keep them.
+      // (Set here, it wins over the routes' own public cache-control.)
+      response.headers.set("cache-control", "private, no-store");
+    }
     return pathname === "/widget" ? response : noFraming(response);
   }
 
@@ -54,6 +74,15 @@ export function proxy(request: NextRequest) {
   // Unknown host (later: custom domains).
   return new NextResponse(null, { status: 404 });
 }
+
+/**
+ * What anyone may open on a private portal: signing in (every way, and its emailed links), the
+ * SSO and email links, robots.txt (which says keep out), and the widget's panel (which asks
+ * people to sign in itself, since the customer's site signs them in there). Sign-up is open
+ * here only to say it's off.
+ */
+const OPEN_PORTAL_PATHS =
+  /^\/(sign-in|sign-in\/link|sign-up|forgot-password|reset-password|sso|sso\/error|continue|unsubscribe|unsubscribe\/confirm|robots\.txt|widget)$/;
 
 function noFraming(response: NextResponse): NextResponse {
   response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");

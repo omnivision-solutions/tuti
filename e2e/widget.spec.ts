@@ -204,6 +204,37 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
 });
 
+test("a private portal's widget asks visitors to sign in; people the customer's site signs in see it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("Portal is now private")).toBeVisible();
+
+  // The customer's site doesn't sign this visitor in: the panel shows nothing of the portal.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await expect(widget.getByText("Sign in to see this.", { exact: false })).toBeVisible();
+  await expect(widget.getByRole("link", { name: "What's new" })).toHaveCount(0);
+  await checkpoint(visitor, "widget-private-signed-out");
+
+  // Once it signs them in (Tuti.identify), the panel shows the portal, on every tab.
+  ssoSecrets.set(slug, secret);
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await widget.getByRole("link", { name: "What's new" }).click();
+  await expect(widget.getByText("Nothing new yet")).toBeVisible();
+  await checkpoint(visitor, "widget-private-signed-in-with-sso");
+});
+
 test("someone a customer's site signs in sees what's new on one device, and it isn't new on their others", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;

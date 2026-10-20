@@ -8,6 +8,7 @@ import { BrandingSettings } from "@/components/branding-settings";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
+import { PortalAccessSelect } from "@/components/portal-access-select";
 import { SsoSettings } from "@/components/sso-settings";
 import { SupportEmailSettings } from "@/components/support-email";
 import { WidgetSettings } from "@/components/widget-settings";
@@ -19,6 +20,7 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
+import { portalAccess } from "@/server/operations/portal";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
 const GITHUB_RESULTS: Record<string, string> = {
@@ -57,6 +59,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const widget = (await widgetSettings({ id: project.id }))!;
   const brand = (await branding({ id: project.id }))!;
   const assistant = await assistantSettings(project.id);
+  const { access } = await portalAccess(project.id);
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -119,6 +122,16 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             enabled={project.ssoSecret !== null}
             ssoUrl={`${portalUrl(project.slug)}/sso`}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Portal access</CardTitle>
+          <CardDescription>Who can see your portal, its help center and changelog, and the widget.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PortalAccessSelect projectSlug={project.slug} access={access} />
         </CardContent>
       </Card>
 

@@ -17,7 +17,7 @@ import { emailSignInLink } from "@/server/sign-in-link";
  * `next` (a same-site path, e.g. an invite link) overrides where to go afterwards and
  * is carried over when switching between sign-in and sign-up. `linkProject` (a portal
  * that can send email) adds "Email me a sign-in link"; `forgotPassword` (a host that can
- * send email) adds "Forgot your password?".
+ * send email) adds "Forgot your password?". `signUp={false}` (a private portal) leaves out "Create an account".
  */
 export function AuthForm({
   mode,
@@ -26,6 +26,7 @@ export function AuthForm({
   defaultEmail,
   linkProject,
   forgotPassword,
+  signUp = true,
 }: {
   mode: "sign-in" | "sign-up";
   redirectTo: string;
@@ -33,6 +34,7 @@ export function AuthForm({
   defaultEmail?: string;
   linkProject?: string;
   forgotPassword?: boolean;
+  signUp?: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
@@ -155,6 +157,7 @@ export function AuthForm({
               Email me a sign-in link
             </Button>
           )}
+          {(isSignUp || signUp) && (
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
             <Link
@@ -167,6 +170,7 @@ export function AuthForm({
               {isSignUp ? "Sign in" : "Create an account"}
             </Link>
           </p>
+          )}
         </CardFooter>
       </form>
     </Card>

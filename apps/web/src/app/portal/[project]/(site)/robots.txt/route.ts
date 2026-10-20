@@ -2,13 +2,18 @@ import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
 
-/** Portals are public: crawlers are welcome, and pointed to the sitemap. */
+/** Public portals welcome crawlers and point them to the sitemap; private ones keep them out. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/robots.txt">) {
   const { project: slug } = await params;
-  if (!(await prisma.project.findUnique({ where: { slug }, select: { id: true } }))) {
+  const project = await prisma.project.findUnique({ where: { slug }, select: { portalAccess: true } });
+  if (!project) {
     return new Response("Not found", { status: 404 });
   }
-  return new Response(`User-agent: *\nAllow: /\n\nSitemap: ${portalUrl(slug)}/sitemap.xml\n`, {
+  const body =
+    project.portalAccess === "PRIVATE"
+      ? "User-agent: *\nDisallow: /\n"
+      : `User-agent: *\nAllow: /\n\nSitemap: ${portalUrl(slug)}/sitemap.xml\n`;
+  return new Response(body, {
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" },
   });
 }

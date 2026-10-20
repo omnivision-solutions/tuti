@@ -13,6 +13,7 @@ import { appUrl } from "@/lib/hosts";
 import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
+import { canReadPortal } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -53,8 +54,11 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
       className={cn("h-8 w-auto max-w-48 object-contain object-left", className)}
     />
   );
+  // On a private portal, the pages anyone may open (signing in) don't show what's on it.
+  // proxy.ts keeps them from the rest; this only hides the tabs.
+  const canRead = await canReadPortal({ id: project.id }, session?.user.id);
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
-  const newChangelog = !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
+  const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
   return (
     <>
@@ -88,7 +92,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </SignInLink>
         )}
       </header>
-      <BoardTabs boards={project.boards} newChangelog={newChangelog} />
+      {canRead && <BoardTabs boards={project.boards} newChangelog={newChangelog} />}
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">{children}</main>
       {(brand.footerLinks.length > 0 || brand.poweredBy) && (
         <footer className="flex flex-col items-center gap-3 px-6 pb-6">
