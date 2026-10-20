@@ -19,6 +19,7 @@ import { hashInvitationToken } from "@/lib/invitations";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { request } from "@/test/next-headers";
 
 import * as apiKeys from "./api-keys";
 import * as assistant from "./assistant";
@@ -33,6 +34,7 @@ import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
+import * as passwordReset from "./password-reset";
 import * as posts from "./posts";
 import * as projects from "./projects";
 import * as signInLink from "./sign-in-link";
@@ -64,6 +66,7 @@ const modules = {
   invitations,
   "manage-posts": managePosts,
   media,
+  "password-reset": passwordReset,
   "portal-handoff": portalHandoff,
   posts,
   projects,
@@ -323,6 +326,25 @@ const matrix: Matrix = {
     },
     // The emailed token is the permission (a dead one goes back to the sign-in page).
     confirmSignInLink: { allowed: "public", call: () => signInLink.confirmSignInLink(form({ token: "not-a-token", next: "/" })) },
+  },
+  // Anyone may ask for a reset link on a portal or the app; only the address's owner can use it (see password-reset.db.test.ts).
+  "password-reset": {
+    emailPasswordReset: {
+      allowed: "public",
+      call: async (slug) => {
+        request.host = `${slug}.localhost:3100`;
+        try {
+          return await passwordReset.emailPasswordReset(form({ email: `e2e-${crypto.randomUUID()}@example.com` }));
+        } finally {
+          request.host = "";
+        }
+      },
+    },
+    // The emailed token is the permission (a dead one goes back to "Forgot your password?").
+    setNewPassword: {
+      allowed: "public",
+      call: () => passwordReset.setNewPassword(form({ token: "not-a-token", password: "a-new-password", confirm: "a-new-password" })),
+    },
   },
   "sso-settings": {
     rotateSsoSecret: { allowed: "ADMIN", call: (slug) => ssoSettings.rotateSsoSecret(slug) },

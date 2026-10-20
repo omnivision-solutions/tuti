@@ -1,10 +1,7 @@
 "use server";
 
-import { createHmac } from "node:crypto";
-
 import { prisma } from "@tuti/db";
 import { emailConfigured } from "@tuti/email";
-import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
@@ -12,17 +9,11 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { clientKey } from "@/lib/client-ip";
 import { resolveHost } from "@/lib/hosts";
-import { hashSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
-import {
-  SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR,
-  SIGN_IN_LINKS_PER_CLIENT_PER_HOUR,
-  SIGN_IN_LINKS_PER_PORTAL_PER_HOUR,
-  type SignInLinkMetadata,
-} from "@/lib/sign-in-link";
+import type { SignInLinkMetadata } from "@/lib/sign-in-link";
 
+import { countEmailedLink } from "./email-link-limits";
 import { failedSignInLinkPath, pendingSignInLink } from "./sign-in-link-lookup";
 
 const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z.email("Enter a valid email address")) });
@@ -51,7 +42,7 @@ export async function emailSignInLink(
   }
 
   const requestHeaders = await headers();
-  const limited = await recordRequest(project.id, hashSecret(email), await clientHash(requestHeaders));
+  const limited = await countEmailedLink(project.id, email, requestHeaders);
   if ("error" in limited) {
     return { error: limited.error };
   }
@@ -101,78 +92,4 @@ export async function confirmSignInLink(form: FormData) {
     }
   }
   redirect(signedIn ? next : failedSignInLinkPath(next));
-}
-
-let warnedNoIpHeader = false;
-let warnedBadIp = false;
-
-/**
- * Who's asking, for the per-visitor limit: an HMAC of their IP address (an IPv6 address's /64, keyed with the
- * auth secret, so the stored hash can't be matched against a list of addresses), read
- * only from TRUSTED_IP_HEADER, a header the proxy sets. Without it there's no
- * per-visitor limit: X-Forwarded-For and the like can be anything the visitor sends.
- */
-async function clientHash(requestHeaders: Headers): Promise<string | null> {
-  const header = process.env.TRUSTED_IP_HEADER?.trim();
-  if (!header) {
-    if (!warnedNoIpHeader) {
-      warnedNoIpHeader = true;
-      log.warn("TRUSTED_IP_HEADER is not set: portal sign-in links have no per-visitor limit");
-    }
-    return null;
-  }
-  // The proxy's own value is the last one if it appends to a list.
-  const ip = requestHeaders.get(header)?.split(",").at(-1)?.trim();
-  if (!ip) {
-    return null;
-  }
-  // One visitor per IPv4 address or IPv6 /64.
-  const key = clientKey(ip);
-  if (!key) {
-    if (!warnedBadIp) {
-      warnedBadIp = true;
-      log.warn("TRUSTED_IP_HEADER doesn't hold an IP address: no per-visitor limit for such requests", { header });
-    }
-    return null;
-  }
-  return createHmac("sha256", (await auth.$context).secret).update(key).digest("hex");
-}
-
-/**
- * Counts the request against the hourly limits (per address on any portal, per visitor,
- * and per portal): the new row's id, an error to show, or no id when the visitor is over
- * their limit (which isn't shown).
- */
-async function recordRequest(
-  projectId: string,
-  emailHash: string,
-  clientHash: string | null,
-): Promise<{ error: string } | { id: string | null }> {
-  const since = new Date(Date.now() - 60 * 60 * 1000);
-  await prisma.signInLink.deleteMany({ where: { createdAt: { lt: since } } });
-  return prisma.$transaction(async (tx) => {
-    // One at a time per portal, address and visitor (always in that order), so concurrent
-    // requests can't overrun the limits together.
-    await lockProject(tx, projectId);
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(1, hashtext(${emailHash}))`;
-    if (clientHash) {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(2, hashtext(${clientHash}))`;
-    }
-    const [byAddress, byClient, byPortal] = await Promise.all([
-      tx.signInLink.count({ where: { emailHash, createdAt: { gt: since } } }),
-      clientHash ? tx.signInLink.count({ where: { clientHash, createdAt: { gt: since } } }) : 0,
-      tx.signInLink.count({ where: { projectId, createdAt: { gt: since } } }),
-    ]);
-    if (byAddress >= SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR) {
-      return { error: "We've sent a lot of sign-in links to this address in the last hour. Try again later." };
-    }
-    // Before the portal's limit, so one visitor can't use it up for everyone.
-    if (byClient >= SIGN_IN_LINKS_PER_CLIENT_PER_HOUR) {
-      return { id: null };
-    }
-    if (byPortal >= SIGN_IN_LINKS_PER_PORTAL_PER_HOUR) {
-      return { error: "This site has sent a lot of sign-in links in the last hour. Try again later." };
-    }
-    return tx.signInLink.create({ data: { projectId, emailHash, clientHash }, select: { id: true } });
-  });
 }

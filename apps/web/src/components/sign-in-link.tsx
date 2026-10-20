@@ -14,7 +14,8 @@ export function SignInLink({ className, children }: { className?: string; childr
   const here = search ? `${path}?${search}` : path;
   const href = /^\/sign-(in|up)\b/.test(path)
     ? `/sign-in${search ? `?${search}` : ""}`
-    : here === "/"
+    : // Nothing to come back to from a password reset (and its link's token stays out of the URL).
+      here === "/" || /^\/(forgot|reset)-password\b/.test(path)
       ? "/sign-in"
       : `/sign-in?${new URLSearchParams({ next: here })}`;
   return (
