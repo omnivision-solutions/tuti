@@ -5,10 +5,13 @@ import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
+import { HelpAnswer } from "@/components/help-answer";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { helpCenter, publishedArticle } from "@/server/help-queries";
 import { searchHelp } from "@/server/help-search";
+import { MAX_POST_TITLE } from "@/server/operations/create";
+import { answersEnabled } from "@/server/operations/help-ask";
 
 /** A widget Help URL: the list (with the search, if any) or an article. */
 function helpHref(query: string, article?: string) {
@@ -23,20 +26,24 @@ function helpHref(query: string, article?: string) {
 }
 
 /**
- * The widget's Help tab: the portal's help center at panel size. A search (`q`), the
- * collections with their articles, or one article (`article`), which also opens on the
- * portal in a new tab. Article links keep the search, so going back returns to the results.
+ * The widget's Help tab: the portal's help center at panel size. A search (`q`) with the
+ * portal's "Ask AI", the collections with their articles, or one article (`article`), which
+ * also opens on the portal in a new tab. Article links keep the search, so going back
+ * returns to the results. "Post this as feedback" opens the widget's own Feedback tab.
  */
 export async function WidgetHelp({
   projectId,
   projectSlug,
   query,
   article,
+  hasBoard,
 }: {
   projectId: string;
   projectSlug: string;
   query: string;
   article?: string;
+  /** Whether the Feedback tab can take a post (the project has a board). */
+  hasBoard: boolean;
 }) {
   if (article) {
     return <WidgetArticle projectSlug={projectSlug} slug={article} back={helpHref(query)} backLabel={query ? "Search results" : "All articles"} />;
@@ -49,6 +56,15 @@ export async function WidgetHelp({
         <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the help center" />
         <Button type="submit">Search</Button>
       </form>
+      {query && answersEnabled() && (
+        <HelpAnswer
+          key={query}
+          widget
+          projectSlug={projectSlug}
+          question={query}
+          feedbackHref={hasBoard ? `/widget?${new URLSearchParams({ title: query.slice(0, MAX_POST_TITLE) })}` : null}
+        />
+      )}
       {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} />}
     </div>
   );

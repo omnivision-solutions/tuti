@@ -7,6 +7,8 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
+import { nextModelReply } from "./model";
+import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
 function ssoToken(secret: string, claims: Record<string, unknown>) {
@@ -252,7 +254,77 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
 });
 
-type TutiSdk = { open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
+test("a visitor asks the help center's AI in the widget: an answer with its source, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  // SSO, so the customer's site signs its visitor in to the widget's Feedback tab.
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  await owner.getByRole("textbox", { name: "Key name" }).fill("Widget answers test");
+  await owner.getByRole("combobox", { name: "What the key can do" }).click();
+  await owner.getByRole("option", { name: "Read and write" }).click();
+  await owner.getByRole("button", { name: "Create key" }).click();
+  const shown = owner.getByRole("alert").filter({ hasText: "Copy the key for Widget answers test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
+  // A published article whose only section is close to the visitor's question.
+  const question = `How do I add a colleague to Acme ${slug}?`;
+  const body = "Owners and admins send invites from the Team page.";
+  await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const article = await api("/articles", { title: "Inviting your team", body });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help" }).click();
+  const search = widget.getByRole("searchbox", { name: "Search the help center" });
+  await search.fill(question);
+  await search.press("Enter");
+  const ai = widget.getByRole("region", { name: "AI answer" });
+  await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
+  // Sources open on the portal in a new tab, so the answer stays in the panel.
+  const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
+  await expect(source).toHaveAttribute("href", `/help/${article.slug}`);
+  await expect(source).toHaveAttribute("target", "_blank");
+  await checkpoint(visitor, "widget-help-ai-answer");
+  await ai.getByRole("button", { name: "Not helpful" }).click();
+  await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
+  // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
+  expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
+
+  // Something the help center doesn't cover: "I don't know", and posting it from the widget's own Feedback tab.
+  const unrelated = "Can I pay with crypto?";
+  await search.fill(unrelated);
+  await search.press("Enter");
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+  await checkpoint(visitor, "widget-help-ai-no-answer");
+  await ai.getByRole("link", { name: "Post this as feedback" }).click();
+  await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
+  await checkpoint(visitor, "widget-help-ai-post-as-feedback");
+  await widget.getByRole("button", { name: "Submit feedback" }).click();
+  await expect(widget.getByText("Feedback posted")).toBeVisible();
+  await owner.goto(`${portalUrl(slug)}/b/feature-requests`);
+  await expect(owner.getByRole("link", { name: unrelated })).toBeVisible();
+});
+
+type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
 
 test("the team sets up the launcher; a customer's site shows it, opens articles from its help links and from its own button", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);

@@ -156,6 +156,7 @@ model Project {
   collections          Collection[]
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
+  helpGapDismissals    HelpGapDismissal[]
 
   @@map("project")
 }
@@ -919,8 +920,18 @@ enum HelpAnswerStatus {
   FAILED
 }
 
+/// Where a question to the help center's AI was asked.
+enum HelpQuestionSource {
+  /// The portal's /help.
+  PORTAL
+  /// The widget's Help tab.
+  WIDGET
+  /// help.ask (REST or MCP).
+  API
+}
+
 /// A question asked of the help center's AI (help.ask) and the asker's thumbs up or down:
-/// the log a gaps list for the team will read, and what the hourly rate limits count.
+/// what the team's Gaps list reads, and what the hourly rate limits count.
 /// No IP addresses.
 model HelpQuestion {
   id         String           @id @default(cuid())
@@ -928,6 +939,7 @@ model HelpQuestion {
   /// The signed-in user's id, an anonymous reader's first-party cookie id, or the API key's id.
   askerId    String
   question   String
+  source     HelpQuestionSource
   status     HelpAnswerStatus @default(FAILED)
   answer     String?
   /// The articles the answer cites.
@@ -941,6 +953,20 @@ model HelpQuestion {
   @@index([projectId, createdAt])
   @@index([projectId, askerId, createdAt])
   @@map("help_question")
+}
+
+/// A question the team dismissed from the Gaps list: hidden as asked up to `dismissedAt`
+/// (asked again later, it's back).
+model HelpGapDismissal {
+  projectId   String
+  /// Normalized like the Gaps list groups questions: lowercase, trimmed, spaces collapsed.
+  question    String
+  dismissedAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, question])
+  @@map("help_gap_dismissal")
 }
 
 /// A section of a published article (a heading and the text up to the next one, capped

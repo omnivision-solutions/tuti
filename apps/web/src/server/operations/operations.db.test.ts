@@ -44,6 +44,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.search": () => ({ q: "matrix" }),
   "articles.feedback": () => ({ slug: "matrix-article", helpful: false, comment: "From the matrix", author: { id: "matrix-reader" } }),
   "help.insights": () => ({}),
+  "help.dismissGap": () => ({ question: "How do I invite?" }),
   "help.ask": () => ({ q: "How do I invite my team?" }),
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
@@ -206,6 +207,7 @@ const snapshot = () =>
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
+    prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {

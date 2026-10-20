@@ -62,7 +62,7 @@ async function write(title: string, text: string, similarity: number, { draft = 
   return article.slug;
 }
 
-const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, timeoutMs);
+const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", timeoutMs);
 const logged = () =>
   prisma.helpQuestion.findMany({
     where: { projectId: project.id },
@@ -131,7 +131,7 @@ describe("answers", () => {
     await write("Exports", "Download a CSV of your posts.", ANSWER_MIN_SIMILARITY - 0.05);
     expect(await ask()).toMatchObject({ status: "no_answer", answer: null, sources: [] });
     // Nothing published at all: the same.
-    expect(await answerQuestion((await createProject(owner)).id, "reader-1", QUESTION)).toMatchObject({ status: "no_answer" });
+    expect(await answerQuestion((await createProject(owner)).id, "reader-1", QUESTION, "PORTAL")).toMatchObject({ status: "no_answer" });
     expect(model.requests).toEqual([]);
     expect((await logged()).map((question) => question.status)).toEqual(["NO_ANSWER"]);
   });
@@ -212,7 +212,7 @@ describe("rate limits", () => {
   test(`up to ${ASKS_PER_ASKER_PER_HOUR} questions an hour per asker`, async () => {
     // Questions from more than an hour ago don't count.
     await prisma.helpQuestion.createMany({
-      data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR }, () => ({ projectId: project.id, askerId: "reader-1", question: "Old", createdAt: hourAgo() })),
+      data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR }, () => ({ projectId: project.id, askerId: "reader-1", question: "Old", source: "PORTAL" as const, createdAt: hourAgo() })),
     });
     for (let i = 0; i < ASKS_PER_ASKER_PER_HOUR; i++) {
       await ask();
@@ -224,7 +224,7 @@ describe("rate limits", () => {
 
   test(`up to ${ASKS_PER_PROJECT_PER_HOUR} questions an hour per project`, async () => {
     await prisma.helpQuestion.createMany({
-      data: Array.from({ length: ASKS_PER_PROJECT_PER_HOUR - 1 }, (_, i) => ({ projectId: project.id, askerId: `reader-${i}`, question: "Q" })),
+      data: Array.from({ length: ASKS_PER_PROJECT_PER_HOUR - 1 }, (_, i) => ({ projectId: project.id, askerId: `reader-${i}`, question: "Q", source: "PORTAL" as const })),
     });
     expect(await ask(QUESTION, "someone")).toMatchObject({ status: "no_answer" });
     await expect(ask(QUESTION, "someone-else")).rejects.toMatchObject({
@@ -232,12 +232,12 @@ describe("rate limits", () => {
       message: "This help center has had a lot of questions in the last hour. Try again later.",
     });
     // Another project's questions don't count.
-    expect(await answerQuestion((await createProject(owner)).id, "someone-else", QUESTION)).toMatchObject({ status: "no_answer" });
+    expect(await answerQuestion((await createProject(owner)).id, "someone-else", QUESTION, "PORTAL")).toMatchObject({ status: "no_answer" });
   });
 
   test("questions asked at the same time can't overrun the limit together", async () => {
     await prisma.helpQuestion.createMany({
-      data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR - 2 }, () => ({ projectId: project.id, askerId: "reader-1", question: "Q" })),
+      data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR - 2 }, () => ({ projectId: project.id, askerId: "reader-1", question: "Q", source: "PORTAL" as const })),
     });
     const results = await Promise.allSettled(Array.from({ length: 5 }, () => ask()));
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(2);
@@ -269,6 +269,20 @@ describe("the portal's Ask AI and the question log", () => {
     expect((await logged()).map((question) => question.helpful)).toEqual([true, null]);
 
     expect(await askHelp(project.slug, " ")).toEqual({ error: "Type a question" });
+  });
+
+  test("records where each question was asked: the portal, the widget or the API", async () => {
+    actAs(null);
+    const key = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
+    await askHelp(project.slug, "From the portal");
+    await askHelp(project.slug, "From the widget", "widget");
+    await call(askOperation, { actor: key, projectId: project.id }, { q: "From the API" });
+    const questions = await prisma.helpQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
+    expect(questions).toEqual([
+      { question: "From the portal", source: "PORTAL" },
+      { question: "From the widget", source: "WIDGET" },
+      { question: "From the API", source: "API" },
+    ]);
   });
 
   test("help.ask with an API key counts as the key", async () => {

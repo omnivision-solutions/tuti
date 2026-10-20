@@ -14,6 +14,7 @@ import {
   updateArticle,
   updateCollection,
 } from "./operations/help";
+import { dismissHelpGap as dismissGapOperation } from "./operations/help-insights";
 import { asTeam, call } from "./operations/run";
 
 /** The team's help center actions (see the articles.* and collections.* operations). */
@@ -79,4 +80,9 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
 
 export async function deleteCollection(projectSlug: string, slug: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(deleteCollectionOperation, context, { slug: String(slug) }));
+}
+
+/** "Dismiss" on a gap in the help center's insights (see help.dismissGap). */
+export async function dismissHelpGap(projectSlug: string, question: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(dismissGapOperation, context, { question: String(question) }));
 }

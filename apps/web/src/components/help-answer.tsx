@@ -14,16 +14,27 @@ import type { HelpAnswer as Answer } from "@/server/operations/help-ask";
  * "Ask AI" above the help center's search results. The AI only answers when the visitor
  * asks (each answer costs a model call; crawlers and link previews of ?q= pages never
  * trigger one). Its answer is shown as plain text with its sources, or "I don't know" with
- * a way to post the question as feedback.
+ * a way to post the question as feedback. In the widget (`widget`), sources open the portal
+ * in a new tab, so the answer stays in the panel.
  */
-export function HelpAnswer({ projectSlug, question, feedbackHref }: { projectSlug: string; question: string; feedbackHref: string | null }) {
+export function HelpAnswer({
+  projectSlug,
+  question,
+  feedbackHref,
+  widget = false,
+}: {
+  projectSlug: string;
+  question: string;
+  feedbackHref: string | null;
+  widget?: boolean;
+}) {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [rated, setRated] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const ask = () =>
     startTransition(async () => {
-      const result = await askHelp(projectSlug, question);
+      const result = await askHelp(projectSlug, question, widget ? "widget" : "portal");
       if ("error" in result) {
         toast.error(result.error);
         return;
@@ -80,7 +91,11 @@ export function HelpAnswer({ projectSlug, question, feedbackHref }: { projectSlu
             <ul aria-label="Sources" className="flex flex-col gap-1 text-sm">
               {answer.sources.map((source) => (
                 <li key={source.slug}>
-                  <Link href={`/help/${source.slug}`} className="break-words text-primary hover:underline">
+                  <Link
+                    href={`/help/${source.slug}`}
+                    target={widget ? "_blank" : undefined}
+                    className="break-words text-primary hover:underline"
+                  >
                     {source.title}
                   </Link>
                 </li>

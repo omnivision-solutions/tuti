@@ -314,4 +314,28 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await visitor.getByRole("button", { name: "Submit feedback" }).click();
   await expect(visitor.getByText("Feedback posted")).toBeVisible();
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
+
+  // Another question it can't answer.
+  const another = "Is there a dark mode?";
+  await visitor.goto(`/help?${new URLSearchParams({ q: another })}`);
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+
+  // The team sees both as gaps in the insights (the answered question isn't one).
+  await team.goto(`/app/${slug}/help/insights`);
+  // A gap's row (the failed searches list the question too).
+  const gap = (text: string) => team.getByRole("listitem").filter({ hasText: text, has: team.getByRole("button", { name: "Dismiss" }) });
+  await expect(gap(unrelated)).toContainText("1 unanswered");
+  await expect(gap(another)).toBeVisible();
+  await expect(gap(question)).toHaveCount(0);
+  await checkpoint(team, "team-help-gaps");
+  // Dismissing one hides it.
+  await gap(another).getByRole("button", { name: "Dismiss" }).click();
+  await expect(team.getByText("Dismissed")).toBeVisible();
+  await expect(gap(another)).toHaveCount(0);
+  // "Write an article" starts one with the question as its title.
+  await gap(unrelated).getByRole("link", { name: "Write an article" }).click();
+  await team.waitForURL(`**/app/${slug}/help/new?title=*`);
+  await expect(team.getByLabel("Title")).toHaveValue(unrelated);
+  await checkpoint(team, "team-help-gap-new-article");
 });

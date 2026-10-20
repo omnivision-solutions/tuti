@@ -25,7 +25,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
-import { deleteArticle, deleteCollection, publishArticle, restoreArticle, saveArticle, saveCollection, unpublishArticle } from "@/server/help";
+import {
+  deleteArticle,
+  deleteCollection,
+  dismissHelpGap,
+  publishArticle,
+  restoreArticle,
+  saveArticle,
+  saveCollection,
+  unpublishArticle,
+} from "@/server/help";
 
 type Article = { slug: string; title: string; content: Doc; collection: string | null; showUpdatedDate: boolean };
 type CollectionOption = { slug: string; name: string };
@@ -36,11 +45,14 @@ export function ArticleForm({
   article,
   collections,
   mediaBaseUrl,
+  defaultTitle,
 }: {
   projectSlug: string;
   article: Article | null;
   collections: CollectionOption[];
   mediaBaseUrl: string | null;
+  /** A new article's title to start with (a question from the insights' gaps). */
+  defaultTitle?: string;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
@@ -59,7 +71,7 @@ export function ArticleForm({
           <Input
             id="article-title"
             name="title"
-            defaultValue={article?.title}
+            defaultValue={article?.title ?? defaultTitle}
             placeholder="What it helps with, e.g. Inviting your team"
             required
             autoComplete="off"
@@ -356,5 +368,29 @@ export function DeleteCollectionButton({ projectSlug, slug, name }: { projectSlu
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+  );
+}
+
+/** "Dismiss" on a gap in the insights: hides the question until someone asks it again. */
+export function DismissGapButton({ projectSlug, question }: { projectSlug: string; question: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await dismissHelpGap(projectSlug, question);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success("Dismissed");
+          }
+        })
+      }
+    >
+      Dismiss
+    </Button>
   );
 }

@@ -147,6 +147,7 @@ const matrix: Matrix = {
     restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => help.restoreArticle(slug, "matrix-draft", f.revisionId) },
     saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
+    dismissHelpGap: { allowed: "MEMBER", call: (slug) => help.dismissHelpGap(slug, "How do I invite?") },
   },
   // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
   "help-readers": {
@@ -461,7 +462,7 @@ async function createFixture() {
     ],
   });
   const question = await prisma.helpQuestion.create({
-    data: { projectId, askerId: "matrix-reader", question: "How do I invite?", status: "ANSWERED", answer: "From the Team page." },
+    data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({
