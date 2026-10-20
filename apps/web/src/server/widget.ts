@@ -8,9 +8,13 @@ import { verifySsoToken } from "@/lib/sso";
 import type { FormState } from "./form-state";
 import { createPost as createPostOperation } from "./operations/create";
 import { OperationError } from "./operations/define";
-import { call } from "./operations/run";
+import { asTeam, call } from "./operations/run";
+import { updateWidgetSettings } from "./operations/widget";
 
-/** The widget's actions on customers' sites; see lib/widget-session.ts for its tokens. */
+/**
+ * The widget's actions: on customers' sites (see lib/widget-session.ts for its
+ * tokens), and the team's launcher settings.
+ */
 
 /** Trades an SSO token from the project's own app for a widget token, and says who signed in. */
 export async function widgetSignIn(
@@ -54,4 +58,23 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
     throw error;
   }
   return {};
+}
+
+/** Saves the launcher settings form: label, colour, corner and quick links (see widget.update). Empty link rows are skipped. */
+export async function saveWidgetSettings(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const text = (field: FormDataEntryValue | null | undefined) => (typeof field === "string" ? field : "");
+  const urls = formData.getAll("linkUrl");
+  const links = formData
+    .getAll("linkLabel")
+    .map((label, i) => ({ label: text(label), url: text(urls[i]) }))
+    .filter((link) => link.label.trim() || link.url.trim());
+  const input = {
+    label: text(formData.get("label")),
+    color: text(formData.get("color")),
+    position: text(formData.get("position")) as "bottom-right" | "bottom-left",
+    links,
+  };
+  return asTeam(projectSlug, "Only the project's team can change the widget", (context) =>
+    call(updateWidgetSettings, context, input),
+  );
 }

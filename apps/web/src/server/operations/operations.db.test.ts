@@ -68,6 +68,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "linkSuggestions.list": () => ({}),
   "linkSuggestions.accept": (f) => ({ id: f.linkSuggestionId }),
   "linkSuggestions.dismiss": (f) => ({ id: f.linkSuggestionId }),
+  "widget.get": () => ({}),
+  "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
 };
 
 let owner: TestUser;
@@ -195,7 +197,10 @@ const snapshot = () =>
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true } }),
-    prisma.project.findUnique({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
+    prisma.project.findUnique({
+      where: { id: project.id },
+      select: { changelogTone: true, changelogExampleIds: true, widgetLabel: true, widgetColor: true, widgetLinks: true },
+    }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),

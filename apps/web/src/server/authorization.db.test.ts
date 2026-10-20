@@ -305,6 +305,10 @@ const matrix: Matrix = {
         return widget.widgetSignIn(slug, jwt);
       },
     },
+    saveWidgetSettings: {
+      allowed: "MEMBER",
+      call: (slug) => widget.saveWidgetSettings(slug, {}, form({ label: "Help", color: "#5b21b6", position: "bottom-left" })),
+    },
     widgetCreatePost: {
       allowed: "public",
       call: async (slug) => {

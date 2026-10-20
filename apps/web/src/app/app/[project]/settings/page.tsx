@@ -6,12 +6,14 @@ import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/com
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { SsoSettings } from "@/components/sso-settings";
+import { WidgetSettings } from "@/components/widget-settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
+import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
 const GITHUB_RESULTS: Record<string, string> = {
   connected: "GitHub is connected.",
@@ -46,6 +48,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
       },
     },
   });
+  const widget = (await widgetSettings({ id: project.id }))!;
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
     orderBy: { createdAt: "desc" },
@@ -107,6 +110,28 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             projectSlug={project.slug}
             enabled={project.ssoSecret !== null}
             ssoUrl={`${portalUrl(project.slug)}/sso`}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Widget</CardTitle>
+          <CardDescription>
+            A button on your site that opens feedback, what&apos;s new and help in a panel. Add it with one script tag:
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6">
+          <code className="rounded-lg bg-muted p-3 text-xs break-all">
+            {`<script src="${appUrl().origin}/widget.js" data-project="${project.slug}" async></script>`}
+          </code>
+          <WidgetSettings
+            projectSlug={project.slug}
+            label={widget.label}
+            color={widget.color ?? DEFAULT_WIDGET_COLOR}
+            defaultColor={DEFAULT_WIDGET_COLOR}
+            position={widget.position}
+            links={widget.links}
           />
         </CardContent>
       </Card>

@@ -35,6 +35,7 @@ import {
 import { askHelp } from "./help-ask";
 import { answerArticle, getHelpInsights } from "./help-insights";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
+import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
 
@@ -86,6 +87,8 @@ const all = [
   setVote,
   listDuplicates,
   dismissDuplicate,
+  getWidgetSettings,
+  updateWidgetSettings,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

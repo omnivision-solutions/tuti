@@ -22,8 +22,29 @@ test("the widget learns when the latest announcement was: recent, announced and 
   const { latest } = (await response.json()) as { latest: string };
   expect(Math.abs(new Date(latest).getTime() - days(5).getTime())).toBeLessThan(60_000);
 
-  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null });
+  expect((await (await ask("no-such-project")).json()) as object).toEqual({ latest: null, launcher: null });
   expect((await ask("../bad")).status).toBe(404);
   // Browsers that preflight (extensions, proxies adding headers) get a yes.
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
+});
+
+test("the widget learns how its launcher looks: label, colour with readable text, and corner; not the quick links", async () => {
+  const project = await createProject(await signUp());
+  const ask = async () =>
+    (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
+  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right" } });
+
+  await prisma.project.update({
+    where: { id: project.id },
+    data: {
+      widgetLabel: "Help & ideas",
+      widgetColor: "#facc15",
+      widgetPosition: "bottom-left",
+      widgetLinks: [{ label: "Status", url: "https://status.example.com" }],
+    },
+  });
+  expect(await ask()).toEqual({
+    latest: null,
+    launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left" },
+  });
 });
