@@ -135,15 +135,22 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await checkpoint(ada, "portal-changelog-new");
   // On the changelog itself it isn't new any more, even before her visit is recorded (held here).
   let releaseSeen = () => {};
+  let seenHeld = () => {};
+  const held = new Promise<void>((resolve) => (seenHeld = resolve));
   await ada.route("**/changelog", async (route) => {
     if (route.request().method() === "POST") {
-      await new Promise<void>((resolve) => (releaseSeen = resolve));
+      await new Promise<void>((resolve) => {
+        releaseSeen = resolve;
+        seenHeld();
+      });
     }
     await route.continue();
   });
   await changelogTab.click();
   await expect(ada.getByRole("article", { name: "Dark mode is here" })).toBeVisible();
   await expect(changelogTab).toHaveText("Changelog");
+  // Released only once it's actually held (the page may render before it sends the request).
+  await held;
   const recorded = ada.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith("/changelog"));
   releaseSeen();
   await recorded;
