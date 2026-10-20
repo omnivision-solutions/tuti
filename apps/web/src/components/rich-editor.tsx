@@ -63,6 +63,8 @@ export function RichEditor({
   describedBy,
   uploads,
   initial,
+  editorRef: outerRef,
+  onChange,
 }: {
   profile: Profile;
   name: string;
@@ -75,6 +77,10 @@ export function RichEditor({
   describedBy?: string;
   uploads?: EditorUploads;
   initial?: Doc;
+  /** Set to the editor once it's created, for tools outside it (e.g. the changelog's AI helpers). */
+  editorRef?: React.RefObject<Editor | null>;
+  /** Called on every change to the document. */
+  onChange?: () => void;
 }) {
   const [value, setValue] = useState(initial && !isEmptyDoc(initial) ? JSON.stringify(initial) : "");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -145,10 +151,14 @@ export function RichEditor({
     },
     onCreate: ({ editor }) => {
       editorRef.current = editor;
+      if (outerRef) {
+        outerRef.current = editor;
+      }
     },
     onUpdate: ({ editor }) => {
       const doc = editor.getJSON();
       setValue(isEmptyDoc(doc) ? "" : JSON.stringify(doc));
+      onChange?.();
     },
   });
 

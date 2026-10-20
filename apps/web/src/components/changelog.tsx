@@ -1,10 +1,14 @@
 "use client";
 
+import type { Editor } from "@tiptap/react";
 import type { Doc } from "@tuti/content";
-import { useActionState, useState, useTransition } from "react";
+import { SparklesIcon } from "lucide-react";
+import { type RefObject, useActionState, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
+import { diffLines } from "@/lib/line-diff";
+import { DiffLines } from "@/components/line-diff";
 import { RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
@@ -18,18 +22,24 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  acceptChangelogRewrite,
+  type ChangelogRewrite,
   deleteChangelogEntry,
   draftChangelogEntry,
   publishChangelogEntry,
+  rewriteChangelogEntry,
   saveChangelogEntry,
   saveChangelogStyle,
   unpublishChangelogEntry,
 } from "@/server/changelog";
 import type { FormState } from "@/server/form-state";
+import type { RewriteMode } from "@/server/release-notes";
 
 const TAG_LABELS = { new: "New", improved: "Improved", fixed: "Fixed", breaking: "Breaking" } as const;
 export type TagName = keyof typeof TAG_LABELS;
@@ -43,23 +53,31 @@ export function ChangelogForm({
   entry,
   posts,
   mediaBaseUrl,
+  canEditWithAi = false,
 }: {
   projectSlug: string;
   entry: Entry | null;
   /** Posts it can complete: planned, in progress, done, and the ones it already lists. */
   posts: PostOption[];
   mediaBaseUrl: string | null;
+  /** AI is set up on this server: the editor gets its helpers (for saved entries). */
+  canEditWithAi?: boolean;
 }) {
+  const editor = useRef<Editor | null>(null);
+  // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
+  const [dirty, setDirty] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogEntry(projectSlug, entry?.number ?? null, prev, formData);
     if (!result.error) {
+      setDirty(false);
       toast.success("Saved");
     }
     return result;
   }, {});
 
   return (
-    <form {...keepingFields(action)}>
+    // Typing in the form (dialogs in portals, like the AI helpers' instruction, aren't in it).
+    <form {...keepingFields(action)} onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}>
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="entry-title">Title</FieldLabel>
@@ -87,7 +105,12 @@ export function ChangelogForm({
           </div>
         </fieldset>
         <Field>
-          <FieldLabel id="entry-body-label">What changed</FieldLabel>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FieldLabel id="entry-body-label">What changed</FieldLabel>
+            {entry && canEditWithAi && (
+              <AiHelpers projectSlug={projectSlug} number={entry.number} editor={editor} dirty={dirty} />
+            )}
+          </div>
           <RichEditor
             profile="changelog"
             name="content"
@@ -95,6 +118,8 @@ export function ChangelogForm({
             placeholder="What's new for people, and how to use it"
             initial={entry?.content}
             uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
+            editorRef={editor}
+            onChange={() => setDirty(true)}
           />
         </Field>
         <fieldset className="flex flex-col gap-2">
@@ -147,6 +172,170 @@ export function ChangelogForm({
         </Button>
       </FieldGroup>
     </form>
+  );
+}
+
+const PREVIEW_TITLES: Record<RewriteMode, string> = {
+  shorten: "Shorter version",
+  plain: "Explained for non-developers",
+  section: "Rewritten section",
+};
+
+type Section = { index: number; heading: string | null };
+
+/**
+ * AI helpers for a saved entry's text: shorten it (or the section with the cursor), explain it
+ * for non-developers, or rewrite the section with the cursor. Each shows what would change, and
+ * only Accept saves it (refused if the entry changed meanwhile).
+ */
+function AiHelpers({
+  projectSlug,
+  number,
+  editor,
+  dirty,
+}: {
+  projectSlug: string;
+  number: number;
+  editor: RefObject<Editor | null>;
+  /** The form has changes that aren't saved. */
+  dirty: boolean;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [asking, setAsking] = useState<Section | null>(null);
+  const [rewrite, setRewrite] = useState<ChangelogRewrite | null>(null);
+  const inputId = useId();
+
+  /** The section with the cursor, numbered like changelog.rewrite: its heading's, or 0 before the first heading. */
+  const cursorSection = (): Section => {
+    const state = editor.current?.state;
+    const section: Section = { index: 0, heading: null };
+    if (state) {
+      const at = state.selection.$from.index(0);
+      state.doc.forEach((node, _offset, index) => {
+        if (index <= at && node.type.name === "heading") {
+          section.index++;
+          section.heading = node.textContent;
+        }
+      });
+    }
+    return section;
+  };
+
+  // They edit the saved text: changes not saved yet would be lost on Accept.
+  const saved = () => {
+    if (dirty) {
+      toast.error("Save your changes first: AI edits the saved text.");
+    }
+    return !dirty;
+  };
+
+  const run = (input: { mode: RewriteMode; section?: number; instruction?: string }) =>
+    startTransition(async () => {
+      const result = await rewriteChangelogEntry(projectSlug, number, input);
+      if (result.rewrite) {
+        setRewrite(result.rewrite);
+      } else {
+        toast.error(result.error);
+      }
+    });
+
+  const accept = (proposal: ChangelogRewrite) =>
+    startTransition(async () => {
+      const result = await acceptChangelogRewrite(projectSlug, number, proposal.proposed.content, proposal.expectedUpdatedAt);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        setRewrite(null);
+        toast.success("Saved");
+      }
+    });
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending} />}>
+          <SparklesIcon />
+          {pending && !rewrite ? "Writing…" : "Edit with AI"}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten" })}>Shorten</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => saved() && run({ mode: "shorten", section: cursorSection().index })}>
+            Shorten this section
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => saved() && run({ mode: "plain" })}>Explain for non-developers</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => saved() && setAsking(cursorSection())}>Rewrite this section…</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={asking !== null} onOpenChange={(open) => !open && setAsking(null)}>
+        <DialogContent>
+          {asking && (
+            <form
+              className="flex flex-col gap-4"
+              onSubmit={(event) => {
+                // The dialog sits inside the entry's form in React's tree: don't submit that.
+                event.preventDefault();
+                event.stopPropagation();
+                const instruction = String(new FormData(event.currentTarget).get("instruction") ?? "");
+                setAsking(null);
+                run({ mode: "section", section: asking.index, instruction });
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>Rewrite this section</DialogTitle>
+                <DialogDescription>
+                  {asking.heading ? `“${asking.heading}”, where your cursor is.` : "The text before the first heading, where your cursor is."}{" "}
+                  You&apos;ll see the new version before anything changes.
+                </DialogDescription>
+              </DialogHeader>
+              <Field>
+                <FieldLabel htmlFor={inputId}>Instruction (optional)</FieldLabel>
+                <Input
+                  id={inputId}
+                  name="instruction"
+                  maxLength={200}
+                  autoComplete="off"
+                  placeholder="e.g. Mention that it works on phones too"
+                  autoFocus
+                />
+              </Field>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAsking(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit">Rewrite</Button>
+              </DialogFooter>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rewrite !== null} onOpenChange={(open) => !open && setRewrite(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          {rewrite && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{PREVIEW_TITLES[rewrite.mode]}</DialogTitle>
+                <DialogDescription>
+                  Paragraphs taken out are struck through; new ones are highlighted. Nothing changes until you accept.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto text-sm break-words">
+                <DiffLines lines={diffLines(rewrite.body, rewrite.proposed.body)} />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={pending} onClick={() => setRewrite(null)}>
+                  Discard
+                </Button>
+                <Button type="button" disabled={pending} onClick={() => accept(rewrite)}>
+                  {pending ? "Saving…" : "Accept"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

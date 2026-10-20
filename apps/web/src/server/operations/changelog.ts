@@ -1,3 +1,4 @@
+import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
 import {
   enqueue,
@@ -18,7 +19,16 @@ import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
 import { reactionCounts } from "../changelog-queries";
 import { attachMedia, displayDoc, readContent } from "../content";
-import { readReleaseNotes, releaseNotesPrompt } from "../release-notes";
+import {
+  blocksToNotes,
+  droppedFacts,
+  factsIn,
+  readReleaseNotes,
+  releaseNotesPrompt,
+  REWRITE_MODES,
+  rewritePrompt,
+  sectionRange,
+} from "../release-notes";
 import { author, authorId, saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectSlug } from "./read";
@@ -276,6 +286,8 @@ export const updateChangelogEntry = defineOperation({
     content: fields.content,
     tags: fields.tags.optional(),
     posts: fields.posts.optional(),
+    /** Save only if the entry hasn't changed since this (e.g. the `expectedUpdatedAt` changelog.rewrite returns). */
+    expectedUpdatedAt: z.iso.datetime().optional(),
   }),
   example: { tags: ["new", "improved"] },
   run: async ({ projectId }, input) => {
@@ -292,6 +304,14 @@ export const updateChangelogEntry = defineOperation({
     const posts = input.posts && (await postIds(projectId, input.posts));
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
+        if (input.expectedUpdatedAt) {
+          // Locked until this commits, so a save in between can't slip past the check.
+          const [now] = await tx.$queryRaw<{ updatedAt: Date }[]>`
+            SELECT "updatedAt" FROM changelog_entry WHERE id = ${entry.id} FOR UPDATE`;
+          if (now?.updatedAt.getTime() !== new Date(input.expectedUpdatedAt).getTime()) {
+            throw new OperationError(409, "changed", "The entry changed since. Reload it and try again.");
+          }
+        }
         if (posts) {
           await tx.changelogEntryPost.deleteMany({ where: { entryId: entry.id } });
         }
@@ -367,6 +387,120 @@ export const draftChangelogEntry = defineOperation({
     return entryView(await teamEntry(projectId, number), slug);
   },
 });
+
+export const MAX_INSTRUCTION_LENGTH = 200;
+/** AI edits (changelog.rewrite) a project may ask for per clock hour, all of its team together. */
+export const AI_EDITS_PER_HOUR = 60;
+
+export const rewriteChangelogEntry = defineOperation({
+  name: "changelog.rewrite",
+  summary:
+    "Propose an AI edit of an entry's text, without saving it: `shorten` it, explain it for non-developers (`plain`), or rewrite a `section`; the whole text, or one section (`section`: its heading, or its number: 1 for the first heading, 0 for the text before it), with an optional `instruction`. To accept it, send `proposed.content` to changelog.update with `expectedUpdatedAt`",
+  method: "POST",
+  path: "/changelog/{number}/rewrite",
+  scope: "write",
+  access: "team",
+  input: z.object({
+    number: entryNumber,
+    mode: z.enum(REWRITE_MODES),
+    section: z.union([z.number().int().min(0), z.string().trim().min(1).max(200)]).optional(),
+    instruction: z
+      .string()
+      .trim()
+      .max(MAX_INSTRUCTION_LENGTH, `Keep the instruction under ${MAX_INSTRUCTION_LENGTH} characters`)
+      .optional(),
+  }),
+  example: { mode: "section", section: "Dark mode", instruction: "Mention it follows the system setting" },
+  run: async ({ projectId }, input) => {
+    if (!aiEnabled()) {
+      throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
+    }
+    if (input.mode === "section" && input.section === undefined) {
+      throw new OperationError(400, "invalid_input", "Pick the section to rewrite");
+    }
+    const entry = await teamEntry(projectId, input.number);
+    const doc = displayDoc(entry);
+    const blocks = doc.content ?? [];
+    const range = input.section === undefined ? { start: 0, end: blocks.length, index: null, heading: null } : sectionRange(blocks, input.section);
+    if (!range) {
+      throw new OperationError(400, "no_section", `There's no section ${typeof input.section === "string" ? `“${input.section}”` : input.section}`);
+    }
+    const target = blocks.slice(range.start, range.end);
+    const media: NonNullable<Doc["content"]> = [];
+    const text = blocksToNotes(target, media);
+    if (text.trim() === "") {
+      throw new OperationError(400, "nothing_to_rewrite", "There's no text to rewrite yet");
+    }
+    await countAiEdit(projectId);
+    const slug = await projectSlug(projectId);
+    const { posts } = await entryView(entry, slug);
+    let reply: string;
+    try {
+      reply = await complete(
+        rewritePrompt({
+          mode: input.mode,
+          text,
+          entry: target.length < blocks.length ? toMarkdown(doc) : undefined,
+          instruction: input.instruction || undefined,
+          style: await changelogStyle(projectId),
+        }),
+      );
+    } catch (error) {
+      log.warn("AI changelog rewrite failed", { projectId, number: input.number, error });
+      throw new OperationError(502, "ai_failed", "The AI couldn't edit the text. Try again in a moment.");
+    }
+    // Links can be kept, or go to the entry's posts; nothing else.
+    const before = factsIn(target);
+    const links = [...before.keys()].filter((key) => key.startsWith("link ")).map((key) => key.slice("link ".length));
+    const rewritten = readReleaseNotes(reply, new Set([...links, ...posts.map((post) => post.url)]), media);
+    // Checked like anything the team saves.
+    const proposed =
+      rewritten &&
+      (await readContent(
+        "changelog",
+        { content: { type: "doc", content: [...blocks.slice(0, range.start), ...rewritten.doc.content!, ...blocks.slice(range.end)] } },
+        { projectId, maxLength: MAX_ENTRY_LENGTH },
+      ));
+    if (!rewritten || !proposed || proposed.error !== undefined) {
+      log.warn("AI changelog rewrite unusable", { projectId, number: input.number, reply: reply.slice(0, 500) });
+      throw new OperationError(502, "ai_failed", "The AI's version couldn't be used. Try again.");
+    }
+    // Facts are checked, not trusted: a version that drops a link, an image or a video isn't offered.
+    const dropped = droppedFacts(target, rewritten.doc.content!);
+    if (dropped.length > 0) {
+      const list = dropped.length > 1 ? `${dropped.slice(0, -1).join(", ")} and ${dropped.at(-1)}` : dropped[0];
+      throw new OperationError(502, "dropped_facts", `The AI's version left out ${list}, so it wasn't used. Try again.`);
+    }
+    return {
+      number: input.number,
+      mode: input.mode,
+      /** The section it edited (null: the whole text). */
+      section: range.index === null ? null : { index: range.index, heading: range.heading },
+      /** The entry's text now, as plain text. */
+      body: toPlainText(doc),
+      /** The whole entry's text with the edit, not saved. */
+      proposed: { content: proposed.doc, body: proposed.text },
+      /** Send with the proposed content to changelog.update: it's saved only if the entry hasn't changed since. */
+      expectedUpdatedAt: entry.updatedAt.toISOString(),
+    };
+  },
+});
+
+/** Counts an AI edit against the project's hourly cap, or refuses it (429). */
+async function countAiEdit(projectId: string) {
+  // ponytail: a fixed clock hour, so up to twice the cap fits across an hour's edge; a sliding window if that matters.
+  const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+  // Atomic: concurrent edits each get their own count.
+  const [row] = await prisma.$queryRaw<{ count: number }[]>`
+    UPDATE project
+    SET "changelogAiCount" = CASE WHEN "changelogAiHour" = ${hour} THEN "changelogAiCount" + 1 ELSE 1 END,
+        "changelogAiHour" = ${hour}
+    WHERE id = ${projectId}
+    RETURNING "changelogAiCount" AS count`;
+  if (!row || row.count > AI_EDITS_PER_HOUR) {
+    throw new OperationError(429, "rate_limited", `Your team has made ${AI_EDITS_PER_HOUR} AI edits this hour. Try again later.`);
+  }
+}
 
 export const MAX_TONE_LENGTH = 1000;
 export const MAX_STYLE_EXAMPLES = 3;

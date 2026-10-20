@@ -34,6 +34,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "changelog.create": () => ({ title: "From the matrix", body: "Shipped", tags: ["new"], posts: [1] }),
   "changelog.update": () => ({ number: 1, title: "Renamed by the matrix" }),
   "changelog.draft": () => ({ number: 2 }),
+  "changelog.rewrite": () => ({ number: 2, mode: "shorten" }),
   "changelog.publish": () => ({ number: 1 }),
   "changelog.unpublish": () => ({ number: 1 }),
   "changelog.delete": () => ({ number: 1 }),
@@ -250,7 +251,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
 
   // A read and write key can run it.
   fixture = await createFixture();
-  if (operation.name === "changelog.draft") {
+  if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
   }
   expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
