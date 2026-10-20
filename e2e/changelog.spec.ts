@@ -226,6 +226,41 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const section = (await modelRequests()).find((request) => request.user.includes(instruction));
   expect(section?.user).toContain('"textToEdit": "## Better matches\\n\\nSearch looks at comments too."');
 
+  // Typing while the model writes: Accept doesn't save over it (the reply is held until the typing is done).
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route(
+    `**/app/${slug}/changelog/2`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Written while you typed." }), tone);
+  await aiMenu.click();
+  await team.getByRole("menuitem", { name: "Explain for non-developers" }).click();
+  await expect(team.getByRole("button", { name: "Writing…" })).toBeVisible();
+  await text.getByText("Search looks at post titles and comments.").click();
+  await team.keyboard.press("End");
+  await team.keyboard.type(" Typed meanwhile.");
+  release();
+  const meanwhile = team.getByRole("dialog", { name: "Explained for non-developers" });
+  await meanwhile.getByRole("button", { name: "Accept" }).click();
+  await expect(team.getByText("Save your changes first: AI edits the saved text.")).toBeVisible();
+  // Kept open, to save first and try again.
+  await expect(meanwhile).toBeVisible();
+  await meanwhile.getByRole("button", { name: "Discard" }).click();
+  await expect(meanwhile).toBeHidden();
+  await expect(text).toContainText("Search looks at post titles and comments. Typed meanwhile.");
+  await team.reload();
+  await expect(text).not.toContainText("Written while you typed.");
+  await expect(text).not.toContainText("Typed meanwhile.");
+
   // Discarded: nothing changes.
   await nextModelReply(JSON.stringify({ notes: "Search is quicker now. Plain words only." }), tone);
   await aiMenu.click();

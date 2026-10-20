@@ -240,6 +240,8 @@ function AiHelpers({
     });
 
   const accept = (proposal: ChangelogRewrite) =>
+    // Checked again: the form stays editable while the model writes. The preview stays open.
+    saved() &&
     startTransition(async () => {
       const result = await acceptChangelogRewrite(projectSlug, number, proposal.proposed.content, proposal.expectedUpdatedAt);
       if (result.error) {
