@@ -144,7 +144,7 @@ export async function escalateHelp(
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true } });
+  const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Help center not found" };
   }

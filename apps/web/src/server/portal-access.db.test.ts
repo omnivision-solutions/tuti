@@ -152,6 +152,11 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     },
   },
   { name: "rating an answer (rateHelpAnswer)", served: async (slug) => !(await helpReaders.rateHelpAnswer(slug, fixture.questionId, true)).error },
+  {
+    // Refused readers get "not found" before anything else is checked.
+    name: "asking a person (escalateHelp)",
+    served: async (slug) => (await helpReaders.escalateHelp(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Help center not found",
+  },
   { name: "similar posts while typing (findSimilarPosts)", served: async (slug) => (await similarPosts.findSimilarPosts(slug, "Dark mode please")).length > 0 },
   {
     name: "posting (createPost)",
