@@ -86,7 +86,7 @@ describe("articles", () => {
     // Saving the same title keeps the slug.
     expect(await call(updateArticle, as(owner), { slug: "getting-started", title: "Getting started" })).toMatchObject({ slug: "getting-started" });
     await call(publishArticle, as(owner), { slug: "getting-started" });
-    expect(await call(updateArticle, as(owner), { slug: "getting-started", title: "Start here" })).toMatchObject({
+    expect(await call(updateArticle, as(owner), { slug: "getting-started", title: "Start here", publish: true })).toMatchObject({
       slug: "getting-started",
       title: "Start here",
     });

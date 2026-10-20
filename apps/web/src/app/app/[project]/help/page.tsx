@@ -30,7 +30,14 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
-      select: { slug: true, title: true, publishedAt: true, listing: true, collection: { select: { name: true } } },
+      select: {
+        slug: true,
+        title: true,
+        publishedAt: true,
+        listing: true,
+        collection: { select: { name: true } },
+        changes: { select: { articleId: true } },
+      },
     }),
     prisma.collection.findMany({
       where: { projectId },
@@ -81,7 +88,12 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
                       {article.title}
                     </Link>
                   }
-                  badges={article.collection && <Badge variant="secondary">{article.collection.name}</Badge>}
+                  badges={
+                    <>
+                      {article.collection && <Badge variant="secondary">{article.collection.name}</Badge>}
+                      {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
+                    </>
+                  }
                   meta={
                     article.publishedAt
                       ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`

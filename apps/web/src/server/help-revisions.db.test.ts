@@ -21,6 +21,7 @@ import {
   listCollections,
   listRevisions,
   publishArticle,
+  publishChanges,
   restoreArticle,
   updateArticle,
 } from "@/server/operations/help";
@@ -93,16 +94,19 @@ describe("revisions", () => {
     expect(bodies.at(-1)).toBe("Save 2");
   });
 
-  test("restoring a version saves it as a new one, keeping the history; a published article shows it at once", async () => {
+  test("restoring a version saves it as a new one, keeping the history; a published article shows it once it's published", async () => {
     await call(createArticle, as(owner), { title: "Billing", content: doc("Pay by card.") });
     await call(publishArticle, as(owner), { slug: "billing" });
-    await call(updateArticle, as(editor), { slug: "billing", title: "Billing and invoices", content: doc("Pay by card or invoice.") });
+    await call(updateArticle, as(editor), { slug: "billing", title: "Billing and invoices", content: doc("Pay by card or invoice."), publish: true });
     expect(await publishedArticle(project.slug, "billing")).toMatchObject({ title: "Billing and invoices", body: "Pay by card or invoice." });
 
     const [, first] = (await call(listRevisions, as(owner), { slug: "billing" })).revisions;
     const restored = await call(restoreArticle, as(owner), { slug: "billing", revision: first!.id });
-    // Published: its slug stays, readers see the restored text, and search has it.
-    expect(restored).toMatchObject({ slug: "billing", status: "published", title: "Billing", body: "Pay by card." });
+    // Published: its slug stays, and the restored text waits as unpublished changes, like any save.
+    expect(restored).toMatchObject({ slug: "billing", status: "published", title: "Billing and invoices", changes: { title: "Billing", body: "Pay by card." } });
+    expect(await publishedArticle(project.slug, "billing")).toMatchObject({ title: "Billing and invoices" });
+    // Published, readers see the restored text, and search has it.
+    await call(publishChanges, as(owner), { slug: "billing" });
     expect(await publishedArticle(project.slug, "billing")).toMatchObject({ title: "Billing", body: "Pay by card." });
     expect((await searchHelp(project.id, "invoice", 10)).map((r) => r.slug)).toEqual([]);
     expect(await history("billing")).toEqual([
@@ -263,13 +267,16 @@ test("another project's team sees and restores none of this project's versions o
   expect(await prisma.article.count({ where: { projectId: project.id, deletedAt: { not: null } } })).toBe(1);
 });
 
-test("readers see “Updated” once the article is edited after it was published, unless the team turned it off", async () => {
+test("readers see “Updated” once changes go live after it was published, unless the team turned it off", async () => {
   await call(createArticle, as(owner), { title: "Exports", body: "Draft text" });
   await call(updateArticle, as(owner), { slug: "exports", body: "Ready" });
   await call(publishArticle, as(owner), { slug: "exports" });
   expect(await publishedArticle(project.slug, "exports")).toMatchObject({ updatedAt: null });
 
+  // Saved, the changes aren't live yet, so neither is the date.
   await call(updateArticle, as(owner), { slug: "exports", body: "Fixed a typo" });
+  expect(await publishedArticle(project.slug, "exports")).toMatchObject({ body: "Ready", updatedAt: null });
+  await call(publishChanges, as(owner), { slug: "exports" });
   const { updatedAt, publishedAt } = (await publishedArticle(project.slug, "exports"))!;
   expect(updatedAt!.getTime()).toBeGreaterThan(publishedAt!.getTime());
 

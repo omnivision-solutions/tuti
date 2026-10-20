@@ -841,6 +841,7 @@ model Collection {
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   articles  Article[]
   revisions ArticleRevision[]
+  changes   ArticleChanges[]
 
   @@unique([projectId, slug])
   @@map("collection")
@@ -878,8 +879,11 @@ model Article {
   deletedAt       DateTime?
   /// Show "Updated <date>" on the portal when it was edited after it was published.
   showUpdatedDate Boolean        @default(true)
-  /// Where a published article is served (see ArticleListing).
+  /// Where a published article is served (see ArticleListing). Changed at once, never kept
+  /// as an unpublished change: it says who may read the article, not what it says.
   listing         ArticleListing @default(EVERYWHERE)
+  /// When changes to it last went live while it was published: the portal's "Updated" date.
+  revisedAt       DateTime?
   /// At most one collection; deleting it leaves its articles uncollected.
   collectionId    String?
   createdById     String?
@@ -892,6 +896,7 @@ model Article {
   feedback   ArticleFeedback[]
   viewDays   ArticleViewDay[]
   revisions  ArticleRevision[]
+  changes    ArticleChanges?
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
@@ -922,6 +927,27 @@ model ArticleRevision {
   @@index([collectionId])
   @@index([authorId])
   @@map("article_revision")
+}
+
+/// Unpublished changes to a published article: saving a published article keeps its title,
+/// text and collection here, and readers (the portal, search, AI answers, the sitemap, …) keep
+/// the published version in `article` until the team publishes the changes or discards them.
+/// Each save is still a revision. Only published articles have them: unpublishing or deleting
+/// an article makes them its draft's text.
+model ArticleChanges {
+  articleId    String   @id
+  title        String
+  /// Plain text (derived from `content`).
+  body         String   @default("")
+  content      Json?
+  collectionId String?
+  updatedAt    DateTime @updatedAt
+
+  article    Article     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+
+  @@index([collectionId])
+  @@map("article_changes")
 }
 
 /// A reader's answer to "Was this helpful?" under a published article: one per reader

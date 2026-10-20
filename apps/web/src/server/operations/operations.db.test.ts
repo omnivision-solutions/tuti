@@ -54,6 +54,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.create": () => ({ title: "From the matrix", body: "Read me", collection: "basics" }),
   "articles.update": () => ({ slug: "matrix-draft", title: "Renamed by the matrix", collection: null }),
   "articles.publish": () => ({ slug: "matrix-draft" }),
+  "articles.publishChanges": () => ({ slug: "matrix-article" }),
+  "articles.discardChanges": () => ({ slug: "matrix-article" }),
   "articles.unpublish": () => ({ slug: "matrix-article" }),
   "articles.delete": () => ({ slug: "matrix-article" }),
   "articles.revisions": () => ({ slug: "matrix-article" }),
@@ -135,6 +137,10 @@ async function createFixture() {
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({
     data: { article: { connect: { projectId_slug: { projectId: project.id, slug: "matrix-draft" } } }, title: "Matrix draft, before", body: "Older" },
+  });
+  // Unpublished changes to the published article, to publish or discard.
+  await prisma.articleChanges.create({
+    data: { article: { connect: { projectId_slug: { projectId: project.id, slug: "matrix-article" } } }, title: "Matrix article, edited" },
   });
   const board = project.boards[0]!;
   const marker = `matrix-${crypto.randomUUID()}`;
@@ -226,6 +232,7 @@ const snapshot = () =>
     }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
+    prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),

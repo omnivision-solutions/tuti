@@ -176,6 +176,8 @@ const matrix: Matrix = {
       call: (slug) => help.saveArticle(slug, "matrix-draft", {}, form({ title: "Renamed by the matrix", collection: "basics" })),
     },
     publishArticle: { allowed: "MEMBER", call: (slug) => help.publishArticle(slug, "matrix-draft") },
+    publishArticleChanges: { allowed: "MEMBER", call: (slug) => help.publishArticleChanges(slug, "matrix-article") },
+    discardArticleChanges: { allowed: "MEMBER", call: (slug) => help.discardArticleChanges(slug, "matrix-article") },
     unpublishArticle: { allowed: "MEMBER", call: (slug) => help.unpublishArticle(slug, "matrix-article") },
     deleteArticle: { allowed: "MEMBER", call: (slug) => help.deleteArticle(slug, "matrix-article") },
     restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => help.restoreArticle(slug, "matrix-draft", f.revisionId) },
@@ -501,6 +503,10 @@ async function createFixture() {
   // An earlier version of the draft, to restore.
   const revision = await prisma.articleRevision.create({
     data: { article: { connect: { projectId_slug: { projectId, slug: "matrix-draft" } } }, title: "Matrix draft, before", body: "Older" },
+  });
+  // Unpublished changes to the published article, to publish or discard.
+  await prisma.articleChanges.create({
+    data: { article: { connect: { projectId_slug: { projectId, slug: "matrix-article" } } }, title: "Matrix article, edited" },
   });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },

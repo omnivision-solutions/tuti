@@ -2,7 +2,7 @@
 
 import type { Doc } from "@tuti/content";
 import { useRouter } from "next/navigation";
-import { useActionState, useState, useTransition } from "react";
+import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { RichEditor } from "@/components/rich-editor";
@@ -18,7 +18,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,15 +30,25 @@ import type { FormState } from "@/server/form-state";
 import {
   deleteArticle,
   deleteCollection,
+  discardArticleChanges,
   dismissHelpGap,
   publishArticle,
+  publishArticleChanges,
   restoreArticle,
   saveArticle,
   saveCollection,
   unpublishArticle,
 } from "@/server/help";
 
-type Article = { slug: string; title: string; content: Doc; collection: string | null; showUpdatedDate: boolean; listing: Listing };
+type Article = {
+  slug: string;
+  title: string;
+  content: Doc;
+  collection: string | null;
+  showUpdatedDate: boolean;
+  listing: Listing;
+  published: boolean;
+};
 type CollectionOption = { slug: string; name: string };
 
 /** Writes a new article (`article` null) or edits one: title, collection, listing and text. */
@@ -136,9 +147,14 @@ export function ArticleForm({
             <span className="block text-sm text-muted-foreground">Readers see when you last changed it after it was published.</span>
           </span>
         </label>
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : article ? "Save" : "Save draft"}
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          {article?.published && (
+            <p className="text-sm text-muted-foreground">Changes to the title, collection and text go live when you publish them.</p>
+          )}
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : article ? "Save" : "Save draft"}
+          </Button>
+        </div>
       </FieldGroup>
     </form>
   );
@@ -214,6 +230,91 @@ export function ArticleActions({
   );
 }
 
+/**
+ * Over a published article with unpublished changes: review them against the published version
+ * (`diff`), publish them, or discard them.
+ */
+export function ArticleChanges({
+  projectSlug,
+  slug,
+  savedAt,
+  saved,
+  diff,
+}: {
+  projectSlug: string;
+  slug: string;
+  /** When the changes were saved (ISO): they're published or discarded only if nobody saved more since. */
+  savedAt: string;
+  /** The same, for people ("5 minutes ago"). */
+  saved: string;
+  diff: ReactNode;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [reviewing, setReviewing] = useState(false);
+  const run = (action: typeof publishArticleChanges, done: string) =>
+    startTransition(async () => {
+      const result = await action(projectSlug, slug, savedAt);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        setReviewing(false);
+        toast.success(done);
+      }
+    });
+  const publish = (
+    <Button disabled={pending} onClick={() => run(publishArticleChanges, "Changes published")}>
+      Publish changes
+    </Button>
+  );
+
+  return (
+    <Card role="region" aria-labelledby="article-changes-title">
+      <CardHeader>
+        <CardTitle id="article-changes-title">Unpublished changes</CardTitle>
+        <CardDescription>Saved {saved}. Readers see the published version until you publish them.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap justify-end gap-2">
+        <AlertDialog>
+          <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Discard changes</AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Discard changes?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The article goes back to the published version. The changes stay in its history, so you can restore them.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" disabled={pending} onClick={() => run(discardArticleChanges, "Changes discarded")}>
+                Discard changes
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <Dialog open={reviewing} onOpenChange={setReviewing}>
+          <DialogTrigger render={<Button variant="outline" disabled={pending} />}>Review changes</DialogTrigger>
+          <DialogContent className="sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Review changes</DialogTitle>
+              <DialogDescription>
+                Against the published version: paragraphs taken out are struck through, new ones are highlighted.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[60vh] overflow-y-auto">{diff}</div>
+            <DialogFooter>
+              <Button variant="outline" disabled={pending} onClick={() => setReviewing(false)}>
+                Close
+              </Button>
+              {publish}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {publish}
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Makes an earlier version the current one (saved as a new version), then opens the article. */
 export function RestoreVersionButton({
   projectSlug,
@@ -236,7 +337,7 @@ export function RestoreVersionButton({
           <AlertDialogTitle>Restore this version?</AlertDialogTitle>
           <AlertDialogDescription>
             {published
-              ? "It replaces the current text and is published right away: readers see it at once."
+              ? "It replaces the current text as unpublished changes: readers see it once you publish them."
               : "It replaces the draft's current text."}{" "}
             The current version stays in the history.
           </AlertDialogDescription>

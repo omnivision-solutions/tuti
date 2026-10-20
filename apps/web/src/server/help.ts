@@ -10,7 +10,9 @@ import {
   createCollection,
   deleteArticle as deleteArticleOperation,
   deleteCollection as deleteCollectionOperation,
+  discardChanges as discardChangesOperation,
   publishArticle as publishOperation,
+  publishChanges as publishChangesOperation,
   restoreArticle as restoreOperation,
   unpublishArticle as unpublishOperation,
   updateArticle,
@@ -48,6 +50,20 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
 
 export async function publishArticle(projectSlug: string, slug: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(publishOperation, context, { slug: String(slug) }));
+}
+
+/** "Publish changes": a published article's unpublished changes go live, if they're still those saved at `savedAt` (the ones reviewed). */
+export async function publishArticleChanges(projectSlug: string, slug: string, savedAt?: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(publishChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt) }),
+  );
+}
+
+/** "Discard changes": back to the published version, if the changes are still those saved at `savedAt`. */
+export async function discardArticleChanges(projectSlug: string, slug: string, savedAt?: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) =>
+    call(discardChangesOperation, context, { slug: String(slug), savedAt: savedAt === undefined ? undefined : String(savedAt) }),
+  );
 }
 
 export async function unpublishArticle(projectSlug: string, slug: string): Promise<FormState> {
