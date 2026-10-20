@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
+import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
 export type HelpSearchResult = { slug: string; title: string; snippet: string };
 
@@ -72,6 +72,32 @@ async function meaningMatches(projectId: string, query: string, limit: number, t
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
+}
+
+export type AnswerSection = { articleId: string; slug: string; title: string; heading: string; text: string };
+
+/**
+ * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
+ * first: what AI answers may use (help.ask). Null if the question couldn't be embedded in time.
+ */
+export async function answerSections(projectId: string, question: string, limit: number, timeoutMs: number): Promise<AnswerSection[] | null> {
+  let vector: string;
+  try {
+    const [embedding] = await embed([question], AbortSignal.timeout(timeoutMs));
+    vector = toVectorLiteral(embedding!);
+  } catch (error) {
+    log.warn("Embedding a help question failed", { projectId, error });
+    return null;
+  }
+  // ponytail: scans all of the project's chunks, like meaningMatches.
+  return prisma.$queryRaw<AnswerSection[]>`
+    SELECT a.id AS "articleId", a.slug, a.title, c.heading, c.text
+    FROM article_chunk c
+    JOIN article a ON a.id = c."articleId"
+    WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL
+      AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
+    ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
+    LIMIT ${limit}`;
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if help centers get big.

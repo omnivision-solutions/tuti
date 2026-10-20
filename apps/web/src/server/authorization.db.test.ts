@@ -3,9 +3,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { type TeamRole, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import {
+  FAKE_OPENAI_KEY,
   type ModelFake,
+  type OpenAIFake,
   type S3Fake,
   startModelFake,
+  startOpenAIFake,
   startS3Fake,
   startWebhookReceiver,
   type WebhookReceiver,
@@ -144,10 +147,24 @@ const matrix: Matrix = {
     saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
   },
-  // Anyone may answer under a published article and count its view, signed in or not.
+  // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
   "help-readers": {
     answerArticle: { allowed: "public", call: (slug) => helpReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
     countArticleView: { allowed: "public", call: (slug) => helpReaders.countArticleView(slug, "matrix-article") },
+    askHelp: {
+      allowed: "public",
+      // With embeddings on (answers need them). Nothing in the fixture is close to the question, so the model isn't asked.
+      call: async (slug) => {
+        vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+        vi.stubEnv("OPENAI_BASE_URL", openai.url);
+        try {
+          return await helpReaders.askHelp(slug, "How do I invite my team?");
+        } finally {
+          vi.stubEnv("OPENAI_API_KEY", "");
+        }
+      },
+    },
+    rateHelpAnswer: { allowed: "public", takesIds: true, call: (slug, f) => helpReaders.rateHelpAnswer(slug, f.questionId, false) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -312,6 +329,7 @@ type Actor = TeamRole | "signed out" | "other project's owner" | "other project'
 
 let s3: S3Fake;
 let model: ModelFake;
+let openai: OpenAIFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
@@ -322,6 +340,7 @@ beforeAll(async () => {
   receiver = await startWebhookReceiver();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   model = await startModelFake();
+  openai = await startOpenAIFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
@@ -337,7 +356,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 
@@ -436,6 +455,9 @@ async function createFixture() {
       { projectId, slug: "matrix-draft", title: "Matrix draft" },
     ],
   });
+  const question = await prisma.helpQuestion.create({
+    data: { projectId, askerId: "matrix-reader", question: "How do I invite?", status: "ANSWERED", answer: "From the Team page." },
+  });
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
@@ -458,6 +480,7 @@ async function createFixture() {
     invitationId: invitation.id,
     invitationToken,
     targetMemberId: targetMember.id,
+    questionId: question.id,
   };
 }
 

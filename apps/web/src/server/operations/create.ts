@@ -58,6 +58,8 @@ export async function saving<T>(save: () => Promise<T>): Promise<T> {
   }
 }
 
+export const MAX_POST_TITLE = 120;
+
 export const createPost = defineOperation({
   name: "posts.create",
   summary: "Create a post, as the key's creator or on behalf of someone from your app (`author`)",
@@ -67,7 +69,7 @@ export const createPost = defineOperation({
   access: "anyone",
   input: z.object({
     board: z.string().min(1),
-    title: z.string().trim().min(3, "Title is too short").max(120),
+    title: z.string().trim().min(3, "Title is too short").max(MAX_POST_TITLE),
     ...content,
     author,
   }),

@@ -5,6 +5,8 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
+import { modelRequests, nextModelReply } from "./model";
+import { similar } from "./openai";
 
 test("the team writes a help article in a collection, publishes it, and a visitor reads it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -160,4 +162,80 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/help");
   await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+});
+
+test("a visitor asks the help center's AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("textbox", { name: "Key name" }).fill("Help answers test");
+  await team.getByRole("combobox", { name: "What the key can do" }).click();
+  await team.getByRole("option", { name: "Read and write" }).click();
+  await team.getByRole("button", { name: "Create key" }).click();
+  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help answers test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  const api = async (path: string, body: object) => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
+
+  // A published article whose only section is close to the visitor's question.
+  const question = "How do I add a colleague to my project?";
+  const body = "Owners and admins send invites from the Team page. Each invite is good for 7 days.";
+  await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const article = await api("/articles", { title: "Inviting your team", body });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  // The visitor searches, then asks the AI.
+  const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
+  await visitor.goto("/help");
+  const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
+  await searchBox.fill(question);
+  await searchBox.press("Enter");
+  const ai = visitor.getByRole("region", { name: "AI answer" });
+  await expect(ai.getByRole("button", { name: "Ask AI" })).toBeVisible();
+  await checkpoint(visitor, "portal-help-ask-ai");
+  await nextModelReply(
+    JSON.stringify({ answer: "Owners and admins send invites from the Team page.\n\n- Each invite is good for 7 days", sources: ["s1"] }),
+    question,
+  );
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
+  await expect(ai.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
+  const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
+  await expect(source).toHaveAttribute("href", "/help/inviting-your-team");
+  await checkpoint(visitor, "portal-help-ai-answer");
+  const asked = (await modelRequests()).filter((request) => request.user.includes(question));
+  expect(asked).toHaveLength(1);
+  expect(asked[0]!.user).toContain(body);
+  await ai.getByRole("button", { name: "Helpful", exact: true }).click();
+  await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
+  await source.click();
+  await visitor.waitForURL(/\/help\/inviting-your-team$/);
+
+  // Something the help center doesn't cover: "I don't know", without asking the model.
+  await visitor.goto("/help");
+  const unrelated = "Can I pay with crypto?";
+  await visitor.getByRole("searchbox", { name: "Search the help center" }).fill(unrelated);
+  await visitor.getByRole("searchbox", { name: "Search the help center" }).press("Enter");
+  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+  await checkpoint(visitor, "portal-help-ai-no-answer");
+  expect((await modelRequests()).filter((request) => request.user.includes(unrelated))).toEqual([]);
+
+  // Posting it as feedback starts a post with the question as its title.
+  await ai.getByRole("link", { name: "Post this as feedback" }).click();
+  await visitor.waitForURL(/\/b\/feature-requests\?title=/);
+  await expect(visitor.getByLabel("Title")).toHaveValue(unrelated);
+  await checkpoint(visitor, "portal-help-ai-post-as-feedback");
+  await visitor.getByRole("button", { name: "Submit feedback" }).click();
+  await expect(visitor.getByText("Feedback posted")).toBeVisible();
+  await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 });

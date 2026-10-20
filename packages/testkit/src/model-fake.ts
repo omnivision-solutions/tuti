@@ -7,7 +7,7 @@ export const FAKE_MODEL_KEY = "sk-or-test-fake";
 export type ModelRequest = { model: string; system: string; user: string };
 
 /** A scripted answer: a reply (status 200) or an error status. */
-type Step = { status: number; content?: string; during?: () => Promise<unknown> };
+type Step = { status: number; content?: string; during?: () => Promise<unknown>; match?: string };
 
 export type ModelFake = {
   /** Base URL to use as OPENROUTER_BASE_URL. */
@@ -18,9 +18,11 @@ export type ModelFake = {
   requests: ModelRequest[];
   /**
    * The next request gets this reply (steps are used in order). `during` runs while
-   * that request waits for it, e.g. a save racing the model. Also `POST /_fake/replies {content}`.
+   * that request waits for it, e.g. a save racing the model. Also `POST /_fake/replies {content, match?}`,
+   * where `match` keeps the reply for the first request whose user message contains it (so journeys
+   * running side by side can't take each other's replies); requests without a match take unmatched steps.
    */
-  reply(content: string, during?: () => Promise<unknown>): void;
+  reply(content: string, during?: () => Promise<unknown>, match?: string): void;
   /** The next request fails with this HTTP status. */
   fail(status: number): void;
   /** Throws if a step wasn't used or a request came with no step left. */
@@ -52,7 +54,7 @@ export async function startModelFake(): Promise<ModelFake> {
       if (req.method === "GET" && req.url === "/_fake/requests") {
         return send(200, requests);
       }
-      let body: { model?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown };
+      let body: { model?: unknown; messages?: { role?: unknown; content?: unknown }[]; content?: unknown; match?: unknown };
       try {
         body = JSON.parse(raw) as typeof body;
       } catch {
@@ -60,10 +62,10 @@ export async function startModelFake(): Promise<ModelFake> {
       }
       // Lets tests in another process (E2E journeys) script replies.
       if (req.method === "POST" && req.url === "/_fake/replies") {
-        if (typeof body.content !== "string") {
-          return send(400, { error: { message: "expected {content}" } });
+        if (typeof body.content !== "string" || (body.match !== undefined && typeof body.match !== "string")) {
+          return send(400, { error: { message: "expected {content, match?}" } });
         }
-        steps.push({ status: 200, content: body.content });
+        steps.push({ status: 200, content: body.content, match: body.match });
         return send(204, null);
       }
       if (req.method !== "POST" || req.url !== "/chat/completions") {
@@ -77,7 +79,11 @@ export async function startModelFake(): Promise<ModelFake> {
         return send(400, { error: { message: "expected a model, a system and a user message" } });
       }
       requests.push({ model: body.model, system, user });
-      const step = steps.shift();
+      let index = steps.findIndex((step) => step.match !== undefined && user.includes(step.match));
+      if (index === -1) {
+        index = steps.findIndex((step) => step.match === undefined);
+      }
+      const [step] = index === -1 ? [] : steps.splice(index, 1);
       if (!step) {
         unexpected.push(`a request with no reply scripted: ${user.slice(0, 200)}`);
         return send(500, { error: { message: "the model fake has no reply scripted" } });
@@ -103,8 +109,8 @@ export async function startModelFake(): Promise<ModelFake> {
     url,
     env: { OPENROUTER_API_KEY: FAKE_MODEL_KEY, OPENROUTER_BASE_URL: url },
     requests,
-    reply(content, during) {
-      steps.push({ status: 200, content, during });
+    reply(content, during, match) {
+      steps.push({ status: 200, content, during, match });
     },
     fail(status) {
       steps.push({ status });
