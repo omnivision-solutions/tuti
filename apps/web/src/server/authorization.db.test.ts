@@ -336,6 +336,8 @@ const matrix: Matrix = {
   },
   "portal-settings": {
     setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
+    addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
+    removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
   },
   posts: {
     createPost: {
@@ -568,6 +570,7 @@ async function createFixture() {
       { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
+  await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
   const docs = await prisma.helpSection.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", sectionId: docs.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });

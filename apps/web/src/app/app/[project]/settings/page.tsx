@@ -9,6 +9,7 @@ import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/com
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { PortalAccessSelect } from "@/components/portal-access-select";
+import { PortalReaders } from "@/components/portal-readers";
 import { SsoSettings } from "@/components/sso-settings";
 import { SupportEmailSettings } from "@/components/support-email";
 import { WidgetSettings } from "@/components/widget-settings";
@@ -20,7 +21,7 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
-import { portalAccess } from "@/server/operations/portal";
+import { portalAccess, portalReaders } from "@/server/operations/portal";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
 const GITHUB_RESULTS: Record<string, string> = {
@@ -132,6 +133,9 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardHeader>
         <CardContent>
           <PortalAccessSelect projectSlug={project.slug} access={access} />
+          {access === "private" && (
+            <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />
+          )}
         </CardContent>
       </Card>
 

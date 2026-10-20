@@ -28,14 +28,16 @@ import * as similarPosts from "./similar-posts";
 
 /**
  * A private portal (Settings → Portal access): every reader of a portal's content, for each
- * kind of visitor, on a public and a private portal. Only the team and the project's SSO users
- * read a private one; signing up, a sign-in link or another project's team gets nobody in.
+ * kind of visitor, on a public and a private portal. Only the team, the project's SSO users and
+ * the readers it added by email (verified) read a private one; signing up, a sign-in link, an
+ * unverified reader's address or another project's team gets nobody in.
  */
 
 type Project = Awaited<ReturnType<typeof createProject>>;
 let owner: TestUser;
 let project: Project;
-let visitors: Record<"signed out" | "signed up" | "team" | "SSO user", TestUser | null>;
+const VISITORS = ["signed out", "signed up", "team", "SSO user", "reader", "unverified reader"] as const;
+let visitors: Record<(typeof VISITORS)[number], TestUser | null>;
 let fixture: { postId: string; questionId: string };
 
 const form = (fields: Record<string, string>) => {
@@ -45,6 +47,14 @@ const form = (fields: Record<string, string>) => {
   }
   return data;
 };
+
+/** Someone the team added as a reader by email, verified or not. */
+async function readerOf(projectId: string, verified: boolean) {
+  const user = await signUp("Reader");
+  await prisma.user.update({ where: { id: user.id }, data: { emailVerified: verified } });
+  await prisma.portalReader.create({ data: { projectId, email: user.email.toLowerCase() } });
+  return user;
+}
 
 async function ssoUserOf(projectId: string) {
   const user = await signUp("From the app");
@@ -71,7 +81,14 @@ async function portalWithContent(owner: TestUser) {
 beforeAll(async () => {
   owner = await signUp("Owner");
   ({ project, fixture } = await portalWithContent(owner));
-  visitors = { "signed out": null, "signed up": await signUp("Stranger"), team: owner, "SSO user": await ssoUserOf(project.id) };
+  visitors = {
+    "signed out": null,
+    "signed up": await signUp("Stranger"),
+    team: owner,
+    "SSO user": await ssoUserOf(project.id),
+    reader: await readerOf(project.id, true),
+    "unverified reader": await readerOf(project.id, false),
+  };
 });
 
 beforeEach(() => {
@@ -170,10 +187,10 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
 ];
 
 const cases = (["PUBLIC", "PRIVATE"] as const).flatMap((access) =>
-  (["signed out", "signed up", "team", "SSO user"] as const).flatMap((visitor) =>
+  VISITORS.flatMap((visitor) =>
     readers.map((reader) => {
       const expected =
-        access === "PUBLIC" ? !reader.account || visitor !== "signed out" : visitor === "team" || visitor === "SSO user";
+        access === "PUBLIC" ? !reader.account || visitor !== "signed out" : visitor === "team" || visitor === "SSO user" || visitor === "reader";
       return { access, visitor, reader, expected };
     }),
   ),

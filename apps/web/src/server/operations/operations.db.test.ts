@@ -94,6 +94,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private" }),
+  // Like portal.update: admins only in the app.
+  "portalReaders.list": () => ({}),
+  "portalReaders.add": () => ({ emails: ["e2e-matrix-reader@example.com"] }),
+  "portalReaders.remove": () => ({ email: "e2e-reader@example.com" }),
 };
 
 let owner: TestUser;
@@ -140,6 +144,9 @@ async function createFixture() {
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
   await prisma.helpSection.deleteMany({ where: { projectId: project.id } });
+  // A reader, to remove.
+  await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
+  await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
   // A section with both collections in it.
   const docs = await prisma.helpSection.create({ data: { projectId: project.id, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", sectionId: docs.id } });

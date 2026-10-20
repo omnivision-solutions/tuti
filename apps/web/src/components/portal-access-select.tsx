@@ -15,7 +15,7 @@ const ACCESS: Record<PortalAccess, string> = {
 const DESCRIPTIONS: Record<PortalAccess, string> = {
   public: "Anyone can read it, and sign up to post and vote.",
   private:
-    "Only your team and people your app signs in with single sign-on. Everyone else gets the sign-in page; sign-up is off and search engines are kept out.",
+    "Only your team, people your app signs in with single sign-on, and the readers you add below. Everyone else gets the sign-in page; sign-up is off and search engines are kept out.",
 };
 
 export function PortalAccessSelect({ projectSlug, access }: { projectSlug: string; access: PortalAccess }) {
