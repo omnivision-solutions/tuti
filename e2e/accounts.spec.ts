@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
 
@@ -80,4 +81,51 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
   await ada.goto("/b/feature-requests");
   await expect(ada.getByRole("button", { name: "Submit feedback" })).toBeVisible();
+});
+
+test("a visitor signs in to a portal with an emailed link and comes back to the post they started", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  // Signed out, with a post started (as "Post this as feedback" from the help center does).
+  const title = "Can I pay with crypto?";
+  const vera = await newPerson(browser, portalUrl(slug));
+  await vera.goto(`/b/feature-requests?${new URLSearchParams({ title })}`);
+  await vera.getByRole("main").getByRole("link", { name: "Sign in" }).click();
+  await vera.waitForURL(/\/sign-in\?next=/);
+  const email = `e2e-${randomUUID()}@example.com`;
+  await vera.getByLabel("Email").fill(email);
+  await checkpoint(vera, "portal-sign-in-link-form");
+  await vera.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(vera.getByText("Check your email")).toBeVisible();
+  await expect(vera.getByText(`We sent a sign-in link to ${email}.`)).toBeVisible();
+  await checkpoint(vera, "portal-sign-in-link-sent");
+
+  const message = await latestEmailTo(email);
+  expect(message.subject).toBe("Sign in to Acme");
+  const link = linkIn(message, `${portalUrl(slug)}/sign-in/link?`);
+  await vera.goto(link);
+  await vera.waitForURL(/\/b\/feature-requests\?title=/);
+  await expect(vera.getByLabel("Title")).toHaveValue(title);
+  await expect(vera.getByRole("button", { name: "Account" })).toBeVisible();
+  await checkpoint(vera, "portal-signed-in-with-link");
+
+  // A new account is named after the address; they can change it.
+  await vera.getByRole("button", { name: "Account" }).click();
+  await expect(vera.getByRole("menu").getByText(email.split("@")[0]!)).toBeVisible();
+  await vera.getByRole("menuitem", { name: "Account settings" }).click();
+  await vera.waitForURL("**/account");
+  await vera.getByLabel("Name").fill("Vera Visitor");
+  await vera.getByRole("button", { name: "Save" }).click();
+  await expect(vera.getByText("Profile updated")).toBeVisible();
+  await vera.getByRole("button", { name: "Account" }).click();
+  await expect(vera.getByRole("menu").getByText("Vera Visitor")).toBeVisible();
+
+  // The link worked once.
+  const someoneElse = await newPerson(browser, portalUrl(slug));
+  await someoneElse.goto(link);
+  await expect(someoneElse.getByText("That sign-in link has expired or was already used. Ask for a new one.")).toBeVisible();
+  await expect(someoneElse.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 });

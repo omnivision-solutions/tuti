@@ -161,7 +161,8 @@ model Project {
   ssoIdentities        SsoIdentity[]
   ssoTokenUses         SsoTokenUse[]
   portalHandoffs       PortalHandoff[]
-  apiKeys              ApiKey[]
+  signInLinks          SignInLink[]
+  apiKeys             ApiKey[]
   githubInstallation   GithubInstallation?
   postLinks            PostLink[]
   webhooks             Webhook[]
@@ -437,6 +438,24 @@ model PortalHandoff {
 
   @@index([expiresAt])
   @@map("portal_handoff")
+}
+
+/// A sign-in link a portal emailed (magic link; the token itself is Better Auth's
+/// verification row). Kept for an hour: for the hourly limits per address and per
+/// portal, and to check a link is only used on the portal that sent it. Only
+/// hashes are stored (tokenHash is set once the link is made).
+model SignInLink {
+  id        String   @id @default(cuid())
+  projectId String
+  emailHash String
+  tokenHash String?  @unique
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([emailHash, createdAt])
+  @@index([projectId, createdAt])
+  @@map("sign_in_link")
 }
 
 /// A single-use link that adds someone to a project with a given role.

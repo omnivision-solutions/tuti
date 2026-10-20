@@ -11,6 +11,8 @@ test.each([
   ["//evil.example", "/fallback"],
   ["/\\evil.example", "/fallback"],
   ["javascript:alert(1)", "/fallback"],
+  ["/\t/evil.example", "/fallback"],
+  ["/\n/evil.example", "/fallback"],
 ])("safeRedirectPath(%j) → %j", (redirect, expected) => {
   expect(safeRedirectPath(redirect, "/fallback")).toBe(expected);
 });

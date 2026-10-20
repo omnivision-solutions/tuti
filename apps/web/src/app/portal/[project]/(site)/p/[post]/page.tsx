@@ -6,6 +6,7 @@ import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { SignInLink } from "@/components/sign-in-link";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
@@ -97,9 +98,9 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           <CommentForm postId={post.id} />
         ) : (
           <p className="text-sm text-muted-foreground">
-            <Link href="/sign-in" className="text-foreground underline underline-offset-4">
+            <SignInLink className="text-foreground underline underline-offset-4">
               Sign in
-            </Link>{" "}
+            </SignInLink>{" "}
             to comment.
           </p>
         )}

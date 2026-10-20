@@ -1,13 +1,27 @@
 import { prisma } from "@tuti/db";
-import { sendEmail, verifyEmail } from "@tuti/email";
+import { sendEmail, signInLinkEmail, verifyEmail } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
+import { magicLink } from "better-auth/plugins/magic-link";
 
-import { allowedHostPatterns, appUrl } from "./hosts";
-import { portalHandoff } from "./portal-handoff";
+import { allowedHostPatterns, appUrl, portalUrl } from "./hosts";
+import { hashSecret, portalHandoff } from "./portal-handoff";
+import { SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
 import { jwtSso } from "./sso";
+
+/** Remembers which portal a sign-in link's token is for, and emails the portal's own link (see lib/sign-in-link.ts). */
+async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
+  const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
+  await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
+  const url = new URL("/sign-in/link", portalUrl(slug));
+  url.searchParams.set("token", token);
+  if (next !== "/") {
+    url.searchParams.set("next", next);
+  }
+  await sendEmail({ to: email, ...signInLinkEmail({ projectName, url: url.toString(), minutes: SIGN_IN_LINK_MINUTES }) });
+}
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
@@ -47,8 +61,16 @@ export const auth = betterAuth({
       }
     },
   },
+  // Portal sign-in links (lib/sign-in-link.ts) are only asked for through the emailSignInLink
+  // action (which applies the limits) and opened at the portal's /sign-in/link (bound to that portal).
+  disabledPaths: ["/sign-in/magic-link", "/magic-link/verify"],
   // nextCookies must stay last: lets server actions set auth cookies.
-  plugins: [jwtSso(), portalHandoff(), nextCookies()],
+  plugins: [
+    jwtSso(),
+    portalHandoff(),
+    magicLink({ expiresIn: SIGN_IN_LINK_MINUTES * 60, storeToken: "hashed", sendMagicLink: sendSignInLink }),
+    nextCookies(),
+  ],
 });
 
 export type Session = typeof auth.$Infer.Session;
