@@ -33,12 +33,15 @@ function hostnameOf(host: string) {
 const CACHE_MS = 10_000;
 const MAX_CACHED = 5_000;
 const cache = new Map<string, { slug: string | null; until: number }>();
+/** Counts forgetCustomDomain calls: a lookup that started before one doesn't keep what it read. */
+let forgets = 0;
 
 async function customDomainSlug(hostname: string): Promise<string | null> {
   const cached = cache.get(hostname);
   if (cached && cached.until > Date.now()) {
     return cached.slug;
   }
+  const started = forgets;
   const domain = await prisma.customDomain.findFirst({
     where: { hostname, verifiedAt: { not: null } },
     select: { project: { select: { slug: true } } },
@@ -47,12 +50,15 @@ async function customDomainSlug(hostname: string): Promise<string | null> {
     cache.clear();
   }
   const slug = domain?.project.slug ?? null;
-  cache.set(hostname, { slug, until: Date.now() + CACHE_MS });
+  if (forgets === started) {
+    cache.set(hostname, { slug, until: Date.now() + CACHE_MS });
+  }
   return slug;
 }
 
 /** Forgets what this server knows about `hostname` (after it's verified or removed here). */
 export function forgetCustomDomain(hostname: string) {
+  forgets++;
   cache.delete(hostname);
 }
 

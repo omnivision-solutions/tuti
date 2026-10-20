@@ -167,6 +167,25 @@ test("changing or removing the domain: the old one stops answering at once", asy
   expect(await prisma.customDomain.count({ where: { hostname: first } })).toBe(0);
 });
 
+test("a lookup that was under way when the domain was removed doesn't keep it answering", async () => {
+  const host = hostname();
+  await addAndPublish(host);
+  await call(verifyDomain, as(), {});
+  // The lookup reads the domain, then the team removes it before the lookup is done.
+  const read = prisma.customDomain.findFirst.bind(prisma.customDomain);
+  const spy = vi.spyOn(prisma.customDomain, "findFirst").mockImplementationOnce(async (args) => {
+    const result = await read(args as Parameters<typeof read>[0]);
+    await call(removeDomain, as(), {});
+    return result as never;
+  });
+  try {
+    expect(await requestTarget(host)).toMatchObject({ kind: "portal" });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(await requestTarget(host)).toEqual({ kind: "unknown" });
+});
+
 test("only hostnames that can be a domain of the team's own", async () => {
   for (const [input, message] of [
     ["not a domain", "Enter a domain like help.example.com"],
