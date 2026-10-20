@@ -11,7 +11,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   return new Response(articleMarkdown(article), {
     headers: {
       "content-type": "text/markdown; charset=utf-8",
-      "cache-control": "public, max-age=300",
+      // One for some reader groups only must never be served from a shared cache to someone else.
+      "cache-control": article.restricted ? "private, no-store" : "public, max-age=300",
       // Search engines index the article's page, not this copy of it.
       link: `<${portalUrl(project)}/help/${slug}>; rel="canonical"`,
       // Unlisted: for people with the link, not search engines.

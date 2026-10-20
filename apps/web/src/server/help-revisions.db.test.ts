@@ -108,7 +108,7 @@ describe("revisions", () => {
     // Published, readers see the restored text, and search has it.
     await call(publishChanges, as(owner), { slug: "billing" });
     expect(await publishedArticle(project.slug, "billing")).toMatchObject({ title: "Billing", body: "Pay by card." });
-    expect((await searchHelp(project.id, "invoice", 10)).map((r) => r.slug)).toEqual([]);
+    expect((await searchHelp(project.id, "invoice", 10, [])).map((r) => r.slug)).toEqual([]);
     expect(await history("billing")).toEqual([
       { title: "Billing", body: "Pay by card.", author: "Olive Owner" },
       { title: "Billing and invoices", body: "Pay by card or invoice.", author: "Eddie Editor" },
@@ -148,7 +148,7 @@ describe("deleting", () => {
       helpCenter: JSON.stringify(await helpCenter(project.slug)).includes("refunds"),
       llms: (await (await llms(request, { params })).text()).includes("refunds"),
       sitemap: (await (await sitemap(request, { params })).text()).includes("/help/refunds"),
-      search: (await searchHelp(project.id, "refunds", 10)).map((r) => r.slug),
+      search: (await searchHelp(project.id, "refunds", 10, [])).map((r) => r.slug),
       export: Object.keys(await zipped()).filter((file) => file.includes("refunds")),
       insights: (await helpInsights(project.id)).articles.map((a) => a.slug),
       published: (await call(listArticles, as(owner), {})).articles.map((a) => a.slug),

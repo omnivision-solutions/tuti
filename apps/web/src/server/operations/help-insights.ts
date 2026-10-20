@@ -1,6 +1,9 @@
 import { type HelpNoAnswerCause, Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
+
+import { actorGroups } from "../portal-access";
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
 
@@ -25,7 +28,7 @@ export const answerFields = z.object({
  * again changes it (so a retry or double click counts once). A "No" without a comment keeps
  * the comment the reader already left; a "Yes" drops it.
  */
-export async function saveAnswer(projectId: string, readerId: string, input: z.infer<typeof answerFields>) {
+export async function saveAnswer(projectId: string, readerId: string, input: z.infer<typeof answerFields>, groups: ReaderGroups) {
   const comment = input.comment || null;
   if (input.helpful && comment) {
     throw new OperationError(400, "invalid_input", "Only a “No” takes a comment");
@@ -36,7 +39,7 @@ export async function saveAnswer(projectId: string, readerId: string, input: z.i
     SELECT a.id, ${readerId}, ${input.helpful}, ${comment}, now()
     FROM article a
     WHERE a."projectId" = ${projectId} AND a.slug = ${input.slug} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-      AND a.listing IN ('EVERYWHERE', 'UNLISTED')
+      AND a.listing IN ('EVERYWHERE', 'UNLISTED') AND ${visibleArticleSql(groups)}
     ON CONFLICT ("articleId", "readerId") DO UPDATE SET
       helpful = EXCLUDED.helpful,
       comment = CASE WHEN EXCLUDED.helpful THEN NULL ELSE coalesce(EXCLUDED.comment, article_feedback.comment) END,
@@ -58,7 +61,8 @@ export const answerArticle = defineOperation({
   access: "anyone",
   input: answerFields.extend({ author }),
   example: { helpful: false, comment: "It doesn't say how to invite people by email.", author: { id: "user-42" } },
-  run: async (context, input) => saveAnswer(context.projectId, await authorId(context, input.author), input),
+  // Keys act for the team, which reads every article.
+  run: async (context, input) => saveAnswer(context.projectId, await authorId(context, input.author), input, await actorGroups(context.actor, context.projectId)),
 });
 
 /** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */

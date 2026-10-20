@@ -12,13 +12,14 @@ import { searchHelp } from "@/server/help-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
 import { askAPerson } from "@/server/operations/help-escalate";
+import { readerGroups } from "@/server/portal-access";
 
 export const metadata = { title: "Help center" };
 
 /** Published articles matching `query`, each with the passage that matched. */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  const results = project ? await searchHelp(project.id, query, 10) : [];
+  const results = project ? await searchHelp(project.id, query, 10, await readerGroups(project.id)) : [];
   if (results.length === 0) {
     return (
       <EmptyState

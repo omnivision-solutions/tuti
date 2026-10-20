@@ -19,6 +19,8 @@ type StructureCollection = {
   parent: string | null;
   /** At the top level, the section it's in (null without sections). */
   section: string | null;
+  /** The reader groups it's for; empty: everyone. */
+  groups: string[];
   articles: StructureArticle[];
 };
 type StructureSection = { slug: string; name: string };
@@ -369,7 +371,10 @@ export function HelpStructure({
                 }
               >
                 <span className="text-sm font-medium break-words">{collection.name}</span>
-                <span className="text-xs text-muted-foreground">{`${count} ${count === 1 ? "article" : "articles"}`}</span>
+                <span className="text-xs text-muted-foreground">
+                  {`${count} ${count === 1 ? "article" : "articles"}`}
+                  {collection.groups.length > 0 && ` · Only for ${collection.groups.join(", ")}`}
+                </span>
               </Row>
               {(count > 0 || inside.length > 0) && (
                 <div className="ml-2 border-l pl-3">

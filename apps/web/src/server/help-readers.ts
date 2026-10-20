@@ -6,13 +6,14 @@ import { prisma } from "@tuti/db";
 import { cookies, headers } from "next/headers";
 
 import { portalUrl } from "@/lib/hosts";
+import { visibleArticleSql } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
 import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operations/help-ask";
 import { escalateFields, escalateQuestion } from "./operations/help-escalate";
 import { answerFields, saveAnswer } from "./operations/help-insights";
 import { OperationError } from "./operations";
-import { readableProject } from "./portal-access";
+import { readableProject, readerGroups } from "./portal-access";
 import { getSession } from "./session";
 
 /**
@@ -67,7 +68,7 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
     return { error: "Article not found" };
   }
   try {
-    await saveAnswer(project.id, await readerId(String(projectSlug)), input.data);
+    await saveAnswer(project.id, await readerId(String(projectSlug)), input.data, await readerGroups(project.id));
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
@@ -82,15 +83,17 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
  * counter per article and day (UTC). Skips crawlers.
  */
 export async function countArticleView(projectSlug: string, slug: string): Promise<void> {
-  if (BOT.test((await headers()).get("user-agent") ?? "") || !(await readableProject(projectSlug))) {
+  const project = BOT.test((await headers()).get("user-agent") ?? "") ? null : await readableProject(projectSlug);
+  if (!project) {
     return;
   }
+  const groups = await readerGroups(project.id);
   await prisma.$executeRaw`
     INSERT INTO article_view_day ("articleId", day, views)
     SELECT a.id, (now() AT TIME ZONE 'UTC')::date, 1
     FROM article a JOIN project p ON p.id = a."projectId"
     WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-      AND a.listing IN ('EVERYWHERE', 'UNLISTED')
+      AND a.listing IN ('EVERYWHERE', 'UNLISTED') AND ${visibleArticleSql(groups)}
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 
@@ -106,7 +109,13 @@ export async function askHelp(projectSlug: string, question: string, from: "port
     return { error: "Help center not found" };
   }
   try {
-    return await answerQuestion(project.id, await readerId(String(projectSlug), widget), input.data.q, widget ? "WIDGET" : "PORTAL");
+    return await answerQuestion(
+      project.id,
+      await readerId(String(projectSlug), widget),
+      input.data.q,
+      widget ? "WIDGET" : "PORTAL",
+      await readerGroups(project.id),
+    );
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };

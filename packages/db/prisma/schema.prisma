@@ -233,6 +233,9 @@ model SsoIdentity {
   userId     String   @unique
   /// Email as asserted by the project's app (User.email is a placeholder).
   email      String?
+  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: which restricted
+  /// help center collections they may read (Collection.groups).
+  groups     String[] @default([])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -917,6 +920,9 @@ model Collection {
   /// collection (it's in its parent's). Once a project has sections, every top-level collection is
   /// in one (kept under the project's lock); without any, all are null.
   sectionId   String?
+  /// Who may read it (and the articles and collections in it) besides the team: people the project's
+  /// SSO signs in with one of these groups (lowercase). Empty: everyone who may read the portal.
+  groups      String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
