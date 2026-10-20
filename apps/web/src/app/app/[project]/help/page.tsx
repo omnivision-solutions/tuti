@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, RestoreDeletedButton } from "@/components/help";
+import { CollectionDialog, RestoreDeletedButton, SectionDialog } from "@/components/help";
 import { HelpStructure } from "@/components/help-structure";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -13,7 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
-import { inTreeOrder } from "@/server/help-queries";
+import { inTreeOrder, readingOrder } from "@/server/help-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/help";
 
@@ -36,7 +36,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, collections, uncollected, deleted] = await Promise.all([
+  const [articles, sections, collections, uncollected, deleted] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -49,9 +49,10 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         changes: { select: { articleId: true } },
       },
     }),
+    prisma.helpSection.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } }),
     prisma.collection.findMany({
       where: { projectId },
-      orderBy: [{ order: "asc" }, { name: "asc" }],
+      orderBy: readingOrder,
       select: {
         id: true,
         parentId: true,
@@ -59,6 +60,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         name: true,
         description: true,
         parent: { select: { slug: true } },
+        section: { select: { slug: true } },
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -132,25 +134,31 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         <CardHeader>
           <CardTitle id="help-collections">Collections</CardTitle>
           <CardDescription>
-            Group articles by topic, with collections inside collections if you need them. Your help center lists them in this order:
-            drag them into place, or use the arrows.
+            Group articles by topic, with collections inside collections if you need them, and sections for tabs above them. Your help
+            center lists them in this order: drag them into place, or use the arrows.
           </CardDescription>
-          <CardAction>
+          <CardAction className="flex flex-wrap justify-end gap-2">
+            <SectionDialog projectSlug={slug} first={sections.length === 0 && collections.length > 0} />
             <CollectionDialog
               projectSlug={slug}
-              parents={collections.filter((c) => c.parentId === null).map((c) => ({ slug: c.slug, name: c.name }))}
+              parents={inTreeOrder(collections)
+                .filter((c) => c.parentId === null)
+                .map((c) => ({ slug: c.slug, name: c.name }))}
+              sections={sections}
             />
           </CardAction>
         </CardHeader>
-        {(collections.length > 0 || uncollected.length > 0) && (
+        {(sections.length > 0 || collections.length > 0 || uncollected.length > 0) && (
           <CardContent>
             <HelpStructure
               projectSlug={slug}
+              sections={sections}
               collections={inTreeOrder(collections).map((c) => ({
                 slug: c.slug,
                 name: c.name,
                 description: c.description,
                 parent: c.parent?.slug ?? null,
+                section: c.section?.slug ?? null,
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

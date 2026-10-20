@@ -68,6 +68,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "collections.update": () => ({ slug: "basics", name: "The basics", parent: "guides" }),
   "collections.reorder": () => ({ slug: "guides", parent: "basics", position: 0 }),
   "collections.delete": () => ({ slug: "basics" }),
+  "sections.list": () => ({}),
+  "sections.create": () => ({ name: "API" }),
+  "sections.update": () => ({ slug: "docs", name: "Documentation" }),
+  "sections.reorder": () => ({ slug: "docs", position: 0 }),
+  "sections.delete": () => ({ slug: "docs" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -131,12 +136,15 @@ async function createFixture() {
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
-  // A collection, a published article in it and a draft.
+  // A section, a collection in it, a published article in that and a draft.
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
-  const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics" } });
+  await prisma.helpSection.deleteMany({ where: { projectId: project.id } });
+  // A section with both collections in it.
+  const docs = await prisma.helpSection.create({ data: { projectId: project.id, slug: "docs", name: "Docs" } });
+  const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", sectionId: docs.id } });
   // Another, to move one into the other.
-  await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1 } });
+  await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });
   await prisma.article.createMany({
     data: [
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

@@ -10,7 +10,7 @@ import { portalUrl } from "@/lib/hosts";
 import { titleSlug } from "@/lib/post-urls";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { inTreeOrder, listedArticle } from "../help-queries";
+import { inTreeOrder, listedArticle, readingOrder } from "../help-queries";
 import { searchHelp } from "../help-search";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
@@ -142,7 +142,7 @@ async function lastArticle(tx: Prisma.TransactionClient, projectId: string, coll
 }
 
 /** Numbers the rows 0, 1, … in the order of `ids`, in one statement. */
-async function renumber(tx: Prisma.TransactionClient, table: "article" | "collection", ids: string[]) {
+async function renumber(tx: Prisma.TransactionClient, table: "article" | "collection" | "help_section", ids: string[]) {
   await tx.$executeRaw`
     UPDATE ${Prisma.raw(`"${table}"`)} t SET "order" = n.place - 1
     FROM unnest(${ids}::text[]) WITH ORDINALITY AS n(id, place)
@@ -192,6 +192,11 @@ const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title:
 const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
   freeSlug(name, "collection", (prefix) =>
     tx.collection.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
+  );
+
+const freeSectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
+  freeSlug(name, "section", (prefix) =>
+    tx.helpSection.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
   );
 
 /** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
@@ -813,27 +818,31 @@ const collectionSelect = {
   description: true,
   order: true,
   parentId: true,
-  parent: { select: { slug: true } },
+  parent: { select: { slug: true, section: { select: { slug: true } } } },
+  section: { select: { slug: true } },
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-const collectionView = ({ slug, name, description, order, parent, _count }: CollectionRow) => ({
+const collectionView = ({ slug, name, description, order, parent, section, _count }: CollectionRow) => ({
   slug,
   name,
   description,
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
+  /** The section it's in (a collection in another is in its parent's), or null if the help center has no sections. */
+  section: (parent ? parent.section : section)?.slug ?? null,
   order,
   articles: _count.articles,
 });
 
 const siblingOrder: Prisma.CollectionOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
+const sectionOrder: Prisma.HelpSectionOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
 
 /** Collection `slug`, read under the project's lock (it may have been renamed or deleted since the caller looked). */
 async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
   const collection = await tx.collection.findUnique({
     where: { projectId_slug: { projectId, slug } },
-    select: { id: true, name: true, parentId: true },
+    select: { id: true, name: true, parentId: true, sectionId: true, parent: { select: { sectionId: true } } },
   });
   if (!collection) {
     throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
@@ -874,24 +883,85 @@ async function parentFor(
   return parent.id;
 }
 
-/** Puts collection `id` in `parentId` at `position` among the collections there (see `placed`). Call it with the project locked. */
-async function placeCollection(tx: Prisma.TransactionClient, projectId: string, id: string, parentId: string | null, at?: number) {
-  await tx.collection.update({ where: { id }, data: { parentId } });
-  const siblings = await tx.collection.findMany({ where: { projectId, parentId }, orderBy: siblingOrder, select: { id: true } });
+/** The collections in `parentId`, or at the top level (`parentId` null) in section `sectionId`. */
+const siblingsWhere = (projectId: string, parentId: string | null, sectionId: string | null): Prisma.CollectionWhereInput =>
+  parentId === null ? { projectId, parentId, sectionId } : { projectId, parentId };
+
+/**
+ * Puts collection `id` in `parentId` (or at the top level of section `sectionId`, when `parentId`
+ * is null) at `position` among the collections there (see `placed`). Call it with the project locked.
+ */
+async function placeCollection(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  id: string,
+  { parentId, sectionId }: { parentId: string | null; sectionId: string | null },
+  at?: number,
+) {
+  const place = { parentId, sectionId: parentId === null ? sectionId : null };
+  await tx.collection.update({ where: { id }, data: place });
+  const siblings = await tx.collection.findMany({ where: siblingsWhere(projectId, place.parentId, place.sectionId), orderBy: siblingOrder, select: { id: true } });
   await renumber(tx, "collection", placed(siblings, id, at));
+}
+
+/** The project's sections in order. Read with the project locked when the answer decides where something goes. */
+const sectionsOf = (tx: Prisma.TransactionClient, projectId: string) =>
+  tx.helpSection.findMany({ where: { projectId }, orderBy: sectionOrder, select: { id: true, slug: true, name: true } });
+
+/**
+ * The section a collection at the top level goes in: section `slug` if one is named (only at the
+ * top level: one inside another is in its parent's), else `fallback`, else the first one (null when
+ * the help center has none). Call it with the project locked.
+ */
+async function sectionFor(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  { slug, parentId, fallback }: { slug: string | undefined; parentId: string | null; fallback?: string | null },
+) {
+  if (parentId !== null) {
+    if (slug !== undefined) {
+      throw new OperationError(400, "invalid_input", "A collection inside another is in that one's section, so it can't have its own");
+    }
+    return null;
+  }
+  const sections = await sectionsOf(tx, projectId);
+  if (slug !== undefined) {
+    const section = sections.find((s) => s.slug === slug);
+    if (!section) {
+      throw new OperationError(400, "invalid_input", `There's no section “${slug}”`);
+    }
+    return section.id;
+  }
+  return sections.find((s) => s.id === fallback)?.id ?? sections[0]?.id ?? null;
+}
+
+/**
+ * Where collection `collection` goes for `parent` (null: the top level; undefined: where it is) and
+ * `section`: at the top level, the named section, else the one it's in (or its parent's, coming out
+ * of it). Call it with the project locked.
+ */
+async function placeFor(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  collection: Awaited<ReturnType<typeof lockedCollection>>,
+  input: { parent?: string | null; section?: string },
+) {
+  const parentId = input.parent === undefined ? collection.parentId : await parentFor(tx, projectId, collection, input.parent);
+  const fallback = collection.parentId === null ? collection.sectionId : (collection.parent?.sectionId ?? null);
+  return { parentId, sectionId: await sectionFor(tx, projectId, { slug: input.section, parentId, fallback }) };
 }
 
 export const listCollections = defineOperation({
   name: "collections.list",
   summary:
-    "List the help center's collections in order (each top-level one, then the ones in it), with the collection each is in (`parent`) and how many articles each has",
+    "List the help center's collections in order (by section, each top-level one, then the ones in it), with the collection each is in (`parent`), its section and how many articles each has",
   method: "GET",
   path: "/collections",
   scope: "read",
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: siblingOrder, select: collectionSelect });
+    const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: readingOrder, select: collectionSelect });
     return { collections: inTreeOrder(collections).map(collectionView) };
   },
 });
@@ -899,23 +969,30 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a help center collection, at the top level or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name",
+    "Add a help center collection, at the top level (in `section`; left out, the first one, if the help center has sections) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name",
   method: "POST",
   path: "/collections",
   scope: "write",
   access: "team",
-  input: z.object({ ...collectionFields, description: collectionFields.description.default(""), parent: slug.nullable().optional() }),
+  input: z.object({
+    ...collectionFields,
+    description: collectionFields.description.default(""),
+    parent: slug.nullable().optional(),
+    section: slug.optional(),
+  }),
   example: { name: "Getting started", description: "The basics, in five minutes." },
   run: async ({ projectId }, input) =>
     collectionView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
-        const last = await tx.collection.aggregate({ where: { projectId, parentId }, _max: { order: true } });
+        const sectionId = await sectionFor(tx, projectId, { slug: input.section, parentId });
+        const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, sectionId), _max: { order: true } });
         return tx.collection.create({
           data: {
             projectId,
             parentId,
+            sectionId,
             slug: await freeCollectionSlug(tx, projectId, input.name),
             name: input.name,
             description: input.description,
@@ -930,7 +1007,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another section (`section`, at the top level) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -940,6 +1017,7 @@ export const updateCollection = defineOperation({
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
     parent: slug.nullable().optional(),
+    section: slug.optional(),
     order: position.optional(),
   }),
   example: { name: "Basics", parent: null },
@@ -949,10 +1027,10 @@ export const updateCollection = defineOperation({
         await lockProject(tx, projectId);
         const collection = await lockedCollection(tx, projectId, input.slug);
         const { id } = collection;
-        if (input.parent !== undefined) {
-          const parentId = await parentFor(tx, projectId, collection, input.parent);
-          if (parentId !== collection.parentId) {
-            await placeCollection(tx, projectId, id, parentId);
+        if (input.parent !== undefined || input.section !== undefined) {
+          const place = await placeFor(tx, projectId, collection, input);
+          if (place.parentId !== collection.parentId || place.sectionId !== collection.sectionId) {
+            await placeCollection(tx, projectId, id, place);
           }
         }
         return tx.collection.update({
@@ -971,20 +1049,19 @@ export const updateCollection = defineOperation({
 export const reorderCollection = defineOperation({
   name: "collections.reorder",
   summary:
-    "Move a help center collection among its siblings, or into another collection (`parent`, null for the top level; 2 levels deep at most), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
+    "Move a help center collection among its siblings, into another collection (`parent`, null for the top level; 2 levels deep at most) or to another section (`section`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
   method: "POST",
   path: "/collections/{slug}/reorder",
   scope: "write",
   access: "team",
-  input: z.object({ slug, parent: slug.nullable().optional(), position: position.optional() }),
+  input: z.object({ slug, parent: slug.nullable().optional(), section: slug.optional(), position: position.optional() }),
   example: { parent: null, position: 0 },
   run: async ({ projectId }, input) =>
     collectionView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const collection = await lockedCollection(tx, projectId, input.slug);
-        const parentId = input.parent === undefined ? collection.parentId : await parentFor(tx, projectId, collection, input.parent);
-        await placeCollection(tx, projectId, collection.id, parentId, input.position);
+        await placeCollection(tx, projectId, collection.id, await placeFor(tx, projectId, collection, input), input.position);
         return tx.collection.findUniqueOrThrow({ where: { id: collection.id }, select: collectionSelect });
       }),
     ),
@@ -1005,8 +1082,13 @@ export const deleteCollection = defineOperation({
       const collection = await lockedCollection(tx, projectId, input.slug);
       const children = await tx.collection.findMany({ where: { parentId: collection.id }, orderBy: siblingOrder, select: { id: true } });
       if (children.length > 0) {
-        const siblings = await tx.collection.findMany({ where: { projectId, parentId: collection.parentId }, orderBy: siblingOrder, select: { id: true } });
-        await tx.collection.updateMany({ where: { parentId: collection.id }, data: { parentId: collection.parentId } });
+        const siblings = await tx.collection.findMany({
+          where: siblingsWhere(projectId, collection.parentId, collection.sectionId),
+          orderBy: siblingOrder,
+          select: { id: true },
+        });
+        // Only a top-level collection has some in it, so they come up to the top level, in its section.
+        await tx.collection.updateMany({ where: { parentId: collection.id }, data: { parentId: collection.parentId, sectionId: collection.sectionId } });
         await renumber(
           tx,
           "collection",
@@ -1023,5 +1105,144 @@ export const deleteCollection = defineOperation({
       await tx.collection.delete({ where: { id: collection.id } });
     });
     return { deleted: input.slug };
+  },
+});
+
+const sectionSelect = { id: true, slug: true, name: true, order: true, _count: { select: { collections: true } } } as const;
+type SectionRow = Prisma.HelpSectionGetPayload<{ select: typeof sectionSelect }>;
+const sectionView = ({ slug, name, order, _count }: SectionRow) => ({
+  slug,
+  name,
+  order,
+  /** Its top-level collections (each with the ones in it). */
+  collections: _count.collections,
+});
+const sectionName = z.string().trim().min(1, "Name is required").max(40);
+
+/** Section `slug`, read under the project's lock. */
+async function lockedSection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
+  const section = await tx.helpSection.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true } });
+  if (!section) {
+    throw new OperationError(404, "not_found", `There's no section “${slug}”`);
+  }
+  return section;
+}
+
+export const listSections = defineOperation({
+  name: "sections.list",
+  summary:
+    "List the help center's sections in order: readers see each as a tab, with its collections. Without sections, the help center is one page",
+  method: "GET",
+  path: "/sections",
+  scope: "read",
+  access: "team",
+  input: z.object({}),
+  run: async ({ projectId }) => ({
+    sections: (await prisma.helpSection.findMany({ where: { projectId }, orderBy: sectionOrder, select: sectionSelect })).map(sectionView),
+  }),
+});
+
+export const createSection = defineOperation({
+  name: "sections.create",
+  summary:
+    "Add a help center section (a tab for readers), after the others; its slug comes from the name. The first one takes every top-level collection: once there are sections, each top-level collection is in one",
+  method: "POST",
+  path: "/sections",
+  scope: "write",
+  access: "team",
+  input: z.object({ name: sectionName }),
+  example: { name: "Guides" },
+  run: async ({ projectId }, input) =>
+    sectionView(
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const last = await tx.helpSection.aggregate({ where: { projectId }, _max: { order: true } });
+        const section = await tx.helpSection.create({
+          data: { projectId, slug: await freeSectionSlug(tx, projectId, input.name), name: input.name, order: (last._max.order ?? -1) + 1 },
+          select: { id: true },
+        });
+        // The first section: the collections there are go in it, in their order.
+        if (last._max.order === null) {
+          await tx.collection.updateMany({ where: { projectId, parentId: null }, data: { sectionId: section.id } });
+        }
+        return tx.helpSection.findUniqueOrThrow({ where: { id: section.id }, select: sectionSelect });
+      }),
+    ),
+});
+
+export const updateSection = defineOperation({
+  name: "sections.update",
+  summary: "Rename a help center section; its slug follows the name",
+  method: "PATCH",
+  path: "/sections/{slug}",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, name: sectionName }),
+  example: { name: "API reference" },
+  run: async ({ projectId }, input) =>
+    sectionView(
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const { id } = await lockedSection(tx, projectId, input.slug);
+        return tx.helpSection.update({
+          where: { id },
+          data: { name: input.name, slug: await freeSectionSlug(tx, projectId, input.name, id) },
+          select: sectionSelect,
+        });
+      }),
+    ),
+});
+
+export const reorderSection = defineOperation({
+  name: "sections.reorder",
+  summary:
+    "Move a help center section to `position` among the sections (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the help center",
+  method: "POST",
+  path: "/sections/{slug}/reorder",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug, position: position.optional() }),
+  example: { position: 0 },
+  run: async ({ projectId }, input) =>
+    sectionView(
+      await prisma.$transaction(async (tx) => {
+        await lockProject(tx, projectId);
+        const { id } = await lockedSection(tx, projectId, input.slug);
+        await renumber(tx, "help_section", placed(await sectionsOf(tx, projectId), id, input.position));
+        return tx.helpSection.findUniqueOrThrow({ where: { id }, select: sectionSelect });
+      }),
+    ),
+});
+
+export const deleteSection = defineOperation({
+  name: "sections.delete",
+  summary:
+    "Delete a help center section. Its collections go last in the section before it (the one after, for the first), with everything in them; deleting the last section leaves the help center without sections",
+  method: "DELETE",
+  path: "/sections/{slug}",
+  scope: "write",
+  access: "team",
+  input: z.object({ slug }),
+  run: async ({ projectId }, input) => {
+    // Locked, so a collection being saved into it lands first (and moves) or finds it gone.
+    const movedTo = await prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const { id } = await lockedSection(tx, projectId, input.slug);
+      const sections = await sectionsOf(tx, projectId);
+      const at = sections.findIndex((s) => s.id === id);
+      const target = sections[at - 1] ?? sections[at + 1] ?? null;
+      const inSection = (sectionId: string | null) =>
+        tx.collection.findMany({ where: siblingsWhere(projectId, null, sectionId), orderBy: siblingOrder, select: { id: true } });
+      const moving = await inSection(id);
+      if (moving.length > 0) {
+        const staying = target ? await inSection(target.id) : [];
+        await tx.collection.updateMany({ where: { sectionId: id }, data: { sectionId: target?.id ?? null } });
+        await renumber(tx, "collection", [...staying, ...moving].map((c) => c.id));
+      }
+      await tx.helpSection.delete({ where: { id } });
+      return target?.slug ?? null;
+    });
+    // movedTo: where its collections went (null: there are no sections left).
+    return { deleted: input.slug, movedTo };
   },
 });

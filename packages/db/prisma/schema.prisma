@@ -191,6 +191,7 @@ model Project {
   articles             Article[]
   articleChunks        ArticleChunk[]
   collections          Collection[]
+  helpSections         HelpSection[]
   helpSearches         HelpSearch[]
   helpQuestions        HelpQuestion[]
   helpGapDismissals    HelpGapDismissal[]
@@ -873,11 +874,16 @@ model Collection {
   /// The collection it's in, in the same project. At most 2 levels: a collection with a parent has
   /// no children (checked under the project's lock). Deleting the parent moves its children up a level.
   parentId    String?
+  /// The section (a tab of the help center) a top-level collection is in; null inside another
+  /// collection (it's in its parent's). Once a project has sections, every top-level collection is
+  /// in one (kept under the project's lock); without any, all are null.
+  sectionId   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent    Collection?       @relation("CollectionParent", fields: [parentId], references: [id], onDelete: SetNull)
+  section   HelpSection?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   children  Collection[]      @relation("CollectionParent")
   articles  Article[]
   revisions ArticleRevision[]
@@ -885,7 +891,28 @@ model Collection {
 
   @@unique([projectId, slug])
   @@index([parentId])
+  @@index([sectionId])
   @@map("collection")
+}
+
+/// A section of the help center, shown to readers as a tab ("Guides", "API"), with top-level
+/// collections in it. The first one also lists the articles in no collection.
+model HelpSection {
+  id        String   @id @default(cuid())
+  projectId String
+  /// From the name, unique in the project.
+  slug      String
+  name      String
+  /// Sections are listed by this, then by name; new ones go last.
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collections Collection[]
+
+  @@unique([projectId, slug])
+  @@map("help_section")
 }
 
 /// A help center article, at /help/<slug> on the portal once it's published.

@@ -394,6 +394,99 @@ test("the team arranges the help center: a collection in another, moves with the
   await expect(moveTo).toBeFocused();
 });
 
+test("the team splits the help center into sections: the first takes the collections, others get theirs by menu and by dragging", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const name of ["Getting started", "Billing", "Endpoints", "Webhooks"]) {
+    await api("/collections", { name });
+  }
+  for (const [title, collection] of [
+    ["Inviting your team", "getting-started"],
+    ["Card payments", "billing"],
+    ["Listing posts", "endpoints"],
+    ["Signing payloads", "webhooks"],
+  ]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+
+  // The first section: the dialog says the collections go in it.
+  await team.goto(`/app/${slug}/help`);
+  const structure = team.getByRole("region", { name: "Collections" });
+  // A list's own rows (not the ones nested in them).
+  const rows = (name: string) => structure.getByRole("list", { name, exact: true }).locator(":scope > li");
+  await team.getByRole("button", { name: "New section" }).click();
+  const dialog = team.getByRole("dialog");
+  await expect(dialog).toContainText("Your collections go in this first one");
+  await dialog.getByLabel("Name").fill("Guides");
+  await dialog.getByRole("button", { name: "Add section" }).click();
+  await expect(team.getByText("Section added")).toBeVisible();
+  await expect(rows("Collections in Guides")).toHaveText([
+    /^Getting started/,
+    /^Billing/,
+    /^Endpoints/,
+    /^Webhooks/,
+  ]);
+
+  await team.getByRole("button", { name: "New section" }).click();
+  await expect(dialog).not.toContainText("Your collections go in this first one");
+  await dialog.getByLabel("Name").fill("API");
+  await dialog.getByRole("button", { name: "Add section" }).click();
+  await expect(team.getByText("Section added")).toBeVisible();
+  await expect(rows("Sections")).toHaveText([/^Guides/, /^API/]);
+
+  // Endpoints to API from its menu, with the keyboard; Webhooks dragged onto API's row.
+  const moveTo = structure.getByRole("button", { name: "Move Endpoints to…" });
+  await moveTo.focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Section: API" }).press("Enter");
+  await expect(team.getByText("Endpoints moved")).toBeVisible();
+  await expect(moveTo).toBeFocused();
+  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
+  await expect(structure.getByRole("button", { name: "Move Webhooks to…" })).toBeEnabled();
+  await row("Webhooks").dragTo(row("API"));
+  await expect(team.getByText("Webhooks moved")).toBeVisible();
+  await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/]);
+  await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/]);
+
+  // A new collection goes in the section picked.
+  await team.getByRole("button", { name: "New collection" }).click();
+  await dialog.getByLabel("Name").fill("Errors");
+  await dialog.getByLabel("Section").click();
+  await team.getByRole("option", { name: "API" }).click();
+  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await expect(team.getByText("Collection added")).toBeVisible();
+  await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
+
+  // API first, then renamed.
+  await structure.getByRole("button", { name: "Move API up" }).click();
+  await expect(team.getByText("API moved")).toBeVisible();
+  await expect(rows("Sections")).toHaveText([/^API/, /^Guides/]);
+  await structure.getByRole("button", { name: "Rename API" }).click();
+  await dialog.getByLabel("Name").fill("API reference");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(team.getByText("Section saved")).toBeVisible();
+  await checkpoint(team, "team-help-sections");
+
+  // Readers' help center lists the collections by section.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/help");
+  await expect(visitor.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks", "Getting started", "Billing"]);
+
+  // Deleting a section moves its collections to the one next to it.
+  await structure.getByRole("button", { name: "Delete API reference" }).click();
+  const confirm = team.getByRole("alertdialog");
+  await expect(confirm).toContainText("Its collections move to Guides");
+  await confirm.getByRole("button", { name: "Delete" }).click();
+  await expect(team.getByText("API reference deleted")).toBeVisible();
+  await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/, /^Endpoints/, /^Webhooks/, /^Errors/]);
+});
+
 /** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
 async function apiFor(team: Page, slug: string) {
   await team.goto(`/app/${slug}/settings`);

@@ -209,6 +209,9 @@ const matrix: Matrix = {
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
     moveCollection: { allowed: "MEMBER", call: (slug) => help.moveCollection(slug, "guides", "basics", 0) },
     moveArticle: { allowed: "MEMBER", call: (slug) => help.moveArticle(slug, "matrix-draft", "basics", 0) },
+    saveSection: { allowed: "MEMBER", call: (slug) => help.saveSection(slug, null, {}, form({ name: "API" })) },
+    moveSection: { allowed: "MEMBER", call: (slug) => help.moveSection(slug, "docs", 0) },
+    deleteSection: { allowed: "MEMBER", call: (slug) => help.deleteSection(slug, "docs") },
     dismissHelpGap: { allowed: "MEMBER", call: (slug) => help.dismissHelpGap(slug, "How do I invite?") },
   },
   // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
@@ -565,8 +568,9 @@ async function createFixture() {
       { projectId, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
-  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics" } });
-  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1 } });
+  const docs = await prisma.helpSection.create({ data: { projectId, slug: "docs", name: "Docs" } });
+  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", sectionId: docs.id } });
+  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

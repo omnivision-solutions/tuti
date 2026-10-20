@@ -37,6 +37,11 @@ import {
   unpublishArticle,
   updateArticle,
   updateCollection,
+  createSection,
+  deleteSection,
+  listSections,
+  reorderSection,
+  updateSection,
 } from "./help";
 import { markChangelogSeen } from "./changelog-seen";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
@@ -92,6 +97,11 @@ const all = [
   updateCollection,
   reorderCollection,
   deleteCollection,
+  listSections,
+  createSection,
+  updateSection,
+  reorderSection,
+  deleteSection,
   listPosts,
   getPost,
   listComments,
