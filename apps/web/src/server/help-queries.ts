@@ -3,7 +3,10 @@ import { type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
+import { mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-groups";
+
 import { displayDoc } from "./content";
+import { readerGroups } from "./portal-access";
 
 /** Reads for the help center pages: the team's editor and the portal. */
 
@@ -67,14 +70,14 @@ export type HelpSection = { slug: string; name: string; collections: HelpCollect
  * splits the same by section (the tabs), leaving out the ones with nothing to read; it's empty when
  * the help center has no sections. The first section has the articles in no collection.
  */
-export async function helpCenter(projectSlug: string) {
+export async function helpCenter(projectSlug: string, options: { groups?: ReaderGroups } = {}) {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
   const [rows, uncollected, sectionRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, parentId: true, sectionId: true, slug: true, name: true, description: true, articles: articleSelect },
+      select: { id: true, projectId: true, parentId: true, sectionId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
     prisma.helpSection.findMany({
@@ -84,10 +87,18 @@ export async function helpCenter(projectSlug: string) {
     }),
   ]);
   type Row = (typeof rows)[number];
+  // Collections for some groups only are left out for everyone else (`groups`, or whoever's reading).
+  const anyRestricted = rows.some((row) => row.groups.length > 0);
+  const groups = options.groups !== undefined ? options.groups : anyRestricted ? await readerGroups(rows[0]!.projectId) : null;
+  const allowed = (row: Row) => mayReadCollection(groups, row);
   const view = ({ slug, name, description, articles, id }: Row): HelpCollection => ({ slug, name, description, articles, collections: nest(id) });
   const readable = (c: HelpCollection) => c.articles.length > 0 || c.collections.length > 0;
-  const nest = (parentId: string): HelpCollection[] => rows.filter((row) => row.parentId === parentId).map(view).filter(readable);
-  const top = rows.filter((row) => row.parentId === null).map((row) => ({ sectionId: row.sectionId, collection: view(row) })).filter((t) => readable(t.collection));
+  const nest = (parentId: string): HelpCollection[] =>
+    rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
+  const top = rows
+    .filter((row) => row.parentId === null && allowed(row))
+    .map((row) => ({ sectionId: row.sectionId, collection: view(row) }))
+    .filter((t) => readable(t.collection));
   const sections = sectionRows
     .map(({ id, slug, name }, index) => ({
       slug,
@@ -104,6 +115,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   const article = await prisma.article.findFirst({
     where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
+      projectId: true,
       title: true,
       body: true,
       content: true,
@@ -111,11 +123,18 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       showUpdatedDate: true,
       listing: true,
       revisedAt: true,
-      collection: { select: { name: true, section: { select: { slug: true } }, parent: { select: { section: { select: { slug: true } } } } } },
+      collection: {
+        select: { name: true, groups: true, section: { select: { slug: true } }, parent: { select: { groups: true, section: { select: { slug: true } } } } },
+      },
       project: { select: { name: true } },
     },
   });
   if (!article) {
+    return null;
+  }
+  // For some groups only: as good as missing to everyone else.
+  const isRestricted = restricted(article.collection);
+  if (isRestricted && !mayReadCollection(await readerGroups(article.projectId), article.collection, article.collection?.parent)) {
     return null;
   }
   const { revisedAt, collection, ...rest } = article;
@@ -127,6 +146,8 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
     /** The help center section it's in (its collection's, or that one's parent's), for the way back to it. */
     section: (collection?.parent ? collection.parent.section : collection?.section)?.slug ?? null,
     updatedAt,
+    /** For some reader groups only: never kept by shared caches. */
+    restricted: isRestricted,
     doc: displayDoc(article),
   };
 });

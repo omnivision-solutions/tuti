@@ -8,6 +8,7 @@ import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { resolveHost } from "./hosts";
+import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
 
 /**
@@ -45,6 +46,8 @@ const claimsSchema = z.object({
   email: z.email().max(320).optional(),
   name: z.string().trim().min(1).max(100).optional(),
   avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
+  /** Which restricted help center collections they may read (see Collection.groups). Each sign-in says them all. */
+  groups: z.array(readerGroup).max(MAX_READER_GROUPS).optional(),
 });
 
 const querySchema = z.object({
@@ -74,17 +77,17 @@ function isUniqueViolation(error: unknown): boolean {
 export async function upsertProjectUser(
   projectId: string,
   externalId: string,
-  details: { name?: string; image?: string | null; email?: string | null },
+  details: { name?: string; image?: string | null; email?: string | null; groups?: string[] },
 ): Promise<string> {
   const where = { projectId_externalId: { projectId, externalId } };
   const existing = await prisma.ssoIdentity.findUnique({ where, select: { userId: true } });
   if (existing) {
-    const { email, ...profile } = details;
+    const { email, groups, ...profile } = details;
     if (Object.values(profile).some((value) => value !== undefined)) {
       await prisma.user.update({ where: { id: existing.userId }, data: profile });
     }
-    if (email !== undefined) {
-      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email } });
+    if (email !== undefined || groups !== undefined) {
+      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email, groups } });
     }
     return existing.userId;
   }
@@ -95,17 +98,18 @@ export async function upsertProjectUser(
         name: details.name ?? details.email?.split("@")[0] ?? "Anonymous",
         image: details.image ?? null,
         email: placeholderEmail(projectId, externalId),
-        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null } },
+        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null, groups: details.groups ?? [] } },
       },
       select: { id: true },
     });
     return user.id;
   } catch (error) {
-    // Lost a race with a concurrent first sight of the same person.
+    // Lost a race with a concurrent first sight of the same person: they exist now, so this sign-in's
+    // details (its groups above all) go on them like any later one's.
     if (!isUniqueViolation(error)) {
       throw error;
     }
-    return (await prisma.ssoIdentity.findUniqueOrThrow({ where, select: { userId: true } })).userId;
+    return upsertProjectUser(projectId, externalId, details);
   }
 }
 
@@ -133,7 +137,7 @@ export async function verifySsoToken(
   if (!claims.success) {
     return { error: "invalid_claims" };
   }
-  const { sub, jti, iat, exp, email, name, avatar } = claims.data;
+  const { sub, jti, iat, exp, email, name, avatar, groups } = claims.data;
   if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
     return { error: "token_lifetime_too_long" };
   }
@@ -160,6 +164,8 @@ export async function verifySsoToken(
     name: name ?? email?.split("@")[0] ?? "Anonymous",
     image: avatar ?? null,
     email: email ?? null,
+    // Without the claim, none: a token says everything they may read, so groups taken away go.
+    groups: [...new Set(groups ?? [])],
   });
   return { userId };
 }

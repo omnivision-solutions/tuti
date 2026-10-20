@@ -30,7 +30,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     return new Response("Not found", { status: 404 });
   }
   const portal = portalUrl(slug);
-  const { collections, uncollected, sections } = await helpCenter(slug);
+  // For AI tools, like search engines: what's for everyone (not collections for some reader groups only).
+  const { collections, uncollected, sections } = await helpCenter(slug, { groups: [] });
   const articleLinks = (articles: { slug: string; title: string }[]) =>
     links(articles.map((article) => ({ name: article.title, url: `${portal}/help/${article.slug}.md` })));
   // A collection's heading, its articles, then the collections in it a level down.

@@ -4,7 +4,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
@@ -509,25 +509,6 @@ test("the team splits the help center into sections: the first takes the collect
   await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/, /^Endpoints/, /^Webhooks/, /^Errors/]);
 });
 
-/** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
-async function apiFor(team: Page, slug: string) {
-  await team.goto(`/app/${slug}/settings`);
-  await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
-  await team.getByRole("combobox", { name: "What the key can do" }).click();
-  await team.getByRole("option", { name: "Read and write" }).click();
-  await team.getByRole("button", { name: "Create key" }).click();
-  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
-  const key = (await shown.locator("code").first().innerText()).trim();
-  return async (path: string, body: object, method = "POST") => {
-    const response = await fetch(`${APP_URL}/api/v1${path}`, {
-      method,
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    expect(response.ok).toBe(true);
-    return (await response.json()) as { slug: string };
-  };
-}
 
 test("a visitor asks the help center's AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);

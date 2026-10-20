@@ -1,0 +1,222 @@
+import { randomUUID } from "node:crypto";
+
+import { prisma } from "@tuti/db";
+import { articleChunkText } from "@tuti/shared";
+import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
+import { SignJWT } from "jose";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+
+import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+
+import { helpCenter, publishedArticle } from "./help-queries";
+import { answerSections, searchHelp } from "./help-search";
+import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/help";
+import { call } from "./operations/run";
+import { groupsOf } from "./portal-access";
+
+/**
+ * Reader groups: the project's app says in its SSO token which groups someone is in, and a
+ * collection can be for some groups only. Everyone else (signed out, signed up, other groups)
+ * doesn't see it, its articles or the collections in it anywhere; the team sees everything.
+ */
+
+let openai: OpenAIFake;
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+let secret: string;
+
+beforeAll(async () => {
+  openai = await startOpenAIFake();
+});
+afterAll(() => openai.close());
+
+beforeEach(async () => {
+  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+  vi.stubEnv("OPENAI_BASE_URL", openai.url);
+  owner = await signUp("Owner");
+  project = await createProject(owner);
+  secret = generateSsoSecret();
+  await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: secret } });
+  actAs(null);
+});
+
+const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+
+/** Someone the project's SSO signed in, with `groups` (and a session, for actAs). */
+async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) {
+  const user = await signUp("From the app");
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId, userId: user.id, groups } });
+  return user;
+}
+
+/** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
+async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
+  const now = Math.floor(Date.now() / 1000);
+  const token = await new SignJWT({ sub, jti: randomUUID(), ...claims })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + 300)
+    .sign(new TextEncoder().encode(secret));
+  const result = await verifySsoToken({ id: project.id, ssoSecret: secret }, token);
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+  return result.userId;
+}
+
+/**
+ * Basics (everyone), Enterprise (enterprise only) with Setup inside it (everyone, but within
+ * Enterprise), Beta (beta only), and an article in each plus one in no collection. Every article
+ * says "widget", and each has a section close to the question "widget help".
+ */
+async function helpCenterWithGroups() {
+  await call(createCollection, as(), { name: "Basics" });
+  await call(createCollection, as(), { name: "Enterprise", groups: ["Enterprise"] });
+  await call(createCollection, as(), { name: "Setup", parent: "enterprise" });
+  await call(createCollection, as(), { name: "Beta", groups: ["beta"] });
+  openai.setVector("widget help", [1, 0]);
+  for (const [title, collection] of [
+    ["Getting started", "basics"],
+    ["SAML", "enterprise"],
+    ["Rolling out", "setup"],
+    ["New editor", "beta"],
+    ["Contact", null],
+  ] as const) {
+    const body = `The ${title} widget.`;
+    openai.setVector(articleChunkText(title, { heading: "", text: body }), [0.9, Math.sqrt(1 - 0.81)]);
+    const { slug } = await call(createArticle, as(), { title, body, collection });
+    await call(publishArticle, as(), { slug });
+  }
+}
+
+const everyone = ["getting-started", "contact"];
+const enterprise = [...everyone, "saml", "rolling-out"];
+
+describe("who sees what", () => {
+  beforeEach(helpCenterWithGroups);
+
+  /** Every way a reader reads the help center, for the user `actAs` set (or for `groups`). */
+  async function seen(user: TestUser | null) {
+    actAs(user);
+    const userId = user?.id ?? null;
+    const groups = await groupsOf(project.id, userId);
+    const center = await helpCenter(project.slug);
+    const pages = await Promise.all(["getting-started", "saml", "rolling-out", "new-editor", "contact"].map((slug) => publishedArticle(project.slug, slug)));
+    const actor = userId ? { kind: "user" as const, userId } : null;
+    return {
+      helpCenter: [...center.collections.flatMap((c) => [...c.articles, ...c.collections.flatMap((n) => n.articles)]), ...center.uncollected].map((a) => a.slug).sort(),
+      collections: center.collections.map((c) => [c.slug, ...c.collections.map((n) => n.slug)].join(">")),
+      pages: pages.flatMap((page, i) => (page ? [["getting-started", "saml", "rolling-out", "new-editor", "contact"][i]!] : [])).sort(),
+      search: (await searchHelp(project.id, "widget", 10, groups)).map((r) => r.slug).sort(),
+      answers: [...new Set((await answerSections(project.id, "widget help", 10, groups, 2000))!.map((s) => s.slug))].sort(),
+      ...(actor && {
+        api: (await call(listArticles, { actor, projectId: project.id }, {})).articles.map((a) => a.slug).sort(),
+      }),
+    };
+  }
+
+  test("signed out, or signed up on the portal: only what's for everyone", async () => {
+    const expected = { helpCenter: everyone.sort(), collections: ["basics"], pages: everyone.sort(), search: everyone.sort(), answers: everyone.sort() };
+    expect(await seen(null)).toEqual(expected);
+    const stranger = await signUp("Stranger");
+    expect(await seen(stranger)).toEqual({ ...expected, api: everyone.sort() });
+  });
+
+  test("signed in by the app with a group: that group's collections too, with the ones in them; other groups' never", async () => {
+    const ada = await ssoReader(["enterprise"]);
+    const sorted = [...enterprise].sort();
+    expect(await seen(ada)).toEqual({
+      helpCenter: sorted,
+      collections: ["basics", "enterprise>setup"],
+      pages: sorted,
+      search: sorted,
+      answers: sorted,
+      api: sorted,
+    });
+    // An API key acts for the team: getArticle finds them all; a user in no group gets a 404.
+    const grace = await ssoReader([]);
+    await expect(call(getArticle, { actor: { kind: "user", userId: grace.id }, projectId: project.id }, { slug: "saml" })).rejects.toMatchObject({ status: 404 });
+    expect(await call(getArticle, { actor: { kind: "user", userId: ada.id }, projectId: project.id }, { slug: "saml" })).toMatchObject({ slug: "saml" });
+  });
+
+  test("the team sees everything", async () => {
+    const all = ["contact", "getting-started", "new-editor", "rolling-out", "saml"];
+    expect(await seen(owner)).toEqual({
+      helpCenter: all,
+      collections: ["basics", "enterprise>setup", "beta"],
+      pages: all,
+      search: all,
+      answers: all,
+      api: all,
+    });
+  });
+
+  test("a collection inside a restricted one needs both: one for beta inside Enterprise is for people in both", async () => {
+    await call(updateCollection, as(), { slug: "setup", groups: ["beta"] });
+    const both = await ssoReader(["enterprise", "beta"]);
+    const enterpriseOnly = await ssoReader(["enterprise"]);
+    expect((await seen(both)).pages).toContain("rolling-out");
+    expect((await seen(enterpriseOnly)).pages).not.toContain("rolling-out");
+  });
+});
+
+test("each sign-in says the groups: a later token without one takes it away", async () => {
+  await helpCenterWithGroups();
+  const sub = "user-42";
+  const reader = await ssoReader([], sub);
+  expect(await signIn({ groups: ["enterprise", "Enterprise"] }, sub)).toBe(reader.id);
+  expect(await groupsOf(project.id, reader.id)).toEqual(["enterprise"]);
+  actAs(reader);
+  expect(await publishedArticle(project.slug, "saml")).toMatchObject({ title: "SAML" });
+  await signIn({}, sub);
+  expect(await groupsOf(project.id, reader.id)).toEqual([]);
+  expect(await publishedArticle(project.slug, "saml")).toBeNull();
+  // A new person's first sign-in keeps them too; bad group names are refused like any bad claim.
+  expect(await groupsOf(project.id, await signIn({ groups: ["beta"] }))).toEqual(["beta"]);
+  await expect(signIn({ groups: ["no spaces"] })).rejects.toThrow("invalid_claims");
+});
+
+test("a first sign-in that loses the race to create the person still sets their groups", async () => {
+  for (let i = 0; i < 10; i++) {
+    const externalId = `user-${randomUUID()}`;
+    // An API call on their behalf (no groups) and their first sign-in, at the same time.
+    const [, userId] = await Promise.all([
+      upsertProjectUser(project.id, externalId, { name: "From the API" }),
+      upsertProjectUser(project.id, externalId, { groups: ["enterprise"] }),
+    ]);
+    expect(await groupsOf(project.id, userId)).toEqual(["enterprise"]);
+  }
+});
+
+test("search engines and AI tools only get what's for everyone; a restricted article's .md is never cached for others", async () => {
+  await helpCenterWithGroups();
+  const params = Promise.resolve({ project: project.slug });
+  const text = await (await llms(new Request("http://x"), { params })).text();
+  expect(text).toContain("getting-started.md");
+  expect(text).not.toContain("saml");
+  expect(text).not.toContain("Enterprise");
+  const map = await (await sitemap(new Request("http://x"), { params })).text();
+  expect(map).toContain("/help/getting-started");
+  expect(map).not.toContain("/help/saml");
+
+  actAs(owner);
+  const md = (slug: string) => markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug }) });
+  expect((await md("saml")).headers.get("cache-control")).toBe("private, no-store");
+  // Not in shared caches either: a collection restricted later mustn't stay readable from one.
+  expect((await md("getting-started")).headers.get("cache-control")).toBe("private, max-age=300");
+  actAs(null);
+  expect((await md("saml")).status).toBe(404);
+});
+
+test("collections take groups (lowercase, once each) and say them", async () => {
+  expect(await call(createCollection, as(), { name: "Partners", groups: ["Partners", "partners", "plan:pro"] })).toMatchObject({
+    groups: ["partners", "plan:pro"],
+  });
+  await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
+  expect(await call(updateCollection, as(), { slug: "partners", groups: [] })).toMatchObject({ groups: [] });
+  expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "partners", groups: [] }]);
+});

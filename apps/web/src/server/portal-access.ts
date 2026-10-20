@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 
 import { auth } from "@/lib/auth";
 import { readerEntriesFor } from "@/lib/reader-domains";
+import type { ReaderGroups } from "@/lib/reader-groups";
+
+import type { Actor } from "./operations/define";
 import { widgetUser } from "@/lib/widget-session";
 
 import { getSession } from "./session";
@@ -86,4 +89,30 @@ export async function mayRead(projectId: string): Promise<boolean> {
 export async function readableProject(slug: string): Promise<{ id: string } | null> {
   const project = await prisma.project.findUnique({ where: { slug: String(slug) }, select: { id: true } });
   return project && (await mayRead(project.id)) ? project : null;
+}
+
+/**
+ * Which help center collections someone may read (see lib/reader-groups.ts): null for the
+ * project's team (everything), the groups their latest sign-in through the project's SSO gave
+ * them, or none.
+ */
+export async function groupsOf(projectId: string, userId: string | null | undefined): Promise<ReaderGroups> {
+  if (!userId) {
+    return [];
+  }
+  const [member, sso] = await Promise.all([
+    prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
+    prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { groups: true } }),
+  ]);
+  return member ? null : (sso?.groups ?? []);
+}
+
+/** The groups of whoever's reading on this request (the portal's user, or the widget's). */
+export async function readerGroups(projectId: string): Promise<ReaderGroups> {
+  return groupsOf(projectId, await readerId(projectId));
+}
+
+/** An operation's caller's reader groups: API keys act for the team (everything). */
+export async function actorGroups(actor: Actor, projectId: string): Promise<ReaderGroups> {
+  return actor.kind === "apiKey" ? null : groupsOf(projectId, actor.userId);
 }

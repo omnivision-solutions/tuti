@@ -401,7 +401,7 @@ export function CollectionDialog({
   sections = [],
 }: {
   projectSlug: string;
-  collection?: { slug: string; name: string; description: string };
+  collection?: { slug: string; name: string; description: string; groups: string[] };
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
   parents?: CollectionOption[];
   /** The sections a new top-level one can go in, the first by default. */
@@ -453,6 +453,20 @@ export function CollectionDialog({
                 defaultValue={collection?.description}
                 placeholder="Optional, shown in your help center"
               />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`collection-groups-${id}`}>Only for groups</FieldLabel>
+              <Input
+                id={`collection-groups-${id}`}
+                name="groups"
+                defaultValue={collection?.groups.join(", ")}
+                placeholder="Everyone (e.g. enterprise, beta)"
+                autoComplete="off"
+              />
+              <FieldDescription>
+                Leave empty for everyone who can read your help center. With groups, only your team and people your app signs in with
+                one of them (the groups in its sign-in token) see it, its articles and the collections in it.
+              </FieldDescription>
             </Field>
             {!collection && parents.length > 0 && (
               <Field>

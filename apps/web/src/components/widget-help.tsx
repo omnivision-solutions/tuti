@@ -14,6 +14,7 @@ import { searchHelp } from "@/server/help-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/help-ask";
 import { askAPerson } from "@/server/operations/help-escalate";
+import { readerGroups } from "@/server/portal-access";
 
 /** A widget Help URL: the list (with the search, if any, or in a section) or an article. */
 function helpHref(query: string, article?: string, section?: string) {
@@ -88,7 +89,7 @@ export async function WidgetHelp({
 }
 
 async function SearchResults({ projectId, query }: { projectId: string; query: string }) {
-  const results = await searchHelp(projectId, query, 10);
+  const results = await searchHelp(projectId, query, 10, await readerGroups(projectId));
   if (results.length === 0) {
     return (
       <EmptyState

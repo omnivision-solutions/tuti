@@ -91,7 +91,7 @@ async function readers() {
   // The widget's article view (WidgetHelp hands it to WidgetArticle, rendered here).
   const widget = (await WidgetHelp({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG, hasBoard: true })) as ReactElement<object>;
   const widgetArticle = await (widget.type as (props: object) => Promise<ReactNode>)(widget.props);
-  const sections = await answerSections(project.id, QUESTION, 10, 3000);
+  const sections = await answerSections(project.id, QUESTION, 10, [], 3000);
   return {
     page: article && { title: article.title, body: article.body, collection: article.collection?.name, updated: article.updatedAt !== null },
     metadata: (await generateMetadata(params({ slug: SLUG }) as never)).title,
@@ -101,10 +101,10 @@ async function readers() {
     sitemap: await (await sitemap(request, params() as never)).text(),
     widget: texts(widgetArticle).includes(OLD.title),
     searchByWords: {
-      old: (await searchHelp(project.id, "zebra", 10)).map((r) => r.title),
-      new: (await searchHelp(project.id, "quokka", 10)).map((r) => r.title),
+      old: (await searchHelp(project.id, "zebra", 10, [])).map((r) => r.title),
+      new: (await searchHelp(project.id, "quokka", 10, [])).map((r) => r.title),
     },
-    searchByMeaning: (await searchHelp(project.id, QUESTION, 10)).map((r) => r.snippet),
+    searchByMeaning: (await searchHelp(project.id, QUESTION, 10, [])).map((r) => r.snippet),
     ai: sections?.map((s) => [s.title, s.text]),
     api: await call(getArticle, as(await signUp()), { slug: SLUG }).then(({ title, body }) => ({ title, body }), () => null),
     apiList: (await call(listArticles, as(await signUp()), {})).articles.map((a) => [a.title, "changes" in a]),

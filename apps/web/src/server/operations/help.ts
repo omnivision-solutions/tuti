@@ -8,10 +8,12 @@ import { z } from "zod";
 import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { portalUrl } from "@/lib/hosts";
 import { titleSlug } from "@/lib/post-urls";
+import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
 import { inTreeOrder, listedArticle, readingOrder } from "../help-queries";
 import { searchHelp } from "../help-search";
+import { actorGroups } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -53,6 +55,14 @@ const articleFields = {
 const collectionFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
   description: z.string().trim().max(300),
+  /**
+   * Who may read it (its articles and the collections in it) besides the team: people your app's
+   * SSO signs in with one of these groups (the token's `groups`). Empty: everyone.
+   */
+  groups: z
+    .array(readerGroup)
+    .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
+    .transform((groups) => [...new Set(groups)]),
 };
 
 const articleSelect = {
@@ -407,7 +417,11 @@ export const listArticles = defineOperation({
     }
     const query: Record<typeof input.status, Pick<Prisma.ArticleFindManyArgs, "where" | "orderBy">> = {
       // Like the portal's lists, but the team sees unlisted, hidden and AI-only ones too.
-      published: { where: team ? { publishedAt: { not: null }, deletedAt: null } : listedArticle, orderBy: [{ title: "asc" }, { slug: "asc" }] },
+      // Not the ones in collections for reader groups the caller isn't in.
+      published: {
+        where: team ? { publishedAt: { not: null }, deletedAt: null } : { ...listedArticle, ...visibleArticle(await actorGroups(actor, projectId)) },
+        orderBy: [{ title: "asc" }, { slug: "asc" }],
+      },
       draft: { where: { publishedAt: null, deletedAt: null }, orderBy: [{ updatedAt: "desc" }, { slug: "asc" }] },
       deleted: { where: { deletedAt: { gte: restorableSince() } }, orderBy: [{ deletedAt: "desc" }, { slug: "asc" }] },
     };
@@ -439,7 +453,10 @@ export const getArticle = defineOperation({
     const [article, team] = await Promise.all([findArticle(projectId, input.slug), isTeam(actor, projectId)]);
     // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
     const served = article?.publishedAt && SERVED.includes(article.listing);
-    if (!article || (!served && !team)) {
+    // Nor one in a collection for reader groups they aren't in.
+    const visible = async (id: string) =>
+      (await prisma.article.count({ where: { id, ...visibleArticle(await actorGroups(actor, projectId)) } })) > 0;
+    if (!article || (!team && (!served || !(await visible(article.id))))) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
     return articleView(article, await projectSlug(projectId), team);
@@ -458,8 +475,8 @@ export const searchArticles = defineOperation({
     limit: z.coerce.number().int().min(1).max(20).default(10),
   }),
   example: { q: "invite my team", limit: 5 },
-  run: async ({ projectId }, input) => {
-    const [results, slug] = await Promise.all([searchHelp(projectId, input.q, input.limit), projectSlug(projectId)]);
+  run: async ({ actor, projectId }, input) => {
+    const [results, slug] = await Promise.all([searchHelp(projectId, input.q, input.limit, await actorGroups(actor, projectId)), projectSlug(projectId)]);
     return { results: results.map((result) => ({ ...result, url: `${portalUrl(slug)}/help/${result.slug}` })) };
   },
 });
@@ -820,13 +837,16 @@ const collectionSelect = {
   parentId: true,
   parent: { select: { slug: true, section: { select: { slug: true } } } },
   section: { select: { slug: true } },
+  groups: true,
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-const collectionView = ({ slug, name, description, order, parent, section, _count }: CollectionRow) => ({
+const collectionView = ({ slug, name, description, order, parent, section, groups, _count }: CollectionRow) => ({
   slug,
   name,
   description,
+  /** Reader groups it's for (besides the team); empty: everyone. One inside another is also limited by its parent's. */
+  groups,
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
   /** The section it's in (a collection in another is in its parent's), or null if the help center has no sections. */
@@ -969,7 +989,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a help center collection, at the top level (in `section`; left out, the first one, if the help center has sections) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name",
+    "Add a help center collection, at the top level (in `section`; left out, the first one, if the help center has sections) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -977,6 +997,7 @@ export const createCollection = defineOperation({
   input: z.object({
     ...collectionFields,
     description: collectionFields.description.default(""),
+    groups: collectionFields.groups.default([]),
     parent: slug.nullable().optional(),
     section: slug.optional(),
   }),
@@ -996,6 +1017,7 @@ export const createCollection = defineOperation({
             slug: await freeCollectionSlug(tx, projectId, input.name),
             name: input.name,
             description: input.description,
+            groups: input.groups,
             order: (last._max.order ?? -1) + 1,
           },
           select: collectionSelect,
@@ -1007,7 +1029,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another section (`section`, at the top level) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another section (`section`, at the top level), set who may read it (`groups`: reader groups from your app's SSO token; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1016,6 +1038,7 @@ export const updateCollection = defineOperation({
     slug,
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
+    groups: collectionFields.groups.optional(),
     parent: slug.nullable().optional(),
     section: slug.optional(),
     order: position.optional(),
@@ -1038,6 +1061,7 @@ export const updateCollection = defineOperation({
           data: {
             ...(input.name !== undefined && { name: input.name, slug: await freeCollectionSlug(tx, projectId, input.name, id) }),
             ...(input.description !== undefined && { description: input.description }),
+            ...(input.groups !== undefined && { groups: input.groups }),
             ...(input.order !== undefined && { order: input.order }),
           },
           select: collectionSelect,

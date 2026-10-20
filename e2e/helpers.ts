@@ -1,6 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
-import type { Browser, Page } from "@playwright/test";
+import { type Browser, expect, type Page } from "@playwright/test";
+
+import { APP_URL } from "./env";
 
 export type TestPage = Page & { email: string; ip: string };
 
@@ -46,4 +48,24 @@ export async function createProject(page: Page, name: string, slug: string) {
   await page.getByLabel("URL").fill(slug);
   await page.getByRole("button", { name: "Create project" }).click();
   await page.waitForURL(`**/app/${slug}`);
+}
+
+/** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
+export async function apiFor(team: Page, slug: string) {
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
+  await team.getByRole("combobox", { name: "What the key can do" }).click();
+  await team.getByRole("option", { name: "Read and write" }).click();
+  await team.getByRole("button", { name: "Create key" }).click();
+  const shown = team.getByRole("alert").filter({ hasText: "Copy the key for Help test now" });
+  const key = (await shown.locator("code").first().innerText()).trim();
+  return async (path: string, body: object, method = "POST") => {
+    const response = await fetch(`${APP_URL}/api/v1${path}`, {
+      method,
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    expect(response.ok).toBe(true);
+    return (await response.json()) as { slug: string };
+  };
 }

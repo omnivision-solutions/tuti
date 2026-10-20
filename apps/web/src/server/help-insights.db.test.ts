@@ -113,9 +113,9 @@ test("views count per article and day, skipping crawlers", async () => {
 });
 
 test("searches are logged, normalized, as hits or misses; empty ones aren't", async () => {
-  await searchHelp(project.id, "  Send   INVITES ", 10);
-  await searchHelp(project.id, "refunds", 10);
-  await searchHelp(project.id, "   ", 10);
+  await searchHelp(project.id, "  Send   INVITES ", 10, []);
+  await searchHelp(project.id, "refunds", 10, []);
+  await searchHelp(project.id, "   ", 10, []);
   // Logging isn't awaited by search, so wait for it.
   await vi.waitFor(async () => expect(await prisma.helpSearch.count({ where: { projectId: project.id } })).toBe(2));
   expect(await prisma.helpSearch.findMany({ where: { projectId: project.id }, orderBy: { query: "asc" }, select: { projectId: true, query: true, results: true } })).toEqual([
@@ -149,9 +149,9 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   await prisma.helpSearch.create({ data: { projectId: project.id, query: "ancient", results: 0, createdAt: old } });
 
   for (const query of ["refunds", "Refunds", "sso", "send invites"]) {
-    await searchHelp(project.id, query, 10);
+    await searchHelp(project.id, query, 10, []);
   }
-  await searchHelp(other.id, "other project", 10);
+  await searchHelp(other.id, "other project", 10, []);
   await vi.waitFor(async () => expect(await prisma.helpSearch.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(6));
 
   expect(await insights()).toEqual({

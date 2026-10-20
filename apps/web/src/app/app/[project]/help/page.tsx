@@ -61,6 +61,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         description: true,
         parent: { select: { slug: true } },
         section: { select: { slug: true } },
+        groups: true,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -159,6 +160,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
                 description: c.description,
                 parent: c.parent?.slug ?? null,
                 section: c.section?.slug ?? null,
+                groups: c.groups,
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

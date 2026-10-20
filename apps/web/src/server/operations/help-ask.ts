@@ -4,8 +4,10 @@ import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
+import { type ReaderGroups, visibleArticle } from "@/lib/reader-groups";
 
 import { type AnswerSection, answerSections } from "../help-search";
+import { actorGroups } from "../portal-access";
 import { ANSWER_LENGTHS, type AssistantSettings, assistantSettings, offLimitsTopic } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
@@ -134,6 +136,8 @@ export async function answerQuestion(
   askerId: string,
   question: string,
   source: HelpQuestionSource,
+  /** The asker's reader groups: answers only come from articles they may read (null: the team). */
+  groups: ReaderGroups,
   timeoutMs = ANSWER_TIMEOUT_MS,
 ): Promise<HelpAnswer> {
   if (!answersEnabled()) {
@@ -162,7 +166,7 @@ export async function answerQuestion(
   if (offLimitsTopic(question, settings.offLimits)) {
     return finish("off_limits");
   }
-  const sections = await answerSections(projectId, question, ANSWER_SECTIONS, EMBED_TIMEOUT_MS);
+  const sections = await answerSections(projectId, question, ANSWER_SECTIONS, groups, EMBED_TIMEOUT_MS);
   if (!sections) {
     return finish("failed");
   }
@@ -175,14 +179,14 @@ export async function answerQuestion(
     reply = await complete({ ...answerPrompt(question, sections, settings), timeoutMs });
   } catch (error) {
     log.warn("AI help answer failed", { projectId, error });
-    return finish("failed", { fallback: await stillUsable(projectId, sections) });
+    return finish("failed", { fallback: await stillUsable(projectId, sections, groups) });
   }
   const answer = readAnswer(reply, sections);
   if (!answer) {
     return finish("no_answer", { cause: "NO_VALID_CITATION" });
   }
   // An article unpublished or hidden while the model wrote may be in the answer: don't show it.
-  const cited = await stillUsable(projectId, answer.cited);
+  const cited = await stillUsable(projectId, answer.cited, groups);
   return cited.length === answer.cited.length
     ? finish("answered", { answer: { ...answer, cited } })
     : finish("no_answer", { cause: "SOURCE_UNPUBLISHED" });
@@ -190,11 +194,19 @@ export async function answerQuestion(
 
 /**
  * The sections whose articles AI answers may still use, read again after the model's wait (they may
- * have been unpublished or hidden since), each with its listing now (one made AI only isn't linked).
+ * have been unpublished, hidden or restricted to other reader groups since), each with its listing
+ * now (one made AI only isn't linked).
  */
-async function stillUsable(projectId: string, sections: AnswerSection[]): Promise<AnswerSection[]> {
+async function stillUsable(projectId: string, sections: AnswerSection[], groups: ReaderGroups): Promise<AnswerSection[]> {
   const current = await prisma.article.findMany({
-    where: { id: { in: sections.map((section) => section.articleId) }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
+    where: {
+      id: { in: sections.map((section) => section.articleId) },
+      projectId,
+      publishedAt: { not: null },
+      deletedAt: null,
+      listing: { not: "HIDDEN" },
+      ...visibleArticle(groups),
+    },
     select: { id: true, listing: true },
   });
   const listing = new Map(current.map((article) => [article.id, article.listing]));
@@ -219,5 +231,6 @@ export const askHelp = defineOperation({
   access: "anyone",
   input: askFields,
   example: { q: "How do I invite my team?" },
-  run: ({ actor, projectId }, input) => answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API"),
+  run: async ({ actor, projectId }, input) =>
+    answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API", await actorGroups(actor, projectId)),
 });

@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
 import { postPath } from "@/lib/post-urls";
+import { visibleArticle } from "@/lib/reader-groups";
 import { listedArticle } from "@/server/help-queries";
 
 // Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
@@ -31,7 +32,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         select: { boardId: true, number: true, title: true, updatedAt: true },
       },
       changelogEntries: { where: { publishedAt: { not: null } }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
-      articles: { where: listedArticle, orderBy: { slug: "asc" }, select: { slug: true, updatedAt: true } },
+      // For search engines: not the ones for some reader groups only.
+      articles: { where: { ...listedArticle, ...visibleArticle([]) }, orderBy: { slug: "asc" }, select: { slug: true, updatedAt: true } },
     },
   });
   if (!project) {

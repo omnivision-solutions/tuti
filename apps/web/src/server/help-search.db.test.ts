@@ -218,7 +218,7 @@ describe("search with embeddings", () => {
     const release = openai.holdNext();
     try {
       const started = Date.now();
-      expect((await searchHelp(project.id, "invites", 10, 100)).map((r) => r.slug)).toEqual([slug]);
+      expect((await searchHelp(project.id, "invites", 10, [], 100)).map((r) => r.slug)).toEqual([slug]);
       expect(Date.now() - started).toBeLessThan(1000);
     } finally {
       release();

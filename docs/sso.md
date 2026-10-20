@@ -26,6 +26,7 @@ The token is a JWT signed with **HS256** using the secret.
 | `email` | no | Stored for notifications. Not used to match accounts. |
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
+| `groups` | no | Reader groups, e.g. `["enterprise"]`: which restricted help center collections they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
 
 Node example with [`jose`](https://github.com/panva/jose):
 
@@ -101,6 +102,22 @@ With **Settings → Portal access → Private**, only your team and the people y
 this way can read the portal, its help center, changelog and feeds; everyone else gets the
 sign-in page, and sign-up is off. In the widget, the panel asks visitors to sign in until
 `getToken` gives it a token, then shows the portal to them.
+
+Besides SSO users, **Readers** in the same settings lets in people (or whole domains) by
+email, once their address is verified.
+
+## Reader groups
+
+A help center collection can be for some groups only: set **Only for groups** on it (or
+`groups` in `collections.create` / `collections.update`). Then only your team and people your
+app signs in with one of those groups in the token's `groups` claim see the collection, its
+articles and the collections in it: in the help center, article pages, search, AI answers and
+the widget. Everyone else (signed out, signed up on the portal, other groups) doesn't see them
+at all, and `llms.txt` and the sitemap leave them out. A collection inside a restricted one is
+restricted by both.
+
+Groups come from the latest sign-in: send all of a user's groups in every token (e.g. from
+their plan), and a group they lose is gone the next time they sign in.
 
 ## Errors
 

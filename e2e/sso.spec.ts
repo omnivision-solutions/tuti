@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 /** An HS256 token, as a customer's app would sign it for /sso (see docs/sso.md). */
 function ssoToken(secret: string, claims: Record<string, unknown>) {
@@ -63,4 +63,49 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await expect(owner.getByRole("button", { name: "Enable SSO" })).toBeVisible();
   await replay.goto(`/sso?token=${ssoToken(newSecret, { sub: "user-42" })}`);
   await expect(replay).toHaveURL(/code=sso_not_enabled$/);
+});
+
+test("a collection for one reader group: people the app signs in with that group see it, everyone else doesn't", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const api = await apiFor(owner, slug);
+  await api("/collections", { name: "Basics" });
+
+  // "Only for groups" on a new collection.
+  await owner.goto(`/app/${slug}/help`);
+  await owner.getByRole("button", { name: "New collection" }).click();
+  const dialog = owner.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("Enterprise");
+  await dialog.getByLabel("Only for groups").fill("enterprise");
+  await dialog.getByRole("button", { name: "Add collection" }).click();
+  await expect(owner.getByText("Collection added")).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Collections" })).toContainText("Only for enterprise");
+  await checkpoint(owner, "team-help-collection-groups");
+  for (const [title, collection] of [
+    ["Getting started", "basics"],
+    ["Setting up SAML", "enterprise"],
+  ]) {
+    const article = await api("/articles", { title, body: `${title}.`, collection });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+
+  // A visitor sees what's for everyone; the SAML article isn't there.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/help");
+  await expect(visitor.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics"]);
+  expect((await visitor.request.get("/help/setting-up-saml")).status()).toBe(404);
+
+  // Someone the app signs in with the group sees it too.
+  const sam = await newPerson(browser, portalUrl(slug));
+  await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/help")}`);
+  await expect(sam).toHaveURL(/\/help$/);
+  await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
+  await sam.getByRole("link", { name: "Setting up SAML" }).click();
+  await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
+  await checkpoint(sam, "portal-help-group-reader");
 });

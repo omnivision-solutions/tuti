@@ -101,7 +101,14 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
  * `section` (if the help center has sections), or renames collection `slug` and changes its description.
  */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
-  const input = { name: String(formData.get("name") ?? ""), description: String(formData.get("description") ?? "") };
+  const input = {
+    name: String(formData.get("name") ?? ""),
+    description: String(formData.get("description") ?? ""),
+    // Checked by the operation; separated by commas or spaces.
+    groups: String(formData.get("groups") ?? "")
+      .split(/[\s,]+/)
+      .filter(Boolean),
+  };
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
     slug === null
