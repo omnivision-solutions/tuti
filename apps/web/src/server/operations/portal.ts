@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { portalUrl } from "@/lib/hosts";
 import { hashSecret } from "@/lib/portal-handoff";
+import { DOMAIN_ENTRY, OPEN_DOMAINS } from "@/lib/reader-domains";
 
 import { emailAddress } from "./assistant";
 import { defineOperation, OperationError } from "./define";
@@ -50,6 +51,24 @@ export const updatePortal = defineOperation({
   },
 });
 
+/** A reader: an address, or a whole domain ("@acme.com", not one anyone can get an address at). */
+const readerEntry = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .superRefine((entry, ctx) => {
+    if (!entry.startsWith("@")) {
+      if (!emailAddress.safeParse(entry).success) {
+        ctx.addIssue({ code: "custom", message: "Enter a valid email address" });
+      }
+    } else if (!DOMAIN_ENTRY.test(entry)) {
+      ctx.addIssue({ code: "custom", message: "Enter an email address, or a domain like @acme.com" });
+    } else if (OPEN_DOMAINS.has(entry.slice(1))) {
+      ctx.addIssue({ code: "custom", message: `Anyone can get an ${entry} address: add people from it one by one` });
+    }
+  });
+const isDomain = (entry: string) => entry.startsWith("@");
+
 /** Readers added at once, and at most per project. */
 export const READERS_PER_ADD = 20;
 export const MAX_READERS = 2000;
@@ -84,13 +103,13 @@ export const listPortalReaders = defineOperation({
 
 export const addPortalReaders = defineOperation({
   name: "portalReaders.add",
-  summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). On a private portal, each new one is emailed a link to it unless \`notify\` is false (up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal, and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one, and \`emailed\` says how many were sent). Addresses already there are left as they are`,
+  summary: `Let people read the portal while it's private, by email (up to ${READERS_PER_ADD} at once, ${MAX_READERS} in all): any account with that address, once it's verified (an emailed sign-in link verifies it). An entry can be a whole domain ("@acme.com"): everyone with a verified address there (not free email providers, where anyone can get one). On a private portal, each new one is emailed a link to it unless \`notify\` is false (up to ${READER_EMAILS_PER_PROJECT_PER_DAY} such emails a day per portal, and ${READER_EMAILS_PER_ADDRESS_PER_DAY} per address; past them, readers are added without one, and \`emailed\` says how many were sent). Addresses already there are left as they are`,
   method: "POST",
   path: "/portal/readers",
   scope: "write",
   access: "admin",
   input: z.object({
-    emails: z.array(emailAddress).min(1, "Enter an email address").max(READERS_PER_ADD, `Add up to ${READERS_PER_ADD} at once`),
+    emails: z.array(readerEntry).min(1, "Enter an email address").max(READERS_PER_ADD, `Add up to ${READERS_PER_ADD} at once`),
     notify: z.boolean().default(true),
   }),
   example: { emails: ["e2e-reader@example.com"] },
@@ -110,7 +129,8 @@ export const addPortalReaders = defineOperation({
       }
       const addedById = actor.kind === "user" ? actor.userId : actor.createdById;
       await tx.portalReader.createMany({ data: fresh.map((email) => ({ projectId, email, addedById })) });
-      return { added: fresh, toEmail: notify ? await claimReaderEmails(tx, projectId, fresh) : [] };
+      // A domain has nobody to email.
+      return { added: fresh, toEmail: notify ? await claimReaderEmails(tx, projectId, fresh.filter((entry) => !isDomain(entry))) : [] };
     });
 
     let emailed = 0;
@@ -170,12 +190,14 @@ async function claimReaderEmails(tx: Prisma.TransactionClient, projectId: string
 
 export const removePortalReader = defineOperation({
   name: "portalReaders.remove",
-  summary: "Stop letting someone read the private portal by their email (the team and SSO users keep their access); their account stays",
+  summary:
+    "Stop letting someone (an address) or a domain (\"@acme.com\") read the private portal (the team and SSO users keep their access); accounts stay",
   method: "DELETE",
   path: "/portal/readers/{email}",
   scope: "write",
   access: "admin",
-  input: z.object({ email: emailAddress }),
+  // An address or a domain entry ("@acme.com"), as listed.
+  input: z.object({ email: z.string().trim().toLowerCase().min(1).max(320) }),
   run: async ({ projectId }, input) => {
     const { count } = await prisma.portalReader.deleteMany({ where: { projectId, email: input.email } });
     if (count === 0) {

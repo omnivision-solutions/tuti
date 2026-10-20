@@ -110,7 +110,12 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       teamMemberships: { none: { projectId } },
       emailOptOuts: { none: { projectId } },
       ...(project.portalAccess === "PRIVATE" && {
-        OR: [{ ssoIdentity: { projectId } }, { emailVerified: true, email: { in: readers, mode: "insensitive" } }],
+        OR: [
+          { ssoIdentity: { projectId } },
+          { emailVerified: true, email: { in: readers.filter((r) => !r.startsWith("@")), mode: "insensitive" } },
+          // A domain ("@acme.com"): everyone with a verified address there.
+          ...readers.filter((r) => r.startsWith("@")).map((domain) => ({ emailVerified: true, email: { endsWith: domain, mode: "insensitive" as const } })),
+        ],
       }),
     },
     select: { id: true, email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },

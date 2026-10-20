@@ -36,16 +36,18 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
     const result = await addPortalReaders(projectSlug, prev, formData);
     if (!result.error) {
       form.current?.reset();
-      const added = result.added ?? 0;
+      const added = result.added ?? [];
+      const people = added.filter((entry) => !entry.startsWith("@")).length;
       const emailed = result.emailed ?? 0;
+      const what = added.length === 1 && people === 0 ? `${added[0]} added` : `${plural(added.length, "reader")} added`;
       toast.success(
-        added === 0
+        added.length === 0
           ? "They're already readers"
-          : emailed === added
-            ? `${plural(added, "reader")} added; we emailed them a link`
+          : emailed > 0 && emailed === people && people === added.length
+            ? `${what}; we emailed them a link`
             : emailed > 0
-              ? `${plural(added, "reader")} added; we emailed ${emailed} of them`
-              : `${plural(added, "reader")} added`,
+              ? `${what}; we emailed ${emailed} of them`
+              : what,
       );
     }
     return result;
@@ -58,19 +60,19 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
           Readers
         </h3>
         <p className="text-sm text-muted-foreground">
-          People outside your team who may read the portal. They sign in with their address: an emailed sign-in link works even
-          without an account.
+          People outside your team who may read the portal, or a whole domain like @acme.com for everyone there. They sign in
+          with their address: an emailed sign-in link works even without an account.
         </p>
       </div>
       <form ref={form} {...keepingFields(action)} className="flex flex-col gap-2">
         <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="portal-reader-emails">Email addresses</FieldLabel>
+          <FieldLabel htmlFor="portal-reader-emails">Email addresses or domains</FieldLabel>
           <Textarea
             id="portal-reader-emails"
             name="emails"
             rows={2}
             required
-            placeholder="ada@example.com, grace@example.com"
+            placeholder="ada@example.com, @acme.com"
             aria-invalid={state.error ? true : undefined}
           />
           <FieldDescription>Up to 20 at once, separated by commas or lines.</FieldDescription>
@@ -88,7 +90,7 @@ export function PortalReaders({ projectSlug, readers }: { projectSlug: string; r
             <ItemRow
               key={reader.email}
               title={<span className="break-all">{reader.email}</span>}
-              meta={`Added ${timeAgo(new Date(reader.addedAt))}${reader.addedBy ? ` by ${reader.addedBy}` : ""}`}
+              meta={`${reader.email.startsWith("@") ? `Everyone with a verified ${reader.email} address · ` : ""}Added ${timeAgo(new Date(reader.addedAt))}${reader.addedBy ? ` by ${reader.addedBy}` : ""}`}
               actions={<RemoveReaderButton projectSlug={projectSlug} email={reader.email} />}
             />
           ))}

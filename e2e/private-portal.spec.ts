@@ -92,6 +92,14 @@ test("the team lets someone outside it read the private portal by email: they're
   await expect(owner.getByText("1 reader added; we emailed them a link")).toBeVisible();
   await expect(readers.getByRole("listitem")).toHaveText([new RegExp(`^${email}Added .* by Olive Owner`)]);
   await expect(readers.getByLabel("Email addresses")).toHaveValue("");
+  // A whole domain too, but not one anyone can get an address at.
+  await readers.getByLabel("Email addresses").fill("@gmail.com");
+  await readers.getByRole("button", { name: "Add readers" }).click();
+  await expect(readers.getByText("Anyone can get an @gmail.com address: add people from it one by one")).toBeVisible();
+  await readers.getByLabel("Email addresses").fill("@example.org");
+  await readers.getByRole("button", { name: "Add readers" }).click();
+  await expect(owner.getByText("@example.org added")).toBeVisible();
+  await expect(readers.getByRole("listitem").first()).toContainText("Everyone with a verified @example.org address");
   await checkpoint(owner, "settings-portal-readers");
 
   // The email leads to the portal's sign-in; an emailed sign-in link makes the account and lets them in.

@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 
 import { auth } from "@/lib/auth";
+import { readerEntriesFor } from "@/lib/reader-domains";
 import { widgetUser } from "@/lib/widget-session";
 
 import { getSession } from "./session";
@@ -36,7 +37,7 @@ async function isPrivateReader(projectId: string, userId: string): Promise<boole
 }
 
 /**
- * Whether the user's email is on the project's readers: "verified" lets them read a private portal;
+ * Whether the user's email (or its domain) is on the project's readers: "verified" lets them read a private portal;
  * "unverified" doesn't yet (anyone can sign up with any address), which the sign-in page says.
  */
 export async function invitedReader(projectId: string, userId: string): Promise<"verified" | "unverified" | null> {
@@ -44,10 +45,8 @@ export async function invitedReader(projectId: string, userId: string): Promise<
   if (!user) {
     return null;
   }
-  const reader = await prisma.portalReader.findUnique({
-    where: { projectId_email: { projectId, email: user.email.toLowerCase() } },
-    select: { id: true },
-  });
+  // The address itself, or its domain ("@acme.com").
+  const reader = await prisma.portalReader.findFirst({ where: { projectId, email: { in: readerEntriesFor(user.email) } }, select: { id: true } });
   return reader ? (user.emailVerified ? "verified" : "unverified") : null;
 }
 

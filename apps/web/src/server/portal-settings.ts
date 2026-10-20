@@ -13,8 +13,8 @@ export async function setPortalAccess(projectSlug: string, access: string): Prom
   );
 }
 
-/** Settings → Portal access → Readers: the form's addresses, separated by commas, spaces or lines (see portalReaders.add). */
-export async function addPortalReaders(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState & { added?: number; emailed?: number }> {
+/** Settings → Portal access → Readers: the form's addresses and domains, separated by commas, spaces or lines (see portalReaders.add). */
+export async function addPortalReaders(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState & { added?: string[]; emailed?: number }> {
   const emails = String(formData.get("emails") ?? "")
     .split(/[\s,;]+/)
     .filter(Boolean);
@@ -22,7 +22,7 @@ export async function addPortalReaders(projectSlug: string, _state: FormState, f
   const state = await asAdmin(projectSlug, DENIED, async (context) => {
     result = await call(addPortalReadersOperation, context, { emails });
   });
-  return { ...state, added: result?.added.length, emailed: result?.emailed };
+  return { ...state, added: result?.added, emailed: result?.emailed };
 }
 
 export async function removePortalReader(projectSlug: string, email: string): Promise<{ error?: string }> {

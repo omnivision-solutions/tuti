@@ -151,3 +151,24 @@ test("an account with a reader's address that isn't verified doesn't get in unti
   await prisma.project.update({ where: { id: other.id }, data: { portalAccess: "PRIVATE" } });
   expect(await canReadPortal({ id: other.id }, someone.id)).toBe(false);
 });
+
+test("a domain lets in everyone with a verified address there; nobody's emailed for it, and free email providers are refused", async () => {
+  expect(await call(addPortalReaders, as(), { emails: ["@Example.com"] })).toEqual({ added: ["@example.com"], emailed: 0 });
+  const [colleague, unverified, elsewhere] = [await signUp("Colleague"), await signUp("Not verified"), await signUp("Elsewhere", `e2e-${randomUUID()}@example.org`)];
+  await prisma.user.updateMany({ where: { id: { in: [colleague.id, elsewhere.id] } }, data: { emailVerified: true } });
+  expect(await canReadPortal({ id: project.id }, colleague.id)).toBe(true);
+  expect(await canReadPortal({ id: project.id }, unverified.id)).toBe(false);
+  expect(await canReadPortal({ id: project.id }, elsewhere.id)).toBe(false);
+
+  for (const [entry, message] of [
+    ["@gmail.com", "Anyone can get an @gmail.com address: add people from it one by one"],
+    ["@myyahoo.com", "Anyone can get an @myyahoo.com address"],
+    ["@nodot", "Enter an email address, or a domain like @acme.com"],
+    ["@-bad.com", "Enter an email address, or a domain like @acme.com"],
+  ]) {
+    await expect(call(addPortalReaders, as(), { emails: [entry] })).rejects.toMatchObject({ status: 400, message: expect.stringContaining(message) });
+  }
+
+  expect(await call(removePortalReader, as(), { email: "@example.com" })).toEqual({ removed: "@example.com" });
+  expect(await canReadPortal({ id: project.id }, colleague.id)).toBe(false);
+});
