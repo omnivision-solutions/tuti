@@ -194,7 +194,8 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   actAs(owner);
   const md = (slug: string) => markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug }) });
   expect((await md("saml")).headers.get("cache-control")).toBe("private, no-store");
-  expect((await md("getting-started")).headers.get("cache-control")).toBe("public, max-age=300");
+  // Not in shared caches either: a collection restricted later mustn't stay readable from one.
+  expect((await md("getting-started")).headers.get("cache-control")).toBe("private, max-age=300");
   actAs(null);
   expect((await md("saml")).status).toBe(404);
 });
