@@ -61,7 +61,7 @@ function MoveButtons({
       {places.length === 0 && <span aria-hidden className="size-7" />}
       {places.length > 0 && (
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${name} to…`} disabled={disabled} />}>
+          <DropdownMenuTrigger id={`${id}-to`} render={<Button variant="ghost" size="icon-sm" aria-label={`Move ${name} to…`} disabled={disabled} />}>
             <FolderInputIcon aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto min-w-48">
@@ -259,8 +259,8 @@ export function HelpStructure({
           const over: Over = { kind: "article", slug: article.slug, collection };
           const base = { kind: "article" as const, slug: article.slug, name: article.title };
           const places = [
-            ...collections.filter((c) => c.slug !== collection).map((c) => ({ label: label(c), move: () => move({ ...base, into: c.slug }) })),
-            ...(collection === null ? [] : [{ label: "No collection", move: () => move({ ...base, into: null }) }]),
+            ...collections.filter((c) => c.slug !== collection).map((c) => ({ label: label(c), move: () => move({ ...base, into: c.slug }, `${id}-to`) })),
+            ...(collection === null ? [] : [{ label: "No collection", move: () => move({ ...base, into: null }, `${id}-to`) }]),
           ];
           return (
             <li key={article.slug}>
@@ -297,12 +297,12 @@ export function HelpStructure({
           const inside = childrenOf(collection.slug);
           const base = { kind: "collection" as const, slug: collection.slug, name: collection.name };
           const places = [
-            ...(collection.parent === null ? [] : [{ label: "Top level", move: () => move({ ...base, into: null }) }]),
+            ...(collection.parent === null ? [] : [{ label: "Top level", move: () => move({ ...base, into: null }, `${id}-to`) }]),
             ...(inside.length > 0
               ? []
               : childrenOf(null)
                   .filter((c) => c.slug !== collection.slug && c.slug !== collection.parent)
-                  .map((c) => ({ label: `Into ${c.name}`, move: () => move({ ...base, into: c.slug }) }))),
+                  .map((c) => ({ label: `Into ${c.name}`, move: () => move({ ...base, into: c.slug }, `${id}-to`) }))),
           ];
           const count = collection.articles.length;
           return (

@@ -381,8 +381,11 @@ test("the team arranges the help center: a collection in another, moves with the
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
 
   // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the button that started it.
-  await api("/collections/billing", {}, "DELETE");
+  // The drag's move is done once its refreshed rows are in (they stream in after its toast; the buttons are off until
+  // then). Only then is the collection deleted, so the page still shows it.
   const moveTo = structure.getByRole("button", { name: "Move Inviting your team to…" });
+  await expect(moveTo).toBeEnabled();
+  await api("/collections/billing", {}, "DELETE");
   await moveTo.focus();
   await team.keyboard.press("Enter");
   await team.getByRole("menuitem", { name: "Billing", exact: true }).press("Enter");
