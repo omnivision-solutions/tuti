@@ -133,6 +133,20 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await someoneElse.goto(link);
   await expect(someoneElse.getByText("That sign-in link has expired or was already used. Ask for a new one.")).toBeVisible();
   await expect(someoneElse.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+
+  // From the portal's home page it comes back to the portal's home page (the app has a "/" too).
+  const wes = await newPerson(browser, portalUrl(slug));
+  await wes.goto("/sign-in?next=%2F");
+  const wesEmail = `e2e-${randomUUID()}@example.com`;
+  await wes.getByLabel("Email").fill(wesEmail);
+  await wes.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(wes.getByText("Check your email")).toBeVisible();
+  await wes.goto(linkIn(await latestEmailTo(wesEmail), `${portalUrl(slug)}/sign-in/link?`));
+  await wes.getByRole("main").getByRole("button", { name: "Sign in" }).click();
+  // The portal's home page sends people on to its first board.
+  await expect(wes).toHaveURL(`${portalUrl(slug)}/b/feature-requests`);
+  await expect(wes.getByRole("navigation", { name: "Portal" })).toBeVisible();
+  await expect(wes.getByRole("button", { name: "Account" })).toBeVisible();
 });
 
 test("a team member who forgot their password resets it by email and signs in with the new one", async ({ browser }, testInfo) => {

@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { SubmitButton } from "@/components/submit-button";
+import { SignInLinkConfirm } from "@/components/sign-in-link-confirm";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { safeRedirectPath } from "@/lib/redirects";
-import { confirmSignInLink } from "@/server/sign-in-link";
 import { failedSignInLinkPath, pendingSignInLink } from "@/server/sign-in-link-lookup";
 
 export const metadata: Metadata = { robots: { index: false } };
@@ -12,7 +11,7 @@ export const metadata: Metadata = { robots: { index: false } };
 /**
  * <project>.tuti.so/sign-in/link?token=…&next=… is the link in a sign-in email
  * (lib/sign-in-link.ts). Opening it changes nothing: it asks to confirm, showing
- * the address the link was sent to, and "Sign in" uses it (confirmSignInLink).
+ * the address the link was sent to, and "Sign in" uses it (SignInLinkConfirm).
  */
 export default async function SignInLinkPage(props: PageProps<"/portal/[project]/sign-in/link">) {
   const [{ project }, { token, next }] = await Promise.all([props.params, props.searchParams]);
@@ -28,13 +27,9 @@ export default async function SignInLinkPage(props: PageProps<"/portal/[project]
         <CardTitle>Sign in to {link.projectName}</CardTitle>
         <CardDescription className="break-all">as {link.email}</CardDescription>
       </CardHeader>
-      <form action={confirmSignInLink}>
-        <input type="hidden" name="token" value={token as string} />
-        <input type="hidden" name="next" value={nextPath} />
-        <CardFooter>
-          <SubmitButton className="w-full">Sign in</SubmitButton>
-        </CardFooter>
-      </form>
+      <CardFooter>
+        <SignInLinkConfirm token={token as string} next={nextPath} />
+      </CardFooter>
     </Card>
   );
 }

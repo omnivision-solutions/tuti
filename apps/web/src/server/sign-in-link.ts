@@ -5,7 +5,6 @@ import { emailConfigured } from "@tuti/email";
 import { log } from "@tuti/shared";
 import { APIError } from "better-auth/api";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
@@ -68,11 +67,15 @@ export async function emailSignInLink(
 
 /**
  * "Sign in" on the page a sign-in link opens (/sign-in/link): uses the token up and
- * signs the person in on this portal (making their account if it's new), then goes
- * to `next`. A button rather than the link itself, so mail scanners that open links
- * can't use it up, and so people see whose account they're signing in to.
+ * signs the person in on this portal (making their account if it's new), and says
+ * where to go: `next`, or back to sign-in if the link was dead. A button rather than
+ * the link itself, so mail scanners that open links can't use it up, and so people see
+ * whose account they're signing in to.
+ *
+ * The browser goes there itself (SignInLinkConfirm): a server action's redirect is
+ * rendered from the app's own routes, not the portal's, so "/" would be Tuti's home page.
  */
-export async function confirmSignInLink(form: FormData) {
+export async function confirmSignInLink(form: FormData): Promise<{ location: string }> {
   const token = String(form.get("token") ?? "");
   const next = safeRedirectPath(String(form.get("next") ?? ""), "/");
   const requestHeaders = await headers();
@@ -91,5 +94,5 @@ export async function confirmSignInLink(form: FormData) {
       }
     }
   }
-  redirect(signedIn ? next : failedSignInLinkPath(next));
+  return { location: signedIn ? next : failedSignInLinkPath(next) };
 }

@@ -73,7 +73,7 @@ async function confirm(link: URL, host = link.host) {
   form.set("token", link.searchParams.get("token") ?? "");
   form.set("next", link.searchParams.get("next") ?? "/");
   const before = new Date(Date.now() - 1);
-  const location = await redirectTarget(confirmSignInLink(form));
+  const { location } = await confirmSignInLink(form);
   const session = await prisma.session.findFirst({ where: { createdAt: { gt: before } }, include: { user: true } });
   return { location, user: session?.user ?? null };
 }
