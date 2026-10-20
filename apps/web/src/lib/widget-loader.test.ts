@@ -18,7 +18,7 @@ test("sign-in tokens go to the panel only, on the portal's origin, when it asks"
   expect(script).not.toMatch(/postMessage\([^)]*token[^)]*"\*"\)/);
   // Messages count only from the panel's own window and origin.
   expect(script).toContain("if (!event.source || event.origin !== origin) return;");
-  expect(script).toContain("if (frames[i].contentWindow === event.source) from = frames[i];");
+  expect(script).toContain("var from = frameOf(event.source);\n    if (!from) return;");
 });
 
 /** Just enough DOM to run the loader: elements with attributes, styles, children and bubbling clicks. */
@@ -619,4 +619,26 @@ test("inline panels get sign-in tokens and say what's been seen; they can't clos
   page.message(frameWindow, { type: "tuti:ready" });
   await settled();
   expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
+});
+
+test("an inline mount the page removes and puts back (tab panels, keep-alive views) keeps its panel, which still gets tokens and says what's been seen", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, before: (page) => void inlineMount(page) });
+  await settled();
+  const mount = page.body.children[0] as FakeElement;
+  const inline = page.inlineFrames[0]!;
+  const frameWindow = inline.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.body.children.splice(0, 1);
+  mount.parent = null;
+  page.mutated();
+  page.body.appendChild(mount);
+  page.mutated();
+  // Still the one panel, not a second.
+  expect(page.inlineFrames).toEqual([inline]);
+
+  page.message(frameWindow, { type: "tuti:ready" });
+  await settled();
+  expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: "sso-token" }, "https://acme.tuti.example");
+  expect(page.Tuti.unseen()).toBe(true);
+  page.message(frameWindow, { type: "tuti:seen", at: LATEST.latest });
+  expect(page.Tuti.unseen()).toBe(false);
 });

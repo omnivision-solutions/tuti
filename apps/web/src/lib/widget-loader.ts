@@ -220,14 +220,11 @@ export function widgetLoader(portalTemplate: string): string {
     if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or help");
     return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
   }
-  // The panel's iframes: the floating one (\`frame\`, once opened) and the inline ones.
-  var frames = [];
   function newFrame(src) {
     var element = document.createElement("iframe");
     element.src = src;
     element.title = "Feedback";
     css(element, { width: "100%", height: "100%", border: "0", display: "block" });
-    frames.push(element);
     return element;
   }
   var frame;
@@ -280,18 +277,25 @@ export function widgetLoader(portalTemplate: string): string {
   // ones added later (single-page apps). display=inline, and the iframe's name (which stays with
   // it as it navigates), tell the panel there's nothing to close.
   function mountInline() {
-    // Forget inline panels the page has removed.
-    frames = frames.filter(function (element) { return element === frame || document.contains(element); });
     var elements = document.querySelectorAll("[data-tuti-inline]");
     for (var i = 0; i < elements.length; i++) {
-      if (elements[i].__tutiMounted) continue;
-      elements[i].__tutiMounted = true;
+      if (elements[i].__tutiFrame) continue;
       var query = tabQuery(elements[i].getAttribute("data-tuti-inline"));
       var inline = newFrame(portal + "/widget" + (query ? query + "&" : "?") + "display=inline");
       inline.name = ${JSON.stringify(WIDGET_INLINE_NAME)};
       inline.style.minHeight = "500px";
-      elements[i].appendChild(inline);
+      elements[i].__tutiFrame = elements[i].appendChild(inline);
     }
+  }
+  // The panel whose window sent a message: the floating one, or that of a mount in the page now
+  // (read from the page each time, so a removed mount is forgotten and one put back counts again).
+  function frameOf(source) {
+    if (frame && frame.contentWindow === source) return frame;
+    var elements = document.querySelectorAll("[data-tuti-inline]");
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i].__tutiFrame && elements[i].__tutiFrame.contentWindow === source) return elements[i].__tutiFrame;
+    }
+    return null;
   }
   whenBody(function () {
     mountInline();
@@ -342,8 +346,7 @@ export function widgetLoader(portalTemplate: string): string {
   // From a panel (another origin): close (the close button, Escape), ready-for-a-token and seen.
   window.addEventListener("message", function (event) {
     if (!event.source || event.origin !== origin) return;
-    var from = null;
-    for (var i = 0; i < frames.length; i++) if (frames[i].contentWindow === event.source) from = frames[i];
+    var from = frameOf(event.source);
     if (!from) return;
     // Only the floating panel closes; an inline one has nothing to close.
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) { if (from === frame) close(); }
