@@ -352,7 +352,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
 
   // The launcher: a label, a colour, the left corner and a quick link (https only).
   await owner.getByLabel("Button label").fill("Help & ideas");
-  await owner.getByLabel("Colour").fill("#5b21b6");
+  await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByLabel("Bottom left").check();
   await owner.getByRole("button", { name: "Add link" }).click();
   await owner.getByLabel("Link 1 label").fill("Status");

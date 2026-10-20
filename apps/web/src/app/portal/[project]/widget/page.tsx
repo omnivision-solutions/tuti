@@ -14,6 +14,7 @@ import { WidgetHelp } from "@/components/widget-help";
 import { WidgetSeen } from "@/components/widget-seen";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
+import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { widgetSettings } from "@/server/operations/widget";
 import { getSession } from "@/server/session";
@@ -34,7 +35,7 @@ const TABS = [
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
   const [{ project: slug }, { tab: tabParam, q, article, title }] = await Promise.all([props.params, props.searchParams]);
-  const [project, settings] = await Promise.all([
+  const [project, settings, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
       select: {
@@ -44,16 +45,20 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       },
     }),
     widgetSettings({ slug }),
+    branding({ slug }),
   ]);
-  if (!project || !settings) {
+  if (!project || !settings || !brand) {
     notFound();
   }
+  // The portal's accent colour; the logo and links are the portal header's, which the panel doesn't have.
+  const css = brandCss(brand.color);
   const hasHelp = project.articles.length > 0;
   const tabs = TABS.filter(({ tab }) => tab !== "help" || hasHelp);
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
 
   return (
     <main className="flex flex-col gap-4 p-4">
+      {css && <style>{css}</style>}
       <div className="flex items-center justify-between border-b">
         <nav className="flex gap-1" aria-label="Widget">
           {tabs.map(({ tab: key, href, name }) => {

@@ -2,6 +2,7 @@
 
 import { prisma } from "@tuti/db";
 
+import { linksFrom } from "@/lib/forms";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
@@ -63,16 +64,11 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
 /** Saves the launcher settings form: label, colour, corner and quick links (see widget.update). Empty link rows are skipped. */
 export async function saveWidgetSettings(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (field: FormDataEntryValue | null | undefined) => (typeof field === "string" ? field : "");
-  const urls = formData.getAll("linkUrl");
-  const links = formData
-    .getAll("linkLabel")
-    .map((label, i) => ({ label: text(label), url: text(urls[i]) }))
-    .filter((link) => link.label.trim() || link.url.trim());
   const input = {
     label: text(formData.get("label")),
     color: text(formData.get("color")),
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
-    links,
+    links: linksFrom(formData, "link"),
   };
   return asAdmin(projectSlug, "Only project owners and admins can change the widget", (context) =>
     call(updateWidgetSettings, context, input),

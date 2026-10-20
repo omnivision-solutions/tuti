@@ -10,7 +10,17 @@ import { type FormEvent, startTransition } from "react";
  * function, or a working POST for a Server Function, instead of the browser's GET with the fields
  * in the URL. Once hydrated, `onSubmit` prevents the default and React leaves `action` alone.
  */
-export const keepingFields = (action: (formData: FormData) => void) => ({
+/** Link rows from a form (`<prefix>Label` and `<prefix>Url` fields, in order), skipping rows left empty. */
+export function linksFrom(formData: FormData, prefix: string): { label: string; url: string }[] {
+  const text = (field: FormDataEntryValue | undefined) => (typeof field === "string" ? field : "");
+  const urls = formData.getAll(`${prefix}Url`);
+  return formData
+    .getAll(`${prefix}Label`)
+    .map((label, i) => ({ label: text(label), url: text(urls[i]) }))
+    .filter((link) => link.label.trim() || link.url.trim());
+}
+
+export const keepingFields =(action: (formData: FormData) => void) => ({
   action,
   onSubmit: (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
