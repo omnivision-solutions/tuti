@@ -25,4 +25,6 @@ export const serverEnv = {
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
   EMAIL_FROM: "Tuti Test <test@example.com>",
+  // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine.
+  CUSTOM_DOMAIN_TARGET: "customers.example.com",
 };

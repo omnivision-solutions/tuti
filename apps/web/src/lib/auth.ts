@@ -6,7 +6,9 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { allowedHostPatterns, appUrl, portalUrl } from "./hosts";
+import { requestTarget } from "@/server/custom-domains";
+
+import { allowedHostPatterns, appUrl, portalTemplate, portalUrl } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
 import { jwtSso } from "./sso";
@@ -54,6 +56,12 @@ export const auth = betterAuth({
     allowedHosts: allowedHostPatterns(),
     fallback: appUrl().origin,
     protocol: "auto",
+  },
+  // A portal on its own domain (help.acme.com) while it's verified: its forms post from there.
+  trustedOrigins: async (request) => {
+    const host = request?.headers.get("host") ?? null;
+    const target = await requestTarget(host);
+    return target.kind === "portal" && target.customDomain ? [`${new URL(portalTemplate()).protocol}//${host}`] : [];
   },
   advanced: {
     // Behind a proxy (Cloudflare tunnel / load balancer) the original host and

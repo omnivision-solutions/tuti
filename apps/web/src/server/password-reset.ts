@@ -8,7 +8,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { auth } from "@/lib/auth";
-import { resolveHost } from "@/lib/hosts";
+import { requestTarget } from "@/server/custom-domains";
 
 import { countEmailedLink } from "./email-link-limits";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "./sign-in-link-lookup";
@@ -25,7 +25,7 @@ const fields = z.object({ email: z.string().trim().toLowerCase().max(320).pipe(z
 /** The portal's slug, null on the app host, undefined anywhere else. */
 async function thisHost(): Promise<{ requestHeaders: Headers; slug: string | null | undefined }> {
   const requestHeaders = await headers();
-  const target = resolveHost(requestHeaders.get("host"));
+  const target = await requestTarget(requestHeaders.get("host"));
   return { requestHeaders, slug: target.kind === "portal" ? target.slug : target.kind === "app" ? null : undefined };
 }
 

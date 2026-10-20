@@ -49,6 +49,7 @@ import { askHelp } from "./help-ask";
 import { escalateHelp } from "./help-escalate";
 import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
 import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
+import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
@@ -126,6 +127,10 @@ const all = [
   listPortalReaders,
   addPortalReaders,
   removePortalReader,
+  getDomain,
+  setDomain,
+  verifyDomain,
+  removeDomain,
 ] as const;
 
 /** Every operation, served in the app, the REST API and MCP. */

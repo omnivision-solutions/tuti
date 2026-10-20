@@ -6,7 +6,7 @@ import { createAuthEndpoint } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { z } from "zod";
 
-import { resolveHost } from "./hosts";
+import { requestTarget } from "@/server/custom-domains";
 import { safeRedirectPath } from "./redirects";
 
 /**
@@ -43,7 +43,7 @@ export const portalHandoff = () =>
         "/continue/callback",
         { method: "GET", query: z.object({ code: z.string().max(100), redirect: z.string().max(2048).optional() }) },
         async (ctx) => {
-          const target = resolveHost(ctx.headers?.get("host") ?? null);
+          const target = await requestTarget(ctx.headers?.get("host") ?? null);
           if (target.kind !== "portal") {
             throw ctx.redirect("/");
           }

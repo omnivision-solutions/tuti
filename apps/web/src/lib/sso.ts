@@ -7,7 +7,7 @@ import { setSessionCookie } from "better-auth/cookies";
 import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
-import { resolveHost } from "./hosts";
+import { requestTarget } from "@/server/custom-domains";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
 
@@ -178,7 +178,7 @@ export const jwtSso = () =>
         "/sso/jwt",
         { method: "GET", query: querySchema },
         async (ctx) => {
-          const target = resolveHost(ctx.headers?.get("host") ?? null);
+          const target = await requestTarget(ctx.headers?.get("host") ?? null);
           if (target.kind !== "portal") {
             throw ctx.redirect("/");
           }

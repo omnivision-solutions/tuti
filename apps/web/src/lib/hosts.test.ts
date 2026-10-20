@@ -22,6 +22,8 @@ describe("in production", () => {
     ["my-app.tuti.so", { kind: "portal", slug: "my-app" }],
     ["www.tuti.so", { kind: "unknown" }],
     ["api.tuti.so", { kind: "unknown" }],
+    // Where custom domains point (CUSTOM_DOMAIN_TARGET): never a project's portal.
+    ["customers.tuti.so", { kind: "unknown" }],
     ["a.b.tuti.so", { kind: "unknown" }],
     ["acme--dev.tuti.so", { kind: "unknown" }],
     ["acme.tuti.so.evil.example", { kind: "unknown" }],

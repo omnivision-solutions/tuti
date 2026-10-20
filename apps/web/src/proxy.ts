@@ -1,14 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { portalUrl, resolveHost } from "@/lib/hosts";
+import { portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
+import { requestTarget } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
 
 /**
  * Routes requests by host:
  * - app host (tuti.so): served as-is; internal /portal routes are hidden.
- * - portal hosts (<project>.tuti.so): rewritten to /portal/<project>/…, so
+ * - portal hosts (<project>.tuti.so, or a verified custom domain like help.acme.com):
+ *   rewritten to /portal/<project>/…, so
  *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
  *   An article's Markdown, /help/<slug>.md, goes to help/[slug]/md (a route
  *   segment can't be part dynamic, part ".md").
@@ -26,7 +28,8 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/api/health") {
     return NextResponse.next();
   }
-  const target = resolveHost(request.headers.get("host"));
+  const host = request.headers.get("host");
+  const target = await requestTarget(host);
 
   if (target.kind === "portal") {
     if (pathname.startsWith("/api/")) {
@@ -34,7 +37,9 @@ export async function proxy(request: NextRequest) {
     }
     const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(target.slug, request.headers);
     if (visitor === "refused") {
-      const signIn = new URL("/sign-in", portalUrl(target.slug));
+      // On its own domain the portal stays there (help.acme.com/sign-in).
+      const origin = target.customDomain ? `${new URL(portalUrl(target.slug)).protocol}//${host}` : portalUrl(target.slug);
+      const signIn = new URL("/sign-in", origin);
       if (pathname !== "/") {
         signIn.searchParams.set("next", pathname + request.nextUrl.search);
       }
@@ -71,7 +76,7 @@ export async function proxy(request: NextRequest) {
     return noFraming(response);
   }
 
-  // Unknown host (later: custom domains).
+  // Unknown host: nothing (custom domains are portals once verified).
   return new NextResponse(null, { status: 404 });
 }
 

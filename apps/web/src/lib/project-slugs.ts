@@ -10,8 +10,8 @@ const RESERVED_SLUGS = new Set([
   "admin", "api", "app", "assets", "auth", "billing", "blog", "cdn", "dashboard", "dev", "docs",
   "email", "feedback", "help", "img", "login", "mail", "portal", "sso", "staging", "static",
   "status", "support", "test", "tuti", "www",
-  // Our own subdomains: CI screenshots and uploaded media.
-  "ci", "media", "media-dev",
+  // Our own subdomains: CI screenshots, uploaded media, and where custom domains point.
+  "ci", "media", "media-dev", "customers",
 ]);
 
 export function isReservedSlug(slug: string): boolean {
