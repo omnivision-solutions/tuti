@@ -196,6 +196,7 @@ model Project {
   articleChunks        ArticleChunk[]
   collections          Collection[]
   docsTabs             DocsTab[]
+  docsRedirects        DocsRedirect[]
   portalReaders        PortalReader[]
   portalReaderEmails   PortalReaderEmail[]
   customDomain         CustomDomain?
@@ -991,6 +992,7 @@ model Collection {
   articles  Article[]
   revisions ArticleRevision[]
   changes   ArticleChanges[]
+  redirects DocsRedirect[]
 
   @@unique([projectId, slug])
   @@index([parentId])
@@ -1011,11 +1013,37 @@ model DocsTab {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections Collection[]
+  redirects   DocsRedirect[]
 
   @@unique([projectId, slug])
   @@map("docs_tab")
+}
+
+/// A slug a tab, collection or article had, so /docs/<slug> keeps working after it's renamed: it
+/// points at the page (exactly one of the three, a check constraint), not at its slug, so renaming
+/// again makes no chain. A page taking the slug drops it (freeDocsSlug); until then a page that has it
+/// wins (a deleted article restored under another slug leaves one behind its old one).
+model DocsRedirect {
+  id           String   @id @default(cuid())
+  projectId    String
+  slug         String
+  tabId        String?
+  collectionId String?
+  articleId    String?
+  createdAt    DateTime @default(now())
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tab        DocsTab?    @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  article    Article?    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, slug])
+  @@index([tabId])
+  @@index([collectionId])
+  @@index([articleId])
+  @@map("docs_redirect")
 }
 
 /// A docs article, at /docs/<slug> on the portal once it's published.
@@ -1071,6 +1099,7 @@ model Article {
   viewDays   ArticleViewDay[]
   revisions  ArticleRevision[]
   changes    ArticleChanges?
+  redirects  DocsRedirect[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
