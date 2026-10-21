@@ -44,7 +44,8 @@ test("an admin creates an API key, reads posts with it, revokes it and exports t
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   expect((await posts()).status).toBe(401);
 
-  // Everything can also leave as Markdown files in a ZIP.
+  // Everything can also leave as Markdown files in a ZIP (Settings → Export).
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Export" }).click();
   const exportButton = owner.getByRole("link", { name: "Export as Markdown" });
   await exportButton.scrollIntoViewIfNeeded();
   await checkpoint(owner, "settings-export", { fullPage: false });

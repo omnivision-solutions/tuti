@@ -537,7 +537,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
 
   // Customize → Widget: a label, a colour, the left corner and a quick link (https only), beside the widget open on a stand-in for the site.
   await owner.goto(`/app/${slug}/customize/widget`);
-  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback" })).toBeVisible();
+  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
   await owner.getByLabel("Button label").fill("Help & ideas");
   await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByLabel("Bottom left").check();

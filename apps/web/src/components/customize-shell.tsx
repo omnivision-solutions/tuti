@@ -45,17 +45,17 @@ export function CustomizeShell({
   return (
     <PreviewContext value={{ reload, version }}>
       <div className="flex flex-1 flex-col lg:h-[calc(100svh-3rem)] lg:flex-row">
-        <section aria-labelledby="customize-title" className="flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
+        <div className="flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
           <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-2">
             <Link href={backHref} aria-label="Back to Customize" className={buttonVariants({ variant: "ghost", size: "icon-sm" })}>
               <ChevronLeftIcon />
             </Link>
-            <h1 id="customize-title" className="text-sm font-semibold">
+            <h1 className="text-sm font-semibold">
               {title}
             </h1>
           </div>
           <div className="flex flex-col gap-6 p-4">{children}</div>
-        </section>
+        </div>
         {"custom" in preview ? (
           <div className="flex min-h-[32rem] flex-1 flex-col bg-muted/40 p-4 lg:min-h-0">{preview.custom}</div>
         ) : (

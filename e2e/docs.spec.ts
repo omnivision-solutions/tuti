@@ -830,7 +830,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
 
-  // How the AI answers: a tone, short answers, and a topic it doesn't touch.
+  // How the AI answers (Customize → AI answers): a tone, short answers, and a topic it doesn't touch.
+  await team.goto(`/app/${slug}/customize/ai-answers`);
   await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
