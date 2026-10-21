@@ -4,17 +4,18 @@ import { articleChunkText, contentHash, embed, EMBEDDING_MODEL, embeddingsEnable
 
 import type { JobLogger, JobResult } from "./index";
 
-const articleSelect = { projectId: true, title: true, body: true, content: true, publishedAt: true } as const;
-type ArticleText = { projectId: string; title: string; body: string; content: unknown; publishedAt: Date | null };
+const articleSelect = { projectId: true, title: true, body: true, content: true, keywords: true, publishedAt: true } as const;
+type ArticleText = { projectId: string; title: string; body: string; content: unknown; keywords: string[]; publishedAt: Date | null };
 
 /** What a published article's chunks should be, with their hash; null for a draft or a deleted article. */
 function chunksOf(article: ArticleText | null) {
   if (!article?.publishedAt) {
     return null;
   }
-  const chunks = toChunks((article.content as Doc | null) ?? fromPlainText(article.body)).map((chunk) => ({
+  // Its keywords go with its first section: words readers use that the text doesn't.
+  const chunks = toChunks((article.content as Doc | null) ?? fromPlainText(article.body)).map((chunk, i) => ({
     ...chunk,
-    embedText: articleChunkText(article.title, chunk),
+    embedText: articleChunkText(article.title, chunk, i === 0 ? article.keywords : []),
   }));
   return { projectId: article.projectId, chunks, hash: contentHash(chunks.map((c) => c.embedText).join("\n\u0000\n")) };
 }

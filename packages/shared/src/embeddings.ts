@@ -35,8 +35,8 @@ export function postEmbeddingText(post: { title: string; body: string }): string
 }
 
 /** What gets embedded for a section of a docs article: the article's title gives it context. */
-export function articleChunkText(title: string, chunk: { heading: string; text: string }): string {
-  return [title, chunk.heading, chunk.text].filter(Boolean).join("\n\n");
+export function articleChunkText(title: string, chunk: { heading: string; text: string }, keywords: string[] = []): string {
+  return [title, chunk.heading, chunk.text, keywords.length > 0 ? `Keywords: ${keywords.join(", ")}` : ""].filter(Boolean).join("\n\n");
 }
 
 export function contentHash(text: string): string {

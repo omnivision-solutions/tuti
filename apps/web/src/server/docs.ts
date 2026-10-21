@@ -47,15 +47,41 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     body: formData.get("content") ? undefined : "",
     collection: String(formData.get("collection") ?? "") || null,
     showUpdatedDate: formData.get("showUpdatedDate") === "on",
-    // Checked by the operation (an unknown listing is a 400).
-    listing: (formData.get("listing") || undefined) as Listing | undefined,
-    ...accessFrom(formData),
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
     saved = (
       slug === null ? await call(createArticle, context, input) : await call(updateArticle, context, { slug: String(slug), ...input })
     ).slug;
+  });
+  if (saved !== undefined && saved !== slug) {
+    redirect(`/app/${projectSlug}/docs/${saved}`);
+  }
+  return result;
+}
+
+/**
+ * Saves the article's Settings dialog: who can read it, its listing, a slug the team sets (or one
+ * from the title, unticked), its meta description, keywords (separated by commas or lines) and
+ * "Block search indexing". Not its title or text. Opens its new address if it moved.
+ */
+export async function saveArticleSettings(projectSlug: string, slug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const input = {
+    slug: String(slug),
+    // Checked by the operation (an unknown listing is a 400).
+    listing: (formData.get("listing") || undefined) as Listing | undefined,
+    ...accessFrom(formData),
+    newSlug: formData.get("customSlug") === "on" ? String(formData.get("newSlug") ?? "").trim() : null,
+    description: String(formData.get("description") ?? ""),
+    keywords: String(formData.get("keywords") ?? "")
+      .split(/[,\n]/)
+      .map((keyword) => keyword.trim())
+      .filter(Boolean),
+    noindex: formData.get("noindex") === "on",
+  };
+  let saved: string | undefined;
+  const result = await asTeam(projectSlug, DENIED, async (context) => {
+    saved = (await call(updateArticle, context, input)).slug;
   });
   if (saved !== undefined && saved !== slug) {
     redirect(`/app/${projectSlug}/docs/${saved}`);

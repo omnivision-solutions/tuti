@@ -316,21 +316,22 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   // The page header's line under the title.
   const header = team.locator("p", { hasText: /^Published / });
-  const setListing = async (name: string, shot?: string) => {
-    await team.getByLabel("Listing").click();
+  // In the article's settings, with what each listing means under it.
+  const articleSettings = team.getByRole("dialog", { name: "Article settings" });
+  const setListing = async (name: string, description: string, shot?: string) => {
+    await team.getByRole("button", { name: "Settings" }).click();
+    await articleSettings.getByLabel("Listed in").click();
     if (shot) {
       await checkpoint(team, shot, { fullPage: false });
     }
     await team.getByRole("option", { name }).click();
-    const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
-    await team.getByRole("button", { name: "Save", exact: true }).click();
-    await saved;
-    await expect(team.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+    await expect(articleSettings.getByText(description)).toBeVisible();
+    await articleSettings.getByRole("button", { name: "Save changes" }).click();
+    await expect(articleSettings).toBeHidden();
   };
-  await setListing("Unlisted", "team-docs-article-listing");
+  await setListing("Unlisted", "Anyone with the link can read it, but it's in no list or search. AI answers can cite it.", "team-docs-article-listing");
   // A listing goes live at once: it's no unpublished change.
   await expect(unpublished).toHaveCount(0);
-  await expect(team.getByText("Anyone with the link can read it, but it's in no list or search. AI answers can cite it.")).toBeVisible();
   await expect(header).toContainText("Unlisted ·");
   await checkpoint(team, "team-docs-article-unlisted");
   await visitor.goto("/docs");
@@ -338,14 +339,13 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
 
-  await setListing("Hidden");
-  await expect(team.getByText("Stays published, but isn't shown anywhere, not even at its link.")).toBeVisible();
+  await setListing("Hidden", "Stays published, but isn't shown anywhere, not even at its link.");
   await expect(header).toContainText("· Hidden");
   await checkpoint(team, "team-docs-article-hidden");
   expect((await visitor.goto("/docs/inviting-your-team"))!.status()).toBe(404);
   expect((await visitor.request.get(`${portalUrl(slug)}/docs/inviting-your-team.md`)).status()).toBe(404);
 
-  await setListing("Everywhere");
+  await setListing("Everywhere", "In your docs, search, the widget and AI answers.");
   await visitor.goto("/docs");
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
@@ -768,6 +768,60 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(cards).toHaveText([/^Endpoints/]);
 });
 
+
+test("an article's settings: its own address (the old one redirects), keywords readers search for, and a meta description", async ({
+  browser,
+}, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/articles", { title: "Inviting your team", body: "Owners send invites from the Team page." });
+  await api("/articles/inviting-your-team/publish", {});
+
+  await team.goto(`/app/${slug}/docs/inviting-your-team`);
+  await team.getByRole("button", { name: "Settings" }).click();
+  const dialog = team.getByRole("dialog", { name: "Article settings" });
+  await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
+  await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
+  await dialog.getByRole("checkbox", { name: /^Custom slug/ }).check();
+  const slugBox = dialog.getByRole("textbox", { name: "Slug" });
+  await expect(slugBox).toHaveValue("inviting-your-team");
+  // An address Tuti keeps for itself is refused, and what was typed stays.
+  await slugBox.fill("insights");
+  await dialog.getByRole("textbox", { name: "Keywords" }).fill("add a colleague, seats");
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await expect(dialog.getByText("“insights” is reserved; pick another")).toBeVisible();
+  await expect(dialog.getByRole("textbox", { name: "Keywords" })).toHaveValue("add a colleague, seats");
+  await slugBox.fill("invites");
+  await dialog.getByRole("textbox", { name: "Meta description" }).fill("Add teammates to your project, and what they can do.");
+  await checkpoint(team, "team-docs-article-settings", { fullPage: false });
+  await dialog.getByRole("button", { name: "Save changes" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/invites`);
+  await expect(team.getByRole("link", { name: `${portalUrl(slug)}/docs/invites` })).toBeVisible();
+
+  // On a phone, the dialog scrolls in the window.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.getByRole("button", { name: "Settings" }).click();
+  await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveValue("invites");
+  await expect(dialog.getByRole("textbox", { name: "Keywords" })).toHaveValue("add a colleague, seats");
+  await checkpoint(team, "team-docs-article-settings-phone", { fullPage: false });
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await team.keyboard.press("Escape");
+  await team.setViewportSize({ width: 1280, height: 720 });
+
+  // Readers find it at its new address, with its description; the old one redirects there.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/docs/inviting-your-team");
+  await expect(visitor).toHaveURL(/\/docs\/invites$/);
+  await expect(visitor.getByRole("heading", { level: 1 })).toHaveText("Inviting your team");
+  await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Add teammates to your project, and what they can do.");
+  // A word only its keywords have finds it.
+  await visitor.goto("/docs?q=colleague");
+  await expect(visitor.getByRole("main").getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Inviting your team"]);
+  await checkpoint(visitor, "portal-docs-search-by-keyword");
+});
 
 test("a visitor asks the docs' AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);

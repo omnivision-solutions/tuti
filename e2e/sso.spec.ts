@@ -169,16 +169,17 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // In the editor: "Who can read", inheriting from its collection, set to signed-in readers.
+  // In the editor's settings: "Who can read", inheriting from its collection, set to signed-in readers.
   await owner.goto(`/app/${slug}/docs/pricing`);
-  const whoCanRead = owner.getByRole("group", { name: "Who can read" });
+  await owner.getByRole("button", { name: "Settings" }).click();
+  const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
+  const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
   await expect(whoCanRead.getByRole("radio", { name: "Inherit from Basics" })).toBeChecked();
   await expect(whoCanRead).toContainText("Anyone can read it");
   await whoCanRead.getByRole("radio", { name: "Signed-in readers" }).check();
-  await whoCanRead.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-docs-article-who-can-read", { fullPage: false });
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(owner.getByText("Saved")).toBeVisible();
+  await articleSettings.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Settings saved")).toBeVisible();
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("listitem").filter({ hasText: "Pricing" }).first().getByText("Signed-in", { exact: true })).toBeVisible();
 
