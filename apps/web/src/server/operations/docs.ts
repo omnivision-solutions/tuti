@@ -1194,7 +1194,7 @@ export const deleteCollection = defineOperation({
   },
 });
 
-const tabSelect = {
+export const tabSelect = {
   id: true,
   slug: true,
   name: true,
@@ -1205,7 +1205,7 @@ const tabSelect = {
   _count: { select: { collections: true } },
 } as const;
 type TabRow = Prisma.DocsTabGetPayload<{ select: typeof tabSelect }>;
-const tabView = ({ slug, name, order, landing, landingArticle, landingCollection, _count }: TabRow) => ({
+export const tabView = ({ slug, name, order, landing, landingArticle, landingCollection, _count }: TabRow) => ({
   slug,
   name,
   order,
