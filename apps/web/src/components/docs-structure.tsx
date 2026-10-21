@@ -338,7 +338,7 @@ export function DocsStructure({
             ...(collection.parent === null
               ? tabs
                   .filter((s) => s.slug !== collection.tab)
-                  .map((s) => ({ label: `Section: ${s.name}`, move: () => move({ ...base, into: null, tab: s.slug }, `${id}-to`) }))
+                  .map((s) => ({ label: `Tab: ${s.name}`, move: () => move({ ...base, into: null, tab: s.slug }, `${id}-to`) }))
               : []),
             ...(inside.length > 0
               ? []
@@ -389,7 +389,7 @@ export function DocsStructure({
     );
 
   const tabRows = (list: StructureTab[]) => (
-    <ul aria-label="Sections" className="flex flex-col gap-2">
+    <ul aria-label="Tabs" className="flex flex-col gap-2">
       {list.map((tab, index) => {
         const id = `move-tab-${tab.slug}`;
         const over: Over = { kind: "tab", slug: tab.slug };
@@ -420,7 +420,7 @@ export function DocsStructure({
             >
               <span className="font-heading font-bold tracking-tight break-words">{tab.name}</span>
               <span className="text-xs text-muted-foreground">
-                {`Section · ${count} ${count === 1 ? "collection" : "collections"}`}
+                {`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
                 {index === 0 && uncollected.length > 0 && " · also lists the articles in no collection"}
               </span>
             </Row>

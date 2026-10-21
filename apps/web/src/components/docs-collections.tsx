@@ -108,7 +108,7 @@ export function DocsTabs({
     return null;
   }
   return (
-    <nav aria-label="Docs sections" className="flex gap-1 overflow-x-auto">
+    <nav aria-label="Docs tabs" className="flex gap-1 overflow-x-auto">
       {tabs.map((tab) => (
         <Link
           key={tab.slug}

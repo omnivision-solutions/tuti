@@ -487,7 +487,7 @@ export function CollectionDialog({
             )}
             {!collection && tabItems.length > 0 && (
               <Field>
-                <FieldLabel id="collection-tab-label">Section</FieldLabel>
+                <FieldLabel id="collection-tab-label">Tab</FieldLabel>
                 <Select name="tab" items={tabItems} defaultValue={tabItems[0].value}>
                   <SelectTrigger className="w-full" aria-labelledby="collection-tab-label">
                     <SelectValue />
@@ -500,7 +500,7 @@ export function CollectionDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s section.</FieldDescription>}
+                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s tab.</FieldDescription>}
               </Field>
             )}
           </FieldGroup>
@@ -572,7 +572,7 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
     const result = await saveTab(projectSlug, tab?.slug ?? null, prev, formData);
     if (!result.error) {
       setOpen(false);
-      toast.success(tab ? "Section saved" : "Section added");
+      toast.success(tab ? "Tab saved" : "Tab added");
     }
     return result;
   }, {});
@@ -580,15 +580,15 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Rename ${tab.name}` : undefined} />}>
-        {tab ? "Rename" : "New section"}
+        {tab ? "Rename" : "New tab"}
       </DialogTrigger>
       <DialogContent>
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{tab ? "Rename section" : "New section"}</DialogTitle>
+            <DialogTitle>{tab ? "Rename tab" : "New tab"}</DialogTitle>
             {!tab && (
               <DialogDescription>
-                Sections are tabs at the top of your docs, each with its own collections
+                Tabs sit at the top of your docs, each with its own collections
                 {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
               </DialogDescription>
             )}
@@ -610,7 +610,7 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {tab ? "Save" : "Add section"}
+              {tab ? "Save" : "Add tab"}
             </Button>
           </DialogFooter>
         </form>
@@ -641,7 +641,7 @@ export function DeleteTabButton({
           <AlertDialogDescription>
             {movesTo
               ? `Its collections move to ${movesTo}, with their articles.`
-              : "It's the last section, so your docs go back to one page with all your collections."}
+              : "It's the last tab, so your docs go back to one page with all your collections."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

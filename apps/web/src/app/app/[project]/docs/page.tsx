@@ -135,7 +135,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         <CardHeader>
           <CardTitle id="docs-collections">Collections</CardTitle>
           <CardDescription>
-            Group articles by topic, with collections inside collections if you need them, and sections for tabs above them. Your docs
+            Group articles by topic, with collections inside collections if you need them, and tabs above them. Your docs
             list them in this order: drag them into place, or use the arrows.
           </CardDescription>
           <CardAction className="flex flex-wrap justify-end gap-2">

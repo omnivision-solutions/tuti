@@ -420,12 +420,12 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const structure = team.getByRole("region", { name: "Collections" });
   // A list's own rows (not the ones nested in them).
   const rows = (name: string) => structure.getByRole("list", { name, exact: true }).locator(":scope > li");
-  await team.getByRole("button", { name: "New section" }).click();
+  await team.getByRole("button", { name: "New tab" }).click();
   const dialog = team.getByRole("dialog");
   await expect(dialog).toContainText("Your collections go in this first one");
   await dialog.getByLabel("Name").fill("Guides");
-  await dialog.getByRole("button", { name: "Add section" }).click();
-  await expect(team.getByText("Section added")).toBeVisible();
+  await dialog.getByRole("button", { name: "Add tab" }).click();
+  await expect(team.getByText("Tab added")).toBeVisible();
   await expect(rows("Collections in Guides")).toHaveText([
     /^Getting started/,
     /^Billing/,
@@ -433,18 +433,18 @@ test("the team splits the docs into tabs: the first takes the collections, other
     /^Webhooks/,
   ]);
 
-  await team.getByRole("button", { name: "New section" }).click();
+  await team.getByRole("button", { name: "New tab" }).click();
   await expect(dialog).not.toContainText("Your collections go in this first one");
   await dialog.getByLabel("Name").fill("API");
-  await dialog.getByRole("button", { name: "Add section" }).click();
+  await dialog.getByRole("button", { name: "Add tab" }).click();
   // The first one's toast may still be up: the new row says it's done.
-  await expect(rows("Sections")).toHaveText([/^Guides/, /^API/]);
+  await expect(rows("Tabs")).toHaveText([/^Guides/, /^API/]);
 
   // Endpoints to API from its menu, with the keyboard; Webhooks dragged onto API's row.
   const moveTo = structure.getByRole("button", { name: "Move Endpoints to…" });
   await moveTo.focus();
   await team.keyboard.press("Enter");
-  await team.getByRole("menuitem", { name: "Section: API" }).press("Enter");
+  await team.getByRole("menuitem", { name: "Tab: API" }).press("Enter");
   await expect(team.getByText("Endpoints moved")).toBeVisible();
   await expect(moveTo).toBeFocused();
   const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
@@ -457,7 +457,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   // A new collection goes in the tab picked.
   await team.getByRole("button", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Errors");
-  await dialog.getByLabel("Section").click();
+  await dialog.getByLabel("Tab").click();
   await team.getByRole("option", { name: "API" }).click();
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
@@ -466,18 +466,18 @@ test("the team splits the docs into tabs: the first takes the collections, other
   // API first, then renamed.
   await structure.getByRole("button", { name: "Move API up" }).click();
   await expect(team.getByText("API moved")).toBeVisible();
-  await expect(rows("Sections")).toHaveText([/^API/, /^Guides/]);
+  await expect(rows("Tabs")).toHaveText([/^API/, /^Guides/]);
   await structure.getByRole("button", { name: "Rename API" }).click();
   await dialog.getByLabel("Name").fill("API reference");
   await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(team.getByText("Section saved")).toBeVisible();
+  await expect(team.getByText("Tab saved")).toBeVisible();
   await checkpoint(team, "team-docs-tabs");
 
   // Readers get a tab for each one with something to read, the first open; an article leads back to its tab.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  const docsTabs = main.getByRole("navigation", { name: "Docs sections" });
+  const docsTabs = main.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
@@ -494,7 +494,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
 
   // The widget's Docs tab has the same tabs, at panel size.
   await visitor.goto("/widget?tab=docs");
-  const panelTabs = visitor.getByRole("navigation", { name: "Docs sections" });
+  const panelTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await panelTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
