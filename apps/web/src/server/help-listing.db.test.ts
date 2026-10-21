@@ -16,9 +16,9 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { saveArticle } from "./help";
-import { helpCenter, publishedArticle } from "./help-queries";
+import { docsContents, publishedArticle } from "./help-queries";
 import { answerArticle, countArticleView } from "./help-readers";
-import { answerSections, searchHelp } from "./help-search";
+import { answerSections, searchDocs } from "./help-search";
 import { createArticle, getArticle, listArticles, publishArticle, searchArticles, updateArticle } from "./operations/help";
 import { answerQuestion } from "./operations/help-ask";
 import { call } from "./operations/run";
@@ -105,7 +105,7 @@ const params = (more: object = {}) => ({ params: Promise.resolve({ project: proj
 
 describe("the portal", () => {
   test("/help (and the widget's list) shows articles listed everywhere", async () => {
-    const { collections, uncollected } = await helpCenter(project.slug);
+    const { collections, uncollected } = await docsContents(project.slug);
     expect(sorted([...collections.flatMap((c) => c.articles), ...uncollected].map((a) => a.slug))).toEqual(expected("listed"));
   });
 
@@ -155,11 +155,11 @@ describe("the portal", () => {
 describe("search and AI answers", () => {
   test("search by words finds articles listed everywhere", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
-    expect(sorted((await searchHelp(project.id, "zebra", 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
+    expect(sorted((await searchDocs(project.id, "zebra", 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
   });
 
   test("search by meaning finds articles listed everywhere, and so does articles.search", async () => {
-    expect(sorted((await searchHelp(project.id, QUESTION, 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
+    expect(sorted((await searchDocs(project.id, QUESTION, 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
     expect(sorted((await call(searchArticles, as(visitor), { q: QUESTION })).results.map((r) => r.slug))).toEqual(expected("listed"));
   });
 
@@ -235,12 +235,12 @@ describe("the API, the widget and the export", () => {
         }
       };
       walk((await WidgetPage({ ...params(), searchParams: Promise.resolve(searchParams) } as never)) as ReactNode);
-      return hrefs.includes("/widget?tab=help");
+      return hrefs.includes("/widget?tab=docs");
     };
     expect(await tabs()).toBe(true);
     await call(updateArticle, as(owner), { slug: slugOf("everywhere"), listing: "unlisted" });
     expect(await tabs()).toBe(false);
-    expect(await tabs({ tab: "help", article: slugOf("unlisted") })).toBe(true);
+    expect(await tabs({ tab: "docs", article: slugOf("unlisted") })).toBe(true);
   });
 
   test("the export has every listing, each saying which", async () => {

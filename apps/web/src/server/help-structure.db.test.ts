@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { collectionOptions, helpCenter } from "./help-queries";
+import { collectionOptions, docsContents } from "./help-queries";
 import {
   createArticle,
   createCollection,
@@ -226,7 +226,7 @@ describe("readers", () => {
     await call(reorderArticle, as(), { slug: "inviting-your-team", position: 0 });
 
     const link = (slug: string, title: string) => ({ slug, title });
-    expect(await helpCenter(project.slug)).toEqual({
+    expect(await docsContents(project.slug)).toEqual({
       collections: [
         {
           slug: "billing",
@@ -245,8 +245,8 @@ describe("readers", () => {
         },
       ],
       uncollected: [],
-      // No sections: one page.
-      sections: [],
+      // No tabs: one page.
+      tabs: [],
     });
 
     const portal = `http://${project.slug}.localhost:3100`;

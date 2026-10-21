@@ -10,12 +10,12 @@ import { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { WidgetHelp } from "@/components/widget-help";
+import { WidgetDocs } from "@/components/widget-help";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { discardArticleChanges, publishArticleChanges, saveArticle } from "./help";
-import { helpCenter, publishedArticle } from "./help-queries";
-import { answerSections, searchHelp } from "./help-search";
+import { docsContents, publishedArticle } from "./help-queries";
+import { answerSections, searchDocs } from "./help-search";
 import {
   createArticle,
   deleteArticle,
@@ -87,24 +87,24 @@ const texts = (node: ReactNode): string[] =>
 async function readers() {
   const request = new Request("http://x");
   const article = await publishedArticle(project.slug, SLUG);
-  const { collections } = await helpCenter(project.slug);
-  // The widget's article view (WidgetHelp hands it to WidgetArticle, rendered here).
-  const widget = (await WidgetHelp({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG, hasBoard: true })) as ReactElement<object>;
+  const { collections } = await docsContents(project.slug);
+  // The widget's article view (WidgetDocs hands it to WidgetArticle, rendered here).
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG, hasBoard: true })) as ReactElement<object>;
   const widgetArticle = await (widget.type as (props: object) => Promise<ReactNode>)(widget.props);
   const sections = await answerSections(project.id, QUESTION, 10, [], 3000);
   return {
     page: article && { title: article.title, body: article.body, collection: article.collection?.name, updated: article.updatedAt !== null },
     metadata: (await generateMetadata(params({ slug: SLUG }) as never)).title,
     md: await (await markdown(request, params({ slug: SLUG }) as never)).text(),
-    helpCenter: collections.map((c) => [c.name, c.articles.map((a) => a.title)]),
+    docsContents: collections.map((c) => [c.name, c.articles.map((a) => a.title)]),
     llms: (await (await llms(request, params() as never)).text()).includes(OLD.title),
     sitemap: await (await sitemap(request, params() as never)).text(),
     widget: texts(widgetArticle).includes(OLD.title),
     searchByWords: {
-      old: (await searchHelp(project.id, "zebra", 10, [])).map((r) => r.title),
-      new: (await searchHelp(project.id, "quokka", 10, [])).map((r) => r.title),
+      old: (await searchDocs(project.id, "zebra", 10, [])).map((r) => r.title),
+      new: (await searchDocs(project.id, "quokka", 10, [])).map((r) => r.title),
     },
-    searchByMeaning: (await searchHelp(project.id, QUESTION, 10, [])).map((r) => r.snippet),
+    searchByMeaning: (await searchDocs(project.id, QUESTION, 10, [])).map((r) => r.snippet),
     ai: sections?.map((s) => [s.title, s.text]),
     api: await call(getArticle, as(await signUp()), { slug: SLUG }).then(({ title, body }) => ({ title, body }), () => null),
     apiList: (await call(listArticles, as(await signUp()), {})).articles.map((a) => [a.title, "changes" in a]),
@@ -122,7 +122,7 @@ describe("saving a published article", () => {
       page: { ...OLD, collection: "Basics", updated: false },
       metadata: `${OLD.title} · ${project.name}`,
       md: `# ${OLD.title}\n\n${OLD.body}\n`,
-      helpCenter: [["Basics", [OLD.title]]],
+      docsContents: [["Basics", [OLD.title]]],
       llms: true,
       widget: true,
       searchByWords: { old: [OLD.title], new: [] },
@@ -185,7 +185,7 @@ describe("publishing and discarding", () => {
     expect(await readers()).toMatchObject({
       page: { ...NEW, collection: undefined, updated: true },
       md: `# ${NEW.title}\n\n${NEW.body}\n`,
-      helpCenter: [],
+      docsContents: [],
       llms: false,
       widget: false,
       searchByWords: { old: [], new: [NEW.title] },
@@ -268,7 +268,7 @@ describe("unpublishing, deleting and restoring", () => {
   test("unpublishing makes the changes the draft's text, none of it live", async () => {
     await edit();
     expect(await call(unpublishArticle, as(owner), { slug: SLUG })).toMatchObject({ ...NEW, slug: SLUG, status: "draft", changes: null });
-    expect(await readers()).toMatchObject({ page: null, helpCenter: [], searchByWords: { old: [], new: [] }, searchByMeaning: [], ai: [] });
+    expect(await readers()).toMatchObject({ page: null, docsContents: [], searchByWords: { old: [], new: [] }, searchByMeaning: [], ai: [] });
     // The history is unchanged: the changes were already its newest version.
     expect((await call(listRevisions, as(owner), { slug: SLUG })).revisions.map((r) => r.title)).toEqual([NEW.title, OLD.title]);
     // Published again, it's that text.

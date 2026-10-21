@@ -3,7 +3,7 @@ import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILA
 
 import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
 
-export type HelpSearchResult = { slug: string; title: string; snippet: string };
+export type DocsSearchResult = { slug: string; title: string; snippet: string };
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
@@ -18,13 +18,13 @@ const SEARCH_EMBED_TIMEOUT_MS = 2000;
  * terms, articles not embedded yet, and everything while OpenAI is down or slow.
  * Only articles readers with `groups` may read (null: the team, everything).
  */
-export async function searchHelp(
+export async function searchDocs(
   projectId: string,
   query: string,
   limit: number,
   groups: ReaderGroups,
   embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
-): Promise<HelpSearchResult[]> {
+): Promise<DocsSearchResult[]> {
   const [byMeaning, byWords] = await Promise.all([
     embeddingsEnabled() ? meaningMatches(projectId, query, limit, groups, embedTimeoutMs) : [],
     wordMatches(projectId, query, limit, groups),
@@ -52,7 +52,7 @@ function logSearch(projectId: string, query: string, results: number) {
     .catch((error: unknown) => log.warn("Logging a help search failed", { projectId, error }));
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number, groups: ReaderGroups, timeoutMs: number): Promise<HelpSearchResult[]> {
+async function meaningMatches(projectId: string, query: string, limit: number, groups: ReaderGroups, timeoutMs: number): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
@@ -115,7 +115,7 @@ export async function answerSections(
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if help centers get big.
-async function wordMatches(projectId: string, query: string, limit: number, groups: ReaderGroups): Promise<HelpSearchResult[]> {
+async function wordMatches(projectId: string, query: string, limit: number, groups: ReaderGroups): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut.
   const rows = await prisma.$queryRaw<{ slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean }[]>`
     SELECT a.slug, a.title, h.passage,

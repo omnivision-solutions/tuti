@@ -45,11 +45,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "articles.get": () => ({ slug: "matrix-article" }),
   "articles.search": () => ({ q: "matrix" }),
   "articles.feedback": () => ({ slug: "matrix-article", helpful: false, comment: "From the matrix", author: { id: "matrix-reader" } }),
-  "help.insights": () => ({}),
-  "help.dismissGap": () => ({ question: "How do I invite?" }),
-  "help.ask": () => ({ q: "How do I invite my team?" }),
+  "docs.insights": () => ({}),
+  "docs.dismissGap": () => ({ question: "How do I invite?" }),
+  "docs.ask": () => ({ q: "How do I invite my team?" }),
   // A question the read and write key asked (another key's question is refused: see help-escalate.db.test.ts).
-  "help.escalate": (f) => ({ questionId: f.questionId, email: `e2e-${crypto.randomUUID()}@example.com`, note: "From the matrix" }),
+  "docs.escalate": (f) => ({ questionId: f.questionId, email: `e2e-${crypto.randomUUID()}@example.com`, note: "From the matrix" }),
   "assistant.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "assistant.update": () => ({ tone: "Plain", length: "short", instructions: "Say hi", offLimits: ["refund"] }),
@@ -68,11 +68,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "collections.update": () => ({ slug: "basics", name: "The basics", parent: "guides" }),
   "collections.reorder": () => ({ slug: "guides", parent: "basics", position: 0 }),
   "collections.delete": () => ({ slug: "basics" }),
-  "sections.list": () => ({}),
-  "sections.create": () => ({ name: "API" }),
-  "sections.update": () => ({ slug: "docs", name: "Documentation" }),
-  "sections.reorder": () => ({ slug: "docs", position: 0 }),
-  "sections.delete": () => ({ slug: "docs" }),
+  "tabs.list": () => ({}),
+  "tabs.create": () => ({ name: "API" }),
+  "tabs.update": () => ({ slug: "docs", name: "Documentation" }),
+  "tabs.reorder": () => ({ slug: "docs", position: 0 }),
+  "tabs.delete": () => ({ slug: "docs" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -158,7 +158,7 @@ async function createFixture() {
       { projectId: project.id, number: 2, title: "Matrix draft", body: "Shipped" },
     ],
   });
-  // A section, a collection in it, a published article in that and a draft.
+  // A tab, a collection in it, a published article in that and a draft.
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
@@ -174,7 +174,7 @@ async function createFixture() {
   // A reader, to remove.
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
-  // A section with both collections in it.
+  // A tab with both collections in it.
   const docs = await prisma.docsTab.create({ data: { projectId: project.id, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", tabId: docs.id } });
   // Another, to move one into the other.
@@ -230,7 +230,7 @@ async function createFixture() {
   // "Ask a person" is on, and the read and write key just got "I don't know".
   await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
   const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
-  // One at a time: questions count against help.ask's hourly limit per key.
+  // One at a time: questions count against docs.ask's hourly limit per key.
   await prisma.docsQuestion.deleteMany({ where: { projectId: project.id } });
   const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: writeKey.id, question: "Can I pay with crypto?", source: "API", status: "NO_ANSWER" },
@@ -312,8 +312,8 @@ test("every operation is in this matrix", () => {
 test.each(operations.map((operation) => ({ name: operation.name, operation })))("$name", async ({ operation }) => {
   const input = () => cases[operation.name as OperationName](fixture);
   let fixture = await createFixture();
-  // AI answers need embeddings: on for help.ask only. Nothing is close to its question, so the model isn't asked.
-  vi.stubEnv("OPENAI_API_KEY", operation.name === "help.ask" ? FAKE_OPENAI_KEY : "");
+  // AI answers need embeddings: on for docs.ask only. Nothing is close to its question, so the model isn't asked.
+  vi.stubEnv("OPENAI_API_KEY", operation.name === "docs.ask" ? FAKE_OPENAI_KEY : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();
@@ -336,7 +336,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
   }
-  if (operation.name === "help.escalate") {
+  if (operation.name === "docs.escalate") {
     model.reply("They want to pay with crypto.");
   }
   expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });

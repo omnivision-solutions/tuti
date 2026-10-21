@@ -12,14 +12,14 @@ import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-gro
 
 import { attachMedia, displayDoc, readContent } from "../content";
 import { inTreeOrder, listedArticle, readingOrder } from "../help-queries";
-import { searchHelp } from "../help-search";
+import { searchDocs } from "../help-search";
 import { actorGroups } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
-/** The help center (Phase 10): articles the team writes, grouped in collections, published on the portal's /help. */
+/** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
 
 export const MAX_ARTICLE_LENGTH = 50_000;
 /**
@@ -189,7 +189,7 @@ async function freeSlug(
 }
 
 // Deleted articles don't hold on to their slugs (a restored one takes the next free one if its own is gone).
-// "new" and "insights" are the team's pages under /app/<project>/help, and /docs/api is the API
+// "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
 // reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
 const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
   freeSlug(
@@ -208,8 +208,8 @@ const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, nam
     tx.collection.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
   );
 
-const freeSectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
-  freeSlug(name, "section", (prefix) =>
+const freeTabSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
+  freeSlug(name, "tab", (prefix) =>
     tx.docsTab.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
   );
 
@@ -403,7 +403,7 @@ export function articleRevisions(articleId: string) {
 export const listArticles = defineOperation({
   name: "articles.list",
   summary:
-    "List help center articles by title: published ones (listed everywhere; the team sees every listing), the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
+    "List docs articles by title: published ones (listed everywhere; the team sees every listing), the team's drafts (latest edited first), or deleted ones the team can still restore (latest deleted first)",
   method: "GET",
   path: "/articles",
   scope: "read",
@@ -447,7 +447,7 @@ export const listArticles = defineOperation({
 export const getArticle = defineOperation({
   name: "articles.get",
   summary:
-    "Get a help center article by its slug (drafts, hidden and AI-only articles only for the team). The team also gets its unpublished `changes`",
+    "Get a docs article by its slug (drafts, hidden and AI-only articles only for the team). The team also gets its unpublished `changes`",
   method: "GET",
   path: "/articles/{slug}",
   scope: "read",
@@ -469,7 +469,7 @@ export const getArticle = defineOperation({
 
 export const searchArticles = defineOperation({
   name: "articles.search",
-  summary: "Search the published help center articles: best matches first, each with the passage that matched",
+  summary: "Search the published docs articles: best matches first, each with the passage that matched",
   method: "GET",
   path: "/search/articles",
   scope: "read",
@@ -480,14 +480,14 @@ export const searchArticles = defineOperation({
   }),
   example: { q: "invite my team", limit: 5 },
   run: async ({ actor, projectId }, input) => {
-    const [results, portal] = await Promise.all([searchHelp(projectId, input.q, input.limit, await actorGroups(actor, projectId)), portalOf(projectId)]);
+    const [results, portal] = await Promise.all([searchDocs(projectId, input.q, input.limit, await actorGroups(actor, projectId)), portalOf(projectId)]);
     return { results: results.map((result) => ({ ...result, url: `${portal}/docs/${result.slug}` })) };
   },
 });
 
 export const createArticle = defineOperation({
   name: "articles.create",
-  summary: "Write a help center article (a draft until it's published); its slug comes from the title",
+  summary: "Write a docs article (a draft until it's published); its slug comes from the title",
   method: "POST",
   path: "/articles",
   scope: "write",
@@ -529,7 +529,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a help center article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing and showUpdatedDate change at once",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing and showUpdatedDate change at once",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -576,7 +576,7 @@ export const updateArticle = defineOperation({
 
 export const listRevisions = defineOperation({
   name: "articles.revisions",
-  summary: `A help center article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT} are kept)`,
+  summary: `A docs article's saved versions, newest (the current one) first, with who saved each and its text (the latest ${ARTICLE_REVISIONS_KEPT} are kept)`,
   method: "GET",
   path: "/articles/{slug}/revisions",
   scope: "read",
@@ -601,7 +601,7 @@ export const listRevisions = defineOperation({
 
 export const restoreArticle = defineOperation({
   name: "articles.restore",
-  summary: `Restore a help center article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
+  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
   method: "POST",
   path: "/articles/{slug}/restore",
   scope: "write",
@@ -664,7 +664,7 @@ export const restoreArticle = defineOperation({
 
 export const publishArticle = defineOperation({
   name: "articles.publish",
-  summary: "Publish a help center article on the portal",
+  summary: "Publish a docs article on the portal",
   method: "POST",
   path: "/articles/{slug}/publish",
   scope: "write",
@@ -707,7 +707,7 @@ async function checkSavedAt(tx: Prisma.TransactionClient, articleId: string, sav
 export const publishChanges = defineOperation({
   name: "articles.publishChanges",
   summary:
-    "Publish a help center article's unpublished `changes` (see articles.update): readers, search and AI answers get them. Without changes it does nothing",
+    "Publish a docs article's unpublished `changes` (see articles.update): readers, search and AI answers get them. Without changes it does nothing",
   method: "POST",
   path: "/articles/{slug}/publish-changes",
   scope: "write",
@@ -736,7 +736,7 @@ export const publishChanges = defineOperation({
 export const discardChanges = defineOperation({
   name: "articles.discardChanges",
   summary:
-    "Drop a help center article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions). Without changes it does nothing",
+    "Drop a docs article's unpublished `changes`: it's back to the published version (saved as a new version, so the changes stay in articles.revisions). Without changes it does nothing",
   method: "POST",
   path: "/articles/{slug}/discard-changes",
   scope: "write",
@@ -760,7 +760,7 @@ export const discardChanges = defineOperation({
 
 export const unpublishArticle = defineOperation({
   name: "articles.unpublish",
-  summary: "Take a help center article off the portal (back to a draft, with its unpublished changes as the draft's text)",
+  summary: "Take a docs article off the portal (back to a draft, with its unpublished changes as the draft's text)",
   method: "POST",
   path: "/articles/{slug}/unpublish",
   scope: "write",
@@ -785,7 +785,7 @@ export const unpublishArticle = defineOperation({
 
 export const deleteArticle = defineOperation({
   name: "articles.delete",
-  summary: `Delete a help center article; the team can restore it (with articles.restore) for ${DELETED_ARTICLE_DAYS} days`,
+  summary: `Delete a docs article; the team can restore it (with articles.restore) for ${DELETED_ARTICLE_DAYS} days`,
   method: "DELETE",
   path: "/articles/{slug}",
   scope: "write",
@@ -812,7 +812,7 @@ const position = z.number().int().min(0).max(10_000);
 export const reorderArticle = defineOperation({
   name: "articles.reorder",
   summary:
-    "Move a help center article within its collection, or into another (`collection`, null for none), at `position` (0 first; left out, last); the others keep their order around it. Readers list articles in this order. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
+    "Move a docs article within its collection, or into another (`collection`, null for none), at `position` (0 first; left out, last); the others keep their order around it. Readers list articles in this order. A move to another collection goes live at once, on a published article too (its unpublished changes move with it), and is kept as a version",
   method: "POST",
   path: "/articles/{slug}/reorder",
   scope: "write",
@@ -869,14 +869,14 @@ const collectionView = ({ slug, name, description, order, parent, tab, groups, _
   groups,
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
-  /** The section it's in (a collection in another is in its parent's), or null if the help center has no sections. */
-  section: (parent ? parent.tab : tab)?.slug ?? null,
+  /** The tab it's in (a collection in another is in its parent's), or null if the docs have no tabs. */
+  tab: (parent ? parent.tab : tab)?.slug ?? null,
   order,
   articles: _count.articles,
 });
 
 const siblingOrder: Prisma.CollectionOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
-const sectionOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
+const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
 
 /** Collection `slug`, read under the project's lock (it may have been renamed or deleted since the caller looked). */
 async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
@@ -923,12 +923,12 @@ async function parentFor(
   return parent.id;
 }
 
-/** The collections in `parentId`, or at the top level (`parentId` null) in section `tabId`. */
+/** The collections in `parentId`, or at the top level (`parentId` null) in tab `tabId`. */
 const siblingsWhere = (projectId: string, parentId: string | null, tabId: string | null): Prisma.CollectionWhereInput =>
   parentId === null ? { projectId, parentId, tabId } : { projectId, parentId };
 
 /**
- * Puts collection `id` in `parentId` (or at the top level of section `tabId`, when `parentId`
+ * Puts collection `id` in `parentId` (or at the top level of tab `tabId`, when `parentId`
  * is null) at `position` among the collections there (see `placed`). Call it with the project locked.
  */
 async function placeCollection(
@@ -944,57 +944,57 @@ async function placeCollection(
   await renumber(tx, "collection", placed(siblings, id, at));
 }
 
-/** The project's sections in order. Read with the project locked when the answer decides where something goes. */
-const sectionsOf = (tx: Prisma.TransactionClient, projectId: string) =>
-  tx.docsTab.findMany({ where: { projectId }, orderBy: sectionOrder, select: { id: true, slug: true, name: true } });
+/** The project's tabs in order. Read with the project locked when the answer decides where something goes. */
+const tabsOf = (tx: Prisma.TransactionClient, projectId: string) =>
+  tx.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: { id: true, slug: true, name: true } });
 
 /**
- * The section a collection at the top level goes in: section `slug` if one is named (only at the
+ * The tab a collection at the top level goes in: tab `slug` if one is named (only at the
  * top level: one inside another is in its parent's), else `fallback`, else the first one (null when
- * the help center has none). Call it with the project locked.
+ * the docs have none). Call it with the project locked.
  */
-async function sectionFor(
+async function tabFor(
   tx: Prisma.TransactionClient,
   projectId: string,
   { slug, parentId, fallback }: { slug: string | undefined; parentId: string | null; fallback?: string | null },
 ) {
   if (parentId !== null) {
     if (slug !== undefined) {
-      throw new OperationError(400, "invalid_input", "A collection inside another is in that one's section, so it can't have its own");
+      throw new OperationError(400, "invalid_input", "A collection inside another is in that one's tab, so it can't have its own");
     }
     return null;
   }
-  const sections = await sectionsOf(tx, projectId);
+  const tabs = await tabsOf(tx, projectId);
   if (slug !== undefined) {
-    const section = sections.find((s) => s.slug === slug);
-    if (!section) {
-      throw new OperationError(400, "invalid_input", `There's no section “${slug}”`);
+    const tab = tabs.find((s) => s.slug === slug);
+    if (!tab) {
+      throw new OperationError(400, "invalid_input", `There's no tab “${slug}”`);
     }
-    return section.id;
+    return tab.id;
   }
-  return sections.find((s) => s.id === fallback)?.id ?? sections[0]?.id ?? null;
+  return tabs.find((s) => s.id === fallback)?.id ?? tabs[0]?.id ?? null;
 }
 
 /**
  * Where collection `collection` goes for `parent` (null: the top level; undefined: where it is) and
- * `section`: at the top level, the named section, else the one it's in (or its parent's, coming out
+ * `tab`: at the top level, the named tab, else the one it's in (or its parent's, coming out
  * of it). Call it with the project locked.
  */
 async function placeFor(
   tx: Prisma.TransactionClient,
   projectId: string,
   collection: Awaited<ReturnType<typeof lockedCollection>>,
-  input: { parent?: string | null; section?: string },
+  input: { parent?: string | null; tab?: string },
 ) {
   const parentId = input.parent === undefined ? collection.parentId : await parentFor(tx, projectId, collection, input.parent);
   const fallback = collection.parentId === null ? collection.tabId : (collection.parent?.tabId ?? null);
-  return { parentId, tabId: await sectionFor(tx, projectId, { slug: input.section, parentId, fallback }) };
+  return { parentId, tabId: await tabFor(tx, projectId, { slug: input.tab, parentId, fallback }) };
 }
 
 export const listCollections = defineOperation({
   name: "collections.list",
   summary:
-    "List the help center's collections in order (by section, each top-level one, then the ones in it), with the collection each is in (`parent`), its section and how many articles each has",
+    "List the docs' collections in order (by tab, each top-level one, then the ones in it), with the collection each is in (`parent`), its tab and how many articles each has",
   method: "GET",
   path: "/collections",
   scope: "read",
@@ -1009,7 +1009,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a help center collection, at the top level (in `section`; left out, the first one, if the help center has sections) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1019,7 +1019,7 @@ export const createCollection = defineOperation({
     description: collectionFields.description.default(""),
     groups: collectionFields.groups.default([]),
     parent: slug.nullable().optional(),
-    section: slug.optional(),
+    tab: slug.optional(),
   }),
   example: { name: "Getting started", description: "The basics, in five minutes." },
   run: async ({ projectId }, input) =>
@@ -1027,7 +1027,7 @@ export const createCollection = defineOperation({
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
-        const tabId = await sectionFor(tx, projectId, { slug: input.section, parentId });
+        const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
         const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
         return tx.collection.create({
           data: {
@@ -1049,7 +1049,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a help center collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another section (`section`, at the top level), set who may read it (`groups`: reader groups from your app's SSO token; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: reader groups from your app's SSO token; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1060,7 +1060,7 @@ export const updateCollection = defineOperation({
     description: collectionFields.description.optional(),
     groups: collectionFields.groups.optional(),
     parent: slug.nullable().optional(),
-    section: slug.optional(),
+    tab: slug.optional(),
     order: position.optional(),
   }),
   example: { name: "Basics", parent: null },
@@ -1070,7 +1070,7 @@ export const updateCollection = defineOperation({
         await lockProject(tx, projectId);
         const collection = await lockedCollection(tx, projectId, input.slug);
         const { id } = collection;
-        if (input.parent !== undefined || input.section !== undefined) {
+        if (input.parent !== undefined || input.tab !== undefined) {
           const place = await placeFor(tx, projectId, collection, input);
           if (place.parentId !== collection.parentId || place.tabId !== collection.tabId) {
             await placeCollection(tx, projectId, id, place);
@@ -1093,12 +1093,12 @@ export const updateCollection = defineOperation({
 export const reorderCollection = defineOperation({
   name: "collections.reorder",
   summary:
-    "Move a help center collection among its siblings, into another collection (`parent`, null for the top level; 2 levels deep at most) or to another section (`section`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
+    "Move a docs collection among its siblings, into another collection (`parent`, null for the top level; 2 levels deep at most) or to another tab (`tab`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
   method: "POST",
   path: "/collections/{slug}/reorder",
   scope: "write",
   access: "team",
-  input: z.object({ slug, parent: slug.nullable().optional(), section: slug.optional(), position: position.optional() }),
+  input: z.object({ slug, parent: slug.nullable().optional(), tab: slug.optional(), position: position.optional() }),
   example: { parent: null, position: 0 },
   run: async ({ projectId }, input) =>
     collectionView(
@@ -1113,7 +1113,7 @@ export const reorderCollection = defineOperation({
 
 export const deleteCollection = defineOperation({
   name: "collections.delete",
-  summary: "Delete a help center collection; the collections in it move up a level, in its place, and its articles stay, without a collection",
+  summary: "Delete a docs collection; the collections in it move up a level, in its place, and its articles stay, without a collection",
   method: "DELETE",
   path: "/collections/{slug}",
   scope: "write",
@@ -1131,7 +1131,7 @@ export const deleteCollection = defineOperation({
           orderBy: siblingOrder,
           select: { id: true },
         });
-        // Only a top-level collection has some in it, so they come up to the top level, in its section.
+        // Only a top-level collection has some in it, so they come up to the top level, in its tab.
         await tx.collection.updateMany({ where: { parentId: collection.id }, data: { parentId: collection.parentId, tabId: collection.tabId } });
         await renumber(
           tx,
@@ -1152,118 +1152,118 @@ export const deleteCollection = defineOperation({
   },
 });
 
-const sectionSelect = { id: true, slug: true, name: true, order: true, _count: { select: { collections: true } } } as const;
-type SectionRow = Prisma.DocsTabGetPayload<{ select: typeof sectionSelect }>;
-const sectionView = ({ slug, name, order, _count }: SectionRow) => ({
+const tabSelect = { id: true, slug: true, name: true, order: true, _count: { select: { collections: true } } } as const;
+type TabRow = Prisma.DocsTabGetPayload<{ select: typeof tabSelect }>;
+const tabView = ({ slug, name, order, _count }: TabRow) => ({
   slug,
   name,
   order,
   /** Its top-level collections (each with the ones in it). */
   collections: _count.collections,
 });
-const sectionName = z.string().trim().min(1, "Name is required").max(40);
+const tabName = z.string().trim().min(1, "Name is required").max(40);
 
-/** Section `slug`, read under the project's lock. */
-async function lockedSection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
-  const section = await tx.docsTab.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true } });
-  if (!section) {
-    throw new OperationError(404, "not_found", `There's no section “${slug}”`);
+/** Tab `slug`, read under the project's lock. */
+async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: string) {
+  const tab = await tx.docsTab.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true } });
+  if (!tab) {
+    throw new OperationError(404, "not_found", `There's no tab “${slug}”`);
   }
-  return section;
+  return tab;
 }
 
-export const listSections = defineOperation({
-  name: "sections.list",
+export const listTabs = defineOperation({
+  name: "tabs.list",
   summary:
-    "List the help center's sections in order: readers see each as a tab, with its collections. Without sections, the help center is one page",
+    "List the docs' tabs in order, each with its collections. Without tabs, the docs are one page",
   method: "GET",
-  path: "/sections",
+  path: "/tabs",
   scope: "read",
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => ({
-    sections: (await prisma.docsTab.findMany({ where: { projectId }, orderBy: sectionOrder, select: sectionSelect })).map(sectionView),
+    tabs: (await prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: tabSelect })).map(tabView),
   }),
 });
 
-export const createSection = defineOperation({
-  name: "sections.create",
+export const createTab = defineOperation({
+  name: "tabs.create",
   summary:
-    "Add a help center section (a tab for readers), after the others; its slug comes from the name. The first one takes every top-level collection: once there are sections, each top-level collection is in one",
+    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one",
   method: "POST",
-  path: "/sections",
+  path: "/tabs",
   scope: "write",
   access: "team",
-  input: z.object({ name: sectionName }),
+  input: z.object({ name: tabName }),
   example: { name: "Guides" },
   run: async ({ projectId }, input) =>
-    sectionView(
+    tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const last = await tx.docsTab.aggregate({ where: { projectId }, _max: { order: true } });
-        const section = await tx.docsTab.create({
-          data: { projectId, slug: await freeSectionSlug(tx, projectId, input.name), name: input.name, order: (last._max.order ?? -1) + 1 },
+        const tab = await tx.docsTab.create({
+          data: { projectId, slug: await freeTabSlug(tx, projectId, input.name), name: input.name, order: (last._max.order ?? -1) + 1 },
           select: { id: true },
         });
-        // The first section: the collections there are go in it, in their order.
+        // The first tab: the collections there are go in it, in their order.
         if (last._max.order === null) {
-          await tx.collection.updateMany({ where: { projectId, parentId: null }, data: { tabId: section.id } });
+          await tx.collection.updateMany({ where: { projectId, parentId: null }, data: { tabId: tab.id } });
         }
-        return tx.docsTab.findUniqueOrThrow({ where: { id: section.id }, select: sectionSelect });
+        return tx.docsTab.findUniqueOrThrow({ where: { id: tab.id }, select: tabSelect });
       }),
     ),
 });
 
-export const updateSection = defineOperation({
-  name: "sections.update",
-  summary: "Rename a help center section; its slug follows the name",
+export const updateTab = defineOperation({
+  name: "tabs.update",
+  summary: "Rename a docs tab; its slug follows the name",
   method: "PATCH",
-  path: "/sections/{slug}",
+  path: "/tabs/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug, name: sectionName }),
+  input: z.object({ slug, name: tabName }),
   example: { name: "API reference" },
   run: async ({ projectId }, input) =>
-    sectionView(
+    tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const { id } = await lockedSection(tx, projectId, input.slug);
+        const { id } = await lockedTab(tx, projectId, input.slug);
         return tx.docsTab.update({
           where: { id },
-          data: { name: input.name, slug: await freeSectionSlug(tx, projectId, input.name, id) },
-          select: sectionSelect,
+          data: { name: input.name, slug: await freeTabSlug(tx, projectId, input.name, id) },
+          select: tabSelect,
         });
       }),
     ),
 });
 
-export const reorderSection = defineOperation({
-  name: "sections.reorder",
+export const reorderTab = defineOperation({
+  name: "tabs.reorder",
   summary:
-    "Move a help center section to `position` among the sections (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the help center",
+    "Move a docs tab to `position` among the tabs (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs",
   method: "POST",
-  path: "/sections/{slug}/reorder",
+  path: "/tabs/{slug}/reorder",
   scope: "write",
   access: "team",
   input: z.object({ slug, position: position.optional() }),
   example: { position: 0 },
   run: async ({ projectId }, input) =>
-    sectionView(
+    tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const { id } = await lockedSection(tx, projectId, input.slug);
-        await renumber(tx, "docs_tab", placed(await sectionsOf(tx, projectId), id, input.position));
-        return tx.docsTab.findUniqueOrThrow({ where: { id }, select: sectionSelect });
+        const { id } = await lockedTab(tx, projectId, input.slug);
+        await renumber(tx, "docs_tab", placed(await tabsOf(tx, projectId), id, input.position));
+        return tx.docsTab.findUniqueOrThrow({ where: { id }, select: tabSelect });
       }),
     ),
 });
 
-export const deleteSection = defineOperation({
-  name: "sections.delete",
+export const deleteTab = defineOperation({
+  name: "tabs.delete",
   summary:
-    "Delete a help center section. Its collections go last in the section before it (the one after, for the first), with everything in them; deleting the last section leaves the help center without sections",
+    "Delete a docs tab. Its collections go last in the tab before it (the one after, for the first), with everything in them; deleting the last tab leaves the docs without tabs",
   method: "DELETE",
-  path: "/sections/{slug}",
+  path: "/tabs/{slug}",
   scope: "write",
   access: "team",
   input: z.object({ slug }),
@@ -1271,22 +1271,22 @@ export const deleteSection = defineOperation({
     // Locked, so a collection being saved into it lands first (and moves) or finds it gone.
     const movedTo = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
-      const { id } = await lockedSection(tx, projectId, input.slug);
-      const sections = await sectionsOf(tx, projectId);
-      const at = sections.findIndex((s) => s.id === id);
-      const target = sections[at - 1] ?? sections[at + 1] ?? null;
-      const inSection = (tabId: string | null) =>
+      const { id } = await lockedTab(tx, projectId, input.slug);
+      const tabs = await tabsOf(tx, projectId);
+      const at = tabs.findIndex((s) => s.id === id);
+      const target = tabs[at - 1] ?? tabs[at + 1] ?? null;
+      const inTab = (tabId: string | null) =>
         tx.collection.findMany({ where: siblingsWhere(projectId, null, tabId), orderBy: siblingOrder, select: { id: true } });
-      const moving = await inSection(id);
+      const moving = await inTab(id);
       if (moving.length > 0) {
-        const staying = target ? await inSection(target.id) : [];
+        const staying = target ? await inTab(target.id) : [];
         await tx.collection.updateMany({ where: { tabId: id }, data: { tabId: target?.id ?? null } });
         await renumber(tx, "collection", [...staying, ...moving].map((c) => c.id));
       }
       await tx.docsTab.delete({ where: { id } });
       return target?.slug ?? null;
     });
-    // movedTo: where its collections went (null: there are no sections left).
+    // movedTo: where its collections went (null: there are no tabs left).
     return { deleted: input.slug, movedTo };
   },
 });

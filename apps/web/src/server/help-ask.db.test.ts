@@ -10,13 +10,13 @@ import {
   answersEnabled,
   ASKS_PER_ASKER_PER_HOUR,
   ASKS_PER_PROJECT_PER_HOUR,
-  askHelp as askOperation,
+  askDocs as askOperation,
 } from "@/server/operations/help-ask";
 import { updateAssistantSettings } from "@/server/operations/assistant";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { askHelp, rateHelpAnswer } from "./help-readers";
+import { askDocs, rateDocsAnswer } from "./help-readers";
 
 /**
  * AI answers on the help center (help.ask): sections found through the OpenAI fake's
@@ -292,7 +292,7 @@ describe("failures", () => {
       vi.stubEnv(name, "");
       expect(answersEnabled()).toBe(false);
       await expect(ask()).rejects.toMatchObject({ status: 503, message: "AI answers aren't set up on this server" });
-      expect(await askHelp(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server" });
+      expect(await askDocs(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server" });
       vi.stubEnv(name, name === "OPENAI_API_KEY" ? FAKE_OPENAI_KEY : model.env.OPENROUTER_API_KEY!);
     }
     expect(await logged()).toEqual([]);
@@ -343,32 +343,32 @@ describe("the portal's Ask AI and the question log", () => {
     actAs(visitor);
     await write("Inviting your team", "Owners invite people.", 0.8);
     model.reply(reply("Owners invite people.", ["s1"]));
-    const answer = await askHelp(project.slug, `  ${QUESTION}  `);
+    const answer = await askDocs(project.slug, `  ${QUESTION}  `);
     expect(answer).toMatchObject({ status: "answered", answer: "Owners invite people." });
     const id = (answer as { id: string }).id;
 
-    expect(await rateHelpAnswer(project.slug, id, false)).toEqual({});
+    expect(await rateDocsAnswer(project.slug, id, false)).toEqual({});
     expect(await logged()).toEqual([expect.objectContaining({ askerId: visitor.id, question: QUESTION, status: "ANSWERED", helpful: false })]);
     // Rating again replaces it.
-    expect(await rateHelpAnswer(project.slug, id, true)).toEqual({});
+    expect(await rateDocsAnswer(project.slug, id, true)).toEqual({});
     expect((await logged())[0]!.helpful).toBe(true);
 
     // Not through another project, and not a question without an answer.
     const other = await createProject(owner);
-    expect(await rateHelpAnswer(other.slug, id, false)).toEqual({ error: "There's no such answer" });
-    const unanswered = await askHelp(project.slug, "Something else entirely");
+    expect(await rateDocsAnswer(other.slug, id, false)).toEqual({ error: "There's no such answer" });
+    const unanswered = await askDocs(project.slug, "Something else entirely");
     expect(unanswered).toMatchObject({ status: "no_answer" });
-    expect(await rateHelpAnswer(project.slug, (unanswered as { id: string }).id, true)).toEqual({ error: "There's no such answer" });
+    expect(await rateDocsAnswer(project.slug, (unanswered as { id: string }).id, true)).toEqual({ error: "There's no such answer" });
     expect((await logged()).map((question) => question.helpful)).toEqual([true, null]);
 
-    expect(await askHelp(project.slug, " ")).toEqual({ error: "Type a question" });
+    expect(await askDocs(project.slug, " ")).toEqual({ error: "Type a question" });
   });
 
   test("records where each question was asked: the portal, the widget or the API", async () => {
     actAs(null);
     const key = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
-    await askHelp(project.slug, "From the portal");
-    await askHelp(project.slug, "From the widget", "widget");
+    await askDocs(project.slug, "From the portal");
+    await askDocs(project.slug, "From the widget", "widget");
     await call(askOperation, { actor: key, projectId: project.id }, { q: "From the API" });
     const questions = await prisma.docsQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
     expect(questions).toEqual([

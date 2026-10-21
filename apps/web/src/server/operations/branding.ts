@@ -8,7 +8,7 @@ import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, luminance, textColorOn, type WidgetLink } from "./widget";
 
-/** The portal's and help center's look (Phase 10): logos, favicon, accent colour, header and footer links, "Powered by". */
+/** The portal's and its docs' look (Phase 10): logos, favicon, accent colour, header and footer links, "Powered by". */
 
 export const MAX_BRAND_LINKS = 5;
 

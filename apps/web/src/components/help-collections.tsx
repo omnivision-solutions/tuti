@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
-import type { HelpCollection } from "@/server/help-queries";
+import type { DocsCollection } from "@/server/help-queries";
 
 type Articles = { slug: string; title: string }[];
 
@@ -26,7 +26,7 @@ function CollectionSection({
   href,
   compact,
 }: {
-  collection: HelpCollection;
+  collection: DocsCollection;
   nested: boolean;
   href: (slug: string) => string;
   compact: boolean;
@@ -54,16 +54,16 @@ function CollectionSection({
 }
 
 /**
- * The help center's contents, for the portal's /help and the widget's Help tab: each collection in
+ * The docs' contents, for the portal's /docs and the widget's Docs tab: each collection in
  * order with its articles and the collections in it, then the articles in none.
  */
-export function HelpCollections({
+export function DocsCollections({
   collections,
   uncollected,
   href,
   compact = false,
 }: {
-  collections: HelpCollection[];
+  collections: DocsCollection[];
   uncollected: Articles;
   /** An article's link. */
   href: (slug: string) => string;
@@ -90,37 +90,37 @@ export function HelpCollections({
 }
 
 /**
- * The help center's sections as tabs, above its collections (only with two or more). `href` links
- * a section's tab; plain links, so they work without JavaScript.
+ * The docs' tabs, above its collections (only with two or more). `href` links a tab; plain
+ * links, so they work without JavaScript.
  */
-export function SectionTabs({
-  sections,
+export function DocsTabs({
+  tabs,
   active,
   href,
   compact = false,
 }: {
-  sections: { slug: string; name: string }[];
+  tabs: { slug: string; name: string }[];
   active: string;
   href: (slug: string) => string;
   compact?: boolean;
 }) {
-  if (sections.length < 2) {
+  if (tabs.length < 2) {
     return null;
   }
   return (
     <nav aria-label="Docs sections" className="flex gap-1 overflow-x-auto">
-      {sections.map((section) => (
+      {tabs.map((tab) => (
         <Link
-          key={section.slug}
-          href={href(section.slug)}
-          aria-current={section.slug === active ? "page" : undefined}
+          key={tab.slug}
+          href={href(tab.slug)}
+          aria-current={tab.slug === active ? "page" : undefined}
           className={cn(
             "rounded-full border px-3 py-1 whitespace-nowrap transition-colors",
             compact ? "text-xs" : "text-sm",
-            section.slug === active ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            tab.slug === active ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
-          {section.name}
+          {tab.name}
         </Link>
       ))}
     </nav>

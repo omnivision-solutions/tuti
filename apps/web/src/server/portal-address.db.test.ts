@@ -14,7 +14,7 @@ import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/d
 import { createChangelogEntry } from "./operations/changelog";
 import { createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
-import { escalateHelp } from "./operations/help-escalate";
+import { escalateDocs } from "./operations/help-escalate";
 import { addPortalReaders, updatePortal } from "./operations/portal";
 import { createArticle, getArticle, publishArticle } from "./operations/help";
 import { call } from "./operations/run";
@@ -146,7 +146,7 @@ test("a failing address lookup fails a request before it writes anything, so a r
     await expect(call(createArticle, as(), { title: "Billing", body: "Hi" })).rejects.toThrow("database down");
     await expect(call(createChangelogEntry, as(), { title: "Dark mode", body: "Shipped" })).rejects.toThrow("database down");
     await expect(call(addPortalReaders, as(), { emails: ["e2e-reader@example.com"] })).rejects.toThrow("database down");
-    await expect(call(escalateHelp, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
+    await expect(call(escalateDocs, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
   } finally {
     spy.mockRestore();
   }

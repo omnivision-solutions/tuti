@@ -9,7 +9,7 @@ import { portalUrl } from "@/lib/hosts";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
-import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operations/help-ask";
+import { answerQuestion, askFields, type DocsAnswer, rateAnswer } from "./operations/help-ask";
 import { escalateFields, escalateQuestion } from "./operations/help-escalate";
 import { answerFields, saveAnswer } from "./operations/help-insights";
 import { OperationError } from "./operations";
@@ -98,7 +98,7 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
 }
 
 /** "Ask AI" on the portal's /help or in the widget: an answer from the published articles, or "I don't know" (see help.ask). */
-export async function askHelp(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<HelpAnswer | { error: string }> {
+export async function askDocs(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<DocsAnswer | { error: string }> {
   const widget = from === "widget";
   const input = askFields.safeParse({ q: question });
   if (!input.success) {
@@ -125,7 +125,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
 }
 
 /** Thumbs up or down on an AI answer. Rating again replaces it. */
-export async function rateHelpAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
+export async function rateDocsAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
   const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Docs not found" };
@@ -142,7 +142,7 @@ export async function rateHelpAnswer(projectSlug: string, questionId: string, he
 }
 
 /** "Ask a person" after an AI answer that didn't help: emails the question to the team (see help.escalate). Only the asker may. */
-export async function escalateHelp(
+export async function escalateDocs(
   projectSlug: string,
   questionId: string,
   email: string,

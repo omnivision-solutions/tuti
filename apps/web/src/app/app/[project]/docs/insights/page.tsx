@@ -10,7 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { helpInsights, INSIGHTS_DAYS } from "@/server/operations/help-insights";
+import { docsInsights, INSIGHTS_DAYS } from "@/server/operations/help-insights";
 
 export const metadata = { title: "Docs insights" };
 
@@ -36,7 +36,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
   if (!membership) {
     notFound();
   }
-  const insights = await helpInsights(membership.project.id);
+  const insights = await docsInsights(membership.project.id);
   const empty = (text: string) => <p className="text-sm text-muted-foreground">{text}</p>;
 
   return (

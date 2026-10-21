@@ -4,7 +4,7 @@ import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createArticle, deleteArticle, publishArticle, searchArticles, unpublishArticle, updateArticle } from "@/server/operations/help";
-import { searchHelp } from "@/server/help-search";
+import { searchDocs } from "@/server/help-search";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -218,7 +218,7 @@ describe("search with embeddings", () => {
     const release = openai.holdNext();
     try {
       const started = Date.now();
-      expect((await searchHelp(project.id, "invites", 10, [], 100)).map((r) => r.slug)).toEqual([slug]);
+      expect((await searchDocs(project.id, "invites", 10, [], 100)).map((r) => r.slug)).toEqual([slug]);
       expect(Date.now() - started).toBeLessThan(1000);
     } finally {
       release();

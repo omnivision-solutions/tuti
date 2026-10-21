@@ -9,9 +9,9 @@ import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { helpCenter, publishedArticle } from "@/server/help-queries";
-import { searchHelp } from "@/server/help-search";
-import { helpInsights } from "@/server/operations/help-insights";
+import { docsContents, publishedArticle } from "@/server/help-queries";
+import { searchDocs } from "@/server/help-search";
+import { docsInsights } from "@/server/operations/help-insights";
 import {
   ARTICLE_REVISIONS_KEPT,
   createArticle,
@@ -108,7 +108,7 @@ describe("revisions", () => {
     // Published, readers see the restored text, and search has it.
     await call(publishChanges, as(owner), { slug: "billing" });
     expect(await publishedArticle(project.slug, "billing")).toMatchObject({ title: "Billing", body: "Pay by card." });
-    expect((await searchHelp(project.id, "invoice", 10, [])).map((r) => r.slug)).toEqual([]);
+    expect((await searchDocs(project.id, "invoice", 10, [])).map((r) => r.slug)).toEqual([]);
     expect(await history("billing")).toEqual([
       { title: "Billing", body: "Pay by card.", author: "Olive Owner" },
       { title: "Billing and invoices", body: "Pay by card or invoice.", author: "Eddie Editor" },
@@ -145,19 +145,19 @@ describe("deleting", () => {
     const portal = async () => ({
       page: (await publishedArticle(project.slug, "refunds"))?.title ?? null,
       md: (await markdown(request, { params: Promise.resolve({ project: project.slug, slug: "refunds" }) })).status,
-      helpCenter: JSON.stringify(await helpCenter(project.slug)).includes("refunds"),
+      docsContents: JSON.stringify(await docsContents(project.slug)).includes("refunds"),
       llms: (await (await llms(request, { params })).text()).includes("refunds"),
       sitemap: (await (await sitemap(request, { params })).text()).includes("/docs/refunds"),
-      search: (await searchHelp(project.id, "refunds", 10, [])).map((r) => r.slug),
+      search: (await searchDocs(project.id, "refunds", 10, [])).map((r) => r.slug),
       export: Object.keys(await zipped()).filter((file) => file.includes("refunds")),
-      insights: (await helpInsights(project.id)).articles.map((a) => a.slug),
+      insights: (await docsInsights(project.id)).articles.map((a) => a.slug),
       published: (await call(listArticles, as(owner), {})).articles.map((a) => a.slug),
       collection: (await call(listCollections, as(owner), {})).collections[0]!.articles,
     });
     expect(await portal()).toEqual({
       page: "Refunds",
       md: 200,
-      helpCenter: true,
+      docsContents: true,
       llms: true,
       sitemap: true,
       search: ["refunds"],
@@ -171,7 +171,7 @@ describe("deleting", () => {
     expect(await portal()).toEqual({
       page: null,
       md: 404,
-      helpCenter: false,
+      docsContents: false,
       llms: false,
       sitemap: false,
       search: [],

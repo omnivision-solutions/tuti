@@ -213,31 +213,31 @@ const matrix: Matrix = {
     deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
     moveCollection: { allowed: "MEMBER", call: (slug) => help.moveCollection(slug, "guides", "basics", 0) },
     moveArticle: { allowed: "MEMBER", call: (slug) => help.moveArticle(slug, "matrix-draft", "basics", 0) },
-    saveSection: { allowed: "MEMBER", call: (slug) => help.saveSection(slug, null, {}, form({ name: "API" })) },
-    moveSection: { allowed: "MEMBER", call: (slug) => help.moveSection(slug, "docs", 0) },
-    deleteSection: { allowed: "MEMBER", call: (slug) => help.deleteSection(slug, "docs") },
-    dismissHelpGap: { allowed: "MEMBER", call: (slug) => help.dismissHelpGap(slug, "How do I invite?") },
+    saveTab: { allowed: "MEMBER", call: (slug) => help.saveTab(slug, null, {}, form({ name: "API" })) },
+    moveTab: { allowed: "MEMBER", call: (slug) => help.moveTab(slug, "docs", 0) },
+    deleteTab: { allowed: "MEMBER", call: (slug) => help.deleteTab(slug, "docs") },
+    dismissDocsGap: { allowed: "MEMBER", call: (slug) => help.dismissDocsGap(slug, "How do I invite?") },
   },
   // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
   "help-readers": {
     answerArticle: { allowed: "public", call: (slug) => helpReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
     countArticleView: { allowed: "public", call: (slug) => helpReaders.countArticleView(slug, "matrix-article") },
-    askHelp: {
+    askDocs: {
       allowed: "public",
       // With embeddings on (answers need them). Nothing in the fixture is close to the question, so the model isn't asked.
       call: async (slug) => {
         vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
         vi.stubEnv("OPENAI_BASE_URL", openai.url);
         try {
-          return await helpReaders.askHelp(slug, "How do I invite my team?");
+          return await helpReaders.askDocs(slug, "How do I invite my team?");
         } finally {
           vi.stubEnv("OPENAI_API_KEY", "");
         }
       },
     },
-    rateHelpAnswer: { allowed: "public", takesIds: true, call: (slug, f) => helpReaders.rateHelpAnswer(slug, f.questionId, false) },
+    rateDocsAnswer: { allowed: "public", takesIds: true, call: (slug, f) => helpReaders.rateDocsAnswer(slug, f.questionId, false) },
     // Only the asker (here the browser with MATRIX_READER's cookie; someone signed in is known by their account instead).
-    escalateHelp: {
+    escalateDocs: {
       allowed: "public",
       takesIds: true,
       // The summary of what they need.
@@ -246,7 +246,7 @@ const matrix: Matrix = {
         const cookie = request.cookie;
         request.cookie = [cookie, `tuti_reader=${MATRIX_READER}`].filter(Boolean).join("; ");
         try {
-          return await helpReaders.escalateHelp(slug, f.escalatableId, `e2e-${crypto.randomUUID()}@example.com`, "From the matrix");
+          return await helpReaders.escalateDocs(slug, f.escalatableId, `e2e-${crypto.randomUUID()}@example.com`, "From the matrix");
         } finally {
           request.cookie = cookie;
         }

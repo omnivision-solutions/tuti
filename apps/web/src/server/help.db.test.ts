@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { helpCenter, publishedArticle } from "@/server/help-queries";
+import { docsContents, publishedArticle } from "@/server/help-queries";
 import {
   createArticle,
   createCollection,
@@ -123,12 +123,12 @@ describe("collections", () => {
     await call(publishArticle, as(owner), { slug: "shortcuts" });
 
     // The portal: collections with published articles (not the empty one, not drafts), then the rest.
-    expect(await helpCenter(project.slug)).toEqual({
+    expect(await docsContents(project.slug)).toEqual({
       collections: [
         { slug: "basics", name: "Basics", description: "", articles: [{ slug: "getting-started", title: "Getting started" }], collections: [] },
       ],
       uncollected: [{ slug: "shortcuts", title: "Shortcuts" }],
-      sections: [],
+      tabs: [],
     });
 
     // Renaming moves its slug; articles follow by id.

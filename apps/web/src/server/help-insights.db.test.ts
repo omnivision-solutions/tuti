@@ -8,10 +8,10 @@ import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { dismissHelpGap } from "./help";
+import { dismissDocsGap } from "./help";
 import { answerArticle, countArticleView } from "./help-readers";
-import { searchHelp } from "./help-search";
-import { answerArticle as answerOperation, getHelpInsights } from "./operations/help-insights";
+import { searchDocs } from "./help-search";
+import { answerArticle as answerOperation, getDocsInsights } from "./operations/help-insights";
 import { call } from "./operations/run";
 
 /** Readers' answers under help articles, article views, search logging and the team's insights. */
@@ -41,7 +41,7 @@ function anonymous(id = randomUUID()) {
 
 const feedback = () =>
   prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } }, orderBy: { createdAt: "asc" }, select: { readerId: true, helpful: true, comment: true } });
-const insights = (projectId = project.id) => call(getHelpInsights, { actor: { kind: "user", userId: owner.id }, projectId }, {});
+const insights = (projectId = project.id) => call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId }, {});
 
 test("one answer per reader and article: answering again changes it", async () => {
   const reader = anonymous();
@@ -113,9 +113,9 @@ test("views count per article and day, skipping crawlers", async () => {
 });
 
 test("searches are logged, normalized, as hits or misses; empty ones aren't", async () => {
-  await searchHelp(project.id, "  Send   INVITES ", 10, []);
-  await searchHelp(project.id, "refunds", 10, []);
-  await searchHelp(project.id, "   ", 10, []);
+  await searchDocs(project.id, "  Send   INVITES ", 10, []);
+  await searchDocs(project.id, "refunds", 10, []);
+  await searchDocs(project.id, "   ", 10, []);
   // Logging isn't awaited by search, so wait for it.
   await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: project.id } })).toBe(2));
   expect(await prisma.docsSearch.findMany({ where: { projectId: project.id }, orderBy: { query: "asc" }, select: { projectId: true, query: true, results: true } })).toEqual([
@@ -149,9 +149,9 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   await prisma.docsSearch.create({ data: { projectId: project.id, query: "ancient", results: 0, createdAt: old } });
 
   for (const query of ["refunds", "Refunds", "sso", "send invites"]) {
-    await searchHelp(project.id, query, 10, []);
+    await searchDocs(project.id, query, 10, []);
   }
-  await searchHelp(other.id, "other project", 10, []);
+  await searchDocs(other.id, "other project", 10, []);
   await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(6));
 
   expect(await insights()).toEqual({
@@ -259,13 +259,13 @@ describe("gaps", () => {
 
     // Not by someone outside the team.
     actAs(await signUp("Outsider"));
-    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
+    expect(await dismissDocsGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
     actAs(null);
-    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
+    expect(await dismissDocsGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
     expect(await prisma.docsGapDismissal.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(0);
 
     actAs(await addMember(project.id, "MEMBER"));
-    expect(await dismissHelpGap(project.slug, "  CAN I pay with   crypto?")).toEqual({});
+    expect(await dismissDocsGap(project.slug, "  CAN I pay with   crypto?")).toEqual({});
     expect((await gaps()).map((gap) => gap.question)).toEqual(["How do I export?"]);
     // Another project's gaps stay.
     expect((await gaps(other.id)).map((gap) => gap.question)).toEqual(["Can I pay with crypto?"]);
@@ -278,7 +278,7 @@ describe("gaps", () => {
       ["How do I export?", 1],
     ]);
     // Dismissing it again hides it again.
-    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({});
+    expect(await dismissDocsGap(project.slug, "Can I pay with crypto?")).toEqual({});
     expect((await gaps()).map((gap) => gap.question)).toEqual(["How do I export?"]);
   });
 });

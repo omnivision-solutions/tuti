@@ -493,7 +493,7 @@ test("the team splits the help center into sections: the first takes the collect
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
 
   // The widget's Help tab has the same tabs, at panel size.
-  await visitor.goto("/widget?tab=help");
+  await visitor.goto("/widget?tab=docs");
   const panelTabs = visitor.getByRole("navigation", { name: "Docs sections" });
   await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await panelTabs.getByRole("link", { name: "Guides" }).click();

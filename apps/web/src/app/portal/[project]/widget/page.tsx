@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
 import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
-import { WidgetHelp } from "@/components/widget-help";
+import { WidgetDocs } from "@/components/widget-help";
 import { WidgetLocked } from "@/components/widget-locked";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
@@ -27,17 +27,17 @@ export const metadata: Metadata = { robots: { index: false } };
 const TABS = [
   { tab: "feedback", href: "/widget", name: "Feedback" },
   { tab: "whats-new", href: "/widget?tab=whats-new", name: "What's new" },
-  { tab: "help", href: "/widget?tab=help", name: "Docs" },
+  { tab: "docs", href: "/widget?tab=docs", name: "Docs" },
 ] as const;
 
 /**
  * What the widget script shows in its iframe on customers' sites: post feedback,
- * read the changelog, and search and read the help center (once it has articles).
+ * read the changelog, and search and read the docs (once they have articles).
  * Outside the portal's (site) layout, so no header or footer; the only page that
  * other sites may frame (see proxy.ts). Links that leave it open a new tab.
  */
 export default async function WidgetPage(props: PageProps<"/portal/[project]/widget">) {
-  const [{ project: slug }, { tab: tabParam, q, article, section, title, display }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project: slug }, { tab: tabParam, q, article, docsTab, title, display }] = await Promise.all([props.params, props.searchParams]);
   const [project, settings, brand] = await Promise.all([
     prisma.project.findUnique({
       where: { slug },
@@ -67,9 +67,9 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       </main>
     );
   }
-  // Help once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
-  const hasHelp = project.articles.length > 0 || (tabParam === "help" && typeof article === "string");
-  const tabs = TABS.filter(({ tab }) => tab !== "help" || hasHelp);
+  // Docs once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
+  const hasDocs = project.articles.length > 0 || (tabParam === "docs" && typeof article === "string");
+  const tabs = TABS.filter(({ tab }) => tab !== "docs" || hasDocs);
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
 
   return (
@@ -116,13 +116,13 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         </nav>
       )}
       {tab === "whats-new" && <WhatsNew slug={slug} />}
-      {tab === "help" && (
-        <WidgetHelp
+      {tab === "docs" && (
+        <WidgetDocs
           projectId={project.id}
           projectSlug={slug}
           query={typeof q === "string" ? q.trim().slice(0, 200) : ""}
           article={typeof article === "string" ? article : undefined}
-          section={typeof section === "string" ? section : undefined}
+          docsTab={typeof docsTab === "string" ? docsTab : undefined}
           hasBoard={project.boards.length > 0}
         />
       )}
@@ -133,7 +133,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   );
 }
 
-/** The new-post form, starting with `title` (a question from Help's "Post this as feedback"). */
+/** The new-post form, starting with `title` (a question from Docs' "Post this as feedback"). */
 async function Feedback({ slug, board, title }: { slug: string; board?: string; title?: string }) {
   if (!board) {
     return <EmptyState title="No boards yet" description="Feedback opens once the team adds a board." />;

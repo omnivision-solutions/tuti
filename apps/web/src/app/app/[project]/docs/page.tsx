@@ -4,8 +4,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, RestoreDeletedButton, SectionDialog } from "@/components/help";
-import { HelpStructure } from "@/components/help-structure";
+import { CollectionDialog, RestoreDeletedButton, TabDialog } from "@/components/help";
+import { DocsStructure } from "@/components/help-structure";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -25,18 +25,18 @@ const structureView = (article: { slug: string; title: string; publishedAt: Date
 });
 
 /**
- * The team's help center: articles (drafts first, then latest edited), the collections they're
+ * The team's docs: articles (drafts first, then latest edited), the collections they're
  * grouped in with their articles in the order readers see them (rearranged here), and articles
  * deleted lately (which can be restored).
  */
-export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs">) {
+export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, sections, collections, uncollected, deleted] = await Promise.all([
+  const [articles, tabs, collections, uncollected, deleted] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -131,35 +131,35 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs
           </CardContent>
         </Card>
       )}
-      <Card role="region" aria-labelledby="help-collections">
+      <Card role="region" aria-labelledby="docs-collections">
         <CardHeader>
-          <CardTitle id="help-collections">Collections</CardTitle>
+          <CardTitle id="docs-collections">Collections</CardTitle>
           <CardDescription>
             Group articles by topic, with collections inside collections if you need them, and sections for tabs above them. Your docs
             list them in this order: drag them into place, or use the arrows.
           </CardDescription>
           <CardAction className="flex flex-wrap justify-end gap-2">
-            <SectionDialog projectSlug={slug} first={sections.length === 0 && collections.length > 0} />
+            <TabDialog projectSlug={slug} first={tabs.length === 0 && collections.length > 0} />
             <CollectionDialog
               projectSlug={slug}
               parents={inTreeOrder(collections)
                 .filter((c) => c.parentId === null)
                 .map((c) => ({ slug: c.slug, name: c.name }))}
-              sections={sections}
+              tabs={tabs}
             />
           </CardAction>
         </CardHeader>
-        {(sections.length > 0 || collections.length > 0 || uncollected.length > 0) && (
+        {(tabs.length > 0 || collections.length > 0 || uncollected.length > 0) && (
           <CardContent>
-            <HelpStructure
+            <DocsStructure
               projectSlug={slug}
-              sections={sections}
+              tabs={tabs}
               collections={inTreeOrder(collections).map((c) => ({
                 slug: c.slug,
                 name: c.name,
                 description: c.description,
                 parent: c.parent?.slug ?? null,
-                section: c.tab?.slug ?? null,
+                tab: c.tab?.slug ?? null,
                 groups: c.groups,
                 articles: c.articles.map(structureView),
               }))}

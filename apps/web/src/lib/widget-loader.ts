@@ -21,7 +21,7 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDG
  * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
  * backdrop on narrow screens) or "inline" (no button). Any element with `data-tuti-inline`
  * gets the panel in it, in every mode: its own iframe, at the tab it names
- * (`data-tuti-inline="help"`; empty for Feedback), without a close button; elements
+ * (`data-tuti-inline="docs"`; empty for Feedback), without a close button; elements
  * added later get one too.
  *
  * Signing people in (their account in the customer's app, through the project's
@@ -31,7 +31,7 @@ import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDG
  * for one, and the token is sent only to the portal's origin.
  *
  * `Tuti.open()` opens the panel, `Tuti.open({ tab })` at a tab, and
- * `Tuti.open({ article: "<slug>" })` at a help article, as does clicking any
+ * `Tuti.open({ article: "<slug>" })` at a docs article, as does clicking any
  * element with `data-tuti-article="<slug>"` (contextual help buttons; one listener
  * on the document, so elements added later work too). `Tuti.close()` closes it.
  *
@@ -215,9 +215,9 @@ export function widgetLoader(portalTemplate: string): string {
     });
   }
 
-  var TABS = { feedback: "", "whats-new": "?tab=whats-new", help: "?tab=help" };
+  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs" };
   function tabQuery(tab) {
-    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or help");
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or docs");
     return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
   }
   function newFrame(src) {
@@ -230,11 +230,11 @@ export function widgetLoader(portalTemplate: string): string {
   var frame;
   var returnFocus;
 
-  // Opens the panel, at a tab or a help article if asked (otherwise where it was);
+  // Opens the panel, at a tab or a docs article if asked (otherwise where it was);
   // closing it gives focus back to \`from\`.
   function open(options, from) {
     var article = options && typeof options.article === "string" ? options.article : "";
-    var query = article ? "?tab=help&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
+    var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
     if (!frame) {
       frame = panel.appendChild(newFrame(src));

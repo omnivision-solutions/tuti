@@ -152,10 +152,10 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
   ].map((path) => ({ name: `page ${path}`, served: async (slug: string) => (await visit(slug, path)) === "served" })),
   { name: "the widget's panel", served: widgetShows },
   {
-    name: "AI answers (askHelp)",
+    name: "AI answers (askDocs)",
     // Without AI set up here, a reader is told so; anyone else, that there's no such help center.
     served: async (slug) => {
-      const result = await helpReaders.askHelp(slug, "How do I start?");
+      const result = await helpReaders.askDocs(slug, "How do I start?");
       return !("error" in result && result.error === "Docs not found");
     },
   },
@@ -168,11 +168,11 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
       return (await articleViews()) > before;
     },
   },
-  { name: "rating an answer (rateHelpAnswer)", served: async (slug) => !(await helpReaders.rateHelpAnswer(slug, fixture.questionId, true)).error },
+  { name: "rating an answer (rateDocsAnswer)", served: async (slug) => !(await helpReaders.rateDocsAnswer(slug, fixture.questionId, true)).error },
   {
     // Refused readers get "not found" before anything else is checked.
-    name: "asking a person (escalateHelp)",
-    served: async (slug) => (await helpReaders.escalateHelp(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
+    name: "asking a person (escalateDocs)",
+    served: async (slug) => (await helpReaders.escalateDocs(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
   },
   { name: "similar posts while typing (findSimilarPosts)", served: async (slug) => (await similarPosts.findSimilarPosts(slug, "Dark mode please")).length > 0 },
   {
@@ -240,7 +240,7 @@ test("in the widget on a customer's site, the person their app signs in (the rea
   const sso = visitors["SSO user"]!;
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(project.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(true);
-  expect(await helpReaders.askHelp(project.slug, "How do I start?")).not.toEqual({ error: "Docs not found" });
+  expect(await helpReaders.askDocs(project.slug, "How do I start?")).not.toEqual({ error: "Docs not found" });
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(other.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(false);
   request.cookie = `${WIDGET_READER_COOKIE}=not-a-token`;

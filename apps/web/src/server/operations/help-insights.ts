@@ -8,7 +8,7 @@ import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
 
 /**
- * What readers make of the help center (Phase 10): their answers to "Was this helpful?",
+ * What readers make of the docs (Phase 10): their answers to "Was this helpful?",
  * article views and searches, summed up for the team. Feeds AI answers' gaps (Phase 11)
  * and the docs audit (Phase 12). Stores no IP addresses: see the models in schema.prisma.
  */
@@ -68,8 +68,8 @@ export const answerArticle = defineOperation({
 /** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */
 const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
 
-/** The team's numbers for the last INSIGHTS_DAYS days (help.insights and the app's insights page). */
-export async function helpInsights(projectId: string) {
+/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
+export async function docsInsights(projectId: string) {
   // Whole days (UTC), today included, so daily view counts and timestamps cover the same span.
   const since = new Date(new Date().toISOString().slice(0, 10));
   since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
@@ -157,11 +157,11 @@ export async function dismissGap(projectId: string, question: string) {
   return { dismissed: question };
 }
 
-export const dismissHelpGap = defineOperation({
-  name: "help.dismissGap",
-  summary: "Dismiss a question from the gaps in help.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
+export const dismissDocsGap = defineOperation({
+  name: "docs.dismissGap",
+  summary: "Dismiss a question from the gaps in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
   method: "POST",
-  path: "/help/gaps/dismiss",
+  path: "/docs/gaps/dismiss",
   scope: "write",
   access: "team",
   input: gapFields,
@@ -169,13 +169,13 @@ export const dismissHelpGap = defineOperation({
   run: ({ projectId }, { question }) => dismissGap(projectId, question),
 });
 
-export const getHelpInsights = defineOperation({
-  name: "help.insights",
-  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (help.escalate)`,
+export const getDocsInsights = defineOperation({
+  name: "docs.insights",
+  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate)`,
   method: "GET",
-  path: "/help/insights",
+  path: "/docs/insights",
   scope: "read",
   access: "team",
   input: z.object({}),
-  run: ({ projectId }) => helpInsights(projectId),
+  run: ({ projectId }) => docsInsights(projectId),
 });

@@ -37,17 +37,17 @@ import {
   unpublishArticle,
   updateArticle,
   updateCollection,
-  createSection,
-  deleteSection,
-  listSections,
-  reorderSection,
-  updateSection,
+  createTab,
+  deleteTab,
+  listTabs,
+  reorderTab,
+  updateTab,
 } from "./help";
 import { markChangelogSeen } from "./changelog-seen";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
-import { askHelp } from "./help-ask";
-import { escalateHelp } from "./help-escalate";
-import { answerArticle, dismissHelpGap, getHelpInsights } from "./help-insights";
+import { askDocs } from "./help-ask";
+import { escalateDocs } from "./help-escalate";
+import { answerArticle, dismissDocsGap, getDocsInsights } from "./help-insights";
 import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
@@ -78,12 +78,12 @@ const all = [
   getArticle,
   searchArticles,
   answerArticle,
-  askHelp,
-  escalateHelp,
+  askDocs,
+  escalateDocs,
   getAssistantSettings,
   updateAssistantSettings,
-  getHelpInsights,
-  dismissHelpGap,
+  getDocsInsights,
+  dismissDocsGap,
   createArticle,
   updateArticle,
   publishArticle,
@@ -99,11 +99,11 @@ const all = [
   updateCollection,
   reorderCollection,
   deleteCollection,
-  listSections,
-  createSection,
-  updateSection,
-  reorderSection,
-  deleteSection,
+  listTabs,
+  createTab,
+  updateTab,
+  reorderTab,
+  deleteTab,
   listPosts,
   getPost,
   listComments,
