@@ -14,6 +14,7 @@ import {
 } from "@/server/operations/docs-ask";
 import { updateAssistantSettings } from "@/server/operations/assistant";
 import { call } from "@/server/operations/run";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { askDocs, rateDocsAnswer } from "./docs-readers";
@@ -64,7 +65,7 @@ async function write(title: string, text: string, similarity: number, { draft = 
   return article.slug;
 }
 
-const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", [], timeoutMs);
+const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", SIGNED_OUT, timeoutMs);
 const logged = () =>
   prisma.docsQuestion.findMany({
     where: { projectId: project.id },
@@ -133,7 +134,7 @@ describe("answers", () => {
     await write("Exports", "Download a CSV of your posts.", ANSWER_MIN_SIMILARITY - 0.05);
     expect(await ask()).toMatchObject({ status: "no_answer", answer: null, sources: [] });
     // Nothing published at all: the same.
-    expect(await answerQuestion((await createProject(owner)).id, "reader-1", QUESTION, "PORTAL", [])).toMatchObject({ status: "no_answer" });
+    expect(await answerQuestion((await createProject(owner)).id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT)).toMatchObject({ status: "no_answer" });
     expect(model.requests).toEqual([]);
     expect((await logged()).map((question) => question.status)).toEqual(["NO_ANSWER"]);
   });
@@ -325,7 +326,7 @@ describe("rate limits", () => {
       message: "These docs have had a lot of questions in the last hour. Try again later.",
     });
     // Another project's questions don't count.
-    expect(await answerQuestion((await createProject(owner)).id, "someone-else", QUESTION, "PORTAL", [])).toMatchObject({ status: "no_answer" });
+    expect(await answerQuestion((await createProject(owner)).id, "someone-else", QUESTION, "PORTAL", SIGNED_OUT)).toMatchObject({ status: "no_answer" });
   });
 
   test("questions asked at the same time can't overrun the limit together", async () => {

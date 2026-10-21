@@ -17,14 +17,14 @@ import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
-import { readerGroups } from "@/server/portal-access";
+import { currentReader } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 
 /** Published articles matching `query`, each with the passage that matched. */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  const results = project ? await searchDocs(project.id, query, 10, await readerGroups(project.id)) : [];
+  const results = project ? await searchDocs(project.id, query, 10, await currentReader(project.id)) : [];
   if (results.length === 0) {
     return (
       <EmptyState

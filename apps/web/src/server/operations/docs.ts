@@ -10,12 +10,12 @@ import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
-import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
+import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { inTreeOrder, listedArticle, readingOrder } from "../docs-queries";
+import { inTreeOrder, listedArticle, readableArticle, readingOrder } from "../docs-queries";
 import { searchDocs } from "../docs-search";
-import { actorGroups } from "../portal-access";
+import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
@@ -445,9 +445,9 @@ export const listArticles = defineOperation({
     }
     const query: Record<typeof input.status, Pick<Prisma.ArticleFindManyArgs, "where" | "orderBy">> = {
       // Like the portal's lists, but the team sees unlisted, hidden and AI-only ones too.
-      // Not the ones in collections for reader groups the caller isn't in.
+      // Not the ones for readers the caller isn't (signed-in readers, some groups), by the article, its collections or its tab.
       published: {
-        where: team ? { publishedAt: { not: null }, deletedAt: null } : { ...listedArticle, ...visibleArticle(await actorGroups(actor, projectId)) },
+        where: team ? { publishedAt: { not: null }, deletedAt: null } : { ...listedArticle, ...(await readableArticle(projectId, await actorReader(actor, projectId))) },
         orderBy: [{ title: "asc" }, { slug: "asc" }],
       },
       draft: { where: { publishedAt: null, deletedAt: null }, orderBy: [{ updatedAt: "desc" }, { slug: "asc" }] },
@@ -481,9 +481,9 @@ export const getArticle = defineOperation({
     const [article, team] = await Promise.all([findArticle(projectId, input.slug), isTeam(actor, projectId)]);
     // An article without a page (a draft, hidden or AI only) is as good as missing to everyone but the team.
     const served = article?.publishedAt && SERVED.includes(article.listing);
-    // Nor one in a collection for reader groups they aren't in.
+    // Nor one that isn't for them (see articles.list).
     const visible = async (id: string) =>
-      (await prisma.article.count({ where: { id, ...visibleArticle(await actorGroups(actor, projectId)) } })) > 0;
+      (await prisma.article.count({ where: { id, ...(await readableArticle(projectId, await actorReader(actor, projectId))) } })) > 0;
     if (!article || (!team && (!served || !(await visible(article.id))))) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
@@ -504,7 +504,7 @@ export const searchArticles = defineOperation({
   }),
   example: { q: "invite my team", limit: 5 },
   run: async ({ actor, projectId }, input) => {
-    const [results, portal] = await Promise.all([searchDocs(projectId, input.q, input.limit, await actorGroups(actor, projectId)), portalOf(projectId)]);
+    const [results, portal] = await Promise.all([searchDocs(projectId, input.q, input.limit, await actorReader(actor, projectId)), portalOf(projectId)]);
     return { results: results.map((result) => ({ ...result, url: `${portal}/docs/${result.slug}` })) };
   },
 });
@@ -1079,6 +1079,7 @@ export const createCollection = defineOperation({
           slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
           name: input.name,
           description: input.description,
+          access: input.groups.length > 0 ? "GROUPS" : "INHERIT",
           groups: { create: await groupLinks(tx, projectId, input.groups) },
           icon: input.icon,
           order: (last._max.order ?? -1) + 1,
@@ -1125,7 +1126,10 @@ export const updateCollection = defineOperation({
         data: {
           ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
           ...(input.description !== undefined && { description: input.description }),
-          ...(input.groups !== undefined && { groups: { deleteMany: {}, create: await groupLinks(tx, projectId, input.groups) } }),
+          ...(input.groups !== undefined && {
+            access: input.groups.length > 0 ? "GROUPS" : "INHERIT",
+            groups: { deleteMany: {}, create: await groupLinks(tx, projectId, input.groups) },
+          }),
           ...(input.icon !== undefined && { icon: input.icon }),
           ...(input.order !== undefined && { order: input.order }),
         },

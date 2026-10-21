@@ -13,7 +13,7 @@ import { answerQuestion, askFields, type DocsAnswer, rateAnswer } from "./operat
 import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
-import { readableProject, readerGroups } from "./portal-access";
+import { currentReader, readableProject } from "./portal-access";
 import { getSession } from "./session";
 
 /**
@@ -68,7 +68,7 @@ export async function answerArticle(projectSlug: string, slug: string, helpful: 
     return { error: "Article not found" };
   }
   try {
-    await saveAnswer(project.id, await readerId(String(projectSlug)), input.data, await readerGroups(project.id));
+    await saveAnswer(project.id, await readerId(String(projectSlug)), input.data, await currentReader(project.id));
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
@@ -87,13 +87,13 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
   if (!project) {
     return;
   }
-  const groups = await readerGroups(project.id);
+  const reader = await currentReader(project.id);
   await prisma.$executeRaw`
     INSERT INTO article_view_day ("articleId", day, views)
     SELECT a.id, (now() AT TIME ZONE 'UTC')::date, 1
     FROM article a JOIN project p ON p.id = a."projectId"
     WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-      AND a.listing IN ('EVERYWHERE', 'UNLISTED') AND ${visibleArticleSql(groups)}
+      AND a.listing IN ('EVERYWHERE', 'UNLISTED') AND ${visibleArticleSql(reader)}
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 
@@ -114,7 +114,7 @@ export async function askDocs(projectSlug: string, question: string, from: "port
       await readerId(String(projectSlug), widget),
       input.data.q,
       widget ? "WIDGET" : "PORTAL",
-      await readerGroups(project.id),
+      await currentReader(project.id),
     );
   } catch (error) {
     if (error instanceof OperationError) {

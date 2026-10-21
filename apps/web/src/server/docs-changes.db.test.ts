@@ -11,6 +11,7 @@ import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/ro
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { WidgetDocs } from "@/components/widget-docs";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { discardArticleChanges, publishArticleChanges, saveArticle } from "./docs";
@@ -91,7 +92,7 @@ async function readers() {
   // The widget's article view (WidgetDocs hands it to WidgetArticle, rendered here).
   const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG, hasBoard: true })) as ReactElement<object>;
   const widgetArticle = await (widget.type as (props: object) => Promise<ReactNode>)(widget.props);
-  const sections = await answerSections(project.id, QUESTION, 10, [], 3000);
+  const sections = await answerSections(project.id, QUESTION, 10, SIGNED_OUT, 3000);
   return {
     page: article && { title: article.title, body: article.body, collection: article.collection?.name, updated: article.updatedAt !== null },
     metadata: (await generateMetadata(params({ slug: SLUG }) as never)).title,
@@ -101,10 +102,10 @@ async function readers() {
     sitemap: await (await sitemap(request, params() as never)).text(),
     widget: texts(widgetArticle).includes(OLD.title),
     searchByWords: {
-      old: (await searchDocs(project.id, "zebra", 10, [])).map((r) => r.title),
-      new: (await searchDocs(project.id, "quokka", 10, [])).map((r) => r.title),
+      old: (await searchDocs(project.id, "zebra", 10, SIGNED_OUT)).map((r) => r.title),
+      new: (await searchDocs(project.id, "quokka", 10, SIGNED_OUT)).map((r) => r.title),
     },
-    searchByMeaning: (await searchDocs(project.id, QUESTION, 10, [])).map((r) => r.snippet),
+    searchByMeaning: (await searchDocs(project.id, QUESTION, 10, SIGNED_OUT)).map((r) => r.snippet),
     ai: sections?.map((s) => [s.title, s.text]),
     api: await call(getArticle, as(await signUp()), { slug: SLUG }).then(({ title, body }) => ({ title, body }), () => null),
     apiList: (await call(listArticles, as(await signUp()), {})).articles.map((a) => [a.title, "changes" in a]),

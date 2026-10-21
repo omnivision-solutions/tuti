@@ -15,7 +15,7 @@ import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
-import { readerGroups } from "@/server/portal-access";
+import { currentReader } from "@/server/portal-access";
 
 /** A widget Docs URL: the list (with the search, if any, or in a docs tab, or a collection's) or an article (opened from there). */
 function docsHref({ q, docsTab, collection, article }: { q?: string; docsTab?: string; collection?: string; article?: string }) {
@@ -90,7 +90,7 @@ export async function WidgetDocs({
 }
 
 async function SearchResults({ projectId, query }: { projectId: string; query: string }) {
-  const results = await searchDocs(projectId, query, 10, await readerGroups(projectId));
+  const results = await searchDocs(projectId, query, 10, await currentReader(projectId));
   if (results.length === 0) {
     return (
       <EmptyState

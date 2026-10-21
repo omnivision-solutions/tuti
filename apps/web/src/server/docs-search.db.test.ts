@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { createArticle, deleteArticle, publishArticle, searchArticles, unpublishArticle, updateArticle } from "@/server/operations/docs";
 import { searchDocs } from "@/server/docs-search";
 import { call } from "@/server/operations/run";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
@@ -218,7 +219,7 @@ describe("search with embeddings", () => {
     const release = openai.holdNext();
     try {
       const started = Date.now();
-      expect((await searchDocs(project.id, "invites", 10, [], 100)).map((r) => r.slug)).toEqual([slug]);
+      expect((await searchDocs(project.id, "invites", 10, SIGNED_OUT, 100)).map((r) => r.slug)).toEqual([slug]);
       expect(Date.now() - started).toBeLessThan(1000);
     } finally {
       release();

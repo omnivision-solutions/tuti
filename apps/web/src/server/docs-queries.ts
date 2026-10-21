@@ -4,10 +4,11 @@ import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { ancestry } from "@/lib/collection-tree";
-import { groupClaims, mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-groups";
+import { type Level, readable, type Reader, restricted } from "@/lib/read-access";
+import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
-import { readerGroups } from "./portal-access";
+import { currentReader } from "./portal-access";
 
 /** Reads for the docs pages: the team's editor and the portal. */
 
@@ -51,6 +52,18 @@ export async function collectionOptions(projectId: string) {
  * spell the same out.
  */
 const published = { publishedAt: { not: null }, deletedAt: null } as const;
+/** The order tabs are in: the first is /docs, and has the articles in no collection. */
+export const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
+
+/** "Who can read" the project's first tab, which the articles in no collection are under (null without tabs). */
+export const firstTabLevel = (projectId: string): Promise<Level | null> =>
+  prisma.docsTab.findFirst({ where: { projectId }, orderBy: tabOrder, select: levelSelect });
+
+/** Articles `reader` may read (visibleArticle, with the project's first tab looked up); everything for the team. */
+export async function readableArticle(projectId: string, reader: Reader): Promise<Prisma.ArticleWhereInput> {
+  return reader === null ? {} : visibleArticle(reader, await firstTabLevel(projectId));
+}
+
 /** In the docs' lists, search, the sitemap and llms.txt: listed everywhere. */
 export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies Prisma.ArticleWhereInput;
 /** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
@@ -79,9 +92,9 @@ export type DocsTabView = { slug: string; name: string; collections: DocsCollect
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
  * reader: the docs pages, their tabs row and their tree share it.
  */
-export const docsContents = cache(async (projectSlug: string, options: { groups?: ReaderGroups } = {}) => {
+export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
-  const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
+  const articleSelect = { where: listedArticle, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
@@ -95,39 +108,52 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
         name: true,
         description: true,
         icon: true,
-        groups: groupClaims,
+        ...levelSelect,
         articles: articleSelect,
       },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
-      orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { id: true, slug: true, name: true },
+      orderBy: tabOrder,
+      select: { id: true, projectId: true, slug: true, name: true, ...levelSelect },
     }),
   ]);
   type Row = (typeof rows)[number];
-  // Collections for some groups only are left out for everyone else (`groups`, or whoever's reading).
-  const anyRestricted = rows.some((row) => row.groups.length > 0);
-  const groups = options.groups !== undefined ? options.groups : anyRestricted ? await readerGroups(rows[0]!.projectId) : null;
-  const allowed = (row: Row) => mayReadCollection(groups, row);
-  const view = ({ slug, name, description, icon, articles, id }: Row): DocsCollection => ({ slug, name, description, icon, articles, collections: nest(id) });
-  const readable = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
+  // What's for some readers only is left out for everyone else (`reader`, or whoever's reading): a
+  // page needs its tab, every collection it's in and itself to let them through.
+  const levels = [...tabRows, ...rows, ...rows.flatMap((row) => row.articles), ...uncollected];
+  // Any level is a row of the project: only asked when there's one that's restricted.
+  const reader = options.reader !== undefined ? options.reader : restricted(levels) ? await currentReader(levels[0]!.projectId) : null;
+  const tabOf = new Map(tabRows.map((tab) => [tab.id, tab]));
+  const allowed = (row: Row) => readable(reader, row, row.parentId === null && row.tabId ? tabOf.get(row.tabId) : null);
+  const articlesFor = (articles: Row["articles"]) => articles.filter((article) => readable(reader, article)).map(({ slug, title }) => ({ slug, title }));
+  const view = ({ slug, name, description, icon, articles, id }: Row): DocsCollection => ({
+    slug,
+    name,
+    description,
+    icon,
+    articles: articlesFor(articles),
+    collections: nest(id),
+  });
+  const hasContent = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
   const nest = (parentId: string): DocsCollection[] =>
-    rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
+    rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(hasContent);
   const top = rows
     .filter((row) => row.parentId === null && allowed(row))
     .map((row) => ({ tabId: row.tabId, collection: view(row) }))
-    .filter((t) => readable(t.collection));
+    .filter((t) => hasContent(t.collection));
+  // The articles in no collection are under the first tab.
+  const loose = readable(reader, tabRows[0]) ? articlesFor(uncollected) : [];
   const tabs = tabRows
     .map(({ id, slug, name }, index) => ({
       slug,
       name,
       collections: top.filter((t) => t.tabId === id).map((t) => t.collection),
-      uncollected: index === 0 ? uncollected : [],
+      uncollected: index === 0 ? loose : [],
     }))
     .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
-  return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
+  return { collections: top.map((t) => t.collection), uncollected: loose, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
 });
 
 export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
@@ -218,6 +244,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
     where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
       projectId: true,
+      ...levelSelect,
       title: true,
       body: true,
       content: true,
@@ -232,19 +259,20 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   if (!article) {
     return null;
   }
-  // Its collection and the ones it's in, up to its top-level one (which has its tab).
+  // Its collection and the ones it's in, up to its top-level one (which has its tab); in none, the first tab.
   const up = article.collection
     ? ancestry(
         await prisma.collection.findMany({
           where: { projectId: article.projectId },
-          select: { id: true, parentId: true, groups: groupClaims, tab: { select: { slug: true } } },
+          select: { id: true, parentId: true, ...levelSelect, tab: { select: { slug: true, ...levelSelect } } },
         }),
         article.collection.id,
       )
     : [];
-  // For some groups only: as good as missing to everyone else.
-  const isRestricted = restricted(up);
-  if (isRestricted && !mayReadCollection(await readerGroups(article.projectId), ...up)) {
+  const levels = [article.collection ? up.at(-1)?.tab : await firstTabLevel(article.projectId), ...up, article];
+  // For some readers only: as good as missing to everyone else.
+  const isRestricted = restricted(levels);
+  if (isRestricted && !readable(await currentReader(article.projectId), ...levels)) {
     return null;
   }
   const { revisedAt, collection, ...rest } = article;
@@ -256,7 +284,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
     /** The docs tab it's in (its collection's top-level one's), for the way back to it. */
     tab: up.at(-1)?.tab?.slug ?? null,
     updatedAt,
-    /** For some reader groups only: never kept by shared caches. */
+    /** For some readers only: never kept by shared caches. */
     restricted: isRestricted,
     doc: displayDoc(article),
   };
