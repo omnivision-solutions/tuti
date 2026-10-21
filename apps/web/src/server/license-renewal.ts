@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
 
 import packageJson from "../../package.json";
 import { installation as thisInstallation, licensedUntil, licenseNow, licenseServer } from "./license";
@@ -54,7 +55,8 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
       }),
       signal: AbortSignal.timeout(10_000),
     });
-  } catch {
+  } catch (error) {
+    log.warn("Couldn't reach the licence server; the current key stays", { projectId, error });
     return "unreachable";
   }
   const body = (await response.json().catch(() => null)) as { key?: unknown; token?: unknown; now?: unknown; error?: unknown } | null;
@@ -73,6 +75,7 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
     // A key that doesn't verify (for this installation and project, by Tuti) isn't kept.
     !licensedUntil(body.key, { installation: installation.id, project: projectId }, licenseNow(installation))
   ) {
+    log.warn("The licence server's answer can't be used; the current key stays", { projectId, status: response.status });
     return "unreachable";
   }
   await prisma.$transaction([
