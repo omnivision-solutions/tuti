@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
-import { fromReadAccess } from "@/lib/read-access";
+import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
 import { claimsOf } from "@/lib/reader-groups";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -43,7 +43,6 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
   const parents = docs.collections
     .filter((c) => c.depth + levels <= MAX_COLLECTION_DEPTH && !ancestry(docs.collections, c.id).some((up) => up.id === collection.id))
     .map((c) => ({ slug: c.slug, name: docs.pathOf(c.id) }));
-  const above = collection.parent ?? collection.tab;
 
   return (
     <>
@@ -112,10 +111,10 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
                 projectSlug={slug}
                 kind="collection"
                 slug={collection.slug}
-                groups={access.groups}
-                inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]! }}
-                access={fromReadAccess(collection.access)}
-                defaultGroups={claimsOf(collection)}
+                path={`/docs/${collection.slug}`}
+                access={access}
+                above={collection.parent ?? collection.tab ?? ""}
+                level={{ access: fromReadAccess(collection.access), groups: claimsOf(collection), noAccess: fromNoAccess(collection.noAccess) }}
               />
             </CardContent>
           </Card>

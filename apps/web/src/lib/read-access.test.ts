@@ -1,7 +1,7 @@
-import type { ReadAccess } from "@tuti/db";
+import type { NoAccess, ReadAccess } from "@tuti/db";
 import { describe, expect, test } from "vitest";
 
-import { accessBadge, allows, describeAccess, type Level, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
+import { accessBadge, allows, describeAccess, type Level, locks, readable, type Reader, restricted, SIGNED_OUT } from "./read-access";
 
 const level = (access: ReadAccess, ...groups: string[]): Level => ({ access, groups: groups.map((key) => ({ group: { key } })) });
 const inherit = level("INHERIT");
@@ -86,4 +86,26 @@ test("accessBadge: none for inherit", () => {
   expect(accessBadge({ access: "SIGNED_IN", groups: [] })).toBe("Signed-in");
   expect(accessBadge({ access: "GROUPS", groups: ["Enterprise", "Pro"] })).toBe("Enterprise, Pro");
   expect(accessBadge({ access: "GROUPS", groups: [] })).toBe("Team only");
+});
+
+describe("locks: what people without access see, from the nearest level that says", () => {
+  const shown = (noAccess: NoAccess) => ({ noAccess });
+  const [inherits, lock, hide] = [shown("INHERIT"), shown("LOCK"), shown("HIDE")];
+
+  test("nothing set anywhere (or no levels): hidden, as before", () => {
+    expect(locks()).toBe(false);
+    expect(locks(null, inherits, inherits, inherits)).toBe(false);
+  });
+
+  test("a level's own choice wins over what's above it", () => {
+    expect(locks(hide, inherits, lock)).toBe(true);
+    expect(locks(lock, inherits, hide)).toBe(false);
+  });
+
+  test("inherit takes the nearest level above that says, from the collection it's in up to the tab", () => {
+    expect(locks(lock, inherits, inherits)).toBe(true);
+    expect(locks(hide, lock, inherits)).toBe(true);
+    expect(locks(lock, hide, inherits)).toBe(false);
+    expect(locks(undefined, lock, inherits)).toBe(true);
+  });
 });

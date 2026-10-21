@@ -656,12 +656,19 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
   const access = team.getByRole("tabpanel", { name: "Access" });
   await expect(access.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await access.getByRole("radio", { name: "Signed-in readers" }).check();
+  // What the rest see of it, as in the dialogs: hidden by default, or shown with a lock.
+  const withoutAccess = access.getByRole("group", { name: "People without access" });
+  await expect(withoutAccess.getByRole("radio", { name: "Inherit" })).toBeChecked();
+  await withoutAccess.getByRole("radio", { name: "Show with a lock" }).check();
+  await expect(withoutAccess.getByRole("link", { name: "Preview as a reader" })).toHaveAttribute("href", `${portalUrl(slug)}/docs/billing?preview=signed-out`);
   await access.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Collection saved")).toBeVisible();
   await tree.getByRole("link", { name: "Handbook", exact: true }).click();
   await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("listitem").first().getByText("Signed-in", { exact: true })).toBeVisible();
   await api("/articles/downloading-invoices/publish", {});
-  expect((await visitor.request.get("/docs/downloading-invoices")).status()).toBe(404);
+  await visitor.goto("/docs/downloading-invoices");
+  await expect(visitor.getByText("Sign in to read this.")).toBeVisible();
+  await expect(visitor.getByText("Every invoice is a PDF")).toHaveCount(0);
 
   // On a phone the tree is a "Browse docs" menu above the page.
   await team.setViewportSize({ width: 390, height: 844 });

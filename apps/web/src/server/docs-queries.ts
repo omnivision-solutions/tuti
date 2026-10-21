@@ -1,13 +1,14 @@
 import { type Doc, toMarkdown } from "@tuti/content";
-import { type DocsLanding, type Prisma, prisma } from "@tuti/db";
+import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { ancestry } from "@/lib/collection-tree";
-import { describeAccess, type Level, type NamedLevel, readable, type Reader, restricted } from "@/lib/read-access";
+import { describeAccess, type Level, locks, type NamedLevel, readable, type Reader, restricted } from "@/lib/read-access";
 import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
+import { portalAddress } from "./custom-domains";
 import { currentReader } from "./portal-access";
 
 /** Reads for the docs pages: the team's editor and the portal. */
@@ -57,24 +58,36 @@ export const namedLevel = (level: Level, names: Map<string, string>): NamedLevel
  * them; "" is the top level of docs without tabs). Articles in no collection are under the first tab.
  */
 export const accessChoices = cache(async (projectId: string) => {
-  const [tabs, collections, groups] = await Promise.all([
+  const [tabs, collections, groups, project] = await Promise.all([
     prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: { id: true, slug: true, name: true, ...levelSelect } }),
     prisma.collection.findMany({ where: { projectId }, select: { id: true, parentId: true, tabId: true, slug: true, ...levelSelect } }),
     prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } }),
   ]);
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const tabOf = new Map(tabs.map((tab) => [tab.id, tab]));
-  const words = (levels: (Level | undefined)[]) => describeAccess(levels.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
-  const inherits: Record<string, string> = Object.fromEntries([
-    ["", words([])],
-    ...tabs.map((tab) => [tab.slug, words([tab])]),
-    ...collections.map((c) => {
+  // Each tab's and collection's levels, top down, by slug.
+  const chains: [string, ((Level & { noAccess: NoAccess }) | undefined)[]][] = [
+    ["", []],
+    ...tabs.map((tab): [string, [typeof tab]] => [tab.slug, [tab]]),
+    ...collections.map((c): [string, ((typeof tabs)[number] | (typeof c) | undefined)[]] => {
       const up = ancestry(collections, c.id);
       const tabId = up.at(-1)?.tabId;
-      return [c.slug, words([tabId ? tabOf.get(tabId) : undefined, ...up])];
+      return [c.slug, [tabId ? tabOf.get(tabId) : undefined, ...up.toReversed()]];
     }),
-  ]);
-  return { groups, inherits, firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null };
+  ];
+  const words = (chain: (Level | undefined)[]) => describeAccess(chain.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
+  const inherits: Record<string, string> = Object.fromEntries(chains.map(([slug, chain]) => [slug, words(chain)]));
+  /** What the rest see of a page that inherits "People without access" there. */
+  const shows: Record<string, "lock" | "hide"> = Object.fromEntries(chains.map(([slug, chain]) => [slug, locks(...chain) ? "lock" : "hide"]));
+  return {
+    groups,
+    inherits,
+    shows,
+    firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null,
+    /** The portal's address, for "Preview as a reader". */
+    portal: await portalAddress(project.slug),
+  };
 });
 
 export type AccessChoices = Awaited<ReturnType<typeof accessChoices>>;
@@ -90,7 +103,7 @@ const published = { publishedAt: { not: null }, deletedAt: null } as const;
 export const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
 
 /** "Who can read" the project's first tab, which the articles in no collection are under (null without tabs). */
-export const firstTabLevel = (projectId: string): Promise<Level | null> =>
+export const firstTabLevel = (projectId: string) =>
   prisma.docsTab.findFirst({ where: { projectId }, orderBy: tabOrder, select: levelSelect });
 
 /** Articles `reader` may read (visibleArticle, with the project's first tab looked up); everything for the team. */
@@ -103,15 +116,21 @@ export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies P
 /** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
 export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLISTED"] } } satisfies Prisma.ArticleWhereInput;
 
+/** An article in a list: `locked` when this reader may not read it but sees its title with a lock. */
+export type DocsArticleLink = { slug: string; title: string; locked?: true };
+
 export type DocsCollection = {
   slug: string;
   name: string;
+  /** Empty when it's locked. */
   description: string;
   /** Its Lucide icon's name, or null. */
   icon: string | null;
-  articles: { slug: string; title: string }[];
+  articles: DocsArticleLink[];
   /** The collections in it, in order. */
   collections: DocsCollection[];
+  /** This reader may not read it, but sees its name with a lock (and nothing in it). */
+  locked?: true;
 };
 
 /**
@@ -123,9 +142,11 @@ export type DocsTabView = {
   slug: string;
   name: string;
   collections: DocsCollection[];
-  uncollected: { slug: string; title: string }[];
+  uncollected: DocsArticleLink[];
   landing: DocsLanding;
   page: string | null;
+  /** This reader may not read it, but sees its name with a lock (and nothing in it). */
+  locked?: true;
 };
 
 /**
@@ -137,8 +158,14 @@ export type DocsTabView = {
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
  * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
  * the articles whose team blocked search indexing.
+ *
+ * What isn't for this reader is left out, unless "People without access" shows it with a lock
+ * (`locks`): then it's there by its title (a tab's or collection's name and icon) with `locked`,
+ * and nothing in it, as long as the team would find something to read there. Not with `locks:
+ * false` (search engines and AI tools get no locks). `signedIn`: whether this reader is signed in,
+ * for what a locked page tells them.
  */
-export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean } = {}) => {
+export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean; locks?: boolean } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const listed = { ...listedArticle, ...(options.indexable && { noindex: false }) };
   const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
@@ -182,42 +209,68 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
   // Any level is a row of the project: only asked when there's one that's restricted.
   const reader = options.reader !== undefined ? options.reader : restricted(levels) ? await currentReader(levels[0]!.projectId) : null;
   const tabOf = new Map(tabRows.map((tab) => [tab.id, tab]));
+  const withLocks = options.locks !== false;
+  // A collection's levels, top down: its top-level one's tab, the ones it's in, itself.
+  const levelsOf = (row: Row) => {
+    const up = ancestry(rows, row.id);
+    const tabId = up.at(-1)?.tabId;
+    return [tabId ? tabOf.get(tabId) : undefined, ...up.toReversed()];
+  };
+  // Whether the team would find something to read in it.
+  const hasArticles = (row: Row): boolean => row.articles.length > 0 || rows.some((child) => child.parentId === row.id && hasArticles(child));
   const allowed = (row: Row) => readable(reader, row, row.parentId === null && row.tabId ? tabOf.get(row.tabId) : null);
-  const articlesFor = (articles: Row["articles"]) => articles.filter((article) => readable(reader, article)).map(({ slug, title }) => ({ slug, title }));
-  const view = ({ slug, name, description, icon, articles, id }: Row): DocsCollection => ({
-    slug,
-    name,
-    description,
-    icon,
-    articles: articlesFor(articles),
-    collections: nest(id),
-  });
-  const hasContent = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
-  const nest = (parentId: string): DocsCollection[] =>
-    rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(hasContent);
+  // In a collection (or tab) this reader may read (`above`: its levels): the articles they may, and the locked ones by title.
+  const articlesFor = (articles: Row["articles"], above: Parameters<typeof locks>): DocsArticleLink[] =>
+    articles.flatMap(({ slug, title, ...level }) =>
+      readable(reader, level) ? [{ slug, title }] : withLocks && locks(...above, level) ? [{ slug, title, locked: true as const }] : [],
+    );
+  // Left out (null) when there's nothing in it for this reader.
+  const view = (row: Row): DocsCollection | null => {
+    const { slug, name, description, icon, articles, id } = row;
+    if (!allowed(row)) {
+      return withLocks && locks(...levelsOf(row)) && hasArticles(row) ? { slug, name, description: "", icon, articles: [], collections: [], locked: true } : null;
+    }
+    const collection = { slug, name, description, icon, articles: articlesFor(articles, levelsOf(row)), collections: nest(id) };
+    return collection.articles.length > 0 || collection.collections.length > 0 ? collection : null;
+  };
+  const nest = (parentId: string): DocsCollection[] => rows.filter((row) => row.parentId === parentId).flatMap((row) => view(row) ?? []);
   const top = rows
-    .filter((row) => row.parentId === null && allowed(row))
-    .map((row) => ({ tabId: row.tabId, collection: view(row) }))
-    .filter((t) => hasContent(t.collection));
+    .filter((row) => row.parentId === null)
+    .flatMap((row) => {
+      const collection = view(row);
+      return collection ? [{ tabId: row.tabId, collection }] : [];
+    });
   // The articles in no collection are under the first tab.
-  const loose = readable(reader, tabRows[0]) ? articlesFor(uncollected) : [];
-  const tabs = tabRows
-    .map(({ id, slug, name, landing, landingArticle, landingCollection }, index) => ({
+  const loose = readable(reader, tabRows[0]) ? articlesFor(uncollected, [tabRows[0]]) : [];
+  const tabs = tabRows.flatMap(({ id, slug, name, landing, landingArticle, landingCollection, ...level }, index): DocsTabView[] => {
+    const tab = {
       slug,
       name,
-      collections: top.filter((t) => t.tabId === id).map((t) => t.collection),
-      uncollected: index === 0 ? loose : [],
       landing,
       // A deleted article's slug may be another's now.
       page: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
-    }))
-    .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
-  return { collections: top.map((t) => t.collection), uncollected: loose, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
+    };
+    if (!readable(reader, level)) {
+      const hasSome = rows.some((row) => row.parentId === null && row.tabId === id && hasArticles(row)) || (index === 0 && uncollected.length > 0);
+      return withLocks && locks(level) && hasSome ? [{ ...tab, collections: [], uncollected: [], locked: true }] : [];
+    }
+    const view = { ...tab, collections: top.filter((t) => t.tabId === id).map((t) => t.collection), uncollected: index === 0 ? loose : [] };
+    return view.collections.length > 0 || view.uncollected.length > 0 ? [view] : [];
+  });
+  return { collections: top.map((t) => t.collection), uncollected: loose, tabs, home: tabRows.at(0)?.slug ?? null, signedIn: reader?.signedIn ?? true };
 });
 
 export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
 
-export type DocsTreeCollection = { slug: string; name: string; icon: string | null; articles: { slug: string; title: string }[]; collections: DocsTreeCollection[]; open: boolean };
+export type DocsTreeCollection = {
+  slug: string;
+  name: string;
+  icon: string | null;
+  articles: DocsArticleLink[];
+  collections: DocsTreeCollection[];
+  open: boolean;
+  locked?: true;
+};
 
 /**
  * The Docs layout's tree: tab `tab`'s collections (else the first tab with something to read, or all
@@ -226,9 +279,9 @@ export type DocsTreeCollection = { slug: string; name: string; icon: string | nu
  */
 export function docsTree(docs: DocsContents, tab: string | null, at: string | null) {
   const { collections, uncollected } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
-  const branch = ({ slug, name, icon, articles, collections }: DocsCollection): DocsTreeCollection => {
+  const branch = ({ slug, name, icon, articles, collections, locked }: DocsCollection): DocsTreeCollection => {
     const inside = collections.map(branch);
-    return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open) };
+    return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open), ...(locked && { locked }) };
   };
   return { collections: collections.map(branch), uncollected };
 }
@@ -253,21 +306,25 @@ export type TabLanding = { kind: "overview" } | { kind: "article"; slug: string;
 /** What /docs/<slug> is for this reader. */
 export type DocsPage =
   | { kind: "article"; article: PublishedArticle }
+  /** An article this reader may not read, shown with a lock. */
+  | { kind: "locked"; article: LockedArticle }
   | { kind: "tab"; docs: DocsContents; tab: DocsTabView; landing: TabLanding }
   | CollectionPage
   | { kind: "redirect"; path: string };
 
-/** The first article in `collection`'s reading order: its own, then the ones in the collections in it. */
-const firstIn = (collection: DocsCollection): string | undefined => collection.articles[0]?.slug ?? collection.collections.map(firstIn).find(Boolean);
+/** The first article this reader may read in `collection`'s reading order: its own, then the ones in the collections in it. */
+const firstIn = (collection: DocsCollection): string | undefined =>
+  collection.articles.find((a) => !a.locked)?.slug ?? collection.collections.map(firstIn).find(Boolean);
 
 /**
  * What tab `tab`'s path shows this reader: its first article (in its first collection, else the
  * first in none), the article or collection the team picked, or its overview. A picked page this
- * reader may not read there (deleted, unpublished, hidden or AI only, restricted, or in another tab
- * now) is the overview, as is a tab with no article.
+ * reader may not read there (deleted, unpublished, hidden or AI only, restricted, locked, or in
+ * another tab now) is the overview, as is a tab with no article.
  */
 export async function tabLanding(projectSlug: string, docs: DocsContents, tab: DocsTabView): Promise<TabLanding> {
-  const slug = tab.landing === "FIRST" ? (tab.collections.map(firstIn).find(Boolean) ?? tab.uncollected[0]?.slug) : tab.landing === "PAGE" ? tab.page : null;
+  const slug =
+    tab.landing === "FIRST" ? (tab.collections.map(firstIn).find(Boolean) ?? tab.uncollected.find((a) => !a.locked)?.slug) : tab.landing === "PAGE" ? tab.page : null;
   if (!slug) {
     return { kind: "overview" };
   }
@@ -277,7 +334,7 @@ export async function tabLanding(projectSlug: string, docs: DocsContents, tab: D
     return { kind: "article", slug, article };
   }
   const found = findCollection(docs, slug);
-  return found?.tab === tab ? { kind: "collection", docs, slug, ...found } : { kind: "overview" };
+  return found?.tab === tab && !found.collection.locked ? { kind: "collection", docs, slug, ...found } : { kind: "overview" };
 }
 
 /**
@@ -327,9 +384,9 @@ export function findCollection(docs: DocsContents, slug: string) {
  * (a 404).
  */
 export const docsPage = cache(async (projectSlug: string, slug: string): Promise<DocsPage | null> => {
-  const article = await publishedArticle(projectSlug, slug);
-  if (article) {
-    return { kind: "article", article };
+  const found = await articleAt(projectSlug, slug);
+  if (found) {
+    return found.kind === "article" ? { kind: "article", article: found.article } : { kind: "locked", article: found.locked };
   }
   const listing = await listingPage(projectSlug, slug);
   if (listing) {
@@ -339,8 +396,25 @@ export const docsPage = cache(async (projectSlug: string, slug: string): Promise
   return moved && { kind: "redirect", path: moved.path };
 });
 
-/** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */
+/** A published article on the portal (unless it's hidden or AI only) that this reader may read, once per request (its page and its metadata both read it). */
 export const publishedArticle = cache(async (projectSlug: string, slug: string) => {
+  const found = await articleAt(projectSlug, slug);
+  return found?.kind === "article" ? found.article : null;
+});
+
+/**
+ * A published article on the portal that this reader may not read, but that "People without
+ * access" shows them with a lock: only its title, its collection and its tab, never what it says.
+ */
+export const lockedForReader = cache(async (projectSlug: string, slug: string) => {
+  const found = await articleAt(projectSlug, slug);
+  return found?.kind === "locked" ? found.locked : null;
+});
+
+export type LockedArticle = NonNullable<Awaited<ReturnType<typeof lockedForReader>>>;
+
+/** What article `slug` is to this reader: one they may read, one locked for them, or nothing (missing, or hidden from them). */
+const articleAt = cache(async (projectSlug: string, slug: string) => {
   const article = await prisma.article.findFirst({
     where: { project: { slug: projectSlug }, slug, ...servedArticle },
     select: {
@@ -372,31 +446,51 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
         article.collection.id,
       )
     : [];
-  const levels = [article.collection ? up.at(-1)?.tab : await firstTabLevel(article.projectId), ...up, article];
-  // For some readers only: as good as missing to everyone else.
-  const isRestricted = restricted(levels);
-  if (isRestricted && !readable(await currentReader(article.projectId), ...levels)) {
-    return null;
-  }
+  const levels = [article.collection ? up.at(-1)?.tab : await firstTabLevel(article.projectId), ...up.toReversed(), article];
   const { revisedAt, collection, ...rest } = article;
-  // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
-  const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
-  return {
-    ...rest,
+  const where = {
     collection: collection && { slug: collection.slug, name: collection.name },
     /** The docs tab it's in (its collection's top-level one's), for the way back to it. */
     tab: up.at(-1)?.tab?.slug ?? null,
-    updatedAt,
-    /** For some readers only: never kept by shared caches. */
-    restricted: isRestricted,
-    doc: displayDoc(article),
+  };
+  // For some readers only: as good as missing to everyone else, unless it's shown to them with a lock.
+  const isRestricted = restricted(levels);
+  const reader = isRestricted ? await currentReader(article.projectId) : null;
+  if (!readable(reader, ...levels)) {
+    if (!locks(...levels)) {
+      return null;
+    }
+    // Its collection and tab only if this reader sees them listed (readable, or locked too): a hidden
+    // one's name stays hidden.
+    const above = levels.slice(0, -1);
+    const shown = (chain: typeof levels) => readable(reader, ...chain) || locks(...chain);
+    const locked = {
+      collection: shown(above) ? where.collection : null,
+      tab: shown(above.slice(0, 1)) ? where.tab : null,
+    };
+    // Picked field by field: nothing of what it says.
+    return { kind: "locked" as const, locked: { slug, title: article.title, ...locked, signedIn: reader?.signedIn ?? false } };
+  }
+  // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
+  const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
+  return {
+    kind: "article" as const,
+    article: {
+      ...rest,
+      ...where,
+      updatedAt,
+      /** For some readers only: never kept by shared caches. */
+      restricted: isRestricted,
+      doc: displayDoc(article),
+    },
   };
 });
 
 /**
  * Where a page that had `slug` is now (its path; `article`, its slug if it's an article), when no page
- * has `slug` any more: only if this reader may read it there (publishedArticle, or a tab or collection
- * with something to read), so a redirect never shows that a draft, hidden or restricted page is there.
+ * has `slug` any more: only if this reader may read it there, or sees it with a lock (an article, or a
+ * tab or collection with something to read), so a redirect never shows that a draft, hidden or
+ * restricted page is there.
  */
 async function movedPage(projectSlug: string, slug: string): Promise<{ path: string; article: string | null } | null> {
   const redirect = await prisma.docsRedirect.findFirst({
@@ -406,7 +500,7 @@ async function movedPage(projectSlug: string, slug: string): Promise<{ path: str
   const article = redirect?.article;
   if (article) {
     // A deleted article's slug may be another's now.
-    return !article.deletedAt && (await publishedArticle(projectSlug, article.slug)) ? { path: `/docs/${article.slug}`, article: article.slug } : null;
+    return !article.deletedAt && (await articleAt(projectSlug, article.slug)) ? { path: `/docs/${article.slug}`, article: article.slug } : null;
   }
   const to = redirect?.tab ?? redirect?.collection;
   const page = to && (await listingPage(projectSlug, to.slug));

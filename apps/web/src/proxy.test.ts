@@ -46,6 +46,16 @@ test("an article's .md URL is served by its Markdown route", async () => {
   expect(await rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
 });
 
+test("“Preview as a reader”: only a portal page's own ?preview=signed-out asks for it, never a header the request sends", async () => {
+  const preview = async (path: string, headers: Record<string, string> = {}) =>
+    (await proxy(new NextRequest(`http://acme.tuti.example${path}`, { headers: { host: "acme.tuti.example", ...headers } }))).headers.get(
+      "x-middleware-request-x-tuti-preview",
+    );
+  expect(await preview("/docs/billing?preview=signed-out")).toBe("signed-out");
+  expect(await preview("/docs/billing")).toBe("");
+  expect(await preview("/docs/billing?preview=yes", { "x-tuti-preview": "signed-out" })).toBe("");
+});
+
 test("Tuti's own portal under its path on the app's domain (tuti.example/help/…), and nothing else of the app's", async () => {
   const response = (path: string) => proxy(request("tuti.example", path));
   const rewrite = async (path: string) => (await response(path)).headers.get("x-middleware-rewrite");

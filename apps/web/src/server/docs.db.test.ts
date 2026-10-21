@@ -130,6 +130,7 @@ describe("collections", () => {
       uncollected: [{ slug: "shortcuts", title: "Shortcuts" }],
       tabs: [],
       home: null,
+      signedIn: true,
     });
 
     // Renaming moves its slug; articles follow by id.

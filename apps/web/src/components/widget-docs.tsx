@@ -7,15 +7,23 @@ import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
-import { ArticleLinks, DocsTabs } from "@/components/docs-collections";
+import { ArticleLinks, DocsTabs, LockedMark } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { type DocsCollection, docsContents, findCollection, movedArticle, publishedArticle } from "@/server/docs-queries";
-import { searchDocs } from "@/server/docs-search";
+import { WidgetLocked } from "@/components/widget-locked";
+import { type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { searchForReader } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
-import { currentReader } from "@/server/portal-access";
+
+/**
+ * What a page this reader may not read, but sees with a lock, says in the panel: to sign in (as
+ * for a private portal; the customer's page can sign them in here), or that they don't have access.
+ */
+function LockedMessage({ projectSlug, signedIn }: { projectSlug: string; signedIn: boolean }) {
+  return signedIn ? <p className="text-sm text-muted-foreground">You don&apos;t have access to this.</p> : <WidgetLocked projectSlug={projectSlug} />;
+}
 
 /** A widget Docs URL: the list (with the search, if any, or in a docs tab, or a collection's) or an article (opened from there). */
 function docsHref({ q, docsTab, collection, article }: { q?: string; docsTab?: string; collection?: string; article?: string }) {
@@ -84,13 +92,17 @@ export async function WidgetDocs({
           askAPerson={await askAPerson(projectSlug)}
         />
       )}
-      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} docsTab={docsTab} collection={collection} />}
+      {query ? (
+        <SearchResults projectId={projectId} projectSlug={projectSlug} query={query} />
+      ) : (
+        <Collections projectSlug={projectSlug} docsTab={docsTab} collection={collection} />
+      )}
     </div>
   );
 }
 
-async function SearchResults({ projectId, query }: { projectId: string; query: string }) {
-  const results = await searchDocs(projectId, query, 10, await currentReader(projectId));
+async function SearchResults({ projectId, projectSlug, query }: { projectId: string; projectSlug: string; query: string }) {
+  const results = await searchForReader(projectId, projectSlug, query, 10);
   if (results.length === 0) {
     return (
       <EmptyState
@@ -110,6 +122,7 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
         <li key={result.slug} className="flex flex-col gap-0.5">
           <Link href={docsHref({ q: query, article: result.slug })} className="break-words text-primary hover:underline">
             {result.title}
+            {result.locked && <LockedMark />}
           </Link>
           {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
         </li>
@@ -126,7 +139,10 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
         <li key={collection.slug} className="flex flex-col gap-0.5">
           <Link href={href(collection.slug)} className="flex items-center gap-2 font-medium hover:underline">
             <CollectionIcon name={collection.icon} />
-            <span className="min-w-0 break-words">{collection.name}</span>
+            <span className="min-w-0 break-words">
+              {collection.name}
+              {collection.locked && <LockedMark />}
+            </span>
           </Link>
           {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
         </li>
@@ -160,6 +176,7 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
           </h2>
           {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
         </div>
+        {collection.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
         {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => docsHref({ ...at, collection: collection.slug, article })} />}
         {collection.collections.length > 0 && (
           <CollectionLinks
@@ -175,6 +192,7 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
   return (
     <>
       {tabs}
+      {tab?.locked && <LockedMessage projectSlug={projectSlug} signedIn={docs.signedIn} />}
       {collections.length > 0 && <CollectionLinks collections={collections} label="Collections" href={(c) => docsHref({ ...at, collection: c })} />}
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
@@ -207,7 +225,8 @@ async function WidgetArticle({
   // An old slug of an article that has since moved opens it where it is now.
   const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
   const slug = moved ?? asked;
-  const article = await publishedArticle(projectSlug, slug);
+  // One locked for this reader: its title, and what to do.
+  const article = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
   if (!article) {
     return (
       <EmptyState
@@ -240,7 +259,11 @@ async function WidgetArticle({
           {article.title}
         </h1>
       </div>
-      <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+      {"doc" in article ? (
+        <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+      ) : (
+        <LockedMessage projectSlug={projectSlug} signedIn={article.signedIn} />
+      )}
     </article>
   );
 }

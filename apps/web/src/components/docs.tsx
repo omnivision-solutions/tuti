@@ -28,7 +28,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
 import { keepingFields } from "@/lib/forms";
-import type { Access } from "@/lib/read-access";
+import { previewUrl } from "@/lib/portal-base";
+import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
 import type { FormState } from "@/server/form-state";
 import type { DocsLanding } from "@/server/operations/docs";
@@ -506,23 +507,27 @@ export function CollectionSettingsForm({
   );
 }
 
-/** A tab's or a collection's page's Access: who can read it (`inherit`: what the level above lets read). */
+/**
+ * A tab's or a collection's page's Access: who can read it and what people without access see, with
+ * "Preview as a reader" (`path`: its page in the portal). `above` is the level it inherits from (its
+ * collection or tab; "" for a tab), `level` what it has now.
+ */
 export function AccessForm({
   projectSlug,
   kind,
   slug,
-  groups,
-  inherit,
+  path,
   access,
-  defaultGroups,
+  above,
+  level,
 }: {
   projectSlug: string;
   kind: "tab" | "collection";
   slug: string;
-  groups: GroupOption[];
-  inherit: { label: string; description: string };
-  access: Access;
-  defaultGroups: string[];
+  path: string;
+  access: AccessChoices;
+  above: string;
+  level: { access: Access; groups: string[]; noAccess: WithoutAccess };
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await (kind === "tab" ? saveTab : saveCollection)(projectSlug, slug, prev, formData);
@@ -534,13 +539,23 @@ export function AccessForm({
   return (
     <form {...keepingFields(action)}>
       <FieldGroup>
-        <WhoCanRead id={`${kind}-access-${slug}`} projectSlug={projectSlug} groups={groups} inherit={inherit} defaultAccess={access} defaultGroups={defaultGroups} />
+        <WhoCanRead
+          id={`${kind}-access-${slug}`}
+          projectSlug={projectSlug}
+          groups={access.groups}
+          inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+          defaultAccess={level.access}
+          defaultGroups={level.groups}
+          defaultNoAccess={level.noAccess}
+          preview={previewUrl(access, path)}
+        />
         {state.error && <FieldError>{state.error}</FieldError>}
         <SaveButton pending={pending} />
       </FieldGroup>
     </form>
   );
 }
+
 
 /**
  * Adds a collection, at the top level (of a tab, with tabs) or in one of `parents`: the dialog a
@@ -614,7 +629,7 @@ export function CollectionDialog({
               id="collection-access-new"
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]! }}
+              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!, shows: access.shows[parent ?? tab ?? ""] ?? "hide" }}
             />
           </FieldGroup>
           <DialogFooter>

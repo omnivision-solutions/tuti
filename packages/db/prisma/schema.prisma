@@ -1012,6 +1012,8 @@ model Collection {
   icon        String?
   /// Who may read it (and what's in it), on top of its tab and the collections it's in.
   access      ReadAccess @default(INHERIT)
+  /// What people it isn't for see of it (see NoAccess).
+  noAccess    NoAccess   @default(INHERIT)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -1075,6 +1077,19 @@ enum ReadAccess {
   GROUPS
 }
 
+/// What people a tab, collection or article isn't for (by its ReadAccess) see of it. The nearest
+/// level that isn't INHERIT decides, from the page up (the article, each collection, the tab); with
+/// none, HIDE. See apps/web lib/read-access.ts.
+enum NoAccess {
+  /// As the level above (for a tab: HIDE).
+  INHERIT
+  /// Listed by its title with a lock; its page shows the title and asks them to sign in, or says
+  /// they don't have access, never its content.
+  LOCK
+  /// Not listed anywhere, and its link is "not found".
+  HIDE
+}
+
 /// A group a tab is for (with `access` GROUPS). A group in use can't be deleted, as for CollectionGroup.
 model TabGroup {
   tabId   String
@@ -1128,6 +1143,8 @@ model DocsTab {
   order               Int         @default(0)
   /// Who may read it: its collections and, on the first tab, the articles in no collection.
   access              ReadAccess  @default(INHERIT)
+  /// What people it isn't for see of it (see NoAccess).
+  noAccess            NoAccess    @default(INHERIT)
   /// What the tab's path shows (see DocsLanding).
   landing             DocsLanding @default(OVERVIEW)
   /// With PAGE: the article or the collection (at most one, a check constraint) it shows. Gone,
@@ -1234,6 +1251,8 @@ model Article {
   /// Who may read it, on top of its collections and their tab (in no collection: the first tab's).
   /// Like `listing`, changed at once, never kept as an unpublished change.
   access          ReadAccess     @default(INHERIT)
+  /// What people it isn't for see of it (see NoAccess); like `access`, changed at once.
+  noAccess        NoAccess       @default(INHERIT)
   /// When changes to it last went live while it was published: the portal's "Updated" date.
   revisedAt       DateTime?
   /// At most one collection; deleting it leaves its articles uncollected.

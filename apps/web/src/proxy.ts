@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { appPortalMount } from "@/lib/app-portal";
 import { portalUrl } from "@/lib/hosts";
-import { ASSET_PATH, BASE_HEADER, BASE_PATTERN } from "@/lib/portal-base";
+import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, PREVIEW } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
@@ -152,6 +152,8 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   if (!mount) {
     forwarded.set(BASE_HEADER, "");
   }
+  // "Preview as a reader": always set here, so only the page's own query can ask for it (see currentReader).
+  forwarded.set(PREVIEW.header, request.nextUrl.searchParams.get(PREVIEW.param) === PREVIEW.value ? PREVIEW.value : "");
   const response = NextResponse.rewrite(url, { request: { headers: forwarded } });
   if (visitor === "allowed") {
     // A private portal's feeds and files are for this reader only: no shared cache may keep them.

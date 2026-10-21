@@ -105,10 +105,10 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
                 projectSlug={slug}
                 kind="tab"
                 slug={tab.slug}
-                groups={access.groups}
-                inherit={{ label: "Inherit", description: access.inherits[""]! }}
-                access={tab.access}
-                defaultGroups={tab.groups}
+                path={first ? "/docs" : `/docs/${tab.slug}`}
+                access={access}
+                above=""
+                level={tab}
               />
             </CardContent>
           </Card>

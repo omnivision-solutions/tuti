@@ -34,7 +34,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const portal = await portalAddress(slug);
   // For AI tools, like search engines: what's for everyone (nothing for signed-in readers or some groups only),
   // and not the articles whose team blocked search indexing.
-  const docs = await docsContents(slug, { reader: SIGNED_OUT, indexable: true });
+  const docs = await docsContents(slug, { reader: SIGNED_OUT, indexable: true, locks: false });
   const { collections, uncollected, tabs } = docs;
   const articleItem = (article: { slug: string; title: string }) => ({
     type: "listItem",
