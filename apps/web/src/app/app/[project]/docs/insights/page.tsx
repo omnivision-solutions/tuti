@@ -12,7 +12,7 @@ import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { helpInsights, INSIGHTS_DAYS } from "@/server/operations/help-insights";
 
-export const metadata = { title: "Help center insights" };
+export const metadata = { title: "Docs insights" };
 
 /** Why a gap's latest question got "I don't know" (none for questions asked before causes were kept). */
 const CAUSES: Record<string, string> = {
@@ -30,7 +30,7 @@ function helpfulness(helpful: number, notHelpful: number) {
 }
 
 /** What readers did in the help center lately: views, which articles helped, what they missed and couldn't find. */
-export default async function HelpInsightsPage(props: PageProps<"/app/[project]/help/insights">) {
+export default async function HelpInsightsPage(props: PageProps<"/app/[project]/docs/insights">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
   if (!membership) {
@@ -41,7 +41,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
 
   return (
     <>
-      <BackLink href={`/app/${slug}/help`}>Help center</BackLink>
+      <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
       <PageHeader
         title="Insights"
         description={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
@@ -83,7 +83,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
                   actions={
                     <>
                       <Link
-                        href={`/app/${slug}/help/new?${new URLSearchParams({ title: gap.question })}`}
+                        href={`/app/${slug}/docs/new?${new URLSearchParams({ title: gap.question })}`}
                         className={buttonVariants({ variant: "outline", size: "sm" })}
                       >
                         Write an article
@@ -111,7 +111,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
                 <ItemRow
                   key={article.slug}
                   title={
-                    <Link href={`/app/${slug}/help/${article.slug}`} className="hover:underline">
+                    <Link href={`/app/${slug}/docs/${article.slug}`} className="hover:underline">
                       {article.title}
                     </Link>
                   }
@@ -138,7 +138,7 @@ export default async function HelpInsightsPage(props: PageProps<"/app/[project]/
                   title={<span className="font-normal">{comment.comment}</span>}
                   meta={
                     <>
-                      <Link href={`/app/${slug}/help/${comment.article.slug}`} className="hover:underline">
+                      <Link href={`/app/${slug}/docs/${comment.article.slug}`} className="hover:underline">
                         {comment.article.title}
                       </Link>
                       {` · ${timeAgo(new Date(comment.at))}`}

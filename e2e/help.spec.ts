@@ -17,7 +17,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await createProject(team, "Acme", slug);
 
   // A collection to put it in.
-  await team.getByRole("link", { name: "Help center" }).click();
+  await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
   await team.getByRole("button", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog");
@@ -52,7 +52,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   }
   await checkpoint(team, "team-help-article-draft");
   await team.getByRole("button", { name: "Save draft" }).click();
-  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   await expect(team.getByText("Draft", { exact: true })).toBeVisible();
 
   // Visitors don't see it yet.
@@ -132,10 +132,10 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(helpful.getByText("Thanks for letting us know.")).toBeVisible();
 
   // The team sees it in the help center's insights, with the article's views and the search that found nothing.
-  await team.getByRole("link", { name: "Help center" }).first().click();
-  await team.waitForURL(`**/app/${slug}/help`);
+  await team.getByRole("link", { name: "Docs", exact: true }).first().click();
+  await team.waitForURL(`**/app/${slug}/docs`);
   await team.getByRole("link", { name: "Insights" }).click();
-  await team.waitForURL(`**/app/${slug}/help/insights`);
+  await team.waitForURL(`**/app/${slug}/docs/insights`);
   await expect(team.getByText("The last 30 days: 2 article views, 2 searches, 1 failed search.")).toBeVisible();
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
@@ -144,8 +144,8 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await checkpoint(team, "team-help-insights");
 
   // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
-  await team.getByRole("link", { name: "Help center" }).first().click();
-  await team.waitForURL(`**/app/${slug}/help`);
+  await team.getByRole("link", { name: "Docs", exact: true }).first().click();
+  await team.waitForURL(`**/app/${slug}/docs`);
   await expect(team.getByText("1 article", { exact: true })).toBeVisible();
   await team.route("**/*", async (route) => {
     if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
@@ -167,7 +167,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.
   await team.getByRole("link", { name: "Inviting your team" }).click();
-  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   const paragraph = editor.locator("p", { hasText: "Owners and admins send invites" });
   for (const sentence of [" Members can ask them.", " Invites last a week."]) {
     // The caret goes to the paragraph's end (End only reaches the end of a visual line).
@@ -217,7 +217,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // Its history shows what changed since the first version.
   await team.getByRole("link", { name: "History" }).click();
-  await team.waitForURL(`**/app/${slug}/help/inviting-your-team/history`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team/history`);
   const versions = team.getByRole("link", { name: /^Saved / });
   await expect(versions).toHaveCount(3);
   await versions.nth(2).click();
@@ -234,7 +234,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await checkpoint(team, "team-help-article-restore-confirm", { fullPage: false });
   await restoring.getByRole("button", { name: "Restore" }).click();
   await expect(team.getByText("Version restored")).toBeVisible();
-  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   await unpublished.getByRole("button", { name: "Discard changes" }).click();
   const discarding = team.getByRole("alertdialog");
   await expect(discarding).toContainText("The changes stay in its history");
@@ -247,7 +247,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // Listing: unlisted, it's gone from /help but its link still works; hidden, its page is a 404.
   await team.getByRole("link", { name: "Inviting your team" }).click();
-  await team.waitForURL(`**/app/${slug}/help/inviting-your-team`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   // The page header's line under the title.
   const header = team.locator("p", { hasText: /^Published / });
   const setListing = async (name: string, shot?: string) => {
@@ -288,7 +288,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   const deletingArticle = team.getByRole("alertdialog");
   await expect(deletingArticle).toContainText("You can restore it from Recently deleted for 30 days.");
   await deletingArticle.getByRole("button", { name: "Delete" }).click();
-  await team.waitForURL(`**/app/${slug}/help`);
+  await team.waitForURL(`**/app/${slug}/docs`);
   const recentlyDeleted = team.getByRole("region", { name: "Recently deleted" });
   await expect(recentlyDeleted).toContainText("Inviting your team");
   await checkpoint(team, "team-help-recently-deleted");
@@ -326,7 +326,7 @@ test("the team arranges the help center: a collection in another, moves with the
   }
 
   // A collection in Billing.
-  await team.goto(`/app/${slug}/help`);
+  await team.goto(`/app/${slug}/docs`);
   await team.getByRole("button", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Invoices");
@@ -416,7 +416,7 @@ test("the team splits the help center into sections: the first takes the collect
   }
 
   // The first section: the dialog says the collections go in it.
-  await team.goto(`/app/${slug}/help`);
+  await team.goto(`/app/${slug}/docs`);
   const structure = team.getByRole("region", { name: "Collections" });
   // A list's own rows (not the ones nested in them).
   const rows = (name: string) => structure.getByRole("list", { name, exact: true }).locator(":scope > li");
@@ -601,7 +601,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   expect((await modelRequests()).filter((request) => request.user.includes(offLimits))).toEqual([]);
 
   // The team sees them as gaps in the insights (the answered question isn't one), each with why.
-  await team.goto(`/app/${slug}/help/insights`);
+  await team.goto(`/app/${slug}/docs/insights`);
   // A gap's row (the failed searches list the question too).
   const gap = (text: string) => team.getByRole("listitem").filter({ hasText: text, has: team.getByRole("button", { name: "Dismiss" }) });
   await expect(gap(unrelated)).toContainText("1 unanswered");
@@ -616,7 +616,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await expect(gap(another)).toHaveCount(0);
   // "Write an article" starts one with the question as its title.
   await gap(unrelated).getByRole("link", { name: "Write an article" }).click();
-  await team.waitForURL(`**/app/${slug}/help/new?title=*`);
+  await team.waitForURL(`**/app/${slug}/docs/new?title=*`);
   await expect(team.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(team, "team-help-gap-new-article");
 });
@@ -638,7 +638,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   const link = linkIn(await latestEmailTo(support), `${APP_URL}/support-email?`);
   const inbox = await newPerson(browser, APP_URL);
   await inbox.goto(link);
-  await expect(inbox.getByText(`Send questions from Acme's help center that the AI can't answer to ${support}?`)).toBeVisible();
+  await expect(inbox.getByText(`Send questions from Acme's docs that the AI can't answer to ${support}?`)).toBeVisible();
   await checkpoint(inbox, "support-email-confirm");
   await inbox.getByRole("button", { name: "Confirm" }).click();
   await expect(inbox.getByText(`now come to ${support}`)).toBeVisible();
@@ -674,7 +674,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   expect(copy.subject).toBe("Your question to Acme");
 
   // The Gaps list says it went to a person.
-  await team.goto(`/app/${slug}/help/insights`);
+  await team.goto(`/app/${slug}/docs/insights`);
   const gap = team.getByRole("listitem").filter({ hasText: question, has: team.getByRole("button", { name: "Dismiss" }) });
   await expect(gap).toContainText("Escalated");
   await checkpoint(team, "team-help-gap-escalated");
@@ -691,8 +691,8 @@ test("a help-first team makes the help center the portal's home page", async ({ 
 
   await team.goto(`/app/${slug}/settings`);
   await team.getByRole("combobox", { name: "Home page" }).click();
-  await team.getByRole("option", { name: "Help center" }).click();
-  await expect(team.getByText("Your portal opens with help center now")).toBeVisible();
+  await team.getByRole("option", { name: "Docs" }).click();
+  await expect(team.getByText("Your portal opens with docs now")).toBeVisible();
   await checkpoint(team, "settings-home-page");
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);

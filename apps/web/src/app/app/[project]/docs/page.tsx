@@ -29,7 +29,7 @@ const structureView = (article: { slug: string; title: string; publishedAt: Date
  * grouped in with their articles in the order readers see them (rearranged here), and articles
  * deleted lately (which can be restored).
  */
-export default async function TeamHelpPage(props: PageProps<"/app/[project]/help">) {
+export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
   if (!membership) {
@@ -87,14 +87,14 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
   return (
     <>
       <PageHeader
-        title="Help center"
-        description="Articles that answer your users' questions. Published ones show in your portal's help center."
+        title="Docs"
+        description="Articles that answer your users' questions. Published ones show in your portal's docs."
         actions={
           <>
-            <Link href={`/app/${slug}/help/insights`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={`/app/${slug}/docs/insights`} className={buttonVariants({ variant: "outline" })}>
               Insights
             </Link>
-            <Link href={`/app/${slug}/help/new`} className={buttonVariants()}>
+            <Link href={`/app/${slug}/docs/new`} className={buttonVariants()}>
               New article
             </Link>
           </>
@@ -110,7 +110,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
                 <ItemRow
                   key={article.slug}
                   title={
-                    <Link href={`/app/${slug}/help/${article.slug}`} className="hover:underline">
+                    <Link href={`/app/${slug}/docs/${article.slug}`} className="hover:underline">
                       {article.title}
                     </Link>
                   }
@@ -135,8 +135,8 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/help
         <CardHeader>
           <CardTitle id="help-collections">Collections</CardTitle>
           <CardDescription>
-            Group articles by topic, with collections inside collections if you need them, and sections for tabs above them. Your help
-            center lists them in this order: drag them into place, or use the arrows.
+            Group articles by topic, with collections inside collections if you need them, and sections for tabs above them. Your docs
+            list them in this order: drag them into place, or use the arrows.
           </CardDescription>
           <CardAction className="flex flex-wrap justify-end gap-2">
             <SectionDialog projectSlug={slug} first={sections.length === 0 && collections.length > 0} />

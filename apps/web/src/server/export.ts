@@ -200,7 +200,7 @@ function readme(projectName: string, exportedAt: Date): string {
 
 Exported from Tuti on ${exportedAt.toISOString()}.
 
-- \`help/\`: help center articles, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (a collection in another is a folder in its folder, and with sections each section is a folder with its collections; articles in no collection are directly in \`help/\`). \`order\` in the front matter is an article's place in its collection.
+- \`help/\`: the articles in your docs, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (a collection in another is a folder in its folder, and with sections each section is a folder with its collections; articles in no collection are directly in \`help/\`). \`order\` in the front matter is an article's place in its collection.
 - \`changelog/\`: changelog entries, drafts included, as \`<number>-<title>.md\`.
 - \`posts/\`: feedback posts in a folder per board, as \`<number>-<title>.md\`, with their comments at the end.
 

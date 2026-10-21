@@ -193,7 +193,7 @@ export function ArticleActions({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{title}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              {published ? "It's removed from your help center, and links to it stop working. " : ""}
+              {published ? "It's removed from your docs, and links to it stop working. " : ""}
               You can restore it from Recently deleted for 30 days.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -216,7 +216,7 @@ export function ArticleActions({
             <AlertDialogHeader>
               <AlertDialogTitle>Publish “{title}”?</AlertDialogTitle>
               <AlertDialogDescription>
-                Anyone can read it in your portal&apos;s help center, and search engines can find it.
+                Anyone can read it in your portal&apos;s docs, and search engines can find it.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -355,7 +355,7 @@ export function RestoreVersionButton({
                   toast.error(result.error);
                 } else {
                   toast.success("Version restored");
-                  router.push(`/app/${projectSlug}/help/${result.slug}`);
+                  router.push(`/app/${projectSlug}/docs/${result.slug}`);
                 }
               })
             }
@@ -451,7 +451,7 @@ export function CollectionDialog({
                 rows={2}
                 maxLength={300}
                 defaultValue={collection?.description}
-                placeholder="Optional, shown in your help center"
+                placeholder="Optional, shown in your docs"
               />
             </Field>
             <Field>
@@ -464,7 +464,7 @@ export function CollectionDialog({
                 autoComplete="off"
               />
               <FieldDescription>
-                Leave empty for everyone who can read your help center. With groups, only your team and people your app signs in with
+                Leave empty for everyone who can read your docs. With groups, only your team and people your app signs in with
                 one of them (the groups in its sign-in token) see it, its articles and the collections in it.
               </FieldDescription>
             </Field>
@@ -588,7 +588,7 @@ export function SectionDialog({ projectSlug, section, first = false }: { project
             <DialogTitle>{section ? "Rename section" : "New section"}</DialogTitle>
             {!section && (
               <DialogDescription>
-                Sections are tabs at the top of your help center, each with its own collections
+                Sections are tabs at the top of your docs, each with its own collections
                 {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
               </DialogDescription>
             )}
@@ -641,7 +641,7 @@ export function DeleteSectionButton({
           <AlertDialogDescription>
             {movesTo
               ? `Its collections move to ${movesTo}, with their articles.`
-              : "It's the last section, so your help center goes back to one page with all your collections."}
+              : "It's the last section, so your docs go back to one page with all your collections."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

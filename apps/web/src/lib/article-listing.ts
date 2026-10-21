@@ -13,7 +13,7 @@ export const LISTING_LABELS: Record<Listing, string> = {
 };
 
 export const LISTING_DESCRIPTIONS: Record<Listing, string> = {
-  everywhere: "In your help center, search, the widget and AI answers.",
+  everywhere: "In your docs, search, the widget and AI answers.",
   unlisted: "Anyone with the link can read it, but it's in no list or search. AI answers can cite it.",
   hidden: "Stays published, but isn't shown anywhere, not even at its link.",
   ai_only: "AI answers use it and name it without a link. It has no page and isn't in any list or search.",

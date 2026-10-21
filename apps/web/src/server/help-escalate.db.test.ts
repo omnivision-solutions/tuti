@@ -5,7 +5,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/help/insights/page";
+import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { hashSecret } from "@/lib/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";

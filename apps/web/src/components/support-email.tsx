@@ -62,7 +62,7 @@ export function ConfirmSupportEmail({ token, address, projectName }: { token: st
       <Alert className="mx-auto max-w-sm">
         <CircleCheckIcon />
         <AlertDescription className="break-words">
-          Confirmed. Questions from {result.projectName}&apos;s help center that the AI can&apos;t answer now come to {result.address}.
+          Confirmed. Questions from {result.projectName}&apos;s docs that the AI can&apos;t answer now come to {result.address}.
         </AlertDescription>
       </Alert>
     );
@@ -72,7 +72,7 @@ export function ConfirmSupportEmail({ token, address, projectName }: { token: st
       <CardHeader>
         <CardTitle>Confirm the support email</CardTitle>
         <CardDescription className="break-words">
-          Send questions from {projectName}&apos;s help center that the AI can&apos;t answer to {address}?
+          Send questions from {projectName}&apos;s docs that the AI can&apos;t answer to {address}?
         </CardDescription>
       </CardHeader>
       <CardFooter className="mt-6 flex flex-col gap-3">
