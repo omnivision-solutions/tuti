@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
+import { lucideIcon } from "@/lib/lucide-icons";
 import { inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -163,6 +164,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 tab: c.tab?.slug ?? null,
                 groups: c.groups,
                 icon: c.icon,
+                knownIcon: Boolean(lucideIcon(c.icon)),
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

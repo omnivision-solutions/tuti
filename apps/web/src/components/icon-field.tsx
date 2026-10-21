@@ -21,13 +21,17 @@ export function LucideIcon({ name, className }: { name: string; className?: stri
   return <DynamicIcon name={name as IconName} aria-hidden className={cn("size-4 shrink-0", className)} />;
 }
 
-/** A form's `icon` field (a Lucide icon's name, empty for none): "Add icon" opens a searchable grid; "Remove icon". */
-export function IconField({ defaultValue }: { defaultValue: string | null }) {
-  const [icon, setIcon] = useState(defaultValue);
+/**
+ * A form's `icon` field (a Lucide icon's name, empty for none): "Add icon" opens a searchable grid; "Remove icon".
+ * A stored icon Lucide no longer has (`known` false) shows as none, but is sent unchanged until another is picked.
+ */
+export function IconField({ defaultValue, known = true }: { defaultValue: string | null; known?: boolean }) {
+  const [value, setIcon] = useState(defaultValue);
   const [open, setOpen] = useState(false);
+  const icon = value === defaultValue && !known ? null : value;
   return (
     <Field>
-      <input type="hidden" name="icon" value={icon ?? ""} />
+      <input type="hidden" name="icon" value={value ?? ""} />
       <div className="flex flex-wrap gap-2">
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger

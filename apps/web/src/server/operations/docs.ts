@@ -64,13 +64,19 @@ const collectionFields = {
     .array(readerGroup)
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
     .transform((groups) => [...new Set(groups)]),
-  /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. */
-  icon: z
-    .string()
-    .trim()
-    .refine((name) => Boolean(lucideIcon(name)), { error: (issue) => `No icon named “${String(issue.input)}”` })
-    .nullable(),
+  /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
+  icon: z.string().trim().nullable(),
 };
+
+/**
+ * Refuses an icon the installed Lucide doesn't have, unless it's the one the collection has
+ * (`current`): one Lucide dropped since stays, so it doesn't block saving the collection's other fields.
+ */
+function checkIcon(icon: string | null | undefined, current: string | null = null) {
+  if (icon && icon !== current && !lucideIcon(icon)) {
+    throw new OperationError(400, "invalid_input", `No icon named “${icon}”`);
+  }
+}
 
 const articleSelect = {
   id: true,
@@ -892,7 +898,7 @@ const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { 
 async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
   const collection = await tx.collection.findUnique({
     where: { projectId_slug: { projectId, slug } },
-    select: { id: true, name: true, parentId: true, tabId: true, parent: { select: { tabId: true } } },
+    select: { id: true, name: true, icon: true, parentId: true, tabId: true, parent: { select: { tabId: true } } },
   });
   if (!collection) {
     throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
@@ -1036,6 +1042,7 @@ export const createCollection = defineOperation({
   run: async ({ projectId }, input) =>
     collectionView(
       await prisma.$transaction(async (tx) => {
+        checkIcon(input.icon);
         await lockProject(tx, projectId);
         const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
         const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
@@ -1083,6 +1090,7 @@ export const updateCollection = defineOperation({
         await lockProject(tx, projectId);
         const collection = await lockedCollection(tx, projectId, input.slug);
         const { id } = collection;
+        checkIcon(input.icon, collection.icon);
         if (input.parent !== undefined || input.tab !== undefined) {
           const place = await placeFor(tx, projectId, collection, input);
           if (place.parentId !== collection.parentId || place.tabId !== collection.tabId) {

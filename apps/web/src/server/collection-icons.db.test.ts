@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
 
@@ -42,6 +43,21 @@ test("an icon Lucide doesn't have is refused", async () => {
   // Nor a name from the object's prototype.
   await expect(call(updateCollection, as(), { slug: "basics", icon: "constructor" })).rejects.toMatchObject({ status: 400 });
   expect(await icons()).toEqual(["basics:rocket"]);
+});
+
+test("an icon Lucide dropped since doesn't block saving the collection; a new unknown one is still refused", async () => {
+  await call(createCollection, as(), { name: "Basics" });
+  await prisma.collection.update({ where: { projectId_slug: { projectId: project.id, slug: "basics" } }, data: { icon: "dropped-icon" } });
+  // The dialog sends the stored icon back with the other fields.
+  expect(await call(updateCollection, as(), { slug: "basics", name: "The basics", icon: "dropped-icon" })).toMatchObject({
+    slug: "the-basics",
+    icon: "dropped-icon",
+  });
+  await expect(call(updateCollection, as(), { slug: "the-basics", icon: "another-unknown" })).rejects.toMatchObject({
+    status: 400,
+    message: "No icon named “another-unknown”",
+  });
+  expect(await icons()).toEqual(["the-basics:dropped-icon"]);
 });
 
 test("the export has an article's collection's icon in its front matter", async () => {

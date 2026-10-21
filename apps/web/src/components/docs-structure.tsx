@@ -24,6 +24,8 @@ type StructureCollection = {
   groups: string[];
   /** Its Lucide icon's name, or null. */
   icon: string | null;
+  /** Whether the installed Lucide has it (one it dropped since draws nothing). */
+  knownIcon: boolean;
   articles: StructureArticle[];
 };
 type StructureTab = { slug: string; name: string };
@@ -374,7 +376,7 @@ export function DocsStructure({
                 }
               >
                 <span className="flex items-center gap-1.5 text-sm font-medium break-words">
-                  {collection.icon && <LucideIcon name={collection.icon} />}
+                  {collection.icon && collection.knownIcon && <LucideIcon name={collection.icon} />}
                   <span className="min-w-0">{collection.name}</span>
                 </span>
                 <span className="text-xs text-muted-foreground">

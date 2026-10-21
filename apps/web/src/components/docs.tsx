@@ -402,7 +402,7 @@ export function CollectionDialog({
   tabs = [],
 }: {
   projectSlug: string;
-  collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null };
+  collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null; knownIcon: boolean };
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
@@ -444,7 +444,7 @@ export function CollectionDialog({
               />
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
-            <IconField defaultValue={collection?.icon ?? null} />
+            <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
             <Field>
               <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
               <Textarea
