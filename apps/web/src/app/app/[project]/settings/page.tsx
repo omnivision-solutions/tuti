@@ -6,6 +6,7 @@ import { ApiKeys } from "@/components/api-keys";
 import { AssistantSettings } from "@/components/assistant-settings";
 import { BrandingSettings } from "@/components/branding-settings";
 import { CustomDomainSettings } from "@/components/custom-domain";
+import { SiteMountSettings } from "@/components/site-mount";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
@@ -25,6 +26,7 @@ import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
 import { customDomain } from "@/server/operations/domain";
+import { siteMountView } from "@/server/operations/site";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
 
@@ -66,6 +68,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const assistant = await assistantSettings(project.id);
   const { access, home } = await portalAccess(project.id);
   const domain = await customDomain(project.id);
+  const site = await siteMountView(project.id);
   const portal = new URL(portalUrl(project.slug));
   const keys = await prisma.apiKey.findMany({
     where: { projectId: project.id, revokedAt: null },
@@ -167,6 +170,16 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your site</CardTitle>
+          <CardDescription>Your portal and help center under a path of your own site, like example.com/portal.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SiteMountSettings projectSlug={project.slug} site={site} portalAddress={portal.host} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

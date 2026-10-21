@@ -25,9 +25,6 @@
         "^build",
         "^db:generate"
       ],
-      "env": [
-        "ASSET_PREFIX"
-      ],
       "inputs": [
         "$TURBO_DEFAULT$",
         ".env*"

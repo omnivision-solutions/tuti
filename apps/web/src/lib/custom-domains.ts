@@ -51,7 +51,7 @@ export function normalizeHostname(input: string): { hostname: string } | { error
 }
 
 /** The app's domain and the one portals are under (tuti.so for {project}.tuti.so), without ports. */
-function ownDomains(): string[] {
+export function ownDomains(): string[] {
   const portalHost = new URL(portalTemplate().replace("{project}", "x")).hostname;
   // The label with the project in it goes: "{project}--dev.tuti.so" is under tuti.so too.
   const portalDomain = portalHost.split(".").slice(1).join(".");

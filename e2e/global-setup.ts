@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -55,6 +55,9 @@ export default async function globalSetup() {
   const cloudflare = await startCloudflareFake();
   // Journeys say when Cloudflare has a domain's certificate through /_fake/certificate (e2e/dns.ts).
   process.env.E2E_CLOUDFLARE_URL = cloudflare.env.CLOUDFLARE_API_URL;
+  const site = await startSiteFake();
+  // A team's own website; journeys make it forward a path to their portal through /_fake/forward (e2e/site.ts).
+  process.env.E2E_SITE_URL = site.origin;
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
@@ -92,7 +95,7 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

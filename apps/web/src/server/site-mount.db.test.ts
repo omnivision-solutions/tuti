@@ -42,12 +42,12 @@ test("under the path: the portal's own page, told the path; elsewhere: the porta
   expect(passedOn(mounted, BASE_HEADER)).toBe("/portal");
   expect((await visit("/portal")).headers.get("x-middleware-rewrite")).toBe(`http://${host()}/portal/${project.slug}`);
 
-  // The portal at its own address: no path, whatever the request says.
-  const direct = await visit("/feedback/feature-requests", { [BASE_HEADER]: "/evil" });
-  expect(direct.headers.get("x-middleware-rewrite")).toBe(`http://${host()}/portal/${project.slug}/feedback/feature-requests`);
+  // The portal at its own address: no path, whatever the request says (the widget's panel, which stays there).
+  const direct = await visit("/widget", { [BASE_HEADER]: "/evil" });
+  expect(direct.headers.get("x-middleware-rewrite")).toBe(`http://${host()}/portal/${project.slug}/widget`);
   expect(passedOn(direct, BASE_HEADER)).toBe("");
-  // Only that path: /portalx is the portal's own (a page it doesn't have).
-  expect((await visit("/portalx/docs")).headers.get("x-middleware-rewrite")).toBe(`http://${host()}/portal/${project.slug}/portalx/docs`);
+  // Other pages at its Tuti address go to the site; /portalx isn't under the path.
+  expect((await visit("/portalx/docs")).headers.get("location")).toBe("https://acme.example/portal/portalx/docs");
 });
 
 test("not until it's verified", async () => {

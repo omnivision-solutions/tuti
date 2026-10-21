@@ -2,6 +2,7 @@
 
 import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
+import { removeSite, setSite, verifySite } from "./operations/site";
 import { addPortalReaders as addPortalReadersOperation, type PortalHomePage, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { asAdmin, call } from "./operations/run";
 
@@ -50,4 +51,19 @@ export async function verifyCustomDomain(projectSlug: string): Promise<{ error?:
 
 export async function removeCustomDomain(projectSlug: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, DOMAIN_DENIED, (context) => call(removeDomain, context, {}));
+}
+
+const SITE_DENIED = "Only project owners and admins can change where the portal is on your site";
+
+/** Settings → Your site (see site.set, site.verify and site.remove). */
+export async function saveSite(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asAdmin(projectSlug, SITE_DENIED, (context) => call(setSite, context, { url: String(formData.get("url") ?? "") }));
+}
+
+export async function verifySiteSetup(projectSlug: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, SITE_DENIED, (context) => call(verifySite, context, {}));
+}
+
+export async function removeSiteMount(projectSlug: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, SITE_DENIED, (context) => call(removeSite, context, {}));
 }
