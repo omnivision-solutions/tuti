@@ -978,7 +978,7 @@ model ChangelogEntryPullRequest {
 model Collection {
   id          String   @id @default(cuid())
   projectId   String
-  /// From the name, unique in the project.
+  /// From the name; no other collection, tab or (live) article in the project has it, so /docs/<slug> is one page.
   slug        String
   name        String
   description String   @default("")
@@ -1016,7 +1016,7 @@ model Collection {
 model DocsTab {
   id        String   @id @default(cuid())
   projectId String
-  /// From the name, unique in the project.
+  /// From the name; no other tab, collection or (live) article in the project has it, so /docs/<slug> is one page.
   slug      String
   name      String
   /// Tabs are listed by this, then by name; new ones go last.
@@ -1047,7 +1047,8 @@ enum ArticleListing {
 model Article {
   id              String         @id @default(cuid())
   projectId       String
-  /// From the title, unique in the project; follows the title while it's a draft.
+  /// From the title; no other live article, tab or collection in the project has it, so /docs/<slug> is
+  /// one page. Follows the title while it's a draft.
   slug            String
   title           String
   /// Plain text of the article (derived from `content`).
