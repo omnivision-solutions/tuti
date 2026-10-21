@@ -108,7 +108,7 @@ export function SectionTabs({
     return null;
   }
   return (
-    <nav aria-label="Help center sections" className="flex gap-1 overflow-x-auto">
+    <nav aria-label="Docs sections" className="flex gap-1 overflow-x-auto">
       {sections.map((section) => (
         <Link
           key={section.slug}

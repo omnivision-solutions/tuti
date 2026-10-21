@@ -62,7 +62,7 @@ test("llms.txt describes the portal and links each published article's Markdown,
   expect(await response.text()).toBe(
     [
       `# Project ${project.slug}`,
-      `> Help center, changelog and feedback for Project ${project.slug}.`,
+      `> Docs, changelog and feedback for Project ${project.slug}.`,
       "## Getting started",
       "The basics.",
       `- [Inviting \\*your\\* team](${portal}/docs/inviting-your-team.md)`,

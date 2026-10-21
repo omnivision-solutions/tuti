@@ -24,7 +24,7 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   // Its name in the header goes to the portal's home, under the path.
   await owner.getByRole("banner").getByRole("link", { name: "Tuti" }).click();
   await owner.waitForURL(`${own}/feedback/feature-requests`);
-  await owner.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Help" }).click();
+  await owner.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   await owner.waitForURL(`${own}/docs`);
   // The account, with its password, is the app's.
   await owner.getByRole("button", { name: "Account" }).click();

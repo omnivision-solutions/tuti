@@ -73,7 +73,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // The visitor finds it under its collection on the Help tab, and reads it.
   await visitor.goto("/");
-  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Help" }).click();
+  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   const collection = visitor.getByRole("region", { name: "Getting started" });
   await expect(collection).toContainText("The basics, in five minutes.");
   await checkpoint(visitor, "portal-help-center");
@@ -107,7 +107,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // Search finds it with the passage that matched; a search with no match says so.
   await visitor.goto("/docs");
-  const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
+  const searchBox = visitor.getByRole("searchbox", { name: "Search the docs" });
   await searchBox.fill("send invites");
   await visitor.getByRole("button", { name: "Search" }).click();
   await visitor.waitForURL(/\/docs\?q=send\+invites$/);
@@ -477,7 +477,7 @@ test("the team splits the help center into sections: the first takes the collect
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  const sectionTabs = main.getByRole("navigation", { name: "Help center sections" });
+  const sectionTabs = main.getByRole("navigation", { name: "Docs sections" });
   await expect(sectionTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(sectionTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
@@ -486,7 +486,7 @@ test("the team splits the help center into sections: the first takes the collect
   await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
   await main.getByRole("link", { name: "Card payments" }).click();
-  await main.getByRole("link", { name: "Help center" }).click();
+  await main.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
   // A search covers every section.
   await visitor.goto("/docs?q=payloads");
@@ -494,7 +494,7 @@ test("the team splits the help center into sections: the first takes the collect
 
   // The widget's Help tab has the same tabs, at panel size.
   await visitor.goto("/widget?tab=help");
-  const panelTabs = visitor.getByRole("navigation", { name: "Help center sections" });
+  const panelTabs = visitor.getByRole("navigation", { name: "Docs sections" });
   await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await panelTabs.getByRole("link", { name: "Guides" }).click();
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
@@ -538,7 +538,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   // The visitor searches, then asks the AI.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
-  const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
+  const searchBox = visitor.getByRole("searchbox", { name: "Search the docs" });
   await searchBox.fill(question);
   await searchBox.press("Enter");
   const ai = visitor.getByRole("region", { name: "AI answer" });
@@ -569,8 +569,8 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   // Something the help center doesn't cover: "I don't know", without asking the model.
   await visitor.goto("/docs");
   const unrelated = "Can I pay with crypto?";
-  await visitor.getByRole("searchbox", { name: "Search the help center" }).fill(unrelated);
-  await visitor.getByRole("searchbox", { name: "Search the help center" }).press("Enter");
+  await visitor.getByRole("searchbox", { name: "Search the docs" }).fill(unrelated);
+  await visitor.getByRole("searchbox", { name: "Search the docs" }).press("Enter");
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "portal-help-ai-no-answer");
@@ -666,7 +666,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
 
   // The team gets it, to reply to the visitor directly; the visitor gets a copy.
   const sent = await latestEmailTo(support, { after: before.support });
-  expect(sent.subject).toBe(`Question from the help center: ${question}`);
+  expect(sent.subject).toBe(`Question from the docs: ${question}`);
   expect(sent.replyTo).toBe(visitor.email);
   expect(sent.text).toContain("They want to pay for Acme in crypto, yearly.");
   expect(sent.text).toContain("We'd like to pay yearly.");

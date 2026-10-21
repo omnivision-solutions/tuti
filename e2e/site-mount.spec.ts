@@ -45,7 +45,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/roadmap`);
   await expect(visitor.getByRole("heading", { name: "Roadmap" })).toBeVisible();
-  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Help" }).click();
+  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/portal/sign-in?next=%2Fdocs");
   await checkpoint(visitor, "portal-on-site");

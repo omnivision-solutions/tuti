@@ -88,7 +88,7 @@ export async function escalateQuestion(
 ) {
   const to = await supportAddress({ id: projectId });
   if (!to) {
-    throw new OperationError(403, "escalation_off", "This help center doesn't take questions by email");
+    throw new OperationError(403, "escalation_off", "These docs don't take questions by email");
   }
   const question = await prisma.helpQuestion.findFirst({
     where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },

@@ -16,7 +16,7 @@ import { askAPerson } from "@/server/operations/help-escalate";
 import { readerGroups } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 
-export const metadata = { title: "Help center" };
+export const metadata = { title: "Docs" };
 
 /** Published articles matching `query`, each with the passage that matched. */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
@@ -74,10 +74,10 @@ export default async function HelpCenterPage(props: PageProps<"/portal/[project]
   const { collections, uncollected } = section ?? help;
   return (
     <div className="flex flex-col gap-8">
-      <PageHeader title="Help center" description="Guides and answers to common questions." />
+      <PageHeader title="Docs" description="Guides and answers to common questions." />
       {/* A plain GET form: search works without JavaScript. */}
       <form role="search" action={at("/docs")} className="flex gap-2">
-        <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the help center" />
+        <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
         <Button type="submit">Search</Button>
       </form>
       {query && answersEnabled() && (
