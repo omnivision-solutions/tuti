@@ -994,6 +994,9 @@ model Collection {
   /// Who may read it (and the articles and collections in it) besides the team: people the project's
   /// SSO signs in with one of these groups (lowercase). Empty: everyone who may read the portal.
   groups      String[] @default([])
+  /// A Lucide icon by name (kebab-case, e.g. "credit-card"), checked against the installed Lucide
+  /// when set. One Lucide later drops draws nothing.
+  icon        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
