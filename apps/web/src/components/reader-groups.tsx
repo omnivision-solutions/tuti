@@ -36,7 +36,7 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
         <ItemList>
           {groups.map((group) => (
             <ItemRow
-              key={group.claim}
+              key={group.key}
               title={group.name}
               meta={
                 <>
@@ -65,14 +65,14 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
 function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: GroupView }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveGroup(projectSlug, group?.claim ?? null, prev, formData);
+    const result = await saveGroup(projectSlug, group?.key ?? null, prev, formData);
     if (!result.error) {
       setOpen(false);
       toast.success(group ? "Group saved" : "Group added");
     }
     return result;
   }, {});
-  const id = group?.claim ?? "new";
+  const id = group?.key ?? "new";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -105,7 +105,7 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
               <Input
                 id={`group-claim-${id}`}
                 name="claim"
-                defaultValue={group?.claim}
+                defaultValue={group?.claim ?? undefined}
                 placeholder={group ? undefined : "From the name"}
                 maxLength={50}
                 autoComplete="off"
@@ -158,7 +158,7 @@ function DeleteGroupButton({ projectSlug, group }: { projectSlug: string; group:
             disabled={pending}
             onClick={() =>
               startTransition(async () => {
-                const result = await deleteGroup(projectSlug, group.claim);
+                const result = await deleteGroup(projectSlug, group.key);
                 if (result.error) {
                   toast.error(result.error);
                 } else {

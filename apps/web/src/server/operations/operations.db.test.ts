@@ -169,7 +169,7 @@ async function createFixture() {
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
-  await prisma.readerGroup.create({ data: { projectId: project.id, name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", claim: "beta" } });
   // A custom domain waiting for DNS, with its TXT record there to verify it.
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
   await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });

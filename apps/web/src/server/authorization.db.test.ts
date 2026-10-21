@@ -605,7 +605,7 @@ async function createFixture() {
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
   // A reader group no collection is for.
-  await prisma.readerGroup.create({ data: { projectId, name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId, key: "beta", name: "Beta", claim: "beta" } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

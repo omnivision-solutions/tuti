@@ -104,7 +104,11 @@ export async function groupsOf(projectId: string, userId: string | null | undefi
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
     prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { groups: true } }),
   ]);
-  return member ? null : (sso?.groups ?? []);
+  if (member) {
+    return null;
+  }
+  const groups = await prisma.readerGroup.findMany({ where: { projectId, claim: { in: sso?.groups ?? [] } }, select: { key: true } });
+  return groups.map((group) => group.key);
 }
 
 /** The groups of whoever's reading on this request (the portal's user, or the widget's). */

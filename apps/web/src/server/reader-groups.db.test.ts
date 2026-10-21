@@ -56,7 +56,7 @@ async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) 
 
 /** The project's reader groups with these claims (named after them). */
 const addGroups = (...claims: string[]) =>
-  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, name: claim, claim })) });
+  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, key: claim, name: claim, claim })) });
 
 /** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
 async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
@@ -203,6 +203,7 @@ test("each sign-in says the groups: a later token without one takes it away", as
 });
 
 test("a first sign-in that loses the race to create the person still sets their groups", async () => {
+  await addGroups("enterprise");
   for (let i = 0; i < 10; i++) {
     const externalId = `user-${randomUUID()}`;
     // An API call on their behalf (no groups) and their first sign-in, at the same time.
@@ -242,7 +243,7 @@ test("collections take groups by claim (lowercase, once each, only the project's
   await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
   // A group the project doesn't have (another project's included) is refused, and nothing changes.
   const other = await createProject(owner);
-  await prisma.readerGroup.create({ data: { projectId: other.id, name: "Elsewhere", claim: "elsewhere" } });
+  await prisma.readerGroup.create({ data: { projectId: other.id, key: "elsewhere", name: "Elsewhere", claim: "elsewhere" } });
   await expect(call(createCollection, as(), { name: "Elsewhere", groups: ["elsewhere"] })).rejects.toMatchObject({
     status: 400,
     message: "There's no group “elsewhere”: add it in Settings → Groups first",

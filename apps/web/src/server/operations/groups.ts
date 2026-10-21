@@ -10,7 +10,7 @@ import { defineOperation, OperationError } from "./define";
 /**
  * Reader groups (Settings → Groups): who's in one is worked out when they read, from their latest
  * SSO sign-in's `groups` claim naming the group's `claim`. Docs collections can be for some groups
- * only (collections.*, see lib/reader-groups.ts).
+ * only (collections.*, see lib/reader-groups.ts), named by the group's `key`.
  */
 
 const groupFields = {
@@ -20,32 +20,32 @@ const groupFields = {
   description: z.string().trim().max(300),
 };
 
-export type GroupView = { name: string; claim: string; description: string; readers: number };
+export type GroupView = { key: string; name: string; claim: string | null; description: string; readers: number };
 
-/** The project's groups by name, each with how many people its SSO signed in are in it now (or just group `claim`). */
-export async function groupsWithReaders(projectId: string, claim?: string) {
+/** The project's groups by name, each with how many people its SSO signed in are in it now (or just group `key`). */
+export async function groupsWithReaders(projectId: string, key?: string) {
   return prisma.$queryRaw<GroupView[]>`
-    SELECT rg.name, rg.claim, rg.description, count(s.id)::int AS readers
+    SELECT rg.key, rg.name, rg.claim, rg.description, count(s.id)::int AS readers
     FROM reader_group rg
     LEFT JOIN sso_identity s ON s."projectId" = rg."projectId" AND rg.claim = ANY(s.groups)
-    WHERE rg."projectId" = ${projectId} ${claim === undefined ? Prisma.empty : Prisma.sql`AND rg.claim = ${claim}`}
+    WHERE rg."projectId" = ${projectId} ${key === undefined ? Prisma.empty : Prisma.sql`AND rg.key = ${key}`}
     GROUP BY rg.id
-    ORDER BY rg.name, rg.claim`;
+    ORDER BY rg.name, rg.key`;
 }
 
-const viewOf = async (projectId: string, claim: string) => (await groupsWithReaders(projectId, claim))[0]!;
+const viewOf = async (projectId: string, key: string) => (await groupsWithReaders(projectId, key))[0]!;
 
 const taken = (error: unknown, claim: string) =>
   error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002"
     ? new OperationError(409, "conflict", `There's already a group “${claim}”`)
     : error;
 
-const notFound = (claim: string) => new OperationError(404, "not_found", `There's no group “${claim}”`);
+const notFound = (key: string) => new OperationError(404, "not_found", `There's no group “${key}”`);
 
 export const listGroups = defineOperation({
   name: "groups.list",
   summary:
-    "List the reader groups by name: who's in one is whoever your app's SSO last signed in with its `claim` in the token's `groups`; `readers` counts them now. Collections can be for some groups only (`groups` on collections.*)",
+    "List the reader groups by name: who's in one is whoever your app's SSO last signed in with its `claim` in the token's `groups`; `readers` counts them now. Collections can be for some groups only (`groups` on collections.*, by `key`)",
   method: "GET",
   path: "/groups",
   scope: "read",
@@ -67,7 +67,7 @@ export const createGroup = defineOperation({
   run: async ({ projectId }, input) => {
     const claim = input.claim ?? titleSlug(input.name, "group");
     try {
-      await prisma.readerGroup.create({ data: { projectId, name: input.name, claim, description: input.description } });
+      await prisma.readerGroup.create({ data: { projectId, key: claim, name: input.name, claim, description: input.description } });
     } catch (error) {
       throw taken(error, claim);
     }
@@ -78,7 +78,7 @@ export const createGroup = defineOperation({
 export const updateGroup = defineOperation({
   name: "groups.update",
   summary:
-    "Rename a reader group (`group` is its claim now), change its description or its `claim`: then it's whoever your app's SSO signs in with the new claim, and the collections for it follow",
+    "Rename a reader group (`group` is its key), change its description or its `claim`: then it's whoever your app's SSO signs in with the new claim, and the collections for it follow",
   method: "PATCH",
   path: "/groups/{group}",
   scope: "write",
@@ -91,16 +91,15 @@ export const updateGroup = defineOperation({
   }),
   example: { name: "Enterprise customers" },
   run: async ({ projectId }, { group, ...input }) => {
-    const claim = input.claim ?? group;
     try {
-      const { count } = await prisma.readerGroup.updateMany({ where: { projectId, claim: group }, data: input });
+      const { count } = await prisma.readerGroup.updateMany({ where: { projectId, key: group }, data: input });
       if (count === 0) {
         throw notFound(group);
       }
     } catch (error) {
-      throw taken(error, claim);
+      throw taken(error, input.claim ?? group);
     }
-    return viewOf(projectId, claim);
+    return viewOf(projectId, group);
   },
 });
 
@@ -118,7 +117,7 @@ export const deleteGroup = defineOperation({
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const group = await tx.readerGroup.findUnique({
-        where: { projectId_claim: { projectId, claim: input.group } },
+        where: { projectId_key: { projectId, key: input.group } },
         select: { id: true, collections: { select: { collection: { select: { name: true } } }, orderBy: { collection: { name: "asc" } } } },
       });
       if (!group) {

@@ -19,7 +19,7 @@ type StructureCollection = {
   parent: string | null;
   /** At the top level, the tab it's in (null without tabs). */
   tab: string | null;
-  /** The reader groups it's for (their claims); empty: everyone. */
+  /** The reader groups it's for (their keys); empty: everyone. */
   groups: string[];
   articles: StructureArticle[];
 };
@@ -377,7 +377,7 @@ export function DocsStructure({
                 <span className="text-xs text-muted-foreground">
                   {`${count} ${count === 1 ? "article" : "articles"}`}
                   {collection.groups.length > 0 &&
-                    ` · Only for ${collection.groups.map((claim) => groups.find((g) => g.claim === claim)?.name ?? claim).join(", ")}`}
+                    ` · Only for ${collection.groups.map((key) => groups.find((g) => g.key === key)?.name ?? key).join(", ")}`}
                 </span>
               </Row>
               {(count > 0 || inside.length > 0) && (

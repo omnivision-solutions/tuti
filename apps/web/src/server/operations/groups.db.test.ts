@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
@@ -33,6 +35,7 @@ async function ssoReader(groups: string[], projectId = project.id) {
 
 test("groups have a name, a claim (from the name unless given) and a description; listed by name", async () => {
   expect(await create({ name: "  Enterprise customers ", description: " On the Enterprise plan " })).toEqual({
+    key: "enterprise-customers",
     name: "Enterprise customers",
     claim: "enterprise-customers",
     description: "On the Enterprise plan",
@@ -74,12 +77,14 @@ test("readers counts the project's SSO users whose latest sign-in names the clai
     ["enterprise", 2],
   ]);
   expect(await update({ group: "enterprise", name: "Enterprise plan", claim: "plan:enterprise", description: "Paying" })).toEqual({
+    key: "enterprise",
     name: "Enterprise plan",
     claim: "plan:enterprise",
     description: "Paying",
     readers: 0,
   });
-  await expect(update({ group: "enterprise", name: "Gone" })).rejects.toMatchObject({ status: 404 });
+  // Groups go by their key, which stays; never by the claim.
+  await expect(update({ group: "plan:enterprise", name: "Gone" })).rejects.toMatchObject({ status: 404 });
 });
 
 test("a group a collection is for can't be deleted; once no collection is, it can", async () => {
@@ -141,7 +146,26 @@ test("in the app: owners and admins only", async () => {
   // An empty claim on a new group: from the name; on an edit: unchanged.
   expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", claim: "", description: "" }))).toEqual({});
   expect(await saveGroup(project.slug, "enterprise", {}, form({ name: "Enterprise plan", claim: "", description: "Paying" }))).toEqual({});
-  expect(await list()).toEqual([{ name: "Enterprise plan", claim: "enterprise", description: "Paying", readers: 0 }]);
+  expect(await list()).toEqual([{ key: "enterprise", name: "Enterprise plan", claim: "enterprise", description: "Paying", readers: 0 }]);
   expect(await deleteGroupAction(project.slug, "enterprise")).toEqual({});
   expect(await list()).toEqual([]);
+});
+
+test("the migration gives today's groups their claim as their key, no conditions, and SSO users no attributes", async () => {
+  const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261021120000_group_conditions/migration.sql", import.meta.url), "utf8");
+  // Back to before it, with a group and an SSO user as they were then.
+  await prisma.$executeRawUnsafe(`
+    DROP INDEX "reader_group_projectId_key_key";
+    ALTER TABLE "reader_group" DROP COLUMN "key", DROP COLUMN "conditions", ALTER COLUMN "claim" SET NOT NULL;
+    ALTER TABLE "sso_identity" DROP COLUMN "attributes";`);
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", name, claim, "updatedAt") VALUES ('g1', ${project.id}, 'Pro plan', 'plan:pro', now())`;
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, "updatedAt") VALUES ('s1', ${project.id}, 'user-1', ${owner.id}, '{plan:pro}', now())`;
+
+  await prisma.$executeRawUnsafe(sql);
+
+  expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, claim: true, conditions: true } })).toEqual([
+    { key: "plan:pro", claim: "plan:pro", conditions: [] },
+  ]);
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { attributes: true } })).toEqual([{ attributes: {} }]);
+  expect((await list()).map((g) => [g.key, g.readers])).toEqual([["plan:pro", 1]]);
 });

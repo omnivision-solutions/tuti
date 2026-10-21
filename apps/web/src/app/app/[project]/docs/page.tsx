@@ -83,7 +83,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
-    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { claim: "asc" }], select: { claim: true, name: true } }),
+    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
   ]);
 
   return (
