@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 
 import type { Listing } from "@/lib/article-listing";
-import type { Access } from "@/lib/read-access";
+import type { Access, WithoutAccess } from "@/lib/read-access";
 
 import type { FormState } from "./form-state";
 import {
@@ -33,10 +33,11 @@ import { asTeam, call } from "./operations/run";
 
 const DENIED = "Only the project's team can edit the docs";
 
-/** A form's "Who can read" (WhoCanRead): its access, with its ticked groups only for "groups". Checked by the operation. */
-function accessFrom(formData: FormData): { access?: Access; groups?: string[] } {
+/** A form's "Who can read" (WhoCanRead): its access, with its ticked groups only for "groups", and "People without access". Checked by the operation. */
+function accessFrom(formData: FormData): { access?: Access; groups?: string[]; noAccess?: WithoutAccess } {
   const access = (formData.get("access") || undefined) as Access | undefined;
-  return access === undefined ? {} : { access, groups: access === "groups" ? formData.getAll("groups").map(String) : [] };
+  const noAccess = (formData.get("noAccess") || undefined) as WithoutAccess | undefined;
+  return { ...(access && { access, groups: access === "groups" ? formData.getAll("groups").map(String) : [] }), ...(noAccess && { noAccess }) };
 }
 
 /** Saves the editor's form: a new draft when `slug` is null, or changes to article `slug`. Opens its new address if it moved. */

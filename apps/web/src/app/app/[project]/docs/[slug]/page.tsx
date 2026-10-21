@@ -15,7 +15,7 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { fromReadAccess } from "@/lib/read-access";
+import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -105,6 +105,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           listing,
           access: fromReadAccess(article.access),
           groups: claimsOf(article),
+          noAccess: fromNoAccess(article.noAccess),
           published: article.publishedAt !== null,
         }}
         collections={await collectionOptions(membership.project.id)}

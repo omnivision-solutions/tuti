@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
-import type { Access } from "@/lib/read-access";
+import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 import type { DocsLanding } from "@/server/operations/docs";
@@ -28,6 +28,7 @@ type StructureCollection = {
   /** Who can read it, with its groups' keys (for access "groups"), and that as a badge (null: inherit). */
   access: Access;
   groups: string[];
+  noAccess: WithoutAccess;
   badge: string | null;
   /** Its Lucide icon's name, or null. */
   icon: string | null;
@@ -43,6 +44,7 @@ type StructureTab = {
   /** Who can read it, with its groups' keys, and that as a badge (null: inherit). */
   access: Access;
   groups: string[];
+  noAccess: WithoutAccess;
   badge: string | null;
 };
 

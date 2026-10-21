@@ -25,10 +25,10 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
+import { type GroupOption, previewUrl, WhoCanRead } from "@/components/who-can-read";
 import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
-import type { Access } from "@/lib/read-access";
+import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
 import type { FormState } from "@/server/form-state";
 import type { DocsLanding } from "@/server/operations/docs";
@@ -57,6 +57,8 @@ type Article = {
   access: Access;
   /** Its groups' keys (with access "groups"). */
   groups: string[];
+  /** "People without access". */
+  noAccess: WithoutAccess;
   published: boolean;
 };
 type CollectionOption = { slug: string; name: string };
@@ -147,9 +149,12 @@ export function ArticleForm({
           inherit={{
             label: parent ? `Inherit from ${parent.name}` : "Inherit",
             description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
+            shows: access.shows[parent?.slug ?? ""] ?? "hide",
           }}
           defaultAccess={article?.access}
           defaultGroups={article?.groups}
+          defaultNoAccess={article?.noAccess}
+          preview={article?.published ? previewUrl(access, `/docs/${article.slug}`) : undefined}
         />
         <Field>
           <FieldLabel id="article-body-label">Article</FieldLabel>
@@ -441,6 +446,7 @@ export function CollectionDialog({
     tab: string | null;
     access: Access;
     groups: string[];
+    noAccess: WithoutAccess;
     icon: string | null;
     knownIcon: boolean;
   };
@@ -542,9 +548,11 @@ export function CollectionDialog({
               id={`collection-access-${id}`}
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]! }}
+              inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]!, shows: access.shows[above ?? ""] ?? "hide" }}
               defaultAccess={collection?.access}
               defaultGroups={collection?.groups}
+              defaultNoAccess={collection?.noAccess}
+              preview={collection && previewUrl(access, `/docs/${collection.slug}`)}
             />
           </FieldGroup>
           <DialogFooter>
@@ -669,6 +677,8 @@ export type TabSettings = CollectionOption & {
   /** Who can read it, with its groups' keys (for access "groups"). */
   access: Access;
   groups: string[];
+  /** "People without access". */
+  noAccess: WithoutAccess;
   pages: { collections: CollectionOption[]; articles: { slug: string; title: string; published: boolean }[] };
 };
 
@@ -816,9 +826,11 @@ export function TabDialog({
                     id={`tab-access-${id}`}
                     projectSlug={projectSlug}
                     groups={access.groups}
-                    inherit={{ label: "Inherit", description: access.inherits[""]! }}
+                    inherit={{ label: "Inherit", description: access.inherits[""]!, shows: "hide" }}
                     defaultAccess={tab.access}
                     defaultGroups={tab.groups}
+                    defaultNoAccess={tab.noAccess}
+                    preview={previewUrl(access, home ? "/docs" : `/docs/${tab.slug}`)}
                   />
                 )}
                 {state.error && <FieldError>{state.error}</FieldError>}

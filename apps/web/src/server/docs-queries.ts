@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown } from "@tuti/content";
-import { type DocsLanding, type Prisma, prisma } from "@tuti/db";
+import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
@@ -8,6 +8,7 @@ import { describeAccess, type Level, locks, type NamedLevel, readable, type Read
 import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
+import { portalAddress } from "./custom-domains";
 import { currentReader } from "./portal-access";
 
 /** Reads for the docs pages: the team's editor and the portal. */
@@ -57,24 +58,36 @@ export const namedLevel = (level: Level, names: Map<string, string>): NamedLevel
  * them; "" is the top level of docs without tabs). Articles in no collection are under the first tab.
  */
 export async function accessChoices(projectId: string) {
-  const [tabs, collections, groups] = await Promise.all([
+  const [tabs, collections, groups, project] = await Promise.all([
     prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: { id: true, slug: true, name: true, ...levelSelect } }),
     prisma.collection.findMany({ where: { projectId }, select: { id: true, parentId: true, tabId: true, slug: true, ...levelSelect } }),
     prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } }),
   ]);
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const tabOf = new Map(tabs.map((tab) => [tab.id, tab]));
-  const words = (levels: (Level | undefined)[]) => describeAccess(levels.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
-  const inherits: Record<string, string> = Object.fromEntries([
-    ["", words([])],
-    ...tabs.map((tab) => [tab.slug, words([tab])]),
-    ...collections.map((c) => {
+  // Each tab's and collection's levels, top down, by slug.
+  const chains: [string, ((Level & { noAccess: NoAccess }) | undefined)[]][] = [
+    ["", []],
+    ...tabs.map((tab): [string, [typeof tab]] => [tab.slug, [tab]]),
+    ...collections.map((c): [string, ((typeof tabs)[number] | (typeof c) | undefined)[]] => {
       const up = ancestry(collections, c.id);
       const tabId = up.at(-1)?.tabId;
-      return [c.slug, words([tabId ? tabOf.get(tabId) : undefined, ...up])];
+      return [c.slug, [tabId ? tabOf.get(tabId) : undefined, ...up.toReversed()]];
     }),
-  ]);
-  return { groups, inherits, firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null };
+  ];
+  const words = (chain: (Level | undefined)[]) => describeAccess(chain.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
+  const inherits: Record<string, string> = Object.fromEntries(chains.map(([slug, chain]) => [slug, words(chain)]));
+  /** What the rest see of a page that inherits "People without access" there. */
+  const shows: Record<string, "lock" | "hide"> = Object.fromEntries(chains.map(([slug, chain]) => [slug, locks(...chain) ? "lock" : "hide"]));
+  return {
+    groups,
+    inherits,
+    shows,
+    firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null,
+    /** The portal's address, for "Preview as a reader". */
+    portal: await portalAddress(project.slug),
+  };
 }
 
 export type AccessChoices = Awaited<ReturnType<typeof accessChoices>>;

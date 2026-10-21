@@ -71,6 +71,9 @@ export type NamedLevel = { access: ReadAccess; groups: string[] };
 
 const or = (names: string[]) => new Intl.ListFormat("en-GB", { type: "disjunction" }).format(names);
 
+/** describeAccess for a page everyone may read. */
+export const ANYONE = "Anyone can read it";
+
 /**
  * Who may read a page under these levels together, in words for the team: "Anyone can read it",
  * "Signed-in readers", "Readers in Enterprise or Pro" (and "…, and in Beta" for each level more),
@@ -84,7 +87,7 @@ export function describeAccess(levels: NamedLevel[]): string {
   if (groups.length > 0) {
     return `Readers in ${groups.map((level) => or(level.groups)).join(", and in ")}`;
   }
-  return levels.some((level) => level.access === "SIGNED_IN") ? "Signed-in readers" : "Anyone can read it";
+  return levels.some((level) => level.access === "SIGNED_IN") ? "Signed-in readers" : ANYONE;
 }
 
 /** A row's badge for one level that isn't inherit: "Signed-in", "Enterprise, Pro" or "Team only"; null for inherit. */

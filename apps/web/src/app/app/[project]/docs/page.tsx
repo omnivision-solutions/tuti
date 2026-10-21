@@ -15,7 +15,7 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
 import { lucideIcon } from "@/lib/lucide-icons";
-import { accessBadge, fromReadAccess, toReadAccess } from "@/lib/read-access";
+import { accessBadge, fromNoAccess, fromReadAccess, toReadAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionPath, inTreeOrder, namedLevel, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -177,6 +177,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 tab: c.tab?.slug ?? null,
                 access: fromReadAccess(c.access),
                 groups: claimsOf(c),
+                noAccess: fromNoAccess(c.noAccess),
                 badge: badge(c),
                 icon: c.icon,
                 knownIcon: Boolean(lucideIcon(c.icon)),

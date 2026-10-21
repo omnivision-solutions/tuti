@@ -15,7 +15,21 @@ import { request } from "@/test/next-headers";
 
 import { docsContents, docsHome, docsPage, everyCollection } from "./docs-queries";
 import { answerSections, searchForReader } from "./docs-search";
-import { createArticle, createCollection, createTab, publishArticle } from "./operations/docs";
+import {
+  createArticle,
+  createCollection,
+  createTab,
+  deleteTab,
+  getArticle,
+  listArticles,
+  listCollections,
+  listTabs,
+  publishArticle,
+  reorderTab,
+  updateArticle,
+  updateCollection,
+  updateTab,
+} from "./operations/docs";
 import { call } from "./operations/run";
 import { currentReader } from "./portal-access";
 
@@ -295,6 +309,54 @@ test("a tab shown with a lock: listed with a lock, and its page the message", as
   for (const path of ["/docs/api", "/docs/reference", "/docs/endpoints"]) {
     expect(map).not.toContain(path);
   }
+});
+
+describe("the operations: noAccess on tabs.*, collections.* and articles.*", () => {
+  test("each takes it and says it, on its own or with access", async () => {
+    expect(await call(createTab, as(), { name: "Partners", access: "signed_in", noAccess: "lock" })).toMatchObject({ access: "signed_in", noAccess: "lock" });
+    expect(await call(updateTab, as(), { slug: "api", noAccess: "hide" })).toMatchObject({ access: "inherit", noAccess: "hide" });
+    expect((await call(listTabs, as(), {})).tabs.map((t) => [t.slug, t.noAccess])).toEqual([
+      ["guides", "inherit"],
+      ["api", "hide"],
+      ["partners", "lock"],
+    ]);
+
+    expect(await call(createCollection, as(), { name: "Pro", noAccess: "lock" })).toMatchObject({ access: "inherit", noAccess: "lock" });
+    expect(await call(updateCollection, as(), { slug: "pro", access: "signed_in", noAccess: "hide" })).toMatchObject({ access: "signed_in", noAccess: "hide" });
+    expect((await call(listCollections, as(), {})).collections.find((c) => c.slug === "pro")).toMatchObject({ noAccess: "hide" });
+
+    expect(await call(createArticle, as(), { title: "Partner pricing", noAccess: "lock" })).toMatchObject({ access: "inherit", noAccess: "lock" });
+    // Changed at once on a published article, keeping its access and groups.
+    await call(updateArticle, as(), { slug: "endpoints", access: "groups", groups: ["enterprise"] });
+    expect(await call(updateArticle, as(), { slug: "endpoints", noAccess: "lock" })).toMatchObject({ access: "groups", groups: ["enterprise"], noAccess: "lock" });
+    expect(await call(getArticle, as(), { slug: "endpoints" })).toMatchObject({ noAccess: "lock" });
+    expect((await call(listArticles, as(), {})).articles.find((a) => a.slug === "endpoints")).toMatchObject({ noAccess: "lock" });
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked" });
+
+    await expect(call(updateArticle, as(), { slug: "endpoints", noAccess: "show" as never })).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("deleting or reordering a tab copies what it shows the rest onto what it stops governing, as it does who can read", async () => {
+    const noAccessOf = async (kind: "collection" | "article", slug: string) =>
+      kind === "collection"
+        ? (await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { noAccess: true } })).noAccess
+        : (await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { noAccess: true } })).noAccess;
+    await set("tab", "api", "SIGNED_IN", "LOCK");
+    await set("article", "endpoints", "INHERIT", "HIDE");
+    await call(deleteTab, as(), { slug: "api" });
+    expect(await noAccessOf("collection", "reference")).toBe("LOCK");
+    // Its own choice stays.
+    expect(await noAccessOf("article", "endpoints")).toBe("HIDE");
+    await set("article", "endpoints", "INHERIT");
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked" });
+
+    // A new first tab: the articles in no collection keep the old first tab's.
+    await set("tab", "guides", "SIGNED_IN", "LOCK");
+    await call(createTab, as(), { name: "More" });
+    await call(reorderTab, as(), { slug: "more", position: 0 });
+    expect(await noAccessOf("article", "contact")).toBe("LOCK");
+    expect(await docsPage(project.slug, "contact")).toMatchObject({ kind: "locked" });
+  });
 });
 
 describe("Preview as a reader (?preview=signed-out, passed on by proxy.ts)", () => {

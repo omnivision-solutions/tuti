@@ -232,6 +232,75 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await checkpoint(sam, "portal-docs-tab-for-a-group");
 });
 
+test("people without access: an article shown with a lock asks people signed out to sign in, and tells others they don't have access", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/groups", { name: "Enterprise customers", claim: "enterprise" });
+  await api("/collections", { name: "Basics" });
+  for (const [title, body] of [
+    ["Getting started", "Getting started."],
+    ["Pricing", "Enterprise pricing: ask for the zebra plan."],
+  ]) {
+    const article = await api("/articles", { title, body, collection: "basics" });
+    await api(`/articles/${article.slug}/publish`, {});
+  }
+
+  // "People without access" shows once some people can't read it: the group only, shown with a lock.
+  await owner.goto(`/app/${slug}/docs/pricing`);
+  const withoutAccess = owner.getByRole("group", { name: "People without access" });
+  await expect(withoutAccess).toBeHidden();
+  const whoCanRead = owner.getByRole("group", { name: "Who can read" });
+  await whoCanRead.getByRole("radio", { name: "Specific groups" }).check();
+  await whoCanRead.getByRole("checkbox", { name: "Enterprise customers" }).check();
+  await expect(withoutAccess.getByRole("radio", { name: "Inherit from Basics" })).toBeChecked();
+  await expect(withoutAccess).toContainText("Hidden (the default)");
+  await withoutAccess.getByRole("radio", { name: "Show with a lock" }).check();
+  await expect(withoutAccess.getByRole("link", { name: "Preview as a reader" })).toHaveAttribute("href", `${portalUrl(slug)}/docs/pricing?preview=signed-out`);
+  await withoutAccess.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "team-docs-article-people-without-access", { fullPage: false });
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(owner.getByText("Saved")).toBeVisible();
+
+  // Signed out: listed with a lock; its page has its title and asks them to sign in, never its text.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/docs/basics");
+  const locked = visitor.getByRole("main").getByRole("link", { name: "Pricing Locked" });
+  await expect(locked).toBeVisible();
+  await expect(visitor.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Pricing Locked" })).toBeVisible();
+  await checkpoint(visitor, "portal-docs-locked-in-list");
+  await locked.click();
+  await expect(visitor.getByRole("heading", { level: 1, name: "Pricing" })).toBeVisible();
+  await expect(visitor.getByText("Sign in to read this.")).toBeVisible();
+  await expect(visitor.getByRole("main").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", /\/sign-in\?next=%2Fdocs%2Fpricing$/);
+  await expect(visitor.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+  await checkpoint(visitor, "portal-docs-locked-page");
+  const page = await visitor.request.get("/docs/pricing");
+  expect(page.status()).toBe(200);
+  expect(await page.text()).not.toContain("zebra");
+  expect((await visitor.request.get("/docs/pricing.md")).status()).toBe(404);
+  // Search finds it by its title, with nothing of its text.
+  await visitor.goto("/docs?q=pricing");
+  await expect(visitor.getByRole("list", { name: "Search results" }).getByRole("link", { name: "Pricing Locked" })).toBeVisible();
+  expect(await (await visitor.request.get("/docs?q=zebra")).text()).not.toContain("/docs/pricing");
+
+  // Signed in, but not in the group: they don't have access.
+  const reader = await signUp(browser, portalUrl(slug), "Rita Reader");
+  await reader.goto("/docs/pricing");
+  await expect(reader.getByText("You don't have access to this.")).toBeVisible();
+  await expect(reader.getByText("zebra")).toHaveCount(0);
+  await checkpoint(reader, "portal-docs-locked-signed-in");
+
+  // "Preview as a reader" opens the portal as people signed out see it.
+  const [preview] = await Promise.all([owner.waitForEvent("popup"), withoutAccess.getByRole("link", { name: "Preview as a reader" }).click()]);
+  await expect(preview.getByText("Sign in to read this.")).toBeVisible();
+});
+
 test("a group from conditions: readers whose token's attributes match read its collection", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
