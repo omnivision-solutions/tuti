@@ -9,12 +9,12 @@ import { Input } from "@/components/ui/input";
 import type { FormState } from "@/server/form-state";
 import { createProject } from "@/server/projects";
 
-/** `portalExample`: the portal address of a project called "acme" (PORTAL_URL_TEMPLATE), to show the one being typed. */
-export function CreateProjectForm({ portalExample }: { portalExample: string }) {
+/** `portalTemplate`: PORTAL_URL_TEMPLATE (e.g. https://{project}.tuti.so), to show the address being typed. */
+export function CreateProjectForm({ portalTemplate }: { portalTemplate: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(createProject, {});
   const [slug, setSlug] = useState("");
-  const host = new URL(portalExample).host;
-  const at = host.indexOf("acme");
+  // The address as people see it: no scheme, no trailing slash.
+  const address = portalTemplate.replace("{project}", slug.trim().toLowerCase() || "acme").replace(/^[a-z]+:\/\//i, "").replace(/\/$/, "");
 
   return (
     <form {...keepingFields(action)}>
@@ -34,17 +34,7 @@ export function CreateProjectForm({ portalExample }: { portalExample: string }) 
             onChange={(event) => setSlug(event.target.value)}
             aria-invalid={state.error ? true : undefined}
           />
-          <FieldDescription>
-            {at < 0 ? (
-              `Your portal will be at ${host}`
-            ) : (
-              <>
-                Your portal will be {host.slice(0, at)}
-                {slug.trim().toLowerCase() || "acme"}
-                {host.slice(at + "acme".length)}
-              </>
-            )}
-          </FieldDescription>
+          <FieldDescription>Your portal will be {address}</FieldDescription>
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
         <Button type="submit" disabled={pending} className="self-start">

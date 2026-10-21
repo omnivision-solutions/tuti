@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { CreateProjectForm } from "@/components/create-project-form";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { portalUrl } from "@/lib/hosts";
+import { portalTemplate } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -27,7 +27,7 @@ export default async function AppHome() {
           <CardDescription>A project is your team&apos;s home for feedback, with its own public portal.</CardDescription>
         </CardHeader>
         <CardContent>
-          <CreateProjectForm portalExample={portalUrl("acme")} />
+          <CreateProjectForm portalTemplate={portalTemplate()} />
         </CardContent>
       </Card>
     </>
