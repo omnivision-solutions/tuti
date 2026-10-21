@@ -857,8 +857,8 @@ export function DeleteTabButton({
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {movesTo
-              ? `Its collections move to ${movesTo}, with their articles.`
-              : "It's the last tab, so your docs go back to one page with all your collections."}
+              ? `Its collections move to ${movesTo}, with their articles. They keep who can read them.`
+              : "It's the last tab, so your docs go back to one page with all your collections. They keep who can read them."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
