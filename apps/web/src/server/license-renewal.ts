@@ -10,7 +10,8 @@ import { installation as thisInstallation, licensedUntil, licenseNow, licenseSer
  * Installations renew each project's licence key from Tuti's licence server (tuti.so; see
  * server/license-server.ts): after a portal page, at most daily, and when an admin chooses
  * Check now. Only projects an admin asked a licence for (or that have one) ever contact it, and
- * only with this installation's id, the project's id, the refresh token and the app version.
+ * only with this installation's id, the project's id, the refresh token (once it has one), the
+ * request id and the app version.
  *
  * tuti.so down keeps the current key, so a portal never breaks: once the key expires (35 days),
  * the badge is back. A refusal (cancelled, or the licence in use on another copy of this
@@ -68,12 +69,14 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
     const { count } = await prisma.project.updateMany({ where: claim, data: { licenseKey: null, licenseToken: null, licenseRequestId: null } });
     return count ? body.error : "busy";
   }
-  const serverNow = typeof body?.now === "string" ? new Date(body.now) : null;
-  const seen = serverNow && !Number.isNaN(serverNow.getTime()) ? serverNow : null;
+  const seen = typeof body?.now === "string" ? new Date(body.now) : null;
   if (
     !response.ok ||
     typeof body?.key !== "string" ||
     typeof body.token !== "string" ||
+    // tuti.so always says its time: an answer without it isn't one of its answers.
+    !seen ||
+    Number.isNaN(seen.getTime()) ||
     // A key that doesn't verify (for this installation and project, by Tuti) isn't kept.
     !licensedUntil(body.key, { installation: installation.id, project: projectId }, licenseNow(installation))
   ) {
@@ -82,7 +85,7 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
   }
   const [{ count }] = await prisma.$transaction([
     prisma.project.updateMany({ where: claim, data: { licenseKey: body.key, licenseToken: body.token, licenseRequestId: null } }),
-    ...(seen ? [prisma.$executeRaw`UPDATE installation SET "latestSeenAt" = GREATEST("latestSeenAt", ${seen}) WHERE singleton = 1`] : []),
+    prisma.$executeRaw`UPDATE installation SET "latestSeenAt" = GREATEST("latestSeenAt", ${seen}) WHERE singleton = 1`,
   ]);
   return count ? "licensed" : "busy";
 }

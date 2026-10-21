@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST } from "@/app/api/license/refresh/route";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
-import { testLicensePrivateKey } from "@/test/license";
+import { issueLicense, testLicensePrivateKey } from "@/test/license";
 
 import { installationId } from "./license";
 import { DAY_MS, renewLicense } from "./license-renewal";
@@ -140,6 +140,11 @@ test("a cancelled licence removes the key; tuti.so not answering keeps it", asyn
   const other = generateKeyPairSync("ed25519").privateKey;
   const forged = signLicense(other, { installation: await installationId(), project: project.id });
   tutiSo.mockImplementationOnce(async () => Response.json({ key: forged, token: "t", now: new Date().toISOString() }));
+  await checkedDaysAgo(1);
+  expect(await check()).toMatchObject({ status: "unreachable" });
+  expect((await state()).licenseKey).toBe(key);
+  // Nor is an answer without tuti.so's time, even with a good key.
+  tutiSo.mockImplementationOnce(async () => Response.json({ key: issueLicense({ installation: await installationId(), project: project.id }), token: "t" }));
   await checkedDaysAgo(1);
   expect(await check()).toMatchObject({ status: "unreachable" });
   expect((await state()).licenseKey).toBe(key);
