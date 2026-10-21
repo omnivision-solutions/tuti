@@ -373,8 +373,8 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   const billing = main.getByRole("region", { name: "Billing" });
   await expect(billing.getByRole("heading", { level: 3 })).toHaveText(["Invoices"]);
-  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("link")).toHaveText(["Downloading invoices"]);
-  await expect(main.getByRole("region", { name: "Getting started" }).getByRole("link")).toHaveText(["Your first board", "Inviting your team"]);
+  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("listitem")).toHaveText(["Downloading invoices"]);
+  await expect(main.getByRole("region", { name: "Getting started" }).getByRole("listitem")).toHaveText(["Your first board", "Inviting your team"]);
   await checkpoint(visitor, "portal-docs-nested");
   // An old URL of an article (and of its Markdown) sends readers to its current one.
   await visitor.goto("/docs/payments");
@@ -483,21 +483,33 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(team.getByText("Tab saved")).toBeVisible();
   await checkpoint(team, "team-docs-tabs");
 
-  // Readers get a tab for each one with something to read, the first open; an article leads back to its tab.
+  // Readers get a tab for each one with something to read: the first at /docs, the others at their own path.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
   const docsTabs = main.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
   await checkpoint(visitor, "portal-docs-tabs");
   await docsTabs.getByRole("link", { name: "Guides" }).click();
-  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await checkpoint(visitor, "portal-docs-tab");
+  // A collection has a page, in its tab; an article leads back to its tab.
+  await main.getByRole("link", { name: "Billing" }).click();
+  await expect(visitor).toHaveURL(/\/docs\/billing$/);
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Billing");
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-docs-collection");
   await main.getByRole("link", { name: "Card payments" }).click();
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Card payments");
   await main.getByRole("link", { name: "Docs", exact: true }).click();
-  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\/guides$/);
+  // The first tab has one address: /docs.
+  await visitor.goto("/docs/api-reference");
+  await expect(visitor).toHaveURL(/\/docs$/);
   // A search covers every tab.
   await visitor.goto("/docs?q=payloads");
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
@@ -510,13 +522,14 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
   await checkpoint(visitor, "widget-docs-tabs");
 
-  // Deleting a tab moves its collections to the one next to it.
-  await structure.getByRole("button", { name: "Delete API reference" }).click();
+  // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.
+  await expect(structure.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
+  await structure.getByRole("button", { name: "Delete Guides" }).click();
   const confirm = team.getByRole("alertdialog");
-  await expect(confirm).toContainText("Its collections move to Guides");
+  await expect(confirm).toContainText("Its collections move to API reference");
   await confirm.getByRole("button", { name: "Delete" }).click();
-  await expect(team.getByText("API reference deleted")).toBeVisible();
-  await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/, /^Endpoints/, /^Webhooks/, /^Errors/]);
+  await expect(team.getByText("Guides deleted")).toBeVisible();
+  await expect(rows("Collections in API reference")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
 });
 
 
