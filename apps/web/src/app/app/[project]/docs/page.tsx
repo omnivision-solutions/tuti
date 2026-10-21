@@ -62,6 +62,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         parent: { select: { slug: true } },
         tab: { select: { slug: true } },
         groups: true,
+        icon: true,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -161,6 +162,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 parent: c.parent?.slug ?? null,
                 tab: c.tab?.slug ?? null,
                 groups: c.groups,
+                icon: c.icon,
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

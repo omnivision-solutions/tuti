@@ -20,12 +20,41 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
   await team.getByRole("button", { name: "New collection" }).click();
-  const dialog = team.getByRole("dialog");
+  const dialog = team.getByRole("dialog", { name: "New collection" });
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
+  // An icon, found by searching Lucide's names: the search box has focus, an arrow key reaches the icons, Enter picks one.
+  await dialog.getByRole("button", { name: "Add icon" }).click();
+  const picker = team.getByRole("dialog", { name: "Pick an icon" });
+  await expect(picker.getByRole("searchbox", { name: "Search icons" })).toBeFocused();
+  await expect(picker.getByRole("button").nth(47).locator("svg")).toBeVisible();
+  await checkpoint(team, "team-docs-collection-icon-picker");
+  // More come as the grid scrolls.
+  const grid = picker.getByRole("group", { name: "Icons" });
+  await expect(grid.getByRole("button")).toHaveCount(64);
+  await grid.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect(grid.getByRole("button")).toHaveCount(128);
+  await team.keyboard.type("rocket");
+  await expect(picker.getByRole("button", { name: "rocket", exact: true }).locator("svg")).toBeVisible();
+  await team.keyboard.press("ArrowDown");
+  await team.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Change icon (rocket)" })).toBeVisible();
+  // Escape closes the picker, not the dialog; "Remove icon" takes it off.
+  await dialog.getByRole("button", { name: "Change icon (rocket)" }).click();
+  await expect(picker.getByRole("searchbox", { name: "Search icons" })).toBeFocused();
+  await team.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await dialog.getByRole("button", { name: "Remove icon" }).click();
+  await expect(dialog.getByRole("button", { name: "Add icon" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Add icon" }).click();
+  await picker.getByRole("searchbox", { name: "Search icons" }).fill("rocket");
+  await picker.getByRole("button", { name: "rocket", exact: true }).click();
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(team.getByText("0 articles")).toBeVisible();
+  // Its row shows the icon.
+  await expect(team.getByRole("region", { name: "Collections" }).locator("svg.lucide-rocket")).toBeVisible();
   await checkpoint(team, "team-docs");
 
   // A draft: title, collection, a heading, text and a table.

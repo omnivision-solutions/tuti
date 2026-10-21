@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { IconField } from "@/components/icon-field";
 import { RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
@@ -401,7 +402,7 @@ export function CollectionDialog({
   tabs = [],
 }: {
   projectSlug: string;
-  collection?: { slug: string; name: string; description: string; groups: string[] };
+  collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null };
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
@@ -443,6 +444,7 @@ export function CollectionDialog({
               />
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
+            <IconField defaultValue={collection?.icon ?? null} />
             <Field>
               <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
               <Textarea

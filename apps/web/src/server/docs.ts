@@ -108,6 +108,8 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
     groups: String(formData.get("groups") ?? "")
       .split(/[\s,]+/)
       .filter(Boolean),
+    // A Lucide icon's name; empty for none.
+    icon: String(formData.get("icon") ?? "") || null,
   };
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
