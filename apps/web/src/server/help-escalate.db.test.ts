@@ -5,7 +5,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/help/insights/page";
+import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { hashSecret } from "@/lib/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -155,7 +155,7 @@ describe("asking a person", () => {
     expect(await escalateHelp(project.slug, question.id, ` ${visitor.toUpperCase()}`, "We're a <b>crypto</b> company.")).toEqual({});
 
     const team = await mailbox.latestTo(support);
-    expect(team.subject).toBe("Question from the help center: Can I pay with crypto?");
+    expect(team.subject).toBe("Question from the docs: Can I pay with crypto?");
     expect(team.replyTo).toBe(visitor);
     for (const text of ["They want to pay for their plan in crypto.", "Can I pay with crypto?", "You can pay by card.", "marked not helpful", "Billing", visitor]) {
       expect(team.text).toContain(text);
@@ -201,11 +201,11 @@ describe("asking a person", () => {
   test("refused while it's off or the address isn't confirmed yet", async () => {
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "This help center doesn't take questions by email" });
+    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
     actAs(owner);
     await saveSupportEmail(project.slug, {}, form({ supportEmail: support }));
     asReader(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "This help center doesn't take questions by email" });
+    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
     expect(sentTo(support).filter((email) => !email.subject.startsWith("Confirm"))).toEqual([]);
     expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
   });

@@ -45,7 +45,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
 
   const content = [
     heading(1, project.name),
-    { type: "blockquote", content: [paragraph(`Help center, changelog and feedback for ${project.name}.`)] },
+    { type: "blockquote", content: [paragraph(`Docs, changelog and feedback for ${project.name}.`)] },
     ...(sections.length > 0
       ? // A section's heading, then its collections a level down; the first has the articles in none.
         sections.flatMap((tab) => [
@@ -55,7 +55,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         ])
       : [
           ...collections.flatMap((collection) => section(collection, 2)),
-          ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Help center"), articleLinks(uncollected)] : []),
+          ...(uncollected.length > 0 ? [heading(2, collections.length > 0 ? "More articles" : "Docs"), articleLinks(uncollected)] : []),
         ]),
     heading(2, "Changelog"),
     links([{ name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` }]),

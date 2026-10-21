@@ -131,7 +131,7 @@ function projectNav(project: ProjectSummary) {
     { title: "Feedback", href: base, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
-    { title: "Help center", href: `${base}/help`, icon: BookOpenIcon },
+    { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(project.role === "OWNER" || project.role === "ADMIN"
       ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }]

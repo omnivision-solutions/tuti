@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: string; name: string }[]; newChangelog?: boolean }) {
   const pathname = usePortalPath();
   const at = usePortalHref();
-  const tabs = [...boards.map((board) => ({ href: boardPath(board), name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/docs", name: "Help" }];
+  const tabs = [...boards.map((board) => ({ href: boardPath(board), name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/docs", name: "Docs" }];
 
   return (
     <div className="border-b">

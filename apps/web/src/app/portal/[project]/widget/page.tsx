@@ -27,7 +27,7 @@ export const metadata: Metadata = { robots: { index: false } };
 const TABS = [
   { tab: "feedback", href: "/widget", name: "Feedback" },
   { tab: "whats-new", href: "/widget?tab=whats-new", name: "What's new" },
-  { tab: "help", href: "/widget?tab=help", name: "Help" },
+  { tab: "help", href: "/widget?tab=help", name: "Docs" },
 ] as const;
 
 /**

@@ -322,7 +322,7 @@ describe("rate limits", () => {
     expect(await ask(QUESTION, "someone")).toMatchObject({ status: "no_answer" });
     await expect(ask(QUESTION, "someone-else")).rejects.toMatchObject({
       status: 429,
-      message: "This help center has had a lot of questions in the last hour. Try again later.",
+      message: "These docs have had a lot of questions in the last hour. Try again later.",
     });
     // Another project's questions don't count.
     expect(await answerQuestion((await createProject(owner)).id, "someone-else", QUESTION, "PORTAL", [])).toMatchObject({ status: "no_answer" });

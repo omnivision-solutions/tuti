@@ -51,7 +51,7 @@ const FEATURES = [
   },
 ];
 
-const NEXT = ["Public roadmap", "Changelog, drafted from GitHub", "Help center", "Embeddable widget", "REST API and MCP"];
+const NEXT = ["Public roadmap", "Changelog, drafted from GitHub", "Docs", "Embeddable widget", "REST API and MCP"];
 
 export default async function Home() {
   const session = await getSession();

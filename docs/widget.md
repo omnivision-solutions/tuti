@@ -1,7 +1,7 @@
 # Widget
 
 A button on your site that opens a panel with your project's feedback form, what's
-new (the changelog) and, once you've published articles, help. Add one script tag
+new (the changelog) and, once you've published articles, your docs. Add one script tag
 anywhere in your pages:
 
 ```html
@@ -52,14 +52,14 @@ or before the script loads:
 <script>window.TutiSettings = { display: "sidebar" };</script>
 ```
 
-The attribute wins over `TutiSettings`. In every mode, `Tuti.open()` and help links open
+The attribute wins over `TutiSettings`. In every mode, `Tuti.open()` and article links open
 the panel (in `inline` mode, the floating one, as with `data-hide-launcher`).
 
 ### Inline
 
 Every element with `data-tuti-inline` gets its own panel, in any display mode, so a page can
 have a launcher and an inline panel, or several inline ones (say Feedback on one side and
-What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `help`;
+What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `help` (Docs);
 empty (`<div data-tuti-inline>`) is Feedback, and so is an unknown one, with an error in the
 browser console. The panel fills the element's width and height, and is at least 500px tall; give the
 element a height to make it taller. It has no close button, since there's nothing to close.
@@ -88,7 +88,7 @@ or set `hideLauncher` before the script loads:
 
 ## Contextual help
 
-Any element with `data-tuti-article` opens the panel at that help article when clicked,
+Any element with `data-tuti-article` opens the panel at that article when clicked,
 including elements added to the page later (single-page apps):
 
 ```html
@@ -106,8 +106,8 @@ panel instead of leaving the page.
 | Call | What it does |
 | --- | --- |
 | `Tuti.open()` | Opens the panel where it was (the Feedback tab the first time). |
-| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"help"`. |
-| `Tuti.open({ article: "<slug>" })` | Opens it at a help article. |
+| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"help"` (Docs). |
+| `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
 | `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new. |
