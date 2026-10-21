@@ -3,6 +3,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
+import { ancestry } from "@/lib/collection-tree";
 import { groupClaims, mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
@@ -11,11 +12,12 @@ import { readerGroups } from "./portal-access";
 /** Reads for the docs pages: the team's editor and the portal. */
 
 /**
- * Collections in reading order: each top-level one, then the ones in it (collections go 2 levels
- * deep at most). `sorted` is by order, then name.
+ * Collections in reading order: each top-level one, then the ones in it (each followed by the ones
+ * in it). `sorted` is by order, then name.
  */
 export function inTreeOrder<T extends { id: string; parentId: string | null }>(sorted: T[]): T[] {
-  return sorted.filter((c) => c.parentId === null).flatMap((top) => [top, ...sorted.filter((c) => c.parentId === top.id)]);
+  const under = (parentId: string | null): T[] => sorted.filter((c) => c.parentId === parentId).flatMap((c) => [c, ...under(c.id)]);
+  return under(null);
 }
 
 /**
@@ -29,14 +31,17 @@ export const readingOrder: Prisma.CollectionOrderByWithRelationInput[] = [
   { name: "asc" },
 ];
 
-/** The editor's collection picker: in reading order, a collection in another named with it ("Billing › Invoices"). */
+/** A collection's name with the ones it's in ("Billing › Invoices"); `rows` are its project's. */
+export const collectionPath = (rows: { id: string; parentId: string | null; name: string }[], id: string) =>
+  ancestry(rows, id)
+    .map((c) => c.name)
+    .reverse()
+    .join(" › ");
+
+/** The editor's collection picker: in reading order, a collection in others named with them ("Billing › Invoices"). */
 export async function collectionOptions(projectId: string) {
-  const collections = await prisma.collection.findMany({
-    where: { projectId },
-    orderBy: readingOrder,
-    select: { id: true, parentId: true, slug: true, name: true, parent: { select: { name: true } } },
-  });
-  return inTreeOrder(collections).map((c) => ({ slug: c.slug, name: c.parent ? `${c.parent.name} › ${c.name}` : c.name }));
+  const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: readingOrder, select: { id: true, parentId: true, slug: true, name: true } });
+  return inTreeOrder(collections).map((c) => ({ slug: c.slug, name: collectionPath(collections, c.id) }));
 }
 
 /**
@@ -152,14 +157,18 @@ async function listingPage(projectSlug: string, slug: string): Promise<DocsPage 
   if (tab) {
     return { kind: "tab", docs, tab };
   }
+  const found = findCollection(docs, slug);
+  return found && { kind: "collection", docs, ...found };
+}
+
+/** Collection `slug` in `docs` (so, if this reader may read it), with its tab and the one it's in. */
+export function findCollection(docs: DocsContents, slug: string) {
   const all = everyCollection(docs.collections);
   const collection = all.find((c) => c.slug === slug);
   if (!collection) {
     return null;
   }
   return {
-    kind: "collection",
-    docs,
     tab: docs.tabs.find((t) => everyCollection(t.collections).includes(collection)) ?? null,
     parent: all.find((c) => c.collections.includes(collection)) ?? null,
     collection,
@@ -197,24 +206,26 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       showUpdatedDate: true,
       listing: true,
       revisedAt: true,
-      collection: {
-        select: {
-          slug: true,
-          name: true,
-          groups: groupClaims,
-          tab: { select: { slug: true } },
-          parent: { select: { groups: groupClaims, tab: { select: { slug: true } } } },
-        },
-      },
+      collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },
     },
   });
   if (!article) {
     return null;
   }
+  // Its collection and the ones it's in, up to its top-level one (which has its tab).
+  const up = article.collection
+    ? ancestry(
+        await prisma.collection.findMany({
+          where: { projectId: article.projectId },
+          select: { id: true, parentId: true, groups: groupClaims, tab: { select: { slug: true } } },
+        }),
+        article.collection.id,
+      )
+    : [];
   // For some groups only: as good as missing to everyone else.
-  const isRestricted = restricted(article.collection);
-  if (isRestricted && !mayReadCollection(await readerGroups(article.projectId), article.collection, article.collection?.parent)) {
+  const isRestricted = restricted(up);
+  if (isRestricted && !mayReadCollection(await readerGroups(article.projectId), ...up)) {
     return null;
   }
   const { revisedAt, collection, ...rest } = article;
@@ -223,8 +234,8 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   return {
     ...rest,
     collection: collection && { slug: collection.slug, name: collection.name },
-    /** The docs tab it's in (its collection's, or that one's parent's), for the way back to it. */
-    tab: (collection?.parent ? collection.parent.tab : collection?.tab)?.slug ?? null,
+    /** The docs tab it's in (its collection's top-level one's), for the way back to it. */
+    tab: up.at(-1)?.tab?.slug ?? null,
     updatedAt,
     /** For some reader groups only: never kept by shared caches. */
     restricted: isRestricted,

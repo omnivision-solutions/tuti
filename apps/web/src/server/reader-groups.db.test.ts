@@ -12,7 +12,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { docsContents, publishedArticle } from "./docs-queries";
+import { docsContents, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { createGroup, updateGroup } from "./operations/groups";
@@ -111,12 +111,13 @@ describe("who sees what", () => {
     const userId = user?.id ?? null;
     const groups = await groupsOf(project.id, userId);
     const center = await docsContents(project.slug);
-    const pages = await Promise.all(["getting-started", "saml", "rolling-out", "new-editor", "contact"].map((slug) => publishedArticle(project.slug, slug)));
+    const slugs = (await prisma.article.findMany({ where: { projectId: project.id }, select: { slug: true } })).map((a) => a.slug);
+    const pages = await Promise.all(slugs.map((slug) => publishedArticle(project.slug, slug)));
     const actor = userId ? { kind: "user" as const, userId } : null;
     return {
-      docsContents: [...center.collections.flatMap((c) => [...c.articles, ...c.collections.flatMap((n) => n.articles)]), ...center.uncollected].map((a) => a.slug).sort(),
+      docsContents: [...everyCollection(center.collections).flatMap((c) => c.articles), ...center.uncollected].map((a) => a.slug).sort(),
       collections: center.collections.map((c) => [c.slug, ...c.collections.map((n) => n.slug)].join(">")),
-      pages: pages.flatMap((page, i) => (page ? [["getting-started", "saml", "rolling-out", "new-editor", "contact"][i]!] : [])).sort(),
+      pages: pages.flatMap((page, i) => (page ? [slugs[i]!] : [])).sort(),
       search: (await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug).sort(),
       answers: [...new Set((await answerSections(project.id, "widget help", 10, groups, 2000))!.map((s) => s.slug))].sort(),
       ...(actor && {
@@ -167,6 +168,48 @@ describe("who sees what", () => {
     const enterpriseOnly = await ssoReader(["enterprise"]);
     expect((await seen(both)).pages).toContain("rolling-out");
     expect((await seen(enterpriseOnly)).pages).not.toContain("rolling-out");
+  });
+
+  test("however deep, every collection above counts: one three levels into Enterprise is for enterprise, and one for beta there needs both", async () => {
+    await call(createCollection, as(), { name: "Keys", parent: "setup" });
+    await call(createCollection, as(), { name: "Preview", parent: "setup", groups: ["beta"] });
+    for (const [title, collection] of [
+      ["Rotating keys", "keys"],
+      ["Early access", "preview"],
+    ] as const) {
+      const body = `The ${title} widget.`;
+      openai.setVector(articleChunkText(title, { heading: "", text: body }), [0.9, Math.sqrt(1 - 0.81)]);
+      const { slug } = await call(createArticle, as(), { title, body, collection });
+      await call(publishArticle, as(), { slug });
+    }
+    /** What `user` reads of the two, in every way (but the collections' names). */
+    const deep = async (user: TestUser | null) =>
+      Object.fromEntries(
+        Object.entries(await seen(user))
+          .filter(([way]) => way !== "collections")
+          .map(([way, slugs]) => [way, slugs.filter((s) => s === "rotating-keys" || s === "early-access")]),
+      );
+    const every = (slugs: string[], api = true) => ({
+      docsContents: slugs,
+      pages: slugs,
+      search: slugs,
+      answers: slugs,
+      ...(api && { api: slugs }),
+    });
+    expect(await deep(null)).toEqual(every([], false));
+    expect(await deep(await ssoReader(["beta"]))).toEqual(every([]));
+    expect(await deep(await ssoReader(["enterprise"]))).toEqual(every(["rotating-keys"]));
+    expect(await deep(await ssoReader(["enterprise", "beta"]))).toEqual(every(["early-access", "rotating-keys"]));
+    expect(await deep(owner)).toEqual(every(["early-access", "rotating-keys"]));
+
+    // Nor for search engines and AI tools, and its .md isn't cached for others.
+    actAs(null);
+    const params = Promise.resolve({ project: project.slug });
+    expect(await (await llms(new Request("http://x"), { params })).text()).not.toContain("rotating-keys");
+    expect(await (await sitemap(new Request("http://x"), { params })).text()).not.toContain("rotating-keys");
+    actAs(owner);
+    const md = await markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug: "rotating-keys" }) });
+    expect(md.headers.get("cache-control")).toBe("private, no-store");
   });
 });
 
