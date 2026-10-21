@@ -144,14 +144,18 @@ async function listingPage(projectSlug: string, slug: string): Promise<DocsPage 
   if (tab) {
     return { kind: "tab", docs, tab };
   }
+  const found = findCollection(docs, slug);
+  return found && { kind: "collection", docs, ...found };
+}
+
+/** Collection `slug` in `docs` (so, if this reader may read it), with its tab and the one it's in. */
+export function findCollection(docs: DocsContents, slug: string) {
   const all = everyCollection(docs.collections);
   const collection = all.find((c) => c.slug === slug);
   if (!collection) {
     return null;
   }
   return {
-    kind: "collection",
-    docs,
     tab: docs.tabs.find((t) => everyCollection(t.collections).includes(collection)) ?? null,
     parent: all.find((c) => c.collections.includes(collection)) ?? null,
     collection,

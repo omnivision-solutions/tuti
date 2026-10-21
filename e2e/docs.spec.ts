@@ -519,7 +519,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const panelTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(panelTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await panelTabs.getByRole("link", { name: "Guides" }).click();
-  await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText(["Getting started", "Billing"]);
   await checkpoint(visitor, "widget-docs-tabs");
 
   // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.

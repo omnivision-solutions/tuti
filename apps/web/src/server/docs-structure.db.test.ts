@@ -68,11 +68,13 @@ async function published(title: string, collection: string | null) {
   return slug;
 }
 
+/** chain("Billing", "Invoices", "Taxes", "Europe", "Germany")'s paths. */
+const fiveDeep = ["billing", "billing/invoices", "billing/invoices/taxes", "billing/invoices/taxes/europe", "billing/invoices/taxes/europe/germany"];
+
 describe("nested collections", () => {
   const refused = { status: 400, code: "invalid_input" };
   const tooDeep = { ...refused, message: "Collections go 5 levels deep at most" };
   const loop = { ...refused, message: "A collection can't go inside itself or one inside it" };
-  const fiveDeep = ["billing", "billing/invoices", "billing/invoices/taxes", "billing/invoices/taxes/europe", "billing/invoices/taxes/europe/germany"];
 
   test("collections go in others 5 levels deep, listed after the one they're in; a sixth level is refused", async () => {
     await chain("Billing", "Invoices", "Taxes", "Europe", "Germany");
@@ -376,5 +378,37 @@ describe("readers", () => {
     ]);
     const { articles } = await call(listArticles, as(), {});
     expect(articles.find((a) => a.slug === "inviting-your-team")).toMatchObject({ order: 0, collection: { slug: "basics" } });
+  });
+
+  test("5 levels deep: /docs nests them all, and llms.txt has headings to ####, then lists", async () => {
+    await chain("Billing", "Invoices", "Taxes", "Europe", "Germany");
+    await call(updateCollection, as(), { slug: "europe", description: "Inside the EU." });
+    await published("Card payments", "billing");
+    await published("VAT", "europe");
+    await published("Steuernummer", "germany");
+    await published("Reverse charge", "taxes");
+
+    const nested = (await docsContents(project.slug)).collections;
+    const path = (collections: typeof nested): string[] => collections.flatMap((c) => [c.slug, ...path(c.collections).map((p) => `${c.slug}/${p}`)]);
+    expect(path(nested)).toEqual(fiveDeep);
+
+    const portal = `http://${project.slug}.localhost:3100`;
+    const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
+    expect(text).toContain(
+      [
+        `## [Billing](${portal}/docs/billing)`,
+        `- [Card payments](${portal}/docs/card-payments.md)`,
+        `### [Invoices](${portal}/docs/invoices)`,
+        `#### [Taxes](${portal}/docs/taxes)`,
+        [
+          `- [Reverse charge](${portal}/docs/reverse-charge.md)`,
+          `- [Europe](${portal}/docs/europe): Inside the EU.`,
+          `  - [VAT](${portal}/docs/vat.md)`,
+          `  - [Germany](${portal}/docs/germany)`,
+          `    - [Steuernummer](${portal}/docs/steuernummer.md)`,
+        ].join("\n"),
+        "## Changelog",
+      ].join("\n\n"),
+    );
   });
 });

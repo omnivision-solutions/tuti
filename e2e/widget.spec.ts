@@ -332,15 +332,21 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   const exporting = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
   await api(`/articles/${exporting.slug}/publish`, {});
 
-  // Now the widget has a Docs tab: the collections and their articles, like the portal's /docs.
+  // Now the widget has a Docs tab: the collections (each opens its own list) and the articles in none.
   await visitor.reload();
   await launcher.click();
   await tabs.getByRole("link", { name: "Docs" }).click();
-  const section = widget.getByRole("region", { name: "Getting started" });
-  await expect(section).toContainText("The basics, in five minutes.");
-  await expect(section.getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  const collections = widget.getByRole("list", { name: "Collections" });
+  await expect(collections).toContainText("The basics, in five minutes.");
   await expect(widget.getByRole("region", { name: "More articles" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
   await checkpoint(visitor, "widget-docs");
+  await collections.getByRole("link", { name: "Getting started" }).click();
+  await expect(widget.getByRole("heading", { name: "Getting started", level: 2 })).toBeVisible();
+  await widget.getByRole("link", { name: "Inviting your team" }).click();
+  // Back from an article: to the collection it was opened from.
+  await widget.getByRole("article", { name: "Inviting your team" }).getByRole("link", { name: "Getting started" }).click();
+  await widget.getByRole("link", { name: "All articles" }).click();
+  await expect(collections).toBeVisible();
 
   // Search, read a result, and go back to the results.
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
@@ -375,7 +381,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(widget.getByText("Download a CSV of every post from the board's menu.")).toBeVisible();
   await checkpoint(visitor, "widget-docs-opened-at-article");
   await widget.getByRole("link", { name: "All articles" }).click();
-  await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
+  await expect(widget.getByRole("list", { name: "Collections" }).getByRole("link", { name: "Getting started" })).toBeVisible();
 });
 
 test("a visitor asks the docs' AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {

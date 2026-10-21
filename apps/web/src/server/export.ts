@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { strToU8, Zip, ZipDeflate } from "fflate";
 
+import { ancestry } from "@/lib/collection-tree";
 import { titleSlug } from "@/lib/post-urls";
 
 import { displayDoc } from "./content";
@@ -72,6 +73,12 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
 
   yield ["README.md", readme(project.name, exportedAt)];
 
+  // For each article's folder: its collection and the ones that's in, up to its top-level one (which has the tab).
+  const collections = await prisma.collection.findMany({
+    where: { projectId },
+    select: { id: true, parentId: true, slug: true, tab: { select: { slug: true, name: true } } },
+  });
+
   for await (const article of batches((after, take) =>
     prisma.article.findMany({
       where: { projectId, deletedAt: null, id: { gt: after } },
@@ -87,20 +94,14 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         listing: true,
         updatedAt: true,
         order: true,
-        collection: {
-          select: {
-            slug: true,
-            name: true,
-            tab: { select: { slug: true, name: true } },
-            parent: { select: { slug: true, tab: { select: { slug: true, name: true } } } },
-          },
-        },
+        collection: { select: { id: true, name: true } },
       },
     }),
   )) {
-    // A collection in another is a folder in its folder (collections go 2 levels deep at most), in its tab's folder.
-    const tab = article.collection?.parent ? article.collection.parent.tab : article.collection?.tab;
-    const folder = ["docs", tab?.slug, article.collection?.parent?.slug, article.collection?.slug].filter(Boolean).join("/");
+    // A collection in another is a folder in its folder, in its tab's folder.
+    const up = article.collection ? ancestry(collections, article.collection.id) : [];
+    const tab = up.at(-1)?.tab;
+    const folder = ["docs", tab?.slug, ...up.map((c) => c.slug).reverse()].filter(Boolean).join("/");
     yield [
       `${folder}/${article.slug}.md`,
       frontMatter({
