@@ -6,7 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { portalAddress, requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -17,7 +17,8 @@ import { jwtSso } from "./sso";
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
   const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
-  const url = new URL("/sign-in/link", await portalAddress(slug));
+  // After the address: it can have a path (a portal under its site's /portal).
+  const url = new URL(`${await portalAddress(slug)}/sign-in/link`);
   url.searchParams.set("token", token);
   if (next !== "/") {
     url.searchParams.set("next", next);
@@ -38,7 +39,7 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     data: { tokenHash: hashSecret(token) },
     select: { project: { select: { slug: true, name: true } } },
   });
-  const link = new URL("/reset-password", project ? await portalAddress(project.slug) : appUrl());
+  const link = new URL(`${project ? await portalAddress(project.slug) : appUrl().origin}/reset-password`);
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
@@ -61,9 +62,17 @@ export const auth = betterAuth({
   trustedOrigins: async (request) => {
     const host = request?.headers.get("host") ?? null;
     const target = await requestTarget(host);
-    return target.kind === "portal" && target.customDomain ? [`${new URL(portalTemplate()).protocol}//${host}`] : [];
+    if (target.kind !== "portal") {
+      return [];
+    }
+    // A portal under a path of its team's site posts from that site, once it's verified.
+    const mount = await siteMount(target.slug);
+    return [...(target.customDomain ? [`${new URL(portalTemplate()).protocol}//${host}`] : []), ...(mount ? [mount.origin] : [])];
   },
   advanced: {
+    // tuti.session_token and the like: a portal under a path of a team's site (acme.com/portal) has its
+    // cookies on that site, beside the site's own, which may be Better Auth's too.
+    cookiePrefix: "tuti",
     // Behind a proxy (Cloudflare tunnel / load balancer) the original host and
     // protocol arrive in x-forwarded-* headers.
     trustedProxyHeaders: true,

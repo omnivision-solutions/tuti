@@ -8,10 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { authClient } from "@/lib/auth-client";
 import { SIGN_IN_LINK_MINUTES } from "@/lib/sign-in-link";
 import { emailSignInLink } from "@/server/sign-in-link";
-import { usePortalHref } from "@/components/portal-base";
+import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
 /**
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
@@ -38,6 +37,7 @@ export function AuthForm({
   signUp?: boolean;
 }) {
   const at = usePortalHref();
+  const authClient = usePortalAuthClient();
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [linkError, setLinkError] = useState<string>();
@@ -82,7 +82,7 @@ export function AuthForm({
     setError(undefined);
     setLinkError(undefined);
     const { error } = isSignUp
-      ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: next ?? redirectTo })
+      ? await authClient.signUp.email({ email, password, name: String(form.get("name")), callbackURL: at(next ?? redirectTo) })
       : await authClient.signIn.email({ email, password });
     setPending(false);
 
@@ -90,7 +90,7 @@ export function AuthForm({
       setError(error.message ?? "Something went wrong");
       return;
     }
-    router.push(next ?? redirectTo);
+    router.push(at(next ?? redirectTo));
     router.refresh();
   }
 

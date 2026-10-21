@@ -10,6 +10,7 @@ import { z } from "zod";
 import { requestTarget } from "@/server/custom-domains";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
+import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**
  * JWT single sign-on.
@@ -184,7 +185,7 @@ export const jwtSso = () =>
           }
           const { slug } = target;
           const { token } = ctx.query;
-          const fail = (code: SsoErrorCode) => ctx.redirect(`/sso/error?code=${code}`);
+          const fail = (code: SsoErrorCode) => ctx.redirect(withBase(baseFrom(ctx.headers), `/sso/error?code=${code}`));
 
           const project = await prisma.project.findUnique({
             where: { slug },
@@ -207,7 +208,8 @@ export const jwtSso = () =>
           const session = await ctx.context.internalAdapter.createSession(user.id);
           await setSessionCookie(ctx, { session, user });
 
-          throw ctx.redirect(safeRedirectPath(ctx.query.redirect, "/"));
+          // Back under the site's path, for a portal there (see lib/portal-base.ts).
+          throw ctx.redirect(withBase(baseFrom(ctx.headers), safeRedirectPath(ctx.query.redirect, "/")));
         },
       ),
     },

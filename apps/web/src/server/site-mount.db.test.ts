@@ -4,7 +4,13 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 
 import PostPage from "@/app/portal/[project]/(site)/feedback/[board]/[post]/page";
 import PortalHome from "@/app/portal/[project]/(site)/page";
+import { SignJWT } from "jose";
+
+import { GET as authGet, POST as authRoute } from "@/app/api/auth/[...all]/route";
+import { GET as ssoRoute } from "@/app/portal/[project]/(site)/sso/route";
+import { auth } from "@/lib/auth";
 import { BASE_HEADER } from "@/lib/portal-base";
+import { generateSsoSecret } from "@/lib/sso";
 import { proxy } from "@/proxy";
 import { createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
@@ -74,4 +80,56 @@ test("its pages' redirects stay under the path", async () => {
   // A path a request makes up isn't used.
   request.headers = { [BASE_HEADER]: "//evil.example" };
   expect(await redirectTarget(PortalHome({ params: Promise.resolve({ project: project.slug }) } as never))).toBe("/feedback/feature-requests");
+});
+
+test("signing in on the site: the auth API and Tuti's icon under the path, told the site's host", async () => {
+  const api = await visit("/portal/api/auth/get-session");
+  expect(api.headers.get("x-middleware-rewrite")).toBe(`http://${host()}/api/auth/get-session`);
+  expect(passedOn(api, BASE_HEADER)).toBe("/portal");
+  // As if the site's proxy said so: forms posted from the site's pages count as posted to it.
+  expect(passedOn(api, "x-forwarded-host")).toBe("acme.example");
+  expect(passedOn(api, "x-forwarded-proto")).toBe("https");
+  expect(passedOn(await visit("/portal/docs", { "x-forwarded-host": "evil.example" }), "x-forwarded-host")).toBe("acme.example");
+  expect((await visit("/portal/icon.svg")).headers.get("x-middleware-rewrite")).toBe(`http://${host()}/icon.svg`);
+});
+
+test("the site's pages may post to its sign-in: Better Auth trusts the site once it's verified", async () => {
+  const trusted = (auth.options.trustedOrigins as (request?: Request) => Promise<string[]>)(new Request(`http://${host()}/api/auth/sign-in/email`, { headers: { host: host() } }));
+  expect(await trusted).toContain("https://acme.example");
+  await prisma.siteMount.updateMany({ where: { projectId: project.id }, data: { verifiedAt: null } });
+  forgetCustomDomain("");
+  expect(await (auth.options.trustedOrigins as (request?: Request) => Promise<string[]>)(new Request(`http://${host()}/x`, { headers: { host: host() } }))).not.toContain("https://acme.example");
+});
+
+test("SSO there comes back under the path, errors too", async () => {
+  const secret = generateSsoSecret();
+  await prisma.project.update({ where: { id: project.id }, data: { ssoSecret: secret } });
+  const now = Math.floor(Date.now() / 1000);
+  const token = await new SignJWT({ sub: "user-1", jti: crypto.randomUUID(), name: "Sam" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + 60)
+    .sign(new TextEncoder().encode(secret));
+  const sso = (query: string) =>
+    ssoRoute(new Request(`http://${host()}/portal/sso?${query}`, { headers: { host: host(), [BASE_HEADER]: "/portal" } }));
+  expect((await sso(`token=${token}&redirect=%2Froadmap`)).headers.get("location")).toBe("/portal/roadmap");
+  expect((await sso("token=not-a-token")).headers.get("location")).toMatch(/^\/portal\/sso\/error\?code=/);
+});
+
+test("session cookies are Tuti's own (tuti.…), beside a site's", async () => {
+  const response = await authRoute(
+    new Request(`http://${host()}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { host: host(), "content-type": "application/json" },
+      body: JSON.stringify({ email: `e2e-${crypto.randomUUID()}@example.com`, password: "correct horse battery staple", name: "Ada" }),
+    }),
+  );
+  expect(response.headers.getSetCookie().join("\n")).toMatch(/(^|\n)tuti\.session_token=/);
+});
+
+test("\"Continue with your Tuti account\" there comes back under the path, a failed one too", async () => {
+  const response = await authGet(
+    new Request(`http://${host()}/portal/api/auth/continue/callback?code=not-a-code&redirect=%2Froadmap`, { headers: { host: host(), [BASE_HEADER]: "/portal" } }),
+  );
+  expect(response.headers.get("location")).toBe("/portal/sign-in?continue=failed");
 });

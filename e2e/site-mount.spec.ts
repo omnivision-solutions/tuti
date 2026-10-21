@@ -49,6 +49,29 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/portal/sign-in?next=%2Fdocs");
   await checkpoint(visitor, "portal-on-site");
+
+  // Signing up, posting and signing out there, all under the path.
+  await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);
+  await visitor.getByRole("link", { name: "Create an account" }).click();
+  await expect(visitor).toHaveURL(new RegExp(`^${siteUrl().replace(/[.:]/g, "\\$&")}/portal/sign-up`));
+  await visitor.getByLabel("Name").fill("Ada");
+  await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
+  await visitor.getByLabel("Password").fill("correct horse battery staple");
+  await visitor.getByRole("button", { name: "Sign up" }).click();
+  await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
+  await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
+  await visitor.goto("/portal/feedback/feature-requests");
+  await visitor.getByLabel("Title").fill("Dark mode on our site");
+  await visitor.getByRole("button", { name: "Submit feedback" }).click();
+  await visitor.getByRole("link", { name: "Dark mode on our site" }).click();
+  await visitor.waitForURL((url) => url.origin === siteUrl() && url.pathname.startsWith("/portal/feedback/feature-requests/"));
+  await expect(visitor.getByRole("heading", { name: "Dark mode on our site" })).toBeVisible();
+  await checkpoint(visitor, "portal-on-site-signed-in");
+  await visitor.getByRole("button", { name: "Account" }).click();
+  await visitor.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+  expect(new URL(visitor.url()).pathname.startsWith("/portal")).toBe(true);
   // The rest of the site is the site's.
   await visitor.goto("/pricing");
   await expect(visitor.getByRole("heading", { name: "The site's own page" })).toBeVisible();
