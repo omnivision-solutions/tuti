@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, test } from "vitest";
 
@@ -10,6 +11,7 @@ import {
   createArticle,
   createCollection,
   createTab,
+  deleteArticle,
   deleteCollection,
   deleteTab,
   listCollections,
@@ -192,6 +194,89 @@ describe("tabs", () => {
     // Whichever tab came first has them all, whether they were saved before it or after.
     expect(listed.map((s) => s.collections).sort()).toEqual([0, 3]);
     expect((await call(listCollections, as(), {})).collections.every((c) => c.tab === listed.find((s) => s.collections === 3)!.slug)).toBe(true);
+  });
+});
+
+describe("landing", () => {
+  const landing = async () => (await call(listTabs, as(), {})).tabs.map((t) => `${t.slug}:${t.landing}${t.landingPage ? `=${t.landingPage}` : ""}`);
+
+  test("a tab shows its overview, its first article or an article or collection in it; renaming keeps it", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await call(createTab, as(), { name: "API" });
+    await collections("Basics");
+    await call(createCollection, as(), { name: "Endpoints", tab: "api" });
+    await call(createCollection, as(), { name: "Webhooks", parent: "endpoints" });
+    for (const [title, collection] of [
+      ["Start here", "basics"],
+      ["Signing payloads", "webhooks"],
+      ["Contact us", null],
+    ] as const) {
+      await call(createArticle, as(), { title, body: `${title}.`, collection });
+    }
+    expect(await landing()).toEqual(["guides:overview", "api:overview"]);
+
+    expect(await call(updateTab, as(), { slug: "api", landing: "page", landingPage: "signing-payloads" })).toMatchObject({
+      slug: "api",
+      name: "API",
+      landing: "page",
+      landingPage: "signing-payloads",
+    });
+    await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "contact-us" });
+    expect(await landing()).toEqual(["guides:page=contact-us", "api:page=signing-payloads"]);
+    await call(updateTab, as(), { slug: "api", landing: "page", landingPage: "webhooks" });
+    await call(updateTab, as(), { slug: "api", name: "API reference" });
+    expect(await landing()).toEqual(["guides:page=contact-us", "api-reference:page=webhooks"]);
+    // Another kind drops the page.
+    await call(updateTab, as(), { slug: "guides", landing: "first" });
+    await call(updateTab, as(), { slug: "api-reference", landing: "overview" });
+    expect(await landing()).toEqual(["guides:first", "api-reference:overview"]);
+  });
+
+  test("the page must be in the tab, and goes with “page” only", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await call(createTab, as(), { name: "API" });
+    await collections("Basics");
+    await call(createCollection, as(), { name: "Endpoints", tab: "api" });
+    await call(createArticle, as(), { title: "Start here", collection: "basics" });
+    await call(createArticle, as(), { title: "Contact us" });
+    const pick = (slug: string, landingPage?: string, landing: "overview" | "first" | "page" = "page") =>
+      call(updateTab, as(), { slug, landing, landingPage });
+
+    const notHere = (page: string) => ({ ...refused, message: `There's no article or collection “${page}” in this tab` });
+    await expect(pick("api", "start-here")).rejects.toMatchObject(notHere("start-here"));
+    await expect(pick("api", "basics")).rejects.toMatchObject(notHere("basics"));
+    // The articles in no collection are the first tab's.
+    await expect(pick("api", "contact-us")).rejects.toMatchObject(notHere("contact-us"));
+    await expect(pick("guides", "endpoints")).rejects.toMatchObject(notHere("endpoints"));
+    await expect(pick("guides", "nothing")).rejects.toMatchObject(notHere("nothing"));
+    await expect(pick("guides")).rejects.toMatchObject({ ...refused, message: "Pick the page it shows" });
+    await expect(pick("guides", "basics", "first")).rejects.toMatchObject(refused);
+    await expect(pick("guides", "guides")).rejects.toMatchObject(notHere("guides"));
+    expect(await landing()).toEqual(["guides:overview", "api:overview"]);
+  });
+
+  test("a deleted page is no longer named; the tab keeps “page” (readers get the overview)", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await collections("Basics");
+    await call(createArticle, as(), { title: "Start here", collection: "basics" });
+    await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "start-here" });
+    await call(deleteArticle, as(), { slug: "start-here" });
+    expect(await landing()).toEqual(["guides:page"]);
+
+    await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "basics" });
+    await call(deleteCollection, as(), { slug: "basics" });
+    expect(await landing()).toEqual(["guides:page"]);
+    expect(await prisma.docsTab.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ landingArticleId: null, landingCollectionId: null });
+  });
+
+  test("a tab shows one page at most (a check constraint)", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await collections("Basics");
+    await call(createArticle, as(), { title: "Start here", collection: "basics" });
+    const [article, collection] = await Promise.all([prisma.article.findFirstOrThrow({ where: { projectId: project.id } }), prisma.collection.findFirstOrThrow({ where: { projectId: project.id } })]);
+    await expect(
+      prisma.docsTab.updateMany({ where: { projectId: project.id }, data: { landing: "PAGE", landingArticleId: article.id, landingCollectionId: collection.id } }),
+    ).rejects.toThrow(/docs_tab_one_landing_page/);
   });
 });
 

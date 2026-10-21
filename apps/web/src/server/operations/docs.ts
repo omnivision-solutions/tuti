@@ -1194,16 +1194,50 @@ export const deleteCollection = defineOperation({
   },
 });
 
-const tabSelect = { id: true, slug: true, name: true, order: true, _count: { select: { collections: true } } } as const;
+const tabSelect = {
+  id: true,
+  slug: true,
+  name: true,
+  order: true,
+  landing: true,
+  landingArticle: { select: { slug: true, deletedAt: true } },
+  landingCollection: { select: { slug: true } },
+  _count: { select: { collections: true } },
+} as const;
 type TabRow = Prisma.DocsTabGetPayload<{ select: typeof tabSelect }>;
-const tabView = ({ slug, name, order, _count }: TabRow) => ({
+const tabView = ({ slug, name, order, landing, landingArticle, landingCollection, _count }: TabRow) => ({
   slug,
   name,
   order,
   /** Its top-level collections (each with the ones in it). */
   collections: _count.collections,
+  /** What its path shows: an `overview`, its `first` article, or a `page` the team picked (landingPage). */
+  landing: landing.toLowerCase() as DocsLanding,
+  /** With `page`: the article's or collection's slug (null once it's deleted). */
+  landingPage: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
 });
 const tabName = z.string().trim().min(1, "Name is required").max(40);
+
+export const LANDINGS = ["overview", "first", "page"] as const;
+export type DocsLanding = (typeof LANDINGS)[number];
+
+/**
+ * The landing page `slug` may be for `tab` (`first`: the docs' first tab, which has the articles in
+ * no collection): a (live) article or a collection in it. Read under the project's lock.
+ */
+async function landingPageIn(tx: Prisma.TransactionClient, projectId: string, tab: { id: string; first: boolean }, slug: string) {
+  const tree = await treeOf(tx, projectId);
+  const inTab = (collectionId: string | null) => (collectionId === null ? tab.first : ancestry(tree, collectionId).at(-1)?.tabId === tab.id);
+  const article = await tx.article.findFirst({ where: { projectId, slug, deletedAt: null }, select: { id: true, collectionId: true } });
+  if (article && inTab(article.collectionId)) {
+    return { landingArticleId: article.id, landingCollectionId: null };
+  }
+  const collection = tree.find((c) => c.slug === slug);
+  if (collection && inTab(collection.id)) {
+    return { landingArticleId: null, landingCollectionId: collection.id };
+  }
+  throw new OperationError(400, "invalid_input", `There's no article or collection “${slug}” in this tab`);
+}
 
 /** Tab `slug`, read under the project's lock. */
 async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: string) {
@@ -1217,7 +1251,7 @@ async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: 
 export const listTabs = defineOperation({
   name: "tabs.list",
   summary:
-    "List the docs' tabs in order, each with its collections. Without tabs, the docs are one page",
+    "List the docs' tabs in order, each with its collections and what its path shows (`landing`, `landingPage`; see tabs.update). Without tabs, the docs are one page",
   method: "GET",
   path: "/tabs",
   scope: "read",
@@ -1258,25 +1292,37 @@ export const createTab = defineOperation({
 
 export const updateTab = defineOperation({
   name: "tabs.update",
-  summary: "Rename a docs tab; its slug follows the name",
+  summary:
+    "Rename a docs tab (its slug follows the name) or set what its path shows (`landing`): an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names (its slug; required with `page`). A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead",
   method: "PATCH",
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug, name: tabName }),
-  example: { name: "API reference" },
-  run: async ({ projectId }, input) =>
-    tabView(
+  input: z.object({ slug, name: tabName.optional(), landing: z.enum(LANDINGS).optional(), landingPage: slug.optional() }),
+  example: { name: "API reference", landing: "page", landingPage: "getting-started" },
+  run: async ({ projectId }, input) => {
+    if ((input.landing === "page") !== (input.landingPage !== undefined)) {
+      throw new OperationError(400, "invalid_input", input.landingPage === undefined ? "Pick the page it shows" : "landingPage goes with landing “page”");
+    }
+    return tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const { id } = await lockedTab(tx, projectId, input.slug);
+        const page =
+          input.landingPage === undefined
+            ? { landingArticleId: null, landingCollectionId: null }
+            : await landingPageIn(tx, projectId, { id, first: (await tabsOf(tx, projectId))[0]?.id === id }, input.landingPage);
         return tx.docsTab.update({
           where: { id },
-          data: { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) },
+          data: {
+            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) }),
+            ...(input.landing && { landing: input.landing.toUpperCase() as Uppercase<DocsLanding>, ...page }),
+          },
           select: tabSelect,
         });
       }),
-    ),
+    );
+  },
 });
 
 export const reorderTab = defineOperation({
