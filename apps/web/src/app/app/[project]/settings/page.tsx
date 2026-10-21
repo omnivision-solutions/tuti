@@ -13,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalHomeSelect } from "@/components/portal-home-select";
 import { PortalReaders } from "@/components/portal-readers";
+import { ReaderGroups } from "@/components/reader-groups";
 import { SsoSettings } from "@/components/sso-settings";
 import { SupportEmailSettings } from "@/components/support-email";
 import { WidgetSettings } from "@/components/widget-settings";
@@ -26,6 +27,7 @@ import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
 import { customDomain } from "@/server/operations/domain";
+import { groupsWithReaders } from "@/server/operations/groups";
 import { siteMountView } from "@/server/operations/site";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
@@ -145,6 +147,19 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           {access === "private" && (
             <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />
           )}
+        </CardContent>
+      </Card>
+
+      <Card id="groups" role="region" aria-labelledby="groups-title" className="scroll-mt-6">
+        <CardHeader>
+          <CardTitle id="groups-title">Groups</CardTitle>
+          <CardDescription>
+            Readers your app signs in with single sign-on, grouped by the <code>groups</code> in its token. A collection in
+            your docs can be for some groups only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ReaderGroups projectSlug={project.slug} groups={await groupsWithReaders(project.id)} />
         </CardContent>
       </Card>
 

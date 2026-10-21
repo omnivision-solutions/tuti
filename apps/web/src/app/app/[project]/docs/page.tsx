@@ -37,7 +37,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, tabs, collections, uncollected, deleted] = await Promise.all([
+  const [articles, tabs, collections, uncollected, deleted, groups] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -83,6 +83,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
+    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { claim: "asc" }], select: { claim: true, name: true } }),
   ]);
 
   return (
@@ -147,6 +148,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 .filter((c) => c.parentId === null)
                 .map((c) => ({ slug: c.slug, name: c.name }))}
               tabs={tabs}
+              groups={groups}
             />
           </CardAction>
         </CardHeader>
@@ -165,6 +167,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}
+              groups={groups}
             />
           </CardContent>
         )}
