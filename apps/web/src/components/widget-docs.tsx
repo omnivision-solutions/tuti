@@ -9,7 +9,7 @@ import { DocsAnswer } from "@/components/docs-answer";
 import { DocsCollections, DocsTabs } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { docsContents, publishedArticle } from "@/server/docs-queries";
+import { docsContents, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -133,7 +133,10 @@ async function Collections({ projectSlug, docsTab }: { projectSlug: string; docs
   );
 }
 
-async function WidgetArticle({ projectSlug, slug, back, backLabel }: { projectSlug: string; slug: string; back: string; backLabel: string }) {
+async function WidgetArticle({ projectSlug, slug: asked, back, backLabel }: { projectSlug: string; slug: string; back: string; backLabel: string }) {
+  // An old slug of an article that has since moved opens it where it is now.
+  const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
+  const slug = moved ?? asked;
   const article = await publishedArticle(projectSlug, slug);
   if (!article) {
     return (
