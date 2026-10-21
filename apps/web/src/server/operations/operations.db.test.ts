@@ -138,8 +138,8 @@ beforeAll(async () => {
   // Portals under a path of a site: on, and the site is local.
   site = await startSiteFake();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
-  // license.check asks a licence server that isn't there (nothing listens on port 9): "unreachable".
-  vi.stubEnv("LICENSE_SERVER_URL", "http://127.0.0.1:9");
+  // license.check asks the local site, which has no licence server (its own 404): "unreachable".
+  vi.stubEnv("LICENSE_SERVER_URL", site.origin);
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
