@@ -107,6 +107,16 @@ enum TeamRole {
   MEMBER
 }
 
+/// This installation of Tuti, one row (made by its migration): the random id licence keys are signed for.
+model Installation {
+  /// Always 1, so there's only ever one row.
+  singleton Int      @id @default(1)
+  id        String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("installation")
+}
+
 model Project {
   id                    String       @id @default(cuid())
   slug                  String       @unique
@@ -145,6 +155,9 @@ model Project {
   headerLinks           Json         @default("[]")
   footerLinks           Json         @default("[]")
   poweredBy             Boolean      @default(true)
+  /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
+  /// valid one the footer says "Powered by tuti" whatever poweredBy says.
+  licenseKey            String?
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)

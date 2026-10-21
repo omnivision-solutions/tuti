@@ -6,10 +6,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import type { z } from "zod";
 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { issueLicense } from "@/test/license";
 
 import { saveBranding } from "../branding";
+import { installationId } from "../license";
 import { brandCss, getBranding, updateBranding } from "./branding";
 import { call } from "./run";
+
+vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let s3: S3Fake;
 let owner: TestUser;
@@ -32,6 +36,11 @@ afterEach(() => vi.unstubAllEnvs());
 const DAY = 24 * 60 * 60 * 1000;
 const team = (projectId = project.id) => ({ actor: { kind: "user" as const, userId: owner.id }, projectId });
 const update = (input: z.input<typeof updateBranding.input>) => call(updateBranding, team(), input);
+/** Gives the project a licence key as if fetched from tuti.so, for `claims` (this project on this installation), valid for `days`. */
+async function license({ days = 30, ...claims }: { days?: number; project?: string; installation?: string } = {}) {
+  const licenseKey = issueLicense({ installation: await installationId(), project: project.id, ...claims }, days);
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey } });
+}
 const get = () => call(getBranding, team(), {});
 
 /** A processed upload, made two days ago (so the cleanup takes it as soon as nothing uses it), with its files in storage. */
@@ -75,6 +84,7 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
 });
 
 test("admins set the colour, links and Powered by; each change leaves the rest", async () => {
+  await license();
   const saved = await update({
     color: "#5B21B6",
     headerLinks: [{ label: " Docs ", url: " https://docs.example.com " }],
@@ -215,8 +225,35 @@ test("one image may be both logos; it's released only once neither uses it", asy
 
 test("another project's branding is its own", async () => {
   const other = await createProject(owner);
+  await license();
   await update({ color: "#5b21b6", poweredBy: false, headerLinks: [{ label: "Docs", url: "https://docs.example.com" }] });
   expect(await call(getBranding, team(other.id), {})).toMatchObject({ color: null, poweredBy: true, headerLinks: [] });
+});
+
+test('"Powered by tuti" stays without a licence for the project on this installation, however it was turned off', async () => {
+  await expect(update({ poweredBy: false })).rejects.toMatchObject({
+    status: 400,
+    message: 'Hiding "Powered by tuti" needs a licence for this project',
+  });
+  expect(await get()).toMatchObject({ poweredBy: true });
+
+  // Turned off in the database: the portal still says it, without a key or with one that doesn't fit.
+  await prisma.project.update({ where: { id: project.id }, data: { poweredBy: false } });
+  expect(await get()).toMatchObject({ poweredBy: true });
+  const other = await createProject(owner);
+  for (const key of [{ days: -1 }, { project: other.id }, { installation: "another-installation" }]) {
+    await license(key);
+    expect(await get()).toMatchObject({ poweredBy: true });
+    await expect(update({ poweredBy: false })).rejects.toMatchObject({ status: 400 });
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey: "not-a-key" } });
+  expect(await get()).toMatchObject({ poweredBy: true });
+
+  // With a valid key it's hidden, and it's back as soon as the key goes.
+  await license();
+  expect(await get()).toMatchObject({ poweredBy: false });
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey: null } });
+  expect(await get()).toMatchObject({ poweredBy: true });
 });
 
 test("the app's form saves everything: an empty image field removes it, empty link rows are skipped", async () => {
@@ -241,7 +278,8 @@ test("the app's form saves everything: an empty image field removes it, empty li
   ).toEqual({});
   expect(await get()).toMatchObject({ logo: { id: logo.id }, color: "#5b21b6", headerLinks: [{ label: "Docs" }], footerLinks: [], poweredBy: true });
 
-  // An unchecked checkbox isn't sent: Powered by is off.
+  // An unchecked checkbox isn't sent: Powered by is off (with a licence).
+  await license();
   expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6" }))).toEqual({});
   expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false });
   await releaseADayLater();
@@ -253,6 +291,7 @@ test("branding is a project setting: members can't change it, admins can", async
   const form = () => {
     const data = new FormData();
     data.set("color", "#5b21b6");
+    data.set("poweredBy", "on");
     return data;
   };
   actAs(await addMember(project.id, "MEMBER"));
