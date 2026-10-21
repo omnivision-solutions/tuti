@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 
-import { DocsIndex } from "@/components/portal-docs";
+import { DocsIndex, DocsLayout } from "@/components/portal-docs";
 import { portalAddress } from "@/server/custom-domains";
-import { docsContents } from "@/server/docs-queries";
+import { docsContents, docsTree } from "@/server/docs-queries";
 
 const searchQuery = (q: string | string[] | undefined) => (typeof q === "string" ? q.trim().slice(0, 200) : "");
 
@@ -20,9 +20,12 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
 export default async function DocsPage(props: PageProps<"/portal/[project]/docs">) {
   const [{ project: slug }, { q }] = await Promise.all([props.params, props.searchParams]);
   const query = searchQuery(q);
-  // Search results stand alone.
-  const docs = query ? { collections: [], uncollected: [], tabs: [], home: null } : await docsContents(slug);
+  const docs = await docsContents(slug);
   // The first tab, or the first with something to read for this reader.
   const tab = docs.tabs.find((t) => t.slug === docs.home) ?? docs.tabs[0] ?? null;
-  return <DocsIndex projectSlug={slug} query={query} docs={docs} tab={tab} />;
+  return (
+    <DocsLayout tree={docsTree(docs, tab?.slug ?? null, null)} current={null}>
+      <DocsIndex projectSlug={slug} query={query} docs={docs} tab={tab} />
+    </DocsLayout>
+  );
 }

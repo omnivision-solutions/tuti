@@ -74,9 +74,10 @@ export type DocsTabView = { slug: string; name: string; collections: DocsCollect
  * Collections without a listed article (in them or in the ones in them) are left out. `tabs`
  * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
- * slug, whether or not it has anything to read; null without tabs).
+ * slug, whether or not it has anything to read; null without tabs). Once per request for the
+ * reader: the docs pages, their tabs row and their tree share it.
  */
-export async function docsContents(projectSlug: string, options: { groups?: ReaderGroups } = {}) {
+export const docsContents = cache(async (projectSlug: string, options: { groups?: ReaderGroups } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
@@ -114,9 +115,27 @@ export async function docsContents(projectSlug: string, options: { groups?: Read
     }))
     .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
   return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
-}
+});
 
 export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
+
+export type DocsTreeCollection = { slug: string; name: string; articles: { slug: string; title: string }[]; collections: DocsTreeCollection[]; open: boolean };
+
+/**
+ * The Docs layout's tree: tab `tab`'s collections (else the first tab with something to read, or all
+ * of the docs without tabs) and its articles in none. `at` is the collection the page is, or the
+ * article is in: it and the ones it's in are `open`.
+ */
+export function docsTree(docs: DocsContents, tab: string | null, at: string | null) {
+  const { collections, uncollected } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
+  const branch = ({ slug, name, articles, collections }: DocsCollection): DocsTreeCollection => {
+    const inside = collections.map(branch);
+    return { slug, name, articles, collections: inside, open: slug === at || inside.some((c) => c.open) };
+  };
+  return { collections: collections.map(branch), uncollected };
+}
+
+export type DocsTree = ReturnType<typeof docsTree>;
 
 /** A tab's page: the first is /docs itself. */
 export const docsTabPath = (docs: { home: string | null }, tab: string) => (tab === docs.home ? "/docs" : `/docs/${tab}`);
