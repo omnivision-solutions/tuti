@@ -59,7 +59,7 @@ const collectionFields = {
   description: z.string().trim().max(300),
   /**
    * Who may read it (its articles and the collections in it) besides the team: people in one of
-   * these groups (by claim: groups.list), whom your app's SSO signs in with it in the token's `groups`. Empty: everyone.
+   * these groups (by key: groups.list). Empty: everyone.
    */
   groups: z
     .array(readerGroup)
@@ -895,7 +895,7 @@ const collectionView = ({ id, slug, name, description, icon, order, parent, grou
   description,
   /** Its Lucide icon's name, or null for none. */
   icon,
-  /** Reader groups it's for (their claims; besides the team); empty: everyone. One inside others is also limited by theirs. */
+  /** Reader groups it's for (their keys; besides the team); empty: everyone. One inside others is also limited by theirs. */
   groups: claimsOf({ groups }),
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
@@ -953,10 +953,10 @@ function parentFor(tree: Awaited<ReturnType<typeof treeOf>>, collection: { id: s
   return parent.id;
 }
 
-/** Links to the project's groups with these claims, for a collection; one that isn't there is refused. Call it with the project locked. */
-async function groupLinks(tx: Prisma.TransactionClient, projectId: string, claims: string[]) {
-  const groups = await tx.readerGroup.findMany({ where: { projectId, claim: { in: claims } }, select: { id: true, claim: true } });
-  const missing = claims.find((claim) => !groups.some((group) => group.claim === claim));
+/** Links to the project's groups with these keys, for a collection; one that isn't there is refused. Call it with the project locked. */
+async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
+  const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { id: true, key: true } });
+  const missing = keys.find((key) => !groups.some((group) => group.key === key));
   if (missing !== undefined) {
     throw new OperationError(400, "invalid_input", `There's no group “${missing}”: add it in Settings → Groups first`);
   }
@@ -1050,7 +1050,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `groups` (claims of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team; `icon` names a Lucide icon (lucide.dev) shown next to its name",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `groups` (keys of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team; `icon` names a Lucide icon (lucide.dev) shown next to its name",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1092,7 +1092,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: claims of the project's reader groups, see groups.list; empty, everyone), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: keys of the project's reader groups, see groups.list; empty, everyone), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",

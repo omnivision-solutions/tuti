@@ -27,6 +27,7 @@ The token is a JWT signed with **HS256** using the secret.
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
 | `groups` | no | Reader groups, e.g. `["enterprise"]`: which restricted collections in your docs they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
+| `attributes` | no | What you know about the user, e.g. `{ "plan": "pro", "seats": 12 }`, for groups' conditions to match (see [Attributes](#attributes)). Strings, numbers and booleans, up to 50. Each sign-in replaces them. |
 
 Node example with [`jose`](https://github.com/panva/jose):
 
@@ -37,6 +38,9 @@ const token = await new SignJWT({
   email: user.email,
   name: user.name,
   avatar: user.avatarUrl,
+  // Optional: for reader groups (see below).
+  groups: user.isBetaTester ? ["beta"] : [],
+  attributes: { plan: user.plan, role: user.role },
 })
   .setProtectedHeader({ alg: "HS256" })
   .setSubject(String(user.id))
@@ -108,22 +112,65 @@ email, once their address is verified.
 
 ## Reader groups
 
-Add your groups in **Settings → Groups** (owners and admins; or `groups.create`): a name, the
-claim your token names the group by in `groups` (e.g. `enterprise`) and a description. The list
-shows how many people your app has signed in with each. Changing a group's claim changes who's
-in it.
+Add your groups in **Settings → Groups** (owners and admins; or `groups.create`): a name, a
+description, and who's in it, by either or both of:
+
+- **SSO group name**: the claim your token names the group by in `groups` (e.g. `enterprise`).
+- **Conditions** on the token's `attributes`, all of which must match (up to 10). Each is an
+  attribute, an operator (**is**, **is not** or **is one of**, with the values comma-separated) and
+  a value, e.g. `plan` is one of `pro, enterprise`.
+
+Someone is in the group when their `groups` has its name, or when its conditions (if it has any)
+all match their attributes. While you write the conditions, the dialog shows how many of the people
+your app has signed in match them now, with a few of their names; the list shows the same for each
+group. Changing a group's name in `groups` or its conditions changes who's in it.
+
+How conditions compare:
+
+- Values compare as text, exactly: capital letters and spaces count (`Pro` isn't `pro`), and the
+  attribute's name must match exactly too.
+- Numbers and booleans compare as their text: `"seats": 12` is `12`, `"beta": true` is `true`.
+- **is not** also matches when the token has no such attribute.
+- Only people your app signs in can be in a group: signed-out visitors and people who signed up on
+  the portal are in none, even for a group whose only condition is "is not".
+
+Each group has a `key`, made from its name when you add it and never changed: the API's
+`/groups/{key}` and the `groups` on `collections.*` name groups by it (`groups.list` has them).
 
 A collection in your docs can be for some groups only: tick them under **Only for groups** on it
-(or `groups`, their claims, in `collections.create` / `collections.update`). Then only your team
-and people your app signs in with one of those groups in the token's `groups` claim see the collection, its
+(or `groups`, their keys, in `collections.create` / `collections.update`). Then only your team
+and people your app signs in who are in one of those groups see the collection, its
 articles and the collections in it: in the docs, article pages, search, AI answers and
 the widget. Everyone else (signed out, signed up on the portal, other groups) doesn't see them
 at all, and `llms.txt` and the sitemap leave them out. A collection inside a restricted one is
 restricted by both. A group a collection is for can't be deleted until it's removed there,
 since that would open the collection to everyone.
 
-Groups come from the latest sign-in: send all of a user's groups in every token (e.g. from
-their plan), and a group they lose is gone the next time they sign in.
+Groups and attributes come from the latest sign-in: send all of a user's groups and attributes in
+every token (e.g. from their plan), and one they lose is gone the next time they sign in.
+
+### Attributes
+
+The token's `attributes` is an object of what your app knows about the user, by name, for
+conditions to match:
+
+```json
+{
+  "sub": "user-42",
+  "jti": "5f0c6c1e-8f5a-4a4e-9d55-2b8f3c1d7a10",
+  "iat": 1760000000,
+  "exp": 1760000300,
+  "name": "Sam from Acme",
+  "groups": ["beta"],
+  "attributes": { "plan": "enterprise", "role": "admin", "company": "Acme", "seats": 40, "sso": true }
+}
+```
+
+- Names are up to 64 characters (spaces around them are trimmed); values are strings (up to 200
+  characters), numbers or booleans; up to 50 of them (the first 50 are kept).
+- Anything else (an object or a list as a value, `null`, a name too long) is left out, one by
+  one: a bad attribute never stops the user signing in.
+- Each sign-in replaces them all, and a token without `attributes` clears them.
 
 ## Errors
 
