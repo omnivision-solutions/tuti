@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
+import { CollectionIcon } from "@/components/collection-icon";
 import type { DocsCollection } from "@/server/docs-queries";
 
 type Articles = { slug: string; title: string }[];
@@ -37,8 +38,12 @@ function CollectionSection({
   const Heading = level <= 6 ? (`h${level}` as "h2") : "p";
   return (
     <section aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
-      <Heading id={`collection-${collection.slug}`} className={cn("font-heading font-bold tracking-tight break-words", level === 2 && "text-lg")}>
-        <Link href={collectionHref(collection.slug)} className="hover:underline">
+      <Heading
+        id={`collection-${collection.slug}`}
+        className={cn("flex items-center gap-2 font-heading font-bold tracking-tight break-words", level === 2 && "text-lg")}
+      >
+        <CollectionIcon name={collection.icon} />
+        <Link href={collectionHref(collection.slug)} className="min-w-0 hover:underline">
           {collection.name}
         </Link>
       </Heading>

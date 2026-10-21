@@ -4,6 +4,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
+import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
 import { ArticleLinks, DocsTabs } from "@/components/docs-collections";
@@ -123,8 +124,9 @@ function CollectionLinks({ collections, label, href }: { collections: DocsCollec
     <ul aria-label={label} className="flex flex-col gap-3">
       {collections.map((collection) => (
         <li key={collection.slug} className="flex flex-col gap-0.5">
-          <Link href={href(collection.slug)} className="font-medium break-words hover:underline">
-            {collection.name}
+          <Link href={href(collection.slug)} className="flex items-center gap-2 font-medium hover:underline">
+            <CollectionIcon name={collection.icon} />
+            <span className="min-w-0 break-words">{collection.name}</span>
           </Link>
           {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
         </li>
@@ -152,7 +154,10 @@ async function Collections({ projectSlug, docsTab, collection: slug }: { project
         {tabs}
         <div className="flex flex-col gap-2">
           <BackLink href={docsHref(parent ? { ...at, collection: parent.slug } : at)}>{parent ? parent.name : "All articles"}</BackLink>
-          <h2 className="font-heading text-lg font-bold tracking-tight break-words">{collection.name}</h2>
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold tracking-tight break-words">
+            <CollectionIcon name={collection.icon} />
+            <span className="min-w-0">{collection.name}</span>
+          </h2>
           {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
         </div>
         {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => docsHref({ ...at, collection: collection.slug, article })} />}

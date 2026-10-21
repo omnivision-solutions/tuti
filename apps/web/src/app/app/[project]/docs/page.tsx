@@ -14,6 +14,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
+import { lucideIcon } from "@/lib/lucide-icons";
 import { claimsOf, groupClaims } from "@/lib/reader-groups";
 import { collectionPath, inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -64,6 +65,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         parent: { select: { slug: true } },
         tab: { select: { slug: true } },
         groups: groupClaims,
+        icon: true,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -165,6 +167,8 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 parent: c.parent?.slug ?? null,
                 tab: c.tab?.slug ?? null,
                 groups: claimsOf(c),
+                icon: c.icon,
+                knownIcon: Boolean(lucideIcon(c.icon)),
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

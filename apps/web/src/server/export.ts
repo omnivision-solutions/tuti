@@ -94,7 +94,7 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         listing: true,
         updatedAt: true,
         order: true,
-        collection: { select: { id: true, name: true } },
+        collection: { select: { id: true, name: true, icon: true } },
       },
     }),
   )) {
@@ -114,6 +114,8 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         // Only with tabs.
         ...(tab && { tab: tab.name }),
         collection: article.collection?.name ?? null,
+        // Its collection's Lucide icon, when it has one.
+        ...(article.collection?.icon && { collectionIcon: article.collection.icon }),
         // Its place in the collection (or among the articles in none): 0 first.
         order: article.order,
       }) + body(article),

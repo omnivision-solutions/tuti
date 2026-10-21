@@ -106,6 +106,8 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
     description: String(formData.get("description") ?? ""),
     // The ticked groups' claims, checked by the operation.
     groups: formData.getAll("groups").map(String),
+    // A Lucide icon's name; empty for none.
+    icon: String(formData.get("icon") ?? "") || null,
   };
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
