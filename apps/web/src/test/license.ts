@@ -8,6 +8,9 @@ const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 
 export const testLicenseKey = { LICENSE_PUBLIC_KEYS: [publicKey.export({ format: "der", type: "spki" }).toString("base64")] };
 
+/** The private half, for tests of the licence server: its LICENSE_PRIVATE_KEY. */
+export const testLicensePrivateKey = privateKey.export({ format: "der", type: "pkcs8" }).toString("base64");
+
 /** A licence key for `project` on `installation`, valid for `days` (negative: already expired). */
 export function issueLicense(
   claims: { installation: string; project: string },

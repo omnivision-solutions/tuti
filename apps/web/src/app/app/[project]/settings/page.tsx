@@ -5,12 +5,11 @@ import { notFound } from "next/navigation";
 import { ApiKeys } from "@/components/api-keys";
 import { AssistantSettings } from "@/components/assistant-settings";
 import { BrandingSettings } from "@/components/branding-settings";
-import { CustomDomainSettings } from "@/components/custom-domain";
-import { SiteMountSettings } from "@/components/site-mount";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { PortalAccessSelect } from "@/components/portal-access-select";
+import { OwnAddressSettings } from "@/components/own-address";
 import { PortalHomeSelect } from "@/components/portal-home-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { ReaderGroups } from "@/components/reader-groups";
@@ -23,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { customDomainTarget } from "@/lib/custom-domains";
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
+import { projectLicense } from "@/server/license";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
@@ -67,6 +67,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   });
   const widget = (await widgetSettings({ id: project.id }))!;
   const brand = (await branding({ id: project.id }))!;
+  const license = await projectLicense(project.id);
   const assistant = await assistantSettings(project.id);
   const { access, home } = await portalAccess(project.id);
   const domain = await customDomain(project.id);
@@ -154,7 +155,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle id="groups-title">Groups</CardTitle>
           <CardDescription>
-            Readers your app signs in with single sign-on, grouped by the <code>groups</code> in its token. A collection in
+            Readers your app signs in with single sign-on, grouped by the <code>groups</code> or <code>attributes</code> in its token. A collection in
             your docs can be for some groups only.
           </CardDescription>
         </CardHeader>
@@ -173,26 +174,23 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardContent>
       </Card>
 
-      {/* Only where the server says where customers point their domains (and for one added before that changed). */}
-      {(customDomainTarget() || domain) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Custom domain</CardTitle>
-            <CardDescription>Your portal and docs at an address of your own, like help.example.com.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CustomDomainSettings projectSlug={project.slug} domain={domain} portalAddress={portal.host} protocol={portal.protocol} />
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
-          <CardTitle>Your site</CardTitle>
-          <CardDescription>Your portal and docs under a path of your own site, like example.com/portal.</CardDescription>
+          <CardTitle>Your own address</CardTitle>
+          <CardDescription>
+            Your portal and docs at an address of yours: a domain of its own, like help.example.com, or a path of your site, like
+            example.com/portal. One or the other.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <SiteMountSettings projectSlug={project.slug} site={site} portalAddress={portal.host} />
+          <OwnAddressSettings
+            projectSlug={project.slug}
+            domain={domain}
+            site={site}
+            domainsOn={Boolean(customDomainTarget())}
+            portalAddress={portal.host}
+            protocol={portal.protocol}
+          />
         </CardContent>
       </Card>
 
@@ -212,6 +210,8 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             headerLinks={brand.headerLinks}
             footerLinks={brand.footerLinks}
             poweredBy={brand.poweredBy}
+            licensedUntil={license.licensedUntil}
+            buyLicenseUrl={license.buyUrl}
           />
         </CardContent>
       </Card>

@@ -151,6 +151,8 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
     },
+    // Asks the local site, which has no licence server (LICENSE_SERVER_URL below): "unreachable".
+    checkBrandingLicense: { allowed: "ADMIN", call: (slug) => branding.checkBrandingLicense(slug) },
   },
   changelog: {
     saveChangelogEntry: {
@@ -333,8 +335,10 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
   },
   groups: {
-    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise" })) },
+    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", claim: "enterprise" })) },
     deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
+    // Names the project's SSO users, like Settings → Groups.
+    previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, null, [{ attribute: "plan", op: "is", value: "pro" }]) },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.
@@ -489,6 +493,8 @@ beforeAll(async () => {
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   site = await startSiteFake();
+  // Licence checks ask the local site, never tuti.so: it has no licence server (its own 404), so "unreachable".
+  vi.stubEnv("LICENSE_SERVER_URL", site.origin);
   const [OWNER, ADMIN, MEMBER, outsider, ssoUser] = await Promise.all(
     ["Owner", "Admin", "Member", "Outsider", "SSO user"].map((name) => signUp(name)),
   );
@@ -511,7 +517,7 @@ type Fixture = Awaited<ReturnType<typeof createFixture>>;
 let installations = 0;
 
 /** A project with one of everything the actions work on. */
-async function createFixture() {
+async function createFixture(own: "domain" | "site" = "domain") {
   const project = await createProject(users.OWNER);
   const projectId = project.id;
   await prisma.teamMember.createMany({
@@ -594,18 +600,22 @@ async function createFixture() {
     ],
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
-  // A custom domain waiting for DNS, with its TXT record there to verify it.
-  const domain = await prisma.customDomain.create({ data: { projectId, hostname: `docs.${project.slug}.example.com`, verificationToken: "matrix" } });
-  dns.txt(`_tuti.${domain.hostname}`, ["tuti-verify=matrix"]);
-  // The portal on a site, waiting for its check, which the site answers.
-  await prisma.siteMount.create({ data: { projectId, origin: site.origin, path: `/${project.slug}`, verificationToken: "matrix" } });
-  site.answer(`/${project.slug}/.well-known/tuti-site`, "tuti-site=matrix");
-  site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
+  // The portal's own address, one or the other like a real project's: the portal on a site, waiting
+  // for its check, which the site answers (for the site actions); else a custom domain waiting for
+  // DNS, with its TXT record there to verify it.
+  if (own === "site") {
+    await prisma.siteMount.create({ data: { projectId, origin: site.origin, path: `/${project.slug}`, verificationToken: "matrix" } });
+    site.answer(`/${project.slug}/.well-known/tuti-site`, "tuti-site=matrix");
+    site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
+  } else {
+    const domain = await prisma.customDomain.create({ data: { projectId, hostname: `docs.${project.slug}.example.com`, verificationToken: "matrix" } });
+    dns.txt(`_tuti.${domain.hostname}`, ["tuti-verify=matrix"]);
+  }
   const tab = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
   // A reader group no collection is for.
-  await prisma.readerGroup.create({ data: { projectId, name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId, key: "beta", name: "Beta", claim: "beta" } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
@@ -724,12 +734,15 @@ test("every server action module is in the matrix", () => {
   expect(serverActionFiles.sort()).toEqual(Object.keys(modules).sort());
 });
 
+/** The actions for the portal under a path of the team's site, which get a project on one (the rest get one with a custom domain). */
+const SITE_ACTIONS = new Set(["portal-settings.saveSite", "portal-settings.verifySiteSetup", "portal-settings.removeSiteMount"]);
+
 const cases = Object.entries(matrix).flatMap(([module, actions]) =>
   Object.entries(actions as Record<string, Case>).map(([name, rule]) => ({ name: `${module}.${name}`, rule })),
 );
 
-test.each(cases)("$name", async ({ rule }) => {
-  const fixture = await createFixture();
+test.each(cases)("$name", async ({ name, rule }) => {
+  const fixture = await createFixture(SITE_ACTIONS.has(name) ? "site" : "domain");
   const before = await snapshot();
 
   for (const actor of refusedActors(rule)) {

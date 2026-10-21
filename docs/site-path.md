@@ -5,9 +5,9 @@ Your portal and docs can live under a path of your own site, like
 `example.com/portal/sign-in`. Your site keeps everything else; Tuti only answers under
 that path.
 
-In the Tuti app, your project's **Settings → Your site** (owners and admins): enter the
-address, make your site forward two paths to Tuti, then **Check setup**. Until it's
-checked, your portal stays at its own address.
+In the Tuti app, your project's **Settings → Your own address** (owners and admins): pick
+**A path of your site**, enter the address, make your site forward two paths to Tuti, then
+**Check setup**. Until it's checked, your portal stays at its own address.
 
 ## What your site forwards
 
@@ -112,8 +112,9 @@ export default {
 
 ## Good to know
 
-- **One path.** The portal can be under one path of one site (and also on a custom domain).
-  Its own address keeps working for the widget, which your site embeds from there.
+- **One path, or a domain.** The portal can be under one path of one site, or on a domain of
+  its own, not both: to switch, remove the one it has first. Its Tuti address keeps working for
+  the widget, which your site embeds from there.
 - **Sign-in.** People sign in on your site, under the path. Their Tuti session is a cookie
   on your site, named `tuti.…` so it can't clash with yours. Browsers send it with every
   request to your site, so your own servers see it too; it only signs people in to your

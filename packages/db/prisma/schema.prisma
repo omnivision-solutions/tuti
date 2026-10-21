@@ -110,9 +110,12 @@ enum TeamRole {
 /// This installation of Tuti, one row (made by its migration): the random id licence keys are signed for.
 model Installation {
   /// Always 1, so there's only ever one row.
-  singleton Int      @id @default(1)
-  id        String   @unique
-  createdAt DateTime @default(now())
+  singleton    Int       @id @default(1)
+  id           String    @unique
+  /// The latest time tuti.so has said it is: keys expire by it too, so setting the clock back
+  /// doesn't bring an expired one back.
+  latestSeenAt DateTime?
+  createdAt    DateTime  @default(now())
 
   @@map("installation")
 }
@@ -158,6 +161,14 @@ model Project {
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
   licenseKey            String?
+  /// Renewing that key from tuti.so (server/license-renewal.ts): the one-time token for the next
+  /// renewal, the request id of an attempt whose answer hasn't arrived (a retry carries it), when an
+  /// admin first asked for a licence (checks start then; a project nobody asked about never
+  /// contacts tuti.so), and when it was last checked (at most daily, and one check at a time).
+  licenseToken          String?
+  licenseRequestId      String?
+  licenseRequestedAt    DateTime?
+  licenseCheckedAt      DateTime?
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)
@@ -256,6 +267,9 @@ model SsoIdentity {
   /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
   /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
   groups     String[] @default([])
+  /// The `attributes` claim of their latest sign-in (strings, numbers and booleans by name, up to 50;
+  /// lib/reader-groups.ts readerAttributes), matched against groups' conditions.
+  attributes Json     @default("{}")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -1025,9 +1039,15 @@ model Collection {
 model ReaderGroup {
   id          String   @id @default(cuid())
   projectId   String
+  /// From the name when it's made, unique in the project and never changed: how the API and
+  /// collections name it (`/groups/{key}`, `groups` on collections.*).
+  key         String
   name        String
-  /// Matched against the token's `groups` (lowercase), unique in the project. Changing it changes who's in it.
-  claim       String
+  /// Matched against the token's `groups` (lowercase), unique in the project when set. Changing it changes who's in it.
+  claim       String?
+  /// Matched against the token's `attributes`, all of them (lib/reader-groups.ts GroupCondition[]).
+  /// A reader is in the group when the claim matches or, with at least one condition, all of them do.
+  conditions  Json     @default("[]")
   description String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1035,6 +1055,7 @@ model ReaderGroup {
   project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections CollectionGroup[]
 
+  @@unique([projectId, key])
   @@unique([projectId, claim])
   @@map("reader_group")
 }
@@ -1397,4 +1418,31 @@ model ArticleChunk {
   @@unique([articleId, position])
   @@index([projectId])
   @@map("article_chunk")
+}
+
+/// Licences Tuti sells (used only where LICENSE_PRIVATE_KEY is set: tuti.so), one per installation and
+/// project, each hiding "Powered by tuti" on that project's portal (see server/license-server.ts).
+/// Installations renew their key with a one-time refresh token. Tokens are derived from the private
+/// key, the licence and a generation, so none is stored: the current one is `generation`'s, and 0
+/// means no installation has claimed it yet.
+model License {
+  id             String    @id @default(cuid())
+  installationId String
+  projectId      String
+  /// False once cancelled: renewals are refused, so the installation's key lapses.
+  active         Boolean   @default(true)
+  generation     Int       @default(0)
+  /// The request that made the current generation: a retry of it with the previous token (its answer
+  /// was lost) gets the same answer again.
+  requestId      String?
+  /// The app version the installation last renewed from, for support.
+  version        String?
+  lastRefreshAt  DateTime?
+  /// Requests with a spent token or a second claim, i.e. the licence in use on another installation.
+  refusedCount   Int       @default(0)
+  lastRefusedAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([installationId, projectId])
+  @@map("license")
 }

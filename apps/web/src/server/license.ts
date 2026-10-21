@@ -15,7 +15,17 @@ const publicKeys = LICENSE_PUBLIC_KEYS.map((key) => createPublicKey({ key: Buffe
 
 /** This installation's random id (made by its migration), which its licence keys are signed for. */
 export async function installationId(): Promise<string> {
-  return (await prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true } })).id;
+  return (await installation()).id;
+}
+
+/** This installation: its id, and the latest time tuti.so has said it is. */
+export function installation(): Promise<{ id: string; latestSeenAt: Date | null }> {
+  return prisma.installation.findUniqueOrThrow({ where: { singleton: 1 }, select: { id: true, latestSeenAt: true } });
+}
+
+/** The time keys expire by: now, or the latest time tuti.so has said it is if that's later (a clock set back). */
+export function licenseNow({ latestSeenAt }: { latestSeenAt: Date | null }): Date {
+  return new Date(Math.max(Date.now(), latestSeenAt?.getTime() ?? 0));
 }
 
 /** Until when `key` licenses `project` on `installation`, or null if it isn't a valid, current key for them. */
@@ -40,4 +50,23 @@ export function licensedUntil(
   } catch {
     return null;
   }
+}
+
+/** Tuti's licence server. LICENSE_SERVER_URL is for tests: keys from any other server don't verify. */
+export function licenseServer(): string {
+  return process.env.LICENSE_SERVER_URL || "https://tuti.so";
+}
+
+/** The project's licence on this installation: until when (null without one), and where to buy one for it. */
+export async function projectLicense(projectId: string): Promise<{ licensedUntil: Date | null; buyUrl: string }> {
+  const [project, current] = await Promise.all([
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { licenseKey: true } }),
+    installation(),
+  ]);
+  const buyUrl = new URL("/license", licenseServer());
+  buyUrl.search = new URLSearchParams({ installation: current.id, project: projectId }).toString();
+  return {
+    licensedUntil: licensedUntil(project.licenseKey, { installation: current.id, project: projectId }, licenseNow(current)),
+    buyUrl: buyUrl.toString(),
+  };
 }
