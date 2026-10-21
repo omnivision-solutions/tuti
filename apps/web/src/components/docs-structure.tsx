@@ -6,6 +6,7 @@ import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransit
 import { toast } from "sonner";
 
 import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, type GroupOption, TabDialog } from "@/components/docs";
+import { LucideIcon } from "@/components/icon-field";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
@@ -21,6 +22,10 @@ type StructureCollection = {
   tab: string | null;
   /** The reader groups it's for (their claims); empty: everyone. */
   groups: string[];
+  /** Its Lucide icon's name, or null. */
+  icon: string | null;
+  /** Whether the installed Lucide has it (one it dropped since draws nothing). */
+  knownIcon: boolean;
   articles: StructureArticle[];
 };
 type StructureTab = { slug: string; name: string };
@@ -373,7 +378,10 @@ export function DocsStructure({
                   </>
                 }
               >
-                <span className="text-sm font-medium break-words">{collection.name}</span>
+                <span className="flex items-center gap-1.5 text-sm font-medium break-words">
+                  {collection.icon && collection.knownIcon && <LucideIcon name={collection.icon} />}
+                  <span className="min-w-0">{collection.name}</span>
+                </span>
                 <span className="text-xs text-muted-foreground">
                   {`${count} ${count === 1 ? "article" : "articles"}`}
                   {collection.groups.length > 0 &&
