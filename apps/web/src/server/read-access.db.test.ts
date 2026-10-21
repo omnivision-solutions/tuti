@@ -20,11 +20,13 @@ import {
   createCollection,
   createTab,
   deleteArticle,
+  deleteTab,
   getArticle,
   listArticles,
   listCollections,
   listTabs,
   publishArticle,
+  reorderTab,
   updateArticle,
   updateCollection,
   updateTab,
@@ -414,5 +416,49 @@ describe("the operations: access on tabs.*, collections.* and articles.*", () =>
     });
     await call(deleteArticle, as(), { slug: "contact" });
     expect(await call(deleteGroup, as(), { group: "beta" })).toEqual({ deleted: "beta" });
+  });
+});
+
+describe("a tab change never opens what the tab kept closed", () => {
+  const accessOf = async (kind: "collection" | "article", slug: string) => {
+    const select = { access: true, groups: { select: { group: { select: { key: true } } } } } as const;
+    const row =
+      kind === "collection"
+        ? await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug }, select })
+        : await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select });
+    return [row.access, ...row.groups.map((g) => g.group.key)];
+  };
+
+  test("deleting a restricted tab: its collections keep its access, for people signed out and outside the group", async () => {
+    await restrict("tab", "api", "GROUPS", ["enterprise"]);
+    await call(deleteTab, as(), { slug: "api" });
+    expect(await accessOf("collection", "reference")).toEqual(["GROUPS", "enterprise"]);
+    expect((await seen(null)).pages).toEqual(["contact", "getting-started"]);
+    expect((await seen(await ssoReader(["beta"]))).pages).toEqual(["contact", "getting-started"]);
+    expect((await seen(await ssoReader(["enterprise"]))).pages).toEqual(ALL);
+  });
+
+  test("deleting the last tab, restricted: its collections and the articles in none keep its access; a tab that inherits copies nothing", async () => {
+    await call(deleteTab, as(), { slug: "api" });
+    expect(await accessOf("collection", "reference")).toEqual(["INHERIT"]);
+    await restrict("tab", "guides", "SIGNED_IN");
+    await call(deleteTab, as(), { slug: "guides" });
+    // Reference moved into Guides with the first delete, so it's one of its collections now.
+    expect(await Promise.all([accessOf("collection", "basics"), accessOf("collection", "reference"), accessOf("article", "contact")])).toEqual([
+      ["SIGNED_IN"],
+      ["SIGNED_IN"],
+      ["SIGNED_IN"],
+    ]);
+    expect((await seen(null)).pages).toEqual([]);
+    expect((await seen(await signUp("Stranger"))).pages).toEqual(ALL);
+  });
+
+  test("reordering: when another tab becomes first, the articles in no collection keep the old first tab's access", async () => {
+    await restrict("tab", "guides", "GROUPS", ["enterprise"]);
+    await call(reorderTab, as(), { slug: "api", position: 0 });
+    expect(await accessOf("article", "contact")).toEqual(["GROUPS", "enterprise"]);
+    expect((await seen(null)).pages).toEqual(["endpoints"]);
+    expect((await seen(await ssoReader(["beta"]))).pages).toEqual(["endpoints"]);
+    expect((await seen(await ssoReader(["enterprise"]))).pages).toEqual(ALL);
   });
 });
