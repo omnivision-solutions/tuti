@@ -7,11 +7,13 @@ import { proxy } from "@/proxy";
 import { randomSecret } from "@/lib/portal-handoff";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
+import { request } from "@/test/next-headers";
 
 import { portalAddress } from "./custom-domains";
 import { createPost } from "./operations/create";
 import { getSite, removeSite, setSite, verifySite } from "./operations/site";
 import { call } from "./operations/run";
+import { emailPasswordReset } from "./password-reset";
 import { continueToPortal } from "./portal-handoff";
 import { emailSignInLink } from "./sign-in-link";
 
@@ -139,6 +141,14 @@ test("links Tuti emails, and \"Continue as\", keep the path", async () => {
   form.set("email", owner.email);
   await emailSignInLink(project.slug, "/", form);
   expect((await mailbox.latestTo(owner.email)).text).toContain(`${site.origin}/portal/sign-in/link?token=`);
+  // A password reset asked for on the portal.
+  request.host = tuti();
+  try {
+    expect(await emailPasswordReset(form)).toMatchObject({ sentTo: owner.email });
+  } finally {
+    request.host = "";
+  }
+  expect((await mailbox.latestTo(owner.email)).text).toContain(`${site.origin}/portal/reset-password?token=`);
   actAs(owner);
   const back = await redirectTarget(continueToPortal(project.slug, randomSecret(), "/roadmap"));
   expect(back.startsWith(`${site.origin}/portal/api/auth/continue/callback?code=`)).toBe(true);
