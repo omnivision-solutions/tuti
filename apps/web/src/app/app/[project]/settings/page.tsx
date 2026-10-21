@@ -23,6 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { customDomainTarget } from "@/lib/custom-domains";
 import { githubConfig } from "@/lib/github";
 import { appUrl, portalUrl } from "@/lib/hosts";
+import { projectLicense } from "@/server/license";
 import { getAdminProject } from "@/server/membership";
 import { assistantSettings } from "@/server/operations/assistant";
 import { branding } from "@/server/operations/branding";
@@ -67,6 +68,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   });
   const widget = (await widgetSettings({ id: project.id }))!;
   const brand = (await branding({ id: project.id }))!;
+  const license = await projectLicense(project.id);
   const assistant = await assistantSettings(project.id);
   const { access, home } = await portalAccess(project.id);
   const domain = await customDomain(project.id);
@@ -212,6 +214,8 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             headerLinks={brand.headerLinks}
             footerLinks={brand.footerLinks}
             poweredBy={brand.poweredBy}
+            licensedUntil={license.licensedUntil}
+            buyLicenseUrl={license.buyUrl}
           />
         </CardContent>
       </Card>

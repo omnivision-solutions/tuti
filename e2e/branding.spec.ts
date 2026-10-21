@@ -45,12 +45,23 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await card.getByRole("button", { name: "Add footer link" }).click();
   await card.getByLabel("Footer link 1 label").fill("Privacy");
   await card.getByLabel("Footer link 1 URL").fill("https://example.com/privacy");
-  // Hiding Powered by tuti needs a licence for the project.
+  // Hiding Powered by tuti needs a licence for the project: unticking it asks about one instead.
   const poweredBy = card.getByLabel('Show "Powered by tuti" in the footer');
-  await poweredBy.uncheck();
-  await card.getByRole("button", { name: "Save branding" }).click();
-  await expect(card.getByText('Hiding "Powered by tuti" needs a licence for this project')).toBeVisible();
-  await poweredBy.check();
+  await expect(card.getByText("Hiding it needs a licence for this project.")).toBeVisible();
+  await poweredBy.click();
+  const dialog = owner.getByRole("dialog", { name: 'Keep "Powered by tuti"?' });
+  await expect(dialog).toBeVisible();
+  // Bought on the licence server (tuti.so; this installation itself here) for this installation and project.
+  const buy = new URL((await dialog.getByRole("link", { name: "Get a licence" }).getAttribute("href"))!);
+  expect(`${buy.origin}${buy.pathname}`).toBe(`${APP_URL}/license`);
+  expect(buy.searchParams.get("installation")).toBeTruthy();
+  expect(buy.searchParams.get("project")).toBeTruthy();
+  await checkpoint(owner, "powered-by-licence-dialog", { fullPage: false });
+  await dialog.getByRole("button", { name: "Check now" }).click();
+  await expect(dialog.getByText("No licence for this project yet. Once you've bought one, check again.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Keep the badge" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(poweredBy).toBeChecked();
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await checkpoint(owner, "branding-settings");
