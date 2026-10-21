@@ -15,6 +15,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { docsContents, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
+import { updateGroup } from "./operations/groups";
 import { call } from "./operations/run";
 import { groupsOf } from "./portal-access";
 
@@ -167,6 +168,22 @@ describe("who sees what", () => {
     expect((await seen(both)).pages).toContain("rolling-out");
     expect((await seen(enterpriseOnly)).pages).not.toContain("rolling-out");
   });
+});
+
+test("a group's claim changed: its collections are for whoever the app signs in with the new one", async () => {
+  await docsWithGroups();
+  const before = await ssoReader(["enterprise"]);
+  const after = await ssoReader(["plan:enterprise"]);
+  const reads = async (user: TestUser) => {
+    actAs(user);
+    return (await publishedArticle(project.slug, "saml")) !== null;
+  };
+  expect([await reads(before), await reads(after)]).toEqual([true, false]);
+  await call(updateGroup, as(), { group: "enterprise", claim: "plan:enterprise" });
+  expect([await reads(before), await reads(after)]).toEqual([false, true]);
+  const groups = await groupsOf(project.id, after.id);
+  expect((await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug)).toContain("saml");
+  expect((await searchDocs(project.id, "widget", 10, await groupsOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
 });
 
 test("each sign-in says the groups: a later token without one takes it away", async () => {
