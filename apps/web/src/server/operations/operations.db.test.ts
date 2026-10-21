@@ -73,6 +73,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "tabs.update": () => ({ slug: "docs", name: "Documentation" }),
   "tabs.reorder": () => ({ slug: "docs", position: 0 }),
   "tabs.delete": () => ({ slug: "docs" }),
+  "groups.list": () => ({}),
+  // Like portal.update: admins only in the app.
+  "groups.create": () => ({ name: "Enterprise" }),
+  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: "beta-testers" }),
+  "groups.delete": () => ({ group: "beta" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -162,6 +167,9 @@ async function createFixture() {
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
+  // A reader group no collection is for.
+  await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
+  await prisma.readerGroup.create({ data: { projectId: project.id, name: "Beta", claim: "beta" } });
   // A custom domain waiting for DNS, with its TXT record there to verify it.
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
   await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
@@ -298,6 +306,7 @@ const snapshot = () =>
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
+    prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: { claim: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.docsGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),

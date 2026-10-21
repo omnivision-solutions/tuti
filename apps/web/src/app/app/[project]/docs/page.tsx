@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
+import { claimsOf, groupClaims } from "@/lib/reader-groups";
 import { inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -36,7 +37,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, tabs, collections, uncollected, deleted] = await Promise.all([
+  const [articles, tabs, collections, uncollected, deleted, groups] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -61,7 +62,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         description: true,
         parent: { select: { slug: true } },
         tab: { select: { slug: true } },
-        groups: true,
+        groups: groupClaims,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -82,6 +83,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
+    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { claim: "asc" }], select: { claim: true, name: true } }),
   ]);
 
   return (
@@ -146,6 +148,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 .filter((c) => c.parentId === null)
                 .map((c) => ({ slug: c.slug, name: c.name }))}
               tabs={tabs}
+              groups={groups}
             />
           </CardAction>
         </CardHeader>
@@ -160,10 +163,11 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 description: c.description,
                 parent: c.parent?.slug ?? null,
                 tab: c.tab?.slug ?? null,
-                groups: c.groups,
+                groups: claimsOf(c),
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}
+              groups={groups}
             />
           </CardContent>
         )}

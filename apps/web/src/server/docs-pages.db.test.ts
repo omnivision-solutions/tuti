@@ -33,6 +33,7 @@ beforeEach(async () => {
   await call(createCollection, as(), { name: "Invoices", parent: "billing" });
   await call(createCollection, as(), { name: "Later" });
   await call(createCollection, as(), { name: "Endpoints", tab: "api" });
+  await prisma.readerGroup.createMany({ data: ["enterprise", "partners"].map((claim) => ({ projectId: project.id, name: claim, claim })) });
   await call(createCollection, as(), { name: "Enterprise", tab: "api", groups: ["enterprise"] });
   await call(createCollection, as(), { name: "Agreements", tab: "partners", groups: ["partners"] });
   for (const [title, collection, listing] of [
