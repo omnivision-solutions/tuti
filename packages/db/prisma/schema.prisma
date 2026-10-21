@@ -148,6 +148,8 @@ model Project {
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)
+  /// What the portal's home (`/`) opens: the first board, the roadmap, the changelog or the help center.
+  portalHome            PortalHome   @default(FEEDBACK)
   /// How the help center's AI answers (see the assistant.* operations): a tone, the answer
   /// length, standing instructions, and off-limits topics (short phrases; a question that
   /// contains one gets a fixed reply without asking the model).
@@ -1175,6 +1177,13 @@ enum HelpNoAnswerCause {
 enum PortalAccess {
   PUBLIC
   PRIVATE
+}
+
+enum PortalHome {
+  FEEDBACK
+  ROADMAP
+  CHANGELOG
+  DOCS
 }
 
 /// How long the help center's AI answers are (each is a sentence in the prompt and a cap on the reply).

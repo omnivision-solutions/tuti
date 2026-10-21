@@ -93,7 +93,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: false }),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
-  "portal.update": () => ({ access: "private" }),
+  "portal.update": () => ({ access: "private", home: "docs" }),
   // Like portal.update: admins only in the app.
   "portalReaders.list": () => ({}),
   "portalReaders.add": () => ({ emails: ["e2e-matrix-reader@example.com"] }),
@@ -269,6 +269,8 @@ const snapshot = () =>
         brandColor: true,
         headerLinks: true,
         poweredBy: true,
+        portalAccess: true,
+        portalHome: true,
         assistantTone: true,
         assistantLength: true,
         assistantInstructions: true,
