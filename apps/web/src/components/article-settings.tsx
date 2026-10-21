@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
 import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
-import type { Access } from "@/lib/read-access";
+import type { Access, WithoutAccess } from "@/lib/read-access";
 import { saveArticleSettings } from "@/server/docs";
 import type { FormState } from "@/server/form-state";
 
@@ -57,6 +57,7 @@ export function ArticleSettings({
   article,
   groups,
   inherit,
+  preview,
 }: {
   projectSlug: string;
   article: {
@@ -65,6 +66,8 @@ export function ArticleSettings({
     access: Access;
     /** Its groups' keys (with access "groups"). */
     groups: string[];
+    /** "People without access". */
+    noAccess: WithoutAccess;
     customSlug: boolean;
     description: string;
     keywords: string[];
@@ -72,8 +75,10 @@ export function ArticleSettings({
   };
   /** The project's groups, for "Who can read". */
   groups: GroupOption[];
-  /** "Who can read"'s first choice: what it inherits from, and what that lets read. */
-  inherit: { label: string; description: string };
+  /** "Who can read"'s first choice: what it inherits from, what that lets read, and what it shows the rest. */
+  inherit: { label: string; description: string; shows: "lock" | "hide" };
+  /** Its page on the portal, for "Preview as a reader" (published only). */
+  preview?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -113,6 +118,8 @@ export function ArticleSettings({
               inherit={inherit}
               defaultAccess={article.access}
               defaultGroups={article.groups}
+              defaultNoAccess={article.noAccess}
+              preview={preview}
             />
             <Field>
               <FieldLabel id="article-listing-label">Listed in</FieldLabel>

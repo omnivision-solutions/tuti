@@ -1,10 +1,21 @@
 import { cn } from "cn";
+import { LockIcon } from "lucide-react";
 import Link from "next/link";
 
 import { CollectionIcon } from "@/components/collection-icon";
-import type { DocsCollection } from "@/server/docs-queries";
+import type { DocsArticleLink, DocsCollection } from "@/server/docs-queries";
 
-type Articles = { slug: string; title: string }[];
+type Articles = DocsArticleLink[];
+
+/** After the title of a page this reader may not read: a lock, "Locked" to screen readers. */
+export function LockedMark({ className }: { className?: string }) {
+  return (
+    <>
+      <LockIcon aria-hidden className={cn("ml-1.5 inline-block size-3.5 shrink-0 align-[-0.1em] text-muted-foreground", className)} />
+      <span className="sr-only"> Locked</span>
+    </>
+  );
+}
 
 export function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: string) => string }) {
   return (
@@ -13,6 +24,7 @@ export function ArticleLinks({ articles, href }: { articles: Articles; href: (sl
         <li key={article.slug}>
           <Link href={href(article.slug)} className="break-words text-primary hover:underline">
             {article.title}
+            {article.locked && <LockedMark />}
           </Link>
         </li>
       ))}
@@ -45,6 +57,7 @@ function CollectionSection({
         <CollectionIcon name={collection.icon} />
         <Link href={collectionHref(collection.slug)} className="min-w-0 hover:underline">
           {collection.name}
+          {collection.locked && <LockedMark />}
         </Link>
       </Heading>
       {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
@@ -90,7 +103,7 @@ export function DocsTabs({
   href,
   compact = false,
 }: {
-  tabs: { slug: string; name: string }[];
+  tabs: { slug: string; name: string; locked?: true }[];
   /** The tab whose page (or collection or article) this is, if any. */
   active: string | null;
   href: (slug: string) => string;
@@ -113,6 +126,7 @@ export function DocsTabs({
           )}
         >
           {tab.name}
+          {tab.locked && <LockedMark className="text-current" />}
         </Link>
       ))}
     </nav>

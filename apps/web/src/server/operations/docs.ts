@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { type ArticleListing, Prisma, prisma } from "@tuti/db";
+import { type ArticleListing, type NoAccess, Prisma, prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS, enqueue, lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
-import { type Access, ACCESSES, fromReadAccess, type Level, toReadAccess } from "@/lib/read-access";
+import { type Access, ACCESSES, fromNoAccess, fromReadAccess, type Level, NO_ACCESSES, toNoAccess, toReadAccess, type WithoutAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
@@ -98,17 +98,26 @@ const accessFields = {
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
     .transform((groups) => [...new Set(groups)])
     .optional(),
+  /**
+   * What people it isn't for see of it: `inherit` (the default: what the level above says; with
+   * nothing above saying, `hide`), `lock` (its title, listed with a lock; its page asks them to sign
+   * in or says they don't have access, never its content) or `hide` (nothing: not listed, and its
+   * link is not found).
+   */
+  noAccess: z.enum(NO_ACCESSES).optional(),
 };
 
 /**
- * What an operation's `access` and `groups` change (undefined: neither was sent): the access, and
- * links to the groups (undefined: keep the ones it has; none unless it's `groups`). Unknown groups,
- * or groups with another access, are refused. Call it with the project locked.
+ * What an operation's `access`, `groups` and `noAccess` change (undefined: none was sent): the
+ * access, links to the groups (undefined: keep the ones it has; none unless it's `groups`), and
+ * what the rest see. Unknown groups, or groups with another access, are refused. Call it with the
+ * project locked.
  */
-async function accessChange(tx: Prisma.TransactionClient, projectId: string, input: { access?: Access; groups?: string[] }) {
+async function accessChange(tx: Prisma.TransactionClient, projectId: string, input: { access?: Access; groups?: string[]; noAccess?: WithoutAccess }) {
   const access = input.access ?? (input.groups === undefined ? undefined : input.groups.length > 0 ? "groups" : "inherit");
+  const noAccess = input.noAccess && toNoAccess(input.noAccess);
   if (access === undefined) {
-    return undefined;
+    return noAccess && { access: undefined, groups: undefined, noAccess };
   }
   if (access !== "groups" && input.groups?.length) {
     throw new OperationError(400, "invalid_input", "Groups go with access “groups”");
@@ -116,11 +125,16 @@ async function accessChange(tx: Prisma.TransactionClient, projectId: string, inp
   return {
     access: toReadAccess(access),
     groups: access !== "groups" ? [] : input.groups === undefined ? undefined : await groupLinks(tx, projectId, input.groups),
+    noAccess,
   };
 }
 
-/** "Who can read" for the API, from `levelSelect`: its access and its groups' keys. */
-const accessView = (level: Level) => ({ access: fromReadAccess(level.access), groups: claimsOf(level) });
+/** "Who can read" for the API, from `levelSelect`: its access, its groups' keys, and what the rest see of it. */
+const accessView = (level: Level & { noAccess: NoAccess }) => ({
+  access: fromReadAccess(level.access),
+  groups: claimsOf(level),
+  noAccess: fromNoAccess(level.noAccess),
+});
 
 const collectionFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
@@ -503,7 +517,7 @@ async function saveChanges(
   const data: Prisma.ArticleUncheckedUpdateInput = {
     ...(showUpdatedDate !== undefined && { showUpdatedDate }),
     ...(listing !== undefined && { listing }),
-    ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
+    ...(access && { access: access.access, noAccess: access.noAccess, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
     ...(description !== undefined && { description }),
     ...(keywords !== undefined && { keywords }),
     ...(noindex !== undefined && { noindex }),
@@ -648,7 +662,7 @@ export const searchArticles = defineOperation({
 export const createArticle = defineOperation({
   name: "articles.create",
   summary:
-    "Write a docs article (a draft until it's published); its slug comes from the title, unless you set one (`slug`: lowercase letters, digits and hyphens; refused if it's taken, never changed). `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`). `description`, `keywords` and `noindex` as in articles.update",
+    "Write a docs article (a draft until it's published); its slug comes from the title, unless you set one (`slug`: lowercase letters, digits and hyphens; refused if it's taken, never changed). `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`), and `noAccess` what people it isn't for see of it (`inherit`, the default: as its collection; `lock`: its title with a lock, never its text; or `hide`). `description`, `keywords` and `noindex` as in articles.update",
   method: "POST",
   path: "/articles",
   scope: "write",
@@ -682,7 +696,7 @@ export const createArticle = defineOperation({
             order: await lastArticle(tx, projectId, collection ?? null),
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
-            ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
+            ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
             description: input.description,
             keywords: input.keywords,
             noindex: input.noindex,
@@ -702,7 +716,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it (`access` and `groups`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -1211,7 +1225,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `access` says who can read it and what's in it, on top of its tab and the collections it's in (`inherit`, the default; `signed_in`; or `groups`, readers in one of `groups`, keys of the project's reader groups (see groups.list), besides the team; `groups` alone, as before, means `groups`); `icon` names a Lucide icon (lucide.dev) shown next to its name",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `access` says who can read it and what's in it, on top of its tab and the collections it's in (`inherit`, the default; `signed_in`; or `groups`, readers in one of `groups`, keys of the project's reader groups (see groups.list), besides the team; `groups` alone, as before, means `groups`); `icon` names a Lucide icon (lucide.dev) shown next to its name. `noAccess` says what people it isn't for see of it and what's in it (`inherit`, the default; `lock`: its name with a lock, nothing in it; or `hide`)",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1241,7 +1255,7 @@ export const createCollection = defineOperation({
           slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
           name: input.name,
           description: input.description,
-          ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
+          ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
           icon: input.icon,
           order: (last._max.order ?? -1) + 1,
         },
@@ -1254,7 +1268,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who can read it (`access` and `groups`, as in collections.create; `groups` alone, as before: some make it `groups`, none `inherit`), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who can read it (`access` and `groups`, as in collections.create; `groups` alone, as before: some make it `groups`, none `inherit`), its `icon` (a Lucide icon's name; null removes it) what people it isn't for see (`noAccess`, as in collections.create), or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1288,7 +1302,7 @@ export const updateCollection = defineOperation({
         data: {
           ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
           ...(input.description !== undefined && { description: input.description }),
-          ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
+          ...(access && { access: access.access, noAccess: access.noAccess, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
           ...(input.icon !== undefined && { icon: input.icon }),
           ...(input.order !== undefined && { order: input.order }),
         },
@@ -1431,7 +1445,7 @@ export const listTabs = defineOperation({
 export const createTab = defineOperation({
   name: "tabs.create",
   summary:
-    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. `access` says who can read it (`inherit`, the default: everyone who may read the portal; `signed_in`; or `groups`, with `groups`), and so what's in it; the first tab's is also the articles' in no collection",
+    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. `access` says who can read it (`inherit`, the default: everyone who may read the portal; `signed_in`; or `groups`, with `groups`), and so what's in it; the first tab's is also the articles' in no collection. `noAccess` says what people it isn't for see of it (`inherit`, the default: hidden; `lock`: its name with a lock, nothing in it; or `hide`)",
   method: "POST",
   path: "/tabs",
   scope: "write",
@@ -1450,7 +1464,7 @@ export const createTab = defineOperation({
             slug: await freeDocsSlug(tx, projectId, input.name, "tab"),
             name: input.name,
             order: (last._max.order ?? -1) + 1,
-            ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
+            ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
           },
           select: { id: true },
         });
@@ -1466,7 +1480,7 @@ export const createTab = defineOperation({
 export const updateTab = defineOperation({
   name: "tabs.update",
   summary:
-    "Rename a docs tab (its slug follows the name) or set what its path shows (`landing`): an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names (its slug; required with `page`). A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead. Or change who can read it (`access` and `groups`, as in tabs.create)",
+    "Rename a docs tab (its slug follows the name) or set what its path shows (`landing`): an `overview` (search and a card per top-level collection; the default), its `first` article in reading order, or a `page`: the article or collection in this tab that `landingPage` names (its slug; required with `page`). A picked page a reader can't read there (unpublished, hidden, restricted, moved to another tab) shows them the overview instead. Or change who can read it (`access` and `groups`) or what the rest see (`noAccess`), as in tabs.create",
   method: "PATCH",
   path: "/tabs/{slug}",
   scope: "write",
@@ -1493,7 +1507,7 @@ export const updateTab = defineOperation({
           data: {
             ...(renamed && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name!, "tab", { id, slug: input.slug }) }),
             ...(input.landing && { landing: input.landing.toUpperCase() as Uppercase<DocsLanding>, ...page }),
-            ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
+            ...(access && { access: access.access, noAccess: access.noAccess, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
           },
           select: tabSelect,
         });
@@ -1505,10 +1519,22 @@ export const updateTab = defineOperation({
 /**
  * Before tab `tabId` stops governing them (deleted, or no longer first): its top-level collections, or
  * the articles in no collection, that inherit take its "Who can read", so a tab change never opens
- * what it kept closed (it may narrow). Call it with the project locked.
+ * what it kept closed (it may narrow); and those that inherit "People without access" take what it
+ * came to (a tab that inherits hides) when the tab they go under (`to`; null: none) comes to
+ * something else, so it never changes what the rest see of them either. Call it with the project locked.
  */
-async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, tabId: string, what: "collections" | "uncollected") {
-  const tab = await tx.docsTab.findUniqueOrThrow({ where: { id: tabId }, select: { access: true, groups: { select: { groupId: true } } } });
+async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, tabId: string, what: "collections" | "uncollected", to: string | null) {
+  const tab = await tx.docsTab.findUniqueOrThrow({ where: { id: tabId }, select: { access: true, noAccess: true, groups: { select: { groupId: true } } } });
+  const next = to ? await tx.docsTab.findUniqueOrThrow({ where: { id: to }, select: { noAccess: true } }) : null;
+  const shown = (noAccess: NoAccess | undefined) => (noAccess === "LOCK" ? "LOCK" : "HIDE");
+  if (shown(tab.noAccess) !== shown(next?.noAccess)) {
+    const where = { projectId, noAccess: "INHERIT" as const };
+    if (what === "collections") {
+      await tx.collection.updateMany({ where: { ...where, tabId, parentId: null }, data: { noAccess: shown(tab.noAccess) } });
+    } else {
+      await tx.article.updateMany({ where: { ...where, collectionId: null }, data: { noAccess: shown(tab.noAccess) } });
+    }
+  }
   if (tab.access === "INHERIT") {
     return;
   }
@@ -1542,7 +1568,7 @@ export const reorderTab = defineOperation({
         const order = placed(tabs, id, input.position);
         // The first tab governs the articles in no collection: a new one mustn't open them.
         if (tabs[0] && order[0] !== tabs[0].id) {
-          await keepTabAccess(tx, projectId, tabs[0].id, "uncollected");
+          await keepTabAccess(tx, projectId, tabs[0].id, "uncollected", order[0] ?? null);
         }
         await renumber(tx, "docs_tab", order);
         return tx.docsTab.findUniqueOrThrow({ where: { id }, select: tabSelect });
@@ -1573,9 +1599,9 @@ export const deleteTab = defineOperation({
       const inTab = (tabId: string | null) =>
         tx.collection.findMany({ where: siblingsWhere(projectId, null, tabId), orderBy: siblingOrder, select: { id: true } });
       // What it governed keeps who can read it: its collections, and (the first tab) the articles in none.
-      await keepTabAccess(tx, projectId, id, "collections");
+      await keepTabAccess(tx, projectId, id, "collections", target?.id ?? null);
       if (at === 0) {
-        await keepTabAccess(tx, projectId, id, "uncollected");
+        await keepTabAccess(tx, projectId, id, "uncollected", null);
       }
       const moving = await inTab(id);
       if (moving.length > 0) {

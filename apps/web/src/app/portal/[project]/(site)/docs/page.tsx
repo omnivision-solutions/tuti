@@ -16,7 +16,10 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
   if (searchQuery(q)) {
     return { title: "Docs", ...canonical, robots: { index: false } };
   }
-  const { landing } = await docsHome(project);
+  const { tab, landing } = await docsHome(project);
+  if (tab?.locked) {
+    return { title: "Docs", ...canonical, robots: { index: false } };
+  }
   return { ...(landing.kind === "overview" ? { title: "Docs" } : docsPageMetadata(landing)), ...canonical };
 }
 

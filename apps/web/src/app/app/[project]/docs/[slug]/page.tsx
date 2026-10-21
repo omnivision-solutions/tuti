@@ -7,6 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ArticleSettings } from "@/components/article-settings";
+import { previewUrl } from "@/lib/portal-base";
 import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/line-diff";
@@ -16,7 +17,7 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { fromReadAccess } from "@/lib/read-access";
+import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
@@ -94,6 +95,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
                 listing,
                 access: fromReadAccess(article.access),
                 groups: claimsOf(article),
+                noAccess: fromNoAccess(article.noAccess),
                 customSlug: article.customSlug,
                 description: article.description,
                 keywords: article.keywords,
@@ -103,7 +105,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               inherit={{
                 label: parent ? `Inherit from ${parent.name}` : "Inherit",
                 description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
+                shows: access.shows[parent?.slug ?? ""] ?? "hide",
               }}
+              preview={article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined}
             />
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} />
           </>

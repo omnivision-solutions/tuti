@@ -1,6 +1,6 @@
 "use client";
 
-import { SearchIcon } from "lucide-react";
+import { LockIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -84,15 +84,26 @@ export function DocsSearch() {
   );
 }
 
-/** A part's row under the header (`label` names it): only with two or more entries. `wide` lines it up with Docs' wider page. */
-export function PartRow({ label, links, wide = false }: { label: string; links: { href: string; name: string; active: boolean }[]; wide?: boolean }) {
+/**
+ * A part's row under the header (`label` names it): only with two or more entries. `wide` lines it
+ * up with Docs' wider page. A `locked` entry (a docs tab this reader may not read) has a lock.
+ */
+export function PartRow({
+  label,
+  links,
+  wide = false,
+}: {
+  label: string;
+  links: { href: string; name: string; active: boolean; locked?: boolean }[];
+  wide?: boolean;
+}) {
   if (links.length < 2) {
     return null;
   }
   return (
     <div className="border-b">
       <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", wide ? "max-w-7xl" : "max-w-3xl")} aria-label={label}>
-        {links.map(({ href, name, active }) => (
+        {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
             href={href}
@@ -103,6 +114,12 @@ export function PartRow({ label, links, wide = false }: { label: string; links: 
             )}
           >
             {name}
+            {locked && (
+              <>
+                <LockIcon aria-hidden className="ml-1.5 inline-block size-3.5 align-[-0.1em]" />
+                <span className="sr-only"> Locked</span>
+              </>
+            )}
           </Link>
         ))}
       </nav>

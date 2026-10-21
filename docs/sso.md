@@ -156,6 +156,21 @@ isn't for them at all: in the docs, the tabs, article pages and their `.md`, sea
 the widget. `llms.txt` and the sitemap only list what's for everyone. In the API, `groups` without
 `access` still works as it did for collections: some groups mean `groups`, none `inherit`.
 
+**People without access** (`noAccess`) says what everyone else sees of a page, from the nearest
+level that says (the page, each collection it's in, then its tab):
+
+- **Hide** (`hide`, what happens when no level says): nothing. It isn't listed, and its link is
+  "not found", so nobody learns it's there.
+- **Show with a lock** (`lock`): its title is listed with a lock (in the docs, the tabs, the tree,
+  search results and the widget; search matches its title only), and its page shows the title and
+  "Sign in to read this." (signed out) or "You don't have access to this.", never its text. Its
+  `.md`, AI answers, `llms.txt` and the sitemap stay closed, and the page is `noindex`. A locked
+  tab or collection shows nothing inside it.
+- **Inherit** (`inherit`, the default).
+
+**Preview as a reader**, next to it in the app, opens the page on your portal as people signed out
+see it (`?preview=signed-out`, which only changes what your team sees).
+
 A group a tab, collection or article is for can't be deleted until it's removed there, so who can
 read what never changes behind your back.
 
