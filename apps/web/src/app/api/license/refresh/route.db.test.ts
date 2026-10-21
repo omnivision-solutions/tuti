@@ -108,11 +108,16 @@ test("two renewals with the same token at once: one renews, the other is a copy"
       await tx.$executeRaw`SELECT 1 FROM license WHERE id = ${id} FOR UPDATE`;
       const renewals = Promise.all([refresh(token!), refresh(token!)]);
       // Both wait for the row (with no lock of their own, both would have read the same generation by now).
-      for (let waiting = 0, tries = 0; waiting < 2 && tries < 100; tries++) {
+      // Counted in this test file's database, on the licence table only.
+      let waiting = 0;
+      for (let tries = 0; waiting < 2 && tries < 250; tries++) {
         await new Promise((resolve) => setTimeout(resolve, 20));
-        const [row] = await tx.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`;
+        const [row] = await tx.$queryRaw<{ count: bigint }[]>`
+          SELECT count(*) FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%license%'`;
         waiting = Number(row!.count);
       }
+      expect(waiting).toBe(2);
       // Wrapped: the transaction commits (letting them go) without waiting for them.
       return { renewals };
     },
