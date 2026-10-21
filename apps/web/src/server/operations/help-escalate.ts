@@ -3,12 +3,12 @@ import { emailConfigured, escalationEmail, sendEmail } from "@tuti/email";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalAddress } from "@/server/custom-domains";
 
 import { countEmailedLink } from "../email-link-limits";
 import { getSession } from "../session";
 import { emailAddress, limitHeaders } from "./assistant";
 import { defineOperation, OperationError } from "./define";
+import { projectPortal } from "./read";
 
 /**
  * "Ask a person" (Phase 11): a question the AI couldn't help with goes to the team's support
@@ -106,6 +106,8 @@ export async function escalateQuestion(
   if ("error" in limited || !limited.id) {
     throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
   }
+  // Looked up before the claim: if it failed after, the question would stay claimed with nothing sent.
+  const portal = await projectPortal(projectId);
   // Claimed before anything is sent, so a double click or a retry can't send it twice; released if the team's email fails.
   const { count } = await prisma.helpQuestion.updateMany({
     where: { id: question.id, escalatedAt: null },
@@ -118,7 +120,7 @@ export async function escalateQuestion(
   const note = input.note || null;
   const notHelpful = question.helpful === false;
   const [project, articles, summary] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true, slug: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } }),
     // The cited articles AI answers may still use (one hidden since is left out; an AI-only one has no page to link).
     prisma.article.findMany({
       where: { id: { in: question.articleIds }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
@@ -127,7 +129,6 @@ export async function escalateQuestion(
     }),
     summarize(projectId, { question: question.question, answer: question.answer, notHelpful, note }, timeoutMs),
   ]);
-  const portal = await portalAddress(project.slug);
   const content = {
     projectName: project.name,
     from: input.email,

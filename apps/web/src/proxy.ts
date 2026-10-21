@@ -40,7 +40,10 @@ export async function proxy(request: NextRequest) {
     if (!target.customDomain && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
       const address = await portalAddress(target.slug);
       if (address !== portalUrl(target.slug)) {
-        return NextResponse.redirect(new URL(pathname + request.nextUrl.search, address), 308);
+        const response = NextResponse.redirect(new URL(pathname + request.nextUrl.search, address), 308);
+        // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
+        response.headers.set("cache-control", "no-store");
+        return response;
       }
     }
     const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(target.slug, request.headers);

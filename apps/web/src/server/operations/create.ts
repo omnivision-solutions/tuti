@@ -90,6 +90,8 @@ export const createPost = defineOperation({
       throw new OperationError(400, "invalid_content", text.error);
     }
     const userId = await authorId(context, input.author);
+    // Before anything is written: a lookup failing after the post is saved would fail a request that did save it.
+    const portal = await projectPortal(projectId);
 
     const post = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -125,7 +127,7 @@ export const createPost = defineOperation({
     } catch (error) {
       log.error("Enqueueing the post-created job failed", { error, postId: post.id });
     }
-    const created = summary(post, await projectPortal(projectId));
+    const created = summary(post, portal);
     await emitEvent(projectId, "post.created", created);
     return created;
   },
@@ -154,6 +156,7 @@ export const createComment = defineOperation({
       throw new OperationError(400, "invalid_content", "Write something first");
     }
     const userId = await authorId(context, input.author);
+    const portal = await projectPortal(projectId);
 
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -175,7 +178,7 @@ export const createComment = defineOperation({
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),
     };
-    const { url, number, title } = summary(post, await projectPortal(projectId));
+    const { url, number, title } = summary(post, portal);
     await emitEvent(projectId, "comment.created", { post: { number, title, url }, comment: created });
     return created;
   },

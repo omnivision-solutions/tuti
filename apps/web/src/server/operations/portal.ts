@@ -117,6 +117,8 @@ export const addPortalReaders = defineOperation({
     const emails = [...new Set(input.emails)];
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true } });
     const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();
+    // Before the readers are added: if it failed after, a retry would find them added and email nobody.
+    const signInUrl = notify ? `${await portalAddress(project.slug)}/sign-in` : "";
     // Under the project's lock, so adds at the same time can't go past the limits together.
     const { added, toEmail } = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
@@ -139,7 +141,7 @@ export const addPortalReaders = defineOperation({
         where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
         select: { name: true, email: true },
       });
-      const url = `${await portalAddress(project.slug)}/sign-in`;
+      const url = signInUrl;
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
         toEmail.map((email) =>

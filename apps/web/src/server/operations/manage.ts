@@ -30,12 +30,14 @@ export const updatePost = defineOperation({
       }
       boardId = board.id;
     }
+    // Before the change is written (see posts.create).
+    const portal = await projectPortal(projectId);
     const updated = await prisma.post.update({
       where: { id: post.id },
       data: { ...(input.status && { status: fromApiStatus(input.status) }), ...(boardId && { boardId }) },
       select: postSummarySelect,
     });
-    const result = summary(updated, await projectPortal(projectId));
+    const result = summary(updated, portal);
     if (updated.status !== post.status) {
       await postStatusChanged(projectId, post.id, result, post.status);
     }

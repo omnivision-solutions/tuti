@@ -9,9 +9,12 @@ import { proxy } from "@/proxy";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
-import { portalAddress } from "./custom-domains";
+import { forgetCustomDomain, portalAddress } from "./custom-domains";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { createPost } from "./operations/create";
+import { updatePost } from "./operations/manage";
+import { escalateHelp } from "./operations/help-escalate";
+import { addPortalReaders, updatePortal } from "./operations/portal";
 import { createArticle, getArticle, publishArticle } from "./operations/help";
 import { call } from "./operations/run";
 import { continueToPortal } from "./portal-handoff";
@@ -87,6 +90,7 @@ test("the Tuti address sends pages on to the domain, with their path and query; 
   const response = await visit("/docs/getting-started?q=x");
   expect(response.status).toBe(308);
   expect(response.headers.get("location")).toBe(`http://${host}:3100/docs/getting-started?q=x`);
+  expect(response.headers.get("cache-control")).toBe("no-store");
   expect((await visit("/api/auth/get-session")).status).not.toBe(308);
   expect((await visit("/widget")).status).not.toBe(308);
   expect((await visit("/feedback/feature-requests", "POST")).status).not.toBe(308);
@@ -121,4 +125,31 @@ test("links Tuti makes use the domain: sign-in emails, the sitemap, the API, and
   const back = await redirectTarget(continueToPortal(project.slug, randomSecret(), "/roadmap"));
   expect(back.startsWith(`http://${host}:3100/api/auth/continue/callback?code=`)).toBe(true);
   expect(await prisma.portalHandoff.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("a failing address lookup fails a request before it writes anything, so a retry does it all", async () => {
+  await verified();
+  const board = project.boards[0]!;
+  await call(updatePortal, as(), { access: "private" });
+  await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
+  const question = await prisma.helpQuestion.create({
+    data: { projectId: project.id, askerId: owner.id, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER" },
+  });
+  await call(createPost, as(), { board: board.slug, title: "Night mode" });
+  forgetCustomDomain(host);
+  // Its lookups fail from now on (none kept: that forgot them).
+  const spy = vi.spyOn(prisma.customDomain, "findFirst").mockRejectedValue(new Error("database down"));
+  try {
+    await expect(call(createPost, as(), { board: board.slug, title: "Dark mode" })).rejects.toThrow("database down");
+    await expect(call(updatePost, as(), { number: 1, status: "planned" })).rejects.toThrow("database down");
+    await expect(call(addPortalReaders, as(), { emails: ["e2e-reader@example.com"] })).rejects.toThrow("database down");
+    await expect(call(escalateHelp, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
+  } finally {
+    spy.mockRestore();
+  }
+  // Only the post from before; its status unchanged, so a retry changes it (and tells the webhooks).
+  expect(await prisma.post.findMany({ where: { projectId: project.id }, select: { title: true, status: true } })).toEqual([{ title: "Night mode", status: "OPEN" }]);
+  expect(await prisma.portalReader.count({ where: { projectId: project.id } })).toBe(0);
+  // Not claimed: asking a person again works.
+  expect(await prisma.helpQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
 });
