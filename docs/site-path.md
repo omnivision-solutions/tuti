@@ -75,7 +75,13 @@ In `_redirects` (a `200` is a rewrite):
 ## Nginx
 
 ```nginx
-location /portal {
+# /portal and everything under it, not /portal-news.
+location = /portal {
+    proxy_pass https://acme.tuti.so;
+    proxy_set_header Host acme.tuti.so;
+    proxy_ssl_server_name on;
+}
+location /portal/ {
     proxy_pass https://acme.tuti.so;
     proxy_set_header Host acme.tuti.so;
     proxy_ssl_server_name on;
@@ -91,7 +97,8 @@ location /_tuti/ {
 
 ## Cloudflare
 
-A Worker on your site's routes `example.com/portal*` and `example.com/_tuti/*`:
+A Worker on your site's routes `example.com/portal`, `example.com/portal/*` and `example.com/_tuti/*`
+(not `example.com/portal*`, which would also take a page like `/portal-news`):
 
 ```js
 export default {

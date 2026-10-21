@@ -36,7 +36,8 @@ export async function continueToPortal(projectSlug: string, state: string, redir
       expiresAt: new Date(Date.now() + HANDOFF_TTL_SECONDS * 1000),
     },
   });
-  const callback = new URL("/api/auth/continue/callback", await portalAddress(projectSlug));
+  // After the address: it can have a path (a portal under its site's /portal).
+  const callback = new URL(`${await portalAddress(projectSlug)}/api/auth/continue/callback`);
   callback.searchParams.set("code", code);
   callback.searchParams.set("redirect", safeRedirectPath(redirectPath, "/"));
   redirect(callback.toString());
