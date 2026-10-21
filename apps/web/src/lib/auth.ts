@@ -17,7 +17,8 @@ import { jwtSso } from "./sso";
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
   const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
-  const url = new URL("/sign-in/link", await portalAddress(slug));
+  // After the address: it can have a path (a portal under its site's /portal).
+  const url = new URL(`${await portalAddress(slug)}/sign-in/link`);
   url.searchParams.set("token", token);
   if (next !== "/") {
     url.searchParams.set("next", next);
@@ -38,7 +39,7 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     data: { tokenHash: hashSecret(token) },
     select: { project: { select: { slug: true, name: true } } },
   });
-  const link = new URL("/reset-password", project ? await portalAddress(project.slug) : appUrl());
+  const link = new URL(`${project ? await portalAddress(project.slug) : appUrl().origin}/reset-password`);
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,
