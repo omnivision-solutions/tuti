@@ -41,4 +41,6 @@ export const serverEnv = {
   // A licence server too, like tuti.so, with a private key made for the run (its keys don't verify
   // anywhere: installations trust only Tuti's public keys), so the licence page has a journey.
   LICENSE_PRIVATE_KEY: generateKeyPairSync("ed25519").privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
+  // And its licence checks ask itself, never tuti.so.
+  LICENSE_SERVER_URL: APP_URL,
 };
