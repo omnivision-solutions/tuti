@@ -318,7 +318,7 @@ One PR per item, in this order: each needs the ones before it. Inside a PR, simi
 
 Follow-ups found while building items 1–15 (2026-10-21), one small PR each, most important first:
 
-- [ ] An escalated AI question's copy goes to the address the visitor types and lists the articles the answer cited without checking access again: if access narrowed in between (or the address isn't the visitor's), restricted titles reach it. Check each cited article against the asker's access when the email is sent, and leave out what they may no longer read (found in #146; it was already true with collection groups)
+- [ ] An escalated AI question's copy goes to the address the visitor types and lists the articles the answer cited without checking access again: if access narrowed in between (or the address isn't the visitor's), restricted titles reach it. Check each cited article against the asker's access when the email is sent, and leave out what they may no longer read; and unless the typed address is the asker's own verified address, leave out every restricted article's title (only ones anyone may read are named) (found in #146; it was already true with collection groups)
 - [ ] The export's front matter has `access`, `groups` and `noAccess` for tabs, collections and articles (it has `listing`, `description`, `keywords` and `noindex` already)
 - [ ] Rename `groupClaims` / `claimsOf` in `lib/reader-groups.ts` to `groupKeys` / `keysOf`: they return group keys since #142 (kept to ease merging the stacked PRs)
 - [ ] The Gaps list: from a failed search, "Add as a keyword" to an article the team picks (#147 left it out: it needs an article picker there)
