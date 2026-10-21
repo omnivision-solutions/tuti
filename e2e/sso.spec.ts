@@ -90,8 +90,8 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(groups).toContainText("No groups yet");
   await groups.getByRole("button", { name: "New group" }).click();
   const groupDialog = owner.getByRole("dialog");
-  await groupDialog.getByLabel("Name").fill("Enterprise customers");
-  await groupDialog.getByLabel("Claim").fill("enterprise");
+  await groupDialog.getByLabel("Name", { exact: true }).fill("Enterprise customers");
+  await groupDialog.getByLabel("SSO group name (optional)").fill("enterprise");
   await groupDialog.getByLabel("Description").fill("On the Enterprise plan");
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
@@ -140,4 +140,73 @@ test("a collection for one reader group: people the app signs in with that group
   await owner.getByRole("alertdialog", { name: "Delete Enterprise customers?" }).getByRole("button", { name: "Delete" }).click();
   await expect(owner.getByText("Used by Enterprise; remove it from them first")).toBeVisible();
   await checkpoint(owner, "team-settings-group-in-use", { fullPage: false });
+});
+
+test("a group from conditions: readers whose token's attributes match read its collection", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  const api = await apiFor(owner, slug);
+
+  // The app has signed in two people: one on the Pro plan, one on Free.
+  const signIn = async (sub: string, name: string, attributes: Record<string, unknown>) => {
+    const person = await newPerson(browser, portalUrl(slug));
+    await person.goto(`/sso?token=${ssoToken(secret, { sub, name, attributes })}&redirect=${encodeURIComponent("/docs")}`);
+    await expect(person).toHaveURL(/\/docs$/);
+    return person;
+  };
+  await signIn("user-1", "Ada from Acme", { plan: "pro", seats: 12 });
+  await signIn("user-2", "Bea from Acme", { plan: "free" });
+
+  // A group by condition, with who matches now as it's written.
+  await owner.goto(`/app/${slug}/settings#groups`);
+  const groups = owner.getByRole("region", { name: "Groups" });
+  await groups.getByRole("button", { name: "New group" }).click();
+  const dialog = owner.getByRole("dialog");
+  await dialog.getByLabel("Name", { exact: true }).fill("Pro customers");
+  const preview = dialog.getByRole("status");
+  await expect(preview).toHaveText("Complete a condition to see who matches.");
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  const condition = dialog.getByRole("group", { name: "Condition 1" });
+  await condition.getByLabel("Attribute").fill("plan");
+  await expect(preview).toHaveText("Complete a condition to see who matches.");
+  await condition.getByRole("combobox", { name: "Operator" }).click();
+  await owner.getByRole("option", { name: "is one of" }).click();
+  await condition.getByLabel("Value").fill("pro, enterprise");
+  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  await checkpoint(owner, "team-settings-group-conditions-preview", { fullPage: false });
+  // On a phone, each condition's row wraps instead of squeezing its fields.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "team-settings-group-conditions-preview-phone", { fullPage: false });
+  await owner.setViewportSize(desktop);
+  // Values match exactly: "Pro" isn't "pro".
+  await condition.getByLabel("Value").fill("Pro");
+  await expect(preview).toHaveText("No readers match now.");
+  await condition.getByLabel("Value").fill("pro, free");
+  await expect(preview).toHaveText("2 readers match now: Ada from Acme and Bea from Acme.");
+  await condition.getByLabel("Value").fill("pro, enterprise");
+  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  await dialog.getByRole("button", { name: "Add group" }).click();
+  await expect(owner.getByText("Group added")).toBeVisible();
+  await expect(groups).toContainText("plan is one of pro, enterprise · 1 reader: Ada from Acme");
+  await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
+
+  // A collection for it, with an article.
+  await api("/collections", { name: "Pro guides", groups: ["pro-customers"] });
+  const article = await api("/articles", { title: "Bulk export", body: "Export everything at once.", collection: "pro-guides" });
+  await api(`/articles/${article.slug}/publish`, {});
+
+  // Bea (Free) doesn't see it; Ada (Pro) reads it.
+  const bea = await signIn("user-2", "Bea from Acme", { plan: "free" });
+  await expect(bea.getByRole("link", { name: "Bulk export" })).toHaveCount(0);
+  expect((await bea.request.get("/docs/bulk-export")).status()).toBe(404);
+  const ada = await signIn("user-1", "Ada from Acme", { plan: "pro", seats: 12 });
+  await ada.getByRole("link", { name: "Bulk export" }).click();
+  await expect(ada.getByRole("heading", { level: 1, name: "Bulk export" })).toBeVisible();
+  await checkpoint(ada, "portal-docs-condition-group-reader");
 });

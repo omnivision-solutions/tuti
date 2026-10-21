@@ -75,8 +75,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "tabs.delete": () => ({ slug: "docs" }),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
-  "groups.create": () => ({ name: "Enterprise" }),
-  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: "beta-testers" }),
+  "groups.create": () => ({ name: "Enterprise", conditions: [{ attribute: "plan", op: "is_one_of", value: ["enterprise", "custom"] }] }),
+  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: null, conditions: [{ attribute: "beta", op: "is", value: "true" }] }),
   "groups.delete": () => ({ group: "beta" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
@@ -169,7 +169,7 @@ async function createFixture() {
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
-  await prisma.readerGroup.create({ data: { projectId: project.id, name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", claim: "beta" } });
   // A custom domain waiting for DNS, with its TXT record there to verify it.
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
   await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
