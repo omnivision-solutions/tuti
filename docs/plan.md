@@ -330,8 +330,18 @@ One PR per item, in this order: each needs the ones before it. Inside a PR, simi
   - Commits: the schema; readers' locked lists and pages, with database tests (nothing of the text leaks: page, `.md`, search, AI answers); the setting in the app, with journeys and screenshots
 - [x] **15. Article settings.** A Settings dialog in the article editor, with "Who can read" (13) and "Listed in": a custom slug (on a published article too; the old one redirects, from 4), a meta description (otherwise from the text, as now), keywords (searched like the text, and given to the embedding, for the words readers use that the article doesn't; the Gaps list's failed searches show which), and "Block search indexing" (noindex, out of the sitemap and `llms.txt`). `slug`, `description`, `keywords` and `noindex` on `articles.create`/`update`; the export's front matter has them.
   - Commits: the schema and operations, with database tests; search and readers' pages (keywords, noindex, meta), with database tests; the dialog, with journeys and screenshots
-- [ ] **16. The team's Docs as a tree.** Beside the editor, like Ferndesk's: each tab with its collections and articles, a + on each (new article, new collection), "New tab" and "Recently deleted" at the bottom; dragging as in today's Collections, which it replaces; a tab or collection opens its page (Content, Access, Settings).
+- [x] **16. The team's Docs as a tree.** Beside the editor, like Ferndesk's: each tab with its collections and articles, a + on each (new article, new collection), "New tab" and "Recently deleted" at the bottom; dragging as in today's Collections, which it replaces; a tab or collection opens its page (Content, Access, Settings).
   - Commits: the tree and its moves (reusing the reorder operations); pages for tabs and collections in the app; journeys and screenshots
+
+Follow-ups found while building items 1–15 (2026-10-21), one small PR each, most important first:
+
+- [ ] An escalated AI question's copy goes to the address the visitor types and lists the articles the answer cited without checking access again: if access narrowed in between (or the address isn't the visitor's), restricted titles reach it. Check each cited article against the asker's access when the email is sent, and leave out what they may no longer read; and unless the typed address is the asker's own verified address, leave out every restricted article's title (only ones anyone may read are named) (found in #146; it was already true with collection groups)
+- [ ] The export's front matter has `access`, `groups` and `noAccess` for tabs, collections and articles (it has `listing`, `description`, `keywords` and `noindex` already)
+- [ ] Rename `groupClaims` / `claimsOf` in `lib/reader-groups.ts` to `groupKeys` / `keysOf`: they return group keys since #142 (kept to ease merging the stacked PRs)
+- [ ] The Gaps list: from a failed search, "Add as a keyword" to an article the team picks (#147 left it out: it needs an article picker there)
+- [ ] The "Who can read" hint under "Inherit" says what it inherits; the "People without access" one says "Hidden (the default)" even when an explicit "Hide" above causes it: name the level it comes from
+- [ ] The icon picker opens with commonly used icons first (it starts at "A" today)
+- [ ] On phones the overview has its own search box and the header's: keep one
 
 ## Deciding vs. writing: small models for decisions (cross-cutting, asked 2026-10-20)
 

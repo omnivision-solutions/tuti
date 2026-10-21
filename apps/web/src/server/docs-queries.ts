@@ -57,7 +57,7 @@ export const namedLevel = (level: Level, names: Map<string, string>): NamedLevel
  * each tab and collection (with everything above it), in words, by slug (tabs and collections share
  * them; "" is the top level of docs without tabs). Articles in no collection are under the first tab.
  */
-export async function accessChoices(projectId: string) {
+export const accessChoices = cache(async (projectId: string) => {
   const [tabs, collections, groups, project] = await Promise.all([
     prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: { id: true, slug: true, name: true, ...levelSelect } }),
     prisma.collection.findMany({ where: { projectId }, select: { id: true, parentId: true, tabId: true, slug: true, ...levelSelect } }),
@@ -88,7 +88,7 @@ export async function accessChoices(projectId: string) {
     /** The portal's address, for "Preview as a reader". */
     portal: await portalAddress(project.slug),
   };
-}
+});
 
 export type AccessChoices = Awaited<ReturnType<typeof accessChoices>>;
 
