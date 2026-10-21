@@ -487,7 +487,9 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  const docsTabs = main.getByRole("navigation", { name: "Docs tabs" });
+  // They're the row under the header's Docs.
+  await expect(visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toHaveAttribute("aria-current", "page");
+  const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
@@ -505,8 +507,15 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await checkpoint(visitor, "portal-docs-collection");
   await main.getByRole("link", { name: "Card payments" }).click();
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Card payments");
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).not.toHaveAttribute("aria-current");
   await main.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(visitor).toHaveURL(/\/docs\/guides$/);
+  // Off Docs, its row goes (the boards' row isn't there either, with one board).
+  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
+  await expect(docsTabs).toHaveCount(0);
+  await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
   // The first tab has one address: /docs.
   await visitor.goto("/docs/api-reference");
   await expect(visitor).toHaveURL(/\/docs$/);

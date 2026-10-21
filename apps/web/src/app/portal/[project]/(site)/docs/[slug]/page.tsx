@@ -7,7 +7,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { ArticleActions } from "@/components/article-actions";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
-import { CollectionContents, DocsTabs } from "@/components/docs-collections";
+import { CollectionContents } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
 import { DocsIndex } from "@/components/portal-docs";
 import { formatDate } from "@/lib/format";
@@ -60,7 +60,6 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
       const back = parent ? `/docs/${parent.slug}` : tab ? docsTabPath(docs, tab.slug) : "/docs";
       return (
         <div className="flex flex-col gap-8">
-          {tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => at(docsTabPath(docs, t))} />}
           <div className="flex flex-col gap-6">
             <BackLink href={at(back)}>{parent ? parent.name : "Docs"}</BackLink>
             <PageHeader title={collection.name} description={collection.description} />
@@ -83,7 +82,6 @@ async function ArticlePage({ project, slug, article }: { project: string; slug: 
   const collection = article.collection && everyCollection(docs.collections).find((c) => c.slug === article.collection!.slug);
   return (
     <div className="flex flex-col gap-8">
-      <DocsTabs tabs={docs.tabs} active={article.tab ?? docs.home} href={(t) => at(docsTabPath(docs, t))} />
       <article className="flex flex-col gap-6" aria-labelledby="article-title">
         <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")}>Docs</BackLink>
         <div className="flex flex-col gap-1">
