@@ -1,9 +1,10 @@
 import { prisma } from "@tuti/db";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
 import { auth } from "@/lib/auth";
 import { inGroup, readerAttributes, storedConditions } from "@/lib/group-conditions";
+import { PREVIEW } from "@/lib/portal-base";
 import { readerEntriesFor } from "@/lib/reader-domains";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 
@@ -121,9 +122,14 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   };
 });
 
-/** Whoever's reading on this request (the portal's user, or the widget's). */
+/**
+ * Whoever's reading on this request (the portal's user, or the widget's). The team previewing the
+ * portal as a reader (PREVIEW) reads it as people signed out do; for anyone else the preview
+ * changes nothing, so it never shows more than they may read.
+ */
 export async function currentReader(projectId: string): Promise<Reader> {
-  return readerOf(projectId, await readerId(projectId));
+  const reader = await readerOf(projectId, await readerId(projectId));
+  return reader === null && (await headers()).get(PREVIEW.header) === PREVIEW.value ? SIGNED_OUT : reader;
 }
 
 /** An operation's caller as a reader: API keys act for the team (everything). */

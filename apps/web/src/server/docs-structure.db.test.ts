@@ -355,6 +355,7 @@ describe("readers", () => {
       // No tabs: one page.
       tabs: [],
       home: null,
+      signedIn: true,
     });
 
     const portal = `http://${project.slug}.localhost:3100`;

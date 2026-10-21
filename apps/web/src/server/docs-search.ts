@@ -4,7 +4,11 @@ import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILA
 import type { Reader } from "@/lib/read-access";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
-export type DocsSearchResult = { slug: string; title: string; snippet: string };
+import { docsContents, everyCollection } from "./docs-queries";
+import { currentReader } from "./portal-access";
+
+/** `locked`: an article this reader may not read, found by its title alone (no snippet). */
+export type DocsSearchResult = { slug: string; title: string; snippet: string; locked?: true };
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
@@ -34,6 +38,28 @@ export async function searchDocs(
   const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
   logSearch(projectId, query, results.length);
   return results;
+}
+
+/**
+ * Search on the portal and in the widget, for whoever's reading: what they may read (searchDocs),
+ * then the articles listed to them with a lock (see docsContents) whose titles match. Those are
+ * matched by their title alone and come without a snippet, so nothing of what they say is searched or shown.
+ */
+export async function searchForReader(projectId: string, projectSlug: string, query: string, limit: number): Promise<DocsSearchResult[]> {
+  const [results, docs] = await Promise.all([searchDocs(projectId, query, limit, await currentReader(projectId)), docsContents(projectSlug)]);
+  const locked = [...everyCollection(docs.collections).flatMap((c) => c.articles), ...docs.uncollected].filter((a) => a.locked).map((a) => a.slug);
+  if (locked.length === 0 || results.length >= limit) {
+    return results;
+  }
+  const byTitle = await prisma.$queryRaw<{ slug: string; title: string }[]>`
+    SELECT a.slug, a.title
+    FROM article a
+    CROSS JOIN websearch_to_tsquery('english', ${query}) q
+    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE'
+      AND a.slug = ANY(${locked}::text[]) AND to_tsvector('english', a.title) @@ q
+    ORDER BY ts_rank(to_tsvector('english', a.title), q) DESC, a.title
+    LIMIT ${limit - results.length}`;
+  return [...results, ...byTitle.map(({ slug, title }) => ({ slug, title, snippet: "", locked: true as const }))];
 }
 
 /** A query as the team's insights count it: trimmed, one space between words, lower case. */

@@ -10,7 +10,8 @@ export default async function DocsPageTabs(props: PageProps<"/portal/[project]/d
       return <DocsTabsRow docs={page.docs} active={page.tab.slug} />;
     case "collection":
       return <DocsTabsRow docs={page.docs} active={page.tab?.slug ?? null} />;
-    case "article": {
+    case "article":
+    case "locked": {
       const docs = await docsContents(project);
       return <DocsTabsRow docs={docs} active={page.article.tab ?? docs.home} />;
     }

@@ -19,6 +19,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
   }
   const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs/${slug}` } };
   if (page.kind === "tab") {
+    if (page.tab.locked) {
+      return { title: `${page.tab.name} · Docs`, robots: { index: false }, ...canonical };
+    }
     return { ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Docs` } : docsPageMetadata(page.landing)), ...canonical };
   }
   return { ...docsPageMetadata(page), ...canonical };
@@ -41,6 +44,7 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
     case "collection":
       return <DocsCollectionPage page={page} />;
     case "article":
+    case "locked":
       return <DocsArticle project={project} slug={slug} article={page.article} />;
   }
 }

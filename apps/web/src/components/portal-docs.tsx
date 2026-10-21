@@ -2,7 +2,7 @@ import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
-import { ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, LockIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -12,9 +12,10 @@ import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
-import { ArticleLinks, CollectionContents } from "@/components/docs-collections";
+import { ArticleLinks, CollectionContents, LockedMark } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
 import { PartRow } from "@/components/portal-nav";
+import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/format";
@@ -32,20 +33,20 @@ import {
   docsTabPath,
   docsTree,
   everyCollection,
+  type LockedArticle,
   type TabLanding,
 } from "@/server/docs-queries";
-import { searchDocs } from "@/server/docs-search";
+import { searchForReader } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
-import { currentReader } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 
-/** Published articles matching `query`, each with the passage that matched. */
+/** Published articles matching `query`, each with the passage that matched (locked ones by their title, with none). */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  const results = project ? await searchDocs(project.id, query, 10, await currentReader(project.id)) : [];
+  const results = project ? await searchForReader(project.id, projectSlug, query, 10) : [];
   if (results.length === 0) {
     return (
       <EmptyState
@@ -65,6 +66,7 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
         <li key={result.slug} className="flex flex-col gap-0.5">
           <Link href={at(`/docs/${result.slug}`)} className="break-words text-primary hover:underline">
             {result.title}
+            {result.locked && <LockedMark />}
           </Link>
           {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
         </li>
@@ -132,7 +134,10 @@ async function DocsOverview({ docs, tab }: { docs: DocsContents; tab: DocsTabVie
                     <CollectionIcon name={collection.icon} />
                   </span>
                 )}
-                <h2 className="font-heading font-semibold break-words">{collection.name}</h2>
+                <h2 className="font-heading font-semibold break-words">
+                  {collection.name}
+                  {collection.locked && <LockedMark />}
+                </h2>
                 {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
               </Link>
             </li>
@@ -153,8 +158,35 @@ async function DocsOverview({ docs, tab }: { docs: DocsContents; tab: DocsTabVie
   );
 }
 
-/** A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article or collection it shows in its place. */
+/**
+ * What a page this reader may not read, but sees with a lock, says in place of what's on it: to
+ * sign in (and come back here), or that they don't have access.
+ */
+function LockedMessage({ signedIn }: { signedIn: boolean }) {
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-xl border p-5">
+      <p className="flex items-center gap-2 font-medium">
+        <LockIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+        {signedIn ? "You don't have access to this." : "Sign in to read this."}
+      </p>
+      {!signedIn && <SignInLink className={buttonVariants()}>Sign in</SignInLink>}
+    </div>
+  );
+}
+
+/**
+ * A tab's path (/docs for the first; `tab` null without tabs): its overview, or the article or
+ * collection it shows in its place; a locked tab, its name and LockedMessage.
+ */
 export function DocsTabPage({ project, docs, tab, landing }: { project: string; docs: DocsContents; tab: DocsTabView | null; landing: TabLanding }) {
+  if (tab?.locked) {
+    return (
+      <div className="flex flex-col gap-8">
+        <PageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
+        <LockedMessage signedIn={docs.signedIn} />
+      </div>
+    );
+  }
   switch (landing.kind) {
     case "article":
       return <DocsArticle project={project} slug={landing.slug} article={landing.article} />;
@@ -169,11 +201,17 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
   }
 }
 
-/** An article's or collection's title and description for search engines and link previews (the caller adds the canonical address). */
-export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "collection" }>): Metadata {
+/**
+ * An article's or collection's title and description for search engines and link previews (the
+ * caller adds the canonical address). A locked one: its title only, and not for search engines.
+ */
+export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "locked" | "collection" }>): Metadata {
+  if (page.kind === "locked") {
+    return { title: `${page.article.title} · Docs`, robots: { index: false } };
+  }
   if (page.kind === "collection") {
-    const { name, description } = page.collection;
-    return { title: `${name} · Docs`, ...(description && { description }) };
+    const { name, description, locked } = page.collection;
+    return { title: `${name} · Docs`, ...(description && { description }), ...(locked && { robots: { index: false } }) };
   }
   const { article } = page;
   const text = article.body.replace(/\s+/g, " ").trim();
@@ -200,15 +238,31 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
           </BackLink>
           <PageHeader title={collection.name} description={collection.description} />
         </div>
-        <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} />
+        {collection.locked ? (
+          <LockedMessage signedIn={docs.signedIn} />
+        ) : (
+          <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} />
+        )}
       </div>
     </DocsLayout>
   );
 }
 
-/** Article `slug`'s page (at its own path, or a tab's showing it). */
-export async function DocsArticle({ project, slug, article }: { project: string; slug: string; article: Extract<DocsPage, { kind: "article" }>["article"] }) {
+/**
+ * Article `slug`'s page (at its own path, or a tab's showing it). A locked one (LockedArticle) has
+ * its title, and LockedMessage in place of everything it says.
+ */
+export async function DocsArticle({
+  project,
+  slug,
+  article,
+}: {
+  project: string;
+  slug: string;
+  article: Extract<DocsPage, { kind: "article" }>["article"] | LockedArticle;
+}) {
   const at = await portalLinks();
+  const readable = "doc" in article ? article : null;
   // Its tab and collection have pages for this reader when they have something to read (an unlisted
   // article may be all there is): the way back is its tab's, or /docs.
   const docs = await docsContents(project);
@@ -217,7 +271,7 @@ export async function DocsArticle({ project, slug, article }: { project: string;
   // The tree: its tab's (the first tab's has the articles in none), its collection's branch open.
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   return (
-    <DocsLayout tree={tree} current={slug} headings={docHeadings(article.doc)}>
+    <DocsLayout tree={tree} current={slug} headings={readable ? docHeadings(readable.doc) : []}>
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         {/* On phones; wider screens have the tree. */}
         <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")} className="md:hidden">
@@ -238,15 +292,21 @@ export async function DocsArticle({ project, slug, article }: { project: string;
           <h1 id={ARTICLE_TITLE_ID} className="font-heading text-2xl font-bold tracking-tight break-words">
             {article.title}
           </h1>
-          {article.updatedAt && (
+          {readable?.updatedAt && (
             <p className="text-sm text-muted-foreground">
-              Updated <time dateTime={article.updatedAt.toISOString()}>{formatDate(article.updatedAt)}</time>
+              Updated <time dateTime={readable.updatedAt.toISOString()}>{formatDate(readable.updatedAt)}</time>
             </p>
           )}
         </div>
-        <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
-        <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} headingIds className="rich-text break-words" />
-        <ArticleFeedback projectSlug={project} slug={slug} />
+        {readable ? (
+          <>
+            <ArticleActions markdown={articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
+            <RichText doc={readable.doc} mediaBaseUrl={mediaPublicUrl()} headingIds className="rich-text break-words" />
+            <ArticleFeedback projectSlug={project} slug={slug} />
+          </>
+        ) : (
+          <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
+        )}
       </article>
     </DocsLayout>
   );
@@ -255,7 +315,7 @@ export async function DocsArticle({ project, slug, article }: { project: string;
 /** Docs' row under the header: its tabs with something to read (with two or more), `active` the one this page is in. */
 export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active: string | null }) {
   const at = await portalLinks();
-  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active }));
+  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active, locked: tab.locked }));
   return <PartRow label="Docs tabs" links={links} wide />;
 }
 
@@ -282,10 +342,17 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   const named = (collection: DocsTreeCollection) => (
     <>
       <CollectionIcon name={collection.icon} />
-      <span className="min-w-0">{collection.name}</span>
+      <span className="min-w-0">{locked(collection.name, collection.locked)}</span>
     </>
   );
-  const articles = (list: { slug: string; title: string }[]) => list.map((article) => <li key={article.slug}>{link(article.slug, article.title)}</li>);
+  // A page's name, with a lock if it's locked for this reader.
+  const locked = (name: string, isLocked?: boolean) => (
+    <>
+      {name}
+      {isLocked && <LockedMark />}
+    </>
+  );
+  const articles = (list: DocsTree["uncollected"]) => list.map((article) => <li key={article.slug}>{link(article.slug, locked(article.title, article.locked))}</li>);
   const contents = (collection: DocsTreeCollection) => (
     <ul className="flex flex-col gap-0.5">
       {articles(collection.articles)}

@@ -5,6 +5,13 @@
  */
 export const BASE_HEADER = "x-tuti-base";
 
+/**
+ * "Preview as a reader": the app links to a portal page with `?preview=signed-out`; proxy.ts says in
+ * `header` whether the request had it (always set there, so a request can't say so itself), and
+ * currentReader (server/portal-access.ts) shows the team the page as people signed out see it.
+ */
+export const PREVIEW = { param: "preview", value: "signed-out", header: "x-tuti-preview" } as const;
+
 /** Where pages load Next.js's files from (next.config.ts's assetPrefix): a path of its own on every host, so a team's site forwards it too. */
 export const ASSET_PATH = "/_tuti";
 

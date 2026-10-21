@@ -1,4 +1,4 @@
-import type { ReadAccess } from "@tuti/db";
+import type { NoAccess, ReadAccess } from "@tuti/db";
 
 /**
  * "Who can read" a docs tab, collection or article (ReadAccess in the schema, lowercase in the API):
@@ -15,6 +15,26 @@ export type Access = (typeof ACCESSES)[number];
 
 export const toReadAccess = (access: Access) => access.toUpperCase() as ReadAccess;
 export const fromReadAccess = (access: ReadAccess) => access.toLowerCase() as Access;
+
+/**
+ * "People without access": what someone a page isn't for sees of it (NoAccess in the schema,
+ * lowercase in the API). `inherit` (the level above's), `lock` (its title, listed with a lock; its
+ * page says to sign in or that they don't have access, never its content) or `hide` (nothing: not
+ * listed, and its link is "not found").
+ */
+export const NO_ACCESSES = ["inherit", "lock", "hide"] as const;
+export type WithoutAccess = (typeof NO_ACCESSES)[number];
+
+export const toNoAccess = (choice: WithoutAccess) => choice.toUpperCase() as NoAccess;
+export const fromNoAccess = (noAccess: NoAccess) => noAccess.toLowerCase() as WithoutAccess;
+
+/**
+ * Whether a page under these levels (its tab, each collection, the page: top down) is shown with a
+ * lock to people it isn't for: the nearest level from the page up that isn't `inherit` says; with
+ * none, it's hidden.
+ */
+export const locks = (...levels: ({ noAccess: NoAccess } | null | undefined)[]) =>
+  levels.findLast((level) => level && level.noAccess !== "INHERIT")?.noAccess === "LOCK";
 
 /** Who's reading: null is the team (everything); else whether they're signed in on the portal, and their groups' keys. */
 export type Reader = { signedIn: boolean; groups: string[] } | null;

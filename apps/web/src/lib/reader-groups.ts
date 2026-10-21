@@ -31,8 +31,8 @@ export const readerGroup = z
  */
 export const groupClaims = { select: { group: { select: { key: true } } }, orderBy: { group: { key: "asc" } } } as const;
 
-/** Selects a tab's, collection's or article's "Who can read" (a Level). */
-export const levelSelect = { access: true, groups: groupClaims } as const;
+/** Selects a tab's, collection's or article's "Who can read" (a Level), and what the rest see of it (see `locks`). */
+export const levelSelect = { access: true, groups: groupClaims, noAccess: true } as const;
 
 /** The keys of a level's groups (selected with `groupClaims`). */
 export const claimsOf = (level: { groups: { group: { key: string } }[] }) => level.groups.map((g) => g.group.key);

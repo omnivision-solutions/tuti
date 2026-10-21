@@ -45,7 +45,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       orderBy: { slug: "asc" },
       select: { slug: true, updatedAt: true },
     }),
-    docsContents(slug, { reader: SIGNED_OUT }),
+    docsContents(slug, { reader: SIGNED_OUT, locks: false }),
   ]);
   const latestPost = project.posts[0]?.updatedAt;
   const pages: { path: string; lastmod?: Date }[] = [
