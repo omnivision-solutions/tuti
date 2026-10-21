@@ -77,7 +77,7 @@ const articleFields = {
 const customSlug = z
   .string()
   .trim()
-  .min(1)
+  .min(1, "Enter a slug")
   .max(80)
   .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Use lowercase letters, digits and hyphens");
 

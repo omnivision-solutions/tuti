@@ -8,6 +8,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { saveArticleSettings } from "./docs";
 import { docsContents } from "./docs-queries";
 import { searchDocs } from "./docs-search";
 import { createArticle, createCollection, createTab, getArticle, listArticles, publishArticle, updateArticle } from "./operations/docs";
@@ -143,6 +144,42 @@ describe("description, keywords and noindex", () => {
     expect(article).not.toHaveProperty("keywords");
     expect(article).not.toHaveProperty("customSlug");
     expect((await call(listArticles, reader, {})).articles[0]).not.toHaveProperty("keywords");
+  });
+});
+
+describe("the editor's Settings dialog", () => {
+  const form = (fields: Record<string, string>) => {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      data.set(key, value);
+    }
+    return data;
+  };
+  /** The action's redirect (its new address), or its result. */
+  const save = (slug: string, fields: Record<string, string>) =>
+    saveArticleSettings(project.slug, slug, {}, form(fields)).then(
+      (result) => result,
+      (error: { digest?: string }) => error.digest?.split(";")[2] ?? Promise.reject(error),
+    );
+
+  test("saves its fields only, keywords by commas or lines, and opens the new address", async () => {
+    actAs(owner);
+    await call(createArticle, as(), { title: "Billing", body: "Pay by card." });
+    const fields = { customSlug: "on", newSlug: " payments ", description: "How we charge.", keywords: "invoice,\nVAT , ,receipts", noindex: "on" };
+    expect(await save("billing", fields)).toBe(`/app/${project.slug}/docs/payments`);
+    expect(await call(getArticle, as(), { slug: "payments" })).toMatchObject({
+      title: "Billing",
+      body: "Pay by card.",
+      customSlug: true,
+      description: "How we charge.",
+      keywords: ["invoice", "VAT", "receipts"],
+      noindex: true,
+    });
+    // Unticked: back to the title's; a clash is said, not changed.
+    expect(await save("payments", {})).toBe(`/app/${project.slug}/docs/billing`);
+    expect(await call(getArticle, as(), { slug: "billing" })).toMatchObject({ customSlug: false, description: "", keywords: [], noindex: false });
+    await call(createArticle, as(), { title: "Refunds" });
+    expect(await save("refunds", { customSlug: "on", newSlug: "billing" })).toEqual({ error: "That address is taken by the article “Billing”" });
   });
 });
 

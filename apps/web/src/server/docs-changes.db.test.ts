@@ -259,7 +259,6 @@ describe("publishing and discarding", () => {
     // Saving the editor's form on a published article keeps the changes too.
     const form = new FormData();
     form.set("title", "From the editor");
-    form.set("listing", "everywhere");
     expect(await saveArticle(project.slug, SLUG, {}, form)).toEqual({});
     expect(await publishedArticle(project.slug, SLUG)).toMatchObject({ title: NEW.title });
   });

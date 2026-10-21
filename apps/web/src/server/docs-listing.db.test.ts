@@ -16,7 +16,7 @@ import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { saveArticle } from "./docs";
+import { saveArticleSettings } from "./docs";
 import { docsContents, publishedArticle } from "./docs-queries";
 import { answerArticle, countArticleView } from "./docs-readers";
 import { answerSections, searchDocs } from "./docs-search";
@@ -252,7 +252,7 @@ describe("the API, the widget and the export", () => {
     }
   });
 
-  test("listing is checked: one of the four, set on create and update, and the editor saves it", async () => {
+  test("listing is checked: one of the four, set on create and update, and the editor's settings save it", async () => {
     for (const listing of ["secret", "HIDDEN", ""]) {
       await expect(call(createArticle, as(owner), { title: "Bad listing", listing } as never)).rejects.toMatchObject({ status: 400 });
       await expect(call(updateArticle, as(owner), { slug: slugOf("hidden"), listing } as never)).rejects.toMatchObject({ status: 400 });
@@ -263,11 +263,10 @@ describe("the API, the widget and the export", () => {
 
     actAs(owner);
     const form = new FormData();
-    form.set("title", "Hidden guide v2");
     form.set("listing", "ai_only");
-    expect(await saveArticle(project.slug, slugOf("hidden"), {}, form)).toEqual({});
+    expect(await saveArticleSettings(project.slug, slugOf("hidden"), {}, form)).toEqual({});
     expect((await call(getArticle, as(owner), { slug: slugOf("hidden") })).listing).toBe("ai_only");
     form.set("listing", "nowhere");
-    expect((await saveArticle(project.slug, slugOf("hidden"), {}, form)).error).toBeTruthy();
+    expect((await saveArticleSettings(project.slug, slugOf("hidden"), {}, form)).error).toBeTruthy();
   });
 });
