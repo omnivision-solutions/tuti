@@ -163,10 +163,12 @@ export function AuthForm({
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
             <Link
-              href={`${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
-                ...(next && { next }),
-                ...(defaultEmail && { email: defaultEmail }),
-              })}`}
+              href={at(
+                `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
+                  ...(next && { next }),
+                  ...(defaultEmail && { email: defaultEmail }),
+                })}`,
+              )}
               className="text-foreground underline underline-offset-4"
             >
               {isSignUp ? "Sign in" : "Create an account"}

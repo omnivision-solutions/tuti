@@ -41,7 +41,7 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
           <DropdownMenuLabel className="truncate">{name}</DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href={accountHref} />}>
+        <DropdownMenuItem render={<Link href={at(accountHref)} />}>
           <UserIcon />
           Account settings
         </DropdownMenuItem>
