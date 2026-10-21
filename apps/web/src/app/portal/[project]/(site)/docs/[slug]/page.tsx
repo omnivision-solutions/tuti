@@ -1,4 +1,4 @@
-import { docHeadings } from "@tuti/content";
+import { ARTICLE_TITLE_ID, docHeadings } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import type { Metadata } from "next";
@@ -93,7 +93,7 @@ async function ArticlePage({ project, slug, article }: { project: string; slug: 
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   return (
     <DocsLayout tree={tree} current={slug} headings={docHeadings(article.doc)}>
-      <article className="flex flex-col gap-6" aria-labelledby="article-title">
+      <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
         {/* On phones; wider screens have the tree. */}
         <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")} className="md:hidden">
           Docs
@@ -110,7 +110,7 @@ async function ArticlePage({ project, slug, article }: { project: string; slug: 
               )}
             </p>
           )}
-          <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">
+          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-2xl font-bold tracking-tight break-words">
             {article.title}
           </h1>
           {article.updatedAt && (
