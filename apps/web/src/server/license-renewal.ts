@@ -65,11 +65,13 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
     return "unreachable";
   }
   const body = (await response.json().catch(() => null)) as { key?: unknown; token?: unknown; now?: unknown; error?: unknown } | null;
+  // Writes only while this check still holds its claim: one that took longer than the lease leaves the project to the next.
+  const claim = { id: projectId, licenseCheckedAt: now };
 
   if (response.status === 403 && (body?.error === "not_licensed" || body?.error === "in_use")) {
     // Without the token, the next check is a new claim: tuti.so gives it the licence after support resets it.
-    await prisma.project.update({ where: { id: projectId }, data: { licenseKey: null, licenseToken: null, licenseRequestId: null } });
-    return body.error;
+    const { count } = await prisma.project.updateMany({ where: claim, data: { licenseKey: null, licenseToken: null, licenseRequestId: null } });
+    return count ? body.error : "busy";
   }
   const serverNow = typeof body?.now === "string" ? new Date(body.now) : null;
   const seen = serverNow && !Number.isNaN(serverNow.getTime()) ? serverNow : null;
@@ -83,9 +85,9 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
     log.warn("The licence server's answer can't be used; the current key stays", { projectId, status: response.status });
     return "unreachable";
   }
-  await prisma.$transaction([
-    prisma.project.update({ where: { id: projectId }, data: { licenseKey: body.key, licenseToken: body.token, licenseRequestId: null } }),
+  const [{ count }] = await prisma.$transaction([
+    prisma.project.updateMany({ where: claim, data: { licenseKey: body.key, licenseToken: body.token, licenseRequestId: null } }),
     ...(seen ? [prisma.$executeRaw`UPDATE installation SET "latestSeenAt" = GREATEST("latestSeenAt", ${seen}) WHERE singleton = 1`] : []),
   ]);
-  return "licensed";
+  return count ? "licensed" : "busy";
 }
