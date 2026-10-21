@@ -131,14 +131,18 @@ export function toPlainText(node: JSONContent): string {
 
 export type Heading = { id: string; text: string; level: 2 | 3 };
 
+/** The id of the article page's own title (its h1), which no heading takes. */
+export const ARTICLE_TITLE_ID = "article-title";
+
 /**
  * An article's sections, for "On this page": its top-level headings in order, each with the id
  * RichText gives it (`headingIds`), made from its text ("Getting started" → `getting-started`),
  * with `-2`, `-3` on repeats, and `section-<n>` (its place among the headings) when no letter or
- * digit from a-z and 0-9 is left (non-Latin text).
+ * digit from a-z and 0-9 is left (non-Latin text). The page title's id is taken already ("Article
+ * title" → `article-title-2`).
  */
 export function docHeadings(doc: JSONContent): Heading[] {
-  const used = new Set<string>();
+  const used = new Set<string>([ARTICLE_TITLE_ID]);
   return (doc.content ?? [])
     .filter((node) => node.type === "heading")
     .map((node, i) => {

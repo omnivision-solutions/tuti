@@ -1024,6 +1024,8 @@ model Collection {
   /// these groups. None: everyone who may read the portal.
   groups    CollectionGroup[]
   redirects DocsRedirect[]
+  /// Tabs that show it at their path.
+  landingOf DocsTab[]         @relation("DocsTabLanding")
 
   @@unique([projectId, slug])
   @@index([parentId])
@@ -1076,22 +1078,42 @@ model CollectionGroup {
 /// A tab of the docs ("Guides", "API"), with top-level collections in it. The first one also
 /// lists the articles in no collection.
 model DocsTab {
-  id        String   @id @default(cuid())
-  projectId String
+  id                  String      @id @default(cuid())
+  projectId           String
   /// From the name; no other tab, collection or (live) article in the project has it, so /docs/<slug> is one page.
-  slug      String
-  name      String
+  slug                String
+  name                String
   /// Tabs are listed by this, then by name; new ones go last.
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  order               Int         @default(0)
+  /// What the tab's path shows (see DocsLanding).
+  landing             DocsLanding @default(OVERVIEW)
+  /// With PAGE: the article or the collection (at most one, a check constraint) it shows. Gone,
+  /// unpublished, restricted or in another tab, it's the overview, for that reader.
+  landingArticleId    String?
+  landingCollectionId String?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
-  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  collections Collection[]
-  redirects   DocsRedirect[]
+  project           Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collections       Collection[]
+  redirects         DocsRedirect[]
+  landingArticle    Article?       @relation("DocsTabLanding", fields: [landingArticleId], references: [id], onDelete: SetNull)
+  landingCollection Collection?    @relation("DocsTabLanding", fields: [landingCollectionId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, slug])
+  @@index([landingArticleId])
+  @@index([landingCollectionId])
   @@map("docs_tab")
+}
+
+/// What a docs tab's path (/docs for the first, /docs/<tab> the others) shows.
+enum DocsLanding {
+  /// Search, a card per top-level collection and, on the first tab, the articles in none.
+  OVERVIEW
+  /// Its first article in reading order.
+  FIRST
+  /// The article or collection the team picked (landingArticleId or landingCollectionId).
+  PAGE
 }
 
 /// A slug a tab, collection or article had, so /docs/<slug> keeps working after it's renamed: it
@@ -1173,6 +1195,8 @@ model Article {
   revisions  ArticleRevision[]
   changes    ArticleChanges?
   redirects  DocsRedirect[]
+  /// Tabs that show it at their path.
+  landingOf  DocsTab[]         @relation("DocsTabLanding")
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])

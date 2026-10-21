@@ -18,7 +18,7 @@ import { lucideIcon } from "@/lib/lucide-icons";
 import { claimsOf, groupClaims } from "@/lib/reader-groups";
 import { collectionPath, inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
-import { restorableSince } from "@/server/operations/docs";
+import { restorableSince, tabSelect, tabView } from "@/server/operations/docs";
 
 const structureArticle = { slug: true, title: true, publishedAt: true } as const;
 const structureView = (article: { slug: string; title: string; publishedAt: Date | null }) => ({
@@ -52,7 +52,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         changes: { select: { articleId: true } },
       },
     }),
-    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } }),
+    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: tabSelect }).then((rows) => rows.map(tabView)),
     prisma.collection.findMany({
       where: { projectId },
       orderBy: readingOrder,

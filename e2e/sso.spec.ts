@@ -127,7 +127,7 @@ test("a collection for one reader group: people the app signs in with that group
   await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
   await expect(sam).toHaveURL(/\/docs$/);
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
-  await sam.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Setting up SAML" }).click();
+  await sam.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-group-reader");
 

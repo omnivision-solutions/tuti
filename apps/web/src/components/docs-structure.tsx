@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
+import type { DocsLanding } from "@/server/operations/docs";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
 type StructureCollection = {
@@ -29,7 +30,7 @@ type StructureCollection = {
   knownIcon: boolean;
   articles: StructureArticle[];
 };
-type StructureTab = { slug: string; name: string };
+type StructureTab = { slug: string; name: string; landing: DocsLanding; landingPage: string | null };
 
 type Kind = "tab" | "collection" | "article";
 /** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
@@ -181,6 +182,14 @@ export function DocsStructure({
   const siblingsOf = (c: StructureCollection) => (c.parent === null ? childrenOf(null).filter((s) => s.tab === c.tab) : childrenOf(c.parent));
   const articlesIn = (collection: string | null) =>
     collection === null ? uncollected : (collections.find((c) => c.slug === collection)?.articles ?? []);
+  /** What tab `tab` can show at its path: its collections in reading order and their articles (the first tab's: and the ones in none). */
+  const pagesIn = (tab: string, first: boolean) => {
+    const under = (c: StructureCollection): StructureCollection[] => [c, ...childrenOf(c.slug).flatMap(under)];
+    const inTab = childrenOf(null)
+      .filter((c) => c.tab === tab)
+      .flatMap(under);
+    return { collections: inTab, articles: [...inTab.flatMap((c) => c.articles), ...(first ? uncollected : [])] };
+  };
   // The tree by slug, for the checks the server makes too.
   const tree = collections.map((c) => ({ id: c.slug, parentId: c.parent, name: c.name }));
   // Each collection's chain up to its top-level one, once per render (rows and menus ask often, drags re-render).
@@ -449,7 +458,7 @@ export function DocsStructure({
                     down={index < list.length - 1 ? () => move({ ...base, position: index + 1 }, `${id}-down`) : undefined}
                     places={[]}
                   />
-                  <TabDialog projectSlug={projectSlug} tab={tab} />
+                  <TabDialog projectSlug={projectSlug} tab={{ ...tab, pages: pagesIn(tab.slug, index === 0) }} home={index === 0} />
                   {/* The first is the docs' home: another goes first before it can go. */}
                   {(index > 0 || list.length === 1) && (
                     <DeleteTabButton projectSlug={projectSlug} tab={tab} movesTo={list[index - 1]?.name ?? null} />

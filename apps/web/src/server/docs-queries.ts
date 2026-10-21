@@ -1,5 +1,5 @@
 import { type Doc, toMarkdown } from "@tuti/content";
-import { type Prisma, prisma } from "@tuti/db";
+import { type DocsLanding, type Prisma, prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
@@ -67,8 +67,19 @@ export type DocsCollection = {
   collections: DocsCollection[];
 };
 
-/** A tab of the docs for readers, with its collections and, on the first, the articles in none. */
-export type DocsTabView = { slug: string; name: string; collections: DocsCollection[]; uncollected: { slug: string; title: string }[] };
+/**
+ * A tab of the docs for readers, with its collections and, on the first, the articles in none.
+ * `landing`: what its path shows (tabLanding), with `page` the slug of the article or collection
+ * picked (null when there's none, or it's deleted).
+ */
+export type DocsTabView = {
+  slug: string;
+  name: string;
+  collections: DocsCollection[];
+  uncollected: { slug: string; title: string }[];
+  landing: DocsLanding;
+  page: string | null;
+};
 
 /**
  * The portal's /docs (and the widget's, and llms.txt): the top-level collections in order, each with
@@ -103,7 +114,14 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
     prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
-      select: { id: true, slug: true, name: true },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        landing: true,
+        landingArticle: { select: { slug: true, deletedAt: true } },
+        landingCollection: { select: { slug: true } },
+      },
     }),
   ]);
   type Row = (typeof rows)[number];
@@ -120,11 +138,14 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
     .map((row) => ({ tabId: row.tabId, collection: view(row) }))
     .filter((t) => readable(t.collection));
   const tabs = tabRows
-    .map(({ id, slug, name }, index) => ({
+    .map(({ id, slug, name, landing, landingArticle, landingCollection }, index) => ({
       slug,
       name,
       collections: top.filter((t) => t.tabId === id).map((t) => t.collection),
       uncollected: index === 0 ? uncollected : [],
+      landing,
+      // A deleted article's slug may be another's now.
+      page: (landingArticle && !landingArticle.deletedAt ? landingArticle.slug : null) ?? landingCollection?.slug ?? null,
     }))
     .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
   return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
@@ -156,12 +177,54 @@ export const docsTabPath = (docs: { home: string | null }, tab: string) => (tab 
 /** Every collection in `collections` and the ones in them, in reading order. */
 export const everyCollection = (collections: DocsCollection[]): DocsCollection[] => collections.flatMap((c) => [c, ...everyCollection(c.collections)]);
 
+type PublishedArticle = NonNullable<Awaited<ReturnType<typeof publishedArticle>>>;
+type CollectionPage = { kind: "collection"; docs: DocsContents; tab: DocsTabView | null; parent: DocsCollection | null; collection: DocsCollection };
+
+/**
+ * What a tab's path shows this reader: its overview, or an article's or collection's page (its
+ * `slug`) in its place.
+ */
+export type TabLanding = { kind: "overview" } | { kind: "article"; slug: string; article: PublishedArticle } | (CollectionPage & { slug: string });
+
 /** What /docs/<slug> is for this reader. */
 export type DocsPage =
-  | { kind: "article"; article: NonNullable<Awaited<ReturnType<typeof publishedArticle>>> }
-  | { kind: "tab"; docs: DocsContents; tab: DocsTabView }
-  | { kind: "collection"; docs: DocsContents; tab: DocsTabView | null; parent: DocsCollection | null; collection: DocsCollection }
+  | { kind: "article"; article: PublishedArticle }
+  | { kind: "tab"; docs: DocsContents; tab: DocsTabView; landing: TabLanding }
+  | CollectionPage
   | { kind: "redirect"; path: string };
+
+/** The first article in `collection`'s reading order: its own, then the ones in the collections in it. */
+const firstIn = (collection: DocsCollection): string | undefined => collection.articles[0]?.slug ?? collection.collections.map(firstIn).find(Boolean);
+
+/**
+ * What tab `tab`'s path shows this reader: its first article (in its first collection, else the
+ * first in none), the article or collection the team picked, or its overview. A picked page this
+ * reader may not read there (deleted, unpublished, hidden or AI only, restricted, or in another tab
+ * now) is the overview, as is a tab with no article.
+ */
+export async function tabLanding(projectSlug: string, docs: DocsContents, tab: DocsTabView): Promise<TabLanding> {
+  const slug = tab.landing === "FIRST" ? (tab.collections.map(firstIn).find(Boolean) ?? tab.uncollected[0]?.slug) : tab.landing === "PAGE" ? tab.page : null;
+  if (!slug) {
+    return { kind: "overview" };
+  }
+  const article = await publishedArticle(projectSlug, slug);
+  // Its collection's tab; in none, the first tab's.
+  if (article && (article.collection ? article.tab : docs.home) === tab.slug) {
+    return { kind: "article", slug, article };
+  }
+  const found = findCollection(docs, slug);
+  return found?.tab === tab ? { kind: "collection", docs, slug, ...found } : { kind: "overview" };
+}
+
+/**
+ * /docs for this reader, once per request (the page and its metadata): the first tab (or the first
+ * with something to read; null without tabs) and what it shows.
+ */
+export const docsHome = cache(async (projectSlug: string) => {
+  const docs = await docsContents(projectSlug);
+  const tab = docs.tabs.find((t) => t.slug === docs.home) ?? docs.tabs[0] ?? null;
+  return { docs, tab, landing: tab ? await tabLanding(projectSlug, docs, tab) : ({ kind: "overview" } as const) };
+});
 
 /**
  * A tab or collection with something this reader may read (as on /docs: a restricted or empty one is
@@ -174,7 +237,7 @@ async function listingPage(projectSlug: string, slug: string): Promise<DocsPage 
   }
   const tab = docs.tabs.find((t) => t.slug === slug);
   if (tab) {
-    return { kind: "tab", docs, tab };
+    return { kind: "tab", docs, tab, landing: await tabLanding(projectSlug, docs, tab) };
   }
   const found = findCollection(docs, slug);
   return found && { kind: "collection", docs, ...found };

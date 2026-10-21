@@ -60,39 +60,6 @@ function CollectionSection({
   );
 }
 
-/** The docs' contents, for the portal's /docs: each collection in order with its articles and the collections in it, then the articles in none. */
-export function DocsCollections({
-  collections,
-  uncollected,
-  href,
-  collectionHref,
-}: {
-  collections: DocsCollection[];
-  uncollected: Articles;
-  /** An article's link. */
-  href: (slug: string) => string;
-  /** A collection's link: its own page. */
-  collectionHref: (slug: string) => string;
-}) {
-  return (
-    <>
-      {collections.map((collection) => (
-        <CollectionSection key={collection.slug} collection={collection} level={2} href={href} collectionHref={collectionHref} />
-      ))}
-      {uncollected.length > 0 && (
-        <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
-          {collections.length > 0 && (
-            <h2 id="more-articles" className="font-heading text-lg font-bold tracking-tight">
-              More articles
-            </h2>
-          )}
-          <ArticleLinks articles={uncollected} href={href} />
-        </section>
-      )}
-    </>
-  );
-}
-
 /** A collection's page: its articles, then the collections in it (each with its own). */
 export function CollectionContents({
   collection,
