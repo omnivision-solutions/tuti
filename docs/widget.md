@@ -92,10 +92,10 @@ Any element with `data-tuti-article` opens the panel at that help article when c
 including elements added to the page later (single-page apps):
 
 ```html
-<a href="https://acme.tuti.so/help/exporting-your-data" data-tuti-article="exporting-your-data">How do exports work?</a>
+<a href="https://acme.tuti.so/docs/exporting-your-data" data-tuti-article="exporting-your-data">How do exports work?</a>
 ```
 
-The value is the article's URL name (the end of its `/help/…` address). With an `href`,
+The value is the article's URL name (the end of its `/docs/…` address). With an `href`,
 the link still works where the script isn't loaded; with the script, it opens the
 panel instead of leaving the page.
 

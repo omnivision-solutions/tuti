@@ -31,10 +31,10 @@ test("a team enables SSO; their app signs people into the portal, once per token
 
   // The customer's app sends a signed-in user to the portal's /sso with a token.
   const token = ssoToken(secret, { sub: "user-42", name: "Sam from Acme", email: "sam@example.com" });
-  const sso = `/sso?token=${token}&redirect=${encodeURIComponent("/b/feature-requests")}`;
+  const sso = `/sso?token=${token}&redirect=${encodeURIComponent("/feedback/feature-requests")}`;
   const sam = await newPerson(browser, portalUrl(slug));
   await sam.goto(sso);
-  await expect(sam).toHaveURL(/\/b\/feature-requests$/);
+  await expect(sam).toHaveURL(/\/feedback\/feature-requests$/);
   await expect(sam.getByRole("button", { name: "Submit feedback" })).toBeVisible();
   await expect(sam.getByRole("link", { name: "Sign in" })).toHaveCount(0);
   await checkpoint(sam, "portal-signed-in-with-sso");
@@ -96,14 +96,14 @@ test("a collection for one reader group: people the app signs in with that group
 
   // A visitor sees what's for everyone; the SAML article isn't there.
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   await expect(visitor.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics"]);
-  expect((await visitor.request.get("/help/setting-up-saml")).status()).toBe(404);
+  expect((await visitor.request.get("/docs/setting-up-saml")).status()).toBe(404);
 
   // Someone the app signs in with the group sees it too.
   const sam = await newPerson(browser, portalUrl(slug));
-  await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/help")}`);
-  await expect(sam).toHaveURL(/\/help$/);
+  await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
+  await expect(sam).toHaveURL(/\/docs$/);
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
   await sam.getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();

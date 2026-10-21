@@ -14,7 +14,7 @@ test("the team links a post to the pull request that works on it", async ({ brow
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
@@ -47,7 +47,7 @@ test("Tuti suggests the pull request a post is about, and the team links it", as
   const [title, pr] = [`Dark mode ${slug}`, `Theme switcher ${slug}`];
   await similar(title, pr, 0.8);
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill(title);
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: title })).toBeVisible();

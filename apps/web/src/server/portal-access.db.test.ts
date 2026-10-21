@@ -136,16 +136,16 @@ async function articleViews() {
 const readers: { name: string; account?: true; served: (slug: string) => Promise<boolean> }[] = [
   ...[
     "/",
-    "/b/feature-requests",
-    "/p/dark-mode-1",
+    "/feedback/feature-requests",
+    "/feedback/feature-requests/dark-mode-1",
     "/roadmap",
     "/changelog",
     "/changelog/1",
     "/changelog/rss.xml",
-    "/help",
-    "/help?q=start",
-    "/help/getting-started",
-    "/help/getting-started.md",
+    "/docs",
+    "/docs?q=start",
+    "/docs/getting-started",
+    "/docs/getting-started.md",
     "/llms.txt",
     "/sitemap.xml",
     "/account",
@@ -205,8 +205,8 @@ test.each(cases)("$access portal, $visitor: $reader.name → $expected", async (
 test("a private portal sends visitors to sign in and back to where they were; signing in stays open", async () => {
   await setAccess(project.id, "PRIVATE");
   expect(await visit(project.slug, "/")).toBe("sign in: /sign-in");
-  expect(await visit(project.slug, "/help/getting-started.md")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/help/getting-started.md" })}`);
-  expect(await visit(project.slug, "/help?q=start")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/help?q=start" })}`);
+  expect(await visit(project.slug, "/docs/getting-started.md")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/docs/getting-started.md" })}`);
+  expect(await visit(project.slug, "/docs?q=start")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/docs?q=start" })}`);
   for (const path of ["/sign-in", "/sign-in/link", "/sign-up", "/forgot-password", "/reset-password", "/sso", "/sso/error", "/continue", "/unsubscribe", "/robots.txt", "/widget"]) {
     expect(await visit(project.slug, path), path).toBe("served");
   }

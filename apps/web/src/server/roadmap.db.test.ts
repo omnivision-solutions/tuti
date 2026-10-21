@@ -38,5 +38,5 @@ test("the roadmap lists planned, in-progress and completed posts: most voted fir
   expect(titles(roadmap.planned)).toEqual(["Planned a lot", "Planned a little"]);
   expect(titles(roadmap.inProgress)).toEqual(["Building"]);
   expect(titles(roadmap.completed)).toEqual(["Shipped last", "Shipped first"]);
-  expect(roadmap.planned[0]).toMatchObject({ status: "planned", votes: 5, url: expect.stringContaining("/p/planned-a-lot-3") });
+  expect(roadmap.planned[0]).toMatchObject({ status: "planned", votes: 5, url: expect.stringContaining("/feedback/feature-requests/planned-a-lot-3") });
 });

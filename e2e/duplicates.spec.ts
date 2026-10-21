@@ -20,14 +20,14 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await createProject(owner, "Acme", slug);
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill(original);
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: original })).toBeVisible();
 
   // While typing a similar title, the portal suggests voting on the existing post.
   const bo = await signUp(browser, portalUrl(slug), "Bo");
-  await bo.goto("/b/feature-requests");
+  await bo.goto("/feedback/feature-requests");
   await bo.getByLabel("Title").fill(duplicate);
   const suggestions = bo.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
   await expect(suggestions.getByRole("link", { name: new RegExp(original) })).toBeVisible();

@@ -17,7 +17,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await ada.context().route("https://www.youtube-nocookie.com/**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<body style='background:#222;color:#fff'>Video</body>" }),
   );
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
 
   // Bold, a list and a video, from the toolbar.
@@ -47,7 +47,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
 
   // The post page shows it as written; the video plays from the provider's embed URL.
   await ada.getByRole("link", { name: "Dark mode" }).click();
-  await ada.waitForURL(/\/p\/dark-mode-1$/);
+  await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   const article = ada.getByRole("main");
   await expect(article.locator("strong", { hasText: "Dark mode" })).toBeVisible();
   await expect(article.getByRole("listitem")).toHaveText(["Less glare", "Saves battery"]);
@@ -83,7 +83,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   const screenshot = await owner.screenshot();
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Make the hero smaller");
   await ada.getByRole("textbox", { name: "Details" }).click();
   await ada.keyboard.type("It takes the whole screen:");

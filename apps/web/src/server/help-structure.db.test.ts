@@ -254,11 +254,11 @@ describe("readers", () => {
     expect(text).toContain(
       [
         "## Billing",
-        `- [Card payments](${portal}/help/card-payments.md)`,
+        `- [Card payments](${portal}/docs/card-payments.md)`,
         "### Invoices",
-        `- [Downloading invoices](${portal}/help/downloading-invoices.md)`,
+        `- [Downloading invoices](${portal}/docs/downloading-invoices.md)`,
         "## Basics",
-        `- [Inviting your team](${portal}/help/inviting-your-team.md)\n- [Your first board](${portal}/help/your-first-board.md)`,
+        `- [Inviting your team](${portal}/docs/inviting-your-team.md)\n- [Your first board](${portal}/docs/your-first-board.md)`,
         "## Changelog",
       ].join("\n\n"),
     );

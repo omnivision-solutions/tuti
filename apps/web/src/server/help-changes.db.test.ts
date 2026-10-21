@@ -6,8 +6,8 @@ import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { generateMetadata } from "@/app/portal/[project]/(site)/help/[slug]/page";
-import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
+import { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { WidgetHelp } from "@/components/widget-help";

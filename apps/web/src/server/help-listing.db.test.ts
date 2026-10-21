@@ -6,8 +6,8 @@ import { isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { GET as exportRoute } from "@/app/app/[project]/settings/export/route";
-import ArticlePage, { generateMetadata } from "@/app/portal/[project]/(site)/help/[slug]/page";
-import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
+import ArticlePage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import WidgetPage from "@/app/portal/[project]/widget/page";
@@ -100,7 +100,7 @@ async function shownBy(shown: (slug: string) => Promise<boolean>) {
   const results = await Promise.all(ALL.map(async (slug) => [slug, await shown(slug)] as const));
   return results.filter(([, yes]) => yes).map(([slug]) => slug).sort();
 }
-const linkedSlugs = (text: string) => sorted([...text.matchAll(/\/help\/([a-z-]+)/g)].map((m) => m[1]!));
+const linkedSlugs = (text: string) => sorted([...text.matchAll(/\/docs\/([a-z-]+)/g)].map((m) => m[1]!));
 const params = (more: object = {}) => ({ params: Promise.resolve({ project: project.slug, ...more }) });
 
 describe("the portal", () => {
@@ -172,7 +172,7 @@ describe("search and AI answers", () => {
     expect(answer.status).toBe("answered");
     expect(Object.fromEntries(answer.sources.map((s) => [s.slug, s.url]))).toEqual(
       Object.fromEntries(
-        LISTINGS.filter((l) => SHOWN[l].ai).map((l) => [slugOf(l), SHOWN[l].linked ? `http://${project.slug}.localhost:3100/help/${slugOf(l)}` : null]),
+        LISTINGS.filter((l) => SHOWN[l].ai).map((l) => [slugOf(l), SHOWN[l].linked ? `http://${project.slug}.localhost:3100/docs/${slugOf(l)}` : null]),
       ),
     );
   });

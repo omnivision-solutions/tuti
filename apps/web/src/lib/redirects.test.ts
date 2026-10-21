@@ -3,8 +3,8 @@ import { expect, test } from "vitest";
 import { safeRedirectPath } from "./redirects";
 
 test.each([
-  ["/b/ideas", "/b/ideas"],
-  ["/p/dark-mode-1?x=1#c", "/p/dark-mode-1?x=1#c"],
+  ["/feedback/ideas", "/feedback/ideas"],
+  ["/feedback/feature-requests/dark-mode-1?x=1#c", "/feedback/feature-requests/dark-mode-1?x=1#c"],
   [undefined, "/fallback"],
   ["", "/fallback"],
   ["https://evil.example", "/fallback"],

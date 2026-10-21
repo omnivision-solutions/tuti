@@ -81,7 +81,7 @@ export function CreateBoardForm({ projectSlug }: { projectSlug: string }) {
             required
             aria-invalid={state.error ? true : undefined}
           />
-          <FieldDescription>On your portal at /b/{slug || "<url>"}.</FieldDescription>
+          <FieldDescription>On your portal at /feedback/{slug || "<url>"}.</FieldDescription>
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
         <Field>
@@ -133,7 +133,7 @@ export function EditBoardDialog({
             <Field data-invalid={state.error ? true : undefined}>
               <FieldLabel htmlFor={`slug-${board.id}`}>URL</FieldLabel>
               <Input id={`slug-${board.id}`} name="slug" defaultValue={board.slug} required />
-              <FieldDescription>On your portal at /b/&lt;url&gt;.</FieldDescription>
+              <FieldDescription>On your portal at /feedback/&lt;url&gt;.</FieldDescription>
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
             <Field>

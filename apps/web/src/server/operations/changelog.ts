@@ -63,7 +63,7 @@ const entrySelect = {
   collecting: true,
   createdAt: true,
   updatedAt: true,
-  posts: { select: { post: { select: { id: true, number: true, title: true, status: true } } } },
+  posts: { select: { post: { select: { id: true, number: true, title: true, status: true, board: { select: { slug: true } } } } } },
   pullRequests: { orderBy: { createdAt: "asc" }, select: { repo: true, number: true, url: true, title: true } },
 } as const;
 

@@ -39,13 +39,13 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/boards
               <ItemRow
                 key={board.id}
                 title={
-                  <a href={`${portal}/b/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
+                  <a href={`${portal}/feedback/${board.slug}`} target="_blank" rel="noreferrer" className="hover:underline">
                     {board.name}
                   </a>
                 }
                 meta={
                   <>
-                    /b/{board.slug} · {board._count.posts} {board._count.posts === 1 ? "post" : "posts"}
+                    /feedback/{board.slug} · {board._count.posts} {board._count.posts === 1 ? "post" : "posts"}
                     {board.description && ` · ${board.description}`}
                   </>
                 }

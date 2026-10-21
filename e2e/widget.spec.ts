@@ -86,7 +86,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   }
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
@@ -136,7 +136,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   await widget.getByRole("button", { name: "Close" }).click();
   await expect(ada.locator("#tuti-widget")).toBeHidden();
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await expect(ada.getByRole("link", { name: "Export to CSV" })).toBeVisible();
 
   // Signed in on the portal, the announcement is new to her (what a browser saw on another
@@ -174,7 +174,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   // Other sites may frame the widget, and nothing else.
   const framing = async (path: string) => (await ada.request.get(path)).headers()["content-security-policy"];
   expect(await framing("/widget")).toBeUndefined();
-  expect(await framing("/b/feature-requests")).toBe("frame-ancestors 'none'");
+  expect(await framing("/feedback/feature-requests")).toBe("frame-ancestors 'none'");
 });
 
 test("a customer's site signs its users in to the widget with SSO, and they post from it", async ({ browser }, testInfo) => {
@@ -199,7 +199,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await expect(widget.getByText("Feedback posted")).toBeVisible();
 
   // The post is Sam's, on the portal.
-  await owner.goto(`${portalUrl(slug)}/b/feature-requests`);
+  await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
 });
@@ -357,7 +357,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await expect(article.getByText("Getting started")).toBeVisible();
   const newTab = article.getByRole("link", { name: "Open in new tab" });
   await expect(newTab).toHaveAttribute("target", "_blank");
-  await expect(newTab).toHaveAttribute("href", `/help/${inviting.slug}`);
+  await expect(newTab).toHaveAttribute("href", `/docs/${inviting.slug}`);
   await checkpoint(visitor, "widget-help-article");
   await article.getByRole("link", { name: "Search results" }).click();
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
@@ -434,7 +434,7 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
   // Sources open on the portal in a new tab, so the answer stays in the panel.
   const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
-  await expect(source).toHaveAttribute("href", `/help/${article.slug}`);
+  await expect(source).toHaveAttribute("href", `/docs/${article.slug}`);
   await expect(source).toHaveAttribute("target", "_blank");
   await checkpoint(visitor, "widget-help-ai-answer");
   await ai.getByRole("button", { name: "Not helpful" }).click();
@@ -494,7 +494,7 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await checkpoint(visitor, "widget-help-ai-post-as-feedback");
   await widget.getByRole("button", { name: "Submit feedback" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
-  await owner.goto(`${portalUrl(slug)}/b/feature-requests`);
+  await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: unrelated })).toBeVisible();
 });
 

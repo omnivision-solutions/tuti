@@ -106,7 +106,7 @@ export function HelpAnswer({
                   {source.url === null ? (
                     <span className="break-words">{source.title}</span>
                   ) : (
-                    <Link href={`/help/${source.slug}`} target={widget ? "_blank" : undefined} className="break-words text-primary hover:underline">
+                    <Link href={`/docs/${source.slug}`} target={widget ? "_blank" : undefined} className="break-words text-primary hover:underline">
                       {source.title}
                     </Link>
                   )}

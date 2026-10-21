@@ -27,7 +27,7 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Export everything to CSV, including archived boards and supercalifragilistic fields");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await ada.getByRole("link", { name: /Export everything/ }).click();
@@ -59,8 +59,8 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
 
     const portalPage = await open(portal, portalUrl(slug));
     for (const [path, name] of [
-      ["/b/feature-requests", "portal-board"],
-      ["/p/export-everything-to-csv-including-archived-boards-and-supercalifragilistic-fields-1", "portal-post"],
+      ["/feedback/feature-requests", "portal-board"],
+      ["/feedback/feature-requests/export-everything-to-csv-including-archived-boards-and-supercalifragilistic-fields-1", "portal-post"],
     ] as const) {
       await portalPage.goto(path);
       await expect(portalPage.getByRole("main")).toBeVisible();

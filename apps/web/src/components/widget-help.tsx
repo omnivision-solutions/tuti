@@ -153,7 +153,7 @@ async function WidgetArticle({ projectSlug, slug, back, backLabel }: { projectSl
       <div className="flex flex-wrap items-center justify-between gap-2">
         <BackLink href={back}>{backLabel}</BackLink>
         <Link
-          href={`/help/${slug}`}
+          href={`/docs/${slug}`}
           target="_blank"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground [&>svg]:size-4"
         >

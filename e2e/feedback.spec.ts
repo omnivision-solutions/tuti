@@ -49,17 +49,17 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
 
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await submitFeedback(ada, "Dark mode");
   await checkpoint(ada, "portal-first-post");
 
   const bo = await signUp(browser, portalUrl(slug), "Bo");
-  await bo.goto("/b/feature-requests");
+  await bo.goto("/feedback/feature-requests");
   await submitFeedback(bo, "Night theme for the editor");
   await checkpoint(bo, "portal-two-posts");
   await bo.getByRole("link", { name: "Dark mode" }).click();
   // The board list has vote buttons too: vote only once the post page is open.
-  await bo.waitForURL(/\/p\/dark-mode-1$/);
+  await bo.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await bo.getByRole("button", { name: "Upvote" }).click();
   await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
 
@@ -81,8 +81,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(team, "team-planned");
 
   // People on the portal see one post with both votes, the team's answer and the status.
-  await bo.goto("/p/night-theme-for-the-editor-2");
-  await expect(bo).toHaveURL(/\/p\/dark-mode-1$/);
+  await bo.goto("/feedback/feature-requests/night-theme-for-the-editor-2");
+  await expect(bo).toHaveURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   // Bo voted for both, so counts once: Ada + Bo.
   await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
   await expect(bo.getByText("Thanks! We're on it.")).toBeVisible();
@@ -91,16 +91,16 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(bo, "portal-merged-post");
 
   // The board's status filter finds it under Planned only.
-  await bo.goto("/b/feature-requests?status=planned");
+  await bo.goto("/feedback/feature-requests?status=planned");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toBeVisible();
-  await bo.goto("/b/feature-requests?status=open");
+  await bo.goto("/feedback/feature-requests?status=open");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await checkpoint(bo, "portal-filtered");
 
   // The portal's roadmap shows it as planned, with both votes.
   await bo.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Roadmap" }).click();
   const planned = bo.getByRole("region", { name: "Planned" });
-  await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", "/p/dark-mode-1");
+  await expect(planned.getByRole("link", { name: "Dark mode" })).toHaveAttribute("href", "/feedback/feature-requests/dark-mode-1");
   await expect(planned).toContainText("2 votes · Feature requests");
   await expect(bo.getByRole("region", { name: "In progress" })).toContainText("Nothing here yet.");
   await checkpoint(bo, "portal-roadmap");

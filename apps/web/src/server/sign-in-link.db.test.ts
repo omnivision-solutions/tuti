@@ -164,12 +164,12 @@ test("a link only works on the portal that sent it", async () => {
 
 test("it goes back to the page they came from, on this portal only", async () => {
   const email = newAddress();
-  await ask(email, "/b/feature-requests?title=Dark+mode");
+  await ask(email, "/feedback/feature-requests?title=Dark+mode");
   const link = await linkTo(email);
-  expect(link.searchParams.get("next")).toBe("/b/feature-requests?title=Dark+mode");
-  expect((await confirm(link)).location).toBe("/b/feature-requests?title=Dark+mode");
+  expect(link.searchParams.get("next")).toBe("/feedback/feature-requests?title=Dark+mode");
+  expect((await confirm(link)).location).toBe("/feedback/feature-requests?title=Dark+mode");
   // A dead link keeps it too, for the new link they ask for.
-  expect(await view(link)).toEqual({ location: `${FAILED}&next=%2Fb%2Ffeature-requests%3Ftitle%3DDark%2Bmode` });
+  expect(await view(link)).toEqual({ location: `${FAILED}&next=%2Ffeedback%2Ffeature-requests%3Ftitle%3DDark%2Bmode` });
 
   for (const next of ["//evil.example/", "https://evil.example/", "/\t/evil.example"]) {
     const address = newAddress();

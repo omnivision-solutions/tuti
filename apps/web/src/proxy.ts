@@ -48,7 +48,7 @@ export async function proxy(request: NextRequest) {
       return noFraming(response);
     }
     const url = request.nextUrl.clone();
-    const path = pathname.replace(/^\/help\/([^/]+)\.md$/, "/help/$1/md");
+    const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
     url.pathname = `/portal/${target.slug}${path === "/" ? "" : path}`;
     const response = NextResponse.rewrite(url);
     if (visitor === "allowed") {

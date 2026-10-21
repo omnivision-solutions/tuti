@@ -57,10 +57,10 @@ test("the team writes a help article in a collection, publishes it, and a visito
 
   // Visitors don't see it yet.
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/help/inviting-your-team");
+  await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
-  expect((await visitor.request.get(`${portalUrl(slug)}/help/inviting-your-team.md`)).status()).toBe(404);
-  await visitor.goto("/help");
+  expect((await visitor.request.get(`${portalUrl(slug)}/docs/inviting-your-team.md`)).status()).toBe(404);
+  await visitor.goto("/docs");
   await expect(visitor.getByText("Nothing here yet")).toBeVisible();
 
   await team.getByRole("button", { name: "Publish" }).click();
@@ -78,7 +78,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(collection).toContainText("The basics, in five minutes.");
   await checkpoint(visitor, "portal-help-center");
   await collection.getByRole("link", { name: "Inviting your team" }).click();
-  await visitor.waitForURL(/\/help\/inviting-your-team$/);
+  await visitor.waitForURL(/\/docs\/inviting-your-team$/);
   const article = visitor.getByRole("article", { name: "Inviting your team" });
   await expect(article.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
   await expect(article.getByRole("columnheader", { name: "Can invite" })).toBeVisible();
@@ -89,7 +89,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await checkpoint(visitor, "portal-help-article");
 
   // AI tools get it as Markdown: at its .md URL, copied, or opened in ChatGPT or Claude with that URL.
-  const markdownUrl = `${portalUrl(slug)}/help/inviting-your-team.md`;
+  const markdownUrl = `${portalUrl(slug)}/docs/inviting-your-team.md`;
   const markdown = await visitor.request.get(markdownUrl);
   expect(markdown.headers()["content-type"]).toBe("text/markdown; charset=utf-8");
   expect(await markdown.text()).toBe(
@@ -106,11 +106,11 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await checkpoint(visitor, "portal-help-article-copied");
 
   // Search finds it with the passage that matched; a search with no match says so.
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
   await searchBox.fill("send invites");
   await visitor.getByRole("button", { name: "Search" }).click();
-  await visitor.waitForURL(/\/help\?q=send\+invites$/);
+  await visitor.waitForURL(/\/docs\?q=send\+invites$/);
   const results = visitor.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results).toContainText("Owners and admins send invites from the Team page.");
@@ -162,7 +162,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(team.getByText("Getting started deleted")).toBeVisible();
   await team.unroute("**/*");
   await expect(team.getByRole("link", { name: "Inviting your team" })).toBeVisible();
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
   // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.
@@ -196,7 +196,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   const unpublished = team.getByRole("region", { name: "Unpublished changes" });
   await expect(unpublished).toContainText("Readers see the published version until you publish them.");
   await checkpoint(team, "team-help-article-unpublished-changes");
-  await visitor.goto("/help/inviting-your-team");
+  await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByText(original, { exact: true })).toBeVisible();
   await expect(visitor.getByText(/Members can ask them/)).toHaveCount(0);
 
@@ -209,7 +209,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await review.getByRole("button", { name: "Publish changes" }).click();
   await expect(team.getByText("Changes published")).toBeVisible();
   await expect(unpublished).toHaveCount(0);
-  await visitor.goto("/help/inviting-your-team");
+  await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByText(edited, { exact: true })).toBeVisible();
   // Changed since it was published, so readers see when.
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
@@ -267,20 +267,20 @@ test("the team writes a help article in a collection, publishes it, and a visito
   await expect(team.getByText("Anyone with the link can read it, but it's in no list or search. AI answers can cite it.")).toBeVisible();
   await expect(header).toContainText("Unlisted ·");
   await checkpoint(team, "team-help-article-unlisted");
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   await expect(visitor.getByText("Nothing here yet")).toBeVisible();
-  await visitor.goto("/help/inviting-your-team");
+  await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
 
   await setListing("Hidden");
   await expect(team.getByText("Stays published, but isn't shown anywhere, not even at its link.")).toBeVisible();
   await expect(header).toContainText("· Hidden");
   await checkpoint(team, "team-help-article-hidden");
-  expect((await visitor.goto("/help/inviting-your-team"))!.status()).toBe(404);
-  expect((await visitor.request.get(`${portalUrl(slug)}/help/inviting-your-team.md`)).status()).toBe(404);
+  expect((await visitor.goto("/docs/inviting-your-team"))!.status()).toBe(404);
+  expect((await visitor.request.get(`${portalUrl(slug)}/docs/inviting-your-team.md`)).status()).toBe(404);
 
   await setListing("Everywhere");
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   await expect(visitor.getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
   // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
@@ -292,7 +292,7 @@ test("the team writes a help article in a collection, publishes it, and a visito
   const recentlyDeleted = team.getByRole("region", { name: "Recently deleted" });
   await expect(recentlyDeleted).toContainText("Inviting your team");
   await checkpoint(team, "team-help-recently-deleted");
-  await visitor.goto("/help/inviting-your-team");
+  await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
 
   await recentlyDeleted.getByRole("button", { name: "Restore “Inviting your team”" }).click();
@@ -365,7 +365,7 @@ test("the team arranges the help center: a collection in another, moves with the
 
   // The portal follows: Billing first with Invoices in it, then Getting started in its new order.
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   const main = visitor.getByRole("main");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   const billing = main.getByRole("region", { name: "Billing" });
@@ -475,7 +475,7 @@ test("the team splits the help center into sections: the first takes the collect
 
   // Readers get a tab per section with something to read, the first open; an article leads back to its tab.
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   const main = visitor.getByRole("main");
   const sectionTabs = main.getByRole("navigation", { name: "Help center sections" });
   await expect(sectionTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
@@ -483,13 +483,13 @@ test("the team splits the help center into sections: the first takes the collect
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
   await checkpoint(visitor, "portal-help-sections");
   await sectionTabs.getByRole("link", { name: "Guides" }).click();
-  await expect(visitor).toHaveURL(/\/help\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
   await main.getByRole("link", { name: "Card payments" }).click();
   await main.getByRole("link", { name: "Help center" }).click();
-  await expect(visitor).toHaveURL(/\/help\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
   // A search covers every section.
-  await visitor.goto("/help?q=payloads");
+  await visitor.goto("/docs?q=payloads");
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
 
   // The widget's Help tab has the same tabs, at panel size.
@@ -537,7 +537,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
 
   // The visitor searches, then asks the AI.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   const searchBox = visitor.getByRole("searchbox", { name: "Search the help center" });
   await searchBox.fill(question);
   await searchBox.press("Enter");
@@ -552,7 +552,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
   await expect(ai.getByRole("listitem").filter({ hasText: "Each invite is good for 7 days" })).toBeVisible();
   const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
-  await expect(source).toHaveAttribute("href", "/help/inviting-your-team");
+  await expect(source).toHaveAttribute("href", "/docs/inviting-your-team");
   await checkpoint(visitor, "portal-help-ai-answer");
   const asked = (await modelRequests()).filter((request) => request.user.includes(question));
   expect(asked).toHaveLength(1);
@@ -564,10 +564,10 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
   await ai.getByRole("button", { name: "Helpful", exact: true }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
   await source.click();
-  await visitor.waitForURL(/\/help\/inviting-your-team$/);
+  await visitor.waitForURL(/\/docs\/inviting-your-team$/);
 
   // Something the help center doesn't cover: "I don't know", without asking the model.
-  await visitor.goto("/help");
+  await visitor.goto("/docs");
   const unrelated = "Can I pay with crypto?";
   await visitor.getByRole("searchbox", { name: "Search the help center" }).fill(unrelated);
   await visitor.getByRole("searchbox", { name: "Search the help center" }).press("Enter");
@@ -578,7 +578,7 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
 
   // Posting it as feedback starts a post with the question as its title.
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
-  await visitor.waitForURL(/\/b\/feature-requests\?title=/);
+  await visitor.waitForURL(/\/feedback\/feature-requests\?title=/);
   await expect(visitor.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(visitor, "portal-help-ai-post-as-feedback");
   await visitor.getByRole("button", { name: "Submit feedback" }).click();
@@ -587,13 +587,13 @@ test("a visitor asks the help center's AI: an answer with its source, or “I do
 
   // Another question it can't answer.
   const another = "Is there a dark mode?";
-  await visitor.goto(`/help?${new URLSearchParams({ q: another })}`);
+  await visitor.goto(`/docs?${new URLSearchParams({ q: another })}`);
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
 
   // An off-limits topic: the fixed reply, without asking the model.
   const offLimits = "Can I get a Refund for last month?";
-  await visitor.goto(`/help?${new URLSearchParams({ q: offLimits })}`);
+  await visitor.goto(`/docs?${new URLSearchParams({ q: offLimits })}`);
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I can't help with that here.")).toBeVisible();
   await expect(ai.getByRole("link", { name: "Post this as feedback" })).toBeVisible();
@@ -648,7 +648,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   // A visitor asks something the help center doesn't cover.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   const question = `Can I pay with crypto for ${slug}?`;
-  await visitor.goto(`/help?${new URLSearchParams({ q: question })}`);
+  await visitor.goto(`/docs?${new URLSearchParams({ q: question })}`);
   const ai = visitor.getByRole("region", { name: "AI answer" });
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();

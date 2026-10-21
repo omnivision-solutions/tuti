@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
-import { postPath } from "@/lib/post-urls";
+import { boardPath, postPath } from "@/lib/post-urls";
 import { visibleArticle } from "@/lib/reader-groups";
 import { listedArticle } from "@/server/help-queries";
 
@@ -29,7 +29,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
         where: { duplicateOfId: null },
         orderBy: { updatedAt: "desc" },
         take: MAX_URLS,
-        select: { boardId: true, number: true, title: true, updatedAt: true },
+        select: { boardId: true, number: true, title: true, updatedAt: true, board: { select: { slug: true } } },
       },
       changelogEntries: { where: { publishedAt: { not: null } }, orderBy: { number: "desc" }, select: { number: true, updatedAt: true } },
       // For search engines: not the ones for some reader groups only.
@@ -43,14 +43,14 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const pages: { path: string; lastmod?: Date }[] = [
     { path: "", lastmod: latestPost },
     ...project.boards.map((board) => ({
-      path: `/b/${board.slug}`,
+      path: boardPath(board),
       lastmod: newest([board.updatedAt, ...project.posts.filter((post) => post.boardId === board.id).map((post) => post.updatedAt)]),
     })),
     { path: "/roadmap", lastmod: latestPost },
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
-    { path: "/help", lastmod: newest(project.articles.map((article) => article.updatedAt)) },
-    ...project.articles.map((article) => ({ path: `/help/${article.slug}`, lastmod: article.updatedAt })),
+    { path: "/docs", lastmod: newest(project.articles.map((article) => article.updatedAt)) },
+    ...project.articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
     ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt })),

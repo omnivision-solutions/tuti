@@ -105,7 +105,7 @@ function sourcesOf(sections: AnswerSection[], slug: string): HelpAnswer["sources
     .map((section) => ({
       slug: section.slug,
       title: section.title,
-      url: section.listing === "AI_ONLY" ? null : `${portalUrl(slug)}/help/${section.slug}`,
+      url: section.listing === "AI_ONLY" ? null : `${portalUrl(slug)}/docs/${section.slug}`,
     }));
 }
 

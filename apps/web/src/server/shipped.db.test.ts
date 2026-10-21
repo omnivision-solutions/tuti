@@ -60,7 +60,7 @@ describe("when a post ships", () => {
       const [email, ...more] = emailsTo(address);
       expect(more).toEqual([]);
       expect(email!.subject).toBe("Done: Dark mode");
-      expect(email!.text).toContain(`http://${project.slug}.localhost:3100/p/dark-mode-${post.number}`);
+      expect(email!.text).toContain(`http://${project.slug}.localhost:3100/feedback/feature-requests/dark-mode-${post.number}`);
       expect(email!.headers["list-unsubscribe"]).toMatch(
         new RegExp(`^<http://${project.slug}\\.localhost:3100/unsubscribe/confirm\\?token=[0-9a-f-]+>$`),
       );

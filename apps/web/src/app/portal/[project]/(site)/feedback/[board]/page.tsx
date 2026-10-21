@@ -12,11 +12,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
-import { postPath } from "@/lib/post-urls";
+import { boardPath, postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 
-export default async function BoardPage(props: PageProps<"/portal/[project]/b/[board]">) {
+export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
   const filters = parsePostFilters(searchParams);
@@ -46,7 +46,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
       select: { board: { select: { slug: true } } },
     });
     if (moved) {
-      permanentRedirect(`/b/${moved.board.slug}`);
+      permanentRedirect(boardPath(moved.board));
     }
     notFound();
   }
@@ -80,7 +80,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/b/[b
               />
               <div className="flex min-w-0 flex-col gap-1">
                 <h2 className="font-medium">
-                  <Link href={postPath(post)} className="hover:underline">
+                  <Link href={postPath({ ...post, board })} className="hover:underline">
                     {post.title}
                   </Link>
                 </h2>

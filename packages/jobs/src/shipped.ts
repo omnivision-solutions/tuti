@@ -85,6 +85,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     select: {
       number: true,
       title: true,
+      board: { select: { slug: true } },
       projectId: true,
       authorId: true,
       project: { select: { name: true, slug: true, portalAccess: true } },

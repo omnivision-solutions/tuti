@@ -85,8 +85,8 @@ describe("answers", () => {
       status: "answered",
       answer: "Owners and admins invite people from the Team page.\n\n- Open Team\n- Click Invite",
       sources: [
-        { slug: inviting, title: "Inviting your team", url: expect.stringMatching(/\/help\/inviting-your-team$/) },
-        { slug: roles, title: "Roles", url: expect.stringMatching(/\/help\/roles$/) },
+        { slug: inviting, title: "Inviting your team", url: expect.stringMatching(/\/docs\/inviting-your-team$/) },
+        { slug: roles, title: "Roles", url: expect.stringMatching(/\/docs\/roles$/) },
       ],
     });
 

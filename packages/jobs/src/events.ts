@@ -117,7 +117,7 @@ export const postSummarySelect = {
 export const toApiStatus = (status: PostStatus) => status.toLowerCase();
 
 /** The post's public URL on its project's portal (PORTAL_URL_TEMPLATE, e.g. https://{project}.tuti.so). */
-export function portalPostUrl(projectSlug: string, post: { title: string; number: number }) {
+export function portalPostUrl(projectSlug: string, post: { title: string; number: number; board: { slug: string } }) {
   return `${portalOrigin(projectSlug)}${postPath(post)}`;
 }
 

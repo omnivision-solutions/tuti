@@ -17,7 +17,7 @@ export type PublishedEntry = {
   tags: ChangelogTag[];
   publishedAt: Date;
   doc: Doc;
-  posts: { number: number; title: string }[];
+  posts: { number: number; title: string; board: { slug: string } }[];
   reactions: ReactionCounts;
   /** The ones the signed-in reader left. */
   reacted: Reaction[];

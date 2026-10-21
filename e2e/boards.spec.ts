@@ -15,7 +15,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   // A new project starts with one board, which can't be deleted while it's the only one.
   await owner.goto(`/app/${slug}/boards`);
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
-  await expect(row("Feature requests")).toContainText("/b/feature-requests · 0 posts");
+  await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 0 posts");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
   // Add a board; its URL follows the name.
@@ -23,7 +23,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(owner.getByLabel("URL")).toHaveValue("bug-reports");
   await owner.getByLabel("Description").fill("Something broken? Tell us here.");
   await owner.getByRole("button", { name: "Create board" }).click();
-  await expect(row("Bug reports")).toContainText("/b/bug-reports · 0 posts · Something broken? Tell us here.");
+  await expect(row("Bug reports")).toContainText("/feedback/bug-reports · 0 posts · Something broken? Tell us here.");
   await checkpoint(owner, "team-boards");
 
   // Change its URL: the old one redirects on the portal.
@@ -32,11 +32,11 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await dialog.getByLabel("URL").fill("bugs");
   await checkpoint(owner, "team-edit-board", { fullPage: false });
   await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(row("Bug reports")).toContainText("/b/bugs");
+  await expect(row("Bug reports")).toContainText("/feedback/bugs");
 
   const visitor = await newPerson(browser, portalUrl(slug));
-  await visitor.goto("/b/bug-reports");
-  await expect(visitor).toHaveURL(/\/b\/bugs$/);
+  await visitor.goto("/feedback/bug-reports");
+  await expect(visitor).toHaveURL(/\/feedback\/bugs$/);
   const tabs = visitor.getByRole("navigation", { name: "Portal" });
   await expect(tabs.getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
   await expect(tabs.getByRole("link", { name: "Feature requests" })).toBeVisible();
@@ -49,6 +49,6 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   // (While the dialog is open the list is hidden from queries, so wait for the result first.)
   await expect(owner.getByText("Bug reports deleted")).toBeVisible();
   await expect(row("Bug reports")).toHaveCount(0);
-  const response = await visitor.goto("/b/bugs");
+  const response = await visitor.goto("/feedback/bugs");
   expect(response?.status()).toBe(404);
 });
