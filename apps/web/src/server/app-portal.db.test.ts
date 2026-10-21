@@ -107,3 +107,21 @@ test("an ordinary slug named as Tuti's own portal is only its owner's to create,
   actAs(await signUp("Someone"));
   expect(await createProject(null as never, data)).toEqual({ error: "That URL is reserved" });
 });
+
+test("the setting is a slug whatever its case, and an app path can't be created even by its owner", async () => {
+  vi.stubEnv("APP_PORTAL_PROJECT", " Help ");
+  const { isUsableSlug } = await import("@/lib/project-slugs");
+  const { appPortalMount } = await import("@/lib/app-portal");
+  expect(isUsableSlug("help")).toBe(true);
+  expect(appPortalMount()).toMatchObject({ slug: "help", path: "/help" });
+
+  vi.stubEnv("APP_PORTAL_PROJECT", "docs");
+  const maintainer = await signUp("Maintainer");
+  await prisma.user.update({ where: { id: maintainer.id }, data: { emailVerified: true } });
+  vi.stubEnv("APP_PORTAL_OWNER", maintainer.email);
+  actAs(maintainer);
+  const data = new FormData();
+  data.set("name", "Docs");
+  data.set("slug", "docs");
+  expect(await createProject(null as never, data)).toEqual({ error: "That URL is reserved" });
+});

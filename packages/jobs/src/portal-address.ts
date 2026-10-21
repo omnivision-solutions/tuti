@@ -17,7 +17,7 @@ export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null 
 export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
   const origin = portalOrigin(projectSlug) as PortalAddress;
   // Tuti's own portal, under its path on the app's domain (APP_PORTAL_PROJECT; see apps/web/src/lib/app-portal.ts).
-  if (projectSlug === process.env.APP_PORTAL_PROJECT?.trim() && process.env.APP_URL) {
+  if (projectSlug === process.env.APP_PORTAL_PROJECT?.trim().toLowerCase() && process.env.APP_URL) {
     return `${new URL(process.env.APP_URL).origin}/${projectSlug}` as PortalAddress;
   }
   // Under a path of the team's own site, once verified (SiteMount): https://acme.com/portal.

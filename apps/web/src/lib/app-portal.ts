@@ -1,4 +1,5 @@
 import { appUrl } from "./hosts";
+import { appPortalSlug } from "./project-slugs";
 
 /**
  * Tuti's own portal under a path of the app's domain (tuti.so/help/…), when APP_PORTAL_PROJECT names
@@ -8,7 +9,7 @@ import { appUrl } from "./hosts";
  * only APP_PORTAL_OWNER may create the project with.
  */
 export function appPortalProject(): string | null {
-  return process.env.APP_PORTAL_PROJECT?.trim() || null;
+  return appPortalSlug();
 }
 
 /**

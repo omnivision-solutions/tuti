@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { appPortalProject, isAppPortalOwner } from "@/lib/app-portal";
+import { appPortalMount, isAppPortalOwner } from "@/lib/app-portal";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
@@ -37,7 +37,8 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
   }
   // Reserved slugs aren't for projects, and Tuti's own portal's (APP_PORTAL_PROJECT, reserved or not) is
   // only for its owner (APP_PORTAL_OWNER, a verified address): nobody else can take it first.
-  const ownPortal = parsed.data.slug === appPortalProject();
+  // Only where it can be served (not one of the app's own paths, see appPortalMount).
+  const ownPortal = appPortalMount()?.slug === parsed.data.slug;
   if ((isReservedSlug(parsed.data.slug) || ownPortal) && !(ownPortal && isAppPortalOwner(session.user))) {
     return { error: "That URL is reserved" };
   }

@@ -26,5 +26,10 @@ export function isReservedSlug(slug: string): boolean {
  * see lib/app-portal.ts), which stays reserved for creating projects (only APP_PORTAL_OWNER may).
  */
 export function isUsableSlug(slug: string): boolean {
-  return !isReservedSlug(slug) || slug === process.env.APP_PORTAL_PROJECT?.trim();
+  return !isReservedSlug(slug) || slug === appPortalSlug();
+}
+
+/** APP_PORTAL_PROJECT as a slug (trimmed, lowercase), or null. */
+export function appPortalSlug(): string | null {
+  return process.env.APP_PORTAL_PROJECT?.trim().toLowerCase() || null;
 }
