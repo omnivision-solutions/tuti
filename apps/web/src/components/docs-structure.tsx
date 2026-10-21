@@ -426,7 +426,10 @@ export function DocsStructure({
                     places={[]}
                   />
                   <TabDialog projectSlug={projectSlug} tab={tab} />
-                  <DeleteTabButton projectSlug={projectSlug} tab={tab} movesTo={(list[index - 1] ?? list[index + 1])?.name ?? null} />
+                  {/* The first is the docs' home: another goes first before it can go. */}
+                  {(index > 0 || list.length === 1) && (
+                    <DeleteTabButton projectSlug={projectSlug} tab={tab} movesTo={list[index - 1]?.name ?? null} />
+                  )}
                 </>
               }
             >

@@ -249,17 +249,18 @@ describe("readers", () => {
       uncollected: [],
       // No tabs: one page.
       tabs: [],
+      home: null,
     });
 
     const portal = `http://${project.slug}.localhost:3100`;
     const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
     expect(text).toContain(
       [
-        "## Billing",
+        `## [Billing](${portal}/docs/billing)`,
         `- [Card payments](${portal}/docs/card-payments.md)`,
-        "### Invoices",
+        `### [Invoices](${portal}/docs/invoices)`,
         `- [Downloading invoices](${portal}/docs/downloading-invoices.md)`,
-        "## Basics",
+        `## [Basics](${portal}/docs/basics)`,
         `- [Inviting your team](${portal}/docs/inviting-your-team.md)\n- [Your first board](${portal}/docs/your-first-board.md)`,
         "## Changelog",
       ].join("\n\n"),
