@@ -170,22 +170,26 @@ function placed(siblings: { id: string }[], id: string, position: number | undef
 }
 
 /**
- * A slug from `text` for a tab, collection or article (`except`, when it has one) that no other tab,
+ * A slug from `text` for a tab, collection or article (`page`, when it has one) that no other tab,
  * collection or live article in the project has, so /docs/<slug> is one page: "getting-started",
  * then "getting-started-2", … Call it with the project locked (lockProject), so two saves can't pick
- * the same one. Deleted articles don't hold on to their slugs (a restored one takes the next free
- * one if its own is gone).
+ * the same one, in the transaction that gives the page the slug. Deleted articles don't hold on to
+ * their slugs (a restored one takes the next free one if its own is gone).
+ *
+ * Redirects (docs_redirect) follow: a slug only a redirect has is free, and taking it drops the
+ * redirect; when `page` gets a new slug, its old one (`page.slug`, read under the lock) redirects
+ * to it.
  */
 async function freeDocsSlug(
   tx: Prisma.TransactionClient,
   projectId: string,
   text: string,
-  fallback: "tab" | "collection" | "article",
-  except?: string,
+  kind: "tab" | "collection" | "article",
+  page?: { id: string; slug: string },
 ) {
-  const base = titleSlug(text, fallback);
-  // Ids are unique across the three tables (cuids), so `except` needs no kind.
-  const where = { projectId, slug: { startsWith: base }, ...(except && { id: { not: except } }) };
+  const base = titleSlug(text, kind);
+  // Ids are unique across the three tables (cuids), so `page` needs no kind.
+  const where = { projectId, slug: { startsWith: base }, ...(page && { id: { not: page.id } }) };
   const select = { slug: true } as const;
   const taken = [
     ...(await tx.docsTab.findMany({ where, select })),
@@ -194,10 +198,23 @@ async function freeDocsSlug(
   ];
   // "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
   // reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
-  const used = new Set([...(fallback === "article" ? ["new", "insights", "api"] : []), ...taken.map((row) => row.slug)]);
+  const used = new Set([...(kind === "article" ? ["new", "insights", "api"] : []), ...taken.map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
+  }
+  await tx.docsRedirect.deleteMany({ where: { projectId, slug: candidate } });
+  if (page && page.slug !== candidate) {
+    const to = {
+      tabId: kind === "tab" ? page.id : null,
+      collectionId: kind === "collection" ? page.id : null,
+      articleId: kind === "article" ? page.id : null,
+    };
+    await tx.docsRedirect.upsert({
+      where: { projectId_slug: { projectId, slug: page.slug } },
+      create: { projectId, slug: page.slug, ...to },
+      update: to,
+    });
   }
   return candidate;
 }
@@ -272,7 +289,7 @@ async function recordRevision(tx: Prisma.TransactionClient, articleId: string, a
 async function lockedArticle(tx: Prisma.TransactionClient, article: { id: string; slug: string }) {
   const current = await tx.article.findFirst({
     where: { id: article.id, deletedAt: null },
-    select: { title: true, publishedAt: true, collectionId: true },
+    select: { slug: true, title: true, publishedAt: true, collectionId: true },
   });
   if (!current) {
     throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
@@ -358,7 +375,7 @@ async function saveChanges(
     Object.assign(
       data,
       version,
-      retitled && { slug: await freeDocsSlug(tx, projectId, title, "article", article.id) },
+      retitled && { slug: await freeDocsSlug(tx, projectId, title, "article", { id: article.id, slug: current.slug }) },
       moved && { order: await lastArticle(tx, projectId, collectionId) },
     );
   }
@@ -631,11 +648,13 @@ export const restoreArticle = defineOperation({
     const restored = await saving(() =>
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        if (deletedAt) {
+        // Read again under the lock: a restore at the same time may have brought it back already.
+        const deleted = deletedAt && (await tx.article.findFirst({ where: { id, deletedAt: { not: null } }, select: { slug: true } }));
+        if (deleted) {
           // Back as a draft (deleting unpublished it), under its slug unless a tab, a collection or another article has it now.
-          await tx.article.updateMany({
-            where: { id, deletedAt: { not: null } },
-            data: { deletedAt: null, slug: await freeDocsSlug(tx, projectId, article.slug, "article", id) },
+          await tx.article.update({
+            where: { id },
+            data: { deletedAt: null, slug: await freeDocsSlug(tx, projectId, deleted.slug, "article", { id, slug: deleted.slug }) },
           });
         }
         return saveChanges(
@@ -1068,7 +1087,7 @@ export const updateCollection = defineOperation({
         return tx.collection.update({
           where: { id },
           data: {
-            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", id) }),
+            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
             ...(input.description !== undefined && { description: input.description }),
             ...(input.groups !== undefined && { groups: input.groups }),
             ...(input.order !== undefined && { order: input.order }),
@@ -1219,7 +1238,7 @@ export const updateTab = defineOperation({
         const { id } = await lockedTab(tx, projectId, input.slug);
         return tx.docsTab.update({
           where: { id },
-          data: { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", id) },
+          data: { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) },
           select: tabSelect,
         });
       }),
