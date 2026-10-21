@@ -113,7 +113,7 @@ test("two renewals with the same token at once: one renews, the other is a copy"
       for (let tries = 0; waiting < 2 && tries < 250; tries++) {
         await new Promise((resolve) => setTimeout(resolve, 20));
         // pg_stat_activity is read once per transaction unless its snapshot is cleared.
-        await tx.$queryRaw`SELECT pg_stat_clear_snapshot()`;
+        await tx.$executeRaw`SELECT pg_stat_clear_snapshot()`;
         const [row] = await tx.$queryRaw<{ count: bigint }[]>`
           SELECT count(*) FROM pg_stat_activity
           WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%license%'`;
