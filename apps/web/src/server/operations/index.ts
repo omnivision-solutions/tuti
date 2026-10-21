@@ -48,6 +48,7 @@ import { getAssistantSettings, updateAssistantSettings } from "./assistant";
 import { askDocs } from "./docs-ask";
 import { escalateDocs } from "./docs-escalate";
 import { answerArticle, dismissDocsGap, getDocsInsights } from "./docs-insights";
+import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
 import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
@@ -104,6 +105,10 @@ const all = [
   updateTab,
   reorderTab,
   deleteTab,
+  listGroups,
+  createGroup,
+  updateGroup,
+  deleteGroup,
   listPosts,
   getPost,
   listComments,

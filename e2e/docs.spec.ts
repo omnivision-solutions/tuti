@@ -356,10 +356,13 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   for (const name of ["Getting started", "Billing"]) {
     await api("/collections", { name });
   }
+  // Card payments was "Payments" while it was a draft: its first URL will redirect.
+  await api("/articles", { title: "Payments", body: "Card payments.", collection: "billing" });
+  await api("/articles/payments", { title: "Card payments" }, "PATCH");
+  await api("/articles/card-payments/publish", {});
   for (const [title, collection] of [
     ["Inviting your team", "getting-started"],
     ["Your first board", "getting-started"],
-    ["Card payments", "billing"],
     ["Downloading invoices", "billing"],
   ]) {
     const article = await api("/articles", { title, body: `${title}.`, collection });
@@ -414,6 +417,13 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("link")).toHaveText(["Downloading invoices"]);
   await expect(main.getByRole("region", { name: "Getting started" }).getByRole("link")).toHaveText(["Your first board", "Inviting your team"]);
   await checkpoint(visitor, "portal-docs-nested");
+  // An old URL of an article (and of its Markdown) sends readers to its current one.
+  await visitor.goto("/docs/payments");
+  await expect(visitor).toHaveURL(/\/docs\/card-payments$/);
+  await expect(visitor.getByRole("heading", { name: "Card payments", level: 1 })).toBeVisible();
+  const markdown = await visitor.request.get(`${portalUrl(slug)}/docs/payments.md`);
+  expect([markdown.status(), new URL(markdown.url()).pathname]).toEqual([200, "/docs/card-payments.md"]);
+  await visitor.goto("/docs");
 
   // Dragged by its row: Getting started back above Billing.
   const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });

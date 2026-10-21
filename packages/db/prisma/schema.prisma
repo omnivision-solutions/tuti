@@ -209,6 +209,8 @@ model Project {
   articleChunks        ArticleChunk[]
   collections          Collection[]
   docsTabs             DocsTab[]
+  readerGroups         ReaderGroup[]
+  docsRedirects        DocsRedirect[]
   portalReaders        PortalReader[]
   portalReaderEmails   PortalReaderEmail[]
   customDomain         CustomDomain?
@@ -251,8 +253,8 @@ model SsoIdentity {
   userId     String   @unique
   /// Email as asserted by the project's app (User.email is a placeholder).
   email      String?
-  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: which restricted
-  /// docs collections they may read (Collection.groups).
+  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
+  /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
   groups     String[] @default([])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -978,7 +980,7 @@ model ChangelogEntryPullRequest {
 model Collection {
   id          String   @id @default(cuid())
   projectId   String
-  /// From the name, unique in the project.
+  /// From the name; no other collection, tab or (live) article in the project has it, so /docs/<slug> is one page.
   slug        String
   name        String
   description String   @default("")
@@ -991,9 +993,6 @@ model Collection {
   /// parent's). Once a project has tabs, every top-level collection is in one (kept under the
   /// project's lock); without any, all are null.
   tabId       String?
-  /// Who may read it (and the articles and collections in it) besides the team: people the project's
-  /// SSO signs in with one of these groups (lowercase). Empty: everyone who may read the portal.
-  groups      String[] @default([])
   /// A Lucide icon by name (kebab-case, e.g. "credit-card"), checked against the installed Lucide
   /// when set. One Lucide later drops draws nothing.
   icon        String?
@@ -1007,6 +1006,10 @@ model Collection {
   articles  Article[]
   revisions ArticleRevision[]
   changes   ArticleChanges[]
+  /// Who may read it (and the articles and collections in it) besides the team: people in one of
+  /// these groups. None: everyone who may read the portal.
+  groups    CollectionGroup[]
+  redirects DocsRedirect[]
 
   @@unique([projectId, slug])
   @@index([parentId])
@@ -1014,12 +1017,47 @@ model Collection {
   @@map("collection")
 }
 
+/// A group of readers (Settings → Groups): the people the project's SSO signs in with `claim` in
+/// their token's `groups` (SsoIdentity.groups), worked out when they read. Collections can be for
+/// some groups only.
+model ReaderGroup {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  /// Matched against the token's `groups` (lowercase), unique in the project. Changing it changes who's in it.
+  claim       String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collections CollectionGroup[]
+
+  @@unique([projectId, claim])
+  @@map("reader_group")
+}
+
+/// A group a collection is for. A group in use can't be deleted (NO ACTION, checked at the end of
+/// the statement, so deleting the project, which takes both, still works): dropping it would open
+/// the collection to everyone.
+model CollectionGroup {
+  collectionId String
+  groupId      String
+
+  collection Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  group      ReaderGroup @relation(fields: [groupId], references: [id], onDelete: NoAction)
+
+  @@id([collectionId, groupId])
+  @@index([groupId])
+  @@map("collection_group")
+}
+
 /// A tab of the docs ("Guides", "API"), with top-level collections in it. The first one also
 /// lists the articles in no collection.
 model DocsTab {
   id        String   @id @default(cuid())
   projectId String
-  /// From the name, unique in the project.
+  /// From the name; no other tab, collection or (live) article in the project has it, so /docs/<slug> is one page.
   slug      String
   name      String
   /// Tabs are listed by this, then by name; new ones go last.
@@ -1027,11 +1065,37 @@ model DocsTab {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections Collection[]
+  redirects   DocsRedirect[]
 
   @@unique([projectId, slug])
   @@map("docs_tab")
+}
+
+/// A slug a tab, collection or article had, so /docs/<slug> keeps working after it's renamed: it
+/// points at the page (exactly one of the three, a check constraint), not at its slug, so renaming
+/// again makes no chain. A page taking the slug drops it (freeDocsSlug); until then a page that has it
+/// wins (a deleted article restored under another slug leaves one behind its old one).
+model DocsRedirect {
+  id           String   @id @default(cuid())
+  projectId    String
+  slug         String
+  tabId        String?
+  collectionId String?
+  articleId    String?
+  createdAt    DateTime @default(now())
+
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tab        DocsTab?    @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  collection Collection? @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  article    Article?    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, slug])
+  @@index([tabId])
+  @@index([collectionId])
+  @@index([articleId])
+  @@map("docs_redirect")
 }
 
 /// A docs article, at /docs/<slug> on the portal once it's published.
@@ -1050,7 +1114,8 @@ enum ArticleListing {
 model Article {
   id              String         @id @default(cuid())
   projectId       String
-  /// From the title, unique in the project; follows the title while it's a draft.
+  /// From the title; no other live article, tab or collection in the project has it, so /docs/<slug> is
+  /// one page. Follows the title while it's a draft.
   slug            String
   title           String
   /// Plain text of the article (derived from `content`).
@@ -1086,6 +1151,7 @@ model Article {
   viewDays   ArticleViewDay[]
   revisions  ArticleRevision[]
   changes    ArticleChanges?
+  redirects  DocsRedirect[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
