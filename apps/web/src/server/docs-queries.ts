@@ -60,6 +60,8 @@ export type DocsCollection = {
   slug: string;
   name: string;
   description: string;
+  /** Its Lucide icon's name, or null. */
+  icon: string | null;
   articles: { slug: string; title: string }[];
   /** The collections in it, in order. */
   collections: DocsCollection[];
@@ -84,7 +86,18 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: groupClaims, articles: articleSelect },
+      select: {
+        id: true,
+        projectId: true,
+        parentId: true,
+        tabId: true,
+        slug: true,
+        name: true,
+        description: true,
+        icon: true,
+        groups: groupClaims,
+        articles: articleSelect,
+      },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
@@ -98,7 +111,7 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
   const anyRestricted = rows.some((row) => row.groups.length > 0);
   const groups = options.groups !== undefined ? options.groups : anyRestricted ? await readerGroups(rows[0]!.projectId) : null;
   const allowed = (row: Row) => mayReadCollection(groups, row);
-  const view = ({ slug, name, description, articles, id }: Row): DocsCollection => ({ slug, name, description, articles, collections: nest(id) });
+  const view = ({ slug, name, description, icon, articles, id }: Row): DocsCollection => ({ slug, name, description, icon, articles, collections: nest(id) });
   const readable = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
   const nest = (parentId: string): DocsCollection[] =>
     rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
