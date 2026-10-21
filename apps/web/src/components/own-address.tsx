@@ -1,22 +1,24 @@
 "use client";
 
+import { CheckIcon, FolderIcon, GlobeIcon, LinkIcon, type LucideIcon } from "lucide-react";
 import { type ComponentProps, useState } from "react";
+import { toast } from "sonner";
 
+import { CopyButton } from "@/components/copy-button";
 import { CustomDomainSettings } from "@/components/custom-domain";
 import { SiteMountSettings } from "@/components/site-mount";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Domain = ComponentProps<typeof CustomDomainSettings>["domain"];
 type Site = ComponentProps<typeof SiteMountSettings>["site"];
-
-const CHOICES = [
-  ["domain", "A domain of its own", "help.example.com"],
-  ["site", "A path of your site", "example.com/portal"],
-] as const;
+type Choice = "tuti" | "domain" | "site";
 
 /**
- * Customize → Address: the portal at a domain of the team's own or under a path of their
- * site, one or the other (domain.set and site.set each refuse while the other is set). Once one is
- * set, only that one shows; to switch, they remove it.
+ * Customize → Address: where the portal goes live. Its Tuti address (every portal has one), a domain
+ * of the team's own, or a path of their site: one of the last two at most (domain.set and site.set
+ * each refuse while the other is set). Once one is connected, it's picked and the others say to
+ * remove it first.
  */
 export function OwnAddressSettings({
   projectSlug,
@@ -31,58 +33,109 @@ export function OwnAddressSettings({
   site: Site;
   /** Whether this server can put portals on custom domains (CUSTOM_DOMAIN_TARGET). */
   domainsOn: boolean;
+  /** The portal's Tuti address, as a host (acme.tuti.so). */
   portalAddress: string;
   protocol: string;
 }) {
-  const [choice, setChoice] = useState<"domain" | "site">("domain");
+  const connected: Choice | null = domain ? "domain" : site ? "site" : null;
+  const [picked, setPicked] = useState<Choice>(connected ?? "tuti");
+  const choice = connected ?? picked;
+  const tuti = `${protocol}//${portalAddress}`;
   const domainSettings = <CustomDomainSettings projectSlug={projectSlug} domain={domain} portalAddress={portalAddress} protocol={protocol} />;
-  const siteSettings = <SiteMountSettings projectSlug={projectSlug} site={site} portalAddress={portalAddress} />;
+  const siteSettings = <SiteMountSettings projectSlug={projectSlug} site={site} portalAddress={portalAddress} tutiAddress={tuti} />;
 
-  // Both, from before a portal could only have one: show both, so either can be removed.
-  if (domain && site) {
-    return (
-      <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Your portal has a domain of its own and a path of your site. It can only have one: remove the one you don&apos;t want.
-        </p>
-        {domainSettings}
-        {siteSettings}
-      </div>
-    );
-  }
-  if (domain) {
-    return (
-      <div className="flex flex-col gap-4">
-        {domainSettings}
-        <p className="text-sm text-muted-foreground">To put your portal under a path of your site instead, remove this domain first.</p>
-      </div>
-    );
-  }
-  if (site) {
-    return (
-      <div className="flex flex-col gap-4">
-        {siteSettings}
-        {domainsOn && <p className="text-sm text-muted-foreground">To give your portal a domain of its own instead, remove it from your site first.</p>}
-      </div>
-    );
-  }
-  if (!domainsOn) {
-    return siteSettings;
-  }
+  const options: { value: Choice; title: string; example: string; icon: LucideIcon; off?: string }[] = [
+    { value: "tuti", title: "Tuti address", example: portalAddress, icon: LinkIcon },
+    { value: "domain", title: "Custom domain", example: "help.yourcompany.com", icon: GlobeIcon, off: domainsOn ? undefined : "Not set up on this server" },
+    { value: "site", title: "Sub-folder", example: "yourcompany.com/help", icon: FolderIcon },
+  ];
+  const current = domain?.hostname ?? site?.url.replace(/^https?:\/\//, "");
+
   return (
-    <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-sm font-medium">Where your portal goes</legend>
-        <div className="flex flex-wrap gap-4">
-          {CHOICES.map(([value, name, example]) => (
-            <label key={value} className="flex items-center gap-2 text-sm">
-              <input type="radio" name="own-address" value={value} checked={choice === value} onChange={() => setChoice(value)} className="size-4 accent-primary" />
-              {name} <span className="text-muted-foreground">({example})</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      {choice === "domain" ? domainSettings : siteSettings}
-    </div>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>How do you want to go live?</CardTitle>
+          <CardDescription>Where your portal and docs answer.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div role="radiogroup" aria-label="Where your portal goes live" className="flex flex-col gap-3">
+            {options.map(({ value, title, example, icon: Icon, off }) => {
+              const selected = choice === value;
+              // Locked while another is connected: they remove it first.
+              const locked = connected !== null && !selected;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-disabled={locked || Boolean(off)}
+                  onClick={() => {
+                    if (off) {
+                      return;
+                    }
+                    if (locked) {
+                      toast.error(`Remove ${current} before switching.`);
+                      return;
+                    }
+                    setPicked(value);
+                  }}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border p-3 text-left transition-colors",
+                    selected ? "border-primary ring-1 ring-primary" : "hover:bg-accent",
+                    (locked || off) && "opacity-60 hover:bg-transparent",
+                  )}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                    <Icon className="size-4" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-sm font-medium">{title}</span>
+                    <span className="truncate text-sm text-muted-foreground">{off ?? example}</span>
+                  </span>
+                  {selected && <CheckIcon className="ml-auto size-4 shrink-0 text-primary" />}
+                </button>
+              );
+            })}
+          </div>
+          {connected && <p className="text-sm text-muted-foreground">To switch, remove {current} first.</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-col gap-4">
+          {/* Both, from before a portal could only have one: show both, so either can be removed. */}
+          {domain && site ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Your portal has a domain of its own and a sub-folder of your site. It can only have one: remove the one you don&apos;t want.
+              </p>
+              {domainSettings}
+              {siteSettings}
+            </>
+          ) : choice === "domain" ? (
+            domainSettings
+          ) : choice === "site" ? (
+            siteSettings
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-sm">
+                Your portal is at{" "}
+                <a href={tuti} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4">
+                  {portalAddress}
+                </a>
+                .
+              </p>
+              <div className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2">
+                <code className="text-sm break-all">{tuti}</code>
+                <CopyButton value={tuti} label="your portal's address" />
+              </div>
+              <p className="text-sm text-muted-foreground">Every portal has one. It keeps working with a domain or a sub-folder too: the widget loads from it.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }

@@ -55,9 +55,15 @@ export async function removeCustomDomain(projectSlug: string): Promise<{ error?:
 
 const SITE_DENIED = "Only project owners and admins can change where the portal is on your site";
 
-/** Customize → Address (see site.set, site.verify and site.remove). */
+/**
+ * Customize → Address → Sub-folder (see site.set, site.verify and site.remove): the address as one
+ * `url`, or the site and the path as two fields (`site`, `path`), put together.
+ */
 export async function saveSite(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
-  return asAdmin(projectSlug, SITE_DENIED, (context) => call(setSite, context, { url: String(formData.get("url") ?? "") }));
+  const field = (name: string) => String(formData.get(name) ?? "").trim();
+  // site.set adds https:// to a site typed without it.
+  const url = formData.has("url") ? field("url") : `${field("site").replace(/\/+$/, "")}/${field("path").replace(/^\/+/, "")}`;
+  return asAdmin(projectSlug, SITE_DENIED, (context) => call(setSite, context, { url }));
 }
 
 export async function verifySiteSetup(projectSlug: string): Promise<{ error?: string }> {

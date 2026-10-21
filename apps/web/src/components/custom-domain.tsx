@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { CopyField } from "@/components/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
@@ -32,8 +33,9 @@ type Domain = {
 };
 
 /**
- * Customize → Address (see the domain.* operations): the portal at an address of the team's
- * own. They add it, add the DNS records it shows, and check; once verified the portal answers there.
+ * Customize → Address → Custom domain (see the domain.* operations): the portal at a domain of the
+ * team's own. They connect it, add the DNS records it shows (each with Copy), and check; once verified
+ * the portal answers there.
  */
 export function CustomDomainSettings({ projectSlug, domain, portalAddress, protocol }: { projectSlug: string; domain: Domain | null; portalAddress: string; protocol: string }) {
   if (!domain) {
@@ -50,7 +52,7 @@ export function CustomDomainSettings({ projectSlug, domain, portalAddress, proto
         : { label: "Verified", variant: "default" as const };
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-medium break-all">{domain.hostname}</span>
         <Badge variant={badge.variant}>{badge.label}</Badge>
       </div>
@@ -71,20 +73,19 @@ export function CustomDomainSettings({ projectSlug, domain, portalAddress, proto
           "Add these records at your domain's DNS provider, then check. DNS changes can take a few minutes to show."
         )}
       </p>
-      <dl className="grid gap-3 text-sm">
-        {domain.records.map((record) => (
-          <div key={record.type} className="grid gap-1 rounded-lg bg-muted p-3">
-            <dt className="font-medium">{record.type}</dt>
-            <dd className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <span className="text-muted-foreground">Name</span>
-              <code className="break-all">{record.name}</code>
-              <span className="text-muted-foreground">{record.type === "CNAME" ? "Target" : "Value"}</span>
-              <code className="break-all">{record.value}</code>
-            </dd>
+      {domain.records.map((record) => (
+        <section key={record.type} aria-label={`${record.type} record`} className="flex flex-col gap-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium">Type</span>
+            <Badge variant="outline" className="font-mono">
+              {record.type}
+            </Badge>
           </div>
-        ))}
-      </dl>
-      <div className="flex flex-wrap gap-2">
+          <CopyField label="Host" name={`${record.type} host`} value={record.name} />
+          <CopyField label={record.type === "CNAME" ? "Target" : "Value"} name={`${record.type} ${record.type === "CNAME" ? "target" : "value"}`} value={record.value} />
+        </section>
+      ))}
+      <div className="flex flex-wrap justify-end gap-2">
         {!verified && <CheckDnsButton projectSlug={projectSlug} hostname={domain.hostname} />}
         {verified && domain.certificate === "pending" && <CheckCertificateButton />}
         <RemoveDomainButton projectSlug={projectSlug} hostname={domain.hostname} portalAddress={portalAddress} />
@@ -98,13 +99,13 @@ function AddDomainForm({ projectSlug, portalAddress }: { projectSlug: string; po
   return (
     <form {...keepingFields(action)} className="flex flex-col gap-3">
       <Field data-invalid={state.error ? true : undefined}>
-        <FieldLabel htmlFor="custom-domain">Domain</FieldLabel>
-        <Input id="custom-domain" name="hostname" required maxLength={253} placeholder="help.example.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
-        <FieldDescription>A subdomain of a domain you own. The portal stays at {portalAddress} too.</FieldDescription>
+        <FieldLabel htmlFor="custom-domain">Custom domain</FieldLabel>
+        <Input id="custom-domain" name="hostname" required maxLength={253} placeholder="help.yourcompany.com" autoComplete="off" aria-invalid={state.error ? true : undefined} />
+        <FieldDescription>A subdomain of a domain you own, like help.yourcompany.com. The portal stays at {portalAddress} too.</FieldDescription>
         {state.error && <FieldError>{state.error}</FieldError>}
       </Field>
-      <Button type="submit" disabled={pending} className="self-start">
-        Add domain
+      <Button type="submit" disabled={pending} className="self-end">
+        {pending ? "Connecting…" : "Connect domain"}
       </Button>
     </form>
   );
@@ -146,7 +147,7 @@ function RemoveDomainButton({ projectSlug, hostname, portalAddress }: { projectS
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Remove</AlertDialogTrigger>
+      <AlertDialogTrigger render={<Button variant="destructive" disabled={pending} />}>Remove domain</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">Remove {hostname}?</AlertDialogTitle>

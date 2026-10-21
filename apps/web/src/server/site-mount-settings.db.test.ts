@@ -14,6 +14,7 @@ import { createPost } from "./operations/create";
 import { getSite, removeSite, setSite, verifySite } from "./operations/site";
 import { call } from "./operations/run";
 import { emailPasswordReset } from "./password-reset";
+import { saveSite } from "./portal-settings";
 import { continueToPortal } from "./portal-handoff";
 import { emailSignInLink } from "./sign-in-link";
 
@@ -152,4 +153,20 @@ test("links Tuti emails, and \"Continue as\", keep the path", async () => {
   actAs(owner);
   const back = await redirectTarget(continueToPortal(project.slug, randomSecret(), "/roadmap"));
   expect(back.startsWith(`${site.origin}/portal/api/auth/continue/callback?code=`)).toBe(true);
+});
+
+test("Customize's form takes the site and the path as two fields", async () => {
+  actAs(owner);
+  const form = (fields: Record<string, string>) => {
+    const data = new FormData();
+    for (const [name, value] of Object.entries(fields)) {
+      data.set(name, value);
+    }
+    return data;
+  };
+  expect(await saveSite(project.slug, {}, form({ site: `${site.origin}/`, path: "help" }))).toEqual({});
+  expect((await call(getSite, as(), {})).site?.url).toBe(`${site.origin}/help`);
+  expect(await saveSite(project.slug, {}, form({ site: "acme.example", path: "/support" }))).toEqual({});
+  expect((await call(getSite, as(), {})).site?.url).toBe("https://acme.example/support");
+  expect(await saveSite(project.slug, {}, form({ site: site.origin, path: "" }))).toEqual({ error: expect.stringContaining("Add the path the portal goes under") });
 });

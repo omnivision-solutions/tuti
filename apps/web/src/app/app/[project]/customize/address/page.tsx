@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 
 import { CustomizeShell } from "@/components/customize-shell";
 import { OwnAddressSettings } from "@/components/own-address";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { customDomainTarget } from "@/lib/custom-domains";
 import { portalUrl } from "@/lib/hosts";
 import { portalPreview } from "@/server/customize";
@@ -23,25 +22,14 @@ export default async function AddressPage(props: PageProps<"/app/[project]/custo
   const portal = new URL(portalUrl(slug));
   return (
     <CustomizeShell backHref={`/app/${slug}/customize`} title={sectionTitle("address")} preview={await portalPreview(slug, "/")}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Your own address</CardTitle>
-          <CardDescription>
-            Your portal and docs at an address of yours: a domain of its own, like help.example.com, or a path of your site, like example.com/portal.
-            One or the other.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <OwnAddressSettings
-            projectSlug={slug}
-            domain={domain}
-            site={site}
-            domainsOn={Boolean(customDomainTarget())}
-            portalAddress={portal.host}
-            protocol={portal.protocol}
-          />
-        </CardContent>
-      </Card>
+      <OwnAddressSettings
+        projectSlug={slug}
+        domain={domain}
+        site={site}
+        domainsOn={Boolean(customDomainTarget())}
+        portalAddress={portal.host}
+        protocol={portal.protocol}
+      />
     </CustomizeShell>
   );
 }

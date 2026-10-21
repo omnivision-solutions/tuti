@@ -13,36 +13,40 @@ const card = (props: { domain: typeof domain | null; site: typeof site | null; d
   renderToStaticMarkup(
     createElement(OwnAddressSettings, { projectSlug: "acme", domainsOn: true, portalAddress: "acme.tuti.so", protocol: "https:", ...props }),
   );
+/** The option cards: each one's title, and whether it's picked or locked. */
+const options = (html: string) =>
+  [...html.matchAll(/role="radio" aria-checked="(true|false)" aria-disabled="(true|false)"[^>]*>.*?<span class="text-sm font-medium">([^<]+)</g)].map(
+    ([, checked, disabled, title]) => `${title}${checked === "true" ? " (picked)" : ""}${disabled === "true" ? " (locked)" : ""}`,
+  );
 
-test("neither: the choice, a domain's form first", () => {
+test("neither: three ways to go live, the Tuti address picked, with its address to copy", () => {
   const html = card({ domain: null, site: null });
-  expect(html).toContain("A domain of its own");
-  expect(html).toContain("A path of your site");
-  expect(html).toContain("Add domain");
+  expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain", "Sub-folder"]);
+  expect(html).toContain("https://acme.tuti.so");
+  expect(html).toContain("Copy");
 });
 
-test("one of them: only that one, and how to switch", () => {
+test("one connected: it's picked, the others locked until it's removed", () => {
   const withDomain = card({ domain, site: null });
-  expect(withDomain).toContain("help.example.com");
-  expect(withDomain).not.toContain("A path of your site");
-  expect(withDomain).toContain("To put your portal under a path of your site instead, remove this domain first.");
+  expect(options(withDomain)).toEqual(["Tuti address (locked)", "Custom domain (picked)", "Sub-folder (locked)"]);
+  expect(withDomain).toContain("To switch, remove help.example.com first.");
+  expect(withDomain).toContain("Remove domain");
 
   const withSite = card({ domain: null, site });
-  expect(withSite).toContain("https://example.com/portal");
-  expect(withSite).not.toContain("A domain of its own");
-  expect(withSite).toContain("To give your portal a domain of its own instead, remove it from your site first.");
+  expect(options(withSite)).toEqual(["Tuti address (locked)", "Custom domain (locked)", "Sub-folder (picked)"]);
+  expect(withSite).toContain("To switch, remove example.com/portal first.");
+  expect(withSite).toContain("Remove sub-folder");
 });
 
 test("both, from before a portal could only have one: both show, so either can be removed", () => {
   const html = card({ domain, site });
-  expect(html).toContain("help.example.com");
-  expect(html).toContain("https://example.com/portal");
-  expect(html).toContain("Your portal has a domain of its own and a path of your site. It can only have one: remove the one you don&#x27;t want.");
-  expect(html.match(/>Remove</g)).toHaveLength(2);
+  expect(html).toContain("It can only have one: remove the one you don&#x27;t want.");
+  expect(html).toContain("Remove domain");
+  expect(html).toContain("Remove sub-folder");
 });
 
-test("custom domains off on this server: only a path of the site", () => {
+test("custom domains off on this server: that option says so and can't be picked", () => {
   const html = card({ domain: null, site: null, domainsOn: false });
-  expect(html).not.toContain("A domain of its own");
-  expect(html).toContain("Add address");
+  expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain (locked)", "Sub-folder"]);
+  expect(html).toContain("Not set up on this server");
 });
