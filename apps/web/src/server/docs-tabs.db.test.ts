@@ -23,6 +23,7 @@ import {
   updateTab,
 } from "./operations/docs";
 import { call } from "./operations/run";
+import { saveCollection, saveTab } from "./docs";
 
 /**
  * Docs tabs: once there's one, every top-level collection is in one, the
@@ -365,5 +366,43 @@ describe("readers", () => {
       "docs/guides/billing/invoices/downloading-invoices.md",
     ]);
     expect(strFromU8(files["docs/api/endpoints/listing-posts.md"]!)).toContain('tab: "API"');
+  });
+});
+
+describe("a tab's and a collection's page in the app", () => {
+  const form = (fields: Record<string, string>) => {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      data.set(key, value);
+    }
+    return data;
+  };
+  const collection = async (slug: string) => (await call(listCollections, as(), {})).collections.find((c) => c.slug === slug);
+  const tab = async (slug: string) => (await call(listTabs, as(), {})).tabs.find((t) => t.slug === slug);
+
+  test("save Access and Settings apart: what a form hasn't got stays as it is", async () => {
+    actAs(owner);
+    await call(createTab, as(), { name: "Guides" });
+    await call(updateTab, as(), { slug: "guides", landing: "first" });
+    await call(createCollection, as(), { name: "Billing", description: "Plans.", icon: "rocket" });
+    await call(createCollection, as(), { name: "Invoices", parent: "billing" });
+
+    // Access: who can read it, and nothing else.
+    expect(await saveTab(project.slug, "guides", {}, form({ access: "signed_in" }))).toEqual({});
+    expect(await tab("guides")).toMatchObject({ name: "Guides", landing: "first", access: "signed_in" });
+    expect(await saveCollection(project.slug, "billing", {}, form({ access: "signed_in" }))).toEqual({});
+    expect(await collection("billing")).toMatchObject({ name: "Billing", description: "Plans.", icon: "rocket", access: "signed_in" });
+
+    // Settings: the rest; who can read it stays.
+    expect(await saveTab(project.slug, "guides", {}, form({ name: "Handbook", landing: "overview" }))).toEqual({});
+    expect(await tab("handbook")).toMatchObject({ landing: "overview", access: "signed_in" });
+    const settings = { name: "Billing", description: "", icon: "" };
+    expect(await saveCollection(project.slug, "billing", {}, form({ ...settings, parent: "" }))).toEqual({});
+    expect(await collection("billing")).toMatchObject({ description: "", icon: null, parent: null, tab: "handbook", access: "signed_in" });
+    // Its parent: the top level (empty; it stays in its tab), or another collection.
+    expect(await saveCollection(project.slug, "invoices", {}, form({ ...settings, name: "Invoices", parent: "" }))).toEqual({});
+    expect(await collection("invoices")).toMatchObject({ parent: null, tab: "handbook" });
+    expect(await saveCollection(project.slug, "billing", {}, form({ ...settings, parent: "invoices" }))).toEqual({});
+    expect(await collection("billing")).toMatchObject({ parent: "invoices", access: "signed_in" });
   });
 });

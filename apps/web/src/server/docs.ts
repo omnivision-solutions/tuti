@@ -39,6 +39,9 @@ function accessFrom(formData: FormData): { access?: Access; groups?: string[] } 
   return access === undefined ? {} : { access, groups: access === "groups" ? formData.getAll("groups").map(String) : [] };
 }
 
+/** A form's text field, or undefined if the form hasn't got it (it stays as it is). */
+const textField = (formData: FormData, key: string) => (formData.has(key) ? String(formData.get(key)) : undefined);
+
 /** Saves the editor's form: a new draft when `slug` is null, or changes to article `slug`. Opens its new address if it moved. */
 export async function saveArticle(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
@@ -133,21 +136,23 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
 
 /**
  * Adds a collection (`slug` null), in the one the form's `parent` names if any, else in the form's
- * `tab` (if the docs have tabs), or renames collection `slug` and changes its description.
+ * `tab` (if the docs have tabs), or changes collection `slug`: its name, description, icon, the one
+ * it's in (`parent`, empty for the top level) and who can read it. Only the fields the form has change
+ * (a collection's page saves its Settings and its Access apart).
  */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
-    name: String(formData.get("name") ?? ""),
-    description: String(formData.get("description") ?? ""),
+    name: textField(formData, "name"),
+    description: textField(formData, "description"),
     ...accessFrom(formData),
     // A Lucide icon's name; empty for none.
-    icon: String(formData.get("icon") ?? "") || null,
+    icon: formData.has("icon") ? String(formData.get("icon")) || null : undefined,
   };
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
     slug === null
-      ? call(createCollection, context, { ...input, parent, tab: parent ? undefined : String(formData.get("tab") ?? "") || undefined })
-      : call(updateCollection, context, { slug: String(slug), ...input }),
+      ? call(createCollection, context, { ...input, name: input.name ?? "", parent, tab: parent ? undefined : String(formData.get("tab") ?? "") || undefined })
+      : call(updateCollection, context, { slug: String(slug), ...input, parent: formData.has("parent") ? parent : undefined }),
   );
 }
 
@@ -167,14 +172,14 @@ export async function moveCollection(
   );
 }
 
-/** Adds a tab (`slug` null), or saves tab `slug`'s settings: its name and landing page. */
+/** Adds a tab (`slug` null), or saves tab `slug`'s settings (its name and landing page) or who can read it: the fields the form has. */
 export async function saveTab(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
-  const name = String(formData.get("name") ?? "");
+  const name = textField(formData, "name");
   // Its settings: checked by the operation (an unknown landing is a 400; "page" needs a page).
   const landing = (formData.get("landing") || undefined) as DocsLanding | undefined;
   const landingPage = landing === "page" ? String(formData.get("landingPage") ?? "") || undefined : undefined;
   return asTeam(projectSlug, DENIED, (context) =>
-    slug === null ? call(createTab, context, { name }) : call(updateTab, context, { slug: String(slug), name, landing, landingPage, ...accessFrom(formData) }),
+    slug === null ? call(createTab, context, { name: name ?? "" }) : call(updateTab, context, { slug: String(slug), name, landing, landingPage, ...accessFrom(formData) }),
   );
 }
 

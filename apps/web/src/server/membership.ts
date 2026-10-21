@@ -5,6 +5,9 @@ import { getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
 
+/** Whether a team member's `role` is an owner's or an admin's (who may change the project's settings). */
+export const isAdminRole = (role: string) => (ADMIN_ROLES as readonly string[]).includes(role);
+
 /** The signed-in user's membership in a project, if any. */
 export async function getMembership(slug: string) {
   const session = await getSession();
@@ -20,7 +23,7 @@ export async function getMembership(slug: string) {
 /** The project, if the signed-in user is one of its owners or admins. */
 export async function getAdminProject(slug: string) {
   const membership = await getMembership(slug);
-  return membership && (ADMIN_ROLES as readonly string[]).includes(membership.role) ? membership.project : null;
+  return membership && isAdminRole(membership.role) ? membership.project : null;
 }
 
 export async function listMyProjects(userId: string) {

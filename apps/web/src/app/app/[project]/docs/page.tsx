@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { CollectionDialog, RestoreDeletedButton } from "@/components/docs";
 import { DocsStructure } from "@/components/docs-structure";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -150,7 +150,6 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             list them in this order: drag them into place, or use the arrows.
           </CardDescription>
           <CardAction className="flex flex-wrap justify-end gap-2">
-            <TabDialog projectSlug={slug} first={tabs.length === 0 && collections.length > 0} />
             <CollectionDialog
               projectSlug={slug}
               parents={inTreeOrder(collections)
@@ -189,9 +188,9 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         )}
       </Card>
       {deleted.length > 0 && (
-        <Card role="region" aria-labelledby="recently-deleted">
+        <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-6">
           <CardHeader>
-            <CardTitle id="recently-deleted">Recently deleted</CardTitle>
+            <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
             <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
           </CardHeader>
           <CardContent>
