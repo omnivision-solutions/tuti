@@ -136,3 +136,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.
 ## License
 
 [AGPL-3.0](LICENSE). Embeddable SDKs/widgets (when they exist) will be MIT.
+
+### "Powered by tuti"
+
+Portals say "Powered by tuti" in the footer. Hiding it needs a licence for the project, bought on
+tuti.so (a flat monthly fee per project, on tuti.so and self-hosted alike). Your installation then
+fetches the licence key from tuti.so and renews it there, at most daily, after a portal page is
+served.
+
+Only projects an admin asked a licence for (Check now in Settings → Branding) contact tuti.so, and
+all they send is your installation's random id, the project's id, a one-time refresh token and the
+app version. If tuti.so can't be reached, the current key keeps working until it expires (35 days);
+then the badge is back. A portal never stops working over a licence.
