@@ -17,6 +17,9 @@ test("Tuti's own portal on the app's domain: one sign-in for the app and the por
   await owner.getByRole("link", { name: "Dark mode for the dashboard" }).click();
   await owner.waitForURL(`${APP_URL}/feedback/feature-requests/dark-mode-for-the-dashboard-1`);
   await checkpoint(owner, "app-portal-post");
+  // Its name in the header goes to the portal's home, not the app's.
+  await owner.getByRole("banner").getByRole("link", { name: "Tuti" }).click();
+  await owner.waitForURL(`${APP_URL}/feedback/feature-requests`);
   // The account is the app's.
   await owner.getByRole("button", { name: "Account" }).click();
   await owner.getByRole("menuitem", { name: "Account settings" }).click();

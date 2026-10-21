@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
+import { portalHomePath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -66,7 +67,8 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
     <>
       {css && <style>{css}</style>}
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
-        <Link href="/" className="font-heading text-lg font-bold tracking-tight">
+        {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
+        <Link href={onApp ? ((await portalHomePath(slug)) ?? "/") : "/"} className="font-heading text-lg font-bold tracking-tight">
           {brand.logo ? (
             <>
               {logo(brand.logo, brand.logoDark ? "dark:hidden" : undefined)}

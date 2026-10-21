@@ -6,6 +6,7 @@ import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
+import { portalHomePath } from "@/server/portal-home";
 
 /**
  * Routes requests by host:
@@ -43,7 +44,9 @@ export async function proxy(request: NextRequest) {
       // Not to localhost (Tuti's own portal on a local app): Next.js turns a redirect to the origin it
       // serves into a bare path, which would send the browser round in circles; it reads it here then.
       if (address !== portalUrl(target.slug) && new URL(address).hostname !== "localhost") {
-        const response = NextResponse.redirect(new URL(pathname + request.nextUrl.search, address), 308);
+        // Tuti's own portal's home is its home page's part: the app's own / is the app's.
+        const path = pathname === "/" && target.slug === appPortalProject() ? ((await portalHomePath(target.slug)) ?? "/") : pathname;
+        const response = NextResponse.redirect(new URL(path + request.nextUrl.search, address), 308);
         // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
         response.headers.set("cache-control", "no-store");
         return response;

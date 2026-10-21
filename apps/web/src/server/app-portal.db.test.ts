@@ -45,6 +45,10 @@ test("its address is the app's: links go there, and its Tuti address sends pages
   );
   vi.stubEnv("APP_URL", `http://${app}`);
   forgetCustomDomain("");
+  // Its home is its home page's part on the app's domain (the app's own / is the app's).
+  expect((await visit(`${project.slug}.localhost:3100`, "/")).headers.get("location")).toBe(`http://${app}/feedback/feature-requests`);
+  await call(updatePortal, as(), { home: "docs" });
+  expect((await visit(`${project.slug}.localhost:3100`, "/?x=1")).headers.get("location")).toBe(`http://${app}/docs?x=1`);
   // Other projects keep theirs.
   const other = await createProject(owner);
   expect(await portalAddress(other.slug)).toBe(`http://${other.slug}.localhost:3100`);
