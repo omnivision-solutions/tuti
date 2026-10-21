@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
@@ -13,9 +14,16 @@ import { VoteButton } from "@/components/vote-button";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
+import { portalAddress } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { mediaPublicUrl } from "@tuti/shared/storage";
+
+/** Sorted or filtered (`?sort=`, `?status=`), it's still the board: one address for search engines. */
+export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]">): Promise<Metadata> {
+  const { project, board } = await props.params;
+  return { alternates: { canonical: `${await portalAddress(project)}${boardPath({ slug: board })}` } };
+}
 
 export default async function BoardPage(props: PageProps<"/portal/[project]/feedback/[board]">) {
   const at = await portalLinks();

@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
+import { generateMetadata as boardMetadata } from "@/app/portal/[project]/(site)/feedback/[board]/page";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import { createBoard, deleteBoard, updateBoard } from "./boards";
@@ -108,4 +109,12 @@ describe("deleting boards", () => {
     expect(await deleteBoard(project.slug, boardId)).toEqual({});
     expect(await redirects()).toEqual({});
   });
+});
+
+test("a board's page, sorted or filtered, points search engines at its plain address", async () => {
+  const meta = await boardMetadata({
+    params: Promise.resolve({ project: project.slug, board: "feature-requests" }),
+    searchParams: Promise.resolve({ sort: "new", status: "planned" }),
+  } as never);
+  expect(meta.alternates?.canonical).toBe(`http://${project.slug}.localhost:3100/feedback/feature-requests`);
 });

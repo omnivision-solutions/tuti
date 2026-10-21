@@ -1279,7 +1279,7 @@ export const reorderTab = defineOperation({
 export const deleteTab = defineOperation({
   name: "tabs.delete",
   summary:
-    "Delete a docs tab. Its collections go last in the tab before it (the one after, for the first), with everything in them; deleting the last tab leaves the docs without tabs",
+    "Delete a docs tab. Its collections go last in the tab before it, with everything in them. The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
   method: "DELETE",
   path: "/tabs/{slug}",
   scope: "write",
@@ -1292,7 +1292,10 @@ export const deleteTab = defineOperation({
       const { id } = await lockedTab(tx, projectId, input.slug);
       const tabs = await tabsOf(tx, projectId);
       const at = tabs.findIndex((s) => s.id === id);
-      const target = tabs[at - 1] ?? tabs[at + 1] ?? null;
+      if (at === 0 && tabs.length > 1) {
+        throw new OperationError(409, "first_tab", "Move another tab first: the first tab is your docs' home");
+      }
+      const target = tabs[at - 1] ?? null;
       const inTab = (tabId: string | null) =>
         tx.collection.findMany({ where: siblingsWhere(projectId, null, tabId), orderBy: siblingOrder, select: { id: true } });
       const moving = await inTab(id);
