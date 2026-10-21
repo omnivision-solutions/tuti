@@ -34,10 +34,15 @@ beforeEach(async () => {
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const tuti = () => `${project.slug}.localhost:3100`;
 const visit = (path: string) => proxy(new NextRequest(`http://${tuti()}${path}`, { headers: { host: tuti() } }));
-/** What the team's site does once it forwards the path: the portal's Tuti address answers the check, so the site does too. */
-async function forwardCheck(path = "/portal") {
+/** What the team's site does once it forwards `path`: the portal's Tuti address answers the check there, so the site does too. */
+async function forward(path: string) {
   const response = await visit(`${path}/.well-known/tuti-site`);
   site.answer(`${path}/.well-known/tuti-site`, response.status === 200 ? await response.text() : null);
+}
+/** Both rules: the path, and /_tuti. */
+async function forwardCheck(path = "/portal") {
+  await forward(path);
+  await forward("/_tuti");
 }
 
 test("set as pasted, with what to forward; checked through the site; then it's the portal's address", async () => {
@@ -51,7 +56,10 @@ test("set as pasted, with what to forward; checked through the site; then it's t
       { from: "/portal/*", to: `http://${tuti()}/portal/*` },
       { from: "/_tuti/*", to: `http://${tuti()}/_tuti/*` },
     ],
-    check: { url: `${site.origin}/portal/.well-known/tuti-site`, token: expect.stringMatching(/^tuti-site=[0-9a-f]{32}$/) },
+    check: {
+      urls: [`${site.origin}/portal/.well-known/tuti-site`, `${site.origin}/_tuti/.well-known/tuti-site`],
+      token: expect.stringMatching(/^tuti-site=[0-9a-f]{32}$/),
+    },
   });
   expect(await call(getSite, as(), {})).toEqual({ site: pending });
 
@@ -62,7 +70,12 @@ test("set as pasted, with what to forward; checked through the site; then it's t
   await expect(call(verifySite, as(), {})).rejects.toMatchObject({ status: 400 });
   expect(await portalAddress(project.slug)).toBe(`http://${tuti()}`);
 
-  // The Tuti address answers the check under the path (verified or not); the site forwards it.
+  // The Tuti address answers the check under the path (verified or not); the site forwards it, but not /_tuti yet.
+  await forward("/portal");
+  await expect(call(verifySite, as(), {})).rejects.toMatchObject({
+    status: 400,
+    message: `${site.origin}/_tuti/.well-known/tuti-site didn't answer with this portal's check. Make sure your site forwards /_tuti/* to http://${tuti()}/_tuti/*, path and all`,
+  });
   await forwardCheck();
   expect((await call(verifySite, as(), {})).site).toMatchObject({ status: "verified" });
   expect(await portalAddress(project.slug)).toBe(`${site.origin}/portal`);

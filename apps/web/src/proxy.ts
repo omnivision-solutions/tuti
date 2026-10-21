@@ -48,7 +48,8 @@ export async function proxy(request: NextRequest) {
     // "Check setup" for a portal under a path of the team's site: the site forwards <path>/.well-known/tuti-site here.
     if (pathname.endsWith(CHECK_PATH)) {
       const path = pathname.slice(0, -CHECK_PATH.length);
-      const token = BASE_PATTERN.test(path) ? await siteCheckToken(target.slug, path) : null;
+      // Under the mount's path, or under /_tuti (the site forwards both: "Check setup" asks through each).
+      const token = path === ASSET_PATH ? await siteCheckToken(target.slug) : BASE_PATTERN.test(path) ? await siteCheckToken(target.slug, path) : null;
       if (token) {
         return new NextResponse(token, { headers: { "content-type": "text/plain", "cache-control": "no-store" } });
       }

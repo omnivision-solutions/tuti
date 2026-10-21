@@ -594,6 +594,7 @@ async function createFixture() {
   // The portal on a site, waiting for its check, which the site answers.
   await prisma.siteMount.create({ data: { projectId, origin: site.origin, path: `/${project.slug}`, verificationToken: "matrix" } });
   site.answer(`/${project.slug}/.well-known/tuti-site`, "tuti-site=matrix");
+  site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
   const docs = await prisma.helpSection.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", sectionId: docs.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });

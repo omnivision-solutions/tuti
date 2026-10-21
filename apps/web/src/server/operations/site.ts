@@ -32,8 +32,8 @@ const siteView = (mount: Mount, slug: string) => ({
   // What the team's site forwards to the portal's Tuti address, paths and all: everything under the
   // path, and Next.js's files, which pages load from /_tuti (see next.config.ts).
   forward: [mount.path, ASSET_PATH].map((path) => ({ from: `${path}/*`, to: `${portalUrl(slug)}${path}/*` })),
-  /** "Check setup" fetches this through the site, and it must answer with `token`. */
-  check: { url: `${mount.origin}${mount.path}${CHECK_PATH}`, token: `tuti-site=${mount.verificationToken}` },
+  /** "Check setup" fetches these through the site (one per rule in `forward`), and each must answer with `token`. */
+  check: { urls: [mount.path, ASSET_PATH].map((path) => `${mount.origin}${path}${CHECK_PATH}`), token: `tuti-site=${mount.verificationToken}` },
 });
 
 /** The project's portal on its site (Settings → Your site, and site.get), or null. */
@@ -42,9 +42,12 @@ export async function siteMountView(projectId: string) {
   return mount && siteView(mount, await projectSlug(projectId));
 }
 
-/** What the portal's Tuti address answers at <path>/.well-known/tuti-site, for `slug`'s site mount at `path` (verified or not). */
-export async function siteCheckToken(slug: string, path: string): Promise<string | null> {
-  const mount = await prisma.siteMount.findFirst({ where: { project: { slug }, path }, select: { verificationToken: true } });
+/**
+ * What the portal's Tuti address answers at <path>/.well-known/tuti-site, for `slug`'s site mount at
+ * `path` (verified or not); without `path`, at /_tuti/.well-known/tuti-site, for its mount wherever it is.
+ */
+export async function siteCheckToken(slug: string, path?: string): Promise<string | null> {
+  const mount = await prisma.siteMount.findFirst({ where: { project: { slug }, ...(path && { path }) }, select: { verificationToken: true } });
   return mount && `tuti-site=${mount.verificationToken}`;
 }
 
@@ -106,20 +109,23 @@ export const verifySite = defineOperation({
     if (mount.verifiedAt) {
       return { site: siteView(mount, slug) };
     }
-    const { check } = siteView(mount, slug);
-    let answer: string | null;
-    try {
-      answer = await fetchSiteCheck(check.url);
-    } catch (error) {
-      log.info("A site check failed", { error });
-      throw new OperationError(502, "site_unreachable", `We couldn't reach ${check.url}. It must be a public https address; try again in a minute`);
-    }
-    if (answer?.trim() !== check.token) {
-      throw new OperationError(
-        400,
-        "not_verified",
-        `${check.url} didn't answer with this portal's check. Make sure your site forwards ${mount.path}/* and ${ASSET_PATH}/* to ${portalUrl(slug)}, paths and all`,
-      );
+    const { check, forward } = siteView(mount, slug);
+    // Each rule: without the second, pages would come without their scripts and styles.
+    for (const [i, url] of check.urls.entries()) {
+      let answer: string | null;
+      try {
+        answer = await fetchSiteCheck(url);
+      } catch (error) {
+        log.info("A site check failed", { error });
+        throw new OperationError(502, "site_unreachable", `We couldn't reach ${url}. It must be a public https address; try again in a minute`);
+      }
+      if (answer?.trim() !== check.token) {
+        throw new OperationError(
+          400,
+          "not_verified",
+          `${url} didn't answer with this portal's check. Make sure your site forwards ${forward[i]!.from} to ${forward[i]!.to}, path and all`,
+        );
+      }
     }
     // Only the address that was checked: site.set may have replaced it meanwhile.
     const { count } = await prisma.siteMount.updateMany({

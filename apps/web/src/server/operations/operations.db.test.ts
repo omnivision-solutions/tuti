@@ -170,6 +170,7 @@ async function createFixture() {
   await prisma.siteMount.deleteMany({ where: { projectId: project.id } });
   await prisma.siteMount.create({ data: { projectId: project.id, origin: site.origin, path: "/portal", verificationToken: "matrix" } });
   site.answer("/portal/.well-known/tuti-site", "tuti-site=matrix");
+  site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
   // A reader, to remove.
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });

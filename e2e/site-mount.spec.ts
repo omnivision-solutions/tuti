@@ -24,8 +24,10 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(owner.getByText("didn't answer with this portal's check", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-site-pending");
 
-  // The team's site forwards /portal and /_tuti (the portal's scripts and styles) to the portal, paths and all.
+  // The team's site forwards /portal to the portal, path and all; the check says /_tuti (scripts and styles) is missing.
   await forwardToPortal("/portal", portalUrl(slug));
+  await owner.getByRole("button", { name: "Check setup" }).click();
+  await expect(owner.getByText(`Make sure your site forwards /_tuti/*`, { exact: false })).toBeVisible();
   await forwardToPortal("/_tuti", portalUrl(slug));
   await owner.getByRole("button", { name: "Check setup" }).click();
   await expect(owner.getByText(`Your portal is at ${siteUrl()}/portal`)).toBeVisible();
