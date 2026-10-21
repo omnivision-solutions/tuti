@@ -1371,3 +1371,30 @@ model ArticleChunk {
   @@index([projectId])
   @@map("article_chunk")
 }
+
+/// Licences Tuti sells (used only where LICENSE_PRIVATE_KEY is set: tuti.so), one per installation and
+/// project, each hiding "Powered by tuti" on that project's portal (see server/license-server.ts).
+/// Installations renew their key with a one-time refresh token. Tokens are derived from the private
+/// key, the licence and a generation, so none is stored: the current one is `generation`'s, and 0
+/// means no installation has claimed it yet.
+model License {
+  id             String    @id @default(cuid())
+  installationId String
+  projectId      String
+  /// False once cancelled: renewals are refused, so the installation's key lapses.
+  active         Boolean   @default(true)
+  generation     Int       @default(0)
+  /// The request that made the current generation: a retry of it with the previous token (its answer
+  /// was lost) gets the same answer again.
+  requestId      String?
+  /// The app version the installation last renewed from, for support.
+  version        String?
+  lastRefreshAt  DateTime?
+  /// Requests with a spent token or a second claim, i.e. the licence in use on another installation.
+  refusedCount   Int       @default(0)
+  lastRefusedAt  DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([installationId, projectId])
+  @@map("license")
+}
