@@ -1,6 +1,5 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -11,14 +10,13 @@ import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
-import { appUrl, resolveHost } from "@/lib/hosts";
+import { appUrl } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
-import { portalHomePath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -53,7 +51,6 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   }
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
-  const onApp = resolveHost((await headers()).get("host")).kind === "app";
   const css = brandCss(brand.color);
   const logo = (image: NonNullable<typeof brand.logo>, className?: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
@@ -77,7 +74,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
       {css && <style>{css}</style>}
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
         {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
-        <Link href={onApp ? ((await portalHomePath(slug)) ?? "/") : withBase(base, "/")} className="font-heading text-lg font-bold tracking-tight">
+        <Link href={withBase(base, "/")} className="font-heading text-lg font-bold tracking-tight">
           {brand.logo ? (
             <>
               {logo(brand.logo, brand.logoDark ? "dark:hidden" : undefined)}
@@ -98,8 +95,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </nav>
         )}
         {session ? (
-          // On the app's own domain (Tuti's own portal) the account is the app's.
-          <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? "/app/account" : "/account"} />
+          <UserMenu name={session.user.name} image={session.user.image ?? null} />
         ) : (
           <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
             Sign in

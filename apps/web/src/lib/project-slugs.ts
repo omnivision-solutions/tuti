@@ -17,6 +17,7 @@ const RESERVED_SLUGS = new Set([
   "unsubscribe", "widget",
 ]);
 
+/** Reserved, except the one Tuti's own portal has (APP_PORTAL_PROJECT, e.g. "help"; see lib/app-portal.ts). */
 export function isReservedSlug(slug: string): boolean {
-  return RESERVED_SLUGS.has(slug);
+  return RESERVED_SLUGS.has(slug) && slug !== process.env.APP_PORTAL_PROJECT?.trim();
 }

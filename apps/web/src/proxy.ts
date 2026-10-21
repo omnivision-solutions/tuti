@@ -1,13 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { appPortalProject, isAppPortalPath } from "@/lib/app-portal";
-import { appUrl, portalUrl } from "@/lib/hosts";
+import { appPortalMount } from "@/lib/app-portal";
+import { portalUrl } from "@/lib/hosts";
 import { ASSET_PATH, BASE_HEADER, BASE_PATTERN } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
-import { portalHomePath } from "@/server/portal-home";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
@@ -58,14 +57,7 @@ export async function proxy(request: NextRequest) {
     // with that path added back to its links (see lib/portal-base.ts). Not sent on anywhere else.
     const mount = await siteMount(target.slug);
     if (mount && (pathname === mount.path || pathname.startsWith(`${mount.path}/`))) {
-      const path = pathname.slice(mount.path.length) || "/";
-      // Signing in there: the auth API, under the path too; and Tuti's icon.
-      if (path.startsWith("/api/") || path === "/icon.svg") {
-        const url = request.nextUrl.clone();
-        url.pathname = path;
-        return NextResponse.rewrite(url, { request: { headers: fromSite(request, mount) } });
-      }
-      return servePortal(request, target.slug, `${mount.origin}${mount.path}`, path, mount);
+      return mounted(request, target.slug, mount, pathname.slice(mount.path.length) || "/");
     }
     // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
     // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
@@ -74,10 +66,8 @@ export async function proxy(request: NextRequest) {
       // Not to localhost (Tuti's own portal on a local app): Next.js turns a redirect to the origin it
       // serves into a bare path, which would send the browser round in circles; it reads it here then.
       if (address !== portalUrl(target.slug) && new URL(address).hostname !== "localhost") {
-        // Tuti's own portal's home is its home page's part: the app's own / is the app's.
-        const path = pathname === "/" && target.slug === appPortalProject() ? ((await portalHomePath(target.slug)) ?? "/") : pathname;
         // The address can have a path (a portal under its site's /portal): the page's goes after it.
-        const response = NextResponse.redirect(`${address}${path}${request.nextUrl.search}`, 308);
+        const response = NextResponse.redirect(`${address}${pathname}${request.nextUrl.search}`, 308);
         // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
         response.headers.set("cache-control", "no-store");
         return response;
@@ -89,10 +79,10 @@ export async function proxy(request: NextRequest) {
   }
 
   if (target.kind === "app") {
-    // Tuti's own portal, at its parts' paths (see lib/app-portal.ts).
-    const appPortal = appPortalProject();
-    if (appPortal && isAppPortalPath(pathname)) {
-      return servePortal(request, appPortal, appUrl().origin);
+    // Tuti's own portal, under its path (tuti.so/help/…; see lib/app-portal.ts): like a team's site.
+    const own = appPortalMount();
+    if (own && (pathname === own.path || pathname.startsWith(`${own.path}/`))) {
+      return mounted(request, own.slug, own, pathname.slice(own.path.length) || "/");
     }
     if (pathname === "/portal" || pathname.startsWith("/portal/")) {
       return new NextResponse(null, { status: 404 });
@@ -112,6 +102,17 @@ export async function proxy(request: NextRequest) {
 
   // Unknown host: nothing (custom domains are portals once verified).
   return new NextResponse(null, { status: 404 });
+}
+
+/** A request under a portal's path on a site (`path`: the portal's own path of it). */
+function mounted(request: NextRequest, slug: string, mount: { origin: string; path: string }, path: string) {
+  // Signing in there: the auth API, under the path too; and Tuti's icon.
+  if (path.startsWith("/api/") || path === "/icon.svg") {
+    const url = request.nextUrl.clone();
+    url.pathname = path;
+    return NextResponse.rewrite(url, { request: { headers: fromSite(request, mount) } });
+  }
+  return servePortal(request, slug, `${mount.origin}${mount.path}`, path, mount);
 }
 
 /**

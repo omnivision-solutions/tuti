@@ -46,21 +46,25 @@ test("an article's .md URL is served by its Markdown route", async () => {
   expect(await rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
 });
 
-test("Tuti's own portal on the app's domain: its parts' paths, not the app's own pages or the API reference", async () => {
-  const rewrite = async (path: string) => (await proxy(request("tuti.example", path))).headers.get("x-middleware-rewrite");
+test("Tuti's own portal under its path on the app's domain (tuti.example/help/…), and nothing else of the app's", async () => {
+  const response = (path: string) => proxy(request("tuti.example", path));
+  const rewrite = async (path: string) => (await response(path)).headers.get("x-middleware-rewrite");
   // Off unless a project is named.
-  expect(await rewrite("/docs/getting-started")).toBeNull();
-  vi.stubEnv("APP_PORTAL_PROJECT", "acme");
-  expect(await rewrite("/docs/getting-started")).toBe("http://tuti.example/portal/acme/docs/getting-started");
-  expect(await rewrite("/docs/getting-started.md")).toBe("http://tuti.example/portal/acme/docs/getting-started/md");
-  expect(await rewrite("/docs")).toBe("http://tuti.example/portal/acme/docs");
-  expect(await rewrite("/feedback/ideas")).toBe("http://tuti.example/portal/acme/feedback/ideas");
-  expect(await rewrite("/roadmap")).toBe("http://tuti.example/portal/acme/roadmap");
-  expect(await rewrite("/changelog/rss.xml")).toBe("http://tuti.example/portal/acme/changelog/rss.xml");
-  expect(await rewrite("/llms.txt")).toBe("http://tuti.example/portal/acme/llms.txt");
-  for (const path of ["/", "/docs/api", "/sign-in", "/app/acme", "/feedbackx", "/widget", "/sso", "/account"]) {
+  expect(await rewrite("/help/docs")).toBeNull();
+  vi.stubEnv("APP_PORTAL_PROJECT", "help");
+  expect(await rewrite("/help/docs/getting-started")).toBe("http://tuti.example/portal/help/docs/getting-started");
+  expect(await rewrite("/help/docs/getting-started.md")).toBe("http://tuti.example/portal/help/docs/getting-started/md");
+  expect(await rewrite("/help")).toBe("http://tuti.example/portal/help");
+  expect(await rewrite("/help/feedback/ideas")).toBe("http://tuti.example/portal/help/feedback/ideas");
+  expect((await response("/help/roadmap")).headers.get("x-middleware-request-x-tuti-base")).toBe("/help");
+  // Its sign-in is the app's own auth API, under the path.
+  expect(await rewrite("/help/api/auth/get-session")).toBe("http://tuti.example/api/auth/get-session");
+  for (const path of ["/", "/docs/api", "/sign-in", "/app/acme", "/helpx", "/feedback/ideas", "/widget"]) {
     expect(await rewrite(path)).toBeNull();
   }
+  // Its slug may be a reserved one: help.tuti.example is its portal.
+  expect(await rewrite("/")).toBeNull();
+  expect((await proxy(request("help.tuti.example", "/widget"))).headers.get("x-middleware-rewrite")).toBe("http://help.tuti.example/portal/help/widget");
 });
 
 test("Next.js's files are served under /_tuti on every host (a team's site forwards that with its portal)", async () => {

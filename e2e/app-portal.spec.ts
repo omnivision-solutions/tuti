@@ -4,26 +4,25 @@ import { checkpoints } from "./checkpoint";
 import { APP_PORTAL_SLUG, APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-test("Tuti's own portal on the app's domain: one sign-in for the app and the portal, and the rest of the app as it was", async ({ browser }, testInfo) => {
+test("Tuti's own portal under its path on the app's domain: one sign-in for the app and the portal, and the rest of the app as it was", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Tuti", APP_PORTAL_SLUG);
+  const own = `${APP_URL}/${APP_PORTAL_SLUG}`;
 
   // Signed in on the app, so signed in on its portal too.
-  await owner.goto("/feedback/feature-requests");
+  await owner.goto(`${own}/feedback/feature-requests`);
   await expect(owner.getByRole("heading", { name: "Feature requests" })).toBeVisible();
   await owner.getByLabel("Title").fill("Dark mode for the dashboard");
   await owner.getByRole("button", { name: "Submit feedback" }).click();
   await owner.getByRole("link", { name: "Dark mode for the dashboard" }).click();
-  await owner.waitForURL(`${APP_URL}/feedback/feature-requests/dark-mode-for-the-dashboard-1`);
+  await owner.waitForURL(`${own}/feedback/feature-requests/dark-mode-for-the-dashboard-1`);
   await checkpoint(owner, "app-portal-post");
-  // Its name in the header goes to the portal's home, not the app's.
+  // Its name in the header goes to the portal's home, under the path.
   await owner.getByRole("banner").getByRole("link", { name: "Tuti" }).click();
-  await owner.waitForURL(`${APP_URL}/feedback/feature-requests`);
-  // The account is the app's.
-  await owner.getByRole("button", { name: "Account" }).click();
-  await owner.getByRole("menuitem", { name: "Account settings" }).click();
-  await owner.waitForURL(`${APP_URL}/app/account`);
+  await owner.waitForURL(`${own}/feedback/feature-requests`);
+  await owner.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Help" }).click();
+  await owner.waitForURL(`${own}/docs`);
 
   // The rest of the app is as it was: its home, and the API reference under /docs.
   await owner.goto("/docs/api");

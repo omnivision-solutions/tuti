@@ -16,9 +16,9 @@ export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null 
 
 export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
   const origin = portalOrigin(projectSlug) as PortalAddress;
-  // Tuti's own portal, on the app's domain (APP_PORTAL_PROJECT; see apps/web/src/lib/app-portal.ts).
+  // Tuti's own portal, under its path on the app's domain (APP_PORTAL_PROJECT; see apps/web/src/lib/app-portal.ts).
   if (projectSlug === process.env.APP_PORTAL_PROJECT?.trim() && process.env.APP_URL) {
-    return new URL(process.env.APP_URL).origin as PortalAddress;
+    return `${new URL(process.env.APP_URL).origin}/${projectSlug}` as PortalAddress;
   }
   // Under a path of the team's own site, once verified (SiteMount): https://acme.com/portal.
   const mount = await prisma.siteMount.findFirst({ where: { project: { slug: projectSlug }, verifiedAt: { not: null } }, select: { origin: true, path: true } });
