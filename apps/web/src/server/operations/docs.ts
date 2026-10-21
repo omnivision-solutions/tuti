@@ -8,7 +8,7 @@ import { z } from "zod";
 import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
-import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
+import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
 import { inTreeOrder, listedArticle, readingOrder } from "../docs-queries";
@@ -56,8 +56,8 @@ const collectionFields = {
   name: z.string().trim().min(1, "Name is required").max(60),
   description: z.string().trim().max(300),
   /**
-   * Who may read it (its articles and the collections in it) besides the team: people your app's
-   * SSO signs in with one of these groups (the token's `groups`). Empty: everyone.
+   * Who may read it (its articles and the collections in it) besides the team: people in one of
+   * these groups (by claim: groups.list), whom your app's SSO signs in with it in the token's `groups`. Empty: everyone.
    */
   groups: z
     .array(readerGroup)
@@ -865,7 +865,7 @@ const collectionSelect = {
   parentId: true,
   parent: { select: { slug: true, tab: { select: { slug: true } } } },
   tab: { select: { slug: true } },
-  groups: true,
+  groups: groupClaims,
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
@@ -873,8 +873,8 @@ const collectionView = ({ slug, name, description, order, parent, tab, groups, _
   slug,
   name,
   description,
-  /** Reader groups it's for (besides the team); empty: everyone. One inside another is also limited by its parent's. */
-  groups,
+  /** Reader groups it's for (their claims; besides the team); empty: everyone. One inside another is also limited by its parent's. */
+  groups: claimsOf({ groups }),
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
   /** The tab it's in (a collection in another is in its parent's), or null if the docs have no tabs. */
@@ -929,6 +929,16 @@ async function parentFor(
     throw new OperationError(400, "invalid_input", `Collections go 2 levels deep at most, and “${collection.name}” has collections in it`);
   }
   return parent.id;
+}
+
+/** Links to the project's groups with these claims, for a collection; one that isn't there is refused. Call it with the project locked. */
+async function groupLinks(tx: Prisma.TransactionClient, projectId: string, claims: string[]) {
+  const groups = await tx.readerGroup.findMany({ where: { projectId, claim: { in: claims } }, select: { id: true, claim: true } });
+  const missing = claims.find((claim) => !groups.some((group) => group.claim === claim));
+  if (missing !== undefined) {
+    throw new OperationError(400, "invalid_input", `There's no group “${missing}”: add it in Settings → Groups first`);
+  }
+  return groups.map((group) => ({ groupId: group.id }));
 }
 
 /** The collections in `parentId`, or at the top level (`parentId` null) in tab `tabId`. */
@@ -1017,7 +1027,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` (claims of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1045,7 +1055,7 @@ export const createCollection = defineOperation({
             slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
             name: input.name,
             description: input.description,
-            groups: input.groups,
+            groups: { create: await groupLinks(tx, projectId, input.groups) },
             order: (last._max.order ?? -1) + 1,
           },
           select: collectionSelect,
@@ -1057,7 +1067,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: reader groups from your app's SSO token; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: claims of the project's reader groups, see groups.list; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1089,7 +1099,7 @@ export const updateCollection = defineOperation({
           data: {
             ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
             ...(input.description !== undefined && { description: input.description }),
-            ...(input.groups !== undefined && { groups: input.groups }),
+            ...(input.groups !== undefined && { groups: { deleteMany: {}, create: await groupLinks(tx, projectId, input.groups) } }),
             ...(input.order !== undefined && { order: input.order }),
           },
           select: collectionSelect,
