@@ -26,7 +26,12 @@ const portalBranding = cache((slug: string) => branding({ slug }));
 
 export async function generateMetadata({ params }: LayoutProps<"/portal/[project]">): Promise<Metadata> {
   const favicon = (await portalBranding((await params).project))?.favicon;
-  return favicon ? { icons: { icon: [{ url: favicon.url, type: "image/webp" }] } } : {};
+  if (favicon) {
+    return { icons: { icon: [{ url: favicon.url, type: "image/webp" }] } };
+  }
+  // Under a path of a team's site, Tuti's own icon is there too (/icon.svg would be the site's).
+  const base = await portalBase();
+  return base ? { icons: { icon: [{ url: `${base}/icon.svg`, type: "image/svg+xml" }] } } : {};
 }
 
 /**

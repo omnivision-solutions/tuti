@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
 import { safeRedirectPath } from "./redirects";
+import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**
  * "Continue as <name>": signing a Tuti account into a portal without sharing
@@ -49,7 +50,7 @@ export const portalHandoff = () =>
           }
           const state = ctx.getCookie(HANDOFF_STATE_COOKIE);
           ctx.setCookie(HANDOFF_STATE_COOKIE, "", { path: "/", maxAge: 0 });
-          const failed = () => ctx.redirect("/sign-in?continue=failed");
+          const failed = () => ctx.redirect(withBase(baseFrom(ctx.headers), "/sign-in?continue=failed"));
 
           const { code } = ctx.query;
           if (!isSecret(code) || !isSecret(state)) {
@@ -76,7 +77,8 @@ export const portalHandoff = () =>
           }
           const session = await ctx.context.internalAdapter.createSession(user.id);
           await setSessionCookie(ctx, { session, user });
-          throw ctx.redirect(safeRedirectPath(ctx.query.redirect, "/"));
+          // Back under the site's path, for a portal there (see lib/portal-base.ts).
+          throw ctx.redirect(withBase(baseFrom(ctx.headers), safeRedirectPath(ctx.query.redirect, "/")));
         },
       ),
     },

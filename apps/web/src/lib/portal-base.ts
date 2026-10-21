@@ -27,3 +27,9 @@ export const PORTAL_PAGES = new Set([
   "docs", "feedback", "roadmap", "changelog", "account", "sign-in", "sign-up", "forgot-password", "reset-password",
   "continue", "sso", "unsubscribe", "widget", "api", "llms.txt", "robots.txt", "sitemap.xml", "_next",
 ]);
+
+/** The path a request came under (BASE_HEADER, set by proxy.ts), for code that only has its headers. */
+export function baseFrom(headers: Headers | undefined | null): string {
+  const base = headers?.get(BASE_HEADER) ?? "";
+  return BASE_PATTERN.test(base) ? base : "";
+}

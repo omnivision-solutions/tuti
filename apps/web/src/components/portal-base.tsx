@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext } from "react";
 
+import { authClientAt } from "@/lib/auth-client";
 import { withBase } from "@/lib/portal-base";
 
 const PortalBase = createContext({ base: "", slug: "" });
@@ -16,6 +17,11 @@ export function PortalBaseProvider({ base, slug, children }: { base: string; slu
 export function usePortalHref() {
   const { base } = useContext(PortalBase);
   return useCallback((path: string) => withBase(base, path), [base]);
+}
+
+/** The auth client for where the portal is (its API under the site's path, for one there). */
+export function usePortalAuthClient() {
+  return authClientAt(useContext(PortalBase).base);
 }
 
 /**

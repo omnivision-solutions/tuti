@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { usePortalAuthClient } from "@/components/portal-base";
 import { authClient } from "@/lib/auth-client";
 
 export function AccountForms({ name }: { name: string }) {
@@ -21,6 +22,7 @@ export function AccountForms({ name }: { name: string }) {
 }
 
 export function ProfileForm({ name }: { name: string }) {
+  const authClient = usePortalAuthClient();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string>();

@@ -58,7 +58,14 @@ export async function proxy(request: NextRequest) {
     // with that path added back to its links (see lib/portal-base.ts). Not sent on anywhere else.
     const mount = await siteMount(target.slug);
     if (mount && (pathname === mount.path || pathname.startsWith(`${mount.path}/`))) {
-      return servePortal(request, target.slug, `${mount.origin}${mount.path}`, pathname.slice(mount.path.length) || "/", mount.path);
+      const path = pathname.slice(mount.path.length) || "/";
+      // Signing in there: the auth API, under the path too; and Tuti's icon.
+      if (path.startsWith("/api/") || path === "/icon.svg") {
+        const url = request.nextUrl.clone();
+        url.pathname = path;
+        return NextResponse.rewrite(url, { request: { headers: fromSite(request, mount) } });
+      }
+      return servePortal(request, target.slug, `${mount.origin}${mount.path}`, path, mount);
     }
     // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
     // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
@@ -108,10 +115,24 @@ export async function proxy(request: NextRequest) {
 }
 
 /**
- * A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private.
- * `pathname` is the portal's own path; `base`, the path it's under on the team's site, if any.
+ * A request that came through the team's site: the path it's under (BASE_HEADER), and the site as
+ * the host it came to, as a proxy says (X-Forwarded-Host), whatever the site's own proxy sent: so
+ * forms posted from the site's pages count as posted to it (Next.js's server action check).
  */
-async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, base = "") {
+function fromSite(request: NextRequest, mount: { origin: string; path: string }) {
+  const headers = new Headers(request.headers);
+  const site = new URL(mount.origin);
+  headers.set(BASE_HEADER, mount.path);
+  headers.set("x-forwarded-host", site.host);
+  headers.set("x-forwarded-proto", site.protocol.replace(":", ""));
+  return headers;
+}
+
+/**
+ * A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private.
+ * `pathname` is the portal's own path; `mount`, where it is on the team's site, when the request came through it.
+ */
+async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
   const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers);
   if (visitor === "refused") {
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
@@ -126,8 +147,10 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
   const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
   // Always set, so a request can't say a path of its own.
-  const forwarded = new Headers(request.headers);
-  forwarded.set(BASE_HEADER, base);
+  const forwarded = mount ? fromSite(request, mount) : new Headers(request.headers);
+  if (!mount) {
+    forwarded.set(BASE_HEADER, "");
+  }
   const response = NextResponse.rewrite(url, { request: { headers: forwarded } });
   if (visitor === "allowed") {
     // A private portal's feeds and files are for this reader only: no shared cache may keep them.

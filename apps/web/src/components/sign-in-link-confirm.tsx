@@ -2,6 +2,7 @@
 
 import { SubmitButton } from "@/components/submit-button";
 import { confirmSignInLink } from "@/server/sign-in-link";
+import { usePortalHref } from "@/components/portal-base";
 
 /**
  * The "Sign in" button on the page a sign-in link opens. After the action, the browser
@@ -9,12 +10,13 @@ import { confirmSignInLink } from "@/server/sign-in-link";
  * it, and with the new session.
  */
 export function SignInLinkConfirm({ token, next }: { token: string; next: string }) {
+  const at = usePortalHref();
   return (
     <form
       className="w-full"
       action={async (form) => {
         const { location } = await confirmSignInLink(form);
-        window.location.assign(location);
+        window.location.assign(at(location));
       }}
     >
       <input type="hidden" name="token" value={token} />

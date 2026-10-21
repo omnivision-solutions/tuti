@@ -15,12 +15,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
-import { usePortalHref } from "@/components/portal-base";
+import { usePortalAuthClient, usePortalHref } from "@/components/portal-base";
 
 export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const router = useRouter();
   const at = usePortalHref();
+  const authClient = usePortalAuthClient();
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])

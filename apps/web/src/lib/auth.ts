@@ -6,7 +6,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { portalAddress, requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 
 import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
@@ -61,9 +61,17 @@ export const auth = betterAuth({
   trustedOrigins: async (request) => {
     const host = request?.headers.get("host") ?? null;
     const target = await requestTarget(host);
-    return target.kind === "portal" && target.customDomain ? [`${new URL(portalTemplate()).protocol}//${host}`] : [];
+    if (target.kind !== "portal") {
+      return [];
+    }
+    // A portal under a path of its team's site posts from that site, once it's verified.
+    const mount = await siteMount(target.slug);
+    return [...(target.customDomain ? [`${new URL(portalTemplate()).protocol}//${host}`] : []), ...(mount ? [mount.origin] : [])];
   },
   advanced: {
+    // tuti.session_token and the like: a portal under a path of a team's site (acme.com/portal) has its
+    // cookies on that site, beside the site's own, which may be Better Auth's too.
+    cookiePrefix: "tuti",
     // Behind a proxy (Cloudflare tunnel / load balancer) the original host and
     // protocol arrive in x-forwarded-* headers.
     trustedProxyHeaders: true,
