@@ -46,6 +46,8 @@ export async function createProject(page: Page, name: string, slug: string) {
   await page.goto("/app/new");
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("URL").fill(slug);
+  // It says the portal's address as it's typed.
+  await expect(page.getByText(new RegExp(`^Your portal will be ${slug}\\.`))).toBeVisible();
   await page.getByRole("button", { name: "Create project" }).click();
   await page.waitForURL(`**/app/${slug}`);
 }
