@@ -22,6 +22,9 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.goto("/app/new");
   await team.getByLabel("Name").fill("Acme");
   await team.getByLabel("URL").fill(slug);
+  // The portal's address shows as it's typed.
+  await expect(team.getByText(`Your portal will be ${new URL(portalUrl(slug)).host}`, { exact: true })).toBeVisible();
+  await checkpoint(team, "team-new-project-form");
   await team.getByRole("button", { name: "Create project" }).click();
   await team.waitForURL(`**/app/${slug}`);
   await checkpoint(team, "team-new-project");

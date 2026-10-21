@@ -1,7 +1,7 @@
 import { CreateProjectForm } from "@/components/create-project-form";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { portalUrl } from "@/lib/hosts";
+import { portalTemplate } from "@/lib/hosts";
 
 export default function NewProjectPage() {
   return (
@@ -9,7 +9,7 @@ export default function NewProjectPage() {
       <PageHeader title="New project" description="Each project has its own public portal, boards and team." />
       <Card className="max-w-xl">
         <CardContent>
-          <CreateProjectForm portalExample={portalUrl("acme")} />
+          <CreateProjectForm portalTemplate={portalTemplate()} />
         </CardContent>
       </Card>
     </>
