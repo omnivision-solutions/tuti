@@ -35,7 +35,8 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
             {children}
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">
+          // Docs pages take the whole width: their tree is a column of its own (DocsWorkspace).
+          <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6 has-data-[slot=docs-layout]:max-w-none">
             {banners}
             {children}
           </div>

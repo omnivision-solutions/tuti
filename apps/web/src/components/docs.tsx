@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -26,8 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
-import { previewUrl } from "@/lib/portal-base";
 import { keepingFields } from "@/lib/forms";
+import { previewUrl } from "@/lib/portal-base";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
 import type { FormState } from "@/server/form-state";
@@ -64,6 +65,7 @@ export function ArticleForm({
   collections,
   mediaBaseUrl,
   defaultTitle,
+  defaultCollection,
 }: {
   projectSlug: string;
   article: Article | null;
@@ -71,6 +73,8 @@ export function ArticleForm({
   mediaBaseUrl: string | null;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
+  /** A new article's collection to start with (a collection's "New article"). */
+  defaultCollection?: string | null;
 }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveArticle(projectSlug, article?.slug ?? null, prev, formData);
@@ -80,7 +84,7 @@ export function ArticleForm({
     return result;
   }, {});
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
-  const [collection, setCollection] = useState<string | null>(article?.collection ?? null);
+  const [collection, setCollection] = useState<string | null>(article?.collection ?? defaultCollection ?? null);
 
   return (
     <form {...keepingFields(action)}>
@@ -383,108 +387,227 @@ export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { p
 
 export type { GroupOption };
 
-/**
- * Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and
- * changes its description, icon and who can read it.
- */
-export function CollectionDialog({
+type CollectionSettings = {
+  slug: string;
+  name: string;
+  description: string;
+  /** The collection it's in, or null at the top level. */
+  parent: string | null;
+  /** Its Lucide icon's name, and whether the installed Lucide has it. */
+  icon: string | null;
+  knownIcon: boolean;
+};
+
+/** A collection's name (with `error`, a refused save's), icon and description, as form fields; `collection` gives their values. */
+function CollectionFields({ id, collection, error }: { id: string; collection?: CollectionSettings; error?: string }) {
+  return (
+    <>
+      <Field data-invalid={error ? true : undefined}>
+        <FieldLabel htmlFor={`collection-name-${id}`}>Name</FieldLabel>
+        <Input
+          id={`collection-name-${id}`}
+          name="name"
+          defaultValue={collection?.name}
+          placeholder="Getting started"
+          required
+          aria-invalid={error ? true : undefined}
+        />
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+      <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
+      <Field>
+        <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
+        <Textarea
+          id={`collection-description-${id}`}
+          name="description"
+          rows={2}
+          maxLength={300}
+          defaultValue={collection?.description}
+          placeholder="Optional, shown in your docs"
+        />
+      </Field>
+    </>
+  );
+}
+
+/** A form's "Parent collection" picker (`parent`, empty for the top level), from `parents`. */
+function ParentField({
+  id,
+  parents,
+  value,
+  onValueChange,
+  defaultValue,
+}: {
+  id: string;
+  parents: CollectionOption[];
+  value?: string | null;
+  onValueChange?: (value: string | null) => void;
+  defaultValue?: string | null;
+}) {
+  const items = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
+  return (
+    <Field>
+      <FieldLabel id={`${id}-parent-label`}>Parent collection</FieldLabel>
+      <Select
+        name="parent"
+        items={items}
+        {...(onValueChange ? { value, onValueChange: (next) => onValueChange(next as string | null) } : { defaultValue })}
+      >
+        <SelectTrigger className="w-full" aria-labelledby={`${id}-parent-label`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => (
+            <SelectItem key={item.value ?? ""} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
+/** A Save button at the end of a form on a page, off while it saves. */
+function SaveButton({ pending }: { pending: boolean }) {
+  return (
+    <div className="flex justify-end">
+      <Button type="submit" disabled={pending}>
+        {pending ? "Saving…" : "Save"}
+      </Button>
+    </div>
+  );
+}
+
+/** A collection page's Settings: its name, icon, description and the collection it's in (`parents`: where it can go). */
+export function CollectionSettingsForm({
   projectSlug,
   collection,
-  parents = [],
-  tabs = [],
-  access,
+  parents,
 }: {
   projectSlug: string;
-  collection?: {
-    slug: string;
-    name: string;
-    description: string;
-    /** The collection it's in, or (at the top level) its tab: what it inherits from. */
-    parent: string | null;
-    tab: string | null;
-    access: Access;
-    groups: string[];
-    noAccess: WithoutAccess;
-    icon: string | null;
-    knownIcon: boolean;
-  };
-  /** For "Who can read": the project's groups, and what each tab and collection lets read. */
-  access: AccessChoices;
-  /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
-  parents?: CollectionOption[];
-  /** The tabs a new top-level one can go in, the first by default. */
-  tabs?: CollectionOption[];
+  collection: CollectionSettings;
+  parents: CollectionOption[];
 }) {
-  const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveCollection(projectSlug, collection?.slug ?? null, prev, formData);
+    const result = await saveCollection(projectSlug, collection.slug, prev, formData);
     if (!result.error) {
-      setOpen(false);
-      toast.success(collection ? "Collection saved" : "Collection added");
+      toast.success("Collection saved");
     }
     return result;
   }, {});
-  const id = collection?.slug ?? "new";
-  const parentItems = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
+  return (
+    <form {...keepingFields(action)}>
+      <FieldGroup>
+        <CollectionFields id={collection.slug} collection={collection} error={state.error} />
+        <ParentField id={`collection-${collection.slug}`} parents={parents} defaultValue={collection.parent} />
+        <SaveButton pending={pending} />
+      </FieldGroup>
+    </form>
+  );
+}
+
+/**
+ * A tab's or a collection's page's Access: who can read it and what people without access see, with
+ * "Preview as a reader" (`path`: its page in the portal). `above` is the level it inherits from (its
+ * collection or tab; "" for a tab), `level` what it has now.
+ */
+export function AccessForm({
+  projectSlug,
+  kind,
+  slug,
+  path,
+  access,
+  above,
+  level,
+}: {
+  projectSlug: string;
+  kind: "tab" | "collection";
+  slug: string;
+  path: string;
+  access: AccessChoices;
+  above: string;
+  level: { access: Access; groups: string[]; noAccess: WithoutAccess };
+}) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await (kind === "tab" ? saveTab : saveCollection)(projectSlug, slug, prev, formData);
+    if (!result.error) {
+      toast.success(kind === "tab" ? "Tab saved" : "Collection saved");
+    }
+    return result;
+  }, {});
+  return (
+    <form {...keepingFields(action)}>
+      <FieldGroup>
+        <WhoCanRead
+          id={`${kind}-access-${slug}`}
+          projectSlug={projectSlug}
+          groups={access.groups}
+          inherit={{ label: "Inherit", description: access.inherits[above] ?? access.inherits[""]!, shows: access.shows[above] ?? "hide" }}
+          defaultAccess={level.access}
+          defaultGroups={level.groups}
+          defaultNoAccess={level.noAccess}
+          preview={previewUrl(access, path)}
+        />
+        {state.error && <FieldError>{state.error}</FieldError>}
+        <SaveButton pending={pending} />
+      </FieldGroup>
+    </form>
+  );
+}
+
+
+/**
+ * Adds a collection, at the top level (of a tab, with tabs) or in one of `parents`: the dialog a
+ * "+" menu opens (`open`), starting where it was opened.
+ */
+export function CollectionDialog({
+  projectSlug,
+  parents,
+  tabs,
+  access,
+  open,
+  onOpenChange,
+  defaultParent,
+  defaultTab,
+}: {
+  projectSlug: string;
+  /** For "Who can read": the project's groups, and what each tab and collection lets read. */
+  access: AccessChoices;
+  /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
+  parents: CollectionOption[];
+  /** The tabs a new top-level one can go in, the first by default. */
+  tabs: CollectionOption[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Where it goes to start with: in collection `defaultParent`, else at the top level of tab `defaultTab`. */
+  defaultParent: string | null;
+  defaultTab?: string;
+}) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveCollection(projectSlug, null, prev, formData);
+    if (!result.error) {
+      onOpenChange(false);
+      toast.success("Collection added");
+    }
+    return result;
+  }, {});
   const tabItems = tabs.map((s) => ({ value: s.slug, label: s.name }));
-  // A new one's place, as picked: it inherits from there.
-  const [parent, setParent] = useState<string | null>(null);
-  const [tab, setTab] = useState<string | null>(tabItems[0]?.value ?? null);
-  const above = collection ? (collection.parent ?? collection.tab) : (parent ?? tab);
+  // Its place, as picked: it inherits from there.
+  const [parent, setParent] = useState<string | null>(defaultParent);
+  const [tab, setTab] = useState<string | null>(defaultTab ?? tabItems[0]?.value ?? null);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={collection ? "ghost" : "outline"} size="sm" />}>
-        {collection ? "Edit" : "New collection"}
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{collection ? "Edit collection" : "New collection"}</DialogTitle>
+            <DialogTitle>New collection</DialogTitle>
           </DialogHeader>
           <FieldGroup className="my-4">
-            <Field data-invalid={state.error ? true : undefined}>
-              <FieldLabel htmlFor={`collection-name-${id}`}>Name</FieldLabel>
-              <Input
-                id={`collection-name-${id}`}
-                name="name"
-                defaultValue={collection?.name}
-                placeholder="Getting started"
-                required
-                aria-invalid={state.error ? true : undefined}
-              />
-              {state.error && <FieldError>{state.error}</FieldError>}
-            </Field>
-            <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
-            <Field>
-              <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
-              <Textarea
-                id={`collection-description-${id}`}
-                name="description"
-                rows={2}
-                maxLength={300}
-                defaultValue={collection?.description}
-                placeholder="Optional, shown in your docs"
-              />
-            </Field>
-            {!collection && parents.length > 0 && (
-              <Field>
-                <FieldLabel id="collection-parent-label">Parent collection</FieldLabel>
-                <Select name="parent" items={parentItems} value={parent} onValueChange={(value) => setParent(value as string | null)}>
-                  <SelectTrigger className="w-full" aria-labelledby="collection-parent-label">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {parentItems.map((item) => (
-                      <SelectItem key={item.value ?? ""} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-            {!collection && tabItems.length > 0 && (
+            <CollectionFields id="new" error={state.error} />
+            {parents.length > 0 && <ParentField id="collection" parents={parents} value={parent} onValueChange={setParent} />}
+            {tabItems.length > 0 && (
               <Field>
                 <FieldLabel id="collection-tab-label">Tab</FieldLabel>
                 <Select name="tab" items={tabItems} value={tab} onValueChange={(value) => setTab(value as string | null)}>
@@ -499,23 +622,19 @@ export function CollectionDialog({
                     ))}
                   </SelectContent>
                 </Select>
-                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s tab.</FieldDescription>}
+                {parents.length > 0 && <FieldDescription>A collection inside another is in that one&apos;s tab.</FieldDescription>}
               </Field>
             )}
             <WhoCanRead
-              id={`collection-access-${id}`}
+              id="collection-access-new"
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]!, shows: access.shows[above ?? ""] ?? "hide" }}
-              defaultAccess={collection?.access}
-              defaultGroups={collection?.groups}
-              defaultNoAccess={collection?.noAccess}
-              preview={collection && previewUrl(access, `/docs/${collection.slug}`)}
+              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]!, shows: access.shows[parent ?? tab ?? ""] ?? "hide" }}
             />
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {collection ? "Save" : "Add collection"}
+              Add collection
             </Button>
           </DialogFooter>
         </form>
@@ -635,169 +754,152 @@ export type TabSettings = CollectionOption & {
   /** Who can read it, with its groups' keys (for access "groups"). */
   access: Access;
   groups: string[];
-  /** "People without access". */
-  noAccess: WithoutAccess;
   pages: { collections: CollectionOption[]; articles: { slug: string; title: string; published: boolean }[] };
 };
 
 /**
- * Adds a tab (`tab` undefined; the first one takes the collections there are, which the dialog
- * says), or a tab's settings: its name, its address (`home`: the first tab's is /docs), what
- * its path shows and who can read it (`access`: the project's groups to pick from).
+ * A tab's address (`home`: the first tab's is /docs) and what its path shows, as form fields
+ * (`landing`, and `landingPage` for a page picked from the tab's).
  */
-export function TabDialog({
-  projectSlug,
-  tab,
-  first = false,
-  home = false,
-  access,
-}: {
-  projectSlug: string;
-  tab?: TabSettings;
-  first?: boolean;
-  home?: boolean;
-  access?: AccessChoices;
-}) {
-  const [open, setOpen] = useState(false);
-  const [landing, setLanding] = useState(tab?.landing ?? "overview");
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveTab(projectSlug, tab?.slug ?? null, prev, formData);
-    if (!result.error) {
-      setOpen(false);
-      toast.success(tab ? "Tab saved" : "Tab added");
-    }
-    return result;
-  }, {});
-  const id = tab?.slug ?? "new";
-  const pageItems = tab && [
+function TabLandingFields({ id, tab, home }: { id: string; tab: TabSettings; home: boolean }) {
+  const [landing, setLanding] = useState(tab.landing);
+  const pageItems = [
     ...tab.pages.collections.map((c) => ({ value: c.slug, label: c.name })),
     ...tab.pages.articles.map((a) => ({ value: a.slug, label: a.published ? a.title : `${a.title} (draft)` })),
   ];
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        // Opened again: as saved.
-        setLanding(tab?.landing ?? "overview");
-      }}
-    >
-      <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Settings for ${tab.name}` : undefined} />}>
-        {tab ? "Settings" : "New tab"}
+    <>
+      <Field>
+        <FieldLabel htmlFor={`tab-address-${id}`}>Address</FieldLabel>
+        <Input id={`tab-address-${id}`} readOnly value={home ? "/docs" : `/docs/${tab.slug}`} className="font-mono" />
+        <FieldDescription>{home ? "Your docs' home: the first tab is at /docs." : "It follows the name."}</FieldDescription>
+      </Field>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-2 text-sm font-medium">Landing page</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {LANDING_CHOICES.map((choice) => (
+            <label
+              key={choice.value}
+              className="flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors has-checked:border-primary has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+            >
+              <input
+                type="radio"
+                name="landing"
+                value={choice.value}
+                checked={landing === choice.value}
+                onChange={() => setLanding(choice.value)}
+                className="sr-only"
+              />
+              <span aria-hidden className="flex h-14 flex-col gap-1.5 rounded-md bg-muted p-2">
+                {choice.sketch}
+              </span>
+              <span className="text-sm font-medium">{choice.name}</span>
+              <span className="text-xs text-muted-foreground">{choice.description}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {landing === "page" && (
+        <Field>
+          <FieldLabel id={`tab-page-${id}`}>Page</FieldLabel>
+          {pageItems.length > 0 ? (
+            <Select name="landingPage" items={pageItems} defaultValue={tab.landingPage}>
+              <SelectTrigger className="w-full" aria-labelledby={`tab-page-${id}`}>
+                <SelectValue placeholder="Pick an article or collection" />
+              </SelectTrigger>
+              <SelectContent>
+                {tab.pages.collections.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Collections</SelectLabel>
+                    {pageItems.slice(0, tab.pages.collections.length).map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {tab.pages.articles.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Articles</SelectLabel>
+                    {pageItems.slice(tab.pages.collections.length).map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+          ) : (
+            <FieldDescription>This tab has no articles or collections yet.</FieldDescription>
+          )}
+          <FieldDescription>Readers who can&apos;t read it (a draft, or a collection for some groups) get the overview.</FieldDescription>
+        </Field>
+      )}
+    </>
+  );
+}
+
+/** A tab page's Settings: its name, address and landing page (`home`: it's the first tab). */
+export function TabSettingsForm({ projectSlug, tab, home }: { projectSlug: string; tab: TabSettings; home: boolean }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveTab(projectSlug, tab.slug, prev, formData);
+    if (!result.error) {
+      toast.success("Tab saved");
+    }
+    return result;
+  }, {});
+  return (
+    <form {...keepingFields(action)}>
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor={`tab-name-${tab.slug}`}>Name</FieldLabel>
+          <Input id={`tab-name-${tab.slug}`} name="name" defaultValue={tab.name} placeholder="Guides" maxLength={40} required />
+        </Field>
+        <TabLandingFields id={tab.slug} tab={tab} home={home} />
+        {state.error && <FieldError>{state.error}</FieldError>}
+        <SaveButton pending={pending} />
+      </FieldGroup>
+    </form>
+  );
+}
+
+/** "New tab": adds one, after the others (`first`: the first one, which takes the collections there are, as the dialog says). */
+export function TabDialog({ projectSlug, first = false }: { projectSlug: string; first?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveTab(projectSlug, null, prev, formData);
+    if (!result.error) {
+      setOpen(false);
+      toast.success("Tab added");
+    }
+    return result;
+  }, {});
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start font-normal" />}>
+        <PlusIcon aria-hidden className="text-muted-foreground" />
+        New tab
       </DialogTrigger>
-      <DialogContent className={tab && "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"}>
+      <DialogContent>
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{tab ? "Tab settings" : "New tab"}</DialogTitle>
-            {!tab && (
-              <DialogDescription>
-                Tabs sit at the top of your docs, each with its own collections
-                {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
-              </DialogDescription>
-            )}
+            <DialogTitle>New tab</DialogTitle>
+            <DialogDescription>
+              Tabs sit at the top of your docs, each with its own collections
+              {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
+            </DialogDescription>
           </DialogHeader>
           <FieldGroup className="my-4">
-            <Field data-invalid={state.error && !tab ? true : undefined}>
-              <FieldLabel htmlFor={`tab-name-${id}`}>Name</FieldLabel>
-              <Input
-                id={`tab-name-${id}`}
-                name="name"
-                defaultValue={tab?.name}
-                placeholder="Guides"
-                maxLength={40}
-                required
-                aria-invalid={state.error && !tab ? true : undefined}
-              />
-              {state.error && !tab && <FieldError>{state.error}</FieldError>}
+            <Field data-invalid={state.error ? true : undefined}>
+              <FieldLabel htmlFor="tab-name-new">Name</FieldLabel>
+              <Input id="tab-name-new" name="name" placeholder="Guides" maxLength={40} required aria-invalid={state.error ? true : undefined} />
+              {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
-            {tab && (
-              <>
-                <Field>
-                  <FieldLabel htmlFor={`tab-address-${id}`}>Address</FieldLabel>
-                  <Input id={`tab-address-${id}`} readOnly value={home ? "/docs" : `/docs/${tab.slug}`} className="font-mono" />
-                  <FieldDescription>{home ? "Your docs' home: the first tab is at /docs." : "It follows the name."}</FieldDescription>
-                </Field>
-                <fieldset className="flex flex-col gap-2">
-                  <legend className="mb-2 text-sm font-medium">Landing page</legend>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {LANDING_CHOICES.map((choice) => (
-                      <label
-                        key={choice.value}
-                        className="flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors has-checked:border-primary has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
-                      >
-                        <input
-                          type="radio"
-                          name="landing"
-                          value={choice.value}
-                          checked={landing === choice.value}
-                          onChange={() => setLanding(choice.value)}
-                          className="sr-only"
-                        />
-                        <span aria-hidden className="flex h-14 flex-col gap-1.5 rounded-md bg-muted p-2">
-                          {choice.sketch}
-                        </span>
-                        <span className="text-sm font-medium">{choice.name}</span>
-                        <span className="text-xs text-muted-foreground">{choice.description}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                {landing === "page" && pageItems && (
-                  <Field>
-                    <FieldLabel id={`tab-page-${id}`}>Page</FieldLabel>
-                    {pageItems.length > 0 ? (
-                      <Select name="landingPage" items={pageItems} defaultValue={tab.landingPage}>
-                        <SelectTrigger className="w-full" aria-labelledby={`tab-page-${id}`}>
-                          <SelectValue placeholder="Pick an article or collection" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tab.pages.collections.length > 0 && (
-                            <SelectGroup>
-                              <SelectLabel>Collections</SelectLabel>
-                              {pageItems.slice(0, tab.pages.collections.length).map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {item.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          )}
-                          {tab.pages.articles.length > 0 && (
-                            <SelectGroup>
-                              <SelectLabel>Articles</SelectLabel>
-                              {pageItems.slice(tab.pages.collections.length).map((item) => (
-                                <SelectItem key={item.value} value={item.value}>
-                                  {item.label}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          )}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <FieldDescription>This tab has no articles or collections yet.</FieldDescription>
-                    )}
-                    <FieldDescription>Readers who can&apos;t read it (a draft, or a collection for some groups) get the overview.</FieldDescription>
-                  </Field>
-                )}
-                {access && (
-                  <WhoCanRead
-                    id={`tab-access-${id}`}
-                    projectSlug={projectSlug}
-                    groups={access.groups}
-                    inherit={{ label: "Inherit", description: access.inherits[""]!, shows: "hide" }}
-                    defaultAccess={tab.access}
-                    defaultGroups={tab.groups}
-                    defaultNoAccess={tab.noAccess}
-                    preview={previewUrl(access, home ? "/docs" : `/docs/${tab.slug}`)}
-                  />
-                )}
-                {state.error && <FieldError>{state.error}</FieldError>}
-              </>
-            )}
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {tab ? "Save" : "Add tab"}
+              Add tab
             </Button>
           </DialogFooter>
         </form>
