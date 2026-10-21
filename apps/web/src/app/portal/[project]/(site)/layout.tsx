@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -14,6 +15,7 @@ import { UserMenu } from "@/components/user-menu";
 import { appUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
+import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding, brandCss } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
@@ -51,6 +53,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   if (!project || !brand) {
     notFound();
   }
+  // Once the page is sent: renews the project's licence key from tuti.so, at most daily (and only if it has one or asked for one).
+  after(() => renewLicense(project.id, { olderThan: DAY_MS }));
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
   const onApp = resolveHost((await headers()).get("host")).kind === "app";

@@ -96,6 +96,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "branding.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: true }),
+  // Like branding.update: admins only in the app (Check now, Settings → Branding).
+  "license.check": () => ({}),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),
@@ -136,6 +138,8 @@ beforeAll(async () => {
   // Portals under a path of a site: on, and the site is local.
   site = await startSiteFake();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  // license.check asks the local site, which has no licence server (its own 404): "unreachable".
+  vi.stubEnv("LICENSE_SERVER_URL", site.origin);
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);

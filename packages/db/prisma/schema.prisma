@@ -110,9 +110,12 @@ enum TeamRole {
 /// This installation of Tuti, one row (made by its migration): the random id licence keys are signed for.
 model Installation {
   /// Always 1, so there's only ever one row.
-  singleton Int      @id @default(1)
-  id        String   @unique
-  createdAt DateTime @default(now())
+  singleton    Int       @id @default(1)
+  id           String    @unique
+  /// The latest time tuti.so has said it is: keys expire by it too, so setting the clock back
+  /// doesn't bring an expired one back.
+  latestSeenAt DateTime?
+  createdAt    DateTime  @default(now())
 
   @@map("installation")
 }
@@ -158,6 +161,14 @@ model Project {
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
   licenseKey            String?
+  /// Renewing that key from tuti.so (server/license-renewal.ts): the one-time token for the next
+  /// renewal, the request id of an attempt whose answer hasn't arrived (a retry carries it), when an
+  /// admin first asked for a licence (checks start then; a project nobody asked about never
+  /// contacts tuti.so), and when it was last checked (at most daily, and one check at a time).
+  licenseToken          String?
+  licenseRequestId      String?
+  licenseRequestedAt    DateTime?
+  licenseCheckedAt      DateTime?
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)

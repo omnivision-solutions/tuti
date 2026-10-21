@@ -1,5 +1,6 @@
 import type { Operation } from "./define";
 import { getBranding, updateBranding } from "./branding";
+import { checkLicense } from "./license";
 import { createComment, createPost } from "./create";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions, removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
@@ -128,6 +129,7 @@ const all = [
   updateWidgetSettings,
   getBranding,
   updateBranding,
+  checkLicense,
   getPortal,
   updatePortal,
   listPortalReaders,
