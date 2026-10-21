@@ -5,8 +5,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
-import { BoardTabs } from "@/components/board-tabs";
 import { PortalBaseProvider } from "@/components/portal-base";
+import { PartRows, PortalParts } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
@@ -36,9 +36,10 @@ export async function generateMetadata({ params }: LayoutProps<"/portal/[project
 /**
  * A project's public portal (served on <project>.tuti.so via proxy.ts), in the project's
  * branding (Settings → Branding). Links here are host-relative: "/feedback/ideas", not
- * "/portal/<project>/b/ideas".
+ * "/portal/<project>/b/ideas". The header has the portal's parts; under it, the current part's
+ * row (`docsTabs`: the docs pages' tabs, from the @docsTabs slot).
  */
-export default async function PortalLayout({ children, params }: LayoutProps<"/portal/[project]">) {
+export default async function PortalLayout({ children, docsTabs, params }: LayoutProps<"/portal/[project]">) {
   const { project: slug } = await params;
   const [project, brand] = await Promise.all([
     prisma.project.findUnique({
@@ -65,7 +66,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
     />
   );
   // On a private portal, the pages anyone may open (signing in) don't show what's on it.
-  // proxy.ts keeps them from the rest; this only hides the tabs.
+  // proxy.ts keeps them from the rest; this only hides the parts.
   const canRead = await canReadPortal({ id: project.id }, session?.user.id);
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
@@ -74,6 +75,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   return (
     <PortalBaseProvider base={base} slug={slug}>
       {css && <style>{css}</style>}
+      {/* Logo · parts · links and the account on the right. On phones the parts, then the links, get lines of their own. */}
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
         {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
         <Link href={withBase(base, "/")} className="font-heading text-lg font-bold tracking-tight">
@@ -86,9 +88,9 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
             project.name
           )}
         </Link>
+        {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
         {brand.headerLinks.length > 0 && (
-          // On phones the links get a line of their own under the name.
-          <nav aria-label="Links" className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 pb-1 sm:order-none sm:w-auto sm:flex-1 sm:pb-0">
+          <nav aria-label="Links" className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 pb-1 sm:order-none sm:ml-auto sm:w-auto sm:pb-0">
             {brand.headerLinks.map((link, i) => (
               <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
                 {link.label}
@@ -105,7 +107,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </SignInLink>
         )}
       </header>
-      {canRead && <BoardTabs boards={project.boards} newChangelog={newChangelog} />}
+      {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">{children}</main>
       {(brand.footerLinks.length > 0 || brand.poweredBy) && (
         <footer className="flex flex-col items-center gap-3 px-6 pb-6">

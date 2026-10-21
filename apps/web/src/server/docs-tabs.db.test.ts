@@ -122,7 +122,7 @@ describe("tabs", () => {
     await expect(call(updateTab, as(), { slug: "api", name: "Again" })).rejects.toMatchObject({ status: 404 });
   });
 
-  test("deleting a tab moves its collections last into the one before it (after it, for the first); the last one leaves none", async () => {
+  test("deleting a tab moves its collections last into the one before it; the first goes only when it's the last one, leaving none", async () => {
     await call(createTab, as(), { name: "Guides" });
     await collections("Basics");
     await call(createTab, as(), { name: "API" });
@@ -130,13 +130,18 @@ describe("tabs", () => {
     await call(createCollection, as(), { name: "Webhooks", tab: "api" });
     await call(createCollection, as(), { name: "Signatures", parent: "webhooks" });
     await call(createTab, as(), { name: "SDKs" });
+    await call(createCollection, as(), { name: "Python", tab: "sdks" });
 
     expect(await call(deleteTab, as(), { slug: "api" })).toEqual({ deleted: "api", movedTo: "guides" });
-    expect(await tree()).toEqual(["guides:basics", "guides:endpoints", "guides:webhooks", "guides:webhooks/signatures"]);
-    expect(await call(deleteTab, as(), { slug: "guides" })).toEqual({ deleted: "guides", movedTo: "sdks" });
-    expect(await tree()).toEqual(["sdks:basics", "sdks:endpoints", "sdks:webhooks", "sdks:webhooks/signatures"]);
-    expect(await call(deleteTab, as(), { slug: "sdks" })).toEqual({ deleted: "sdks", movedTo: null });
-    expect(await tree()).toEqual(["-:basics", "-:endpoints", "-:webhooks", "-:webhooks/signatures"]);
+    expect(await tree()).toEqual(["guides:basics", "guides:endpoints", "guides:webhooks", "guides:webhooks/signatures", "sdks:python"]);
+    // The first is the docs' home (/docs): not while there are others.
+    await expect(call(deleteTab, as(), { slug: "guides" })).rejects.toMatchObject({
+      status: 409,
+      message: "Move another tab first: the first tab is your docs' home",
+    });
+    expect(await call(deleteTab, as(), { slug: "sdks" })).toEqual({ deleted: "sdks", movedTo: "guides" });
+    expect(await call(deleteTab, as(), { slug: "guides" })).toEqual({ deleted: "guides", movedTo: null });
+    expect(await tree()).toEqual(["-:basics", "-:endpoints", "-:webhooks", "-:webhooks/signatures", "-:python"]);
     expect(await tabs()).toEqual([]);
   });
 
@@ -216,16 +221,16 @@ describe("readers", () => {
     const text = await (await llms(new Request("http://x"), { params })).text();
     expect(text).toContain(
       [
-        "## Guides",
-        "### Basics",
+        `## [Guides](${portal}/docs)`,
+        `### [Basics](${portal}/docs/basics)`,
         `- [Start here](${portal}/docs/start-here.md)`,
-        "### Billing",
-        "#### Invoices",
+        `### [Billing](${portal}/docs/billing)`,
+        `#### [Invoices](${portal}/docs/invoices)`,
         `- [Downloading invoices](${portal}/docs/downloading-invoices.md)`,
         "### More articles",
         `- [Contact us](${portal}/docs/contact-us.md)`,
-        "## API",
-        "### Endpoints",
+        `## [API](${portal}/docs/api)`,
+        `### [Endpoints](${portal}/docs/endpoints)`,
         `- [Listing posts](${portal}/docs/listing-posts.md)`,
         "## Changelog",
       ].join("\n\n"),

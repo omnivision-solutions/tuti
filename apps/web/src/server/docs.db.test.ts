@@ -125,10 +125,11 @@ describe("collections", () => {
     // The portal: collections with published articles (not the empty one, not drafts), then the rest.
     expect(await docsContents(project.slug)).toEqual({
       collections: [
-        { slug: "basics", name: "Basics", description: "", articles: [{ slug: "getting-started", title: "Getting started" }], collections: [] },
+        { slug: "basics", name: "Basics", description: "", icon: null, articles: [{ slug: "getting-started", title: "Getting started" }], collections: [] },
       ],
       uncollected: [{ slug: "shortcuts", title: "Shortcuts" }],
       tabs: [],
+      home: null,
     });
 
     // Renaming moves its slug; articles follow by id.
