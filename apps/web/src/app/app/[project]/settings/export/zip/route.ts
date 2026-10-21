@@ -2,7 +2,7 @@ import { exportZip } from "@/server/export";
 import { getAdminProject } from "@/server/membership";
 
 /** "Export as Markdown" in settings: the project's content as a ZIP download, for owners and admins. */
-export async function GET(_request: Request, { params }: RouteContext<"/app/[project]/settings/export">) {
+export async function GET(_request: Request, { params }: RouteContext<"/app/[project]/settings/export/zip">) {
   const { project: slug } = await params;
   const project = await getAdminProject(slug);
   if (!project) {

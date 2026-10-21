@@ -2,8 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
+import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
@@ -12,7 +12,7 @@ import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
 
-/** Every /app page: signed-in only, same sidebar shell. */
+/** Every /app page: signed-in only, same sidebar shell (components/app-shell.tsx). */
 export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const session = await getSession();
   if (!session) {
@@ -27,20 +27,23 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const fallbackSlug = projects.find((p) => p.slug === lastSlug)?.slug ?? projects[0]?.slug ?? null;
 
   return (
-    <SidebarProvider>
-      <AppSidebar
-        projects={projects}
-        fallbackSlug={fallbackSlug}
-        user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
-      />
-      <SidebarInset>
-        <AppHeader projects={projects} fallbackSlug={fallbackSlug} />
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-6">
+    <AppShell
+      sidebar={
+        <AppSidebar
+          projects={projects}
+          fallbackSlug={fallbackSlug}
+          user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
+        />
+      }
+      header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}
+      banners={
+        <>
           {!session.user.emailVerified && <VerifyEmailBanner email={session.user.email} />}
           <PendingInvitations invitations={invitations} />
-          {children}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </>
+      }
+    >
+      {children}
+    </AppShell>
   );
 }

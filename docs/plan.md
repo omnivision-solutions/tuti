@@ -148,6 +148,23 @@ Test layers (set up in Phase 4):
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 
+## Customize: settings beside a live preview (asked 2026-10-21)
+
+Settings was one long page of cards. What changes how the portal looks moves to **Customize** (owners and admins), each part beside a preview of the portal, as Ferndesk does it; the rest stays in **Settings**, split into pages.
+
+- [x] Settings in pages: Access (portal access, readers, groups), Single sign-on, Integrations (GitHub), Developers (API keys, webhooks), Export. The export's ZIP moved to `settings/export/zip`
+- [x] Customize's menu, by group: Appearance (Branding, Navigation, Home page), Features (AI answers, Widget), Advanced (Address, Powered by). Branding's one form split in three (`saveBranding`'s `part`: look, links, Powered by), each saving only its part
+- [x] Customize's layout: a section's settings in a panel on the left (back, title), the portal on the right in a browser frame (its live address in the bar; desktop, scaled to fit, or phone at 390px), the app's sidebar folded away; on phones the preview comes after the settings. The frame shows the portal's Tuti address with `?customize=1`, which doesn't send it on to the portal's own address; portal pages allow the app to frame them (`frame-ancestors` the app's origin). Saving reloads it. Widget's preview: the panel open above the launcher on a sketch of the team's site
+- [ ] Live preview: changes show in the frame as they're made, before saving (a script in the portal takes them from the app by `postMessage`, the app's origin only); "Save changes" in the panel's header, enabled once something changed; leaving with unsaved changes asks first; light and dark in the preview; links in the frame keep the preview, other sites' open in a new tab
+- [ ] Address: three cards (Tuti address, the default; Custom domain; Sub-folder), the others locked while one is connected, saying why. A domain's records each with Copy; a sub-folder's forwarding rules with Copy, and a guide per platform (Cloudflare, Vercel, Netlify, Nginx, other) opening in our widget (the articles go in our help project)
+- [ ] Content actions: turn off Copy as Markdown, Open in ChatGPT, Open in Claude and the "Updated" date on articles, shown as a "Copy page" menu
+- [ ] Docs home: a title and subtitle above the search box; "Popular articles" from the views we count
+- [ ] SEO for the portal: page title, meta description and share image, previewed as a search result and a social card
+- [ ] Branding: the default colour scheme (system, light or dark), logo text, where the logo links
+- [ ] Navigation: links in the docs sidebar; a "Contact us" button in the header
+- [ ] The preview on a private portal: a short-lived signed token lets the frame read it as the team does
+- Not now: fonts (Google Fonts would send readers' addresses to Google), custom code (a team's script on the portal's host, where its readers' sessions are, needs a design of its own), redirects, translations
+
 ## Licences: hiding "Powered by tuti" (asked 2026-10-21)
 
 The badge is Tuti's attribution on every portal, so hiding it is paid: a flat monthly fee per project of an installation, on tuti.so and self-hosted alike. Tuti signs each licence key with its private key; installations trust only the public keys in the code (no setting, env var or database edit replaces them), so getting around it means forking, which the licence terms cover. Keys come from tuti.so only: bought on tuti.so, then fetched and renewed by the installation (no pasted keys for now).

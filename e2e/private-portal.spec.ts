@@ -23,9 +23,10 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   await createProject(owner, "Acme", slug);
 
   // SSO on, then Portal access → Private.
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  await owner.goto(`/app/${slug}/settings`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();

@@ -14,9 +14,9 @@ export async function connectGithub(admin: TestPage, slug: string): Promise<numb
     body: JSON.stringify({ forwardedFor: admin.ip, setupUrl: `${APP_URL}/api/github/setup`, id, account: "acme", code: `code-${id}` }),
   });
   expect(response.ok).toBe(true);
-  await admin.goto(`/app/${slug}/settings`);
+  await admin.goto(`/app/${slug}/settings/integrations`);
   await admin.getByRole("link", { name: "Connect GitHub" }).click();
-  await admin.waitForURL(`**/app/${slug}/settings?github=connected`);
+  await admin.waitForURL(`**/app/${slug}/settings/integrations?github=connected`);
   return id;
 }
 

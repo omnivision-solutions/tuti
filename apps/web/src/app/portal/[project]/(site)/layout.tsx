@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: LayoutProps<"/portal/[project
 
 /**
  * A project's public portal (served on <project>.tuti.so via proxy.ts), in the project's
- * branding (Settings → Branding). Links here are host-relative: "/feedback/ideas", not
+ * branding (Customize → Branding). Links here are host-relative: "/feedback/ideas", not
  * "/portal/<project>/b/ideas". The header has the portal's parts; under it, the current part's
  * row (`docsTabs`: the docs pages' tabs, from the @docsTabs slot).
  */

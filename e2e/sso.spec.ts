@@ -21,7 +21,7 @@ test("a team enables SSO; their app signs people into the portal, once per token
   await createProject(owner, "Acme", slug);
 
   // Enabling SSO shows the secret once, with the integration snippet.
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secretAlert = owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" });
   const secret = await secretAlert.locator("code").innerText();
@@ -70,7 +70,7 @@ test("a collection for one reader group: people the app signs in with that group
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
@@ -151,7 +151,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
@@ -314,7 +314,7 @@ test("a group from conditions: readers whose token's attributes match read its c
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);

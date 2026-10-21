@@ -68,7 +68,7 @@ export function openApiSpec(serverUrl: string) {
       title: "Tuti API",
       version: "1",
       description:
-        "Read and change a project's feedback. Authenticate with a project API key (Settings → API keys): `Authorization: Bearer tuti_…`. Up to 600 requests a minute per key.",
+        "Read and change a project's feedback. Authenticate with a project API key (Settings → Developers): `Authorization: Bearer tuti_…`. Up to 600 requests a minute per key.",
     },
     servers: [{ url: serverUrl }],
     security: [{ apiKey: [] }],

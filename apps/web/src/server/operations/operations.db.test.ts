@@ -96,7 +96,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "branding.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
   "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: true }),
-  // Like branding.update: admins only in the app (Check now, Settings → Branding).
+  // Like branding.update: admins only in the app (Check now, Customize → Powered by).
   "license.check": () => ({}),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),

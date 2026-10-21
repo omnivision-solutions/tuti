@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { boardPath } from "@/lib/post-urls";
 
 /**
- * Where the portal's home opens (Settings → Home page): the first board, the roadmap, the changelog
+ * Where the portal's home opens (Customize → Home page): the first board, the roadmap, the changelog
  * or the docs; null for a portal with nothing there (no project, or no board).
  */
 export async function portalHomePath(slug: string): Promise<string | null> {

@@ -15,6 +15,12 @@ export const PREVIEW = { param: "preview", value: "signed-out", header: "x-tuti-
 /** "Preview as a reader": page `path` on the portal (`portal`: its address) as people signed out see it. */
 export const previewUrl = ({ portal }: { portal: string }, path: string) => `${portal}${path}?${new URLSearchParams({ [PREVIEW.param]: PREVIEW.value })}`;
 
+/**
+ * Customize's preview of the portal (the app frames it): its Tuti address shows the portal even when
+ * it has an address of its own, which would send the page there.
+ */
+export const CUSTOMIZE = { param: "customize", value: "1" } as const;
+
 /** Where pages load Next.js's files from (next.config.ts's assetPrefix): a path of its own on every host, so a team's site forwards it too. */
 export const ASSET_PATH = "/_tuti";
 

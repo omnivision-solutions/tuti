@@ -3,6 +3,7 @@
 import { useTransition } from "react";
 import { toast } from "sonner";
 
+import { usePreview } from "@/components/customize-shell";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { PortalHomePage } from "@/server/operations/portal";
 import { setPortalHome } from "@/server/portal-settings";
@@ -21,9 +22,10 @@ const DESCRIPTIONS: Record<PortalHomePage, string> = {
   docs: "Your articles, for a portal that's mostly docs.",
 };
 
-/** Settings → Home page (see portal.update's `home`): what the portal's address opens. */
+/** Customize → Home page (see portal.update's `home`): what the portal's address opens. */
 export function PortalHomeSelect({ projectSlug, home }: { projectSlug: string; home: PortalHomePage }) {
   const [pending, startTransition] = useTransition();
+  const preview = usePreview();
   return (
     <div className="flex flex-col gap-2 text-sm">
       <Select
@@ -37,6 +39,7 @@ export function PortalHomeSelect({ projectSlug, home }: { projectSlug: string; h
               toast.error(result.error);
             } else {
               toast.success(`Your portal opens with ${HOMES[value as PortalHomePage].toLowerCase()} now`);
+              preview.reload();
             }
           })
         }

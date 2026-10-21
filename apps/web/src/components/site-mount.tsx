@@ -25,7 +25,7 @@ import { removeSiteMount, saveSite, verifySiteSetup } from "@/server/portal-sett
 type Site = { url: string; status: "pending" | "verified"; forward: { from: string; to: string }[] };
 
 /**
- * Settings → Your site (see the site.* operations): the portal under a path of the team's own site
+ * Customize → Address (see the site.* operations): the portal under a path of the team's own site
  * (acme.com/portal). They set the address, make their site forward the path to Tuti, and check it.
  */
 export function SiteMountSettings({ projectSlug, site, portalAddress }: { projectSlug: string; site: Site | null; portalAddress: string }) {

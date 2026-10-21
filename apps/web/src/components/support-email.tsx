@@ -14,7 +14,7 @@ import { confirmSupportEmail, saveSupportEmail } from "@/server/assistant";
 import type { FormState } from "@/server/form-state";
 
 /**
- * The support email in Settings → AI answers (see assistant.update): where "Ask a person" sends
+ * The support email in Customize → AI answers (see assistant.update): where "Ask a person" sends
  * questions, once the address has confirmed the link we email it. Off while empty.
  */
 export function SupportEmailSettings({ projectSlug, active, pending }: { projectSlug: string; active: string | null; pending: string | null }) {

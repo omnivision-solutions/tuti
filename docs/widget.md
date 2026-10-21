@@ -13,7 +13,7 @@ an iframe, so your site's styles can't reach it and it needs no API key.
 
 ## Launcher
 
-In the Tuti app, your project's **Settings → Widget** (owners and admins) sets:
+In the Tuti app, your project's **Customize → Widget** (owners and admins) sets:
 
 - **Button label** (default "Feedback", up to 30 characters).
 - **Colour** (default the Tuti green; the text on it is black or white, whichever reads better).

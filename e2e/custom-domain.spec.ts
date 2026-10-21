@@ -17,7 +17,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/customize/address`);
   await owner.getByLabel("Domain", { exact: true }).fill(domain);
   await owner.getByRole("button", { name: "Add domain" }).click();
   await expect(owner.getByText("Waiting for DNS")).toBeVisible();

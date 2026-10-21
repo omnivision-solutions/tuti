@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   }
   const installationId = Number(params.get("installation_id"));
   if (!Number.isSafeInteger(installationId) || installationId <= 0) {
-    return NextResponse.redirect(new URL(`/app/${project.slug}/settings?github=unconfirmed`, appUrl()));
+    return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=unconfirmed`, appUrl()));
   }
   const authorize = new URL(`${config.url}/login/oauth/authorize`);
   authorize.search = new URLSearchParams({

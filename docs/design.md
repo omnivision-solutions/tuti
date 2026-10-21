@@ -49,7 +49,15 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 ## Layout
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
-  (`app/app/layout.tsx`), content max-w-4xl.
+  (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
+  A page with sections of its own lists them under its header with `SubNav`
+  (Settings → Access, Single sign-on, …).
+- **Customize** (`/app/<project>/customize/<section>`): the whole width, the
+  sidebar folded away. `CustomizeShell`: the section's settings in a panel on
+  the left (back, title; cards inside), the portal it changes on the right in
+  a browser frame, at desktop or phone width. Settings that change how the
+  portal looks go here, not in Settings; call `usePreview().reload()` once
+  they're saved.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,

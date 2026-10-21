@@ -149,7 +149,7 @@ const matrix: Matrix = {
   branding: {
     saveBranding: {
       allowed: "ADMIN",
-      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
+      call: (slug) => branding.saveBranding(slug, {}, form({ part: "links", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com" })),
     },
     // Asks the local site, which has no licence server (LICENSE_SERVER_URL below): "unreachable".
     checkBrandingLicense: { allowed: "ADMIN", call: (slug) => branding.checkBrandingLicense(slug) },

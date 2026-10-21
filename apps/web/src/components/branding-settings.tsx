@@ -4,6 +4,7 @@ import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { useActionState, useId, useState } from "react";
 import { toast } from "sonner";
 
+import { usePreview } from "@/components/customize-shell";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,7 +17,20 @@ import type { FormState } from "@/server/form-state";
 
 type Image = { id: string; url: string } | null;
 
-/** How the portal and its docs look: logos, favicon, colour, header and footer links, "Powered by" (see branding.update), which needs a licence to hide. */
+/** Saves one part of the branding (see branding.update and saveBranding), with a toast, and shows it in Customize's preview. */
+function useBrandingForm(projectSlug: string, saved: string) {
+  const preview = usePreview();
+  return useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveBranding(projectSlug, prev, formData);
+    if (!result.error) {
+      toast.success(saved);
+      preview.reload();
+    }
+    return result;
+  }, {});
+}
+
+/** Customize → Branding: the portal's and its docs' logos, favicon and colour (see branding.update). */
 export function BrandingSettings({
   projectSlug,
   logo,
@@ -24,11 +38,6 @@ export function BrandingSettings({
   favicon,
   color,
   defaultColor,
-  headerLinks,
-  footerLinks,
-  poweredBy,
-  licensedUntil,
-  buyLicenseUrl,
 }: {
   projectSlug: string;
   logo: Image;
@@ -37,27 +46,15 @@ export function BrandingSettings({
   /** `#rrggbb`, already the default when the project hasn't picked one. */
   color: string;
   defaultColor: string;
-  headerLinks: { label: string; url: string }[];
-  footerLinks: { label: string; url: string }[];
-  poweredBy: boolean;
-  /** When the project's licence expires; null without one. */
-  licensedUntil: Date | null;
-  /** tuti.so/license for this installation and project. */
-  buyLicenseUrl: string;
 }) {
   const [picked, setPicked] = useState(color);
   const [uploading, setUploading] = useState(0);
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveBranding(projectSlug, prev, formData);
-    if (!result.error) {
-      toast.success("Branding saved");
-    }
-    return result;
-  }, {});
+  const [state, action, pending] = useBrandingForm(projectSlug, "Branding saved");
   const busy = (delta: number) => setUploading((count) => count + delta);
 
   return (
     <form {...keepingFields(action)}>
+      <input type="hidden" name="part" value="look" />
       <FieldGroup>
         <ImageField
           projectSlug={projectSlug}
@@ -108,6 +105,30 @@ export function BrandingSettings({
             there instead.
           </FieldDescription>
         </Field>
+        {state.error && <FieldError>{state.error}</FieldError>}
+        <Button type="submit" disabled={pending || uploading > 0} className="self-end">
+          {pending ? "Saving…" : "Save branding"}
+        </Button>
+      </FieldGroup>
+    </form>
+  );
+}
+
+/** Customize → Navigation: links in the portal's header and footer (see branding.update). */
+export function NavigationSettings({
+  projectSlug,
+  headerLinks,
+  footerLinks,
+}: {
+  projectSlug: string;
+  headerLinks: { label: string; url: string }[];
+  footerLinks: { label: string; url: string }[];
+}) {
+  const [state, action, pending] = useBrandingForm(projectSlug, "Navigation saved");
+  return (
+    <form {...keepingFields(action)}>
+      <input type="hidden" name="part" value="links" />
+      <FieldGroup>
         <LinkRows
           name="headerLink"
           item="Header link"
@@ -122,10 +143,38 @@ export function BrandingSettings({
           description="Up to 5 links in the footer, such as your terms and privacy policy."
           links={footerLinks}
         />
+        {state.error && <FieldError>{state.error}</FieldError>}
+        <Button type="submit" disabled={pending} className="self-end">
+          {pending ? "Saving…" : "Save navigation"}
+        </Button>
+      </FieldGroup>
+    </form>
+  );
+}
+
+/** Customize → Powered by: "Powered by tuti" in the footer, which needs a licence to hide (see branding.update). */
+export function PoweredBySettings({
+  projectSlug,
+  poweredBy,
+  licensedUntil,
+  buyLicenseUrl,
+}: {
+  projectSlug: string;
+  poweredBy: boolean;
+  /** When the project's licence expires; null without one. */
+  licensedUntil: Date | null;
+  /** tuti.so/license for this installation and project. */
+  buyLicenseUrl: string;
+}) {
+  const [state, action, pending] = useBrandingForm(projectSlug, "Saved");
+  return (
+    <form {...keepingFields(action)}>
+      <input type="hidden" name="part" value="poweredBy" />
+      <FieldGroup>
         <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} />
         {state.error && <FieldError>{state.error}</FieldError>}
-        <Button type="submit" disabled={pending || uploading > 0} className="self-end">
-          {pending ? "Saving…" : "Save branding"}
+        <Button type="submit" disabled={pending} className="self-end">
+          {pending ? "Saving…" : "Save"}
         </Button>
       </FieldGroup>
     </form>

@@ -102,7 +102,7 @@ see the dot on their laptop.
 
 ## Private portals
 
-With **Settings → Portal access → Private**, only your team and the people your app signs in
+With **Settings → Access → Portal access → Private**, only your team and the people your app signs in
 this way can read the portal, its docs, changelog and feeds; everyone else gets the
 sign-in page, and sign-up is off. In the widget, the panel asks visitors to sign in until
 `getToken` gives it a token, then shows the portal to them.
@@ -112,7 +112,7 @@ email, once their address is verified.
 
 ## Reader groups
 
-Add your groups in **Settings → Groups** (owners and admins; or `groups.create`): a name, a
+Add your groups in **Settings → Access → Groups** (owners and admins; or `groups.create`): a name, a
 description, and who's in it, by either or both of:
 
 - **SSO group name**: the claim your token names the group by in `groups` (e.g. `enterprise`).

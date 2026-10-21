@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
   const done = (result: string) => {
-    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings?github=${result}`, appUrl()));
+    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=${result}`, appUrl()));
     response.cookies.delete({ name: INSTALL_COOKIE, path: "/api/github" });
     return response;
   };

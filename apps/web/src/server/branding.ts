@@ -8,21 +8,23 @@ import { updateBranding } from "./operations/branding";
 import { checkLicense } from "./operations/license";
 import { asAdmin, call } from "./operations/run";
 
-/** Saves the Branding card in Settings (see branding.update): an empty image field removes that image, empty link rows are skipped. */
+/**
+ * Saves one part of the branding from Customize (see branding.update), named by the form's `part`: its
+ * look (logos, favicon, colour; an empty image field removes that image), its links (empty rows are
+ * skipped) or "Powered by". The other parts stay as they are.
+ */
 export async function saveBranding(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (name: string) => {
     const field = formData.get(name);
     return typeof field === "string" ? field : "";
   };
-  const input = {
-    logo: text("logo") || null,
-    logoDark: text("logoDark") || null,
-    favicon: text("favicon") || null,
-    color: text("color"),
-    headerLinks: linksFrom(formData, "headerLink"),
-    footerLinks: linksFrom(formData, "footerLink"),
-    poweredBy: formData.get("poweredBy") === "on",
-  };
+  const part = text("part");
+  const input =
+    part === "links"
+      ? { headerLinks: linksFrom(formData, "headerLink"), footerLinks: linksFrom(formData, "footerLink") }
+      : part === "poweredBy"
+        ? { poweredBy: formData.get("poweredBy") === "on" }
+        : { logo: text("logo") || null, logoDark: text("logoDark") || null, favicon: text("favicon") || null, color: text("color") };
   return asAdmin(projectSlug, "Only project owners and admins can change the branding", (context) =>
     call(updateBranding, context, input),
   );

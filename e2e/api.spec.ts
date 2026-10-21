@@ -20,7 +20,7 @@ test("an admin creates an API key, reads posts with it, revokes it and exports t
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
 
   // The key is shown once, with a command to try it.
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/developers`);
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   await owner.getByRole("textbox", { name: "Key name" }).fill("Zapier");
   await owner.getByRole("button", { name: "Create key" }).click();
