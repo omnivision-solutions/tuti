@@ -1,5 +1,5 @@
 /**
- * Embeds existing posts and suggests duplicates among them, and embeds published help articles for search.
+ * Embeds existing posts and suggests duplicates among them, and embeds published docs articles for search.
  * Run: pnpm --filter @tuti/worker backfill:embeddings
  */
 import { prisma } from "@tuti/db";
@@ -23,7 +23,7 @@ for (const post of posts) {
 }
 console.log(`${posts.length} posts: embedded ${embedded}, ${suggestions} new duplicate suggestion(s)`);
 
-// Published help articles, for search (unchanged ones are skipped).
+// Published docs articles, for search (unchanged ones are skipped).
 const { articles, embedded: articlesEmbedded, failed } = await embedPublishedArticles({ info: () => {}, warn: console.warn });
 console.log(`${articles} published articles: embedded ${articlesEmbedded} for search (the rest unchanged), ${failed.length} failed`);
 await prisma.$disconnect();

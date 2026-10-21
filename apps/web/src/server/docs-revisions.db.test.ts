@@ -9,9 +9,9 @@ import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { docsContents, publishedArticle } from "@/server/help-queries";
-import { searchDocs } from "@/server/help-search";
-import { docsInsights } from "@/server/operations/help-insights";
+import { docsContents, publishedArticle } from "@/server/docs-queries";
+import { searchDocs } from "@/server/docs-search";
+import { docsInsights } from "@/server/operations/docs-insights";
 import {
   ARTICLE_REVISIONS_KEPT,
   createArticle,
@@ -24,7 +24,7 @@ import {
   publishChanges,
   restoreArticle,
   updateArticle,
-} from "@/server/operations/help";
+} from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -161,7 +161,7 @@ describe("deleting", () => {
       llms: true,
       sitemap: true,
       search: ["refunds"],
-      export: ["help/basics/refunds.md"],
+      export: ["docs/basics/refunds.md"],
       insights: ["refunds"],
       published: ["kept", "refunds"],
       collection: 1,

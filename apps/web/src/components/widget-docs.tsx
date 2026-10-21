@@ -5,15 +5,15 @@ import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
-import { DocsAnswer } from "@/components/help-answer";
-import { DocsCollections, DocsTabs } from "@/components/help-collections";
+import { DocsAnswer } from "@/components/docs-answer";
+import { DocsCollections, DocsTabs } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { docsContents, publishedArticle } from "@/server/help-queries";
-import { searchDocs } from "@/server/help-search";
+import { docsContents, publishedArticle } from "@/server/docs-queries";
+import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
-import { answersEnabled } from "@/server/operations/help-ask";
-import { askAPerson } from "@/server/operations/help-escalate";
+import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
 import { readerGroups } from "@/server/portal-access";
 
 /** A widget Docs URL: the list (with the search, if any, or in a docs tab) or an article. */

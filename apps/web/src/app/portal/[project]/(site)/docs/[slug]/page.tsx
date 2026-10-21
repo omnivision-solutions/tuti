@@ -8,7 +8,7 @@ import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { formatDate } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, publishedArticle } from "@/server/help-queries";
+import { articleMarkdown, publishedArticle } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 
 /** Search results show the article's title and its first lines. */

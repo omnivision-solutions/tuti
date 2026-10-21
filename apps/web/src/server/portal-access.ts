@@ -92,7 +92,7 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 }
 
 /**
- * Which help center collections someone may read (see lib/reader-groups.ts): null for the
+ * Which docs collections someone may read (see lib/reader-groups.ts): null for the
  * project's team (everything), the groups their latest sign-in through the project's SSO gave
  * them, or none.
  */

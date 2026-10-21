@@ -48,7 +48,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "docs.insights": () => ({}),
   "docs.dismissGap": () => ({ question: "How do I invite?" }),
   "docs.ask": () => ({ q: "How do I invite my team?" }),
-  // A question the read and write key asked (another key's question is refused: see help-escalate.db.test.ts).
+  // A question the read and write key asked (another key's question is refused: see docs-escalate.db.test.ts).
   "docs.escalate": (f) => ({ questionId: f.questionId, email: `e2e-${crypto.randomUUID()}@example.com`, note: "From the matrix" }),
   "assistant.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).

@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath } from "@/lib/post-urls";
-import { type DocsCollection, docsContents } from "@/server/help-queries";
+import { type DocsCollection, docsContents } from "@/server/docs-queries";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
 const heading = (level: number, value: string) => ({ type: "heading", attrs: { level }, content: [text(value)] });

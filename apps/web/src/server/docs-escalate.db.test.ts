@@ -5,7 +5,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
+import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { hashSecret } from "@/lib/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -13,15 +13,15 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { confirmSupportEmail, saveSupportEmail } from "./assistant";
-import { escalateDocs } from "./help-readers";
+import { escalateDocs } from "./docs-readers";
 import { getAssistantSettings, updateAssistantSettings } from "./operations/assistant";
-import { askAPerson, escalateDocs as escalateOperation } from "./operations/help-escalate";
-import { getDocsInsights } from "./operations/help-insights";
+import { askAPerson, escalateDocs as escalateOperation } from "./operations/docs-escalate";
+import { getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
 
 /**
  * "Ask a person": the team's support email (confirmed by a link before it's used) and
- * passing a question the AI couldn't help with to it (help.escalate). The summary comes
+ * passing a question the AI couldn't help with to it (docs.escalate). The summary comes
  * from the model fake; emails land in the SMTP fake.
  */
 
@@ -319,7 +319,7 @@ test("the Gaps list counts escalated questions and labels them", async () => {
   actAs(owner);
   const { gaps } = await call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(Object.fromEntries(gaps.map((gap) => [gap.question, gap.escalated]))).toEqual({ "Can I pay with crypto?": 1, "Is there a dark mode?": 0 });
-  const html = renderToStaticMarkup(await HelpInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
   const row = (text: string) => html.slice(html.indexOf(text), html.indexOf("Write an article", html.indexOf(text)));
   expect(row("Can I pay with crypto?")).toContain("Escalated");
   expect(row("Is there a dark mode?")).not.toContain("Escalated");

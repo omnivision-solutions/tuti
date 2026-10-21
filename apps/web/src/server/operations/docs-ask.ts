@@ -6,7 +6,7 @@ import { z } from "zod";
 import { portalAddress } from "@/server/custom-domains";
 import { type ReaderGroups, visibleArticle } from "@/lib/reader-groups";
 
-import { type AnswerSection, answerSections } from "../help-search";
+import { type AnswerSection, answerSections } from "../docs-search";
 import { actorGroups } from "../portal-access";
 import { ANSWER_LENGTHS, type AssistantSettings, assistantSettings, offLimitsTopic } from "./assistant";
 import { defineOperation, OperationError } from "./define";

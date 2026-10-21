@@ -56,7 +56,7 @@ export const RELEASE_AFTER_HOURS = 24;
  * more than a day ago) and their quota frees.
  * A sweep rather than bookkeeping on every delete: it reads what's saved, so no delete or
  * edit path can forget to free something. "Uses" means an image node in any post, comment,
- * changelog entry, help article (deleted ones too, until `purgeArticles` removes them), an
+ * changelog entry, docs article (deleted ones too, until `purgeArticles` removes them), an
  * article's unpublished changes or kept article revision, plus the project's branding images. A new column that holds a media
  * id must be added to `used` below, or its uploads are released and deleted.
  *

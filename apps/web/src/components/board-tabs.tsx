@@ -7,7 +7,7 @@ import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
 /**
- * The portal's tabs: each board, then the roadmap, the changelog and the help center (host-relative links).
+ * The portal's tabs: each board, then the roadmap, the changelog and the docs (host-relative links).
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
  */
 export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: string; name: string }[]; newChangelog?: boolean }) {

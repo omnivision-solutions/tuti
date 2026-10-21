@@ -42,12 +42,12 @@ import {
   listTabs,
   reorderTab,
   updateTab,
-} from "./help";
+} from "./docs";
 import { markChangelogSeen } from "./changelog-seen";
 import { getAssistantSettings, updateAssistantSettings } from "./assistant";
-import { askDocs } from "./help-ask";
-import { escalateDocs } from "./help-escalate";
-import { answerArticle, dismissDocsGap, getDocsInsights } from "./help-insights";
+import { askDocs } from "./docs-ask";
+import { escalateDocs } from "./docs-escalate";
+import { answerArticle, dismissDocsGap, getDocsInsights } from "./docs-insights";
 import { addPortalReaders, getPortal, listPortalReaders, removePortalReader, updatePortal } from "./portal";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";

@@ -12,9 +12,9 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { docsContents, publishedArticle } from "./help-queries";
-import { answerSections, searchDocs } from "./help-search";
-import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/help";
+import { docsContents, publishedArticle } from "./docs-queries";
+import { answerSections, searchDocs } from "./docs-search";
+import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { call } from "./operations/run";
 import { groupsOf } from "./portal-access";
 
@@ -73,7 +73,7 @@ async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID(
  * Enterprise), Beta (beta only), and an article in each plus one in no collection. Every article
  * says "widget", and each has a section close to the question "widget help".
  */
-async function helpCenterWithGroups() {
+async function docsWithGroups() {
   await call(createCollection, as(), { name: "Basics" });
   await call(createCollection, as(), { name: "Enterprise", groups: ["Enterprise"] });
   await call(createCollection, as(), { name: "Setup", parent: "enterprise" });
@@ -97,9 +97,9 @@ const everyone = ["getting-started", "contact"];
 const enterprise = [...everyone, "saml", "rolling-out"];
 
 describe("who sees what", () => {
-  beforeEach(helpCenterWithGroups);
+  beforeEach(docsWithGroups);
 
-  /** Every way a reader reads the help center, for the user `actAs` set (or for `groups`). */
+  /** Every way a reader reads the docs, for the user `actAs` set (or for `groups`). */
   async function seen(user: TestUser | null) {
     actAs(user);
     const userId = user?.id ?? null;
@@ -165,7 +165,7 @@ describe("who sees what", () => {
 });
 
 test("each sign-in says the groups: a later token without one takes it away", async () => {
-  await helpCenterWithGroups();
+  await docsWithGroups();
   const sub = "user-42";
   const reader = await ssoReader([], sub);
   expect(await signIn({ groups: ["enterprise", "Enterprise"] }, sub)).toBe(reader.id);
@@ -193,7 +193,7 @@ test("a first sign-in that loses the race to create the person still sets their 
 });
 
 test("search engines and AI tools only get what's for everyone; a restricted article's .md is never cached for others", async () => {
-  await helpCenterWithGroups();
+  await docsWithGroups();
   const params = Promise.resolve({ project: project.slug });
   const text = await (await llms(new Request("http://x"), { params })).text();
   expect(text).toContain("getting-started.md");

@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
-import type { DocsCollection } from "@/server/help-queries";
+import type { DocsCollection } from "@/server/docs-queries";
 
 type Articles = { slug: string; title: string }[];
 

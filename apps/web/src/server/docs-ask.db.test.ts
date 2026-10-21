@@ -4,22 +4,22 @@ import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, start
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
-import { createArticle, publishArticle } from "@/server/operations/help";
+import { createArticle, publishArticle } from "@/server/operations/docs";
 import {
   answerQuestion,
   answersEnabled,
   ASKS_PER_ASKER_PER_HOUR,
   ASKS_PER_PROJECT_PER_HOUR,
   askDocs as askOperation,
-} from "@/server/operations/help-ask";
+} from "@/server/operations/docs-ask";
 import { updateAssistantSettings } from "@/server/operations/assistant";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { askDocs, rateDocsAnswer } from "./help-readers";
+import { askDocs, rateDocsAnswer } from "./docs-readers";
 
 /**
- * AI answers on the help center (help.ask): sections found through the OpenAI fake's
+ * AI answers on the docs (docs.ask): sections found through the OpenAI fake's
  * vectors, answers from the model fake. Publishing runs the articleChanged job inline,
  * which embeds the article's sections.
  */
@@ -378,7 +378,7 @@ describe("the portal's Ask AI and the question log", () => {
     ]);
   });
 
-  test("help.ask with an API key counts as the key", async () => {
+  test("docs.ask with an API key counts as the key", async () => {
     const actor = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
     expect(await call(askOperation, { actor, projectId: project.id }, { q: QUESTION })).toMatchObject({ status: "no_answer" });
     expect(await logged()).toEqual([expect.objectContaining({ askerId: "key-1" })]);

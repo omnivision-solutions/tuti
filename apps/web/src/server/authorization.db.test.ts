@@ -33,8 +33,8 @@ import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
 import * as github from "./github";
-import * as help from "./help";
-import * as helpReaders from "./help-readers";
+import * as docs from "./docs";
+import * as docsReaders from "./docs-readers";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -67,8 +67,8 @@ const modules = {
   boards,
   branding,
   github,
-  help,
-  "help-readers": helpReaders,
+  docs,
+  "docs-readers": docsReaders,
   invitations,
   "manage-posts": managePosts,
   media,
@@ -131,7 +131,7 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => assistant.saveSupportEmail(slug, {}, form({ supportEmail: `e2e-${crypto.randomUUID()}@example.com` })),
     },
-    // The emailed token is the permission (see help-escalate.db.test.ts).
+    // The emailed token is the permission (see docs-escalate.db.test.ts).
     confirmSupportEmail: {
       allowed: "public",
       call: async (slug) => {
@@ -198,30 +198,30 @@ const matrix: Matrix = {
   "changelog-seen": {
     markChangelogSeen: { allowed: "signed in", refusesSsoUsers: true, call: (slug) => changelogSeen.markChangelogSeen(slug, new Date().toISOString()) },
   },
-  help: {
+  docs: {
     saveArticle: {
       allowed: "MEMBER",
-      call: (slug) => help.saveArticle(slug, "matrix-draft", {}, form({ title: "Renamed by the matrix", collection: "basics" })),
+      call: (slug) => docs.saveArticle(slug, "matrix-draft", {}, form({ title: "Renamed by the matrix", collection: "basics" })),
     },
-    publishArticle: { allowed: "MEMBER", call: (slug) => help.publishArticle(slug, "matrix-draft") },
-    publishArticleChanges: { allowed: "MEMBER", call: (slug) => help.publishArticleChanges(slug, "matrix-article") },
-    discardArticleChanges: { allowed: "MEMBER", call: (slug) => help.discardArticleChanges(slug, "matrix-article") },
-    unpublishArticle: { allowed: "MEMBER", call: (slug) => help.unpublishArticle(slug, "matrix-article") },
-    deleteArticle: { allowed: "MEMBER", call: (slug) => help.deleteArticle(slug, "matrix-article") },
-    restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => help.restoreArticle(slug, "matrix-draft", f.revisionId) },
-    saveCollection: { allowed: "MEMBER", call: (slug) => help.saveCollection(slug, null, {}, form({ name: "Billing" })) },
-    deleteCollection: { allowed: "MEMBER", call: (slug) => help.deleteCollection(slug, "basics") },
-    moveCollection: { allowed: "MEMBER", call: (slug) => help.moveCollection(slug, "guides", "basics", 0) },
-    moveArticle: { allowed: "MEMBER", call: (slug) => help.moveArticle(slug, "matrix-draft", "basics", 0) },
-    saveTab: { allowed: "MEMBER", call: (slug) => help.saveTab(slug, null, {}, form({ name: "API" })) },
-    moveTab: { allowed: "MEMBER", call: (slug) => help.moveTab(slug, "docs", 0) },
-    deleteTab: { allowed: "MEMBER", call: (slug) => help.deleteTab(slug, "docs") },
-    dismissDocsGap: { allowed: "MEMBER", call: (slug) => help.dismissDocsGap(slug, "How do I invite?") },
+    publishArticle: { allowed: "MEMBER", call: (slug) => docs.publishArticle(slug, "matrix-draft") },
+    publishArticleChanges: { allowed: "MEMBER", call: (slug) => docs.publishArticleChanges(slug, "matrix-article") },
+    discardArticleChanges: { allowed: "MEMBER", call: (slug) => docs.discardArticleChanges(slug, "matrix-article") },
+    unpublishArticle: { allowed: "MEMBER", call: (slug) => docs.unpublishArticle(slug, "matrix-article") },
+    deleteArticle: { allowed: "MEMBER", call: (slug) => docs.deleteArticle(slug, "matrix-article") },
+    restoreArticle: { allowed: "MEMBER", takesIds: true, call: (slug, f) => docs.restoreArticle(slug, "matrix-draft", f.revisionId) },
+    saveCollection: { allowed: "MEMBER", call: (slug) => docs.saveCollection(slug, null, {}, form({ name: "Billing" })) },
+    deleteCollection: { allowed: "MEMBER", call: (slug) => docs.deleteCollection(slug, "basics") },
+    moveCollection: { allowed: "MEMBER", call: (slug) => docs.moveCollection(slug, "guides", "basics", 0) },
+    moveArticle: { allowed: "MEMBER", call: (slug) => docs.moveArticle(slug, "matrix-draft", "basics", 0) },
+    saveTab: { allowed: "MEMBER", call: (slug) => docs.saveTab(slug, null, {}, form({ name: "API" })) },
+    moveTab: { allowed: "MEMBER", call: (slug) => docs.moveTab(slug, "docs", 0) },
+    deleteTab: { allowed: "MEMBER", call: (slug) => docs.deleteTab(slug, "docs") },
+    dismissDocsGap: { allowed: "MEMBER", call: (slug) => docs.dismissDocsGap(slug, "How do I invite?") },
   },
   // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
-  "help-readers": {
-    answerArticle: { allowed: "public", call: (slug) => helpReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
-    countArticleView: { allowed: "public", call: (slug) => helpReaders.countArticleView(slug, "matrix-article") },
+  "docs-readers": {
+    answerArticle: { allowed: "public", call: (slug) => docsReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
+    countArticleView: { allowed: "public", call: (slug) => docsReaders.countArticleView(slug, "matrix-article") },
     askDocs: {
       allowed: "public",
       // With embeddings on (answers need them). Nothing in the fixture is close to the question, so the model isn't asked.
@@ -229,13 +229,13 @@ const matrix: Matrix = {
         vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
         vi.stubEnv("OPENAI_BASE_URL", openai.url);
         try {
-          return await helpReaders.askDocs(slug, "How do I invite my team?");
+          return await docsReaders.askDocs(slug, "How do I invite my team?");
         } finally {
           vi.stubEnv("OPENAI_API_KEY", "");
         }
       },
     },
-    rateDocsAnswer: { allowed: "public", takesIds: true, call: (slug, f) => helpReaders.rateDocsAnswer(slug, f.questionId, false) },
+    rateDocsAnswer: { allowed: "public", takesIds: true, call: (slug, f) => docsReaders.rateDocsAnswer(slug, f.questionId, false) },
     // Only the asker (here the browser with MATRIX_READER's cookie; someone signed in is known by their account instead).
     escalateDocs: {
       allowed: "public",
@@ -246,7 +246,7 @@ const matrix: Matrix = {
         const cookie = request.cookie;
         request.cookie = [cookie, `tuti_reader=${MATRIX_READER}`].filter(Boolean).join("; ");
         try {
-          return await helpReaders.escalateDocs(slug, f.escalatableId, `e2e-${crypto.randomUUID()}@example.com`, "From the matrix");
+          return await docsReaders.escalateDocs(slug, f.escalatableId, `e2e-${crypto.randomUUID()}@example.com`, "From the matrix");
         } finally {
           request.cookie = cookie;
         }
@@ -595,9 +595,9 @@ async function createFixture() {
   await prisma.siteMount.create({ data: { projectId, origin: site.origin, path: `/${project.slug}`, verificationToken: "matrix" } });
   site.answer(`/${project.slug}/.well-known/tuti-site`, "tuti-site=matrix");
   site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
-  const docs = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
-  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: docs.id } });
-  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: docs.id } });
+  const tab = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
+  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
+  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

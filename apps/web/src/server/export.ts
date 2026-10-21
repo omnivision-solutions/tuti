@@ -98,9 +98,9 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
       },
     }),
   )) {
-    // A collection in another is a folder in its folder (collections go 2 levels deep at most), in its section's folder.
-    const section = article.collection?.parent ? article.collection.parent.tab : article.collection?.tab;
-    const folder = ["help", section?.slug, article.collection?.parent?.slug, article.collection?.slug].filter(Boolean).join("/");
+    // A collection in another is a folder in its folder (collections go 2 levels deep at most), in its tab's folder.
+    const tab = article.collection?.parent ? article.collection.parent.tab : article.collection?.tab;
+    const folder = ["docs", tab?.slug, article.collection?.parent?.slug, article.collection?.slug].filter(Boolean).join("/");
     yield [
       `${folder}/${article.slug}.md`,
       frontMatter({
@@ -110,8 +110,8 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         listing: article.listing.toLowerCase(),
         publishedAt: article.publishedAt,
         updatedAt: article.updatedAt,
-        // Only with sections.
-        ...(section && { section: section.name }),
+        // Only with tabs.
+        ...(tab && { tab: tab.name }),
         collection: article.collection?.name ?? null,
         // Its place in the collection (or among the articles in none): 0 first.
         order: article.order,
@@ -200,7 +200,7 @@ function readme(projectName: string, exportedAt: Date): string {
 
 Exported from Tuti on ${exportedAt.toISOString()}.
 
-- \`help/\`: the articles in your docs, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (a collection in another is a folder in its folder, and with sections each section is a folder with its collections; articles in no collection are directly in \`help/\`). \`order\` in the front matter is an article's place in its collection.
+- \`docs/\`: the articles in your docs, drafts and every listing (everywhere, unlisted, hidden, AI only) included, in a folder per collection (a collection in another is a folder in its folder, and with tabs each tab is a folder with its collections; articles in no collection are directly in \`docs/\`). \`order\` in the front matter is an article's place in its collection.
 - \`changelog/\`: changelog entries, drafts included, as \`<number>-<title>.md\`.
 - \`posts/\`: feedback posts in a folder per board, as \`<number>-<title>.md\`, with their comments at the end.
 

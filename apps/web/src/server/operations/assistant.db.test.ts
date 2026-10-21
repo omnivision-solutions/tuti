@@ -7,7 +7,7 @@ import { saveAssistantSettings } from "../assistant";
 import { getAssistantSettings, offLimitsTopic, updateAssistantSettings } from "./assistant";
 import { call } from "./run";
 
-/** How the docs' AI answers (assistant.*); what reaches the prompt is in help-ask.db.test.ts. */
+/** How the docs' AI answers (assistant.*); what reaches the prompt is in docs-ask.db.test.ts. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;

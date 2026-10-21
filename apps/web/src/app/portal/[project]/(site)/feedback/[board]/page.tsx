@@ -22,7 +22,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const { project: projectSlug, board: boardSlug } = await props.params;
   const searchParams = await props.searchParams;
   const filters = parsePostFilters(searchParams);
-  // "Post this as feedback" from the help center starts the post with the question.
+  // "Post this as feedback" from the docs starts the post with the question.
   const title = typeof searchParams.title === "string" ? searchParams.title : undefined;
   const session = await getSession();
   const userId = session?.user.id;

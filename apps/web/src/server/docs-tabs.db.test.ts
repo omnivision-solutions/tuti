@@ -5,7 +5,7 @@ import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { collectionOptions, docsContents, publishedArticle } from "./help-queries";
+import { collectionOptions, docsContents, publishedArticle } from "./docs-queries";
 import {
   createArticle,
   createCollection,
@@ -19,7 +19,7 @@ import {
   reorderTab,
   updateCollection,
   updateTab,
-} from "./operations/help";
+} from "./operations/docs";
 import { call } from "./operations/run";
 
 /**
@@ -194,14 +194,14 @@ describe("readers", () => {
 
   test("the docs by tab: those with something to read, the first with the articles in no collection", async () => {
     await withTabs();
-    const help = await docsContents(project.slug);
-    expect(help.tabs.map((s) => ({ slug: s.slug, collections: s.collections.map((c) => c.slug), uncollected: s.uncollected.map((a) => a.slug) }))).toEqual([
+    const docs = await docsContents(project.slug);
+    expect(docs.tabs.map((s) => ({ slug: s.slug, collections: s.collections.map((c) => c.slug), uncollected: s.uncollected.map((a) => a.slug) }))).toEqual([
       { slug: "guides", collections: ["basics", "billing"], uncollected: ["contact-us"] },
       { slug: "api", collections: ["endpoints"], uncollected: [] },
     ]);
-    expect(help.tabs[0]!.collections[1]!.collections.map((c) => c.slug)).toEqual(["invoices"]);
+    expect(docs.tabs[0]!.collections[1]!.collections.map((c) => c.slug)).toEqual(["invoices"]);
     // All of it too, in reading order.
-    expect(help.collections.map((c) => c.slug)).toEqual(["basics", "billing", "endpoints"]);
+    expect(docs.collections.map((c) => c.slug)).toEqual(["basics", "billing", "endpoints"]);
 
     // An article's way back is its tab (a collection in another's: that one's tab).
     expect((await publishedArticle(project.slug, "listing-posts"))?.tab).toBe("api");
@@ -234,13 +234,13 @@ describe("readers", () => {
 
     actAs(owner);
     const files = unzipSync(new Uint8Array(await (await exportZip(new Request("http://x"), { params })).arrayBuffer()));
-    expect(Object.keys(files).filter((file) => file.startsWith("help/")).sort()).toEqual([
-      "help/api/endpoints/listing-posts.md",
-      "help/contact-us.md",
-      "help/empty/unread/not-yet.md",
-      "help/guides/basics/start-here.md",
-      "help/guides/billing/invoices/downloading-invoices.md",
+    expect(Object.keys(files).filter((file) => file.startsWith("docs/")).sort()).toEqual([
+      "docs/api/endpoints/listing-posts.md",
+      "docs/contact-us.md",
+      "docs/empty/unread/not-yet.md",
+      "docs/guides/basics/start-here.md",
+      "docs/guides/billing/invoices/downloading-invoices.md",
     ]);
-    expect(strFromU8(files["help/api/endpoints/listing-posts.md"]!)).toContain('section: "API"');
+    expect(strFromU8(files["docs/api/endpoints/listing-posts.md"]!)).toContain('tab: "API"');
   });
 });

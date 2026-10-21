@@ -15,7 +15,7 @@ import type { FormState } from "@/server/form-state";
 
 type Image = { id: string; url: string } | null;
 
-/** How the portal and help center look: logos, favicon, colour, header and footer links, "Powered by" (see branding.update). */
+/** How the portal and its docs look: logos, favicon, colour, header and footer links, "Powered by" (see branding.update). */
 export function BrandingSettings({
   projectSlug,
   logo,

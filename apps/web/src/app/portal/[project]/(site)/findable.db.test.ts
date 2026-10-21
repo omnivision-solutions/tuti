@@ -8,7 +8,7 @@ import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
 
-/** Serving the portal to search engines and AI tools: /help/<slug>.md, /llms.txt, /sitemap.xml and /robots.txt. */
+/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /sitemap.xml and /robots.txt. */
 
 const request = new Request("http://x");
 const doc = (...content: object[]) => ({ type: "doc", content });
@@ -111,7 +111,7 @@ test("the sitemap lists the portal's public pages with when they changed, and no
   expect((await sitemap(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);
 });
 
-test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts are left out, never the help center", async () => {
+test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts are left out, never the docs", async () => {
   const project = await docsContents();
   const portal = `http://${project.slug}.localhost:3100`;
   await prisma.$executeRaw`

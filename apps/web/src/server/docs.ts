@@ -23,8 +23,8 @@ import {
   updateArticle,
   updateCollection,
   updateTab,
-} from "./operations/help";
-import { dismissDocsGap as dismissGapOperation } from "./operations/help-insights";
+} from "./operations/docs";
+import { dismissDocsGap as dismissGapOperation } from "./operations/docs-insights";
 import { asTeam, call } from "./operations/run";
 
 /** The team's docs actions (see the articles.*, collections.* and tabs.* operations). */

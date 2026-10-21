@@ -11,8 +11,8 @@ import { titleSlug } from "@/lib/post-urls";
 import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
-import { inTreeOrder, listedArticle, readingOrder } from "../help-queries";
-import { searchDocs } from "../help-search";
+import { inTreeOrder, listedArticle, readingOrder } from "../docs-queries";
+import { searchDocs } from "../docs-search";
 import { actorGroups } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";

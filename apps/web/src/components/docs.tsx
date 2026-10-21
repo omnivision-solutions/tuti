@@ -40,7 +40,7 @@ import {
   saveCollection,
   saveTab,
   unpublishArticle,
-} from "@/server/help";
+} from "@/server/docs";
 
 type Article = {
   slug: string;

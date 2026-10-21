@@ -10,12 +10,12 @@ import { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { WidgetDocs } from "@/components/widget-help";
+import { WidgetDocs } from "@/components/widget-docs";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { discardArticleChanges, publishArticleChanges, saveArticle } from "./help";
-import { docsContents, publishedArticle } from "./help-queries";
-import { answerSections, searchDocs } from "./help-search";
+import { discardArticleChanges, publishArticleChanges, saveArticle } from "./docs";
+import { docsContents, publishedArticle } from "./docs-queries";
+import { answerSections, searchDocs } from "./docs-search";
 import {
   createArticle,
   deleteArticle,
@@ -28,7 +28,7 @@ import {
   restoreArticle,
   unpublishArticle,
   updateArticle,
-} from "./operations/help";
+} from "./operations/docs";
 import { call } from "./operations/run";
 
 /**

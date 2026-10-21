@@ -4,17 +4,17 @@ import { type Prisma, prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
+import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { dismissDocsGap } from "./help";
-import { answerArticle, countArticleView } from "./help-readers";
-import { searchDocs } from "./help-search";
-import { answerArticle as answerOperation, getDocsInsights } from "./operations/help-insights";
+import { dismissDocsGap } from "./docs";
+import { answerArticle, countArticleView } from "./docs-readers";
+import { searchDocs } from "./docs-search";
+import { answerArticle as answerOperation, getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
 
-/** Readers' answers under help articles, article views, search logging and the team's insights. */
+/** Readers' answers under docs articles, article views, search logging and the team's insights. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -238,7 +238,7 @@ describe("gaps", () => {
     });
 
     actAs(owner);
-    const html = renderToStaticMarkup(await HelpInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+    const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
     const row = (question: string) => html.slice(html.indexOf(question), html.indexOf("Write an article", html.indexOf(question)));
     expect(row("Can I pay with crypto?")).toContain("Off-limits");
     expect(row("How do I export?")).toContain("AI found no answer");
@@ -284,7 +284,7 @@ describe("gaps", () => {
 });
 
 test("only the project's team sees the insights page", async () => {
-  const page = () => HelpInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never);
+  const page = () => DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never);
   const outcome = (promise: Promise<unknown>) =>
     promise.then(
       () => "shown",

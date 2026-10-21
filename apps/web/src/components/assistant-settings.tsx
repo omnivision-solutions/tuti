@@ -18,7 +18,7 @@ const LENGTHS = [
   ["detailed", "Detailed"],
 ] as const;
 
-/** How the help center's AI answers: tone, length, standing instructions and off-limits topics (see assistant.update). */
+/** How the docs' AI answers: tone, length, standing instructions and off-limits topics (see assistant.update). */
 export function AssistantSettings({ projectSlug, settings }: { projectSlug: string; settings: Settings }) {
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveAssistantSettings(projectSlug, prev, formData);

@@ -5,10 +5,10 @@ import { ArrowDownIcon, ArrowUpIcon, FolderInputIcon, GripVerticalIcon } from "l
 import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabDialog } from "@/components/help";
+import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabDialog } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { moveArticle, moveCollection, moveTab } from "@/server/help";
+import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
 type StructureCollection = {

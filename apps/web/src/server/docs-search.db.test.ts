@@ -3,13 +3,13 @@ import { articleChunkText, SEARCH_MIN_SIMILARITY } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { createArticle, deleteArticle, publishArticle, searchArticles, unpublishArticle, updateArticle } from "@/server/operations/help";
-import { searchDocs } from "@/server/help-search";
+import { createArticle, deleteArticle, publishArticle, searchArticles, unpublishArticle, updateArticle } from "@/server/operations/docs";
+import { searchDocs } from "@/server/docs-search";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 /**
- * Help center search: publishing an article runs the articleChanged job inline, which
+ * Docs search: publishing an article runs the articleChanged job inline, which
  * embeds its sections (through the OpenAI fake); articles.search ranks them by meaning,
  * then by words (all it has without a key).
  */

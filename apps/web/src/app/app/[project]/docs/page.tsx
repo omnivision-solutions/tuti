@@ -4,8 +4,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, RestoreDeletedButton, TabDialog } from "@/components/help";
-import { DocsStructure } from "@/components/help-structure";
+import { CollectionDialog, RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { DocsStructure } from "@/components/docs-structure";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +13,9 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
-import { inTreeOrder, readingOrder } from "@/server/help-queries";
+import { inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
-import { restorableSince } from "@/server/operations/help";
+import { restorableSince } from "@/server/operations/docs";
 
 const structureArticle = { slug: true, title: true, publishedAt: true } as const;
 const structureView = (article: { slug: string; title: string; publishedAt: Date | null }) => ({

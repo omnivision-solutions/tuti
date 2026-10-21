@@ -14,9 +14,9 @@ import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/d
 import { createChangelogEntry } from "./operations/changelog";
 import { createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
-import { escalateDocs } from "./operations/help-escalate";
+import { escalateDocs } from "./operations/docs-escalate";
 import { addPortalReaders, updatePortal } from "./operations/portal";
-import { createArticle, getArticle, publishArticle } from "./operations/help";
+import { createArticle, getArticle, publishArticle } from "./operations/docs";
 import { call } from "./operations/run";
 import { continueToPortal } from "./portal-handoff";
 import { emailSignInLink } from "./sign-in-link";

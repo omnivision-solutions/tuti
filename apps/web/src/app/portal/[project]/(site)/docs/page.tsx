@@ -2,17 +2,17 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
-import { DocsAnswer } from "@/components/help-answer";
-import { DocsCollections, DocsTabs } from "@/components/help-collections";
+import { DocsAnswer } from "@/components/docs-answer";
+import { DocsCollections, DocsTabs } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { boardPath } from "@/lib/post-urls";
-import { docsContents } from "@/server/help-queries";
-import { searchDocs } from "@/server/help-search";
+import { docsContents } from "@/server/docs-queries";
+import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
-import { answersEnabled } from "@/server/operations/help-ask";
-import { askAPerson } from "@/server/operations/help-escalate";
+import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
 import { readerGroups } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 

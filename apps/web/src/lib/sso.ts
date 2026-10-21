@@ -47,7 +47,7 @@ const claimsSchema = z.object({
   email: z.email().max(320).optional(),
   name: z.string().trim().min(1).max(100).optional(),
   avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
-  /** Which restricted help center collections they may read (see Collection.groups). Each sign-in says them all. */
+  /** Which restricted docs collections they may read (see Collection.groups). Each sign-in says them all. */
   groups: z.array(readerGroup).max(MAX_READER_GROUPS).optional(),
 });
 

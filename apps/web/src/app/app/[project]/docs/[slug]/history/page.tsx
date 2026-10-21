@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { RestoreVersionButton } from "@/components/help";
+import { RestoreVersionButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ArticleDiff } from "@/components/line-diff";
 import { PageHeader } from "@/components/page-header";
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { ARTICLE_REVISIONS_KEPT, articleRevisions } from "@/server/operations/help";
+import { ARTICLE_REVISIONS_KEPT, articleRevisions } from "@/server/operations/docs";
 
 export const metadata = { title: "Article history" };
 

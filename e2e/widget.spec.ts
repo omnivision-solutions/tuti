@@ -285,7 +285,7 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   await laptop.context().close();
 });
 
-test("a customer's site shows its help center in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
+test("a customer's site shows its docs in the widget: search, read, and open an article from the page", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -307,7 +307,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
     return (await response.json()) as { slug: string };
   };
 
-  // No published articles yet: no Help tab.
+  // No published articles yet: no Docs tab.
   const visitor = await (await browser.newContext()).newPage();
   await visitor.goto(sitePage("customer.localhost", slug));
   const launcher = visitor.getByRole("button", { name: "Feedback" });
@@ -332,7 +332,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   const exporting = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
   await api(`/articles/${exporting.slug}/publish`, {});
 
-  // Now the widget has a Help tab: the collections and their articles, like the portal's /help.
+  // Now the widget has a Docs tab: the collections and their articles, like the portal's /docs.
   await visitor.reload();
   await launcher.click();
   await tabs.getByRole("link", { name: "Docs" }).click();
@@ -340,7 +340,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await expect(section).toContainText("The basics, in five minutes.");
   await expect(section.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(widget.getByRole("region", { name: "More articles" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
-  await checkpoint(visitor, "widget-help");
+  await checkpoint(visitor, "widget-docs");
 
   // Search, read a result, and go back to the results.
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
@@ -349,7 +349,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   const results = widget.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results.getByRole("link", { name: "Exporting your data" })).toHaveCount(0);
-  await checkpoint(visitor, "widget-help-search");
+  await checkpoint(visitor, "widget-docs-search");
   await results.getByRole("link", { name: "Inviting your team" }).click();
   const article = widget.getByRole("article", { name: "Inviting your team" });
   await expect(article.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
@@ -358,7 +358,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   const newTab = article.getByRole("link", { name: "Open in new tab" });
   await expect(newTab).toHaveAttribute("target", "_blank");
   await expect(newTab).toHaveAttribute("href", `/docs/${inviting.slug}`);
-  await checkpoint(visitor, "widget-help-article");
+  await checkpoint(visitor, "widget-docs-article");
   await article.getByRole("link", { name: "Search results" }).click();
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(search).toHaveValue("invite");
@@ -373,12 +373,12 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await expect(launcher).toHaveAttribute("aria-expanded", "true");
   await expect(widget.getByRole("heading", { name: "Exporting your data", level: 1 })).toBeVisible();
   await expect(widget.getByText("Download a CSV of every post from the board's menu.")).toBeVisible();
-  await checkpoint(visitor, "widget-help-opened-at-article");
+  await checkpoint(visitor, "widget-docs-opened-at-article");
   await widget.getByRole("link", { name: "All articles" }).click();
   await expect(widget.getByRole("region", { name: "Getting started" })).toBeVisible();
 });
 
-test("a visitor asks the help center's AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+test("a visitor asks the docs' AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -436,7 +436,7 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
   await expect(source).toHaveAttribute("href", `/docs/${article.slug}`);
   await expect(source).toHaveAttribute("target", "_blank");
-  await checkpoint(visitor, "widget-help-ai-answer");
+  await checkpoint(visitor, "widget-docs-ai-answer");
   await ai.getByRole("button", { name: "Not helpful" }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
 
@@ -463,12 +463,12 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await visitor.unroute("**/token/**");
   await expect(form.getByLabel("Your email")).toHaveValue(typed);
   await form.getByLabel("Anything to add? (optional)").fill("I'm on the free plan.");
-  await checkpoint(visitor, "widget-help-ask-a-person");
+  await checkpoint(visitor, "widget-docs-ask-a-person");
   await nextModelReply("They want to add a colleague on the free plan.", question);
   const before = countEmailsTo(support);
   await form.getByRole("button", { name: "Send to the team" }).click();
   await expect(ai.getByText("We've passed this to the team; they'll reply by email.")).toBeVisible();
-  await checkpoint(visitor, "widget-help-asked-a-person");
+  await checkpoint(visitor, "widget-docs-asked-a-person");
   const sent = await latestEmailTo(support, { after: before });
   expect(sent.replyTo).toBe(typed);
   expect(sent.text).toContain("They want to add a colleague on the free plan.");
@@ -477,13 +477,13 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
   expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
 
-  // Something the help center doesn't cover: "I don't know", and posting it from the widget's own Feedback tab.
+  // Something the docs don't cover: "I don't know", and posting it from the widget's own Feedback tab.
   const unrelated = "Can I pay with crypto?";
   await search.fill(unrelated);
   await search.press("Enter");
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
-  await checkpoint(visitor, "widget-help-ai-no-answer");
+  await checkpoint(visitor, "widget-docs-ai-no-answer");
   // Asking a person here starts with the email the customer's site signed them in with.
   await ai.getByRole("button", { name: "Ask a person" }).click();
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
@@ -491,7 +491,7 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
-  await checkpoint(visitor, "widget-help-ai-post-as-feedback");
+  await checkpoint(visitor, "widget-docs-ai-post-as-feedback");
   await widget.getByRole("button", { name: "Submit feedback" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);

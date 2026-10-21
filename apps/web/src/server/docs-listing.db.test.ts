@@ -15,12 +15,12 @@ import { type Listing, LISTINGS } from "@/lib/article-listing";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
-import { saveArticle } from "./help";
-import { docsContents, publishedArticle } from "./help-queries";
-import { answerArticle, countArticleView } from "./help-readers";
-import { answerSections, searchDocs } from "./help-search";
-import { createArticle, getArticle, listArticles, publishArticle, searchArticles, updateArticle } from "./operations/help";
-import { answerQuestion } from "./operations/help-ask";
+import { saveArticle } from "./docs";
+import { docsContents, publishedArticle } from "./docs-queries";
+import { answerArticle, countArticleView } from "./docs-readers";
+import { answerSections, searchDocs } from "./docs-search";
+import { createArticle, getArticle, listArticles, publishArticle, searchArticles, updateArticle } from "./operations/docs";
+import { answerQuestion } from "./operations/docs-ask";
 import { call } from "./operations/run";
 
 /**
@@ -104,7 +104,7 @@ const linkedSlugs = (text: string) => sorted([...text.matchAll(/\/docs\/([a-z-]+
 const params = (more: object = {}) => ({ params: Promise.resolve({ project: project.slug, ...more }) });
 
 describe("the portal", () => {
-  test("/help (and the widget's list) shows articles listed everywhere", async () => {
+  test("/docs (and the widget's list) shows articles listed everywhere", async () => {
     const { collections, uncollected } = await docsContents(project.slug);
     expect(sorted([...collections.flatMap((c) => c.articles), ...uncollected].map((a) => a.slug))).toEqual(expected("listed"));
   });
@@ -221,7 +221,7 @@ describe("the API, the widget and the export", () => {
     expect(await call(getArticle, as(owner), { slug: slugOf("ai_only") })).toMatchObject({ status: "published", listing: "ai_only" });
   });
 
-  test("the widget has a Help tab once an article is listed, or when it's asked for one (an unlisted one, say)", async () => {
+  test("the widget has a Docs tab once an article is listed, or when it's asked for one (an unlisted one, say)", async () => {
     const tabs = async (searchParams: object = {}) => {
       const hrefs: string[] = [];
       const walk = (node: ReactNode): void => {
@@ -247,7 +247,7 @@ describe("the API, the widget and the export", () => {
     actAs(owner);
     const zip = unzipSync(new Uint8Array(await (await exportRoute(new Request("http://x"), params() as never)).arrayBuffer()));
     for (const listing of LISTINGS) {
-      expect(strFromU8(zip[`help/${slugOf(listing)}.md`]!)).toContain(`\nlisting: "${listing}"\n`);
+      expect(strFromU8(zip[`docs/${slugOf(listing)}.md`]!)).toContain(`\nlisting: "${listing}"\n`);
     }
   });
 

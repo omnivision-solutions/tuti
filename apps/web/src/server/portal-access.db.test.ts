@@ -19,7 +19,7 @@ import { request } from "@/test/next-headers";
 import { createApiKey } from "./api-keys";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
-import * as helpReaders from "./help-readers";
+import * as docsReaders from "./docs-readers";
 import { canActIn } from "./membership";
 import { canReadPortal, WIDGET_READER_COOKIE } from "./portal-access";
 import * as posts from "./posts";
@@ -153,26 +153,26 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
   { name: "the widget's panel", served: widgetShows },
   {
     name: "AI answers (askDocs)",
-    // Without AI set up here, a reader is told so; anyone else, that there's no such help center.
+    // Without AI set up here, a reader is told so; anyone else, that there are no such docs.
     served: async (slug) => {
-      const result = await helpReaders.askDocs(slug, "How do I start?");
+      const result = await docsReaders.askDocs(slug, "How do I start?");
       return !("error" in result && result.error === "Docs not found");
     },
   },
-  { name: "was this helpful (answerArticle)", served: async (slug) => !(await helpReaders.answerArticle(slug, "getting-started", true)).error },
+  { name: "was this helpful (answerArticle)", served: async (slug) => !(await docsReaders.answerArticle(slug, "getting-started", true)).error },
   {
     name: "article views (countArticleView)",
     served: async (slug) => {
       const before = await articleViews();
-      await helpReaders.countArticleView(slug, "getting-started");
+      await docsReaders.countArticleView(slug, "getting-started");
       return (await articleViews()) > before;
     },
   },
-  { name: "rating an answer (rateDocsAnswer)", served: async (slug) => !(await helpReaders.rateDocsAnswer(slug, fixture.questionId, true)).error },
+  { name: "rating an answer (rateDocsAnswer)", served: async (slug) => !(await docsReaders.rateDocsAnswer(slug, fixture.questionId, true)).error },
   {
     // Refused readers get "not found" before anything else is checked.
     name: "asking a person (escalateDocs)",
-    served: async (slug) => (await helpReaders.escalateDocs(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
+    served: async (slug) => (await docsReaders.escalateDocs(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
   },
   { name: "similar posts while typing (findSimilarPosts)", served: async (slug) => (await similarPosts.findSimilarPosts(slug, "Dark mode please")).length > 0 },
   {
@@ -240,7 +240,7 @@ test("in the widget on a customer's site, the person their app signs in (the rea
   const sso = visitors["SSO user"]!;
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(project.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(true);
-  expect(await helpReaders.askDocs(project.slug, "How do I start?")).not.toEqual({ error: "Docs not found" });
+  expect(await docsReaders.askDocs(project.slug, "How do I start?")).not.toEqual({ error: "Docs not found" });
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(other.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(false);
   request.cookie = `${WIDGET_READER_COOKIE}=not-a-token`;
@@ -302,6 +302,6 @@ test("one project's private portal changes nothing for other projects, and its r
   for (const reader of [owner, visitors["SSO user"]!]) {
     actAs(reader);
     expect(await visit(otherPrivate.slug, "/roadmap")).toBe(`sign in: /sign-in?${new URLSearchParams({ next: "/roadmap" })}`);
-    expect(await helpReaders.answerArticle(otherPrivate.slug, "getting-started", true)).toEqual({ error: "Article not found" });
+    expect(await docsReaders.answerArticle(otherPrivate.slug, "getting-started", true)).toEqual({ error: "Article not found" });
   }
 });

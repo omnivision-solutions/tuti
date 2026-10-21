@@ -34,7 +34,7 @@ export function NewPostForm({
   linkTarget?: "_blank";
   /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
   submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
-  /** A title to start the first post with (the question from the help center's "Post this as feedback"). */
+  /** A title to start the first post with (the question from the docs' "Post this as feedback"). */
   defaultTitle?: string;
 }) {
   const at = usePortalHref();

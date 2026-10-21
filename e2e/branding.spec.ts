@@ -80,7 +80,7 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
     await visitor.getByRole("button", { name: "Submit feedback" }).focus();
     await checkpoint(visitor, `branded-portal-${colorScheme}`);
 
-    // The help center is the same portal, branded the same way.
+    // The docs are the same portal, branded the same way.
     await visitor.goto("/docs");
     await expect(visitor.getByRole("navigation", { name: "Footer" })).toBeVisible();
     await expect(visitor.getByText("Powered by")).toHaveCount(0);

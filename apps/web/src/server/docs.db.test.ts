@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { docsContents, publishedArticle } from "@/server/help-queries";
+import { docsContents, publishedArticle } from "@/server/docs-queries";
 import {
   createArticle,
   createCollection,
@@ -13,7 +13,7 @@ import {
   unpublishArticle,
   updateArticle,
   updateCollection,
-} from "@/server/operations/help";
+} from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
