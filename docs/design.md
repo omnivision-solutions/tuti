@@ -53,7 +53,10 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer.
+  "Powered by tuti" footer. Docs pages are wider (max-w-7xl, `DocsLayout`):
+  the tab's tree on the left (a "Browse docs" menu on phones), the page at
+  max-w-3xl, and an article's "On this page" on the right on wide screens;
+  their search box is in the header.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
 
 ## Components

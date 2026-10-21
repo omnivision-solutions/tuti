@@ -127,7 +127,7 @@ test("a collection for one reader group: people the app signs in with that group
   await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
   await expect(sam).toHaveURL(/\/docs$/);
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
-  await sam.getByRole("link", { name: "Setting up SAML" }).click();
+  await sam.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-group-reader");
 
@@ -206,7 +206,7 @@ test("a group from conditions: readers whose token's attributes match read its c
   await expect(bea.getByRole("link", { name: "Bulk export" })).toHaveCount(0);
   expect((await bea.request.get("/docs/bulk-export")).status()).toBe(404);
   const ada = await signIn("user-1", "Ada from Acme", { plan: "pro", seats: 12 });
-  await ada.getByRole("link", { name: "Bulk export" }).click();
+  await ada.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Bulk export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Bulk export" })).toBeVisible();
   await checkpoint(ada, "portal-docs-condition-group-reader");
 });

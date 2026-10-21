@@ -12,7 +12,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { docsContents, everyCollection, publishedArticle } from "./docs-queries";
+import { docsContents, docsTree, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { createGroup, updateGroup } from "./operations/groups";
@@ -210,6 +210,40 @@ describe("who sees what", () => {
     actAs(owner);
     const md = await markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug: "rotating-keys" }) });
     expect(md.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  test("the Docs layout's tree: only what the reader may read, the page's branch open and the rest of it closed", async () => {
+    await call(createCollection, as(), { name: "Keys", parent: "setup" });
+    await call(createCollection, as(), { name: "Billing", parent: "enterprise" });
+    for (const [title, collection] of [
+      ["Rotating keys", "keys"],
+      ["Invoices", "billing"],
+    ] as const) {
+      const body = `The ${title} widget.`;
+      openai.setVector(articleChunkText(title, { heading: "", text: body }), [0.9, Math.sqrt(1 - 0.81)]);
+      const { slug } = await call(createArticle, as(), { title, body, collection });
+      await call(publishArticle, as(), { slug });
+    }
+    // "Rotating keys" is open: it's in Keys, in Setup, in Enterprise.
+    const tree = async (user: TestUser | null) => {
+      actAs(user);
+      return docsTree(await docsContents(project.slug), null, "keys");
+    };
+
+    const outside = await tree(await ssoReader([]));
+    expect(outside.collections.map((c) => c.slug)).toEqual(["basics"]);
+    expect(outside.uncollected.map((a) => a.slug)).toEqual(["contact"]);
+
+    const inside = await tree(await ssoReader(["enterprise"]));
+    expect(inside.collections.map((c) => c.slug)).toEqual(["basics", "enterprise"]);
+    expect(inside.collections[1]).toMatchObject({
+      open: true,
+      articles: [{ slug: "saml" }],
+      collections: [
+        { slug: "setup", open: true, articles: [{ slug: "rolling-out" }], collections: [{ slug: "keys", open: true, articles: [{ slug: "rotating-keys" }] }] },
+        { slug: "billing", open: false, articles: [{ slug: "invoices" }] },
+      ],
+    });
   });
 });
 

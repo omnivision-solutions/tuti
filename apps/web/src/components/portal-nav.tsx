@@ -1,8 +1,11 @@
 "use client";
 
+import { SearchIcon } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
+import { Input } from "@/components/ui/input";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
@@ -59,14 +62,36 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   );
 }
 
-/** A part's row under the header (`label` names it): only with two or more entries. */
-export function PartRow({ label, links }: { label: string; links: { href: string; name: string; active: boolean }[] }) {
+/** The page under the header and its rows: wider on Docs, for its tree and "On this page" beside the page. */
+export function PortalMain({ children }: { children: React.ReactNode }) {
+  const path = usePortalPath();
+  return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", within(path, "/docs") ? "max-w-7xl" : "max-w-3xl")}>{children}</main>;
+}
+
+/** The header's search box on Docs: a plain GET form to /docs, so it works without JavaScript. */
+export function DocsSearch() {
+  const path = usePortalPath();
+  const at = usePortalHref();
+  const query = useSearchParams().get("q") ?? "";
+  if (!within(path, "/docs")) {
+    return null;
+  }
+  return (
+    <form role="search" action={at("/docs")} className="relative order-last w-full pb-1 sm:order-none sm:w-60 sm:pb-0">
+      <SearchIcon aria-hidden className="pointer-events-none absolute top-2 left-2.5 size-4 text-muted-foreground" />
+      <Input key={query} type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search docs" aria-label="Search the docs" className="pl-8" />
+    </form>
+  );
+}
+
+/** A part's row under the header (`label` names it): only with two or more entries. `wide` lines it up with Docs' wider page. */
+export function PartRow({ label, links, wide = false }: { label: string; links: { href: string; name: string; active: boolean }[]; wide?: boolean }) {
   if (links.length < 2) {
     return null;
   }
   return (
     <div className="border-b">
-      <nav className="mx-auto flex w-full max-w-3xl gap-1 overflow-x-auto px-6" aria-label={label}>
+      <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", wide ? "max-w-7xl" : "max-w-3xl")} aria-label={label}>
         {links.map(({ href, name, active }) => (
           <Link
             key={href}

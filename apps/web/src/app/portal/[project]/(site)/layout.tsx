@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
-import { PartRows, PortalParts } from "@/components/portal-nav";
+import { DocsSearch, PartRows, PortalMain, PortalParts } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
@@ -79,7 +79,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   return (
     <PortalBaseProvider base={base} slug={slug}>
       {css && <style>{css}</style>}
-      {/* Logo · parts · links and the account on the right. On phones the parts, then the links, get lines of their own. */}
+      {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
         {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
         <Link href={withBase(base, "/")} className="font-heading text-lg font-bold tracking-tight">
@@ -93,6 +93,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           )}
         </Link>
         {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
+        {canRead && <DocsSearch />}
         {brand.headerLinks.length > 0 && (
           <nav aria-label="Links" className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 pb-1 sm:order-none sm:ml-auto sm:w-auto sm:pb-0">
             {brand.headerLinks.map((link, i) => (
@@ -112,7 +113,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         )}
       </header>
       {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-6 py-10">{children}</main>
+      <PortalMain>{children}</PortalMain>
       {(brand.footerLinks.length > 0 || brand.poweredBy) && (
         <footer className="flex flex-col items-center gap-3 px-6 pb-6">
           {brand.footerLinks.length > 0 && (

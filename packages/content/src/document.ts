@@ -129,6 +129,36 @@ export function toPlainText(node: JSONContent): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export type Heading = { id: string; text: string; level: 2 | 3 };
+
+/**
+ * An article's sections, for "On this page": its top-level headings in order, each with the id
+ * RichText gives it (`headingIds`), made from its text ("Getting started" → `getting-started`),
+ * with `-2`, `-3` on repeats, and `section-<n>` (its place among the headings) when no letter or
+ * digit from a-z and 0-9 is left (non-Latin text).
+ */
+export function docHeadings(doc: JSONContent): Heading[] {
+  const used = new Set<string>();
+  return (doc.content ?? [])
+    .filter((node) => node.type === "heading")
+    .map((node, i) => {
+      const text = toPlainText(node);
+      const base =
+        text
+          .normalize("NFKD")
+          .replace(/[̀-ͯ]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || `section-${i + 1}`;
+      let id = base;
+      for (let n = 2; used.has(id); n++) {
+        id = `${base}-${n}`;
+      }
+      used.add(id);
+      return { id, text, level: node.attrs?.level === 3 ? 3 : 2 };
+    });
+}
+
 /** About 400 tokens: long enough to hold an answer, short enough to match one question well. */
 export const MAX_CHUNK_LENGTH = 1500;
 

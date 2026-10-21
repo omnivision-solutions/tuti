@@ -1,3 +1,4 @@
+import { docHeadings } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import type { Metadata } from "next";
@@ -9,10 +10,10 @@ import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { CollectionContents } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
-import { DocsIndex } from "@/components/portal-docs";
+import { DocsIndex, DocsLayout } from "@/components/portal-docs";
 import { formatDate } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, docsContents, type DocsPage, docsPage, docsTabPath, everyCollection } from "@/server/docs-queries";
+import { articleMarkdown, docsContents, type DocsPage, docsPage, docsTabPath, docsTree, everyCollection } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 
 /** Search results show the page's title and its first lines (an article's) or its description (a collection's). */
@@ -53,19 +54,27 @@ export default async function DocsSlugPage(props: PageProps<"/portal/[project]/d
   }
   switch (page.kind) {
     case "tab":
-      return <DocsIndex projectSlug={project} query="" docs={page.docs} tab={page.tab} />;
+      return (
+        <DocsLayout tree={docsTree(page.docs, page.tab.slug, null)} current={null}>
+          <DocsIndex projectSlug={project} query="" docs={page.docs} tab={page.tab} />
+        </DocsLayout>
+      );
     case "collection": {
       const { docs, tab, parent, collection } = page;
-      // The way back: the collection it's in, else its tab.
+      // The way back: the collection it's in, else its tab (on phones; wider screens have the tree).
       const back = parent ? `/docs/${parent.slug}` : tab ? docsTabPath(docs, tab.slug) : "/docs";
       return (
-        <div className="flex flex-col gap-8">
-          <div className="flex flex-col gap-6">
-            <BackLink href={at(back)}>{parent ? parent.name : "Docs"}</BackLink>
-            <PageHeader title={collection.name} description={collection.description} />
+        <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
+          <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-6">
+              <BackLink href={at(back)} className="md:hidden">
+                {parent ? parent.name : "Docs"}
+              </BackLink>
+              <PageHeader title={collection.name} description={collection.description} />
+            </div>
+            <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} />
           </div>
-          <CollectionContents collection={collection} href={(s) => at(`/docs/${s}`)} collectionHref={(s) => at(`/docs/${s}`)} />
-        </div>
+        </DocsLayout>
       );
     }
     case "article":
@@ -80,10 +89,15 @@ async function ArticlePage({ project, slug, article }: { project: string; slug: 
   const docs = await docsContents(project);
   const tab = docs.tabs.find((t) => t.slug === article.tab);
   const collection = article.collection && everyCollection(docs.collections).find((c) => c.slug === article.collection!.slug);
+  // The tree: its tab's (the first tab's has the articles in none), its collection's branch open.
+  const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
   return (
-    <div className="flex flex-col gap-8">
+    <DocsLayout tree={tree} current={slug} headings={docHeadings(article.doc)}>
       <article className="flex flex-col gap-6" aria-labelledby="article-title">
-        <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")}>Docs</BackLink>
+        {/* On phones; wider screens have the tree. */}
+        <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")} className="md:hidden">
+          Docs
+        </BackLink>
         <div className="flex flex-col gap-1">
           {article.collection && (
             <p className="text-sm text-muted-foreground">
@@ -106,9 +120,9 @@ async function ArticlePage({ project, slug, article }: { project: string; slug: 
           )}
         </div>
         <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
-        <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+        <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} headingIds className="rich-text break-words" />
         <ArticleFeedback projectSlug={project} slug={slug} />
       </article>
-    </div>
+    </DocsLayout>
   );
 }
