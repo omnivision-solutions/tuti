@@ -178,15 +178,17 @@ export function DocsStructure({
     collection === null ? uncollected : (collections.find((c) => c.slug === collection)?.articles ?? []);
   // The tree by slug, for the checks the server makes too.
   const tree = collections.map((c) => ({ id: c.slug, parentId: c.parent, name: c.name }));
+  // Each collection's chain up to its top-level one, once per render (rows and menus ask often, drags re-render).
+  const chains = new Map(tree.map((c) => [c.id, ancestry(tree, c.id)]));
   /** How deep collection `slug` is: 1 at the top level. */
-  const depthOf = (slug: string) => ancestry(tree, slug).length;
+  const depthOf = (slug: string) => chains.get(slug)?.length ?? 0;
   /** Whether collection `slug` is collection `of` or one inside it. */
-  const within = (slug: string, of: string) => ancestry(tree, slug).some((c) => c.id === of);
+  const within = (slug: string, of: string) => chains.get(slug)?.some((c) => c.id === of) ?? false;
   /** A collection as a "Move to…" place: indented, and named with the ones it's in ("Billing › Invoices"). */
   const placeOf = (c: StructureCollection) => ({
     key: c.slug,
     label: c.name,
-    name: ancestry(tree, c.slug)
+    name: (chains.get(c.slug) ?? [])
       .map((p) => p.name)
       .reverse()
       .join(" › "),
