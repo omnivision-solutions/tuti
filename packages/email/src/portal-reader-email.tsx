@@ -9,7 +9,7 @@ export function PortalReaderEmail({ inviterName, projectName, email, url }: Port
   return (
     <Layout preview={`You can now read ${projectName}'s portal.`}>
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
-        {inviterName} gave you access to <strong>{projectName}</strong>&apos;s portal: its help center, changelog and feedback.
+        {inviterName} gave you access to <strong>{projectName}</strong>&apos;s portal: its docs, changelog and feedback.
       </Text>
       <Button
         href={url}

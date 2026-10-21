@@ -18,7 +18,7 @@ import { displayDoc } from "@/server/content";
 import { collectionOptions } from "@/server/help-queries";
 import { getMembership } from "@/server/membership";
 
-export default async function ArticlePage(props: PageProps<"/app/[project]/help/[slug]">) {
+export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
   const { project: slug, slug: articleSlug } = await props.params;
   const membership = await getMembership(slug);
   if (!membership) {
@@ -48,7 +48,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
 
   return (
     <>
-      <BackLink href={`/app/${slug}/help`}>Help center</BackLink>
+      <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
       <PageHeader
         title={article.title}
         description={
@@ -73,7 +73,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
         }
         actions={
           <>
-            <Link href={`/app/${slug}/help/${article.slug}/history`} className={buttonVariants({ variant: "ghost" })}>
+            <Link href={`/app/${slug}/docs/${article.slug}/history`} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} />

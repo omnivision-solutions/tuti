@@ -1,6 +1,6 @@
 # Your portal under a path of your site
 
-Your portal and help center can live under a path of your own site, like
+Your portal and docs can live under a path of your own site, like
 `https://example.com/portal`: `example.com/portal/docs`, `example.com/portal/feedback/…`,
 `example.com/portal/sign-in`. Your site keeps everything else; Tuti only answers under
 that path.

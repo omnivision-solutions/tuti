@@ -19,6 +19,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
+  // Before any branding, the footer says Powered by tuti, linking to Tuti's own site (whatever this installation's address).
+  const before = await (await browser.newContext({ baseURL: portalUrl(slug) })).newPage();
+  await before.goto("/feedback/feature-requests");
+  await expect(before.getByRole("contentinfo").getByRole("link", { name: /Powered by/ })).toHaveAttribute("href", "https://tuti.so");
+  await before.context().close();
+
   const scratch = await owner.context().newPage();
   const [light, dark] = [await wordmark(scratch, "#1d4ed8"), await wordmark(scratch, "#bfdbfe")];
   await scratch.close();

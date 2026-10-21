@@ -16,7 +16,7 @@ import { ARTICLE_REVISIONS_KEPT, articleRevisions } from "@/server/operations/he
 export const metadata = { title: "Article history" };
 
 /** An article's saved versions; opening one shows what changed since, and can restore it. */
-export default async function ArticleHistoryPage(props: PageProps<"/app/[project]/help/[slug]/history">) {
+export default async function ArticleHistoryPage(props: PageProps<"/app/[project]/docs/[slug]/history">) {
   const [{ project: slug, slug: articleSlug }, { revision: selectedId }] = await Promise.all([props.params, props.searchParams]);
   const membership = await getMembership(slug);
   if (!membership) {
@@ -41,7 +41,7 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
   const current = article.changes ?? article;
   const revisions = await articleRevisions(article.id);
   const selected = revisions.find((revision) => revision.id === selectedId);
-  const href = `/app/${slug}/help/${article.slug}`;
+  const href = `/app/${slug}/docs/${article.slug}`;
 
   return (
     <>

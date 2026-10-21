@@ -70,7 +70,7 @@ export async function WidgetHelp({
       {/* A plain GET form: search works without JavaScript. */}
       <form role="search" action="/widget" className="flex gap-2">
         <input type="hidden" name="tab" value="help" />
-        <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the help center" />
+        <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
         <Button type="submit">Search</Button>
       </form>
       {query && answersEnabled() && (

@@ -77,7 +77,7 @@ test("a collection for one reader group: people the app signs in with that group
   await api("/collections", { name: "Basics" });
 
   // "Only for groups" on a new collection.
-  await owner.goto(`/app/${slug}/help`);
+  await owner.goto(`/app/${slug}/docs`);
   await owner.getByRole("button", { name: "New collection" }).click();
   const dialog = owner.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Enterprise");

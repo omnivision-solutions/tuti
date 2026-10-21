@@ -106,7 +106,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
   }
   const project = await readableProject(projectSlug);
   if (!project) {
-    return { error: "Help center not found" };
+    return { error: "Docs not found" };
   }
   try {
     return await answerQuestion(
@@ -128,7 +128,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
 export async function rateHelpAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
   const project = await readableProject(projectSlug);
   if (!project) {
-    return { error: "Help center not found" };
+    return { error: "Docs not found" };
   }
   try {
     await rateAnswer(project.id, String(questionId), helpful === true);
@@ -155,7 +155,7 @@ export async function escalateHelp(
   }
   const project = await readableProject(projectSlug);
   if (!project) {
-    return { error: "Help center not found" };
+    return { error: "Docs not found" };
   }
   try {
     await escalateQuestion(project.id, await readerId(String(projectSlug), from === "widget"), input.data, await headers());

@@ -4,7 +4,7 @@ import { type Prisma, prisma } from "@tuti/db";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/help/insights/page";
+import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -259,9 +259,9 @@ describe("gaps", () => {
 
     // Not by someone outside the team.
     actAs(await signUp("Outsider"));
-    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the help center" });
+    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
     actAs(null);
-    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the help center" });
+    expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
     expect(await prisma.helpGapDismissal.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(0);
 
     actAs(await addMember(project.id, "MEMBER"));

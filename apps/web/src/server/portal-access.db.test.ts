@@ -156,7 +156,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
     // Without AI set up here, a reader is told so; anyone else, that there's no such help center.
     served: async (slug) => {
       const result = await helpReaders.askHelp(slug, "How do I start?");
-      return !("error" in result && result.error === "Help center not found");
+      return !("error" in result && result.error === "Docs not found");
     },
   },
   { name: "was this helpful (answerArticle)", served: async (slug) => !(await helpReaders.answerArticle(slug, "getting-started", true)).error },
@@ -172,7 +172,7 @@ const readers: { name: string; account?: true; served: (slug: string) => Promise
   {
     // Refused readers get "not found" before anything else is checked.
     name: "asking a person (escalateHelp)",
-    served: async (slug) => (await helpReaders.escalateHelp(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Help center not found",
+    served: async (slug) => (await helpReaders.escalateHelp(slug, fixture.questionId, "e2e-reader@example.com", "")).error !== "Docs not found",
   },
   { name: "similar posts while typing (findSimilarPosts)", served: async (slug) => (await similarPosts.findSimilarPosts(slug, "Dark mode please")).length > 0 },
   {
@@ -240,7 +240,7 @@ test("in the widget on a customer's site, the person their app signs in (the rea
   const sso = visitors["SSO user"]!;
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(project.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(true);
-  expect(await helpReaders.askHelp(project.slug, "How do I start?")).not.toEqual({ error: "Help center not found" });
+  expect(await helpReaders.askHelp(project.slug, "How do I start?")).not.toEqual({ error: "Docs not found" });
   request.cookie = `${WIDGET_READER_COOKIE}=${widgetToken(other.id, sso.id)}`;
   expect(await widgetShows(project.slug)).toBe(false);
   request.cookie = `${WIDGET_READER_COOKIE}=not-a-token`;

@@ -315,7 +315,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
   const tabs = widget.getByRole("navigation", { name: "Widget" });
   await expect(tabs.getByRole("link", { name: "What's new" })).toBeVisible();
-  await expect(tabs.getByRole("link", { name: "Help" })).toHaveCount(0);
+  await expect(tabs.getByRole("link", { name: "Docs" })).toHaveCount(0);
 
   // The team publishes two articles, one in a collection.
   const collection = await api("/collections", { name: "Getting started", description: "The basics, in five minutes." });
@@ -335,7 +335,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   // Now the widget has a Help tab: the collections and their articles, like the portal's /help.
   await visitor.reload();
   await launcher.click();
-  await tabs.getByRole("link", { name: "Help" }).click();
+  await tabs.getByRole("link", { name: "Docs" }).click();
   const section = widget.getByRole("region", { name: "Getting started" });
   await expect(section).toContainText("The basics, in five minutes.");
   await expect(section.getByRole("link", { name: "Inviting your team" })).toBeVisible();
@@ -343,7 +343,7 @@ test("a customer's site shows its help center in the widget: search, read, and o
   await checkpoint(visitor, "widget-help");
 
   // Search, read a result, and go back to the results.
-  const search = widget.getByRole("searchbox", { name: "Search the help center" });
+  const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill("invite");
   await widget.getByRole("button", { name: "Search" }).click();
   const results = widget.getByRole("list", { name: "Search results" });
@@ -424,8 +424,8 @@ test("a visitor asks the help center's AI in the widget: an answer with its sour
   await visitor.goto(sitePage("customer.localhost", slug));
   await visitor.getByRole("button", { name: "Feedback" }).click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');
-  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Help" }).click();
-  const search = widget.getByRole("searchbox", { name: "Search the help center" });
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill(question);
   await search.press("Enter");
   const ai = widget.getByRole("region", { name: "AI answer" });

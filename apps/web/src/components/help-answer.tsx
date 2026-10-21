@@ -77,7 +77,7 @@ export function HelpAnswer({
       {(!answer || answer.status === "failed") && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {answer ? "The AI couldn't answer just now. Try again, or read the articles below." : "Get a short answer from the help center, written by AI."}
+            {answer ? "The AI couldn't answer just now. Try again, or read the articles below." : "Get a short answer from the docs, written by AI."}
           </p>
           {askButton}
         </div>
@@ -139,7 +139,7 @@ export function HelpAnswer({
           {answer.status === "no_answer" ? (
             <>
               <p className="font-semibold">I don&apos;t know</p>
-              <p className="text-sm text-muted-foreground">Nothing in the help center answers that yet. Post it as feedback so the team sees it.</p>
+              <p className="text-sm text-muted-foreground">Nothing in the docs answers that yet. Post it as feedback so the team sees it.</p>
             </>
           ) : (
             // A topic the team put off-limits: a fixed reply, the AI wasn't asked.

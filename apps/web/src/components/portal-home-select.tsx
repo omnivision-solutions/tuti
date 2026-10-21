@@ -11,14 +11,14 @@ const HOMES: Record<PortalHomePage, string> = {
   feedback: "Feedback",
   roadmap: "Roadmap",
   changelog: "Changelog",
-  docs: "Help center",
+  docs: "Docs",
 };
 
 const DESCRIPTIONS: Record<PortalHomePage, string> = {
   feedback: "Your first board.",
   roadmap: "What's planned, in progress and done.",
   changelog: "What you've shipped.",
-  docs: "Your help center's articles, for a portal that's mostly help.",
+  docs: "Your articles, for a portal that's mostly docs.",
 };
 
 /** Settings → Home page (see portal.update's `home`): what the portal's address opens. */

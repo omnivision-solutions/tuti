@@ -29,7 +29,7 @@ import { asTeam, call } from "./operations/run";
 
 /** The team's help center actions (see the articles.*, collections.* and sections.* operations). */
 
-const DENIED = "Only the project's team can edit the help center";
+const DENIED = "Only the project's team can edit the docs";
 
 /** Saves the editor's form: a new draft when `slug` is null, or changes to article `slug`. Opens its new address if it moved. */
 export async function saveArticle(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
@@ -49,7 +49,7 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     ).slug;
   });
   if (saved !== undefined && saved !== slug) {
-    redirect(`/app/${projectSlug}/help/${saved}`);
+    redirect(`/app/${projectSlug}/docs/${saved}`);
   }
   return result;
 }
@@ -79,7 +79,7 @@ export async function unpublishArticle(projectSlug: string, slug: string): Promi
 export async function deleteArticle(projectSlug: string, slug: string): Promise<FormState> {
   const result = await asTeam(projectSlug, DENIED, (context) => call(deleteArticleOperation, context, { slug: String(slug) }));
   if (!result.error) {
-    redirect(`/app/${projectSlug}/help`);
+    redirect(`/app/${projectSlug}/docs`);
   }
   return result;
 }

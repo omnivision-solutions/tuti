@@ -138,7 +138,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
       <Card>
         <CardHeader>
           <CardTitle>Portal access</CardTitle>
-          <CardDescription>Who can see your portal, its help center and changelog, and the widget.</CardDescription>
+          <CardDescription>Who can see your portal, its docs and changelog, and the widget.</CardDescription>
         </CardHeader>
         <CardContent>
           <PortalAccessSelect projectSlug={project.slug} access={access} />
@@ -163,7 +163,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <Card>
           <CardHeader>
             <CardTitle>Custom domain</CardTitle>
-            <CardDescription>Your portal and help center at an address of your own, like help.example.com.</CardDescription>
+            <CardDescription>Your portal and docs at an address of your own, like help.example.com.</CardDescription>
           </CardHeader>
           <CardContent>
             <CustomDomainSettings projectSlug={project.slug} domain={domain} portalAddress={portal.host} protocol={portal.protocol} />
@@ -174,7 +174,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
       <Card>
         <CardHeader>
           <CardTitle>Your site</CardTitle>
-          <CardDescription>Your portal and help center under a path of your own site, like example.com/portal.</CardDescription>
+          <CardDescription>Your portal and docs under a path of your own site, like example.com/portal.</CardDescription>
         </CardHeader>
         <CardContent>
           <SiteMountSettings projectSlug={project.slug} site={site} portalAddress={portal.host} />
@@ -184,7 +184,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
       <Card>
         <CardHeader>
           <CardTitle>Branding</CardTitle>
-          <CardDescription>How your portal and help center look: your logo, favicon, colour and links.</CardDescription>
+          <CardDescription>How your portal and docs look: your logo, favicon, colour and links.</CardDescription>
         </CardHeader>
         <CardContent>
           <BrandingSettings
@@ -205,7 +205,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle>Widget</CardTitle>
           <CardDescription>
-            A button on your site that opens feedback, what&apos;s new and help in a panel. Add it with one script tag:
+            A button on your site that opens feedback, what&apos;s new and docs in a panel. Add it with one script tag:
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -227,7 +227,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle>AI answers</CardTitle>
           <CardDescription>
-            How the help center&apos;s AI answers questions. It only ever answers from your published articles; these
+            How the AI answers questions in your docs. It only ever answers from your published articles; these
             settings can&apos;t change that.
           </CardDescription>
         </CardHeader>
@@ -273,7 +273,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle>Export</CardTitle>
           <CardDescription>
-            Download your help center, changelog and feedback as Markdown files in a ZIP, drafts included. Images
+            Download your docs, changelog and feedback as Markdown files in a ZIP, drafts included. Images
             stay links to where they&apos;re hosted.
           </CardDescription>
         </CardHeader>

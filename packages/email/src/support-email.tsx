@@ -11,9 +11,9 @@ type ConfirmProps = { projectName: string; url: string };
 /** Asks a project's new support address to confirm it ("Ask a person" sends questions there once it does). */
 export function SupportEmailConfirmEmail({ projectName, url }: ConfirmProps) {
   return (
-    <Layout preview={`Confirm this address for ${projectName}'s help center.`}>
+    <Layout preview={`Confirm this address for ${projectName}'s docs.`}>
       <Text style={body}>
-        Someone on the <strong>{projectName}</strong> team set this address to get questions from its help center that the AI
+        Someone on the <strong>{projectName}</strong> team set this address to get questions from its docs that the AI
         couldn&apos;t answer. Replies go straight to the person who asked.
       </Text>
       <Button
@@ -64,7 +64,7 @@ export function EscalationEmail({ projectName, from, question, note, answer, not
           </>
         ) : (
           <>
-            <strong>{from}</strong> asked for help on <strong>{projectName}</strong>&apos;s help center. Reply to this email to
+            <strong>{from}</strong> asked for help in <strong>{projectName}</strong>&apos;s docs. Reply to this email to
             answer them.
           </>
         )}
@@ -106,6 +106,6 @@ const subjectLine = (text: string) => {
 };
 
 export const escalationEmail = (props: EscalationProps) => ({
-  subject: props.copy ? `Your question to ${props.projectName}` : `Question from the help center: ${subjectLine(props.question)}`,
+  subject: props.copy ? `Your question to ${props.projectName}` : `Question from the docs: ${subjectLine(props.question)}`,
   body: <EscalationEmail {...props} />,
 });

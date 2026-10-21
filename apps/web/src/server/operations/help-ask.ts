@@ -123,7 +123,7 @@ async function logQuestion(projectId: string, askerId: string, question: string,
       throw new OperationError(429, "rate_limited", "You've asked a lot of questions in the last hour. Try again later.");
     }
     if (byProject >= ASKS_PER_PROJECT_PER_HOUR) {
-      throw new OperationError(429, "rate_limited", "This help center has had a lot of questions in the last hour. Try again later.");
+      throw new OperationError(429, "rate_limited", "These docs have had a lot of questions in the last hour. Try again later.");
     }
     // FAILED until it's answered, so a question that never finishes stays logged as failed.
     return tx.helpQuestion.create({ data: { projectId, askerId, question, source }, select: { id: true } });
