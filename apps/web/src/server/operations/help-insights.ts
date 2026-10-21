@@ -1,4 +1,4 @@
-import { type HelpNoAnswerCause, Prisma, prisma } from "@tuti/db";
+import { type DocsNoAnswerCause, Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
@@ -93,9 +93,9 @@ export async function helpInsights(projectId: string) {
       take: 10,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
-    prisma.helpSearch.count({ where: { projectId, createdAt: { gte: since } } }),
-    prisma.helpSearch.count({ where: { projectId, results: 0, createdAt: { gte: since } } }),
-    prisma.helpSearch.groupBy({
+    prisma.docsSearch.count({ where: { projectId, createdAt: { gte: since } } }),
+    prisma.docsSearch.count({ where: { projectId, results: 0, createdAt: { gte: since } } }),
+    prisma.docsSearch.groupBy({
       by: ["query"],
       where: { projectId, results: 0, createdAt: { gte: since } },
       _count: { _all: true },
@@ -117,11 +117,11 @@ export async function helpInsights(projectId: string) {
         max(q."createdAt") AS "lastAsked",
         (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
       FROM (
-        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM help_question
+        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM docs_question
         WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
       ) q
       WHERE NOT EXISTS (
-        SELECT 1 FROM help_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
+        SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
       )
       GROUP BY q.key
       ORDER BY count(*) DESC, max(q."createdAt") DESC
@@ -141,7 +141,7 @@ export async function helpInsights(projectId: string) {
       ...gap,
       lastAsked: gap.lastAsked.toISOString(),
       // "no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown" (asked before causes were kept), or null (only thumbs-downs).
-      cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<HelpNoAnswerCause> | null,
+      cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<DocsNoAnswerCause> | null,
     })),
   };
 }
@@ -151,7 +151,7 @@ export const gapFields = z.object({ question: z.string().trim().min(1).max(300) 
 /** Hides a question from the Gaps list, as asked until now; asked again later, it's back. */
 export async function dismissGap(projectId: string, question: string) {
   await prisma.$executeRaw`
-    INSERT INTO help_gap_dismissal ("projectId", question, "dismissedAt")
+    INSERT INTO docs_gap_dismissal ("projectId", question, "dismissedAt")
     VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now())
     ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = now()`;
   return { dismissed: question };

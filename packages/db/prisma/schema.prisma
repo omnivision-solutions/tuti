@@ -134,7 +134,7 @@ model Project {
   widgetColor           String?
   widgetPosition        String       @default("bottom-right")
   widgetLinks           Json         @default("[]")
-  /// Branding for the portal and its help center (see the branding.* operations): a logo,
+  /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
   /// footer (`[{ label, url }]`, https only), and whether the footer says "Powered by tuti".
@@ -148,16 +148,16 @@ model Project {
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)
-  /// What the portal's home (`/`) opens: the first board, the roadmap, the changelog or the help center.
+  /// What the portal's home (`/`) opens: the first board, the roadmap, the changelog or the docs.
   portalHome            PortalHome   @default(FEEDBACK)
-  /// How the help center's AI answers (see the assistant.* operations): a tone, the answer
+  /// How the docs' AI answers (see the assistant.* operations): a tone, the answer
   /// length, standing instructions, and off-limits topics (short phrases; a question that
   /// contains one gets a fixed reply without asking the model).
   assistantTone         String       @default("")
   assistantLength       AnswerLength @default(MEDIUM)
   assistantInstructions String       @default("")
   assistantOffLimits    String[]     @default([])
-  /// Where "Ask a person" sends questions the AI couldn't help with (help.escalate): an
+  /// Where "Ask a person" sends questions the AI couldn't help with (docs.escalate): an
   /// address that confirmed a link we emailed it; null is off. A new address waits in
   /// supportEmailPending (with the hash of its link's token) until it's confirmed, and the
   /// confirmed one keeps working meanwhile.
@@ -195,14 +195,14 @@ model Project {
   articles             Article[]
   articleChunks        ArticleChunk[]
   collections          Collection[]
-  helpSections         HelpSection[]
+  docsTabs             DocsTab[]
   portalReaders        PortalReader[]
   portalReaderEmails   PortalReaderEmail[]
   customDomain         CustomDomain?
   siteMount            SiteMount?
-  helpSearches         HelpSearch[]
-  helpQuestions        HelpQuestion[]
-  helpGapDismissals    HelpGapDismissal[]
+  docsSearches         DocsSearch[]
+  docsQuestions        DocsQuestion[]
+  docsGapDismissals    DocsGapDismissal[]
   changelogSeen        ChangelogSeen[]
 
   @@map("project")
@@ -239,7 +239,7 @@ model SsoIdentity {
   /// Email as asserted by the project's app (User.email is a placeholder).
   email      String?
   /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: which restricted
-  /// help center collections they may read (Collection.groups).
+  /// docs collections they may read (Collection.groups).
   groups     String[] @default([])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -961,7 +961,7 @@ model ChangelogEntryPullRequest {
   @@map("changelog_entry_pull_request")
 }
 
-/// A help center collection: a group of articles on the portal's /help.
+/// A docs collection: a group of articles on the portal's /docs.
 model Collection {
   id          String   @id @default(cuid())
   projectId   String
@@ -974,10 +974,10 @@ model Collection {
   /// The collection it's in, in the same project. At most 2 levels: a collection with a parent has
   /// no children (checked under the project's lock). Deleting the parent moves its children up a level.
   parentId    String?
-  /// The section (a tab of the help center) a top-level collection is in; null inside another
-  /// collection (it's in its parent's). Once a project has sections, every top-level collection is
-  /// in one (kept under the project's lock); without any, all are null.
-  sectionId   String?
+  /// The docs tab a top-level collection is in; null inside another collection (it's in its
+  /// parent's). Once a project has tabs, every top-level collection is in one (kept under the
+  /// project's lock); without any, all are null.
+  tabId       String?
   /// Who may read it (and the articles and collections in it) besides the team: people the project's
   /// SSO signs in with one of these groups (lowercase). Empty: everyone who may read the portal.
   groups      String[] @default([])
@@ -986,7 +986,7 @@ model Collection {
 
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent    Collection?       @relation("CollectionParent", fields: [parentId], references: [id], onDelete: SetNull)
-  section   HelpSection?      @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  tab       DocsTab?          @relation(fields: [tabId], references: [id], onDelete: SetNull)
   children  Collection[]      @relation("CollectionParent")
   articles  Article[]
   revisions ArticleRevision[]
@@ -994,19 +994,19 @@ model Collection {
 
   @@unique([projectId, slug])
   @@index([parentId])
-  @@index([sectionId])
+  @@index([tabId])
   @@map("collection")
 }
 
-/// A section of the help center, shown to readers as a tab ("Guides", "API"), with top-level
-/// collections in it. The first one also lists the articles in no collection.
-model HelpSection {
+/// A tab of the docs ("Guides", "API"), with top-level collections in it. The first one also
+/// lists the articles in no collection.
+model DocsTab {
   id        String   @id @default(cuid())
   projectId String
   /// From the name, unique in the project.
   slug      String
   name      String
-  /// Sections are listed by this, then by name; new ones go last.
+  /// Tabs are listed by this, then by name; new ones go last.
   order     Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1015,13 +1015,13 @@ model HelpSection {
   collections Collection[]
 
   @@unique([projectId, slug])
-  @@map("help_section")
+  @@map("docs_tab")
 }
 
-/// A help center article, at /help/<slug> on the portal once it's published.
+/// A docs article, at /docs/<slug> on the portal once it's published.
 /// Where a published article is served. A draft is served nowhere, whatever it says.
 enum ArticleListing {
-  /// Its page, the help center's lists, search, the sitemap, llms.txt and AI answers.
+  /// Its page, the docs' lists, search, the sitemap, llms.txt and AI answers.
   EVERYWHERE
   /// Readable by its link (page and .md) and cited by AI answers, but in no list, search, sitemap or llms.txt.
   UNLISTED
@@ -1079,7 +1079,7 @@ model Article {
 
 /// A saved version of an article: every save that changes its title, text or collection adds
 /// one (the newest is the current version). Restoring an old one saves it again as a new one.
-/// Only the newest ARTICLE_REVISIONS_KEPT (apps/web operations/help.ts) are kept.
+/// Only the newest ARTICLE_REVISIONS_KEPT (apps/web operations/docs.ts) are kept.
 model ArticleRevision {
   id           String   @id @default(cuid())
   articleId    String
@@ -1155,9 +1155,9 @@ model ArticleViewDay {
   @@map("article_view_day")
 }
 
-/// A help center search: its normalized query and how many articles it found (0 is a
+/// A docs search: its normalized query and how many articles it found (0 is a
 /// failed search). Nothing about who searched.
-model HelpSearch {
+model DocsSearch {
   id        String   @id @default(cuid())
   projectId String
   query     String
@@ -1167,11 +1167,11 @@ model HelpSearch {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
-  @@map("help_search")
+  @@map("docs_search")
 }
 
-/// What became of a question asked of the help center's AI.
-enum HelpAnswerStatus {
+/// What became of a question asked of the docs' AI.
+enum DocsAnswerStatus {
   /// Answered from the project's published articles, with sources.
   ANSWERED
   /// "I don't know": no section was relevant enough, or the model cited none.
@@ -1181,7 +1181,7 @@ enum HelpAnswerStatus {
 }
 
 /// Why a question got "I don't know" (NO_ANSWER), so the log's labels mean one thing.
-enum HelpNoAnswerCause {
+enum DocsNoAnswerCause {
   /// No published section was close enough; the model wasn't asked.
   NO_RELEVANT_SECTION
   /// The model gave no answer, or cited none of the sections it was given.
@@ -1207,42 +1207,42 @@ enum PortalHome {
   DOCS
 }
 
-/// How long the help center's AI answers are (each is a sentence in the prompt and a cap on the reply).
+/// How long the docs' AI answers are (each is a sentence in the prompt and a cap on the reply).
 enum AnswerLength {
   SHORT
   MEDIUM
   DETAILED
 }
 
-/// Where a question to the help center's AI was asked.
-enum HelpQuestionSource {
-  /// The portal's /help.
+/// Where a question to the docs' AI was asked.
+enum DocsQuestionSource {
+  /// The portal's /docs.
   PORTAL
-  /// The widget's Help tab.
+  /// The widget's Docs tab.
   WIDGET
-  /// help.ask (REST or MCP).
+  /// docs.ask (REST or MCP).
   API
 }
 
-/// A question asked of the help center's AI (help.ask) and the asker's thumbs up or down:
+/// A question asked of the docs' AI (docs.ask) and the asker's thumbs up or down:
 /// what the team's Gaps list reads, and what the hourly rate limits count.
 /// No IP addresses.
-model HelpQuestion {
+model DocsQuestion {
   id          String             @id @default(cuid())
   projectId   String
   /// The signed-in user's id, an anonymous reader's first-party cookie id, or the API key's id.
   askerId     String
   question    String
-  source      HelpQuestionSource
-  status      HelpAnswerStatus   @default(FAILED)
+  source      DocsQuestionSource
+  status      DocsAnswerStatus   @default(FAILED)
   /// Why it's "I don't know" (NO_ANSWER only).
-  cause       HelpNoAnswerCause?
+  cause       DocsNoAnswerCause?
   answer      String?
   /// The articles the answer cites.
   articleIds  String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
   helpful     Boolean?
-  /// When the asker passed it to the team ("Ask a person", help.escalate), and the support address it went to.
+  /// When the asker passed it to the team ("Ask a person", docs.escalate), and the support address it went to.
   escalatedAt DateTime?
   escalatedTo String?
   createdAt   DateTime           @default(now())
@@ -1251,12 +1251,12 @@ model HelpQuestion {
 
   @@index([projectId, createdAt])
   @@index([projectId, askerId, createdAt])
-  @@map("help_question")
+  @@map("docs_question")
 }
 
 /// A question the team dismissed from the Gaps list: hidden as asked up to `dismissedAt`
 /// (asked again later, it's back).
-model HelpGapDismissal {
+model DocsGapDismissal {
   projectId   String
   /// Normalized like the Gaps list groups questions: lowercase, trimmed, spaces collapsed.
   question    String
@@ -1265,7 +1265,7 @@ model HelpGapDismissal {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@id([projectId, question])
-  @@map("help_gap_dismissal")
+  @@map("docs_gap_dismissal")
 }
 
 /// A section of a published article (a heading and the text up to the next one, capped

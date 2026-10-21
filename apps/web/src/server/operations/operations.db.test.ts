@@ -161,7 +161,7 @@ async function createFixture() {
   // A section, a collection in it, a published article in that and a draft.
   await prisma.article.deleteMany({ where: { projectId: project.id } });
   await prisma.collection.deleteMany({ where: { projectId: project.id } });
-  await prisma.helpSection.deleteMany({ where: { projectId: project.id } });
+  await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
   // A custom domain waiting for DNS, with its TXT record there to verify it.
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
   await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
@@ -175,10 +175,10 @@ async function createFixture() {
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
   // A section with both collections in it.
-  const docs = await prisma.helpSection.create({ data: { projectId: project.id, slug: "docs", name: "Docs" } });
-  const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", sectionId: docs.id } });
+  const docs = await prisma.docsTab.create({ data: { projectId: project.id, slug: "docs", name: "Docs" } });
+  const basics = await prisma.collection.create({ data: { projectId: project.id, slug: "basics", name: "Basics", tabId: docs.id } });
   // Another, to move one into the other.
-  await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });
+  await prisma.collection.create({ data: { projectId: project.id, slug: "guides", name: "Guides", order: 1, tabId: docs.id } });
   await prisma.article.createMany({
     data: [
       { projectId: project.id, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
@@ -231,8 +231,8 @@ async function createFixture() {
   await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
   const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
   // One at a time: questions count against help.ask's hourly limit per key.
-  await prisma.helpQuestion.deleteMany({ where: { projectId: project.id } });
-  const question = await prisma.helpQuestion.create({
+  await prisma.docsQuestion.deleteMany({ where: { projectId: project.id } });
+  const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: writeKey.id, question: "Can I pay with crypto?", source: "API", status: "NO_ANSWER" },
   });
   return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id, questionId: question.id };
@@ -293,13 +293,13 @@ const snapshot = () =>
         supportEmailPending: true,
       },
     }),
-    prisma.helpQuestion.findMany({ where: { projectId: project.id, escalatedAt: { not: null } } }),
+    prisma.docsQuestion.findMany({ where: { projectId: project.id, escalatedAt: { not: null } } }),
     prisma.article.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
-    prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),
+    prisma.docsGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),
     prisma.customDomain.findMany({ where: { projectId: project.id } }),
     prisma.siteMount.findMany({ where: { projectId: project.id } }),

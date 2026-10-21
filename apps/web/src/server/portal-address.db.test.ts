@@ -133,7 +133,7 @@ test("a failing address lookup fails a request before it writes anything, so a r
   const board = project.boards[0]!;
   await call(updatePortal, as(), { access: "private" });
   await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
-  const question = await prisma.helpQuestion.create({
+  const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: owner.id, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER" },
   });
   await call(createPost, as(), { board: board.slug, title: "Night mode" });
@@ -156,5 +156,5 @@ test("a failing address lookup fails a request before it writes anything, so a r
   expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
   // Not claimed: asking a person again works.
-  expect(await prisma.helpQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
+  expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
 });

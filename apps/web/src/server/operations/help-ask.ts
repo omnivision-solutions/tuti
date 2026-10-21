@@ -1,4 +1,4 @@
-import { type HelpNoAnswerCause, type HelpQuestionSource, prisma } from "@tuti/db";
+import { type DocsNoAnswerCause, type DocsQuestionSource, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
@@ -16,7 +16,7 @@ import { projectSlug } from "./read";
  * AI answers on the help center (Phase 11): a question is answered from the project's
  * published article sections closest to it, citing them, or not at all ("I don't know").
  * Nothing goes to the model when no section is close enough, or when the question names one
- * of the team's off-limits topics. Every question is logged (help_question) with why it got
+ * of the team's off-limits topics. Every question is logged (docs_question) with why it got
  * "I don't know"; the log is also what the hourly rate limits count.
  */
 
@@ -110,14 +110,14 @@ function sourcesOf(sections: AnswerSection[], portal: string): HelpAnswer["sourc
 }
 
 /** Logs the question, or refuses it (429) if the asker or the project asked too often in the last hour. */
-async function logQuestion(projectId: string, askerId: string, question: string, source: HelpQuestionSource) {
+async function logQuestion(projectId: string, askerId: string, question: string, source: DocsQuestionSource) {
   return prisma.$transaction(async (tx) => {
     // One at a time per project, so concurrent questions can't overrun the limits together.
     await lockProject(tx, projectId);
     const since = new Date(Date.now() - 60 * 60 * 1000);
     const [byAsker, byProject] = await Promise.all([
-      tx.helpQuestion.count({ where: { projectId, askerId, createdAt: { gt: since } } }),
-      tx.helpQuestion.count({ where: { projectId, createdAt: { gt: since } } }),
+      tx.docsQuestion.count({ where: { projectId, askerId, createdAt: { gt: since } } }),
+      tx.docsQuestion.count({ where: { projectId, createdAt: { gt: since } } }),
     ]);
     if (byAsker >= ASKS_PER_ASKER_PER_HOUR) {
       throw new OperationError(429, "rate_limited", "You've asked a lot of questions in the last hour. Try again later.");
@@ -126,7 +126,7 @@ async function logQuestion(projectId: string, askerId: string, question: string,
       throw new OperationError(429, "rate_limited", "These docs have had a lot of questions in the last hour. Try again later.");
     }
     // FAILED until it's answered, so a question that never finishes stays logged as failed.
-    return tx.helpQuestion.create({ data: { projectId, askerId, question, source }, select: { id: true } });
+    return tx.docsQuestion.create({ data: { projectId, askerId, question, source }, select: { id: true } });
   });
 }
 
@@ -135,7 +135,7 @@ export async function answerQuestion(
   projectId: string,
   askerId: string,
   question: string,
-  source: HelpQuestionSource,
+  source: DocsQuestionSource,
   /** The asker's reader groups: answers only come from articles they may read (null: the team). */
   groups: ReaderGroups,
   timeoutMs = ANSWER_TIMEOUT_MS,
@@ -148,9 +148,9 @@ export async function answerQuestion(
   /** Saves the outcome, and why it's "I don't know" (`cause`, for no_answer). */
   const finish = async (
     status: HelpAnswer["status"],
-    { cause = null, answer = null, fallback = [] }: { cause?: HelpNoAnswerCause | null; answer?: { answer: string; cited: AnswerSection[] } | null; fallback?: AnswerSection[] } = {},
+    { cause = null, answer = null, fallback = [] }: { cause?: DocsNoAnswerCause | null; answer?: { answer: string; cited: AnswerSection[] } | null; fallback?: AnswerSection[] } = {},
   ): Promise<HelpAnswer> => {
-    await prisma.helpQuestion.updateMany({
+    await prisma.docsQuestion.updateMany({
       where: { id },
       data: {
         status: status === "answered" ? "ANSWERED" : status === "failed" ? "FAILED" : "NO_ANSWER",
@@ -215,7 +215,7 @@ async function stillUsable(projectId: string, sections: AnswerSection[], groups:
 
 /** The asker's thumbs up or down on an answer; rating again replaces it. */
 export async function rateAnswer(projectId: string, questionId: string, helpful: boolean) {
-  const { count } = await prisma.helpQuestion.updateMany({ where: { id: questionId, projectId, status: "ANSWERED" }, data: { helpful } });
+  const { count } = await prisma.docsQuestion.updateMany({ where: { id: questionId, projectId, status: "ANSWERED" }, data: { helpful } });
   if (count === 0) {
     throw new OperationError(404, "not_found", "There's no such answer");
   }

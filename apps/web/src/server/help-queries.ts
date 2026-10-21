@@ -23,8 +23,8 @@ export function inTreeOrder<T extends { id: string; parentId: string | null }>(s
  * ones inside others have no section of their own, and inTreeOrder only keeps their order among siblings.
  */
 export const readingOrder: Prisma.CollectionOrderByWithRelationInput[] = [
-  { section: { order: "asc" } },
-  { section: { name: "asc" } },
+  { tab: { order: "asc" } },
+  { tab: { name: "asc" } },
   { order: "asc" },
   { name: "asc" },
 ];
@@ -77,10 +77,10 @@ export async function helpCenter(projectSlug: string, options: { groups?: Reader
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, projectId: true, parentId: true, sectionId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
+      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
-    prisma.helpSection.findMany({
+    prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
       select: { id: true, slug: true, name: true },
@@ -97,13 +97,13 @@ export async function helpCenter(projectSlug: string, options: { groups?: Reader
     rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
   const top = rows
     .filter((row) => row.parentId === null && allowed(row))
-    .map((row) => ({ sectionId: row.sectionId, collection: view(row) }))
+    .map((row) => ({ tabId: row.tabId, collection: view(row) }))
     .filter((t) => readable(t.collection));
   const sections = sectionRows
     .map(({ id, slug, name }, index) => ({
       slug,
       name,
-      collections: top.filter((t) => t.sectionId === id).map((t) => t.collection),
+      collections: top.filter((t) => t.tabId === id).map((t) => t.collection),
       uncollected: index === 0 ? uncollected : [],
     }))
     .filter((section) => section.collections.length > 0 || section.uncollected.length > 0);
@@ -124,7 +124,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       listing: true,
       revisedAt: true,
       collection: {
-        select: { name: true, groups: true, section: { select: { slug: true } }, parent: { select: { groups: true, section: { select: { slug: true } } } } },
+        select: { name: true, groups: true, tab: { select: { slug: true } }, parent: { select: { groups: true, tab: { select: { slug: true } } } } },
       },
       project: { select: { name: true } },
     },
@@ -144,7 +144,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
     ...rest,
     collection: collection && { name: collection.name },
     /** The help center section it's in (its collection's, or that one's parent's), for the way back to it. */
-    section: (collection?.parent ? collection.parent.section : collection?.section)?.slug ?? null,
+    section: (collection?.parent ? collection.parent.tab : collection?.tab)?.slug ?? null,
     updatedAt,
     /** For some reader groups only: never kept by shared caches. */
     restricted: isRestricted,

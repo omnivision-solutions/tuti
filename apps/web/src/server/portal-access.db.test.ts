@@ -72,7 +72,7 @@ async function portalWithContent(owner: TestUser) {
   await prisma.project.update({ where: { id: projectId }, data: { postCount: 1, changelogCount: 1 } });
   await prisma.changelogEntry.create({ data: { projectId, number: 1, title: "Dark mode is here", publishedAt: new Date(), announced: true } });
   await prisma.article.create({ data: { projectId, slug: "getting-started", title: "Getting started", body: "Hello", publishedAt: new Date() } });
-  const question = await prisma.helpQuestion.create({
+  const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "a-reader", question: "How do I start?", source: "PORTAL", status: "ANSWERED", answer: "Sign up." },
   });
   return { project, fixture: { postId: post.id, questionId: question.id } };

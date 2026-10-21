@@ -91,15 +91,15 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
           select: {
             slug: true,
             name: true,
-            section: { select: { slug: true, name: true } },
-            parent: { select: { slug: true, section: { select: { slug: true, name: true } } } },
+            tab: { select: { slug: true, name: true } },
+            parent: { select: { slug: true, tab: { select: { slug: true, name: true } } } },
           },
         },
       },
     }),
   )) {
     // A collection in another is a folder in its folder (collections go 2 levels deep at most), in its section's folder.
-    const section = article.collection?.parent ? article.collection.parent.section : article.collection?.section;
+    const section = article.collection?.parent ? article.collection.parent.tab : article.collection?.tab;
     const folder = ["help", section?.slug, article.collection?.parent?.slug, article.collection?.slug].filter(Boolean).join("/");
     yield [
       `${folder}/${article.slug}.md`,

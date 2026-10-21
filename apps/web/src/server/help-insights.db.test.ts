@@ -117,8 +117,8 @@ test("searches are logged, normalized, as hits or misses; empty ones aren't", as
   await searchHelp(project.id, "refunds", 10, []);
   await searchHelp(project.id, "   ", 10, []);
   // Logging isn't awaited by search, so wait for it.
-  await vi.waitFor(async () => expect(await prisma.helpSearch.count({ where: { projectId: project.id } })).toBe(2));
-  expect(await prisma.helpSearch.findMany({ where: { projectId: project.id }, orderBy: { query: "asc" }, select: { projectId: true, query: true, results: true } })).toEqual([
+  await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: project.id } })).toBe(2));
+  expect(await prisma.docsSearch.findMany({ where: { projectId: project.id }, orderBy: { query: "asc" }, select: { projectId: true, query: true, results: true } })).toEqual([
     { projectId: project.id, query: "refunds", results: 0 },
     { projectId: project.id, query: "send invites", results: 1 },
   ]);
@@ -146,13 +146,13 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   const billing = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } });
   await prisma.articleViewDay.create({ data: { articleId: billing.id, day: old, views: 100 } });
   await prisma.articleFeedback.create({ data: { articleId: billing.id, readerId: "old", helpful: false, comment: "Old", updatedAt: old } });
-  await prisma.helpSearch.create({ data: { projectId: project.id, query: "ancient", results: 0, createdAt: old } });
+  await prisma.docsSearch.create({ data: { projectId: project.id, query: "ancient", results: 0, createdAt: old } });
 
   for (const query of ["refunds", "Refunds", "sso", "send invites"]) {
     await searchHelp(project.id, query, 10, []);
   }
   await searchHelp(other.id, "other project", 10, []);
-  await vi.waitFor(async () => expect(await prisma.helpSearch.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(6));
+  await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(6));
 
   expect(await insights()).toEqual({
     since: expect.any(String),
@@ -177,7 +177,7 @@ test("insights: views, helpfulness per article, the latest “No” comments and
 
 describe("gaps", () => {
   const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
-  const asked = (question: string, data: Partial<Prisma.HelpQuestionCreateManyInput> = {}) => ({
+  const asked = (question: string, data: Partial<Prisma.DocsQuestionCreateManyInput> = {}) => ({
     projectId: project.id,
     askerId: randomUUID(),
     question,
@@ -189,7 +189,7 @@ describe("gaps", () => {
 
   test("unanswered and thumbs-down questions of the last 30 days, grouped by normalized question, with counts, the latest date and the answer that didn't help", async () => {
     const other = await createProject(owner);
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: [
         asked("Can I pay with crypto?", { createdAt: minutesAgo(30) }),
         asked("  can i PAY   with\tcrypto? ", { createdAt: minutesAgo(20) }),
@@ -216,7 +216,7 @@ describe("gaps", () => {
   });
 
   test("each gap says why its latest “I don't know” happened, as a label on the insights page", async () => {
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: [
         asked("Can I pay with crypto?", { cause: "NO_RELEVANT_SECTION", createdAt: minutesAgo(30) }),
         asked("can I pay with crypto?", { cause: "OFF_LIMITS", createdAt: minutesAgo(20) }),
@@ -249,7 +249,7 @@ describe("gaps", () => {
 
   test("dismissing hides a question (whatever its case and spacing) until it's asked again; only the team may, and only in its project", async () => {
     const other = await createProject(owner);
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: [
         asked("Can I pay with crypto?", { createdAt: minutesAgo(5) }),
         asked("How do I export?", { createdAt: minutesAgo(5) }),
@@ -262,7 +262,7 @@ describe("gaps", () => {
     expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
     actAs(null);
     expect(await dismissHelpGap(project.slug, "Can I pay with crypto?")).toEqual({ error: "Only the project's team can edit the docs" });
-    expect(await prisma.helpGapDismissal.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(0);
+    expect(await prisma.docsGapDismissal.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(0);
 
     actAs(await addMember(project.id, "MEMBER"));
     expect(await dismissHelpGap(project.slug, "  CAN I pay with   crypto?")).toEqual({});
@@ -271,8 +271,8 @@ describe("gaps", () => {
     expect((await gaps(other.id)).map((gap) => gap.question)).toEqual(["Can I pay with crypto?"]);
 
     // Asked again after the dismissal: back, counting only the new question.
-    await prisma.helpGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: minutesAgo(1) } });
-    await prisma.helpQuestion.create({ data: asked("can i pay with crypto?") });
+    await prisma.docsGapDismissal.updateMany({ where: { projectId: project.id }, data: { dismissedAt: minutesAgo(1) } });
+    await prisma.docsQuestion.create({ data: asked("can i pay with crypto?") });
     expect((await gaps()).map((gap) => [gap.question, gap.noAnswer])).toEqual([
       ["can i pay with crypto?", 1],
       ["How do I export?", 1],

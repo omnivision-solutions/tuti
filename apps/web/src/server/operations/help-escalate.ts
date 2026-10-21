@@ -90,7 +90,7 @@ export async function escalateQuestion(
   if (!to) {
     throw new OperationError(403, "escalation_off", "These docs don't take questions by email");
   }
-  const question = await prisma.helpQuestion.findFirst({
+  const question = await prisma.docsQuestion.findFirst({
     where: { id: input.questionId, projectId, askerId, createdAt: { gt: new Date(Date.now() - ESCALATE_WITHIN_MS) } },
     select: { id: true, question: true, answer: true, articleIds: true, helpful: true, escalatedAt: true },
   });
@@ -109,7 +109,7 @@ export async function escalateQuestion(
   // Looked up before the claim: if it failed after, the question would stay claimed with nothing sent.
   const portal = await projectPortal(projectId);
   // Claimed before anything is sent, so a double click or a retry can't send it twice; released if the team's email fails.
-  const { count } = await prisma.helpQuestion.updateMany({
+  const { count } = await prisma.docsQuestion.updateMany({
     where: { id: question.id, escalatedAt: null },
     data: { escalatedAt: new Date(), escalatedTo: to },
   });
@@ -146,7 +146,7 @@ export async function escalateQuestion(
     await sendEmail({ to, replyTo: input.email, ...escalationEmail(content) });
   } catch (error) {
     log.error("Sending an escalated question to the team failed", { projectId, error });
-    await prisma.helpQuestion.updateMany({ where: { id: question.id }, data: { escalatedAt: null, escalatedTo: null } });
+    await prisma.docsQuestion.updateMany({ where: { id: question.id }, data: { escalatedAt: null, escalatedTo: null } });
     throw new OperationError(502, "email_failed", "Couldn't send it to the team just now. Try again.");
   }
   // The team has it; the visitor's copy is a courtesy, so failing to send it fails nothing. Replying to it reaches the team.

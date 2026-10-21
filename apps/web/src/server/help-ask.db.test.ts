@@ -66,7 +66,7 @@ async function write(title: string, text: string, similarity: number, { draft = 
 
 const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", [], timeoutMs);
 const logged = () =>
-  prisma.helpQuestion.findMany({
+  prisma.docsQuestion.findMany({
     where: { projectId: project.id },
     orderBy: { createdAt: "asc" },
     select: { askerId: true, question: true, status: true, answer: true, articleIds: true, helpful: true },
@@ -245,7 +245,7 @@ describe("why “I don't know”", () => {
     model.fail(500);
     expect(await ask()).toMatchObject({ status: "failed" });
 
-    const causes = await prisma.helpQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { status: true, cause: true } });
+    const causes = await prisma.docsQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { status: true, cause: true } });
     expect(causes).toEqual([
       { status: "NO_ANSWER", cause: "OFF_LIMITS" },
       { status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" },
@@ -304,7 +304,7 @@ describe("rate limits", () => {
 
   test(`up to ${ASKS_PER_ASKER_PER_HOUR} questions an hour per asker`, async () => {
     // Questions from more than an hour ago don't count.
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR }, () => ({ projectId: project.id, askerId: "reader-1", question: "Old", source: "PORTAL" as const, createdAt: hourAgo() })),
     });
     for (let i = 0; i < ASKS_PER_ASKER_PER_HOUR; i++) {
@@ -316,7 +316,7 @@ describe("rate limits", () => {
   });
 
   test(`up to ${ASKS_PER_PROJECT_PER_HOUR} questions an hour per project`, async () => {
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_PROJECT_PER_HOUR - 1 }, (_, i) => ({ projectId: project.id, askerId: `reader-${i}`, question: "Q", source: "PORTAL" as const })),
     });
     expect(await ask(QUESTION, "someone")).toMatchObject({ status: "no_answer" });
@@ -329,7 +329,7 @@ describe("rate limits", () => {
   });
 
   test("questions asked at the same time can't overrun the limit together", async () => {
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR - 2 }, () => ({ projectId: project.id, askerId: "reader-1", question: "Q", source: "PORTAL" as const })),
     });
     const results = await Promise.allSettled(Array.from({ length: 5 }, () => ask()));
@@ -370,7 +370,7 @@ describe("the portal's Ask AI and the question log", () => {
     await askHelp(project.slug, "From the portal");
     await askHelp(project.slug, "From the widget", "widget");
     await call(askOperation, { actor: key, projectId: project.id }, { q: "From the API" });
-    const questions = await prisma.helpQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
+    const questions = await prisma.docsQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
     expect(questions).toEqual([
       { question: "From the portal", source: "PORTAL" },
       { question: "From the widget", source: "WIDGET" },

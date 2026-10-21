@@ -595,21 +595,21 @@ async function createFixture() {
   await prisma.siteMount.create({ data: { projectId, origin: site.origin, path: `/${project.slug}`, verificationToken: "matrix" } });
   site.answer(`/${project.slug}/.well-known/tuti-site`, "tuti-site=matrix");
   site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
-  const docs = await prisma.helpSection.create({ data: { projectId, slug: "docs", name: "Docs" } });
-  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", sectionId: docs.id } });
-  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, sectionId: docs.id } });
+  const docs = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
+  const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: docs.id } });
+  await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: docs.id } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
       { projectId, slug: "matrix-draft", title: "Matrix draft" },
     ],
   });
-  const question = await prisma.helpQuestion.create({
+  const question = await prisma.docsQuestion.create({
     data: { projectId, askerId: "matrix-reader", question: "How do I invite?", source: "PORTAL", status: "ANSWERED", answer: "From the Team page." },
   });
   // "Ask a person" is on, and an anonymous reader just got "I don't know".
   await prisma.project.update({ where: { id: projectId }, data: { supportEmail: "e2e-support@example.com" } });
-  const escalatable = await prisma.helpQuestion.create({
+  const escalatable = await prisma.docsQuestion.create({
     data: { projectId, askerId: MATRIX_READER, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" },
   });
   // An earlier version of the draft, to restore.

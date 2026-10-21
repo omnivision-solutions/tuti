@@ -79,8 +79,8 @@ async function turnOn(address = support) {
 }
 
 /** A question an anonymous reader (cookie `reader`) just asked; "I don't know" unless it has an answer. */
-async function asked(reader: string, fields: Partial<Prisma.HelpQuestionUncheckedCreateInput> = {}) {
-  return prisma.helpQuestion.create({
+async function asked(reader: string, fields: Partial<Prisma.DocsQuestionUncheckedCreateInput> = {}) {
+  return prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: reader, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER", ...fields },
   });
 }
@@ -92,7 +92,7 @@ function asReader(id = randomUUID()) {
   return id;
 }
 
-const escalated = (id: string) => prisma.helpQuestion.findUniqueOrThrow({ where: { id }, select: { escalatedAt: true, escalatedTo: true } });
+const escalated = (id: string) => prisma.docsQuestion.findUniqueOrThrow({ where: { id }, select: { escalatedAt: true, escalatedTo: true } });
 const sentTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address));
 
 describe("support email", () => {
@@ -222,7 +222,7 @@ describe("asking a person", () => {
     expect(await escalateHelp(project.slug, old.id, newAddress(), "")).toEqual(notFound);
     // Another project's, through this project.
     const other = await createProject(owner);
-    const elsewhere = await prisma.helpQuestion.create({ data: { projectId: other.id, askerId: reader, question: "Hi?", source: "PORTAL" } });
+    const elsewhere = await prisma.docsQuestion.create({ data: { projectId: other.id, askerId: reader, question: "Hi?", source: "PORTAL" } });
     expect(await escalateHelp(project.slug, elsewhere.id, newAddress(), "")).toEqual(notFound);
 
     // Theirs, twice (a double click: at once).

@@ -47,7 +47,7 @@ function logSearch(projectId: string, query: string, results: number) {
   if (!normalized) {
     return;
   }
-  prisma.helpSearch
+  prisma.docsSearch
     .create({ data: { projectId, query: normalized, results } })
     .catch((error: unknown) => log.warn("Logging a help search failed", { projectId, error }));
 }

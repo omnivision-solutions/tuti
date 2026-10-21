@@ -49,7 +49,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs
         changes: { select: { articleId: true } },
       },
     }),
-    prisma.helpSection.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } }),
+    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } }),
     prisma.collection.findMany({
       where: { projectId },
       orderBy: readingOrder,
@@ -60,7 +60,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs
         name: true,
         description: true,
         parent: { select: { slug: true } },
-        section: { select: { slug: true } },
+        tab: { select: { slug: true } },
         groups: true,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
@@ -159,7 +159,7 @@ export default async function TeamHelpPage(props: PageProps<"/app/[project]/docs
                 name: c.name,
                 description: c.description,
                 parent: c.parent?.slug ?? null,
-                section: c.section?.slug ?? null,
+                section: c.tab?.slug ?? null,
                 groups: c.groups,
                 articles: c.articles.map(structureView),
               }))}

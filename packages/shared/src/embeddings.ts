@@ -21,7 +21,7 @@ export const SEARCH_MIN_SIMILARITY = 0.3;
 /**
  * A question vs. a help article's section, for AI answers: below it the section isn't sent to the
  * model, and with no section left the answer is "I don't know". Stricter than search, which only
- * lists articles. ponytail: not calibrated yet; tune with real questions (the help_question log).
+ * lists articles. ponytail: not calibrated yet; tune with real questions (the docs_question log).
  */
 export const ANSWER_MIN_SIMILARITY = 0.4;
 
