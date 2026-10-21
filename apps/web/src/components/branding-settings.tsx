@@ -312,8 +312,9 @@ function PoweredByField({
               target="_blank"
               rel="noreferrer"
               className={buttonVariants()}
-              // From now on, this installation checks daily whether the licence has been bought.
-              onClick={() => void checkBrandingLicense(projectSlug).catch(() => undefined)}
+              // From now on, this installation checks daily whether the licence has been bought. The dialog
+              // says what this first check found (or that it failed) when they come back from tuti.so.
+              onClick={() => void check()}
             >
               Get a licence
             </a>

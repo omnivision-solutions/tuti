@@ -57,8 +57,12 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   expect(buy.searchParams.get("installation")).toBeTruthy();
   expect(buy.searchParams.get("project")).toBeTruthy();
   await checkpoint(owner, "powered-by-licence-dialog", { fullPage: false });
-  await dialog.getByRole("button", { name: "Check now" }).click();
+  // Going to buy one starts this installation's checks; the first says what it found.
+  const [tutiSo] = await Promise.all([owner.waitForEvent("popup"), dialog.getByRole("link", { name: "Get a licence" }).click()]);
+  await tutiSo.close();
   await expect(dialog.getByText("No licence for this project yet. Once you've bought one, check again.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Check now" }).click();
+  await expect(dialog.getByText("Checked a moment ago. Try again in a minute.")).toBeVisible();
   await dialog.getByRole("button", { name: "Keep the badge" }).click();
   await expect(dialog).toBeHidden();
   await expect(poweredBy).toBeChecked();
