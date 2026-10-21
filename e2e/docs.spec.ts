@@ -132,7 +132,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", /^Who can invite Owners and admins send invites/);
   // Beside it, the docs as a tree with the article marked, and its sections ("On this page").
   const tree = visitor.getByRole("navigation", { name: "Docs", exact: true });
-  await expect(tree.getByRole("link", { name: "Getting started" })).toBeVisible();
+  await expect(tree.getByRole("link", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
   const onThisPage = visitor.getByRole("navigation", { name: "On this page" });
   await expect(onThisPage.getByRole("link")).toHaveText(["Who can invite", "Roles"]);

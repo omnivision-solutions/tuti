@@ -132,7 +132,7 @@ export const docsContents = cache(async (projectSlug: string, options: { groups?
 
 export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
 
-export type DocsTreeCollection = { slug: string; name: string; articles: { slug: string; title: string }[]; collections: DocsTreeCollection[]; open: boolean };
+export type DocsTreeCollection = { slug: string; name: string; icon: string | null; articles: { slug: string; title: string }[]; collections: DocsTreeCollection[]; open: boolean };
 
 /**
  * The Docs layout's tree: tab `tab`'s collections (else the first tab with something to read, or all
@@ -141,9 +141,9 @@ export type DocsTreeCollection = { slug: string; name: string; articles: { slug:
  */
 export function docsTree(docs: DocsContents, tab: string | null, at: string | null) {
   const { collections, uncollected } = docs.tabs.find((t) => t.slug === tab) ?? docs.tabs[0] ?? docs;
-  const branch = ({ slug, name, articles, collections }: DocsCollection): DocsTreeCollection => {
+  const branch = ({ slug, name, icon, articles, collections }: DocsCollection): DocsTreeCollection => {
     const inside = collections.map(branch);
-    return { slug, name, articles, collections: inside, open: slug === at || inside.some((c) => c.open) };
+    return { slug, name, icon, articles, collections: inside, open: slug === at || inside.some((c) => c.open) };
   };
   return { collections: collections.map(branch), uncollected };
 }

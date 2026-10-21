@@ -3,6 +3,7 @@ import { prisma } from "@tuti/db";
 import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 
+import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
 import { DocsCollections } from "@/components/docs-collections";
@@ -108,7 +109,7 @@ export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active
  */
 async function DocsTree({ tree, current }: { tree: DocsTree; current: string | null }) {
   const at = await portalLinks();
-  const link = (slug: string, name: string, className?: string) => (
+  const link = (slug: string, name: React.ReactNode, className?: string) => (
     <Link
       href={at(`/docs/${slug}`)}
       aria-current={slug === current ? "page" : undefined}
@@ -120,6 +121,13 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       {name}
     </Link>
   );
+  // A collection's name, after its icon.
+  const named = (collection: DocsTreeCollection) => (
+    <>
+      <CollectionIcon name={collection.icon} />
+      <span className="min-w-0">{collection.name}</span>
+    </>
+  );
   const articles = (list: { slug: string; title: string }[]) => list.map((article) => <li key={article.slug}>{link(article.slug, article.title)}</li>);
   const contents = (collection: DocsTreeCollection) => (
     <ul className="flex flex-col gap-0.5">
@@ -129,7 +137,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
           <details open={child.open}>
             <summary className="flex cursor-pointer list-none items-center rounded-md hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
               <ChevronRightIcon aria-hidden className="ml-1 size-4 shrink-0 text-muted-foreground transition-transform [[open]>summary>&]:rotate-90" />
-              {link(child.slug, child.name, "min-w-0 flex-1 pl-1")}
+              {link(child.slug, named(child), "flex min-w-0 flex-1 items-center gap-2 pl-1")}
             </summary>
             <div className="ml-3 border-l pl-2">{contents(child)}</div>
           </details>
@@ -141,7 +149,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
     <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
-          {link(collection.slug, collection.name, "font-heading font-semibold text-foreground")}
+          {link(collection.slug, named(collection), "flex items-center gap-2 font-heading font-semibold text-foreground")}
           {contents(collection)}
         </div>
       ))}
