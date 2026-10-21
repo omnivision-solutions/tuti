@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { fromPlainText, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
+import { docHeadings, fromPlainText, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
 import { RichText } from "./react";
 
@@ -278,5 +278,45 @@ describe("images", () => {
         renderToStaticMarkup(createElement(RichText, { doc: doc(image(size)), mediaBaseUrl: "https://media.example" })),
       ).toBe("<div></div>");
     }
+  });
+});
+
+describe("headings", () => {
+  const h = (level: number, ...content: object[]) => ({ type: "heading", attrs: { level }, content });
+  const article = doc(
+    h(2, text("Getting started")),
+    p(text("Hi")),
+    h(3, text("What's "), text("new?", [{ type: "bold" }])),
+    h(2, text("Getting started")),
+    h(2, text("Getting started")),
+    h(2, text("Café & Crème")),
+    h(2, text("お支払い")),
+    h(3, text("Section 8")),
+    h(2, text("Цены")),
+    { type: "blockquote", content: [h(2, text("Quoted"))] },
+  );
+
+  test("an article's top-level h2 and h3, with ids from their text: repeats numbered, non-Latin text as section-N", () => {
+    expect(docHeadings(article)).toEqual([
+      { id: "getting-started", text: "Getting started", level: 2 },
+      { id: "what-s-new", text: "What's new?", level: 3 },
+      { id: "getting-started-2", text: "Getting started", level: 2 },
+      { id: "getting-started-3", text: "Getting started", level: 2 },
+      { id: "cafe-creme", text: "Café & Crème", level: 2 },
+      { id: "section-6", text: "お支払い", level: 2 },
+      // A heading's text can make a fallback's id too: the later one is numbered.
+      { id: "section-8", text: "Section 8", level: 3 },
+      { id: "section-8-2", text: "Цены", level: 2 },
+    ]);
+    expect(docHeadings(doc(p(text("No headings"))))).toEqual([]);
+  });
+
+  test("RichText gives headings those ids only when asked (articles)", () => {
+    const ids = (out: string) => [...out.matchAll(/<h[23] id="([^"]+)"/g)].map((m) => m[1]);
+    const out = renderToStaticMarkup(createElement(RichText, { doc: article, headingIds: true }));
+    expect(ids(out)).toEqual(docHeadings(article).map((heading) => heading.id));
+    expect(out).toContain('<h3 id="what-s-new">What&#x27;s <strong>new?</strong></h3>');
+    expect(out).toContain("<blockquote><h2>Quoted</h2></blockquote>");
+    expect(ids(renderToStaticMarkup(createElement(RichText, { doc: article })))).toEqual([]);
   });
 });

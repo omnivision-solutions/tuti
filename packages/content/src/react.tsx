@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { Fragment, type ReactNode } from "react";
 
+import { docHeadings } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
@@ -17,20 +18,30 @@ export function RichText({
   doc,
   className,
   mediaBaseUrl,
+  headingIds = false,
 }: {
   doc: JSONContent;
   className?: string;
   /** Where uploaded images are served from (MEDIA_PUBLIC_URL); without it, images are left out. */
   mediaBaseUrl?: string | null;
+  /** Articles: top-level headings get ids from their text (docHeadings), so they can be linked. */
+  headingIds?: boolean;
 }) {
-  return <div className={className}>{children(doc, mediaBaseUrl ?? undefined)}</div>;
+  const media = mediaBaseUrl ?? undefined;
+  if (!headingIds) {
+    return <div className={className}>{children(doc, media)}</div>;
+  }
+  const ids = docHeadings(doc).map((heading) => heading.id);
+  let next = 0;
+  const content = (doc.content ?? []).map((child, i) => renderNode(child, i, media, child.type === "heading" ? ids[next++] : undefined));
+  return <div className={className}>{content}</div>;
 }
 
 function children(node: JSONContent, media: string | undefined): ReactNode[] {
   return (node.content ?? []).map((child, i) => renderNode(child, i, media));
 }
 
-function renderNode(node: JSONContent, key: number, media: string | undefined): ReactNode {
+function renderNode(node: JSONContent, key: number, media: string | undefined, id?: string): ReactNode {
   const inner = () => children(node, media);
   switch (node.type) {
     case "text":
@@ -53,7 +64,15 @@ function renderNode(node: JSONContent, key: number, media: string | undefined): 
       return <li key={key}>{inner()}</li>;
     case "heading":
       // Under the page's own title: level 3 when asked for, otherwise 2.
-      return node.attrs?.level === 3 ? <h3 key={key}>{inner()}</h3> : <h2 key={key}>{inner()}</h2>;
+      return node.attrs?.level === 3 ? (
+        <h3 key={key} id={id}>
+          {inner()}
+        </h3>
+      ) : (
+        <h2 key={key} id={id}>
+          {inner()}
+        </h2>
+      );
     case "blockquote":
       return <blockquote key={key}>{inner()}</blockquote>;
     case "horizontalRule":
