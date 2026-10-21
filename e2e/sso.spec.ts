@@ -85,7 +85,7 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
   await expect(owner.getByRole("region", { name: "Collections" })).toContainText("Only for enterprise");
-  await checkpoint(owner, "team-help-collection-groups");
+  await checkpoint(owner, "team-docs-collection-groups");
   for (const [title, collection] of [
     ["Getting started", "basics"],
     ["Setting up SAML", "enterprise"],
@@ -107,5 +107,5 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
   await sam.getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
-  await checkpoint(sam, "portal-help-group-reader");
+  await checkpoint(sam, "portal-docs-group-reader");
 });

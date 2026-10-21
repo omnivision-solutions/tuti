@@ -8,13 +8,13 @@ import { GET as llms } from "./llms.txt/route";
 import { GET as robots } from "./robots.txt/route";
 import { GET as sitemap } from "./sitemap.xml/route";
 
-/** Serving the portal to search engines and AI tools: /help/<slug>.md, /llms.txt, /sitemap.xml and /robots.txt. */
+/** Serving the portal to search engines and AI tools: /docs/<slug>.md, /llms.txt, /sitemap.xml and /robots.txt. */
 
 const request = new Request("http://x");
 const doc = (...content: object[]) => ({ type: "doc", content });
 const text = (value: string, marks?: object[]) => ({ type: "text", text: value, ...(marks && { marks }) });
 
-async function helpCenter() {
+async function docsContents() {
   const owner = await signUp();
   const project = await createProject(owner);
   const projectId = project.id;
@@ -37,7 +37,7 @@ async function helpCenter() {
 }
 
 test("a published article is served as Markdown at its .md URL; drafts, missing articles and other projects' aren't", async () => {
-  const project = await helpCenter();
+  const project = await docsContents();
   const other = await createProject(await signUp());
   const get = (projectSlug: string, slug: string) => markdown(request, { params: Promise.resolve({ project: projectSlug, slug }) });
 
@@ -55,7 +55,7 @@ test("a published article is served as Markdown at its .md URL; drafts, missing 
 });
 
 test("llms.txt describes the portal and links each published article's Markdown, the changelog and the boards", async () => {
-  const project = await helpCenter();
+  const project = await docsContents();
   const portal = `http://${project.slug}.localhost:3100`;
   const response = await llms(request, { params: Promise.resolve({ project: project.slug }) });
   expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
@@ -78,7 +78,7 @@ test("llms.txt describes the portal and links each published article's Markdown,
 });
 
 test("the sitemap lists the portal's public pages with when they changed, and nothing a visitor can't see", async () => {
-  const project = await helpCenter();
+  const project = await docsContents();
   const other = await createProject(await signUp());
   const portal = `http://${project.slug}.localhost:3100`;
   const board = await prisma.board.update({ where: { id: project.boards[0]!.id }, data: { updatedAt: new Date("2026-01-01T10:00:00Z") } });
@@ -111,8 +111,8 @@ test("the sitemap lists the portal's public pages with when they changed, and no
   expect((await sitemap(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);
 });
 
-test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts are left out, never the help center", async () => {
-  const project = await helpCenter();
+test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts are left out, never the docs", async () => {
+  const project = await docsContents();
   const portal = `http://${project.slug}.localhost:3100`;
   await prisma.$executeRaw`
     INSERT INTO post (id, "projectId", "boardId", "authorId", number, title, "updatedAt")
@@ -128,7 +128,7 @@ test("the sitemap never lists more than 50,000 URLs: past that, the oldest posts
 });
 
 test("robots.txt welcomes crawlers and points to the sitemap", async () => {
-  const project = await helpCenter();
+  const project = await docsContents();
   const response = await robots(request, { params: Promise.resolve({ project: project.slug }) });
   expect(await response.text()).toBe(`User-agent: *\nAllow: /\n\nSitemap: http://${project.slug}.localhost:3100/sitemap.xml\n`);
   expect((await robots(request, { params: Promise.resolve({ project: "no-such-project" }) })).status).toBe(404);

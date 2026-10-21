@@ -11,19 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { answerBlocks } from "@/lib/answer-text";
-import { askHelp, escalateHelp, rateHelpAnswer } from "@/server/help-readers";
-import type { HelpAnswer as Answer } from "@/server/operations/help-ask";
+import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
+import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
 import { usePortalHref } from "@/components/portal-base";
 
 /**
- * "Ask AI" above the help center's search results. The AI only answers when the visitor
+ * "Ask AI" above the docs' search results. The AI only answers when the visitor
  * asks (each answer costs a model call; crawlers and link previews of ?q= pages never
  * trigger one). Its answer is shown as plain text with its sources, or "I don't know" with
  * a way to post the question as feedback. When the team has a support email (`askAPerson`,
  * with the address to start with), "I don't know" and a thumbs-down also offer "Ask a person".
  * In the widget (`widget`), sources open the portal in a new tab, so the answer stays in the panel.
  */
-export function HelpAnswer({
+export function DocsAnswer({
   projectSlug,
   question,
   feedbackHref,
@@ -43,7 +43,7 @@ export function HelpAnswer({
 
   const ask = () =>
     startTransition(async () => {
-      const result = await askHelp(projectSlug, question, widget ? "widget" : "portal");
+      const result = await askDocs(projectSlug, question, widget ? "widget" : "portal");
       if ("error" in result) {
         toast.error(result.error);
         return;
@@ -53,7 +53,7 @@ export function HelpAnswer({
 
   const rate = (helpful: boolean) =>
     startTransition(async () => {
-      const result = await rateHelpAnswer(projectSlug, answer!.id, helpful);
+      const result = await rateDocsAnswer(projectSlug, answer!.id, helpful);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -165,7 +165,7 @@ export function HelpAnswer({
 /**
  * "Ask a person": the visitor's email (prefilled when we know it: their account, or in the widget
  * the email the customer's page signs them in with) and an optional note, then the question goes to
- * the team by email (help.escalate). Opens in place, taking the row's width.
+ * the team by email (docs.escalate). Opens in place, taking the row's width.
  */
 function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { projectSlug: string; questionId: string; defaultEmail: string; widget: boolean }) {
   const [open, setOpen] = useState(false);
@@ -183,7 +183,7 @@ function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { project
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
     startTransition(async () => {
-      const result = await escalateHelp(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal");
+      const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal");
       if (result.error) {
         setError(result.error);
         return;

@@ -15,7 +15,7 @@ import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
  * - portal hosts (<project>.tuti.so, or a verified custom domain like help.acme.com):
  *   rewritten to /portal/<project>/…, so
  *   acme.tuti.so/b/ideas renders app/portal/[project]/(site)/b/[board].
- *   An article's Markdown, /help/<slug>.md, goes to help/[slug]/md (a route
+ *   An article's Markdown, /docs/<slug>.md, goes to docs/[slug]/md (a route
  *   segment can't be part dynamic, part ".md").
  * The auth API (/api/*) is served on every host so sessions stay per host.
  * Pages can't be framed by other sites (clickjacking), except a portal's

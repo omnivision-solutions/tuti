@@ -30,17 +30,17 @@ import type { FormState } from "@/server/form-state";
 import {
   deleteArticle,
   deleteCollection,
-  deleteSection,
+  deleteTab,
   discardArticleChanges,
-  dismissHelpGap,
+  dismissDocsGap,
   publishArticle,
   publishArticleChanges,
   restoreArticle,
   saveArticle,
   saveCollection,
-  saveSection,
+  saveTab,
   unpublishArticle,
-} from "@/server/help";
+} from "@/server/docs";
 
 type Article = {
   slug: string;
@@ -398,14 +398,14 @@ export function CollectionDialog({
   projectSlug,
   collection,
   parents = [],
-  sections = [],
+  tabs = [],
 }: {
   projectSlug: string;
   collection?: { slug: string; name: string; description: string; groups: string[] };
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
   parents?: CollectionOption[];
-  /** The sections a new top-level one can go in, the first by default. */
-  sections?: CollectionOption[];
+  /** The tabs a new top-level one can go in, the first by default. */
+  tabs?: CollectionOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -418,7 +418,7 @@ export function CollectionDialog({
   }, {});
   const id = collection?.slug ?? "new";
   const parentItems = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
-  const sectionItems = sections.map((s) => ({ value: s.slug, label: s.name }));
+  const tabItems = tabs.map((s) => ({ value: s.slug, label: s.name }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -485,22 +485,22 @@ export function CollectionDialog({
                 </Select>
               </Field>
             )}
-            {!collection && sectionItems.length > 0 && (
+            {!collection && tabItems.length > 0 && (
               <Field>
-                <FieldLabel id="collection-section-label">Section</FieldLabel>
-                <Select name="section" items={sectionItems} defaultValue={sectionItems[0].value}>
-                  <SelectTrigger className="w-full" aria-labelledby="collection-section-label">
+                <FieldLabel id="collection-tab-label">Tab</FieldLabel>
+                <Select name="tab" items={tabItems} defaultValue={tabItems[0].value}>
+                  <SelectTrigger className="w-full" aria-labelledby="collection-tab-label">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {sectionItems.map((item) => (
+                    {tabItems.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
                         {item.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s section.</FieldDescription>}
+                {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s tab.</FieldDescription>}
               </Field>
             )}
           </FieldGroup>
@@ -563,43 +563,43 @@ export function DeleteCollectionButton({
 }
 
 /**
- * Adds a section (`section` undefined) or renames one. The first one takes the collections there
+ * Adds a tab (`tab` undefined) or renames one. The first one takes the collections there
  * are, which the dialog says.
  */
-export function SectionDialog({ projectSlug, section, first = false }: { projectSlug: string; section?: CollectionOption; first?: boolean }) {
+export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: string; tab?: CollectionOption; first?: boolean }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveSection(projectSlug, section?.slug ?? null, prev, formData);
+    const result = await saveTab(projectSlug, tab?.slug ?? null, prev, formData);
     if (!result.error) {
       setOpen(false);
-      toast.success(section ? "Section saved" : "Section added");
+      toast.success(tab ? "Tab saved" : "Tab added");
     }
     return result;
   }, {});
-  const id = section?.slug ?? "new";
+  const id = tab?.slug ?? "new";
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={section ? "ghost" : "outline"} size="sm" aria-label={section ? `Rename ${section.name}` : undefined} />}>
-        {section ? "Rename" : "New section"}
+      <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Rename ${tab.name}` : undefined} />}>
+        {tab ? "Rename" : "New tab"}
       </DialogTrigger>
       <DialogContent>
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{section ? "Rename section" : "New section"}</DialogTitle>
-            {!section && (
+            <DialogTitle>{tab ? "Rename tab" : "New tab"}</DialogTitle>
+            {!tab && (
               <DialogDescription>
-                Sections are tabs at the top of your docs, each with its own collections
+                Tabs sit at the top of your docs, each with its own collections
                 {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
               </DialogDescription>
             )}
           </DialogHeader>
           <FieldGroup className="my-4">
             <Field data-invalid={state.error ? true : undefined}>
-              <FieldLabel htmlFor={`section-name-${id}`}>Name</FieldLabel>
+              <FieldLabel htmlFor={`tab-name-${id}`}>Name</FieldLabel>
               <Input
-                id={`section-name-${id}`}
+                id={`tab-name-${id}`}
                 name="name"
-                defaultValue={section?.name}
+                defaultValue={tab?.name}
                 placeholder="Guides"
                 maxLength={40}
                 required
@@ -610,7 +610,7 @@ export function SectionDialog({ projectSlug, section, first = false }: { project
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {section ? "Save" : "Add section"}
+              {tab ? "Save" : "Add tab"}
             </Button>
           </DialogFooter>
         </form>
@@ -619,29 +619,29 @@ export function SectionDialog({ projectSlug, section, first = false }: { project
   );
 }
 
-export function DeleteSectionButton({
+export function DeleteTabButton({
   projectSlug,
-  section,
+  tab,
   movesTo,
 }: {
   projectSlug: string;
-  section: CollectionOption;
-  /** The section its collections go to (null: it's the last one). */
+  tab: CollectionOption;
+  /** The tab its collections go to (null: it's the last one). */
   movesTo: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   return (
     <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${section.name}`} />}>
+      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} aria-label={`Delete ${tab.name}`} />}>
         Delete
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete {section.name}?</AlertDialogTitle>
+          <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {movesTo
               ? `Its collections move to ${movesTo}, with their articles.`
-              : "It's the last section, so your docs go back to one page with all your collections."}
+              : "It's the last tab, so your docs go back to one page with all your collections."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -651,11 +651,11 @@ export function DeleteSectionButton({
             disabled={pending}
             onClick={() =>
               startTransition(async () => {
-                const result = await deleteSection(projectSlug, section.slug);
+                const result = await deleteTab(projectSlug, tab.slug);
                 if (result.error) {
                   toast.error(result.error);
                 } else {
-                  toast.success(`${section.name} deleted`);
+                  toast.success(`${tab.name} deleted`);
                 }
               })
             }
@@ -678,7 +678,7 @@ export function DismissGapButton({ projectSlug, question }: { projectSlug: strin
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await dismissHelpGap(projectSlug, question);
+          const result = await dismissDocsGap(projectSlug, question);
           if (result.error) {
             toast.error(result.error);
           } else {

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 /**
  * Reader groups (Phase 10): the project's app says in the SSO token which groups someone is in
- * (`groups`, e.g. ["enterprise"]), and a help center collection can be for some groups only. The
+ * (`groups`, e.g. ["enterprise"]), and a docs collection can be for some groups only. The
  * team reads everything; everyone else reads what's for everyone.
  */
 

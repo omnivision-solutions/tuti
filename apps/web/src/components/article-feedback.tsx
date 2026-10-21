@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { answerArticle, countArticleView } from "@/server/help-readers";
+import { answerArticle, countArticleView } from "@/server/docs-readers";
 
 const MAX_COMMENT = 500;
 

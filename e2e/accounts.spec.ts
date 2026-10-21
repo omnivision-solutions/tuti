@@ -89,7 +89,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // Signed out, with a post started (as "Post this as feedback" from the help center does).
+  // Signed out, with a post started (as "Post this as feedback" from the docs does it).
   const title = "Can I pay with crypto?";
   const vera = await newPerson(browser, portalUrl(slug));
   await vera.goto(`/feedback/feature-requests?${new URLSearchParams({ title })}`);

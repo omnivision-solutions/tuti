@@ -11,7 +11,7 @@ import { countEmailedLink } from "../email-link-limits";
 import { type Actor, defineOperation, OperationError } from "./define";
 
 /**
- * How the help center's AI answers (Phase 11): a tone, the answer length, standing instructions
+ * How the docs' AI answers (Phase 11): a tone, the answer length, standing instructions
  * and off-limits topics. All of it goes into the answer prompt as the team's settings, apart from
  * the sources; off-limits topics are also checked before the model is asked (`offLimitsTopic`).
  */
@@ -35,7 +35,7 @@ export type AssistantSettings = {
   length: AssistantLength;
   instructions: string;
   offLimits: string[];
-  /** Where "Ask a person" sends questions (help.escalate); null is off. */
+  /** Where "Ask a person" sends questions (docs.escalate); null is off. */
   supportEmail: string | null;
   /** A new address waiting for its confirmation link to be opened; `supportEmail` keeps working meanwhile. */
   supportEmailPending: string | null;
@@ -151,7 +151,7 @@ export async function confirmSupportEmailToken(token: string): Promise<{ address
 export const getAssistantSettings = defineOperation({
   name: "assistant.get",
   summary:
-    "Get how the help center's AI answers: tone, answer length, standing instructions, off-limits topics, and the support email “Ask a person” sends questions to (null when off), with any address waiting for confirmation",
+    "Get how the docs' AI answers: tone, answer length, standing instructions, off-limits topics, and the support email “Ask a person” sends questions to (null when off), with any address waiting for confirmation",
   method: "GET",
   path: "/assistant",
   scope: "read",
@@ -162,7 +162,7 @@ export const getAssistantSettings = defineOperation({
 
 export const updateAssistantSettings = defineOperation({
   name: "assistant.update",
-  summary: `Set how the help center's AI answers: tone, answer length (short, medium or detailed), standing instructions, and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the help center. \`supportEmail\` turns on “Ask a person” (help.escalate): the address gets a confirmation link and takes questions once it's opened (the current one keeps working until then; saving the waiting address again sends a new link); "" turns it off`,
+  summary: `Set how the docs' AI answers: tone, answer length (short, medium or detailed), standing instructions, and up to ${MAX_OFF_LIMITS_TOPICS} off-limits topics (replaces the list). A question that names an off-limits topic gets “I can't help with that here” without asking the AI. None of it overrides answering only from the docs. \`supportEmail\` turns on “Ask a person” (docs.escalate): the address gets a confirmation link and takes questions once it's opened (the current one keeps working until then; saving the waiting address again sends a new link); "" turns it off`,
   method: "PATCH",
   path: "/assistant",
   scope: "write",

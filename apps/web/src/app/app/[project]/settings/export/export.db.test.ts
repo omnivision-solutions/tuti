@@ -94,14 +94,14 @@ test("owners download everything as Markdown with front matter, drafts included,
     "README.md",
     "changelog/2-dark-mode.md",
     "changelog/3-next-up.md",
-    "help/getting-started/inviting-your-team.md",
-    "help/secret-draft.md",
+    "docs/getting-started/inviting-your-team.md",
+    "docs/secret-draft.md",
     "posts/feature-requests/7-dark-mode.md",
   ]);
   expect(files["README.md"]).toContain(`# Project ${project.slug}`);
   expect(files["README.md"]).toContain("images aren't in this ZIP");
 
-  expect(files["help/getting-started/inviting-your-team.md"]).toBe(
+  expect(files["docs/getting-started/inviting-your-team.md"]).toBe(
     [
       "---",
       'title: "Inviting \\"your\\" team"',
@@ -119,7 +119,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "",
     ].join("\n"),
   );
-  expect(files["help/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\norder: 0\n---\n\nNot yet\.\n$/);
+  expect(files["docs/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\norder: 0\n---\n\nNot yet\.\n$/);
 
   expect(files["changelog/2-dark-mode.md"]).toBe(
     '---\ntitle: "Dark mode"\nstatus: "published"\npublishedAt: 2026-03-05T10:00:00.000Z\ntags: ["new","improved"]\ncompletes: [7]\n---\n\nIt\'s here.\n',
@@ -178,8 +178,8 @@ test("a collection in another is a folder in its folder, and each article says i
   });
   actAs(owner);
   const files = await unzip(await exportOf(slug));
-  expect(Object.keys(files).filter((path) => path.startsWith("help/"))).toEqual(
-    expect.arrayContaining(["help/billing/card-payments.md", "help/billing/invoices/downloading.md"]),
+  expect(Object.keys(files).filter((path) => path.startsWith("docs/"))).toEqual(
+    expect.arrayContaining(["docs/billing/card-payments.md", "docs/billing/invoices/downloading.md"]),
   );
-  expect(files["help/billing/invoices/downloading.md"]).toContain('collection: "Invoices"\norder: 1\n');
+  expect(files["docs/billing/invoices/downloading.md"]).toContain('collection: "Invoices"\norder: 1\n');
 });

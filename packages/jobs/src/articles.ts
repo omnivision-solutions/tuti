@@ -26,7 +26,7 @@ function chunksOf(article: ArticleText | null) {
  */
 export async function articleChanged({ articleId }: JobInput<"articleChanged">, log: JobLogger): Promise<JobResult> {
   if (!embeddingsEnabled()) {
-    log.info("OPENAI_API_KEY not set: help search matches words only");
+    log.info("OPENAI_API_KEY not set: docs search matches words only");
     return { skipped: true };
   }
   const next = chunksOf(await prisma.article.findUnique({ where: { id: articleId }, select: articleSelect }));

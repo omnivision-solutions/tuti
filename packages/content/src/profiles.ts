@@ -12,7 +12,7 @@ import { imageKey, imageWidths } from "./media";
 /**
  * What each kind of content may contain. The editor, the server-side validation
  * and the renderers all derive from these, so they agree on every node and mark.
- * `changelog` adds headings, quotes and dividers to `post`; `article` (help center)
+ * `changelog` adds headings, quotes and dividers to `post`; `article` (docs)
  * adds tables to `changelog`.
  */
 export const PROFILES = ["comment", "post", "changelog", "article"] as const;

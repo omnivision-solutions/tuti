@@ -5,7 +5,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import HelpInsightsPage from "@/app/app/[project]/docs/insights/page";
+import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { hashSecret } from "@/lib/portal-handoff";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -13,15 +13,15 @@ import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import { confirmSupportEmail, saveSupportEmail } from "./assistant";
-import { escalateHelp } from "./help-readers";
+import { escalateDocs } from "./docs-readers";
 import { getAssistantSettings, updateAssistantSettings } from "./operations/assistant";
-import { askAPerson, escalateHelp as escalateOperation } from "./operations/help-escalate";
-import { getHelpInsights } from "./operations/help-insights";
+import { askAPerson, escalateDocs as escalateOperation } from "./operations/docs-escalate";
+import { getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
 
 /**
  * "Ask a person": the team's support email (confirmed by a link before it's used) and
- * passing a question the AI couldn't help with to it (help.escalate). The summary comes
+ * passing a question the AI couldn't help with to it (docs.escalate). The summary comes
  * from the model fake; emails land in the SMTP fake.
  */
 
@@ -79,8 +79,8 @@ async function turnOn(address = support) {
 }
 
 /** A question an anonymous reader (cookie `reader`) just asked; "I don't know" unless it has an answer. */
-async function asked(reader: string, fields: Partial<Prisma.HelpQuestionUncheckedCreateInput> = {}) {
-  return prisma.helpQuestion.create({
+async function asked(reader: string, fields: Partial<Prisma.DocsQuestionUncheckedCreateInput> = {}) {
+  return prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: reader, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER", ...fields },
   });
 }
@@ -92,7 +92,7 @@ function asReader(id = randomUUID()) {
   return id;
 }
 
-const escalated = (id: string) => prisma.helpQuestion.findUniqueOrThrow({ where: { id }, select: { escalatedAt: true, escalatedTo: true } });
+const escalated = (id: string) => prisma.docsQuestion.findUniqueOrThrow({ where: { id }, select: { escalatedAt: true, escalatedTo: true } });
 const sentTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address));
 
 describe("support email", () => {
@@ -152,7 +152,7 @@ describe("asking a person", () => {
     const visitor = newAddress();
     model.reply("They want to pay for their plan in crypto.");
 
-    expect(await escalateHelp(project.slug, question.id, ` ${visitor.toUpperCase()}`, "We're a <b>crypto</b> company.")).toEqual({});
+    expect(await escalateDocs(project.slug, question.id, ` ${visitor.toUpperCase()}`, "We're a <b>crypto</b> company.")).toEqual({});
 
     const team = await mailbox.latestTo(support);
     expect(team.subject).toBe("Question from the docs: Can I pay with crypto?");
@@ -190,7 +190,7 @@ describe("asking a person", () => {
     const question = await asked(reader);
     const visitor = newAddress();
     model.fail(500);
-    expect(await escalateHelp(project.slug, question.id, visitor, "")).toEqual({});
+    expect(await escalateDocs(project.slug, question.id, visitor, "")).toEqual({});
     const team = await mailbox.latestTo(support);
     expect(team.text).not.toContain("Summary");
     expect(team.text).toContain("Can I pay with crypto?");
@@ -201,11 +201,11 @@ describe("asking a person", () => {
   test("refused while it's off or the address isn't confirmed yet", async () => {
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
     actAs(owner);
     await saveSupportEmail(project.slug, {}, form({ supportEmail: support }));
     asReader(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: "These docs don't take questions by email" });
     expect(sentTo(support).filter((email) => !email.subject.startsWith("Confirm"))).toEqual([]);
     expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
   });
@@ -216,19 +216,19 @@ describe("asking a person", () => {
     const notFound = { error: "There's no such question, or it was asked over an hour ago. Ask it again." };
     // Someone else's.
     const theirs = await asked(randomUUID());
-    expect(await escalateHelp(project.slug, theirs.id, newAddress(), "")).toEqual(notFound);
+    expect(await escalateDocs(project.slug, theirs.id, newAddress(), "")).toEqual(notFound);
     // Too old.
     const old = await asked(reader, { createdAt: new Date(Date.now() - 61 * 60 * 1000) });
-    expect(await escalateHelp(project.slug, old.id, newAddress(), "")).toEqual(notFound);
+    expect(await escalateDocs(project.slug, old.id, newAddress(), "")).toEqual(notFound);
     // Another project's, through this project.
     const other = await createProject(owner);
-    const elsewhere = await prisma.helpQuestion.create({ data: { projectId: other.id, askerId: reader, question: "Hi?", source: "PORTAL" } });
-    expect(await escalateHelp(project.slug, elsewhere.id, newAddress(), "")).toEqual(notFound);
+    const elsewhere = await prisma.docsQuestion.create({ data: { projectId: other.id, askerId: reader, question: "Hi?", source: "PORTAL" } });
+    expect(await escalateDocs(project.slug, elsewhere.id, newAddress(), "")).toEqual(notFound);
 
     // Theirs, twice (a double click: at once).
     const mine = await asked(reader);
     model.reply("They want to pay in crypto.");
-    const results = await Promise.all([escalateHelp(project.slug, mine.id, newAddress(), ""), escalateHelp(project.slug, mine.id, newAddress(), "")]);
+    const results = await Promise.all([escalateDocs(project.slug, mine.id, newAddress(), ""), escalateDocs(project.slug, mine.id, newAddress(), "")]);
     expect(results).toEqual(expect.arrayContaining([{}, { error: "You've already passed this question to the team" }]));
     expect(sentTo(support).filter((email) => email.subject.startsWith("Question"))).toHaveLength(1);
     for (const question of [theirs, old, elsewhere]) {
@@ -249,8 +249,8 @@ describe("asking a person", () => {
     await turnOn();
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, "nope", "")).toEqual({ error: "Enter a valid email address" });
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "x".repeat(1001))).toEqual({ error: "Keep the note under 1,000 characters" });
+    expect(await escalateDocs(project.slug, question.id, "nope", "")).toEqual({ error: "Enter a valid email address" });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "x".repeat(1001))).toEqual({ error: "Keep the note under 1,000 characters" });
     expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
   });
 
@@ -260,11 +260,11 @@ describe("asking a person", () => {
     const question = await asked(reader);
     model.reply("They want to pay in crypto.");
     vi.stubEnv("SMTP_PORT", "1");
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: "Couldn't send it to the team just now. Try again." });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: "Couldn't send it to the team just now. Try again." });
     expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
     vi.stubEnv("SMTP_PORT", String(mailbox.port));
     model.reply("They want to pay in crypto.");
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({});
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({});
   });
 });
 
@@ -275,7 +275,7 @@ describe("limits", () => {
     const visitor = newAddress();
     await prisma.signInLink.createMany({ data: Array.from({ length: SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR }, () => ({ projectId: project.id, emailHash: hashSecret(visitor) })) });
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, visitor, "")).toEqual({ error: expect.stringContaining("a lot of emails to this address") });
+    expect(await escalateDocs(project.slug, question.id, visitor, "")).toEqual({ error: expect.stringContaining("a lot of emails to this address") });
     expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
   });
 
@@ -286,15 +286,15 @@ describe("limits", () => {
     for (let i = 0; i < SIGN_IN_LINKS_PER_CLIENT_PER_HOUR; i++) {
       const reader = asReader();
       model.reply("They want to pay in crypto.");
-      expect(await escalateHelp(project.slug, (await asked(reader)).id, newAddress(), "")).toEqual({});
+      expect(await escalateDocs(project.slug, (await asked(reader)).id, newAddress(), "")).toEqual({});
     }
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("a lot of emails") });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("a lot of emails") });
     // Another visitor still may.
     request.headers = { "cf-connecting-ip": "198.51.100.9" };
     model.reply("They want to pay in crypto.");
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({});
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({});
   });
 
   test("per project", async () => {
@@ -304,7 +304,7 @@ describe("limits", () => {
     });
     const reader = asReader();
     const question = await asked(reader);
-    expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("This site has sent a lot of emails") });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({ error: expect.stringContaining("This site has sent a lot of emails") });
   });
 });
 
@@ -314,12 +314,12 @@ test("the Gaps list counts escalated questions and labels them", async () => {
   const question = await asked(reader);
   await asked(reader, { question: "Is there a dark mode?" });
   model.reply("They want to pay in crypto.");
-  expect(await escalateHelp(project.slug, question.id, newAddress(), "")).toEqual({});
+  expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({});
 
   actAs(owner);
-  const { gaps } = await call(getHelpInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
+  const { gaps } = await call(getDocsInsights, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, {});
   expect(Object.fromEntries(gaps.map((gap) => [gap.question, gap.escalated]))).toEqual({ "Can I pay with crypto?": 1, "Is there a dark mode?": 0 });
-  const html = renderToStaticMarkup(await HelpInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
+  const html = renderToStaticMarkup(await DocsInsightsPage({ params: Promise.resolve({ project: project.slug }) } as never));
   const row = (text: string) => html.slice(html.indexOf(text), html.indexOf("Write an article", html.indexOf(text)));
   expect(row("Can I pay with crypto?")).toContain("Escalated");
   expect(row("Is there a dark mode?")).not.toContain("Escalated");

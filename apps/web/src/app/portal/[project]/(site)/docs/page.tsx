@@ -2,17 +2,17 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
-import { HelpAnswer } from "@/components/help-answer";
-import { HelpCollections, SectionTabs } from "@/components/help-collections";
+import { DocsAnswer } from "@/components/docs-answer";
+import { DocsCollections, DocsTabs } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { boardPath } from "@/lib/post-urls";
-import { helpCenter } from "@/server/help-queries";
-import { searchHelp } from "@/server/help-search";
+import { docsContents } from "@/server/docs-queries";
+import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
-import { answersEnabled } from "@/server/operations/help-ask";
-import { askAPerson } from "@/server/operations/help-escalate";
+import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
 import { readerGroups } from "@/server/portal-access";
 import { portalLinks } from "@/server/portal-base";
 
@@ -22,7 +22,7 @@ export const metadata = { title: "Docs" };
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
   const at = await portalLinks();
   const project = await prisma.project.findUnique({ where: { slug: projectSlug }, select: { id: true } });
-  const results = project ? await searchHelp(project.id, query, 10, await readerGroups(project.id)) : [];
+  const results = project ? await searchDocs(project.id, query, 10, await readerGroups(project.id)) : [];
   if (results.length === 0) {
     return (
       <EmptyState
@@ -50,8 +50,8 @@ async function SearchResults({ projectSlug, query }: { projectSlug: string; quer
   );
 }
 
-/** A section's tab: the first is the help center itself. */
-const sectionHref = (sections: { slug: string }[], slug: string) => (sections[0]?.slug === slug ? "/docs" : `/docs?${new URLSearchParams({ section: slug })}`);
+/** A tab's link: the first is /docs itself. */
+const tabHref = (tabs: { slug: string }[], slug: string) => (tabs[0]?.slug === slug ? "/docs" : `/docs?${new URLSearchParams({ section: slug })}`);
 
 /** The new-post form on the portal's first board, with the question as the title. */
 async function feedbackHref(projectSlug: string, question: string) {
@@ -61,17 +61,17 @@ async function feedbackHref(projectSlug: string, question: string) {
 }
 
 /**
- * The help center: a search box (`?q=`, over every section), then each collection with its published
- * articles, then the articles in no collection. With sections, they're tabs (`?section=`; the first
+ * The docs: a search box (`?q=`, over every tab), then each collection with its published
+ * articles, then the articles in no collection. With tabs (`?section=` for now; the first
  * by default, an unknown one too), each with its collections; the first also has the articles in none.
  */
-export default async function HelpCenterPage(props: PageProps<"/portal/[project]/docs">) {
+export default async function DocsPage(props: PageProps<"/portal/[project]/docs">) {
   const at = await portalLinks();
   const [{ project: slug }, { q, section: sectionParam }] = await Promise.all([props.params, props.searchParams]);
   const query = typeof q === "string" ? q.trim().slice(0, 200) : "";
-  const help = query ? { collections: [], uncollected: [], sections: [] } : await helpCenter(slug);
-  const section = help.sections.find((s) => s.slug === sectionParam) ?? help.sections[0];
-  const { collections, uncollected } = section ?? help;
+  const docs = query ? { collections: [], uncollected: [], tabs: [] } : await docsContents(slug);
+  const tab = docs.tabs.find((t) => t.slug === sectionParam) ?? docs.tabs[0];
+  const { collections, uncollected } = tab ?? docs;
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Docs" description="Guides and answers to common questions." />
@@ -81,14 +81,14 @@ export default async function HelpCenterPage(props: PageProps<"/portal/[project]
         <Button type="submit">Search</Button>
       </form>
       {query && answersEnabled() && (
-        <HelpAnswer key={query} projectSlug={slug} question={query} feedbackHref={await feedbackHref(slug, query)} askAPerson={await askAPerson(slug)} />
+        <DocsAnswer key={query} projectSlug={slug} question={query} feedbackHref={await feedbackHref(slug, query)} askAPerson={await askAPerson(slug)} />
       )}
       {query && <SearchResults projectSlug={slug} query={query} />}
-      {section && <SectionTabs sections={help.sections} active={section.slug} href={(s) => at(sectionHref(help.sections, s))} />}
+      {tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => at(tabHref(docs.tabs, t))} />}
       {!query && collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
-      <HelpCollections collections={collections} uncollected={uncollected} href={(article) => at(`/docs/${article}`)} />
+      <DocsCollections collections={collections} uncollected={uncollected} href={(article) => at(`/docs/${article}`)} />
     </div>
   );
 }

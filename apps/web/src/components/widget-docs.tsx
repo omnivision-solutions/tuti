@@ -5,25 +5,25 @@ import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
 import { EmptyState } from "@/components/empty-state";
-import { HelpAnswer } from "@/components/help-answer";
-import { HelpCollections, SectionTabs } from "@/components/help-collections";
+import { DocsAnswer } from "@/components/docs-answer";
+import { DocsCollections, DocsTabs } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { helpCenter, publishedArticle } from "@/server/help-queries";
-import { searchHelp } from "@/server/help-search";
+import { docsContents, publishedArticle } from "@/server/docs-queries";
+import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
-import { answersEnabled } from "@/server/operations/help-ask";
-import { askAPerson } from "@/server/operations/help-escalate";
+import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
 import { readerGroups } from "@/server/portal-access";
 
-/** A widget Help URL: the list (with the search, if any, or in a section) or an article. */
-function helpHref(query: string, article?: string, section?: string) {
-  const params = new URLSearchParams({ tab: "help" });
+/** A widget Docs URL: the list (with the search, if any, or in a docs tab) or an article. */
+function docsHref(query: string, article?: string, docsTab?: string) {
+  const params = new URLSearchParams({ tab: "docs" });
   if (query) {
     params.set("q", query);
   }
-  if (section) {
-    params.set("section", section);
+  if (docsTab) {
+    params.set("docsTab", docsTab);
   }
   if (article) {
     params.set("article", article);
@@ -32,26 +32,26 @@ function helpHref(query: string, article?: string, section?: string) {
 }
 
 /**
- * The widget's Help tab: the portal's help center at panel size. A search (`q`) with the
+ * The widget's Docs tab: the portal's docs at panel size. A search (`q`) with the
  * portal's "Ask AI", the collections with their articles, or one article (`article`), which
  * also opens on the portal in a new tab. Article links keep the search, so going back
  * returns to the results. "Post this as feedback" opens the widget's own Feedback tab; "Ask a person"
  * works as on the portal.
  */
-export async function WidgetHelp({
+export async function WidgetDocs({
   projectId,
   projectSlug,
   query,
   article,
-  section,
+  docsTab,
   hasBoard,
 }: {
   projectId: string;
   projectSlug: string;
   query: string;
   article?: string;
-  /** The section (tab) the list shows, or the article was opened from. */
-  section?: string;
+  /** The docs tab the list shows, or the article was opened from. */
+  docsTab?: string;
   /** Whether the Feedback tab can take a post (the project has a board). */
   hasBoard: boolean;
 }) {
@@ -60,7 +60,7 @@ export async function WidgetHelp({
       <WidgetArticle
         projectSlug={projectSlug}
         slug={article}
-        back={helpHref(query, undefined, query ? undefined : section)}
+        back={docsHref(query, undefined, query ? undefined : docsTab)}
         backLabel={query ? "Search results" : "All articles"}
       />
     );
@@ -69,12 +69,12 @@ export async function WidgetHelp({
     <div className="flex flex-col gap-6">
       {/* A plain GET form: search works without JavaScript. */}
       <form role="search" action="/widget" className="flex gap-2">
-        <input type="hidden" name="tab" value="help" />
+        <input type="hidden" name="tab" value="docs" />
         <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
         <Button type="submit">Search</Button>
       </form>
       {query && answersEnabled() && (
-        <HelpAnswer
+        <DocsAnswer
           key={query}
           widget
           projectSlug={projectSlug}
@@ -83,20 +83,20 @@ export async function WidgetHelp({
           askAPerson={await askAPerson(projectSlug)}
         />
       )}
-      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} section={section} />}
+      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} docsTab={docsTab} />}
     </div>
   );
 }
 
 async function SearchResults({ projectId, query }: { projectId: string; query: string }) {
-  const results = await searchHelp(projectId, query, 10, await readerGroups(projectId));
+  const results = await searchDocs(projectId, query, 10, await readerGroups(projectId));
   if (results.length === 0) {
     return (
       <EmptyState
         title={`No articles match “${query}”`}
         description="Try other words, or browse all articles."
         action={
-          <Link href={helpHref("")} className={buttonVariants({ variant: "outline" })}>
+          <Link href={docsHref("")} className={buttonVariants({ variant: "outline" })}>
             All articles
           </Link>
         }
@@ -107,7 +107,7 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
     <ul aria-label="Search results" className="flex flex-col gap-4">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={helpHref(query, result.slug)} className="break-words text-primary hover:underline">
+          <Link href={docsHref(query, result.slug)} className="break-words text-primary hover:underline">
             {result.title}
           </Link>
           {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
@@ -118,17 +118,17 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
 }
 
 /**
- * Like the portal's /help: each collection with its published articles and the collections in it,
- * then the articles in none; with sections, as tabs (the first by default).
+ * Like the portal's /docs: each collection with its published articles and the collections in it,
+ * then the articles in none; with tabs, the first by default.
  */
-async function Collections({ projectSlug, section: sectionParam }: { projectSlug: string; section?: string }) {
-  const help = await helpCenter(projectSlug);
-  const section = help.sections.find((s) => s.slug === sectionParam) ?? help.sections[0];
-  const { collections, uncollected } = section ?? help;
+async function Collections({ projectSlug, docsTab }: { projectSlug: string; docsTab?: string }) {
+  const docs = await docsContents(projectSlug);
+  const tab = docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0];
+  const { collections, uncollected } = tab ?? docs;
   return (
     <>
-      {section && <SectionTabs sections={help.sections} active={section.slug} href={(s) => helpHref("", undefined, s)} compact />}
-      <HelpCollections collections={collections} uncollected={uncollected} href={(slug) => helpHref("", slug, section?.slug)} compact />
+      {tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => docsHref("", undefined, t)} compact />}
+      <DocsCollections collections={collections} uncollected={uncollected} href={(slug) => docsHref("", slug, tab?.slug)} compact />
     </>
   );
 }

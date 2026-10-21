@@ -7,7 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 
 const quiet = "text-muted-foreground";
 
-/** Reader actions under a help article: take it to an AI tool as Markdown. */
+/** Reader actions under a docs article: take it to an AI tool as Markdown. */
 export function ArticleActions({ markdown, markdownUrl }: { markdown: string; markdownUrl: string }) {
   const prompt = encodeURIComponent(`Read ${markdownUrl} and answer questions about it.`);
   const open = (name: string, href: string) => (

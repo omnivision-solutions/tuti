@@ -8,7 +8,7 @@ import { mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-g
 import { displayDoc } from "./content";
 import { readerGroups } from "./portal-access";
 
-/** Reads for the help center pages: the team's editor and the portal. */
+/** Reads for the docs pages: the team's editor and the portal. */
 
 /**
  * Collections in reading order: each top-level one, then the ones in it (collections go 2 levels
@@ -19,12 +19,12 @@ export function inTreeOrder<T extends { id: string; parentId: string | null }>(s
 }
 
 /**
- * Collections sorted for inTreeOrder: by section (the tabs' order), then by their order there. The
- * ones inside others have no section of their own, and inTreeOrder only keeps their order among siblings.
+ * Collections sorted for inTreeOrder: by tab (the tabs' order), then by their order there. The
+ * ones inside others have no tab of their own, and inTreeOrder only keeps their order among siblings.
  */
 export const readingOrder: Prisma.CollectionOrderByWithRelationInput[] = [
-  { section: { order: "asc" } },
-  { section: { name: "asc" } },
+  { tab: { order: "asc" } },
+  { tab: { name: "asc" } },
   { order: "asc" },
   { name: "asc" },
 ];
@@ -42,45 +42,45 @@ export async function collectionOptions(projectId: string) {
 /**
  * What readers may see: published articles, as far as each one's listing lets them. A deleted
  * article is never published (a check constraint), so `publishedAt` alone would do; `deletedAt`
- * says so where it's read. Raw SQL readers (help-search.ts, help-readers.ts, help-insights.ts)
+ * says so where it's read. Raw SQL readers (docs-search.ts, docs-readers.ts, docs-insights.ts)
  * spell the same out.
  */
 const published = { publishedAt: { not: null }, deletedAt: null } as const;
-/** In the help center's lists, search, the sitemap and llms.txt: listed everywhere. */
+/** In the docs' lists, search, the sitemap and llms.txt: listed everywhere. */
 export const listedArticle = { ...published, listing: "EVERYWHERE" } satisfies Prisma.ArticleWhereInput;
 /** Readable at its link (its page and .md): listed everywhere, or unlisted. Hidden and AI-only articles have no page. */
 export const servedArticle = { ...published, listing: { in: ["EVERYWHERE", "UNLISTED"] } } satisfies Prisma.ArticleWhereInput;
 
-export type HelpCollection = {
+export type DocsCollection = {
   slug: string;
   name: string;
   description: string;
   articles: { slug: string; title: string }[];
   /** The collections in it, in order. */
-  collections: HelpCollection[];
+  collections: DocsCollection[];
 };
 
-/** A section of the help center for readers: a tab, with its collections and, on the first, the articles in none. */
-export type HelpSection = { slug: string; name: string; collections: HelpCollection[]; uncollected: { slug: string; title: string }[] };
+/** A tab of the docs for readers, with its collections and, on the first, the articles in none. */
+export type DocsTabView = { slug: string; name: string; collections: DocsCollection[]; uncollected: { slug: string; title: string }[] };
 
 /**
- * The portal's /help (and the widget's, and llms.txt): the top-level collections in order, each with
+ * The portal's /docs (and the widget's, and llms.txt): the top-level collections in order, each with
  * its listed articles in order and then the collections in it, and the listed articles in none.
- * Collections without a listed article (in them or in the ones in them) are left out. `sections`
- * splits the same by section (the tabs), leaving out the ones with nothing to read; it's empty when
- * the help center has no sections. The first section has the articles in no collection.
+ * Collections without a listed article (in them or in the ones in them) are left out. `tabs`
+ * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
+ * have no tabs. The first tab has the articles in no collection.
  */
-export async function helpCenter(projectSlug: string, options: { groups?: ReaderGroups } = {}) {
+export async function docsContents(projectSlug: string, options: { groups?: ReaderGroups } = {}) {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
   const articleSelect = { where: listedArticle, orderBy: order, select: { slug: true, title: true } } as const;
-  const [rows, uncollected, sectionRows] = await Promise.all([
+  const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, projectId: true, parentId: true, sectionId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
+      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
-    prisma.helpSection.findMany({
+    prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: [{ order: "asc" }, { name: "asc" }],
       select: { id: true, slug: true, name: true },
@@ -91,23 +91,23 @@ export async function helpCenter(projectSlug: string, options: { groups?: Reader
   const anyRestricted = rows.some((row) => row.groups.length > 0);
   const groups = options.groups !== undefined ? options.groups : anyRestricted ? await readerGroups(rows[0]!.projectId) : null;
   const allowed = (row: Row) => mayReadCollection(groups, row);
-  const view = ({ slug, name, description, articles, id }: Row): HelpCollection => ({ slug, name, description, articles, collections: nest(id) });
-  const readable = (c: HelpCollection) => c.articles.length > 0 || c.collections.length > 0;
-  const nest = (parentId: string): HelpCollection[] =>
+  const view = ({ slug, name, description, articles, id }: Row): DocsCollection => ({ slug, name, description, articles, collections: nest(id) });
+  const readable = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
+  const nest = (parentId: string): DocsCollection[] =>
     rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
   const top = rows
     .filter((row) => row.parentId === null && allowed(row))
-    .map((row) => ({ sectionId: row.sectionId, collection: view(row) }))
+    .map((row) => ({ tabId: row.tabId, collection: view(row) }))
     .filter((t) => readable(t.collection));
-  const sections = sectionRows
+  const tabs = tabRows
     .map(({ id, slug, name }, index) => ({
       slug,
       name,
-      collections: top.filter((t) => t.sectionId === id).map((t) => t.collection),
+      collections: top.filter((t) => t.tabId === id).map((t) => t.collection),
       uncollected: index === 0 ? uncollected : [],
     }))
-    .filter((section) => section.collections.length > 0 || section.uncollected.length > 0);
-  return { collections: top.map((t) => t.collection), uncollected, sections: sections satisfies HelpSection[] };
+    .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
+  return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[] };
 }
 
 /** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */
@@ -124,7 +124,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       listing: true,
       revisedAt: true,
       collection: {
-        select: { name: true, groups: true, section: { select: { slug: true } }, parent: { select: { groups: true, section: { select: { slug: true } } } } },
+        select: { name: true, groups: true, tab: { select: { slug: true } }, parent: { select: { groups: true, tab: { select: { slug: true } } } } },
       },
       project: { select: { name: true } },
     },
@@ -143,8 +143,8 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   return {
     ...rest,
     collection: collection && { name: collection.name },
-    /** The help center section it's in (its collection's, or that one's parent's), for the way back to it. */
-    section: (collection?.parent ? collection.parent.section : collection?.section)?.slug ?? null,
+    /** The docs tab it's in (its collection's, or that one's parent's), for the way back to it. */
+    tab: (collection?.parent ? collection.parent.tab : collection?.tab)?.slug ?? null,
     updatedAt,
     /** For some reader groups only: never kept by shared caches. */
     restricted: isRestricted,
@@ -152,7 +152,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   };
 });
 
-/** An article as Markdown, its title as the heading: /help/<slug>.md and "Copy as Markdown". */
+/** An article as Markdown, its title as the heading: /docs/<slug>.md and "Copy as Markdown". */
 export function articleMarkdown(article: { title: string; doc: Doc }): string {
   const title = { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: article.title }] };
   return `${toMarkdown({ type: "doc", content: [title, ...(article.doc.content ?? [])] }, { mediaBaseUrl: mediaPublicUrl() })}\n`;

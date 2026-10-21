@@ -7,7 +7,7 @@ import { attachMedia } from "@/server/content";
 import { createUpload } from "@/server/media";
 import { createChangelogEntry } from "@/server/operations/changelog";
 import { createPost } from "@/server/operations/create";
-import { createArticle, deleteArticle, updateArticle } from "@/server/operations/help";
+import { createArticle, deleteArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 

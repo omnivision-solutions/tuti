@@ -9,16 +9,16 @@ import { portalUrl } from "@/lib/hosts";
 import { visibleArticleSql } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
-import { answerQuestion, askFields, type HelpAnswer, rateAnswer } from "./operations/help-ask";
-import { escalateFields, escalateQuestion } from "./operations/help-escalate";
-import { answerFields, saveAnswer } from "./operations/help-insights";
+import { answerQuestion, askFields, type DocsAnswer, rateAnswer } from "./operations/docs-ask";
+import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
+import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
 import { readableProject, readerGroups } from "./portal-access";
 import { getSession } from "./session";
 
 /**
- * Readers' actions on the portal's help center (and the widget's): answering "Was this helpful?", counting
- * the view, asking the AI, and passing its answer to a person. Anyone who may read the portal may, signed in or not; most help readers are anonymous.
+ * Readers' actions on the portal's docs (and the widget's): answering "Was this helpful?", counting
+ * the view, asking the AI, and passing its answer to a person. Anyone who may read the portal may, signed in or not; most docs readers are anonymous.
  */
 
 const READER_COOKIE = "tuti_reader";
@@ -97,8 +97,8 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
 }
 
-/** "Ask AI" on the portal's /help or in the widget: an answer from the published articles, or "I don't know" (see help.ask). */
-export async function askHelp(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<HelpAnswer | { error: string }> {
+/** "Ask AI" on the portal's /docs or in the widget: an answer from the published articles, or "I don't know" (see docs.ask). */
+export async function askDocs(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<DocsAnswer | { error: string }> {
   const widget = from === "widget";
   const input = askFields.safeParse({ q: question });
   if (!input.success) {
@@ -125,7 +125,7 @@ export async function askHelp(projectSlug: string, question: string, from: "port
 }
 
 /** Thumbs up or down on an AI answer. Rating again replaces it. */
-export async function rateHelpAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
+export async function rateDocsAnswer(projectSlug: string, questionId: string, helpful: boolean): Promise<FormState> {
   const project = await readableProject(projectSlug);
   if (!project) {
     return { error: "Docs not found" };
@@ -141,8 +141,8 @@ export async function rateHelpAnswer(projectSlug: string, questionId: string, he
   return {};
 }
 
-/** "Ask a person" after an AI answer that didn't help: emails the question to the team (see help.escalate). Only the asker may. */
-export async function escalateHelp(
+/** "Ask a person" after an AI answer that didn't help: emails the question to the team (see docs.escalate). Only the asker may. */
+export async function escalateDocs(
   projectSlug: string,
   questionId: string,
   email: string,

@@ -8,26 +8,26 @@ import type { FormState } from "./form-state";
 import {
   createArticle,
   createCollection,
-  createSection,
+  createTab,
   deleteArticle as deleteArticleOperation,
   deleteCollection as deleteCollectionOperation,
-  deleteSection as deleteSectionOperation,
+  deleteTab as deleteTabOperation,
   discardChanges as discardChangesOperation,
   publishArticle as publishOperation,
   publishChanges as publishChangesOperation,
   reorderArticle,
   reorderCollection,
-  reorderSection,
+  reorderTab,
   restoreArticle as restoreOperation,
   unpublishArticle as unpublishOperation,
   updateArticle,
   updateCollection,
-  updateSection,
-} from "./operations/help";
-import { dismissHelpGap as dismissGapOperation } from "./operations/help-insights";
+  updateTab,
+} from "./operations/docs";
+import { dismissDocsGap as dismissGapOperation } from "./operations/docs-insights";
 import { asTeam, call } from "./operations/run";
 
-/** The team's help center actions (see the articles.*, collections.* and sections.* operations). */
+/** The team's docs actions (see the articles.*, collections.* and tabs.* operations). */
 
 const DENIED = "Only the project's team can edit the docs";
 
@@ -98,7 +98,7 @@ export async function restoreArticle(projectSlug: string, slug: string, revision
 
 /**
  * Adds a collection (`slug` null), in the one the form's `parent` names if any, else in the form's
- * `section` (if the help center has sections), or renames collection `slug` and changes its description.
+ * `tab` (if the docs have tabs), or renames collection `slug` and changes its description.
  */
 export async function saveCollection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
@@ -112,42 +112,42 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
     slug === null
-      ? call(createCollection, context, { ...input, parent, section: parent ? undefined : String(formData.get("section") ?? "") || undefined })
+      ? call(createCollection, context, { ...input, parent, tab: parent ? undefined : String(formData.get("tab") ?? "") || undefined })
       : call(updateCollection, context, { slug: String(slug), ...input }),
   );
 }
 
 /**
- * A drop or a move button in the help center's structure: collection `slug` into `parent` (null: the
- * top level; undefined: where it is), at the top level in `section` (undefined: the one it's in), at `position`.
+ * A drop or a move button in the docs' structure: collection `slug` into `parent` (null: the
+ * top level; undefined: where it is), at the top level in `tab` (undefined: the one it's in), at `position`.
  */
 export async function moveCollection(
   projectSlug: string,
   slug: string,
   parent: string | null | undefined,
   position?: number,
-  section?: string,
+  tab?: string,
 ): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) =>
-    call(reorderCollection, context, { slug: String(slug), parent, position, section: section === undefined ? undefined : String(section) }),
+    call(reorderCollection, context, { slug: String(slug), parent, position, tab: tab === undefined ? undefined : String(tab) }),
   );
 }
 
-/** Adds a section (`slug` null) or renames section `slug`. */
-export async function saveSection(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
+/** Adds a tab (`slug` null) or renames tab `slug`. */
+export async function saveTab(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const name = String(formData.get("name") ?? "");
   return asTeam(projectSlug, DENIED, (context) =>
-    slug === null ? call(createSection, context, { name }) : call(updateSection, context, { slug: String(slug), name }),
+    slug === null ? call(createTab, context, { name }) : call(updateTab, context, { slug: String(slug), name }),
   );
 }
 
-/** A section's up and down buttons: section `slug` to `position`. */
-export async function moveSection(projectSlug: string, slug: string, position: number): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(reorderSection, context, { slug: String(slug), position }));
+/** A tab's up and down buttons: tab `slug` to `position`. */
+export async function moveTab(projectSlug: string, slug: string, position: number): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(reorderTab, context, { slug: String(slug), position }));
 }
 
-export async function deleteSection(projectSlug: string, slug: string): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(deleteSectionOperation, context, { slug: String(slug) }));
+export async function deleteTab(projectSlug: string, slug: string): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(deleteTabOperation, context, { slug: String(slug) }));
 }
 
 /** Like moveCollection, for article `slug`: into `collection` (null: none; undefined: where it is) at `position`. */
@@ -159,7 +159,7 @@ export async function deleteCollection(projectSlug: string, slug: string): Promi
   return asTeam(projectSlug, DENIED, (context) => call(deleteCollectionOperation, context, { slug: String(slug) }));
 }
 
-/** "Dismiss" on a gap in the help center's insights (see help.dismissGap). */
-export async function dismissHelpGap(projectSlug: string, question: string): Promise<FormState> {
+/** "Dismiss" on a gap in the docs' insights (see docs.dismissGap). */
+export async function dismissDocsGap(projectSlug: string, question: string): Promise<FormState> {
   return asTeam(projectSlug, DENIED, (context) => call(dismissGapOperation, context, { question: String(question) }));
 }

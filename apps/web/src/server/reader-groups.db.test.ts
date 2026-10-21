@@ -12,9 +12,9 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { helpCenter, publishedArticle } from "./help-queries";
-import { answerSections, searchHelp } from "./help-search";
-import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/help";
+import { docsContents, publishedArticle } from "./docs-queries";
+import { answerSections, searchDocs } from "./docs-search";
+import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { call } from "./operations/run";
 import { groupsOf } from "./portal-access";
 
@@ -73,7 +73,7 @@ async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID(
  * Enterprise), Beta (beta only), and an article in each plus one in no collection. Every article
  * says "widget", and each has a section close to the question "widget help".
  */
-async function helpCenterWithGroups() {
+async function docsWithGroups() {
   await call(createCollection, as(), { name: "Basics" });
   await call(createCollection, as(), { name: "Enterprise", groups: ["Enterprise"] });
   await call(createCollection, as(), { name: "Setup", parent: "enterprise" });
@@ -97,21 +97,21 @@ const everyone = ["getting-started", "contact"];
 const enterprise = [...everyone, "saml", "rolling-out"];
 
 describe("who sees what", () => {
-  beforeEach(helpCenterWithGroups);
+  beforeEach(docsWithGroups);
 
-  /** Every way a reader reads the help center, for the user `actAs` set (or for `groups`). */
+  /** Every way a reader reads the docs, for the user `actAs` set (or for `groups`). */
   async function seen(user: TestUser | null) {
     actAs(user);
     const userId = user?.id ?? null;
     const groups = await groupsOf(project.id, userId);
-    const center = await helpCenter(project.slug);
+    const center = await docsContents(project.slug);
     const pages = await Promise.all(["getting-started", "saml", "rolling-out", "new-editor", "contact"].map((slug) => publishedArticle(project.slug, slug)));
     const actor = userId ? { kind: "user" as const, userId } : null;
     return {
-      helpCenter: [...center.collections.flatMap((c) => [...c.articles, ...c.collections.flatMap((n) => n.articles)]), ...center.uncollected].map((a) => a.slug).sort(),
+      docsContents: [...center.collections.flatMap((c) => [...c.articles, ...c.collections.flatMap((n) => n.articles)]), ...center.uncollected].map((a) => a.slug).sort(),
       collections: center.collections.map((c) => [c.slug, ...c.collections.map((n) => n.slug)].join(">")),
       pages: pages.flatMap((page, i) => (page ? [["getting-started", "saml", "rolling-out", "new-editor", "contact"][i]!] : [])).sort(),
-      search: (await searchHelp(project.id, "widget", 10, groups)).map((r) => r.slug).sort(),
+      search: (await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug).sort(),
       answers: [...new Set((await answerSections(project.id, "widget help", 10, groups, 2000))!.map((s) => s.slug))].sort(),
       ...(actor && {
         api: (await call(listArticles, { actor, projectId: project.id }, {})).articles.map((a) => a.slug).sort(),
@@ -120,7 +120,7 @@ describe("who sees what", () => {
   }
 
   test("signed out, or signed up on the portal: only what's for everyone", async () => {
-    const expected = { helpCenter: everyone.sort(), collections: ["basics"], pages: everyone.sort(), search: everyone.sort(), answers: everyone.sort() };
+    const expected = { docsContents: everyone.sort(), collections: ["basics"], pages: everyone.sort(), search: everyone.sort(), answers: everyone.sort() };
     expect(await seen(null)).toEqual(expected);
     const stranger = await signUp("Stranger");
     expect(await seen(stranger)).toEqual({ ...expected, api: everyone.sort() });
@@ -130,7 +130,7 @@ describe("who sees what", () => {
     const ada = await ssoReader(["enterprise"]);
     const sorted = [...enterprise].sort();
     expect(await seen(ada)).toEqual({
-      helpCenter: sorted,
+      docsContents: sorted,
       collections: ["basics", "enterprise>setup"],
       pages: sorted,
       search: sorted,
@@ -146,7 +146,7 @@ describe("who sees what", () => {
   test("the team sees everything", async () => {
     const all = ["contact", "getting-started", "new-editor", "rolling-out", "saml"];
     expect(await seen(owner)).toEqual({
-      helpCenter: all,
+      docsContents: all,
       collections: ["basics", "enterprise>setup", "beta"],
       pages: all,
       search: all,
@@ -165,7 +165,7 @@ describe("who sees what", () => {
 });
 
 test("each sign-in says the groups: a later token without one takes it away", async () => {
-  await helpCenterWithGroups();
+  await docsWithGroups();
   const sub = "user-42";
   const reader = await ssoReader([], sub);
   expect(await signIn({ groups: ["enterprise", "Enterprise"] }, sub)).toBe(reader.id);
@@ -193,7 +193,7 @@ test("a first sign-in that loses the race to create the person still sets their 
 });
 
 test("search engines and AI tools only get what's for everyone; a restricted article's .md is never cached for others", async () => {
-  await helpCenterWithGroups();
+  await docsWithGroups();
   const params = Promise.resolve({ project: project.slug });
   const text = await (await llms(new Request("http://x"), { params })).text();
   expect(text).toContain("getting-started.md");

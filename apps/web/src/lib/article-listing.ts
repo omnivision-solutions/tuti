@@ -1,5 +1,5 @@
 /**
- * Where a published help article is served (ArticleListing in the schema, lowercase in the API):
+ * Where a published docs article is served (ArticleListing in the schema, lowercase in the API):
  * see the descriptions. A draft is served nowhere, whatever its listing.
  */
 export const LISTINGS = ["everywhere", "unlisted", "hidden", "ai_only"] as const;

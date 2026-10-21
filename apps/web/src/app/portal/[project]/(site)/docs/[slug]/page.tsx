@@ -8,7 +8,7 @@ import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { formatDate } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, publishedArticle } from "@/server/help-queries";
+import { articleMarkdown, publishedArticle } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 
 /** Search results show the article's title and its first lines. */
@@ -36,7 +36,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/do
   }
   return (
     <article className="flex flex-col gap-6" aria-labelledby="article-title">
-      <BackLink href={at(article.section ? `/docs?${new URLSearchParams({ section: article.section })}` : "/docs")}>Docs</BackLink>
+      <BackLink href={at(article.tab ? `/docs?${new URLSearchParams({ section: article.tab })}` : "/docs")}>Docs</BackLink>
       <div className="flex flex-col gap-1">
         {article.collection && <p className="text-sm text-muted-foreground">{article.collection.name}</p>}
         <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">

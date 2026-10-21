@@ -20,7 +20,7 @@ beforeEach(async () => {
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 const home = () => redirectTarget(PortalHome({ params: Promise.resolve({ project: project.slug }) } as never));
 
-test("the first board, then the roadmap, the changelog or the help center once picked", async () => {
+test("the first board, then the roadmap, the changelog or the docs once picked", async () => {
   expect(await call(getPortal, as(), {})).toEqual({ access: "public", home: "feedback" });
   expect(await home()).toBe("/feedback/feature-requests");
   for (const [pick, path] of [

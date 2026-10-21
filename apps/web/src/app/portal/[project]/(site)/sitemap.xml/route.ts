@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { visibleArticle } from "@/lib/reader-groups";
-import { listedArticle } from "@/server/help-queries";
+import { listedArticle } from "@/server/docs-queries";
 
 // Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a &&
 
 /**
  * The portal's public pages for search engines: home, boards, posts, the
- * roadmap, the changelog and the help center, each with when it last changed.
+ * roadmap, the changelog and the docs, each with when it last changed.
  * Merged posts (they redirect), drafts, articles that aren't listed everywhere and the
  * sign-in pages are left out.
  */

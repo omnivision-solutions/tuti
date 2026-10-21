@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { DismissGapButton } from "@/components/help";
+import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { helpInsights, INSIGHTS_DAYS } from "@/server/operations/help-insights";
+import { docsInsights, INSIGHTS_DAYS } from "@/server/operations/docs-insights";
 
 export const metadata = { title: "Docs insights" };
 
@@ -29,14 +29,14 @@ function helpfulness(helpful: number, notHelpful: number) {
   return answers === 0 ? "No answers yet" : `${Math.round((helpful / answers) * 100)}% found it helpful (${helpful} of ${answers})`;
 }
 
-/** What readers did in the help center lately: views, which articles helped, what they missed and couldn't find. */
-export default async function HelpInsightsPage(props: PageProps<"/app/[project]/docs/insights">) {
+/** What readers did in the docs lately: views, which articles helped, what they missed and couldn't find. */
+export default async function DocsInsightsPage(props: PageProps<"/app/[project]/docs/insights">) {
   const { project: slug } = await props.params;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
   }
-  const insights = await helpInsights(membership.project.id);
+  const insights = await docsInsights(membership.project.id);
   const empty = (text: string) => <p className="text-sm text-muted-foreground">{text}</p>;
 
   return (

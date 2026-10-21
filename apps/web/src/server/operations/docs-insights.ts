@@ -1,4 +1,4 @@
-import { type HelpNoAnswerCause, Prisma, prisma } from "@tuti/db";
+import { type DocsNoAnswerCause, Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
@@ -8,7 +8,7 @@ import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
 
 /**
- * What readers make of the help center (Phase 10): their answers to "Was this helpful?",
+ * What readers make of the docs (Phase 10): their answers to "Was this helpful?",
  * article views and searches, summed up for the team. Feeds AI answers' gaps (Phase 11)
  * and the docs audit (Phase 12). Stores no IP addresses: see the models in schema.prisma.
  */
@@ -68,8 +68,8 @@ export const answerArticle = defineOperation({
 /** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */
 const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
 
-/** The team's numbers for the last INSIGHTS_DAYS days (help.insights and the app's insights page). */
-export async function helpInsights(projectId: string) {
+/** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
+export async function docsInsights(projectId: string) {
   // Whole days (UTC), today included, so daily view counts and timestamps cover the same span.
   const since = new Date(new Date().toISOString().slice(0, 10));
   since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
@@ -93,9 +93,9 @@ export async function helpInsights(projectId: string) {
       take: 10,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
-    prisma.helpSearch.count({ where: { projectId, createdAt: { gte: since } } }),
-    prisma.helpSearch.count({ where: { projectId, results: 0, createdAt: { gte: since } } }),
-    prisma.helpSearch.groupBy({
+    prisma.docsSearch.count({ where: { projectId, createdAt: { gte: since } } }),
+    prisma.docsSearch.count({ where: { projectId, results: 0, createdAt: { gte: since } } }),
+    prisma.docsSearch.groupBy({
       by: ["query"],
       where: { projectId, results: 0, createdAt: { gte: since } },
       _count: { _all: true },
@@ -117,11 +117,11 @@ export async function helpInsights(projectId: string) {
         max(q."createdAt") AS "lastAsked",
         (array_agg(q.answer ORDER BY q."createdAt" DESC) FILTER (WHERE q.helpful = false))[1] AS answer
       FROM (
-        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM help_question
+        SELECT *, ${normalized(Prisma.raw("question"))} AS key FROM docs_question
         WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} AND (status = 'NO_ANSWER' OR helpful = false)
       ) q
       WHERE NOT EXISTS (
-        SELECT 1 FROM help_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
+        SELECT 1 FROM docs_gap_dismissal d WHERE d."projectId" = ${projectId} AND d.question = q.key AND d."dismissedAt" >= q."createdAt"
       )
       GROUP BY q.key
       ORDER BY count(*) DESC, max(q."createdAt") DESC
@@ -141,7 +141,7 @@ export async function helpInsights(projectId: string) {
       ...gap,
       lastAsked: gap.lastAsked.toISOString(),
       // "no_relevant_section", "no_valid_citation", "source_unpublished", "off_limits", "unknown" (asked before causes were kept), or null (only thumbs-downs).
-      cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<HelpNoAnswerCause> | null,
+      cause: (gap.cause?.toLowerCase() ?? null) as Lowercase<DocsNoAnswerCause> | null,
     })),
   };
 }
@@ -151,17 +151,17 @@ export const gapFields = z.object({ question: z.string().trim().min(1).max(300) 
 /** Hides a question from the Gaps list, as asked until now; asked again later, it's back. */
 export async function dismissGap(projectId: string, question: string) {
   await prisma.$executeRaw`
-    INSERT INTO help_gap_dismissal ("projectId", question, "dismissedAt")
+    INSERT INTO docs_gap_dismissal ("projectId", question, "dismissedAt")
     VALUES (${projectId}, ${normalized(Prisma.sql`${question}`)}, now())
     ON CONFLICT ("projectId", question) DO UPDATE SET "dismissedAt" = now()`;
   return { dismissed: question };
 }
 
-export const dismissHelpGap = defineOperation({
-  name: "help.dismissGap",
-  summary: "Dismiss a question from the gaps in help.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
+export const dismissDocsGap = defineOperation({
+  name: "docs.dismissGap",
+  summary: "Dismiss a question from the gaps in docs.insights (matched like the list groups them: case and spacing don't matter); asked again later, it's back",
   method: "POST",
-  path: "/help/gaps/dismiss",
+  path: "/docs/gaps/dismiss",
   scope: "write",
   access: "team",
   input: gapFields,
@@ -169,13 +169,13 @@ export const dismissHelpGap = defineOperation({
   run: ({ projectId }, { question }) => dismissGap(projectId, question),
 });
 
-export const getHelpInsights = defineOperation({
-  name: "help.insights",
-  summary: `How the help center did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (help.escalate)`,
+export const getDocsInsights = defineOperation({
+  name: "docs.insights",
+  summary: `How the docs did in the last ${INSIGHTS_DAYS} days: views, the top articles with how many readers found them helpful, the latest “No” comments, the searches that found nothing, and the gaps: questions the AI couldn't answer (with why, the latest time) or whose answer got a thumbs-down, grouped (case and spacing don't matter), with how many were passed to the team (docs.escalate)`,
   method: "GET",
-  path: "/help/insights",
+  path: "/docs/insights",
   scope: "read",
   access: "team",
   input: z.object({}),
-  run: ({ projectId }) => helpInsights(projectId),
+  run: ({ projectId }) => docsInsights(projectId),
 });

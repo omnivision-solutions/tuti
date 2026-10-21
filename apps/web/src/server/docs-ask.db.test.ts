@@ -4,22 +4,22 @@ import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, start
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { z } from "zod";
 
-import { createArticle, publishArticle } from "@/server/operations/help";
+import { createArticle, publishArticle } from "@/server/operations/docs";
 import {
   answerQuestion,
   answersEnabled,
   ASKS_PER_ASKER_PER_HOUR,
   ASKS_PER_PROJECT_PER_HOUR,
-  askHelp as askOperation,
-} from "@/server/operations/help-ask";
+  askDocs as askOperation,
+} from "@/server/operations/docs-ask";
 import { updateAssistantSettings } from "@/server/operations/assistant";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { askHelp, rateHelpAnswer } from "./help-readers";
+import { askDocs, rateDocsAnswer } from "./docs-readers";
 
 /**
- * AI answers on the help center (help.ask): sections found through the OpenAI fake's
+ * AI answers on the docs (docs.ask): sections found through the OpenAI fake's
  * vectors, answers from the model fake. Publishing runs the articleChanged job inline,
  * which embeds the article's sections.
  */
@@ -66,7 +66,7 @@ async function write(title: string, text: string, similarity: number, { draft = 
 
 const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", [], timeoutMs);
 const logged = () =>
-  prisma.helpQuestion.findMany({
+  prisma.docsQuestion.findMany({
     where: { projectId: project.id },
     orderBy: { createdAt: "asc" },
     select: { askerId: true, question: true, status: true, answer: true, articleIds: true, helpful: true },
@@ -245,7 +245,7 @@ describe("why “I don't know”", () => {
     model.fail(500);
     expect(await ask()).toMatchObject({ status: "failed" });
 
-    const causes = await prisma.helpQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { status: true, cause: true } });
+    const causes = await prisma.docsQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { status: true, cause: true } });
     expect(causes).toEqual([
       { status: "NO_ANSWER", cause: "OFF_LIMITS" },
       { status: "NO_ANSWER", cause: "NO_RELEVANT_SECTION" },
@@ -292,7 +292,7 @@ describe("failures", () => {
       vi.stubEnv(name, "");
       expect(answersEnabled()).toBe(false);
       await expect(ask()).rejects.toMatchObject({ status: 503, message: "AI answers aren't set up on this server" });
-      expect(await askHelp(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server" });
+      expect(await askDocs(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server" });
       vi.stubEnv(name, name === "OPENAI_API_KEY" ? FAKE_OPENAI_KEY : model.env.OPENROUTER_API_KEY!);
     }
     expect(await logged()).toEqual([]);
@@ -304,7 +304,7 @@ describe("rate limits", () => {
 
   test(`up to ${ASKS_PER_ASKER_PER_HOUR} questions an hour per asker`, async () => {
     // Questions from more than an hour ago don't count.
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR }, () => ({ projectId: project.id, askerId: "reader-1", question: "Old", source: "PORTAL" as const, createdAt: hourAgo() })),
     });
     for (let i = 0; i < ASKS_PER_ASKER_PER_HOUR; i++) {
@@ -316,7 +316,7 @@ describe("rate limits", () => {
   });
 
   test(`up to ${ASKS_PER_PROJECT_PER_HOUR} questions an hour per project`, async () => {
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_PROJECT_PER_HOUR - 1 }, (_, i) => ({ projectId: project.id, askerId: `reader-${i}`, question: "Q", source: "PORTAL" as const })),
     });
     expect(await ask(QUESTION, "someone")).toMatchObject({ status: "no_answer" });
@@ -329,7 +329,7 @@ describe("rate limits", () => {
   });
 
   test("questions asked at the same time can't overrun the limit together", async () => {
-    await prisma.helpQuestion.createMany({
+    await prisma.docsQuestion.createMany({
       data: Array.from({ length: ASKS_PER_ASKER_PER_HOUR - 2 }, () => ({ projectId: project.id, askerId: "reader-1", question: "Q", source: "PORTAL" as const })),
     });
     const results = await Promise.allSettled(Array.from({ length: 5 }, () => ask()));
@@ -343,34 +343,34 @@ describe("the portal's Ask AI and the question log", () => {
     actAs(visitor);
     await write("Inviting your team", "Owners invite people.", 0.8);
     model.reply(reply("Owners invite people.", ["s1"]));
-    const answer = await askHelp(project.slug, `  ${QUESTION}  `);
+    const answer = await askDocs(project.slug, `  ${QUESTION}  `);
     expect(answer).toMatchObject({ status: "answered", answer: "Owners invite people." });
     const id = (answer as { id: string }).id;
 
-    expect(await rateHelpAnswer(project.slug, id, false)).toEqual({});
+    expect(await rateDocsAnswer(project.slug, id, false)).toEqual({});
     expect(await logged()).toEqual([expect.objectContaining({ askerId: visitor.id, question: QUESTION, status: "ANSWERED", helpful: false })]);
     // Rating again replaces it.
-    expect(await rateHelpAnswer(project.slug, id, true)).toEqual({});
+    expect(await rateDocsAnswer(project.slug, id, true)).toEqual({});
     expect((await logged())[0]!.helpful).toBe(true);
 
     // Not through another project, and not a question without an answer.
     const other = await createProject(owner);
-    expect(await rateHelpAnswer(other.slug, id, false)).toEqual({ error: "There's no such answer" });
-    const unanswered = await askHelp(project.slug, "Something else entirely");
+    expect(await rateDocsAnswer(other.slug, id, false)).toEqual({ error: "There's no such answer" });
+    const unanswered = await askDocs(project.slug, "Something else entirely");
     expect(unanswered).toMatchObject({ status: "no_answer" });
-    expect(await rateHelpAnswer(project.slug, (unanswered as { id: string }).id, true)).toEqual({ error: "There's no such answer" });
+    expect(await rateDocsAnswer(project.slug, (unanswered as { id: string }).id, true)).toEqual({ error: "There's no such answer" });
     expect((await logged()).map((question) => question.helpful)).toEqual([true, null]);
 
-    expect(await askHelp(project.slug, " ")).toEqual({ error: "Type a question" });
+    expect(await askDocs(project.slug, " ")).toEqual({ error: "Type a question" });
   });
 
   test("records where each question was asked: the portal, the widget or the API", async () => {
     actAs(null);
     const key = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
-    await askHelp(project.slug, "From the portal");
-    await askHelp(project.slug, "From the widget", "widget");
+    await askDocs(project.slug, "From the portal");
+    await askDocs(project.slug, "From the widget", "widget");
     await call(askOperation, { actor: key, projectId: project.id }, { q: "From the API" });
-    const questions = await prisma.helpQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
+    const questions = await prisma.docsQuestion.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { question: true, source: true } });
     expect(questions).toEqual([
       { question: "From the portal", source: "PORTAL" },
       { question: "From the widget", source: "WIDGET" },
@@ -378,7 +378,7 @@ describe("the portal's Ask AI and the question log", () => {
     ]);
   });
 
-  test("help.ask with an API key counts as the key", async () => {
+  test("docs.ask with an API key counts as the key", async () => {
     const actor = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
     expect(await call(askOperation, { actor, projectId: project.id }, { q: QUESTION })).toMatchObject({ status: "no_answer" });
     expect(await logged()).toEqual([expect.objectContaining({ askerId: "key-1" })]);

@@ -5,10 +5,10 @@ import { ArrowDownIcon, ArrowUpIcon, FolderInputIcon, GripVerticalIcon } from "l
 import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CollectionDialog, DeleteCollectionButton, DeleteSectionButton, SectionDialog } from "@/components/help";
+import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabDialog } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { moveArticle, moveCollection, moveSection } from "@/server/help";
+import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
 type StructureCollection = {
@@ -17,20 +17,20 @@ type StructureCollection = {
   description: string;
   /** The collection it's in, or null at the top level. */
   parent: string | null;
-  /** At the top level, the section it's in (null without sections). */
-  section: string | null;
+  /** At the top level, the tab it's in (null without tabs). */
+  tab: string | null;
   /** The reader groups it's for; empty: everyone. */
   groups: string[];
   articles: StructureArticle[];
 };
-type StructureSection = { slug: string; name: string };
+type StructureTab = { slug: string; name: string };
 
-type Kind = "section" | "collection" | "article";
-/** A row things can be dropped on: a section, a collection, an article (in `collection`), or the articles in no collection. */
+type Kind = "tab" | "collection" | "article";
+/** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
 type Over = { kind: Kind | "uncollected"; slug: string; collection?: string | null };
 type Where = "before" | "after" | "into";
-/** A move: into collection `into` (null: the top level, or no collection), at the top level in `section` (undefined: where it is). */
-type Move = { kind: Kind; slug: string; name: string; into: string | null; section?: string; position?: number };
+/** A move: into collection `into` (null: the top level, or no collection), at the top level in `tab` (undefined: where it is). */
+type Move = { kind: Kind; slug: string; name: string; into: string | null; tab?: string; position?: number };
 type Drop = Move & { where: Where };
 
 const rowKey = (over: Over) => `${over.kind}:${over.slug}`;
@@ -119,21 +119,21 @@ function Row({
 }
 
 /**
- * The help center's structure for the team: its sections if it has some (readers' tabs), each with
+ * The docs' structure for the team: its tabs if it has some, each with
  * its collections (2 levels deep at most), each with its articles and then the collections in it,
  * and the articles in no collection, in the order readers see them. Rows are dragged into place, or
- * moved with each row's buttons (up, down, and "Move to…" another collection or section), which work
+ * moved with each row's buttons (up, down, and "Move to…" another collection or tab), which work
  * from the keyboard. A drop or a button is one move, applied at once on the server under the project's lock.
  */
-export function HelpStructure({
+export function DocsStructure({
   projectSlug,
-  sections,
+  tabs,
   collections,
   uncollected,
 }: {
   projectSlug: string;
-  sections: StructureSection[];
-  /** Each top-level collection (by section), then the ones in it. */
+  tabs: StructureTab[];
+  /** Each top-level collection (by tab), then the ones in it. */
   collections: StructureCollection[];
   uncollected: StructureArticle[];
 }) {
@@ -155,11 +155,11 @@ export function HelpStructure({
     const other = document.getElementById(otherButton(id));
     // At the top or the bottom now, its own button is disabled, so the other one gets focus.
     (button instanceof HTMLButtonElement && button.disabled && other ? other : button)?.focus();
-  }, [pending, sections, collections, uncollected]);
+  }, [pending, tabs, collections, uncollected]);
 
   const childrenOf = (parent: string | null) => collections.filter((c) => c.parent === parent);
-  /** The collections next to `c`: in its parent, or at the top level of its section. */
-  const siblingsOf = (c: StructureCollection) => (c.parent === null ? childrenOf(null).filter((s) => s.section === c.section) : childrenOf(c.parent));
+  /** The collections next to `c`: in its parent, or at the top level of its tab. */
+  const siblingsOf = (c: StructureCollection) => (c.parent === null ? childrenOf(null).filter((s) => s.tab === c.tab) : childrenOf(c.parent));
   const articlesIn = (collection: string | null) =>
     collection === null ? uncollected : (collections.find((c) => c.slug === collection)?.articles ?? []);
   const label = (c: StructureCollection) => {
@@ -167,14 +167,14 @@ export function HelpStructure({
     return parent ? `${parent.name} › ${c.name}` : c.name;
   };
 
-  const move = ({ kind, slug, name, into, section, position }: Move, focus?: string) => {
+  const move = ({ kind, slug, name, into, tab, position }: Move, focus?: string) => {
     refocus.current = focus ?? null;
     startTransition(async () => {
       const result =
-        kind === "section"
-          ? await moveSection(projectSlug, slug, position ?? sections.length)
+        kind === "tab"
+          ? await moveTab(projectSlug, slug, position ?? tabs.length)
           : kind === "collection"
-            ? await moveCollection(projectSlug, slug, into, position, section)
+            ? await moveCollection(projectSlug, slug, into, position, tab)
             : await moveArticle(projectSlug, slug, into, position);
       if (result.error) {
         toast.error(result.error);
@@ -192,12 +192,12 @@ export function HelpStructure({
     const rect = event.currentTarget.getBoundingClientRect();
     const y = (event.clientY - rect.top) / rect.height;
     const side: Where = y < 0.5 ? "before" : "after";
-    if (dragging.kind === "section") {
-      const dragged = sections.find((s) => s.slug === dragging.slug);
-      if (!dragged || over.kind !== "section") {
+    if (dragging.kind === "tab") {
+      const dragged = tabs.find((s) => s.slug === dragging.slug);
+      if (!dragged || over.kind !== "tab") {
         return null;
       }
-      return { kind: "section", slug: dragged.slug, name: dragged.name, into: null, position: positionAt(sections, dragged.slug, over.slug, side), where: side };
+      return { kind: "tab", slug: dragged.slug, name: dragged.name, into: null, position: positionAt(tabs, dragged.slug, over.slug, side), where: side };
     }
     if (dragging.kind === "collection") {
       const dragged = collections.find((c) => c.slug === dragging.slug);
@@ -205,9 +205,9 @@ export function HelpStructure({
         return null;
       }
       const base = { kind: dragging.kind, slug: dragged.slug, name: dragged.name };
-      // On a section: last at its top level.
-      if (over.kind === "section") {
-        return { ...base, into: null, section: over.slug, where: "into" };
+      // On a tab: last at its top level.
+      if (over.kind === "tab") {
+        return { ...base, into: null, tab: over.slug, where: "into" };
       }
       const row = over.kind === "collection" ? collections.find((c) => c.slug === over.slug) : undefined;
       if (!row) {
@@ -224,7 +224,7 @@ export function HelpStructure({
       return {
         ...base,
         into: row.parent,
-        section: row.parent === null ? (row.section ?? undefined) : undefined,
+        tab: row.parent === null ? (row.tab ?? undefined) : undefined,
         position: positionAt(siblingsOf(row), dragged.slug, row.slug, side),
         where: side,
       };
@@ -238,7 +238,7 @@ export function HelpStructure({
       const collection = over.collection ?? null;
       return { ...base, into: collection, position: positionAt(articlesIn(collection), dragged.slug, over.slug, side), where: side };
     }
-    if (over.kind === "section") {
+    if (over.kind === "tab") {
       return null;
     }
     // On a collection, or on "Not in a collection": last there.
@@ -336,9 +336,9 @@ export function HelpStructure({
           const places = [
             ...(collection.parent === null ? [] : [{ label: "Top level", move: () => move({ ...base, into: null }, `${id}-to`) }]),
             ...(collection.parent === null
-              ? sections
-                  .filter((s) => s.slug !== collection.section)
-                  .map((s) => ({ label: `Section: ${s.name}`, move: () => move({ ...base, into: null, section: s.slug }, `${id}-to`) }))
+              ? tabs
+                  .filter((s) => s.slug !== collection.tab)
+                  .map((s) => ({ label: `Tab: ${s.name}`, move: () => move({ ...base, into: null, tab: s.slug }, `${id}-to`) }))
               : []),
             ...(inside.length > 0
               ? []
@@ -388,16 +388,16 @@ export function HelpStructure({
       </ul>
     );
 
-  const sectionRows = (list: StructureSection[]) => (
-    <ul aria-label="Sections" className="flex flex-col gap-2">
-      {list.map((section, index) => {
-        const id = `move-section-${section.slug}`;
-        const over: Over = { kind: "section", slug: section.slug };
-        const base = { kind: "section" as const, slug: section.slug, name: section.name, into: null };
-        const inSection = childrenOf(null).filter((c) => c.section === section.slug);
-        const count = inSection.length;
+  const tabRows = (list: StructureTab[]) => (
+    <ul aria-label="Tabs" className="flex flex-col gap-2">
+      {list.map((tab, index) => {
+        const id = `move-tab-${tab.slug}`;
+        const over: Over = { kind: "tab", slug: tab.slug };
+        const base = { kind: "tab" as const, slug: tab.slug, name: tab.name, into: null };
+        const inTab = childrenOf(null).filter((c) => c.tab === tab.slug);
+        const count = inTab.length;
         return (
-          <li key={section.slug}>
+          <li key={tab.slug}>
             <Row
               draggable={!pending}
               drop={dropAt(over)}
@@ -406,25 +406,25 @@ export function HelpStructure({
                 <>
                   <MoveButtons
                     id={id}
-                    name={section.name}
+                    name={tab.name}
                     disabled={pending}
                     // eslint-disable-next-line react-hooks/refs -- move() runs on click, not during render
                     up={index > 0 ? () => move({ ...base, position: index - 1 }, `${id}-up`) : undefined}
                     down={index < list.length - 1 ? () => move({ ...base, position: index + 1 }, `${id}-down`) : undefined}
                     places={[]}
                   />
-                  <SectionDialog projectSlug={projectSlug} section={section} />
-                  <DeleteSectionButton projectSlug={projectSlug} section={section} movesTo={(list[index - 1] ?? list[index + 1])?.name ?? null} />
+                  <TabDialog projectSlug={projectSlug} tab={tab} />
+                  <DeleteTabButton projectSlug={projectSlug} tab={tab} movesTo={(list[index - 1] ?? list[index + 1])?.name ?? null} />
                 </>
               }
             >
-              <span className="font-heading font-bold tracking-tight break-words">{section.name}</span>
+              <span className="font-heading font-bold tracking-tight break-words">{tab.name}</span>
               <span className="text-xs text-muted-foreground">
-                {`Section · ${count} ${count === 1 ? "collection" : "collections"}`}
+                {`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
                 {index === 0 && uncollected.length > 0 && " · also lists the articles in no collection"}
               </span>
             </Row>
-            {count > 0 && <div className="ml-2 border-l pl-3">{collectionRows(inSection, `Collections in ${section.name}`)}</div>}
+            {count > 0 && <div className="ml-2 border-l pl-3">{collectionRows(inTab, `Collections in ${tab.name}`)}</div>}
           </li>
         );
       })}
@@ -434,7 +434,7 @@ export function HelpStructure({
   const uncollectedRow: Over = { kind: "uncollected", slug: "" };
   return (
     <div className="flex flex-col gap-2" aria-busy={pending}>
-      {sections.length > 0 ? sectionRows(sections) : collectionRows(childrenOf(null), "Collections")}
+      {tabs.length > 0 ? tabRows(tabs) : collectionRows(childrenOf(null), "Collections")}
       {(uncollected.length > 0 || dragging?.kind === "article") && (
         <div>
           <Row draggable={false} drop={dropAt(uncollectedRow)} handlers={handlers(uncollectedRow)}>

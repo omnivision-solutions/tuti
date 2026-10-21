@@ -3,14 +3,14 @@ import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILA
 
 import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
 
-export type HelpSearchResult = { slug: string; title: string; snippet: string };
+export type DocsSearchResult = { slug: string; title: string; snippet: string };
 
 const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
 const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
 /**
- * A project's listed help articles (published, listed everywhere) that match a query, best first, each with a
+ * A project's listed docs articles (published, listed everywhere) that match a query, best first, each with a
  * snippet. With OPENAI_API_KEY set, articles with a section that means the same
  * (embeddings, see the articleChanged job) come first, with that section. Then come
  * articles that contain the query's words (Postgres full-text search), with the
@@ -18,13 +18,13 @@ const SEARCH_EMBED_TIMEOUT_MS = 2000;
  * terms, articles not embedded yet, and everything while OpenAI is down or slow.
  * Only articles readers with `groups` may read (null: the team, everything).
  */
-export async function searchHelp(
+export async function searchDocs(
   projectId: string,
   query: string,
   limit: number,
   groups: ReaderGroups,
   embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
-): Promise<HelpSearchResult[]> {
+): Promise<DocsSearchResult[]> {
   const [byMeaning, byWords] = await Promise.all([
     embeddingsEnabled() ? meaningMatches(projectId, query, limit, groups, embedTimeoutMs) : [],
     wordMatches(projectId, query, limit, groups),
@@ -47,22 +47,22 @@ function logSearch(projectId: string, query: string, results: number) {
   if (!normalized) {
     return;
   }
-  prisma.helpSearch
+  prisma.docsSearch
     .create({ data: { projectId, query: normalized, results } })
-    .catch((error: unknown) => log.warn("Logging a help search failed", { projectId, error }));
+    .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number, groups: ReaderGroups, timeoutMs: number): Promise<HelpSearchResult[]> {
+async function meaningMatches(projectId: string, query: string, limit: number, groups: ReaderGroups, timeoutMs: number): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
     vector = toVectorLiteral(embedding!);
   } catch (error) {
-    log.warn("Embedding a help search failed; matching words only", { error });
+    log.warn("Embedding a docs search failed; matching words only", { error });
     return [];
   }
   // Each article's closest section, then the articles by how close it is.
-  // ponytail: scans all of the project's chunks; fine for help centers, add an HNSW index past ~100k chunks.
+  // ponytail: scans all of the project's chunks; fine for docs, add an HNSW index past ~100k chunks.
   const rows = await prisma.$queryRaw<{ slug: string; title: string; heading: string; text: string }[]>`
     SELECT a.slug, a.title, best.heading, best.text
     FROM (
@@ -83,7 +83,7 @@ export type AnswerSection = { articleId: string; slug: string; title: string; li
 
 /**
  * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
- * first: what AI answers may use (help.ask). Every listing but hidden: unlisted articles are
+ * first: what AI answers may use (docs.ask). Every listing but hidden: unlisted articles are
  * public at their link anyway, and AI-only ones are there for this. Only articles the asker's
  * `groups` may read. Null if the question couldn't be embedded in time.
  */
@@ -99,7 +99,7 @@ export async function answerSections(
     const [embedding] = await embed([question], AbortSignal.timeout(timeoutMs));
     vector = toVectorLiteral(embedding!);
   } catch (error) {
-    log.warn("Embedding a help question failed", { projectId, error });
+    log.warn("Embedding a docs question failed", { projectId, error });
     return null;
   }
   // ponytail: scans all of the project's chunks, like meaningMatches.
@@ -114,8 +114,8 @@ export async function answerSections(
     LIMIT ${limit}`;
 }
 
-// ponytail: computes each article's tsvector per search; add a stored column with a GIN index if help centers get big.
-async function wordMatches(projectId: string, query: string, limit: number, groups: ReaderGroups): Promise<HelpSearchResult[]> {
+// ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
+async function wordMatches(projectId: string, query: string, limit: number, groups: ReaderGroups): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut.
   const rows = await prisma.$queryRaw<{ slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean }[]>`
     SELECT a.slug, a.title, h.passage,

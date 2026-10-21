@@ -93,7 +93,7 @@ export const getDomain = defineOperation({
 export const setDomain = defineOperation({
   name: "domain.set",
   summary:
-    "Use your own domain for the portal and help center (e.g. help.example.com; one per project, replacing any other): add the DNS records it returns, then domain.verify. Until then the portal stays where it is",
+    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other): add the DNS records it returns, then domain.verify. Until then the portal stays where it is",
   method: "POST",
   path: "/domain",
   scope: "write",

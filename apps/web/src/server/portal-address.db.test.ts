@@ -14,9 +14,9 @@ import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/d
 import { createChangelogEntry } from "./operations/changelog";
 import { createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
-import { escalateHelp } from "./operations/help-escalate";
+import { escalateDocs } from "./operations/docs-escalate";
 import { addPortalReaders, updatePortal } from "./operations/portal";
-import { createArticle, getArticle, publishArticle } from "./operations/help";
+import { createArticle, getArticle, publishArticle } from "./operations/docs";
 import { call } from "./operations/run";
 import { continueToPortal } from "./portal-handoff";
 import { emailSignInLink } from "./sign-in-link";
@@ -133,7 +133,7 @@ test("a failing address lookup fails a request before it writes anything, so a r
   const board = project.boards[0]!;
   await call(updatePortal, as(), { access: "private" });
   await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
-  const question = await prisma.helpQuestion.create({
+  const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: owner.id, question: "Can I pay with crypto?", source: "PORTAL", status: "NO_ANSWER" },
   });
   await call(createPost, as(), { board: board.slug, title: "Night mode" });
@@ -146,7 +146,7 @@ test("a failing address lookup fails a request before it writes anything, so a r
     await expect(call(createArticle, as(), { title: "Billing", body: "Hi" })).rejects.toThrow("database down");
     await expect(call(createChangelogEntry, as(), { title: "Dark mode", body: "Shipped" })).rejects.toThrow("database down");
     await expect(call(addPortalReaders, as(), { emails: ["e2e-reader@example.com"] })).rejects.toThrow("database down");
-    await expect(call(escalateHelp, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
+    await expect(call(escalateDocs, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
   } finally {
     spy.mockRestore();
   }
@@ -156,5 +156,5 @@ test("a failing address lookup fails a request before it writes anything, so a r
   expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
   expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
   // Not claimed: asking a person again works.
-  expect(await prisma.helpQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
+  expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
 });

@@ -291,15 +291,15 @@ test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; 
   const page = loadWidget({});
   page.Tuti.open({ tab: "whats-new" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=whats-new");
-  page.Tuti.open({ tab: "help" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=help");
+  page.Tuti.open({ tab: "docs" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs");
   page.Tuti.open();
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=help");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs");
   page.Tuti.open({ tab: "feedback" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   page.Tuti.open({ tab: "settings" });
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or help");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or docs");
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   error.mockRestore();
 });
@@ -307,7 +307,7 @@ test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; 
 test("Tuti.open({ article }) and data-tuti-article elements, also ones added later, open the panel at that article", async () => {
   const page = loadWidget({});
   page.Tuti.open({ article: "a b/c" });
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=help&article=a%20b%2Fc");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=a%20b%2Fc");
   page.Tuti.close();
 
   // A help link added after the script ran, clicked on its icon: no navigation, the article opens.
@@ -316,7 +316,7 @@ test("Tuti.open({ article }) and data-tuti-article elements, also ones added lat
   const icon = help.appendChild(new FakeElement("svg", page));
   expect(icon.click()).toBe(true);
   expect(page.panel.style.display).toBe("block");
-  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=help&article=exporting-your-data");
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs&article=exporting-your-data");
   // Closing gives focus back to it.
   page.Tuti.close();
   expect(page.document.activeElement).toBe(help);
@@ -547,7 +547,7 @@ test("inline: each data-tuti-inline element gets its own panel, at the tab it na
     attributes: { "data-display": "inline" },
     before: (page) => {
       inlineMount(page);
-      inlineMount(page, "help");
+      inlineMount(page, "docs");
       // The page's own data-tab (its own tabs, say) is none of the widget's business.
       inlineMount(page, "", { "data-tab": "whats-new" });
     },
@@ -557,7 +557,7 @@ test("inline: each data-tuti-inline element gets its own panel, at the tab it na
   expect(page.button).toBeUndefined();
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
     "https://acme.tuti.example/widget?display=inline",
-    "https://acme.tuti.example/widget?tab=help&display=inline",
+    "https://acme.tuti.example/widget?tab=docs&display=inline",
     "https://acme.tuti.example/widget?display=inline",
   ]);
   for (const frame of page.inlineFrames) {
@@ -581,7 +581,7 @@ test("inline mounts work in every mode, also ones added later, each mounted once
   inlineMount(page, "settings");
   page.mutated();
   page.mutated();
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or help");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or docs");
   error.mockRestore();
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
     "https://acme.tuti.example/widget?tab=whats-new&display=inline",

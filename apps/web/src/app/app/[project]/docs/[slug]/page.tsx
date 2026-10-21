@@ -7,7 +7,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/help";
+import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/line-diff";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { collectionOptions } from "@/server/help-queries";
+import { collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {

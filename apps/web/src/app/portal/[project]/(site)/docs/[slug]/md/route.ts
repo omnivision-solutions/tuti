@@ -1,7 +1,7 @@
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, publishedArticle } from "@/server/help-queries";
+import { articleMarkdown, publishedArticle } from "@/server/docs-queries";
 
-/** A published article as Markdown, at /help/<slug>.md (proxy.ts sends it here), for AI tools. */
+/** A published article as Markdown, at /docs/<slug>.md (proxy.ts sends it here), for AI tools. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/docs/[slug]/md">) {
   const { project, slug } = await params;
   const article = await publishedArticle(project, slug);

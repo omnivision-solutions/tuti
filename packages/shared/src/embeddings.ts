@@ -16,12 +16,12 @@ export const DUPLICATE_MIN_SIMILARITY = 0.45;
 export const TYPING_SUGGESTION_MIN_SIMILARITY = 0.4;
 /** A pull request's text vs. a post's. ponytail: not calibrated yet (PRs say "how", posts "what"); tune with real pairs. */
 export const LINK_MIN_SIMILARITY = 0.4;
-/** A search query vs. a help article's section. ponytail: not calibrated yet; tune with real queries (and the misses log). */
+/** A search query vs. a docs article's section. ponytail: not calibrated yet; tune with real queries (and the misses log). */
 export const SEARCH_MIN_SIMILARITY = 0.3;
 /**
- * A question vs. a help article's section, for AI answers: below it the section isn't sent to the
+ * A question vs. a docs article's section, for AI answers: below it the section isn't sent to the
  * model, and with no section left the answer is "I don't know". Stricter than search, which only
- * lists articles. ponytail: not calibrated yet; tune with real questions (the help_question log).
+ * lists articles. ponytail: not calibrated yet; tune with real questions (the docs_question log).
  */
 export const ANSWER_MIN_SIMILARITY = 0.4;
 
@@ -34,7 +34,7 @@ export function postEmbeddingText(post: { title: string; body: string }): string
   return `${post.title}\n\n${post.body}`.trim().slice(0, 8000);
 }
 
-/** What gets embedded for a section of a help article: the article's title gives it context. */
+/** What gets embedded for a section of a docs article: the article's title gives it context. */
 export function articleChunkText(title: string, chunk: { heading: string; text: string }): string {
   return [title, chunk.heading, chunk.text].filter(Boolean).join("\n\n");
 }

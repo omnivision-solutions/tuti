@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { collectionOptions, helpCenter } from "./help-queries";
+import { collectionOptions, docsContents } from "./docs-queries";
 import {
   createArticle,
   createCollection,
@@ -19,11 +19,11 @@ import {
   reorderCollection,
   updateArticle,
   updateCollection,
-} from "./operations/help";
+} from "./operations/docs";
 import { call } from "./operations/run";
 
 /**
- * The help center's structure: collections in collections (2 levels deep at most), articles in
+ * The docs' structure: collections in collections (2 levels deep at most), articles in
  * order in their collection, moved one at a time under the project's lock, and every reader
  * following that order.
  */
@@ -213,7 +213,7 @@ describe("order", () => {
 });
 
 describe("readers", () => {
-  test("/help, the widget, llms.txt and the API list collections and articles in the team's order, nested", async () => {
+  test("/docs, the widget, llms.txt and the API list collections and articles in the team's order, nested", async () => {
     for (const [name, parent] of [["Basics", null], ["Billing", null], ["Invoices", "billing"], ["Empty", "billing"]] as const) {
       await call(createCollection, as(), { name, parent });
     }
@@ -226,7 +226,7 @@ describe("readers", () => {
     await call(reorderArticle, as(), { slug: "inviting-your-team", position: 0 });
 
     const link = (slug: string, title: string) => ({ slug, title });
-    expect(await helpCenter(project.slug)).toEqual({
+    expect(await docsContents(project.slug)).toEqual({
       collections: [
         {
           slug: "billing",
@@ -245,8 +245,8 @@ describe("readers", () => {
         },
       ],
       uncollected: [],
-      // No sections: one page.
-      sections: [],
+      // No tabs: one page.
+      tabs: [],
     });
 
     const portal = `http://${project.slug}.localhost:3100`;

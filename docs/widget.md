@@ -59,7 +59,7 @@ the panel (in `inline` mode, the floating one, as with `data-hide-launcher`).
 
 Every element with `data-tuti-inline` gets its own panel, in any display mode, so a page can
 have a launcher and an inline panel, or several inline ones (say Feedback on one side and
-What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `help` (Docs);
+What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `docs`;
 empty (`<div data-tuti-inline>`) is Feedback, and so is an unknown one, with an error in the
 browser console. The panel fills the element's width and height, and is at least 500px tall; give the
 element a height to make it taller. It has no close button, since there's nothing to close.
@@ -106,7 +106,7 @@ panel instead of leaving the page.
 | Call | What it does |
 | --- | --- |
 | `Tuti.open()` | Opens the panel where it was (the Feedback tab the first time). |
-| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"help"` (Docs). |
+| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"docs"`. |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |

@@ -25,7 +25,7 @@ export const jobs = {
       postId: z.string(),
     }),
   },
-  /** A help article was published or changed: embed its sections for search (or remove them if it's no longer published). */
+  /** A docs article was published or changed: embed its sections for search (or remove them if it's no longer published). */
   articleChanged: {
     name: "article-changed",
     input: z.object({ articleId: z.string() }),
@@ -104,7 +104,7 @@ export const jobs = {
     input: z.object({}),
     cron: "29 3 * * *",
   },
-  /** Removes help articles deleted more than 30 days ago (until then the team can restore them). */
+  /** Removes docs articles deleted more than 30 days ago (until then the team can restore them). */
   purgeArticles: {
     name: "purge-articles",
     input: z.object({}),
