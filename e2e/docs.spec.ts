@@ -836,7 +836,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
   await team.getByLabel("Off-limits topics").fill("refund\nlegal advice");
-  await team.getByRole("button", { name: "Save AI answers" }).click();
+  await team.getByRole("button", { name: "Save changes" }).click();
   await expect(team.getByText("AI answers saved")).toBeVisible();
   await team.reload();
   await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");

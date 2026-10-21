@@ -1,14 +1,15 @@
 import { portalUrl } from "@/lib/hosts";
-import { CUSTOMIZE } from "@/lib/portal-base";
 
 import { portalAddress } from "./custom-domains";
+import { portalHomePath } from "./portal-home";
 
 /**
- * Customize's preview of page `path` of a portal: the page at the portal's Tuti address (which the
- * app may frame, and which doesn't send it on to the portal's own address there), and where readers
- * find it, for the preview's address bar.
+ * Customize's preview of page `path` of a portal (CustomizeShell's `preview`): the portal's Tuti
+ * address (which the app may frame, and which doesn't send the preview on to the portal's own address
+ * there), and where readers find it, for the preview's address bar.
  */
-export async function portalPreview(slug: string, path: string): Promise<{ src: string; address: string }> {
-  const src = `${portalUrl(slug)}${path}?${new URLSearchParams({ [CUSTOMIZE.param]: CUSTOMIZE.value })}`;
-  return { src, address: `${await portalAddress(slug)}${path === "/" ? "" : path}` };
+export async function portalPreview(slug: string, path: string): Promise<{ origin: string; path: string; address: string }> {
+  // The home ("/") sends people to the part it opens: the preview starts there.
+  const page = path === "/" ? ((await portalHomePath(slug)) ?? path) : path;
+  return { origin: new URL(portalUrl(slug)).origin, path: page, address: await portalAddress(slug) };
 }

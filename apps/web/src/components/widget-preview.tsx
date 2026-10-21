@@ -8,8 +8,10 @@ import { cn } from "@/lib/utils";
  * Customize → Widget's preview: the widget open on a stand-in for the team's site, its panel (the
  * portal's /widget, which any site may frame) above the launcher, in its corner.
  */
-export function WidgetPreview({ src, label, color, position }: { src: string; label: string; color: string; position: "bottom-right" | "bottom-left" }) {
-  const { version } = usePreview();
+export function WidgetPreview({ src, ...saved }: { src: string; label: string; color: string; position: "bottom-right" | "bottom-left" }) {
+  const { version, draft } = usePreview();
+  // As the team is setting it, before it's saved.
+  const { label, color, position } = draft.widget ?? saved;
   const left = position === "bottom-left";
   return (
     <div aria-label="Widget preview" role="figure" className="relative flex flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">

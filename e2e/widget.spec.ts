@@ -544,10 +544,12 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByRole("button", { name: "Add link" }).click();
   await owner.getByLabel("Link 1 label").fill("Status");
   await owner.getByLabel("Link 1 URL").fill("http://status.example.com");
-  await owner.getByRole("button", { name: "Save widget" }).click();
+  // The launcher in the preview changes as it's set.
+  await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Links need a full https:// address")).toBeVisible();
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
-  await owner.getByRole("button", { name: "Save widget" }).click();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
   await checkpoint(owner, "widget-settings");

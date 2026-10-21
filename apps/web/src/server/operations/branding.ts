@@ -7,7 +7,7 @@ import { attachMedia, MEDIA_GONE } from "../content";
 import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
-import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, luminance, textColorOn, type WidgetLink } from "./widget";
+import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, type WidgetLink } from "./widget";
 
 /** The portal's and its docs' look (Phase 10): logos, favicon, accent colour, header and footer links, "Powered by". */
 
@@ -77,31 +77,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
   };
 }
 
-/**
- * Relative luminance of the surfaces the accent is hardest to read on (globals.css): the
- * page background in light mode, cards in dark mode.
- */
-const SURFACES = { light: 0.9823, dark: 0.0106 };
-/** WCAG's minimum for buttons, focus rings and large text. */
-const MIN_CONTRAST = 3;
-
-/**
- * CSS that makes `color` the accent (`--primary`, with black or white text on it, and the
- * focus ring). In a mode where it would be too faint against the page (a pale yellow in light
- * mode, a navy in dark mode), the accent there is the text colour instead. Null without a colour.
- */
-export function brandCss(color: string | null): string | null {
-  if (!color) {
-    return null;
-  }
-  const l = luminance(color);
-  const accent = (surface: number) =>
-    (Math.max(l, surface) + 0.05) / (Math.min(l, surface) + 0.05) >= MIN_CONTRAST
-      ? `--primary:${color};--primary-foreground:${textColorOn(color)};--ring:${color}`
-      : "--primary:var(--foreground);--primary-foreground:var(--background);--ring:var(--foreground)";
-  // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
-  return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}`;
-}
+export { brandCss } from "@/lib/colors";
 
 const links = (where: string) =>
   z.array(httpsLink).max(MAX_BRAND_LINKS, `Add up to ${MAX_BRAND_LINKS} ${where} links`).optional();
