@@ -34,8 +34,8 @@ lives in `/shared`, which the others import.
 
 | Folder | Holds | Local file (dev) |
 |---|---|---|
-| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings) | — |
-| `/web` ← shared | `BETTER_AUTH_SECRET`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587) | `apps/web/.env` |
+| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings), `OPENROUTER_API_KEY`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587), `MEDIA_*`; prod also `APP_PORTAL_PROJECT`, `CUSTOM_DOMAIN_TARGET` | — |
+| `/web` ← shared | `BETTER_AUTH_SECRET`; prod also `APP_PORTAL_OWNER`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `TRUSTED_IP_HEADER`, `LICENSE_PRIVATE_KEY` | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
@@ -76,11 +76,19 @@ The script passes `--projectId` and `--domain` explicitly, because the CLI ignor
 Each Docker image starts under
 `infisical run --env=prod --path=/<app> --silent -- …` **only when `INFISICAL_TOKEN`
 is set**, so the same image still works for self-hosters with plain env vars.
-The goal is that the host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN`
-and `INFISICAL_PROJECT_ID`, with one read-only machine identity per app
-(`tuti-web`, `tuti-worker`). Until those identities exist, Coolify holds a copy of
-the prod values as runtime-only env vars: change them in Infisical, then copy them
-over.
+The host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN` and
+`INFISICAL_PROJECT_ID`, never a copy of a value. Each app has its own machine identity
+(`tuti-web`, `tuti-worker`): Universal Auth, no access to the rest of the org, the
+project's Viewer role (read-only; a prod-only role would need Infisical Enterprise).
+`INFISICAL_TOKEN` is an access token of that identity, made with a client secret
+(Universal Auth's login) and set to last 10 years (its TTL and max TTL); the client
+secret isn't kept. To replace a token (it's leaked, or it's running out): make a new
+client secret for the identity, log in with it for a new access token, put that in
+Coolify, redeploy, then revoke the old one. To change a value, edit it in Infisical and
+redeploy the apps that use it; there's nothing to copy.
+
+Infisical holds only what the apps read. The secret GitHub signs Coolify's deploy webhook
+with lives in GitHub and Coolify alone; to change it, set a new one in both.
 
 Coolify deploys `main` on every push, through a GitHub webhook signed with a
 shared secret (Coolify's own auto-deploy; no Coolify token lives in GitHub). `main`
