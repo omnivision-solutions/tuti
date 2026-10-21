@@ -200,6 +200,17 @@ describe("tabs", () => {
 describe("landing", () => {
   const landing = async () => (await call(listTabs, as(), {})).tabs.map((t) => `${t.slug}:${t.landing}${t.landingPage ? `=${t.landingPage}` : ""}`);
 
+  test("saving a tab's landing page with its name as it is keeps its address", async () => {
+    await call(createArticle, as(), { title: "Guides", body: "Taken." });
+    await call(createTab, as(), { name: "Guides" });
+    await call(deleteArticle, as(), { slug: "guides" });
+    // "guides" is free again, but nothing renamed the tab.
+    const redirects = await prisma.docsRedirect.findMany({ select: { slug: true } });
+    expect(await call(updateTab, as(), { slug: "guides-2", name: "Guides", landing: "first" })).toMatchObject({ slug: "guides-2" });
+    expect(await prisma.docsRedirect.findMany({ select: { slug: true } })).toEqual(redirects);
+    expect(await call(updateTab, as(), { slug: "guides-2", name: "Guide" })).toMatchObject({ slug: "guide" });
+  });
+
   test("a tab shows its overview, its first article or an article or collection in it; renaming keeps it", async () => {
     await call(createTab, as(), { name: "Guides" });
     await call(createTab, as(), { name: "API" });

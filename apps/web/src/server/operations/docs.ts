@@ -1241,7 +1241,7 @@ async function landingPageIn(tx: Prisma.TransactionClient, projectId: string, ta
 
 /** Tab `slug`, read under the project's lock. */
 async function lockedTab(tx: Prisma.TransactionClient, projectId: string, slug: string) {
-  const tab = await tx.docsTab.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true } });
+  const tab = await tx.docsTab.findUnique({ where: { projectId_slug: { projectId, slug } }, select: { id: true, name: true } });
   if (!tab) {
     throw new OperationError(404, "not_found", `There's no tab “${slug}”`);
   }
@@ -1307,7 +1307,9 @@ export const updateTab = defineOperation({
     return tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
-        const { id } = await lockedTab(tx, projectId, input.slug);
+        const { id, name } = await lockedTab(tx, projectId, input.slug);
+        // Only a new name moves the tab's address (saving its landing page sends the name as it is).
+        const renamed = input.name !== undefined && input.name !== name;
         const page =
           input.landingPage === undefined
             ? { landingArticleId: null, landingCollectionId: null }
@@ -1315,7 +1317,7 @@ export const updateTab = defineOperation({
         return tx.docsTab.update({
           where: { id },
           data: {
-            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) }),
+            ...(renamed && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name!, "tab", { id, slug: input.slug }) }),
             ...(input.landing && { landing: input.landing.toUpperCase() as Uppercase<DocsLanding>, ...page }),
           },
           select: tabSelect,
