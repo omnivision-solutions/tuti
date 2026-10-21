@@ -187,6 +187,7 @@ describe("readers follow an article's old slugs", () => {
     await call(updateArticle, as(), { slug: "gamma", listing: "unlisted" });
     expect(await read("alpha")).toEqual(moved);
 
+    await prisma.readerGroup.create({ data: { projectId: project.id, name: "Enterprise", claim: "enterprise" } });
     await call(createCollection, as(), { name: "Enterprise", groups: ["enterprise"] });
     await call(updateArticle, as(), { slug: "gamma", collection: "enterprise", publish: true });
     expect(await read("alpha")).toEqual(missing);
