@@ -1,3 +1,5 @@
+import { generateKeyPairSync } from "node:crypto";
+
 // Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e).
 const PORT = Number(process.env.E2E_PORT || 3200);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
@@ -36,4 +38,7 @@ export const serverEnv = {
   APP_PORTAL_PROJECT: APP_PORTAL_SLUG,
   // Only this address (verified) can create that project.
   APP_PORTAL_OWNER: APP_PORTAL_OWNER,
+  // A licence server too, like tuti.so, with a private key made for the run (its keys don't verify
+  // anywhere: installations trust only Tuti's public keys), so the licence page has a journey.
+  LICENSE_PRIVATE_KEY: generateKeyPairSync("ed25519").privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
 };
