@@ -43,7 +43,7 @@ export function WhoCanRead({
       {choices.map(([value, label, description]) => (
         <label
           key={value}
-          className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors has-[:checked]:border-primary has-[:checked]:bg-accent"
+          className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition-colors has-checked:border-primary has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
         >
           <input
             type="radio"
