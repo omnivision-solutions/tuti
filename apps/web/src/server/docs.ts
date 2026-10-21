@@ -104,10 +104,8 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
   const input = {
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
-    // Checked by the operation; separated by commas or spaces.
-    groups: String(formData.get("groups") ?? "")
-      .split(/[\s,]+/)
-      .filter(Boolean),
+    // The ticked groups' claims, checked by the operation.
+    groups: formData.getAll("groups").map(String),
   };
   const parent = String(formData.get("parent") ?? "") || null;
   return asTeam(projectSlug, DENIED, (context) =>
