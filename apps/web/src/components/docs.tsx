@@ -409,7 +409,7 @@ export function CollectionDialog({
   collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null; knownIcon: boolean };
   /** The project's reader groups to pick from. */
   groups: GroupOption[];
-  /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
+  /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
   tabs?: CollectionOption[];
@@ -546,7 +546,7 @@ export function DeleteCollectionButton({
   projectSlug: string;
   slug: string;
   name: string;
-  /** It has collections in it, which move up to the top level. */
+  /** It has collections in it, which move up a level. */
   hasChildren?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
@@ -557,7 +557,7 @@ export function DeleteCollectionButton({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its articles stay, without a collection.{hasChildren && " The collections in it move up to the top level."}
+            Its articles stay, without a collection.{hasChildren && " The collections in it move up a level, in its place."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
