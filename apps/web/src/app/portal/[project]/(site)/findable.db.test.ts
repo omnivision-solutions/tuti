@@ -54,7 +54,7 @@ test("a published article is served as Markdown at its .md URL; drafts, missing 
   expect((await get(other.slug, "inviting-your-team")).status).toBe(404);
 });
 
-test("llms.txt describes the portal and links each published article's Markdown, the changelog and the boards", async () => {
+test("llms.txt describes the portal and links each collection's page, each published article's Markdown, the changelog and the boards", async () => {
   const project = await docsContents();
   const portal = `http://${project.slug}.localhost:3100`;
   const response = await llms(request, { params: Promise.resolve({ project: project.slug }) });
@@ -63,7 +63,7 @@ test("llms.txt describes the portal and links each published article's Markdown,
     [
       `# Project ${project.slug}`,
       `> Docs, changelog and feedback for Project ${project.slug}.`,
-      "## Getting started",
+      `## [Getting started](${portal}/docs/getting-started)`,
       "The basics.",
       `- [Inviting \\*your\\* team](${portal}/docs/inviting-your-team.md)`,
       "## More articles",
@@ -105,6 +105,8 @@ test("the sitemap lists the portal's public pages with when they changed, and no
     [`${portal}/changelog`]: "2026-05-01T10:00:00.000Z",
     [`${portal}/changelog/1`]: "2026-05-01T10:00:00.000Z",
     [`${portal}/docs`]: expect.any(String),
+    // A collection's page.
+    [`${portal}/docs/getting-started`]: undefined,
     [`${portal}/docs/billing`]: expect.any(String),
     [`${portal}/docs/inviting-your-team`]: "2026-03-02T10:00:00.000Z",
   });

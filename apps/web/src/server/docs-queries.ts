@@ -55,6 +55,8 @@ export type DocsCollection = {
   slug: string;
   name: string;
   description: string;
+  /** Its Lucide icon's name, or null. */
+  icon: string | null;
   articles: { slug: string; title: string }[];
   /** The collections in it, in order. */
   collections: DocsCollection[];
@@ -68,7 +70,8 @@ export type DocsTabView = { slug: string; name: string; collections: DocsCollect
  * its listed articles in order and then the collections in it, and the listed articles in none.
  * Collections without a listed article (in them or in the ones in them) are left out. `tabs`
  * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
- * have no tabs. The first tab has the articles in no collection.
+ * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
+ * slug, whether or not it has anything to read; null without tabs).
  */
 export async function docsContents(projectSlug: string, options: { groups?: ReaderGroups } = {}) {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
@@ -77,7 +80,18 @@ export async function docsContents(projectSlug: string, options: { groups?: Read
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: groupClaims, articles: articleSelect },
+      select: {
+        id: true,
+        projectId: true,
+        parentId: true,
+        tabId: true,
+        slug: true,
+        name: true,
+        description: true,
+        icon: true,
+        groups: groupClaims,
+        articles: articleSelect,
+      },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
@@ -91,7 +105,7 @@ export async function docsContents(projectSlug: string, options: { groups?: Read
   const anyRestricted = rows.some((row) => row.groups.length > 0);
   const groups = options.groups !== undefined ? options.groups : anyRestricted ? await readerGroups(rows[0]!.projectId) : null;
   const allowed = (row: Row) => mayReadCollection(groups, row);
-  const view = ({ slug, name, description, articles, id }: Row): DocsCollection => ({ slug, name, description, articles, collections: nest(id) });
+  const view = ({ slug, name, description, icon, articles, id }: Row): DocsCollection => ({ slug, name, description, icon, articles, collections: nest(id) });
   const readable = (c: DocsCollection) => c.articles.length > 0 || c.collections.length > 0;
   const nest = (parentId: string): DocsCollection[] =>
     rows.filter((row) => row.parentId === parentId && allowed(row)).map(view).filter(readable);
@@ -107,8 +121,68 @@ export async function docsContents(projectSlug: string, options: { groups?: Read
       uncollected: index === 0 ? uncollected : [],
     }))
     .filter((tab) => tab.collections.length > 0 || tab.uncollected.length > 0);
-  return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[] };
+  return { collections: top.map((t) => t.collection), uncollected, tabs: tabs satisfies DocsTabView[], home: tabRows.at(0)?.slug ?? null };
 }
+
+export type DocsContents = Awaited<ReturnType<typeof docsContents>>;
+
+/** A tab's page: the first is /docs itself. */
+export const docsTabPath = (docs: { home: string | null }, tab: string) => (tab === docs.home ? "/docs" : `/docs/${tab}`);
+
+/** Every collection in `collections` and the ones in them, in reading order. */
+export const everyCollection = (collections: DocsCollection[]): DocsCollection[] => collections.flatMap((c) => [c, ...everyCollection(c.collections)]);
+
+/** What /docs/<slug> is for this reader. */
+export type DocsPage =
+  | { kind: "article"; article: NonNullable<Awaited<ReturnType<typeof publishedArticle>>> }
+  | { kind: "tab"; docs: DocsContents; tab: DocsTabView }
+  | { kind: "collection"; docs: DocsContents; tab: DocsTabView | null; parent: DocsCollection | null; collection: DocsCollection }
+  | { kind: "redirect"; path: string };
+
+/**
+ * A tab or collection with something this reader may read (as on /docs: a restricted or empty one is
+ * as good as missing); the first tab is /docs.
+ */
+async function listingPage(projectSlug: string, slug: string): Promise<DocsPage | null> {
+  const docs = await docsContents(projectSlug);
+  if (slug === docs.home) {
+    return { kind: "redirect", path: "/docs" };
+  }
+  const tab = docs.tabs.find((t) => t.slug === slug);
+  if (tab) {
+    return { kind: "tab", docs, tab };
+  }
+  const all = everyCollection(docs.collections);
+  const collection = all.find((c) => c.slug === slug);
+  if (!collection) {
+    return null;
+  }
+  return {
+    kind: "collection",
+    docs,
+    tab: docs.tabs.find((t) => everyCollection(t.collections).includes(collection)) ?? null,
+    parent: all.find((c) => c.collections.includes(collection)) ?? null,
+    collection,
+  };
+}
+
+/**
+ * What /docs/<slug> serves this reader, once per request (the page and its metadata): an article, a
+ * tab, a collection (a slug names one of them at most), else a redirect from an old slug, else null
+ * (a 404).
+ */
+export const docsPage = cache(async (projectSlug: string, slug: string): Promise<DocsPage | null> => {
+  const article = await publishedArticle(projectSlug, slug);
+  if (article) {
+    return { kind: "article", article };
+  }
+  const listing = await listingPage(projectSlug, slug);
+  if (listing) {
+    return listing;
+  }
+  const moved = await movedPage(projectSlug, slug);
+  return moved && { kind: "redirect", path: moved.path };
+});
 
 /** A published article on the portal (unless it's hidden or AI only), once per request (its page and its metadata both read it). */
 export const publishedArticle = cache(async (projectSlug: string, slug: string) => {
@@ -124,7 +198,13 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       listing: true,
       revisedAt: true,
       collection: {
-        select: { name: true, groups: groupClaims, tab: { select: { slug: true } }, parent: { select: { groups: groupClaims, tab: { select: { slug: true } } } } },
+        select: {
+          slug: true,
+          name: true,
+          groups: groupClaims,
+          tab: { select: { slug: true } },
+          parent: { select: { groups: groupClaims, tab: { select: { slug: true } } } },
+        },
       },
       project: { select: { name: true } },
     },
@@ -142,7 +222,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;
   return {
     ...rest,
-    collection: collection && { name: collection.name },
+    collection: collection && { slug: collection.slug, name: collection.name },
     /** The docs tab it's in (its collection's, or that one's parent's), for the way back to it. */
     tab: (collection?.parent ? collection.parent.tab : collection?.tab)?.slug ?? null,
     updatedAt,
@@ -153,18 +233,29 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
 });
 
 /**
- * Where an article that had `slug` is now (its current slug), when no page has `slug` any more: only
- * if this reader may read it (publishedArticle), so a redirect never shows that a draft, hidden or
- * restricted page is there. Redirects to tabs and collections wait until they have pages.
+ * Where a page that had `slug` is now (its path; `article`, its slug if it's an article), when no page
+ * has `slug` any more: only if this reader may read it there (publishedArticle, or a tab or collection
+ * with something to read), so a redirect never shows that a draft, hidden or restricted page is there.
  */
-export async function movedArticle(projectSlug: string, slug: string): Promise<string | null> {
+async function movedPage(projectSlug: string, slug: string): Promise<{ path: string; article: string | null } | null> {
   const redirect = await prisma.docsRedirect.findFirst({
     where: { slug, project: { slug: projectSlug } },
-    select: { article: { select: { slug: true, deletedAt: true } } },
+    select: { tab: { select: { slug: true } }, collection: { select: { slug: true } }, article: { select: { slug: true, deletedAt: true } } },
   });
-  const to = redirect?.article;
-  // A deleted article's slug may be another's now.
-  return to && !to.deletedAt && (await publishedArticle(projectSlug, to.slug)) ? to.slug : null;
+  const article = redirect?.article;
+  if (article) {
+    // A deleted article's slug may be another's now.
+    return !article.deletedAt && (await publishedArticle(projectSlug, article.slug)) ? { path: `/docs/${article.slug}`, article: article.slug } : null;
+  }
+  const to = redirect?.tab ?? redirect?.collection;
+  const page = to && (await listingPage(projectSlug, to.slug));
+  // The first tab's old slug goes to /docs.
+  return page ? { path: page.kind === "redirect" ? page.path : `/docs/${to.slug}`, article: null } : null;
+}
+
+/** Where an article that had `slug` is now (its current slug), for its .md and the widget: as movedPage. */
+export async function movedArticle(projectSlug: string, slug: string): Promise<string | null> {
+  return (await movedPage(projectSlug, slug))?.article ?? null;
 }
 
 /** An article as Markdown, its title as the heading: /docs/<slug>.md and "Copy as Markdown". */
