@@ -316,6 +316,16 @@ One PR per item, in this order: each needs the ones before it. Inside a PR, simi
 - [ ] **16. The team's Docs as a tree.** Beside the editor, like Ferndesk's: each tab with its collections and articles, a + on each (new article, new collection), "New tab" and "Recently deleted" at the bottom; dragging as in today's Collections, which it replaces; a tab or collection opens its page (Content, Access, Settings).
   - Commits: the tree and its moves (reusing the reorder operations); pages for tabs and collections in the app; journeys and screenshots
 
+Follow-ups found while building items 1–15 (2026-10-21), one small PR each, most important first:
+
+- [ ] An escalated AI question's copy goes to the address the visitor types and lists the articles the answer cited without checking access again: if access narrowed in between (or the address isn't the visitor's), restricted titles reach it. Check each cited article against the asker's access when the email is sent, and leave out what they may no longer read; and unless the typed address is the asker's own verified address, leave out every restricted article's title (only ones anyone may read are named) (found in #146; it was already true with collection groups)
+- [ ] The export's front matter has `access`, `groups` and `noAccess` for tabs, collections and articles (it has `listing`, `description`, `keywords` and `noindex` already)
+- [ ] Rename `groupClaims` / `claimsOf` in `lib/reader-groups.ts` to `groupKeys` / `keysOf`: they return group keys since #142 (kept to ease merging the stacked PRs)
+- [ ] The Gaps list: from a failed search, "Add as a keyword" to an article the team picks (#147 left it out: it needs an article picker there)
+- [ ] The "Who can read" hint under "Inherit" says what it inherits; the "People without access" one says "Hidden (the default)" even when an explicit "Hide" above causes it: name the level it comes from
+- [ ] The icon picker opens with commonly used icons first (it starts at "A" today)
+- [ ] On phones the overview has its own search box and the header's: keep one
+
 ## Deciding vs. writing: small models for decisions (cross-cutting, asked 2026-10-20)
 
 Generative models write; where the output is a decision (yes/no, a score, a ranking), a small model decides instead: cheaper, faster, calibrated, deterministic in tests, and it can learn from what teams already do in Tuti (merges and "not a duplicate", 👍/👎 on answers, "I don't know", dismissed gaps, edits to AI drafts). Small enough for self-hosters: a CPU reranker (ONNX, e.g. bge-reranker-base via onnxruntime-node) or logistic regression in TypeScript/SQL; no GPU, no extra service. Each starts from today's fixed thresholds and calibrates per project as labels accumulate.
