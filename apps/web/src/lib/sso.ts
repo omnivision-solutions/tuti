@@ -8,6 +8,7 @@ import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
+import { type Attributes, readerAttributes } from "./group-conditions";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
 import { baseFrom, withBase } from "@/lib/portal-base";
@@ -49,6 +50,8 @@ const claimsSchema = z.object({
   avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
   /** Which restricted docs collections they may read (the reader groups with these claims). Each sign-in says them all. */
   groups: z.array(readerGroup).max(MAX_READER_GROUPS).optional(),
+  /** What reader groups' conditions match (e.g. { plan: "pro" }). Bad ones are dropped, not refused. */
+  attributes: z.unknown().optional().transform(readerAttributes),
 });
 
 const querySchema = z.object({
@@ -78,17 +81,17 @@ function isUniqueViolation(error: unknown): boolean {
 export async function upsertProjectUser(
   projectId: string,
   externalId: string,
-  details: { name?: string; image?: string | null; email?: string | null; groups?: string[] },
+  details: { name?: string; image?: string | null; email?: string | null; groups?: string[]; attributes?: Attributes },
 ): Promise<string> {
   const where = { projectId_externalId: { projectId, externalId } };
   const existing = await prisma.ssoIdentity.findUnique({ where, select: { userId: true } });
   if (existing) {
-    const { email, groups, ...profile } = details;
+    const { email, groups, attributes, ...profile } = details;
     if (Object.values(profile).some((value) => value !== undefined)) {
       await prisma.user.update({ where: { id: existing.userId }, data: profile });
     }
-    if (email !== undefined || groups !== undefined) {
-      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email, groups } });
+    if (email !== undefined || groups !== undefined || attributes !== undefined) {
+      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email, groups, attributes } });
     }
     return existing.userId;
   }
@@ -99,7 +102,7 @@ export async function upsertProjectUser(
         name: details.name ?? details.email?.split("@")[0] ?? "Anonymous",
         image: details.image ?? null,
         email: placeholderEmail(projectId, externalId),
-        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null, groups: details.groups ?? [] } },
+        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null, groups: details.groups ?? [], attributes: details.attributes ?? {} } },
       },
       select: { id: true },
     });
@@ -138,7 +141,7 @@ export async function verifySsoToken(
   if (!claims.success) {
     return { error: "invalid_claims" };
   }
-  const { sub, jti, iat, exp, email, name, avatar, groups } = claims.data;
+  const { sub, jti, iat, exp, email, name, avatar, groups, attributes } = claims.data;
   if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
     return { error: "token_lifetime_too_long" };
   }
@@ -167,6 +170,8 @@ export async function verifySsoToken(
     email: email ?? null,
     // Without the claim, none: a token says everything they may read, so groups taken away go.
     groups: [...new Set(groups ?? [])],
+    // The same for attributes ({} without the claim).
+    attributes,
   });
   return { userId };
 }

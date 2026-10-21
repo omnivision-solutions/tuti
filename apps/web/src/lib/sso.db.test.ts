@@ -26,7 +26,7 @@ beforeEach(async () => {
   await prisma.project.update({ where: { id: projectId }, data: { ssoSecret: secret } });
 });
 
-type Claims = { sub?: string; jti?: string; iat?: number; exp?: number; email?: string; name?: string };
+type Claims = { sub?: string; jti?: string; iat?: number; exp?: number; email?: string; name?: string; attributes?: unknown };
 
 /** A token as the project's app would sign it; `claims` override the defaults. */
 function token(claims: Claims = {}, { key = secret, alg = "HS256" } = {}) {
@@ -74,6 +74,24 @@ test("the same `sub` is the same user, with an updated profile", async () => {
   const identities = await ssoUsers();
   expect(identities).toHaveLength(1);
   expect(identities[0]!.user.name).toBe("Ada Lovelace");
+});
+
+test("each sign-in's `attributes` replace the last ones; bad ones are dropped and the sign-in still works", async () => {
+  const attributes = async () => (await ssoUsers()).map((identity) => identity.attributes);
+  const first = await visit(await token({ attributes: { plan: "pro", seats: 12, admin: true, nested: { a: 1 }, tags: ["a"], gone: null } }), {
+    redirect: "/docs",
+  });
+  expect(first.location).toBe("/docs");
+  expect(await attributes()).toEqual([{ plan: "pro", seats: 12, admin: true }]);
+  await visit(await token({ attributes: { plan: "free" } }));
+  expect(await attributes()).toEqual([{ plan: "free" }]);
+  // Not an object: none, and still signed in.
+  expect((await visit(await token({ attributes: "pro" }), { redirect: "/docs" })).location).toBe("/docs");
+  expect(await attributes()).toEqual([{}]);
+  await visit(await token({ attributes: { plan: "pro" } }));
+  // Left out: none either, like `groups`.
+  await visit(await token());
+  expect(await attributes()).toEqual([{}]);
 });
 
 test("the same `sub` in another project is someone else", async () => {
