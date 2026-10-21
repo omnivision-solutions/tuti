@@ -16,7 +16,7 @@ const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a &&
 /**
  * The portal's public pages for search engines: home, boards, posts, the
  * roadmap, the changelog and the docs (with their tabs' and collections' pages), each with when it
- * last changed. Merged posts (they redirect), drafts, articles that aren't listed everywhere,
+ * last changed. Merged posts (they redirect), drafts, articles that aren't listed everywhere or block search indexing,
  * pages for signed-in readers or some groups only (and tabs with nothing else) and the sign-in pages are left out.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/sitemap.xml">) {
@@ -41,7 +41,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // For search engines, like llms.txt: what's for everyone (nothing for signed-in readers or some groups only). The first tab is /docs.
   const [articles, docs] = await Promise.all([
     prisma.article.findMany({
-      where: { projectId: project.id, ...listedArticle, ...(await readableArticle(project.id, SIGNED_OUT)) },
+      where: { projectId: project.id, ...listedArticle, noindex: false, ...(await readableArticle(project.id, SIGNED_OUT)) },
       orderBy: { slug: "asc" },
       select: { slug: true, updatedAt: true },
     }),

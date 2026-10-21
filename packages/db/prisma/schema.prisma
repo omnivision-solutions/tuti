@@ -1219,9 +1219,18 @@ enum ArticleListing {
 model Article {
   id              String         @id @default(cuid())
   projectId       String
-  /// From the title; no other live article, tab or collection in the project has it, so /docs/<slug> is
-  /// one page. Follows the title while it's a draft.
+  /// From the title (or the team's, with `customSlug`); no other live article, tab or collection in the
+  /// project has it, so /docs/<slug> is one page. Follows the title while it's a draft, unless it's custom.
   slug            String
+  /// The team set the slug: it no longer follows the title, even on a draft.
+  customSlug      Boolean        @default(false)
+  /// The meta description (up to 300 characters); empty: from the text.
+  description     String         @default("")
+  /// Words readers search for that the text doesn't have (up to 20, of up to 60 characters): search
+  /// matches them like the text, and they're embedded with its first section.
+  keywords        String[]       @default([])
+  /// "Block search indexing": robots noindex, and left out of the sitemap and llms.txt (still listed in the docs and search).
+  noindex         Boolean        @default(false)
   title           String
   /// Plain text of the article (derived from `content`).
   body            String         @default("")

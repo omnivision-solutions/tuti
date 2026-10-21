@@ -169,16 +169,17 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // In the editor: "Who can read", inheriting from its collection, set to signed-in readers.
+  // In the editor's settings: "Who can read", inheriting from its collection, set to signed-in readers.
   await owner.goto(`/app/${slug}/docs/pricing`);
-  const whoCanRead = owner.getByRole("group", { name: "Who can read" });
+  await owner.getByRole("button", { name: "Settings" }).click();
+  const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
+  const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
   await expect(whoCanRead.getByRole("radio", { name: "Inherit from Basics" })).toBeChecked();
   await expect(whoCanRead).toContainText("Anyone can read it");
   await whoCanRead.getByRole("radio", { name: "Signed-in readers" }).check();
-  await whoCanRead.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-docs-article-who-can-read", { fullPage: false });
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(owner.getByText("Saved")).toBeVisible();
+  await articleSettings.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Settings saved")).toBeVisible();
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("listitem").filter({ hasText: "Pricing" }).first().getByText("Signed-in", { exact: true })).toBeVisible();
 
@@ -251,11 +252,13 @@ test("people without access: an article shown with a lock asks people signed out
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // "People without access" shows once some people can't read it: the group only, shown with a lock.
+  // In the article's settings, "People without access" shows once some people can't read it: the group only, shown with a lock.
   await owner.goto(`/app/${slug}/docs/pricing`);
-  const withoutAccess = owner.getByRole("group", { name: "People without access" });
+  await owner.getByRole("button", { name: "Settings" }).click();
+  const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
+  const withoutAccess = articleSettings.getByRole("group", { name: "People without access" });
   await expect(withoutAccess).toBeHidden();
-  const whoCanRead = owner.getByRole("group", { name: "Who can read" });
+  const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
   await whoCanRead.getByRole("radio", { name: "Specific groups" }).check();
   await whoCanRead.getByRole("checkbox", { name: "Enterprise customers" }).check();
   await expect(withoutAccess.getByRole("radio", { name: "Inherit from Basics" })).toBeChecked();
@@ -264,8 +267,8 @@ test("people without access: an article shown with a lock asks people signed out
   await expect(withoutAccess.getByRole("link", { name: "Preview as a reader" })).toHaveAttribute("href", `${portalUrl(slug)}/docs/pricing?preview=signed-out`);
   await withoutAccess.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-docs-article-people-without-access", { fullPage: false });
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(owner.getByText("Saved")).toBeVisible();
+  await articleSettings.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Settings saved")).toBeVisible();
 
   // Signed out: listed with a lock; its page has its title and asks them to sign in, never its text.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -299,7 +302,9 @@ test("people without access: an article shown with a lock asks people signed out
   await expect(reader.getByText("zebra")).toHaveCount(0);
   await checkpoint(reader, "portal-docs-locked-signed-in");
 
-  // "Preview as a reader" opens the portal as people signed out see it.
+  // "Preview as a reader", in the settings again, opens the portal as people signed out see it.
+  await owner.getByRole("button", { name: "Settings" }).click();
+  await expect(withoutAccess.getByRole("radio", { name: "Show with a lock" })).toBeChecked();
   const [preview] = await Promise.all([owner.waitForEvent("popup"), withoutAccess.getByRole("link", { name: "Preview as a reader" }).click()]);
   await expect(preview.getByText("Sign in to read this.")).toBeVisible();
 });

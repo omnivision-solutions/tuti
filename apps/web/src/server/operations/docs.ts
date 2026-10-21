@@ -32,6 +32,9 @@ export const MAX_ARTICLE_LENGTH = 50_000;
 export const ARTICLE_REVISIONS_KEPT = 50;
 
 export const MAX_ARTICLE_TITLE = 120;
+export const MAX_ARTICLE_DESCRIPTION = 300;
+export const MAX_KEYWORDS = 20;
+export const MAX_KEYWORD = 60;
 
 const toListing = (listing: Listing) => listing.toUpperCase() as ArticleListing;
 /** Listings whose page and .md anyone may read (see servedArticle). */
@@ -54,7 +57,29 @@ const articleFields = {
    * source for AI answers, named without a link).
    */
   listing: z.enum(LISTINGS).optional(),
+  /** The meta description: under its title in search engines' results (up to 300 characters; empty: from the text). Changes at once. */
+  description: z.string().trim().max(MAX_ARTICLE_DESCRIPTION, `The description is up to ${MAX_ARTICLE_DESCRIPTION} characters`).optional(),
+  /**
+   * Words readers search for that the text doesn't have (up to 20, of up to 60 characters; the same
+   * word twice, in any case, is kept once): docs search matches them like the text, and AI answers
+   * find the article by them. Replaces the ones it has; changes at once.
+   */
+  keywords: z
+    .array(z.string().trim().min(1).max(MAX_KEYWORD, `Keywords are up to ${MAX_KEYWORD} characters`))
+    .max(MAX_KEYWORDS, `Up to ${MAX_KEYWORDS} keywords`)
+    .transform((keywords) => keywords.filter((k, i) => keywords.findIndex((other) => other.toLowerCase() === k.toLowerCase()) === i))
+    .optional(),
+  /** "Block search indexing": search engines are asked not to list it, and it's left out of the sitemap and llms.txt (readers still find it in the docs and their search). Changes at once. */
+  noindex: z.boolean().optional(),
 };
+
+/** A slug the team picks for an article (see customDocsSlug). */
+const customSlug = z
+  .string()
+  .trim()
+  .min(1, "Enter a slug")
+  .max(80)
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "Use lowercase letters, digits and hyphens");
 
 /** "Who can read" on tabs.*, collections.* and articles.* (see accessChange). */
 const accessFields = {
@@ -143,6 +168,10 @@ const articleSelect = {
   showUpdatedDate: true,
   listing: true,
   ...levelSelect,
+  customSlug: true,
+  description: true,
+  keywords: true,
+  noindex: true,
   order: true,
   createdAt: true,
   updatedAt: true,
@@ -172,12 +201,17 @@ function articleView({ changes, ...article }: ArticleRow, portal: string, team: 
     content: displayDoc(article),
     url: `${portal}/docs/${article.slug}`,
     /**
-     * Only for the team: who can read it (`access`, `groups`; changed at once, like the listing), and a
+     * Only for the team: who can read it (`access`, `groups`; changed at once, like the listing), its
+     * settings (`customSlug`: the team set its slug; `description`, `keywords`, `noindex`), and a
      * published article's saved changes that readers don't see yet (null if there are none), until
      * articles.publishChanges or articles.discardChanges.
      */
     ...(team && {
       ...accessView(article),
+      customSlug: article.customSlug,
+      description: article.description,
+      keywords: article.keywords,
+      noindex: article.noindex,
       changes: changes && {
         title: changes.title,
         body: changes.body,
@@ -258,21 +292,60 @@ async function freeDocsSlug(
   page?: { id: string; slug: string },
 ) {
   const base = titleSlug(text, kind);
-  // Ids are unique across the three tables (cuids), so `page` needs no kind.
-  const where = { projectId, slug: { startsWith: base }, ...(page && { id: { not: page.id } }) };
-  const select = { slug: true } as const;
-  const taken = [
-    ...(await tx.docsTab.findMany({ where, select })),
-    ...(await tx.collection.findMany({ where, select })),
-    ...(await tx.article.findMany({ where: { ...where, deletedAt: null }, select })),
-  ];
-  // "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
-  // reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
-  const used = new Set([...(kind === "article" ? ["new", "insights", "api"] : []), ...taken.map((row) => row.slug)]);
+  const taken = await docsSlugsTaken(tx, projectId, { startsWith: base }, page);
+  const used = new Set([...(kind === "article" ? RESERVED_ARTICLE_SLUGS : []), ...taken.map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
   }
+  return claimDocsSlug(tx, projectId, candidate, kind, page);
+}
+
+/**
+ * "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
+ * reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
+ */
+const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api"];
+
+/** The tabs, collections and live articles in the project (but `page`) whose slug matches `slug`, with their names. */
+async function docsSlugsTaken(tx: Prisma.TransactionClient, projectId: string, slug: Prisma.StringFilter | string, page?: { id: string }) {
+  // Ids are unique across the three tables (cuids), so `page` needs no kind.
+  const where = { projectId, slug, ...(page && { id: { not: page.id } }) };
+  return [
+    ...(await tx.docsTab.findMany({ where, select: { slug: true, name: true } })).map((tab) => ({ ...tab, kind: "the tab" })),
+    ...(await tx.collection.findMany({ where, select: { slug: true, name: true } })).map((c) => ({ ...c, kind: "the collection" })),
+    ...(await tx.article.findMany({ where: { ...where, deletedAt: null }, select: { slug: true, title: true } })).map((a) => ({
+      slug: a.slug,
+      name: a.title,
+      kind: "the article",
+    })),
+  ];
+}
+
+/**
+ * `slug`, as the team picked it for an article (`page`, when it has one): unlike freeDocsSlug, never
+ * another one. Refused when it's reserved or a tab, collection or other live article has it. Like
+ * freeDocsSlug, call it with the project locked; redirects follow the same way.
+ */
+async function customDocsSlug(tx: Prisma.TransactionClient, projectId: string, slug: string, page?: { id: string; slug: string }) {
+  if (RESERVED_ARTICLE_SLUGS.includes(slug)) {
+    throw new OperationError(400, "invalid_input", `“${slug}” is reserved; pick another`);
+  }
+  const [taken] = await docsSlugsTaken(tx, projectId, slug, page);
+  if (taken) {
+    throw new OperationError(409, "conflict", `That address is taken by ${taken.kind} “${taken.name}”`);
+  }
+  return claimDocsSlug(tx, projectId, slug, "article", page);
+}
+
+/** Gives a page `candidate` (free, under the lock): a redirect with it goes, and `page`'s old slug redirects to it. */
+async function claimDocsSlug(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  candidate: string,
+  kind: "tab" | "collection" | "article",
+  page?: { id: string; slug: string },
+) {
   await tx.docsRedirect.deleteMany({ where: { projectId, slug: candidate } });
   if (page && page.slug !== candidate) {
     const to = {
@@ -359,7 +432,7 @@ async function recordRevision(tx: Prisma.TransactionClient, articleId: string, a
 async function lockedArticle(tx: Prisma.TransactionClient, article: { id: string; slug: string }) {
   const current = await tx.article.findFirst({
     where: { id: article.id, deletedAt: null },
-    select: { slug: true, title: true, publishedAt: true, collectionId: true },
+    select: { slug: true, customSlug: true, title: true, publishedAt: true, collectionId: true },
   });
   if (!current) {
     throw new OperationError(404, "not_found", `There's no article “${article.slug}”`);
@@ -409,9 +482,10 @@ async function applyChanges(tx: Prisma.TransactionClient, articleId: string, pub
 
 /**
  * Saves changes to a live article and records them as a revision. Call it with the project locked
- * (lockProject). A draft's text changes at once, and its slug follows its title. A published one
- * keeps its slug, and its title, text and collection wait as unpublished changes (unless `publish`,
- * which makes them live with any saved before); its listing, who can read it and "Updated" setting change at once.
+ * (lockProject). A draft's text changes at once, and its slug follows its title (unless the team set
+ * it). A published one keeps its slug, and its title, text and collection wait as unpublished changes
+ * (unless `publish`, which makes them live with any saved before); its listing, who can read it,
+ * "Updated" setting and settings (a slug the team sets, `newSlug`; description, keywords, noindex) change at once.
  */
 async function saveChanges(
   tx: Prisma.TransactionClient,
@@ -425,11 +499,16 @@ async function saveChanges(
     showUpdatedDate?: boolean;
     listing?: ArticleListing;
     access?: Awaited<ReturnType<typeof accessChange>>;
+    /** A slug the team sets; null: back to one from the title (only a draft's then changes). */
+    newSlug?: string | null;
+    description?: string;
+    keywords?: string[];
+    noindex?: boolean;
   },
   publish = false,
 ) {
   const current = await lockedArticle(tx, article);
-  const { title, text, collectionId, showUpdatedDate, listing, access } = changes;
+  const { title, text, collectionId, showUpdatedDate, listing, access, newSlug, description, keywords, noindex } = changes;
   const version = {
     ...(title !== undefined && { title }),
     ...(text && { body: text.text, content: text.doc }),
@@ -439,7 +518,16 @@ async function saveChanges(
     ...(showUpdatedDate !== undefined && { showUpdatedDate }),
     ...(listing !== undefined && { listing }),
     ...(access && { access: access.access, noAccess: access.noAccess, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
+    ...(description !== undefined && { description }),
+    ...(keywords !== undefined && { keywords }),
+    ...(noindex !== undefined && { noindex }),
   };
+  const page = { id: article.id, slug: current.slug };
+  if (newSlug) {
+    Object.assign(data, { customSlug: true, slug: await customDocsSlug(tx, projectId, newSlug, page) });
+  } else if (newSlug === null) {
+    data.customSlug = false;
+  }
   if (current.publishedAt) {
     if (Object.keys(version).length > 0) {
       await keepChanges(tx, article.id, version);
@@ -450,10 +538,12 @@ async function saveChanges(
   } else {
     const retitled = title !== undefined && title !== current.title;
     const moved = collectionId !== undefined && collectionId !== current.collectionId;
+    // Its slug follows its title, unless the team set it (now, or before and not turned off).
+    const followsTitle = newSlug === null ? current.customSlug || retitled : newSlug === undefined && !current.customSlug && retitled;
     Object.assign(
       data,
       version,
-      retitled && { slug: await freeDocsSlug(tx, projectId, title, "article", { id: article.id, slug: current.slug }) },
+      followsTitle && { slug: await freeDocsSlug(tx, projectId, title ?? current.title, "article", page) },
       moved && { order: await lastArticle(tx, projectId, collectionId) },
     );
   }
@@ -572,12 +662,17 @@ export const searchArticles = defineOperation({
 export const createArticle = defineOperation({
   name: "articles.create",
   summary:
-    "Write a docs article (a draft until it's published); its slug comes from the title. `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`), and `noAccess` what people it isn't for see of it (`inherit`, the default: as its collection; `lock`: its title with a lock, never its text; or `hide`)",
+    "Write a docs article (a draft until it's published); its slug comes from the title, unless you set one (`slug`: lowercase letters, digits and hyphens; refused if it's taken, never changed). `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`), and `noAccess` what people it isn't for see of it (`inherit`, the default: as its collection; `lock`: its title with a lock, never its text; or `hide`). `description`, `keywords` and `noindex` as in articles.update",
   method: "POST",
   path: "/articles",
   scope: "write",
   access: "team",
-  input: z.object({ ...articleFields, ...accessFields }),
+  input: z.object({
+    ...articleFields,
+    ...accessFields,
+    /** The end of its URL (/docs/<slug>) instead of one from the title: lowercase letters, digits and hyphens. */
+    slug: customSlug.optional(),
+  }),
   example: { title: "Getting started", body: "Create a board, then share your portal.", collection: "basics" },
   run: async ({ actor, projectId }, input) => {
     // Before anything is written: a lookup failing after would fail a request that did its work.
@@ -591,7 +686,9 @@ export const createArticle = defineOperation({
         const created = await tx.article.create({
           data: {
             projectId,
-            slug: await freeDocsSlug(tx, projectId, input.title, "article"),
+            ...(input.slug
+              ? { slug: await customDocsSlug(tx, projectId, input.slug), customSlug: true }
+              : { slug: await freeDocsSlug(tx, projectId, input.title, "article") }),
             title: input.title,
             body: text.text,
             content: text.doc,
@@ -600,6 +697,9 @@ export const createArticle = defineOperation({
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
             ...(access && { access: access.access, noAccess: access.noAccess, groups: { create: access.groups ?? [] } }),
+            description: input.description,
+            keywords: input.keywords,
+            noindex: input.noindex,
             createdById: authorOf(actor),
           },
           select: articleSelect,
@@ -616,7 +716,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create) and showUpdatedDate change at once",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it and what the rest see (`access`, `groups` and `noAccess`, as in articles.create), showUpdatedDate and its settings change at once: `newSlug` sets the end of its URL (as `slug` in articles.create; on a published one too, and the old address redirects), null goes back to one from the title (a draft's follows it again; a published one keeps the one it has); `description` (the meta description; empty: from the text), `keywords` (searched like the text) and `noindex` (block search indexing)",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -626,6 +726,8 @@ export const updateArticle = defineOperation({
     ...articleFields,
     ...accessFields,
     title: articleFields.title.optional(),
+    /** A new slug, set by you (see articles.create's `slug`); null: back to one from the title. */
+    newSlug: customSlug.nullable().optional(),
     /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
     publish: z.boolean().optional(),
   }),
@@ -651,12 +753,17 @@ export const updateArticle = defineOperation({
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
             access: await accessChange(tx, projectId, input),
+            newSlug: input.newSlug,
+            description: input.description,
+            keywords: input.keywords,
+            noindex: input.noindex,
           },
           input.publish,
         );
       }),
     );
-    if (updated.publishedAt && input.publish) {
+    // Keywords are embedded with the text (the job skips an article whose embedded text is the same).
+    if (updated.publishedAt && (input.publish || input.keywords !== undefined)) {
       await indexArticle(updated.id);
     }
     return articleView(updated, portal, true);
@@ -1412,17 +1519,20 @@ export const updateTab = defineOperation({
 /**
  * Before tab `tabId` stops governing them (deleted, or no longer first): its top-level collections, or
  * the articles in no collection, that inherit take its "Who can read", so a tab change never opens
- * what it kept closed (it may narrow); and those that inherit "People without access" take that, so
- * it never changes what the rest see of them either. Call it with the project locked.
+ * what it kept closed (it may narrow); and those that inherit "People without access" take what it
+ * came to (a tab that inherits hides) when the tab they go under (`to`; null: none) comes to
+ * something else, so it never changes what the rest see of them either. Call it with the project locked.
  */
-async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, tabId: string, what: "collections" | "uncollected") {
+async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, tabId: string, what: "collections" | "uncollected", to: string | null) {
   const tab = await tx.docsTab.findUniqueOrThrow({ where: { id: tabId }, select: { access: true, noAccess: true, groups: { select: { groupId: true } } } });
-  if (tab.noAccess !== "INHERIT") {
+  const next = to ? await tx.docsTab.findUniqueOrThrow({ where: { id: to }, select: { noAccess: true } }) : null;
+  const shown = (noAccess: NoAccess | undefined) => (noAccess === "LOCK" ? "LOCK" : "HIDE");
+  if (shown(tab.noAccess) !== shown(next?.noAccess)) {
     const where = { projectId, noAccess: "INHERIT" as const };
     if (what === "collections") {
-      await tx.collection.updateMany({ where: { ...where, tabId, parentId: null }, data: { noAccess: tab.noAccess } });
+      await tx.collection.updateMany({ where: { ...where, tabId, parentId: null }, data: { noAccess: shown(tab.noAccess) } });
     } else {
-      await tx.article.updateMany({ where: { ...where, collectionId: null }, data: { noAccess: tab.noAccess } });
+      await tx.article.updateMany({ where: { ...where, collectionId: null }, data: { noAccess: shown(tab.noAccess) } });
     }
   }
   if (tab.access === "INHERIT") {
@@ -1458,7 +1568,7 @@ export const reorderTab = defineOperation({
         const order = placed(tabs, id, input.position);
         // The first tab governs the articles in no collection: a new one mustn't open them.
         if (tabs[0] && order[0] !== tabs[0].id) {
-          await keepTabAccess(tx, projectId, tabs[0].id, "uncollected");
+          await keepTabAccess(tx, projectId, tabs[0].id, "uncollected", order[0] ?? null);
         }
         await renumber(tx, "docs_tab", order);
         return tx.docsTab.findUniqueOrThrow({ where: { id }, select: tabSelect });
@@ -1489,9 +1599,9 @@ export const deleteTab = defineOperation({
       const inTab = (tabId: string | null) =>
         tx.collection.findMany({ where: siblingsWhere(projectId, null, tabId), orderBy: siblingOrder, select: { id: true } });
       // What it governed keeps who can read it: its collections, and (the first tab) the articles in none.
-      await keepTabAccess(tx, projectId, id, "collections");
+      await keepTabAccess(tx, projectId, id, "collections", target?.id ?? null);
       if (at === 0) {
-        await keepTabAccess(tx, projectId, id, "uncollected");
+        await keepTabAccess(tx, projectId, id, "uncollected", null);
       }
       const moving = await inTab(id);
       if (moving.length > 0) {

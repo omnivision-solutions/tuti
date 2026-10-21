@@ -143,14 +143,20 @@ export async function answerSections(
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
 async function wordMatches(projectId: string, query: string, limit: number, reader: Reader): Promise<DocsSearchResult[]> {
-  // The passage is a piece of the text; "…" marks where it was cut.
-  const rows = await prisma.$queryRaw<{ slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean }[]>`
-    SELECT a.slug, a.title, h.passage,
+  // The passage is a piece of the text; "…" marks where it was cut. Its title and keywords match too
+  // (keywords: words readers use that the text doesn't); when the text doesn't, the team's description stands in for it.
+  const rows = await prisma.$queryRaw<
+    { slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean; description: string; inText: boolean }[]
+  >`
+    SELECT a.slug, a.title, h.passage, a.description, to_tsvector('english', a.body) @@ q AS "inText",
       left(a.body, length(h.passage)) <> h.passage AS "cutStart",
       right(a.body, length(h.passage)) <> h.passage AS "cutEnd"
     FROM article a
     CROSS JOIN websearch_to_tsquery('english', ${query}) q
-    CROSS JOIN LATERAL (SELECT setweight(to_tsvector('english', a.title), 'A') || to_tsvector('english', a.body) AS words) d
+    CROSS JOIN LATERAL (
+      SELECT setweight(to_tsvector('english', a.title), 'A') || setweight(to_tsvector('english', coalesce(array_to_string(a.keywords, ' '), '')), 'B')
+        || to_tsvector('english', a.body) AS words
+    ) d
     CROSS JOIN LATERAL (
       SELECT ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""') AS passage
     ) h
@@ -158,10 +164,10 @@ async function wordMatches(projectId: string, query: string, limit: number, read
       AND ${visibleArticleSql(reader)}
     ORDER BY ts_rank(d.words, q) DESC, a.title
     LIMIT ${limit}`;
-  return rows.map(({ slug, title, passage, cutStart, cutEnd }) => ({
+  return rows.map(({ slug, title, passage, cutStart, cutEnd, description, inText }) => ({
     slug,
     title,
-    snippet: snippet(`${cutStart ? "…" : ""}${passage.trim()}${cutEnd ? "…" : ""}`),
+    snippet: snippet(!inText && description ? description : `${cutStart ? "…" : ""}${passage.trim()}${cutEnd ? "…" : ""}`),
   }));
 }
 

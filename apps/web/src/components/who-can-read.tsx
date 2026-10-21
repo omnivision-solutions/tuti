@@ -4,13 +4,9 @@ import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { PREVIEW } from "@/lib/portal-base";
 import { type Access, ANYONE, type WithoutAccess } from "@/lib/read-access";
 
 export type GroupOption = { key: string; name: string };
-
-/** "Preview as a reader": page `path` on the portal (`portal`: its address) as people signed out see it. */
-export const previewUrl = ({ portal }: { portal: string }, path: string) => `${portal}${path}?${new URLSearchParams({ [PREVIEW.param]: PREVIEW.value })}`;
 
 /**
  * "Who can read" a tab, collection or article, as form fields (`access`, and `groups` for the ticked

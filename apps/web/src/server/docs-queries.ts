@@ -156,7 +156,8 @@ export type DocsTabView = {
  * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
- * reader: the docs pages, their tabs row and their tree share it.
+ * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
+ * the articles whose team blocked search indexing.
  *
  * What isn't for this reader is left out, unless "People without access" shows it with a lock
  * (`locks`): then it's there by its title (a tab's or collection's name and icon) with `locked`,
@@ -164,9 +165,10 @@ export type DocsTabView = {
  * false` (search engines and AI tools get no locks). `signedIn`: whether this reader is signed in,
  * for what a locked page tells them.
  */
-export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; locks?: boolean } = {}) => {
+export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean; locks?: boolean } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
-  const articleSelect = { where: listedArticle, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
+  const listed = { ...listedArticle, ...(options.indexable && { noindex: false }) };
+  const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
@@ -184,7 +186,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         articles: articleSelect,
       },
     }),
-    prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
+    prisma.article.findMany({ ...articleSelect, where: { ...listed, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: tabOrder,
@@ -424,6 +426,8 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
       publishedAt: true,
       showUpdatedDate: true,
       listing: true,
+      description: true,
+      noindex: true,
       revisedAt: true,
       collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },
@@ -453,8 +457,19 @@ const articleAt = cache(async (projectSlug: string, slug: string) => {
   const isRestricted = restricted(levels);
   const reader = isRestricted ? await currentReader(article.projectId) : null;
   if (!readable(reader, ...levels)) {
+    if (!locks(...levels)) {
+      return null;
+    }
+    // Its collection and tab only if this reader sees them listed (readable, or locked too): a hidden
+    // one's name stays hidden.
+    const above = levels.slice(0, -1);
+    const shown = (chain: typeof levels) => readable(reader, ...chain) || locks(...chain);
+    const locked = {
+      collection: shown(above) ? where.collection : null,
+      tab: shown(above.slice(0, 1)) ? where.tab : null,
+    };
     // Picked field by field: nothing of what it says.
-    return locks(...levels) ? { kind: "locked" as const, locked: { slug, title: article.title, ...where, signedIn: reader?.signedIn ?? false } } : null;
+    return { kind: "locked" as const, locked: { slug, title: article.title, ...locked, signedIn: reader?.signedIn ?? false } };
   }
   // "Updated <date>" only once changes went live after it was published, unless the team turned it off.
   const updatedAt = article.showUpdatedDate && revisedAt && article.publishedAt && revisedAt > article.publishedAt ? revisedAt : null;

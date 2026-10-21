@@ -6,6 +6,8 @@ import { mediaPublicUrl } from "@tuti/shared/storage";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ArticleSettings } from "@/components/article-settings";
+import { previewUrl } from "@/lib/portal-base";
 import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/line-diff";
@@ -37,6 +39,10 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       showUpdatedDate: true,
       listing: true,
       ...levelSelect,
+      customSlug: true,
+      description: true,
+      keywords: true,
+      noindex: true,
       collection: { select: { slug: true, name: true } },
       changes: { select: { title: true, body: true, content: true, updatedAt: true, collection: { select: { slug: true, name: true } } } },
     },
@@ -48,6 +54,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const edited = article.changes ?? article;
   const url = `${await portalAddress(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
+  const [collections, access] = await Promise.all([collectionOptions(membership.project.id), accessChoices(membership.project.id)]);
+  // "Who can read" inherits from its collection (the published one: readers' access follows it), or (in none) from the first tab.
+  const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
 
   return (
     <>
@@ -79,6 +88,27 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
             <Link href={`/app/${slug}/docs/${article.slug}/history`} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
+            <ArticleSettings
+              projectSlug={slug}
+              article={{
+                slug: article.slug,
+                listing,
+                access: fromReadAccess(article.access),
+                groups: claimsOf(article),
+                noAccess: fromNoAccess(article.noAccess),
+                customSlug: article.customSlug,
+                description: article.description,
+                keywords: article.keywords,
+                noindex: article.noindex,
+              }}
+              groups={access.groups}
+              inherit={{
+                label: parent ? `Inherit from ${parent.name}` : "Inherit",
+                description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
+                shows: access.shows[parent?.slug ?? ""] ?? "hide",
+              }}
+              preview={article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined}
+            />
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} />
           </>
         }
@@ -102,14 +132,9 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           content: displayDoc(edited) as Doc,
           collection: edited.collection?.slug ?? null,
           showUpdatedDate: article.showUpdatedDate,
-          listing,
-          access: fromReadAccess(article.access),
-          groups: claimsOf(article),
-          noAccess: fromNoAccess(article.noAccess),
           published: article.publishedAt !== null,
         }}
-        collections={await collectionOptions(membership.project.id)}
-        access={await accessChoices(membership.project.id)}
+        collections={collections}
         mediaBaseUrl={mediaPublicUrl()}
       />
     </>

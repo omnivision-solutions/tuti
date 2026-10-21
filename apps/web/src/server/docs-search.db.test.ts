@@ -94,6 +94,26 @@ describe("chunks", () => {
     expect(openai.inputs.at(-1)).toBe(articleChunkText("Adding teammates", { heading: "Who can invite", text: "Only owners." }));
   });
 
+  test("keywords are embedded with the first section, and again when they change on a published article", async () => {
+    const slug = await write("Inviting your team", inviting, { draft: true });
+    await call(updateArticle, as(owner), { slug, keywords: ["add a colleague", "seats"] });
+    await call(publishArticle, as(owner), { slug });
+    const [first, ...rest] = await chunks(slug);
+    expect(openai.inputs).toEqual([
+      articleChunkText("Inviting your team", first!, ["add a colleague", "seats"]),
+      ...rest.map((section) => articleChunkText("Inviting your team", section)),
+    ]);
+    expect(openai.inputs[0]).toBe("Inviting your team\n\nEveryone starts alone.\n\nKeywords: add a colleague, seats");
+
+    // At once, without publishing: they aren't part of the text's unpublished changes.
+    await call(updateArticle, as(owner), { slug, keywords: ["colleague"] });
+    expect(openai.inputs.slice(3)).toContain(articleChunkText("Inviting your team", first!, ["colleague"]));
+    // The same ones again: nothing to embed.
+    const embedded = openai.inputs.length;
+    await call(updateArticle, as(owner), { slug, keywords: ["colleague"] });
+    expect(openai.inputs).toHaveLength(embedded);
+  });
+
   test("unpublishing or deleting an article removes its chunks", async () => {
     const first = await write("Inviting your team", inviting);
     const second = await write("Billing", "Pay by card.");
@@ -244,6 +264,19 @@ describe("search without an OpenAI key", () => {
     expect(results[1]!.snippet.length).toBeLessThan(250);
 
     expect(await search("refunds")).toEqual([]);
+  });
+
+  test("keywords match like the text; when only they do, the description stands in for the passage", async () => {
+    const slug = await write("Billing", "Plans are billed monthly.");
+    expect(await search("receipt")).toEqual([]);
+    await call(updateArticle, as(owner), { slug, keywords: ["receipts", "VAT number"] });
+    expect(await search("receipt")).toEqual([expect.objectContaining({ slug, snippet: "Plans are billed monthly." })]);
+    expect((await search("vat")).map((r) => r.slug)).toEqual([slug]);
+
+    await call(updateArticle, as(owner), { slug, description: "How we charge, and where to find your receipts." });
+    expect(await search("receipt")).toEqual([expect.objectContaining({ snippet: "How we charge, and where to find your receipts." })]);
+    // Where the text matches, the passage from it.
+    expect(await search("monthly")).toEqual([expect.objectContaining({ snippet: "Plans are billed monthly." })]);
   });
 
   test("drafts and other projects' articles never come back", async () => {

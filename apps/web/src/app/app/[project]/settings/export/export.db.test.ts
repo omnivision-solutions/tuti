@@ -39,7 +39,11 @@ async function seed() {
     data: {
       projectId,
       slug: "inviting-your-team",
+      customSlug: true,
       title: 'Inviting "your" team',
+      description: "Add teammates to your project.",
+      keywords: ["add teammates", "Seats"],
+      noindex: true,
       collectionId: collection.id,
       publishedAt: new Date("2026-03-01T10:00:00Z"),
       updatedAt: new Date("2026-03-02T10:00:00Z"),
@@ -111,6 +115,10 @@ test("owners download everything as Markdown with front matter, drafts included,
       "updatedAt: 2026-03-02T10:00:00.000Z",
       'collection: "Getting started"',
       "order: 0",
+      'description: "Add teammates to your project."',
+      'keywords: ["add teammates","Seats"]',
+      "noindex: true",
+      "customSlug: true",
       "---",
       "",
       "Owners can invite.",
@@ -119,7 +127,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "",
     ].join("\n"),
   );
-  expect(files["docs/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\norder: 0\n---\n\nNot yet\.\n$/);
+  expect(files["docs/secret-draft.md"]).toMatch(/^---\ntitle: "Secret draft"\nstatus: "draft"\nlisting: "everywhere"\npublishedAt: null\nupdatedAt: .+\ncollection: null\norder: 0\ndescription: ""\nkeywords: \[\]\nnoindex: false\n---\n\nNot yet\.\n$/);
 
   expect(files["changelog/2-dark-mode.md"]).toBe(
     '---\ntitle: "Dark mode"\nstatus: "published"\npublishedAt: 2026-03-05T10:00:00.000Z\ntags: ["new","improved"]\ncompletes: [7]\n---\n\nIt\'s here.\n',

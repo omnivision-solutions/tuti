@@ -207,6 +207,10 @@ const matrix: Matrix = {
       allowed: "MEMBER",
       call: (slug) => docs.saveArticle(slug, "matrix-draft", {}, form({ title: "Renamed by the matrix", collection: "basics" })),
     },
+    saveArticleSettings: {
+      allowed: "MEMBER",
+      call: (slug) => docs.saveArticleSettings(slug, "matrix-draft", {}, form({ listing: "unlisted", keywords: "matrix", description: "By the matrix" })),
+    },
     publishArticle: { allowed: "MEMBER", call: (slug) => docs.publishArticle(slug, "matrix-draft") },
     publishArticleChanges: { allowed: "MEMBER", call: (slug) => docs.publishArticleChanges(slug, "matrix-article") },
     discardArticleChanges: { allowed: "MEMBER", call: (slug) => docs.discardArticleChanges(slug, "matrix-article") },

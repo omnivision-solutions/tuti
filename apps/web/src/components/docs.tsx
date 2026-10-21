@@ -25,8 +25,8 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { type GroupOption, previewUrl, WhoCanRead } from "@/components/who-can-read";
-import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
+import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
+import { previewUrl } from "@/lib/portal-base";
 import { keepingFields } from "@/lib/forms";
 import type { Access, WithoutAccess } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
@@ -53,30 +53,21 @@ type Article = {
   content: Doc;
   collection: string | null;
   showUpdatedDate: boolean;
-  listing: Listing;
-  access: Access;
-  /** Its groups' keys (with access "groups"). */
-  groups: string[];
-  /** "People without access". */
-  noAccess: WithoutAccess;
   published: boolean;
 };
 type CollectionOption = { slug: string; name: string };
 
-/** Writes a new article (`article` null) or edits one: title, collection, listing, who can read it and text. */
+/** Writes a new article (`article` null) or edits one: title, collection and text (its settings are in ArticleSettings). */
 export function ArticleForm({
   projectSlug,
   article,
   collections,
-  access,
   mediaBaseUrl,
   defaultTitle,
 }: {
   projectSlug: string;
   article: Article | null;
   collections: CollectionOption[];
-  /** For "Who can read": the project's groups, and what each collection (or the first tab, for none) lets read. */
-  access: AccessChoices;
   mediaBaseUrl: string | null;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
@@ -89,10 +80,7 @@ export function ArticleForm({
     return result;
   }, {});
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
-  const [listing, setListing] = useState<Listing>(article?.listing ?? "everywhere");
   const [collection, setCollection] = useState<string | null>(article?.collection ?? null);
-  // It inherits from its collection, or (in none) from the first tab.
-  const parent = collection === null ? access.firstTab : collections.find((c) => c.slug === collection);
 
   return (
     <form {...keepingFields(action)}>
@@ -126,36 +114,6 @@ export function ArticleForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field>
-          <FieldLabel id="article-listing-label">Listing</FieldLabel>
-          <Select name="listing" items={LISTING_LABELS} value={listing} onValueChange={(value) => setListing(value as Listing)}>
-            <SelectTrigger className="w-full sm:w-64" aria-labelledby="article-listing-label" aria-describedby="article-listing-description">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LISTINGS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {LISTING_LABELS[value]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <FieldDescription id="article-listing-description">{LISTING_DESCRIPTIONS[listing]}</FieldDescription>
-        </Field>
-        <WhoCanRead
-          id="article-access"
-          projectSlug={projectSlug}
-          groups={access.groups}
-          inherit={{
-            label: parent ? `Inherit from ${parent.name}` : "Inherit",
-            description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
-            shows: access.shows[parent?.slug ?? ""] ?? "hide",
-          }}
-          defaultAccess={article?.access}
-          defaultGroups={article?.groups}
-          defaultNoAccess={article?.noAccess}
-          preview={article?.published ? previewUrl(access, `/docs/${article.slug}`) : undefined}
-        />
         <Field>
           <FieldLabel id="article-body-label">Article</FieldLabel>
           <RichEditor

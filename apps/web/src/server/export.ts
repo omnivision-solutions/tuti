@@ -94,6 +94,10 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         listing: true,
         updatedAt: true,
         order: true,
+        description: true,
+        keywords: true,
+        noindex: true,
+        customSlug: true,
         collection: { select: { id: true, name: true, icon: true } },
       },
     }),
@@ -118,6 +122,12 @@ async function* exportFiles(project: { id: string; name: string }, exportedAt: D
         ...(article.collection?.icon && { collectionIcon: article.collection.icon }),
         // Its place in the collection (or among the articles in none): 0 first.
         order: article.order,
+        // Its settings: the meta description (empty: from the text), keywords searched like the text, "Block search indexing".
+        description: article.description,
+        keywords: article.keywords,
+        noindex: article.noindex,
+        // The team set its slug (the file's name), rather than it coming from the title.
+        ...(article.customSlug && { customSlug: true }),
       }) + body(article),
     ];
   }

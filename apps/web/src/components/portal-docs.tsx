@@ -215,11 +215,14 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
   }
   const { article } = page;
   const text = article.body.replace(/\s+/g, " ").trim();
+  // The team's meta description, else the text's first lines.
+  const description = article.description || (text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text);
   return {
     title: `${article.title} · ${article.project.name}`,
-    description: text.length > 160 ? `${text.slice(0, 157).trimEnd()}…` : text,
-    // Unlisted: for people with the link, not search engines.
-    ...(article.listing === "UNLISTED" && { robots: { index: false } }),
+    description,
+    openGraph: { title: article.title, description },
+    // Unlisted: for people with the link, not search engines; nor one whose team blocked search indexing.
+    ...((article.listing === "UNLISTED" || article.noindex) && { robots: { index: false } }),
   };
 }
 

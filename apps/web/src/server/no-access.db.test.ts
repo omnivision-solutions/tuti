@@ -14,7 +14,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { docsContents, docsHome, docsPage, everyCollection } from "./docs-queries";
-import { saveArticle } from "./docs";
+import { saveArticleSettings } from "./docs";
 import { answerSections, searchForReader } from "./docs-search";
 import {
   createArticle,
@@ -212,6 +212,19 @@ describe("an article shown with a lock", () => {
     expect(widget).not.toContain(SECRET);
   });
 
+  test("its page names only the collection and tab above it that the reader sees listed", async () => {
+    await set("collection", "reference", "GROUPS", "HIDE", ["enterprise"]);
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked", article: { collection: null, tab: "api" } });
+    expect(await pageText("endpoints")).not.toContain("Reference");
+    await set("collection", "reference", "GROUPS", "LOCK", ["enterprise"]);
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked", article: { collection: { name: "Reference" } } });
+    // A hidden tab isn't named; the collection's own lock still shows its name (as its page does).
+    await set("tab", "api", "GROUPS", "HIDE", ["enterprise"]);
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked", article: { collection: { name: "Reference" }, tab: null } });
+    await set("collection", "reference", "INHERIT");
+    expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked", article: { collection: null, tab: null } });
+  });
+
   test("readers it's for, and the team, read it as before", async () => {
     actAs(await signUp("Stranger"));
     expect(await listed()).toEqual(["contact", "endpoints", "getting-started"]);
@@ -337,19 +350,31 @@ describe("the operations: noAccess on tabs.*, collections.* and articles.*", () 
     await expect(call(updateArticle, as(), { slug: "endpoints", noAccess: "show" as never })).rejects.toMatchObject({ status: 400 });
   });
 
-  test("the editor's form saves both choices", async () => {
+  test("the article's settings dialog saves both choices", async () => {
     actAs(owner);
     const form = new FormData();
-    form.set("title", "Endpoints");
-    form.set("collection", "reference");
     form.set("listing", "everywhere");
-    form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Endpoints." }] }] }));
-    form.set("showUpdatedDate", "on");
     form.set("access", "groups");
     form.append("groups", "enterprise");
     form.set("noAccess", "lock");
-    expect(await saveArticle(project.slug, "endpoints", {}, form)).toEqual({});
+    expect(await saveArticleSettings(project.slug, "endpoints", {}, form)).toEqual({});
     expect(await call(getArticle, as(), { slug: "endpoints" })).toMatchObject({ access: "groups", groups: ["enterprise"], noAccess: "lock" });
+  });
+
+  test("what a tab that inherits hid stays hidden under a tab that locks: deleting it, or a new first tab", async () => {
+    await set("tab", "guides", "INHERIT", "LOCK");
+    await set("collection", "reference", "SIGNED_IN");
+    await call(deleteTab, as(), { slug: "api" });
+    expect(await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "reference" }, select: { noAccess: true } })).toEqual({ noAccess: "HIDE" });
+    expect(await docsPage(project.slug, "reference")).toBeNull();
+    expect(await docsPage(project.slug, "endpoints")).toBeNull();
+
+    await set("article", "contact", "SIGNED_IN");
+    await set("tab", "guides", "INHERIT");
+    await call(createTab, as(), { name: "More" });
+    await set("tab", "more", "INHERIT", "LOCK");
+    await call(reorderTab, as(), { slug: "more", position: 0 });
+    expect(await docsPage(project.slug, "contact")).toBeNull();
   });
 
   test("deleting or reordering a tab copies what it shows the rest onto what it stops governing, as it does who can read", async () => {
