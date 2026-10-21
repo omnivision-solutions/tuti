@@ -151,6 +151,8 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
     },
+    // Asks the local site, which has no licence server (LICENSE_SERVER_URL below): "unreachable".
+    checkBrandingLicense: { allowed: "ADMIN", call: (slug) => branding.checkBrandingLicense(slug) },
   },
   changelog: {
     saveChangelogEntry: {
@@ -491,6 +493,8 @@ beforeAll(async () => {
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
   site = await startSiteFake();
+  // Licence checks ask the local site, never tuti.so: it has no licence server (its own 404), so "unreachable".
+  vi.stubEnv("LICENSE_SERVER_URL", site.origin);
   const [OWNER, ADMIN, MEMBER, outsider, ssoUser] = await Promise.all(
     ["Owner", "Admin", "Member", "Outsider", "SSO user"].map((name) => signUp(name)),
   );

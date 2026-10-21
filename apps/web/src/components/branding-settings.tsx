@@ -5,17 +5,18 @@ import { useActionState, useId, useState } from "react";
 import { toast } from "sonner";
 
 import { LinkRows } from "@/components/widget-settings";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { keepingFields } from "@/lib/forms";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
-import { saveBranding } from "@/server/branding";
+import { checkBrandingLicense, saveBranding } from "@/server/branding";
 import type { FormState } from "@/server/form-state";
 
 type Image = { id: string; url: string } | null;
 
-/** How the portal and its docs look: logos, favicon, colour, header and footer links, "Powered by" (see branding.update). */
+/** How the portal and its docs look: logos, favicon, colour, header and footer links, "Powered by" (see branding.update), which needs a licence to hide. */
 export function BrandingSettings({
   projectSlug,
   logo,
@@ -26,6 +27,8 @@ export function BrandingSettings({
   headerLinks,
   footerLinks,
   poweredBy,
+  licensedUntil,
+  buyLicenseUrl,
 }: {
   projectSlug: string;
   logo: Image;
@@ -37,6 +40,10 @@ export function BrandingSettings({
   headerLinks: { label: string; url: string }[];
   footerLinks: { label: string; url: string }[];
   poweredBy: boolean;
+  /** When the project's licence expires; null without one. */
+  licensedUntil: Date | null;
+  /** tuti.so/license for this installation and project. */
+  buyLicenseUrl: string;
 }) {
   const [picked, setPicked] = useState(color);
   const [uploading, setUploading] = useState(0);
@@ -115,10 +122,7 @@ export function BrandingSettings({
           description="Up to 5 links in the footer, such as your terms and privacy policy."
           links={footerLinks}
         />
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="poweredBy" defaultChecked={poweredBy} className="size-4 accent-primary" />
-          Show &quot;Powered by tuti&quot; in the footer
-        </label>
+        <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} />
         {state.error && <FieldError>{state.error}</FieldError>}
         <Button type="submit" disabled={pending || uploading > 0} className="self-end">
           {pending ? "Saving…" : "Save branding"}
@@ -203,6 +207,120 @@ function ImageField({
         </p>
       )}
       {status && "error" in status && <FieldError>{status.error}</FieldError>}
+    </Field>
+  );
+}
+
+const CHECKED: Record<"not_licensed" | "in_use" | "unreachable" | "busy", string> = {
+  not_licensed: "No licence for this project yet. Once you've bought one, check again.",
+  in_use: "This project's licence is in use on another installation of Tuti. Email hello@tuti.so to move it here.",
+  unreachable: "Couldn't reach tuti.so. Try again in a few minutes.",
+  busy: "Checked a moment ago. Try again in a minute.",
+};
+
+const untilDate = (date: Date) => date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+/**
+ * "Powered by tuti" in the footer: on, unless the project has a licence. Without one, unticking it
+ * opens a dialog instead: why the badge matters, where to buy a licence, and Check now.
+ */
+function PoweredByField({
+  projectSlug,
+  poweredBy,
+  licensedUntil: initial,
+  buyLicenseUrl,
+}: {
+  projectSlug: string;
+  poweredBy: boolean;
+  licensedUntil: Date | null;
+  buyLicenseUrl: string;
+}) {
+  const [shown, setShown] = useState(poweredBy);
+  const [licensedUntil, setLicensedUntil] = useState(initial);
+  const [open, setOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const check = async () => {
+    setChecking(true);
+    setMessage(null);
+    let result: Awaited<ReturnType<typeof checkBrandingLicense>>;
+    try {
+      result = await checkBrandingLicense(projectSlug);
+    } catch {
+      setMessage(CHECKED.unreachable);
+      return;
+    } finally {
+      setChecking(false);
+    }
+    if (result.licensedUntil) {
+      setLicensedUntil(result.licensedUntil);
+      setShown(false);
+      setOpen(false);
+      toast.success(`Licensed until ${untilDate(result.licensedUntil)}. Save to hide the badge.`);
+      return;
+    }
+    setMessage(result.error ?? CHECKED[result.status === "licensed" || !result.status ? "unreachable" : result.status]);
+  };
+
+  return (
+    <Field>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          name="poweredBy"
+          checked={shown}
+          onChange={(event) => {
+            if (!event.target.checked && !licensedUntil) {
+              setMessage(null);
+              setOpen(true);
+              return;
+            }
+            setShown(event.target.checked);
+          }}
+          className="size-4 accent-primary"
+        />
+        Show &quot;Powered by tuti&quot; in the footer
+      </label>
+      <FieldDescription>
+        {licensedUntil ? `Licensed until ${untilDate(licensedUntil)}.` : "Hiding it needs a licence for this project."}
+      </FieldDescription>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Keep &quot;Powered by tuti&quot;?</DialogTitle>
+            <DialogDescription>
+              The badge is how people find Tuti. Keeping it helps us spread the word, and brings in contributors who keep
+              the project maintained.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
+          {message && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {message}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              Keep the badge
+            </Button>
+            <Button type="button" variant="outline" disabled={checking} onClick={() => void check()}>
+              {checking ? "Checking…" : "Check now"}
+            </Button>
+            <a
+              href={buyLicenseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants()}
+              // From now on, this installation checks daily whether the licence has been bought. The dialog
+              // says what this first check found (or that it failed) when they come back from tuti.so.
+              onClick={() => void check()}
+            >
+              Get a licence
+            </a>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Field>
   );
 }

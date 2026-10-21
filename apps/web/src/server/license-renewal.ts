@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 
 import packageJson from "../../package.json";
-import { installation as thisInstallation, licensedUntil, licenseNow } from "./license";
+import { installation as thisInstallation, licensedUntil, licenseNow, licenseServer } from "./license";
 
 /**
  * Installations renew each project's licence key from Tuti's licence server (tuti.so; see
@@ -23,11 +23,6 @@ const CHECK_LEASE_MS = 30_000;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type LicenseCheck = "licensed" | "not_licensed" | "in_use" | "unreachable" | "busy";
-
-/** tuti.so's renewal endpoint. LICENSE_SERVER_URL is for tests: keys from any other server don't verify. */
-function refreshUrl(): URL {
-  return new URL("/api/license/refresh", process.env.LICENSE_SERVER_URL || "https://tuti.so");
-}
 
 /**
  * Renews the project's key unless it was checked in the last `olderThan` ms, or nobody asked for a
@@ -49,7 +44,7 @@ export async function renewLicense(projectId: string, { olderThan = CHECK_LEASE_
   const installation = await thisInstallation();
   let response: Response;
   try {
-    response = await fetch(refreshUrl(), {
+    response = await fetch(new URL("/api/license/refresh", licenseServer()), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
