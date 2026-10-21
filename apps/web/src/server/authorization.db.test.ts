@@ -333,8 +333,10 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
   },
   groups: {
-    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise" })) },
+    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", claim: "enterprise" })) },
     deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
+    // Names the project's SSO users, like Settings → Groups.
+    previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, null, [{ attribute: "plan", op: "is", value: "pro" }]) },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.

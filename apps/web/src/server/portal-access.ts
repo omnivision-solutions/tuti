@@ -1,7 +1,9 @@
 import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { auth } from "@/lib/auth";
+import { inGroup, readerAttributes, storedConditions } from "@/lib/group-conditions";
 import { readerEntriesFor } from "@/lib/reader-domains";
 import type { ReaderGroups } from "@/lib/reader-groups";
 
@@ -92,24 +94,29 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 }
 
 /**
- * Which docs collections someone may read (see lib/reader-groups.ts): null for the
- * project's team (everything), the groups their latest sign-in through the project's SSO gave
- * them, or none.
+ * Which docs collections someone may read (see lib/reader-groups.ts): null for the project's team
+ * (everything), the keys of the groups their latest sign-in through the project's SSO puts them in
+ * (by its `groups` or its `attributes`, see lib/group-conditions.ts), or none (signed out, or not
+ * signed in by the project's SSO). Once per request: pages ask many times.
  */
-export async function groupsOf(projectId: string, userId: string | null | undefined): Promise<ReaderGroups> {
+export const groupsOf = cache(async (projectId: string, userId: string | null | undefined): Promise<ReaderGroups> => {
   if (!userId) {
     return [];
   }
-  const [member, sso] = await Promise.all([
+  const [member, sso, groups] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
-    prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { groups: true } }),
+    prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { groups: true, attributes: true } }),
+    prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, claim: true, conditions: true } }),
   ]);
   if (member) {
     return null;
   }
-  const groups = await prisma.readerGroup.findMany({ where: { projectId, claim: { in: sso?.groups ?? [] } }, select: { key: true } });
-  return groups.map((group) => group.key);
-}
+  if (!sso) {
+    return [];
+  }
+  const reader = { groups: sso.groups, attributes: readerAttributes(sso.attributes) };
+  return groups.filter((group) => inGroup({ claim: group.claim, conditions: storedConditions(group.conditions) }, reader)).map((group) => group.key);
+});
 
 /** The groups of whoever's reading on this request (the portal's user, or the widget's). */
 export async function readerGroups(projectId: string): Promise<ReaderGroups> {

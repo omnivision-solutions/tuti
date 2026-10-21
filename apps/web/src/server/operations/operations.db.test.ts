@@ -75,8 +75,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "tabs.delete": () => ({ slug: "docs" }),
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
-  "groups.create": () => ({ name: "Enterprise" }),
-  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: "beta-testers" }),
+  "groups.create": () => ({ name: "Enterprise", conditions: [{ attribute: "plan", op: "is_one_of", value: ["enterprise", "custom"] }] }),
+  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: null, conditions: [{ attribute: "beta", op: "is", value: "true" }] }),
   "groups.delete": () => ({ group: "beta" }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
