@@ -65,7 +65,11 @@ const collectionFields = {
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
     .transform((groups) => [...new Set(groups)]),
   /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
-  icon: z.string().trim().nullable(),
+  icon: z
+    .string()
+    .trim()
+    .transform((name) => name || null)
+    .nullable(),
 };
 
 /**

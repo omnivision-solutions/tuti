@@ -35,6 +35,13 @@ test("a collection's icon is set, changed and removed by name, and listed", asyn
   expect(await icons()).toEqual(["basics:null", "billing:credit-card"]);
 });
 
+test("an empty icon is no icon, from any caller", async () => {
+  expect(await call(createCollection, as(), { name: "Basics", icon: "  " })).toMatchObject({ icon: null });
+  await call(updateCollection, as(), { slug: "basics", icon: "rocket" });
+  expect(await call(updateCollection, as(), { slug: "basics", icon: "" })).toMatchObject({ icon: null });
+  expect(await icons()).toEqual(["basics:null"]);
+});
+
 test("an icon Lucide doesn't have is refused", async () => {
   const refused = { status: 400, code: "invalid_input", message: "No icon named “not-an-icon”" };
   await expect(call(createCollection, as(), { name: "Basics", icon: "not-an-icon" })).rejects.toMatchObject(refused);
