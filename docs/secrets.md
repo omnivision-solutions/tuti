@@ -80,8 +80,12 @@ The host (Coolify) holds only `INFISICAL_TOKEN`, `INFISICAL_DOMAIN` and
 `INFISICAL_PROJECT_ID`, never a copy of a value. Each app has its own machine identity
 (`tuti-web`, `tuti-worker`): Universal Auth, no access to the rest of the org, the
 project's Viewer role (read-only; a prod-only role would need Infisical Enterprise).
-`INFISICAL_TOKEN` is an access token of that identity. To change a value, edit it in
-Infisical and redeploy the apps that use it; there's nothing to copy.
+`INFISICAL_TOKEN` is an access token of that identity, made with a client secret
+(Universal Auth's login) and set to last 10 years (its TTL and max TTL); the client
+secret isn't kept. To replace a token (it's leaked, or it's running out): make a new
+client secret for the identity, log in with it for a new access token, put that in
+Coolify, redeploy, then revoke the old one. To change a value, edit it in Infisical and
+redeploy the apps that use it; there's nothing to copy.
 
 Infisical holds only what the apps read. The secret GitHub signs Coolify's deploy webhook
 with lives in GitHub and Coolify alone; to change it, set a new one in both.
