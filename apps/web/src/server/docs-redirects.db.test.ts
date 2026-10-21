@@ -212,12 +212,15 @@ describe("readers follow an article's old slugs", () => {
     expect(await read("beta")).toEqual(moved);
   });
 
-  test("a renamed tab's or collection's old slug isn't served yet (they have no pages)", async () => {
+  test("a renamed tab's or collection's old slug goes to its page; .md and the widget's article view don't follow it", async () => {
+    await call(publishArticle, as(), { slug: "gamma" });
     await call(createTab, as(), { name: "Guides" });
-    await call(updateTab, as(), { slug: "guides", name: "Handbook" });
-    await call(createCollection, as(), { name: "Basics" });
+    await call(createTab, as(), { name: "API" });
+    await call(createCollection, as(), { name: "Basics", tab: "api" });
+    await call(updateArticle, as(), { slug: "gamma", collection: "basics", publish: true });
+    await call(updateTab, as(), { slug: "api", name: "Handbook" });
     await call(updateCollection, as(), { slug: "basics", name: "Essentials" });
-    expect(await read("guides")).toEqual(missing);
-    expect(await read("basics")).toEqual(missing);
+    expect(await read("api")).toEqual({ ...missing, page: "308 /docs/handbook" });
+    expect(await read("basics")).toEqual({ ...missing, page: "308 /docs/essentials" });
   });
 });

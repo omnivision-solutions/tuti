@@ -3,7 +3,7 @@ import { prisma } from "@tuti/db";
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { visibleArticle } from "@/lib/reader-groups";
-import { listedArticle } from "@/server/docs-queries";
+import { docsContents, docsTabPath, everyCollection, listedArticle } from "@/server/docs-queries";
 
 // Next.js prerenders routes named sitemap.xml at build time (as metadata routes), where there's no database.
 export const dynamic = "force-dynamic";
@@ -15,9 +15,9 @@ const newest = (dates: Date[]) => dates.reduce<Date | undefined>((a, b) => (a &&
 
 /**
  * The portal's public pages for search engines: home, boards, posts, the
- * roadmap, the changelog and the docs, each with when it last changed.
- * Merged posts (they redirect), drafts, articles that aren't listed everywhere and the
- * sign-in pages are left out.
+ * roadmap, the changelog and the docs (with their tabs' and collections' pages), each with when it
+ * last changed. Merged posts (they redirect), drafts, articles that aren't listed everywhere,
+ * collections for some reader groups only (and tabs with nothing else) and the sign-in pages are left out.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/sitemap.xml">) {
   const { project: slug } = await params;
@@ -39,6 +39,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   if (!project) {
     return new Response("Not found", { status: 404 });
   }
+  // For search engines, like llms.txt: what's for everyone. The first tab is /docs.
+  const docs = await docsContents(slug, { groups: [] });
   const latestPost = project.posts[0]?.updatedAt;
   const pages: { path: string; lastmod?: Date }[] = [
     { path: "", lastmod: latestPost },
@@ -50,6 +52,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     { path: "/changelog", lastmod: newest(project.changelogEntries.map((entry) => entry.updatedAt)) },
     ...project.changelogEntries.map((entry) => ({ path: `/changelog/${entry.number}`, lastmod: entry.updatedAt })),
     { path: "/docs", lastmod: newest(project.articles.map((article) => article.updatedAt)) },
+    ...docs.tabs.filter((tab) => tab.slug !== docs.home).map((tab) => ({ path: docsTabPath(docs, tab.slug) })),
+    ...everyCollection(docs.collections).map((collection) => ({ path: `/docs/${collection.slug}` })),
     ...project.articles.map((article) => ({ path: `/docs/${article.slug}`, lastmod: article.updatedAt })),
     // Posts last, newest first: past the limit, the oldest are the ones left out.
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
