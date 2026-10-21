@@ -14,6 +14,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { docsContents, docsHome, docsPage, everyCollection } from "./docs-queries";
+import { saveArticle } from "./docs";
 import { answerSections, searchForReader } from "./docs-search";
 import {
   createArticle,
@@ -334,6 +335,21 @@ describe("the operations: noAccess on tabs.*, collections.* and articles.*", () 
     expect(await docsPage(project.slug, "endpoints")).toMatchObject({ kind: "locked" });
 
     await expect(call(updateArticle, as(), { slug: "endpoints", noAccess: "show" as never })).rejects.toMatchObject({ status: 400 });
+  });
+
+  test("the editor's form saves both choices", async () => {
+    actAs(owner);
+    const form = new FormData();
+    form.set("title", "Endpoints");
+    form.set("collection", "reference");
+    form.set("listing", "everywhere");
+    form.set("content", JSON.stringify({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Endpoints." }] }] }));
+    form.set("showUpdatedDate", "on");
+    form.set("access", "groups");
+    form.append("groups", "enterprise");
+    form.set("noAccess", "lock");
+    expect(await saveArticle(project.slug, "endpoints", {}, form)).toEqual({});
+    expect(await call(getArticle, as(), { slug: "endpoints" })).toMatchObject({ access: "groups", groups: ["enterprise"], noAccess: "lock" });
   });
 
   test("deleting or reordering a tab copies what it shows the rest onto what it stops governing, as it does who can read", async () => {

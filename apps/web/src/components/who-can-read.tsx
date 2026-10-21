@@ -95,7 +95,7 @@ export function WhoCanRead({
                 Preview as a reader
                 <ExternalLinkIcon aria-hidden className="size-3.5" />
               </a>{" "}
-              opens the saved page on your portal as people signed out see it.
+              opens its page on your portal as people signed out see it.
             </p>
           )}
         </Choices>

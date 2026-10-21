@@ -270,7 +270,8 @@ test("people without access: an article shown with a lock asks people signed out
   // Signed out: listed with a lock; its page has its title and asks them to sign in, never its text.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs/basics");
-  const locked = visitor.getByRole("main").getByRole("link", { name: "Pricing Locked" });
+  // The collection's list (the tree, in the page too, comes first).
+  const locked = visitor.getByRole("main").getByRole("link", { name: "Pricing Locked" }).last();
   await expect(locked).toBeVisible();
   await expect(visitor.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Pricing Locked" })).toBeVisible();
   await checkpoint(visitor, "portal-docs-locked-in-list");
@@ -287,7 +288,9 @@ test("people without access: an article shown with a lock asks people signed out
   // Search finds it by its title, with nothing of its text.
   await visitor.goto("/docs?q=pricing");
   await expect(visitor.getByRole("list", { name: "Search results" }).getByRole("link", { name: "Pricing Locked" })).toBeVisible();
-  expect(await (await visitor.request.get("/docs?q=zebra")).text()).not.toContain("/docs/pricing");
+  // Words only in its text find nothing.
+  await visitor.goto("/docs?q=zebra");
+  await expect(visitor.getByText("No articles match “zebra”")).toBeVisible();
 
   // Signed in, but not in the group: they don't have access.
   const reader = await signUp(browser, portalUrl(slug), "Rita Reader");

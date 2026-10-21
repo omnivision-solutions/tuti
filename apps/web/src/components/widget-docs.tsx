@@ -11,7 +11,7 @@ import { ArticleLinks, DocsTabs, LockedMark } from "@/components/docs-collection
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WidgetLocked } from "@/components/widget-locked";
-import { type DocsCollection, docsContents, findCollection, lockedArticle, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
@@ -226,7 +226,7 @@ async function WidgetArticle({
   const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
   const slug = moved ?? asked;
   // One locked for this reader: its title, and what to do.
-  const article = (await publishedArticle(projectSlug, slug)) ?? (await lockedArticle(projectSlug, slug));
+  const article = (await publishedArticle(projectSlug, slug)) ?? (await lockedForReader(projectSlug, slug));
   if (!article) {
     return (
       <EmptyState

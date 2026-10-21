@@ -404,12 +404,12 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
  * A published article on the portal that this reader may not read, but that "People without
  * access" shows them with a lock: only its title, its collection and its tab, never what it says.
  */
-export const lockedArticle = cache(async (projectSlug: string, slug: string) => {
+export const lockedForReader = cache(async (projectSlug: string, slug: string) => {
   const found = await articleAt(projectSlug, slug);
   return found?.kind === "locked" ? found.locked : null;
 });
 
-export type LockedArticle = NonNullable<Awaited<ReturnType<typeof lockedArticle>>>;
+export type LockedArticle = NonNullable<Awaited<ReturnType<typeof lockedForReader>>>;
 
 /** What article `slug` is to this reader: one they may read, one locked for them, or nothing (missing, or hidden from them). */
 const articleAt = cache(async (projectSlug: string, slug: string) => {
