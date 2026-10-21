@@ -5,8 +5,11 @@ import { proxy } from "./proxy";
 
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public" }));
-// No portal is under a path of a site here (that's site-mount.db.test.ts).
-vi.mock("@/server/custom-domains", async (original) => ({ ...(await original<typeof import("@/server/custom-domains")>()), siteMount: async () => null }));
+// No portal is under a path of a site, or has an address of its own, here (see site-mount.db.test.ts).
+vi.mock("@/server/custom-domains", async (original) => {
+  const { portalUrl } = await import("@/lib/hosts");
+  return { ...(await original<typeof import("@/server/custom-domains")>()), siteMount: async () => null, portalAddress: async (slug: string) => portalUrl(slug) };
+});
 
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "production");
@@ -57,5 +60,11 @@ test("Tuti's own portal on the app's domain: its parts' paths, not the app's own
   expect(await rewrite("/llms.txt")).toBe("http://tuti.example/portal/acme/llms.txt");
   for (const path of ["/", "/docs/api", "/sign-in", "/app/acme", "/feedbackx", "/widget", "/sso", "/account"]) {
     expect(await rewrite(path)).toBeNull();
+  }
+});
+
+test("Next.js's files are served under /_tuti on every host (a team's site forwards that with its portal)", async () => {
+  for (const host of ["tuti.example", "acme.tuti.example", "localhost:3000"]) {
+    expect((await proxy(request(host, "/_tuti/_next/static/chunks/app.js"))).headers.get("x-middleware-rewrite")).toBe(`http://${host}/_next/static/chunks/app.js`);
   }
 });

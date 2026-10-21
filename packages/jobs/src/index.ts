@@ -16,6 +16,7 @@ export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
 export { liveDomain, portalAddress, type PortalAddress } from "./portal-address";
+export { fetchSiteCheck } from "./site-check";
 export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };

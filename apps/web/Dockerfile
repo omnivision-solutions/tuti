@@ -22,10 +22,6 @@ RUN --mount=type=cache,id=tuti-pnpm-store,target=/pnpm-store \
 COPY --from=pruner /app/out/full/ .
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-# Optional: the origin pages load Next.js's files from (e.g. https://tuti.so), for portals under a
-# path of a team's own site; it's fixed when building (see next.config.ts).
-ARG ASSET_PREFIX=""
-ENV ASSET_PREFIX=$ASSET_PREFIX
 # The build needs no secrets. These placeholders (for this command only) satisfy
 # modules that read their settings on import; real values come at run time.
 RUN --mount=type=cache,id=tuti-next-cache,target=/app/apps/web/.next/cache \

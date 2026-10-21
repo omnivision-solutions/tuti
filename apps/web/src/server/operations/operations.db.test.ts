@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { type DnsFake, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startDnsFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { type DnsFake, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, type SiteFake, startDnsFake, startModelFake, startOpenAIFake, startSiteFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -103,12 +103,18 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "domain.set": () => ({ hostname: "help.example.org" }),
   "domain.verify": () => ({}),
   "domain.remove": () => ({}),
+  "site.get": () => ({}),
+  // Like domain.set: admins only in the app.
+  "site.set": () => ({ url: `${site.origin}/help` }),
+  "site.verify": () => ({}),
+  "site.remove": () => ({}),
 };
 
 let owner: TestUser;
 let model: ModelFake;
 let openai: OpenAIFake;
 let dns: DnsFake;
+let site: SiteFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -122,6 +128,9 @@ beforeAll(async () => {
   dns = await startDnsFake();
   vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
   vi.stubEnv("DNS_LOOKUP_URL", dns.url);
+  // Portals under a path of a site: on, and the site is local.
+  site = await startSiteFake();
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -133,7 +142,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), openai.close(), dns.close()]));
+afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -157,6 +166,10 @@ async function createFixture() {
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
   await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
   dns.txt("_tuti.docs.example.com", ["tuti-verify=matrix"]);
+  // The portal on a site, waiting for its check, which the site answers.
+  await prisma.siteMount.deleteMany({ where: { projectId: project.id } });
+  await prisma.siteMount.create({ data: { projectId: project.id, origin: site.origin, path: "/portal", verificationToken: "matrix" } });
+  site.answer("/portal/.well-known/tuti-site", "tuti-site=matrix");
   // A reader, to remove.
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
@@ -288,6 +301,7 @@ const snapshot = () =>
     prisma.helpGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),
     prisma.customDomain.findMany({ where: { projectId: project.id } }),
+    prisma.siteMount.findMany({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {

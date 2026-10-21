@@ -2,12 +2,13 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { appPortalProject, isAppPortalPath } from "@/lib/app-portal";
 import { appUrl, portalUrl } from "@/lib/hosts";
-import { BASE_HEADER } from "@/lib/portal-base";
+import { ASSET_PATH, BASE_HEADER, BASE_PATTERN } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
 import { portalHomePath } from "@/server/portal-home";
+import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
  * Routes requests by host:
@@ -31,12 +32,26 @@ export async function proxy(request: NextRequest) {
   if (pathname === "/api/health") {
     return NextResponse.next();
   }
+  // Next.js's files, which pages load from /_tuti/_next (see next.config.ts): a team's site forwards /_tuti with its portal.
+  if (pathname.startsWith(`${ASSET_PATH}/_next/`)) {
+    const url = request.nextUrl.clone();
+    url.pathname = pathname.slice(ASSET_PATH.length);
+    return NextResponse.rewrite(url);
+  }
   const host = request.headers.get("host");
   const target = await requestTarget(host);
 
   if (target.kind === "portal") {
     if (pathname.startsWith("/api/")) {
       return NextResponse.next();
+    }
+    // "Check setup" for a portal under a path of the team's site: the site forwards <path>/.well-known/tuti-site here.
+    if (pathname.endsWith(CHECK_PATH)) {
+      const path = pathname.slice(0, -CHECK_PATH.length);
+      const token = BASE_PATTERN.test(path) ? await siteCheckToken(target.slug, path) : null;
+      if (token) {
+        return new NextResponse(token, { headers: { "content-type": "text/plain", "cache-control": "no-store" } });
+      }
     }
     // Under a path of the team's own site (acme.com/portal, forwarded here path and all): the portal,
     // with that path added back to its links (see lib/portal-base.ts). Not sent on anywhere else.
@@ -53,7 +68,8 @@ export async function proxy(request: NextRequest) {
       if (address !== portalUrl(target.slug) && new URL(address).hostname !== "localhost") {
         // Tuti's own portal's home is its home page's part: the app's own / is the app's.
         const path = pathname === "/" && target.slug === appPortalProject() ? ((await portalHomePath(target.slug)) ?? "/") : pathname;
-        const response = NextResponse.redirect(new URL(path + request.nextUrl.search, address), 308);
+        // The address can have a path (a portal under its site's /portal): the page's goes after it.
+        const response = NextResponse.redirect(`${address}${path}${request.nextUrl.search}`, 308);
         // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
         response.headers.set("cache-control", "no-store");
         return response;
