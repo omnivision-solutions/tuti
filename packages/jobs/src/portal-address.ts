@@ -3,9 +3,9 @@ import { type Prisma, prisma } from "@tuti/db";
 import { portalOrigin } from "./events";
 
 /**
- * A project's portal's public address: its custom domain once that's live (verified, and its
- * certificate active, or none where the server's own proxy gets certificates), else its Tuti
- * address (PORTAL_URL_TEMPLATE). Every link Tuti makes to a portal uses this one, so people and
+ * A project's portal's public address: the app's own (APP_URL) for Tuti's own portal
+ * (APP_PORTAL_PROJECT), its custom domain once that's live (verified, and its certificate active,
+ * or none where the server's own proxy gets certificates), else its Tuti address (PORTAL_URL_TEMPLATE). Every link Tuti makes to a portal uses this one, so people and
  * search engines see one address. Custom domains are only on where CUSTOM_DOMAIN_TARGET is set.
  */
 /**
@@ -16,6 +16,10 @@ export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null 
 
 export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
   const origin = portalOrigin(projectSlug) as PortalAddress;
+  // Tuti's own portal, on the app's domain (APP_PORTAL_PROJECT; see apps/web/src/lib/app-portal.ts).
+  if (projectSlug === process.env.APP_PORTAL_PROJECT?.trim() && process.env.APP_URL) {
+    return new URL(process.env.APP_URL).origin as PortalAddress;
+  }
   if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
     return origin;
   }
