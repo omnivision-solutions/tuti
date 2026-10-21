@@ -140,6 +140,8 @@ export const updateBranding = defineOperation({
     poweredBy: false,
   },
   run: async ({ projectId }, input) => {
+    // Read before the transaction (it never changes), so the transaction needs no second connection.
+    const installation = await installationId();
     await saving(() =>
       prisma.$transaction(async (tx) => {
         // One save at a time per project, so two saves can't both release the old image, or each keep one the other replaced.
@@ -148,7 +150,7 @@ export const updateBranding = defineOperation({
           where: { id: projectId },
           select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, licenseKey: true },
         });
-        if (input.poweredBy === false && !licensedUntil(current.licenseKey, { installation: await installationId(), project: projectId })) {
+        if (input.poweredBy === false && !licensedUntil(current.licenseKey, { installation, project: projectId })) {
           throw new OperationError(400, "invalid_input", 'Hiding "Powered by tuti" needs a licence for this project');
         }
         const names = Object.keys(IMAGES) as ImageName[];
