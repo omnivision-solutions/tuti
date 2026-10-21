@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
-import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
+import { projectLicense } from "../license";
 import { renewLicense } from "../license-renewal";
 import { defineOperation } from "./define";
 
@@ -20,13 +20,6 @@ export const checkLicense = defineOperation({
     // From now on this project's licence is checked (daily, after portal pages) until it has one.
     await prisma.project.updateMany({ where: { id: projectId, licenseRequestedAt: null }, data: { licenseRequestedAt: new Date() } });
     const status = await renewLicense(projectId);
-    const [project, installation] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { licenseKey: true } }),
-      thisInstallation(),
-    ]);
-    return {
-      status,
-      licensedUntil: licensedUntil(project.licenseKey, { installation: installation.id, project: projectId }, licenseNow(installation)),
-    };
+    return { status, licensedUntil: (await projectLicense(projectId)).licensedUntil };
   },
 });

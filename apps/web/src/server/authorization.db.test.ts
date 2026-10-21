@@ -151,6 +151,8 @@ const matrix: Matrix = {
       allowed: "ADMIN",
       call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
     },
+    // Asks a licence server that isn't there (LICENSE_SERVER_URL below): "unreachable".
+    checkBrandingLicense: { allowed: "ADMIN", call: (slug) => branding.checkBrandingLicense(slug) },
   },
   changelog: {
     saveChangelogEntry: {
@@ -480,6 +482,8 @@ beforeAll(async () => {
   // Webhook fixtures deliver to a local fake receiver.
   receiver = await startWebhookReceiver();
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  // Nothing listens on port 9: licence checks never reach tuti.so.
+  vi.stubEnv("LICENSE_SERVER_URL", "http://127.0.0.1:9");
   model = await startModelFake();
   openai = await startOpenAIFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
