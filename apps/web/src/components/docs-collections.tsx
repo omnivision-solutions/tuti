@@ -6,7 +6,7 @@ import type { DocsCollection } from "@/server/docs-queries";
 
 type Articles = { slug: string; title: string }[];
 
-function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: string) => string }) {
+export function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: string) => string }) {
   return (
     <ul className="flex flex-col gap-1.5">
       {articles.map((article) => (
@@ -20,45 +20,39 @@ function ArticleLinks({ articles, href }: { articles: Articles; href: (slug: str
   );
 }
 
-/** A collection's link, on the portal: its own page. */
-type CollectionHref = ((slug: string) => string) | undefined;
-
-/** A collection: its heading (h2 at the top level, h3 inside another), its articles, then the collections in it. */
+/**
+ * A collection: its heading (h2 at `level` 2, a level down for each one it's in; past h6, bold
+ * text), its articles, then the collections in it.
+ */
 function CollectionSection({
   collection,
-  nested,
+  level,
   href,
   collectionHref,
-  compact,
 }: {
   collection: DocsCollection;
-  nested: boolean;
+  level: number;
   href: (slug: string) => string;
-  collectionHref: CollectionHref;
-  compact: boolean;
+  collectionHref: (slug: string) => string;
 }) {
-  const Heading = nested ? "h3" : "h2";
+  const Heading = level <= 6 ? (`h${level}` as "h2") : "p";
   return (
     <section aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
       <Heading
         id={`collection-${collection.slug}`}
-        className={cn("flex items-center gap-2 font-heading font-bold tracking-tight break-words", !nested && !compact && "text-lg")}
+        className={cn("flex items-center gap-2 font-heading font-bold tracking-tight break-words", level === 2 && "text-lg")}
       >
         <CollectionIcon name={collection.icon} />
-        {collectionHref ? (
-          <Link href={collectionHref(collection.slug)} className="min-w-0 hover:underline">
-            {collection.name}
-          </Link>
-        ) : (
-          <span className="min-w-0">{collection.name}</span>
-        )}
+        <Link href={collectionHref(collection.slug)} className="min-w-0 hover:underline">
+          {collection.name}
+        </Link>
       </Heading>
       {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
       {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={href} />}
       {collection.collections.length > 0 && (
         <div className="mt-2 flex flex-col gap-4 border-l pl-4">
           {collection.collections.map((child) => (
-            <CollectionSection key={child.slug} collection={child} nested href={href} collectionHref={collectionHref} compact={compact} />
+            <CollectionSection key={child.slug} collection={child} level={level + 1} href={href} collectionHref={collectionHref} />
           ))}
         </div>
       )}
@@ -66,35 +60,29 @@ function CollectionSection({
   );
 }
 
-/**
- * The docs' contents, for the portal's /docs and the widget's Docs tab: each collection in
- * order with its articles and the collections in it, then the articles in none.
- */
+/** The docs' contents, for the portal's /docs: each collection in order with its articles and the collections in it, then the articles in none. */
 export function DocsCollections({
   collections,
   uncollected,
   href,
   collectionHref,
-  compact = false,
 }: {
   collections: DocsCollection[];
   uncollected: Articles;
   /** An article's link. */
   href: (slug: string) => string;
-  /** A collection's link (the widget's are headings only). */
-  collectionHref?: CollectionHref;
-  /** Smaller headings, for the widget's panel. */
-  compact?: boolean;
+  /** A collection's link: its own page. */
+  collectionHref: (slug: string) => string;
 }) {
   return (
     <>
       {collections.map((collection) => (
-        <CollectionSection key={collection.slug} collection={collection} nested={false} href={href} collectionHref={collectionHref} compact={compact} />
+        <CollectionSection key={collection.slug} collection={collection} level={2} href={href} collectionHref={collectionHref} />
       ))}
       {uncollected.length > 0 && (
         <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
           {collections.length > 0 && (
-            <h2 id="more-articles" className={cn("font-heading font-bold tracking-tight", !compact && "text-lg")}>
+            <h2 id="more-articles" className="font-heading text-lg font-bold tracking-tight">
               More articles
             </h2>
           )}
@@ -119,7 +107,7 @@ export function CollectionContents({
     <>
       {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={href} />}
       {collection.collections.map((child) => (
-        <CollectionSection key={child.slug} collection={child} nested={false} href={href} collectionHref={collectionHref} compact={false} />
+        <CollectionSection key={child.slug} collection={child} level={2} href={href} collectionHref={collectionHref} />
       ))}
     </>
   );

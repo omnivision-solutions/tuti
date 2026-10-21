@@ -156,7 +156,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardHeader>
           <CardTitle id="groups-title">Groups</CardTitle>
           <CardDescription>
-            Readers your app signs in with single sign-on, grouped by the <code>groups</code> in its token. A collection in
+            Readers your app signs in with single sign-on, grouped by the <code>groups</code> or <code>attributes</code> in its token. A collection in
             your docs can be for some groups only.
           </CardDescription>
         </CardHeader>

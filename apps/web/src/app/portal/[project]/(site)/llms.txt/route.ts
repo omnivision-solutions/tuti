@@ -8,18 +8,18 @@ import { type DocsCollection, docsContents, docsTabPath } from "@/server/docs-qu
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
 const heading = (level: number, value: string, href?: string) => ({ type: "heading", attrs: { level }, content: [text(value, href)] });
 const paragraph = (value: string) => ({ type: "paragraph", content: [text(value)] });
-const links = (items: { name: string; url: string; note?: string | null }[]) => ({
-  type: "bulletList",
-  content: items.map((item) => ({
-    type: "listItem",
-    content: [{ type: "paragraph", content: [text(item.name, item.url), ...(item.note ? [text(`: ${item.note}`)] : [])] }],
-  })),
-});
+type Link = { name: string; url: string; note?: string | null };
+const linkParagraph = (item: Link) => ({ type: "paragraph", content: [text(item.name, item.url), ...(item.note ? [text(`: ${item.note}`)] : [])] });
+const list = (items: object[]) => ({ type: "bulletList", content: items });
+const links = (items: Link[]) => list(items.map((item) => ({ type: "listItem", content: [linkParagraph(item)] })));
+/** Headings go to ####; collections deeper than that are list items. */
+const DEEPEST_HEADING = 4;
 
 /**
  * The portal for AI tools (llmstxt.org): what it is, then links to every docs
- * article's Markdown (by tab, if the docs have them, under links to the tabs' and collections' pages), the changelog and the feedback boards. Built as a document
- * so names and titles are escaped like any Markdown we serve.
+ * article's Markdown (by tab, if the docs have them, under links to the tabs' and collections' pages;
+ * collections nest as headings to ####, then as lists), the changelog and the feedback boards. Built as
+ * a document so names and titles are escaped like any Markdown we serve.
  */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/llms.txt">) {
   const { project: slug } = await params;
@@ -34,15 +34,30 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // For AI tools, like search engines: what's for everyone (not collections for some reader groups only).
   const docs = await docsContents(slug, { groups: [] });
   const { collections, uncollected, tabs } = docs;
-  const articleLinks = (articles: { slug: string; title: string }[]) =>
-    links(articles.map((article) => ({ name: article.title, url: `${portal}/docs/${article.slug}.md` })));
-  // A collection's heading, its articles, then the collections in it a level down.
-  const collectionBlocks = (collection: DocsCollection, level: number): object[] => [
-    heading(level, collection.name, `${portal}/docs/${collection.slug}`),
-    ...(collection.description ? [paragraph(collection.description)] : []),
-    ...(collection.articles.length > 0 ? [articleLinks(collection.articles)] : []),
-    ...collection.collections.flatMap((child) => collectionBlocks(child, level + 1)),
-  ];
+  const articleItem = (article: { slug: string; title: string }) => ({
+    type: "listItem",
+    content: [linkParagraph({ name: article.title, url: `${portal}/docs/${article.slug}.md` })],
+  });
+  const articleLinks = (articles: { slug: string; title: string }[]) => list(articles.map(articleItem));
+  // Past the deepest heading: an item linking its page, with its articles and the collections in it nested under it.
+  const collectionItem = (collection: DocsCollection): object => {
+    const items = [...collection.articles.map(articleItem), ...collection.collections.map(collectionItem)];
+    return {
+      type: "listItem",
+      content: [linkParagraph({ name: collection.name, url: `${portal}/docs/${collection.slug}`, note: collection.description }), ...(items.length > 0 ? [list(items)] : [])],
+    };
+  };
+  // A collection's heading, its articles, then the collections in it a level down (or, from the deepest heading, listed with its articles).
+  const collectionBlocks = (collection: DocsCollection, level: number): object[] => {
+    const listed = level < DEEPEST_HEADING ? [] : collection.collections;
+    const items = [...collection.articles.map(articleItem), ...listed.map(collectionItem)];
+    return [
+      heading(level, collection.name, `${portal}/docs/${collection.slug}`),
+      ...(collection.description ? [paragraph(collection.description)] : []),
+      ...(items.length > 0 ? [list(items)] : []),
+      ...(level < DEEPEST_HEADING ? collection.collections.flatMap((child) => collectionBlocks(child, level + 1)) : []),
+    ];
+  };
 
   const content = [
     heading(1, project.name),

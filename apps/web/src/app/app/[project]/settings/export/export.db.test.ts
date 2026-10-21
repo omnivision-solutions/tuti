@@ -183,3 +183,20 @@ test("a collection in another is a folder in its folder, and each article says i
   );
   expect(files["docs/billing/invoices/downloading.md"]).toContain('collection: "Invoices"\norder: 1\n');
 });
+
+test("collections nest as folders at any depth, in their top-level one's tab's folder", async () => {
+  const owner = await signUp();
+  const { id: projectId, slug } = await createProject(owner);
+  const tab = await prisma.docsTab.create({ data: { projectId, slug: "guides", name: "Guides" } });
+  let parentId: string | null = null;
+  for (const name of ["Billing", "Invoices", "Taxes", "Europe"]) {
+    const created: { id: string } = await prisma.collection.create({
+      data: { projectId, slug: name.toLowerCase(), name, parentId, tabId: parentId ? null : tab.id },
+    });
+    parentId = created.id;
+  }
+  await prisma.article.create({ data: { projectId, slug: "vat", title: "VAT", collectionId: parentId } });
+  actAs(owner);
+  const files = await unzip(await exportOf(slug));
+  expect(files["docs/guides/billing/invoices/taxes/europe/vat.md"]).toContain('tab: "Guides"\ncollection: "Europe"\n');
+});

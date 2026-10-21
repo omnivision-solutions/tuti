@@ -335,8 +335,10 @@ const matrix: Matrix = {
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
   },
   groups: {
-    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise" })) },
+    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise", claim: "enterprise" })) },
     deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
+    // Names the project's SSO users, like Settings → Groups.
+    previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, null, [{ attribute: "plan", op: "is", value: "pro" }]) },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.
@@ -609,7 +611,7 @@ async function createFixture() {
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
   // A reader group no collection is for.
-  await prisma.readerGroup.create({ data: { projectId, name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId, key: "beta", name: "Beta", claim: "beta" } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },
