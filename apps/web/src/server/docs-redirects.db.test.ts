@@ -1,8 +1,12 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
+import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import ArticlePage from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
+import { WidgetDocs } from "@/components/widget-docs";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import {
   createArticle,
@@ -12,6 +16,7 @@ import {
   deleteTab,
   publishArticle,
   restoreArticle,
+  unpublishArticle,
   updateArticle,
   updateCollection,
   updateTab,
@@ -26,6 +31,7 @@ let project: Awaited<ReturnType<typeof createProject>>;
 beforeEach(async () => {
   owner = await signUp("Owner");
   project = await createProject(owner);
+  actAs(null);
 });
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
@@ -126,5 +132,92 @@ describe("deleting a page drops its redirects", () => {
 
     await call(deleteTab, as(), { slug: "handbook" });
     expect(await redirects()).toEqual([]);
+  });
+});
+
+/** What a reader gets at /docs/<slug>, its .md and the widget's article view: the page, a redirect or a 404. */
+async function read(slug: string) {
+  const params = { params: Promise.resolve({ project: project.slug, slug }) } as never;
+  const page = await ArticlePage(params).then(
+    () => "page",
+    (error: { digest?: string }) => {
+      const redirect = error.digest?.match(/^NEXT_REDIRECT;\w+;([^;]+);(\d+);/);
+      return redirect ? `${redirect[2]} ${redirect[1]}` : error.digest === "NEXT_HTTP_ERROR_FALLBACK;404" ? "404" : Promise.reject(error);
+    },
+  );
+  const response = await markdown(new Request("http://x"), params);
+  const md = response.status === 308 ? `308 ${response.headers.get("location")}` : String(response.status);
+  // WidgetDocs hands the article to WidgetArticle, rendered here: the article's title, or "Article not found".
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug, hasBoard: true })) as ReactElement<object>;
+  const texts = (node: ReactNode): string[] =>
+    Array.isArray(node)
+      ? node.flatMap(texts)
+      : typeof node === "string"
+        ? [node]
+        : isValidElement<{ children?: ReactNode; title?: string }>(node)
+          ? [...(node.props.title ? [node.props.title] : []), ...texts(node.props.children)]
+          : [];
+  const shown = texts(await (widget.type as (props: object) => Promise<ReactNode>)(widget.props));
+  return { page, md, widget: shown.find((text) => ["Gamma", "Article not found"].includes(text)) };
+}
+
+const moved = { page: "308 /docs/gamma", md: "308 /docs/gamma.md", widget: "Gamma" };
+const missing = { page: "404", md: "404", widget: "Article not found" };
+
+describe("readers follow an article's old slugs", () => {
+  beforeEach(async () => {
+    await call(createArticle, as(), { title: "Alpha" });
+    await call(updateArticle, as(), { slug: "alpha", title: "Beta" });
+    await call(updateArticle, as(), { slug: "beta", title: "Gamma" });
+  });
+
+  test("permanently, to where it is now, once it's published", async () => {
+    // A draft is served nowhere, by its old slugs neither.
+    expect(await read("alpha")).toEqual(missing);
+    await call(publishArticle, as(), { slug: "gamma" });
+    expect(await read("alpha")).toEqual(moved);
+    expect(await read("beta")).toEqual(moved);
+    expect(await read("gamma")).toEqual({ page: "page", md: "200", widget: "Gamma" });
+  });
+
+  test("only while the reader may read it: hidden, unpublished, deleted or for other groups, it's a 404", async () => {
+    await call(publishArticle, as(), { slug: "gamma" });
+    await call(updateArticle, as(), { slug: "gamma", listing: "hidden" });
+    expect(await read("alpha")).toEqual(missing);
+    await call(updateArticle, as(), { slug: "gamma", listing: "unlisted" });
+    expect(await read("alpha")).toEqual(moved);
+
+    await call(createCollection, as(), { name: "Enterprise", groups: ["enterprise"] });
+    await call(updateArticle, as(), { slug: "gamma", collection: "enterprise", publish: true });
+    expect(await read("alpha")).toEqual(missing);
+    const member = await signUp("From the app");
+    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: member.id, groups: ["enterprise"] } });
+    actAs(member);
+    expect(await read("alpha")).toEqual(moved);
+    actAs(null);
+    await call(updateArticle, as(), { slug: "gamma", collection: null, publish: true });
+
+    await call(unpublishArticle, as(), { slug: "gamma" });
+    expect(await read("alpha")).toEqual(missing);
+    await call(publishArticle, as(), { slug: "gamma" });
+    await call(deleteArticle, as(), { slug: "gamma" });
+    expect(await read("alpha")).toEqual(missing);
+  });
+
+  test("an article that takes an old slug is what readers get there", async () => {
+    await call(publishArticle, as(), { slug: "gamma" });
+    await call(createArticle, as(), { title: "Alpha" });
+    await call(publishArticle, as(), { slug: "alpha" });
+    expect((await read("alpha")).page).toBe("page");
+    expect(await read("beta")).toEqual(moved);
+  });
+
+  test("a renamed tab's or collection's old slug isn't served yet (they have no pages)", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await call(updateTab, as(), { slug: "guides", name: "Handbook" });
+    await call(createCollection, as(), { name: "Basics" });
+    await call(updateCollection, as(), { slug: "basics", name: "Essentials" });
+    expect(await read("guides")).toEqual(missing);
+    expect(await read("basics")).toEqual(missing);
   });
 });

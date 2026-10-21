@@ -1,14 +1,14 @@
 import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 
 import { ArticleActions } from "@/components/article-actions";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { formatDate } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
-import { articleMarkdown, publishedArticle } from "@/server/docs-queries";
+import { articleMarkdown, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
 
 /** Search results show the article's title and its first lines. */
@@ -32,6 +32,11 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/do
   const { project, slug } = await props.params;
   const article = await publishedArticle(project, slug);
   if (!article) {
+    // An old slug of an article that has since moved?
+    const moved = await movedArticle(project, slug);
+    if (moved) {
+      permanentRedirect(at(`/docs/${moved}`));
+    }
     notFound();
   }
   return (

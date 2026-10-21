@@ -152,6 +152,21 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
   };
 });
 
+/**
+ * Where an article that had `slug` is now (its current slug), when no page has `slug` any more: only
+ * if this reader may read it (publishedArticle), so a redirect never shows that a draft, hidden or
+ * restricted page is there. Redirects to tabs and collections wait until they have pages.
+ */
+export async function movedArticle(projectSlug: string, slug: string): Promise<string | null> {
+  const redirect = await prisma.docsRedirect.findFirst({
+    where: { slug, project: { slug: projectSlug } },
+    select: { article: { select: { slug: true, deletedAt: true } } },
+  });
+  const to = redirect?.article;
+  // A deleted article's slug may be another's now.
+  return to && !to.deletedAt && (await publishedArticle(projectSlug, to.slug)) ? to.slug : null;
+}
+
 /** An article as Markdown, its title as the heading: /docs/<slug>.md and "Copy as Markdown". */
 export function articleMarkdown(article: { title: string; doc: Doc }): string {
   const title = { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: article.title }] };
