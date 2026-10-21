@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 
 import { portalOrigin } from "./events";
 
@@ -8,15 +8,18 @@ import { portalOrigin } from "./events";
  * address (PORTAL_URL_TEMPLATE). Every link Tuti makes to a portal uses this one, so people and
  * search engines see one address. Custom domains are only on where CUSTOM_DOMAIN_TARGET is set.
  */
+/**
+ * A custom domain that's live: verified, and its certificate active (or none, where the server's own
+ * proxy gets certificates). Only those are served, and only those are linked to.
+ */
+export const liveDomain = { verifiedAt: { not: null }, OR: [{ certificate: null }, { certificate: "ACTIVE" }] } satisfies Prisma.CustomDomainWhereInput;
+
 export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
   const origin = portalOrigin(projectSlug) as PortalAddress;
   if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
     return origin;
   }
-  const domain = await prisma.customDomain.findFirst({
-    where: { project: { slug: projectSlug }, verifiedAt: { not: null }, OR: [{ certificate: null }, { certificate: "ACTIVE" }] },
-    select: { hostname: true },
-  });
+  const domain = await prisma.customDomain.findFirst({ where: { project: { slug: projectSlug }, ...liveDomain }, select: { hostname: true } });
   if (!domain) {
     return origin;
   }

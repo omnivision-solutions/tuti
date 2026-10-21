@@ -595,6 +595,28 @@ describe("shipping", () => {
     expect(await statuses()).toEqual(["COMPLETED", "IN_PROGRESS"]);
   });
 
+  test("when the portal's address can't be looked up, a merge completes nothing, so the redelivery completes it and tells the webhooks", async () => {
+    await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+    github.repo(repo, { releases: [], pulls: {} });
+    await linkedPosts([{ status: "IN_PROGRESS", pull: 40 }]);
+    vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+    const merged = github.webhook("pull_request", {
+      action: "closed",
+      installation: { id: installationId },
+      repository: { full_name: repo },
+      pull_request: { number: 40, title: "PR", body: "", html_url: `https://github.com/${repo}/pull/40`, merged: true },
+    });
+    const spy = vi.spyOn(prisma.customDomain, "findFirst").mockRejectedValue(new Error("database down"));
+    try {
+      expect(await deliver(merged)).not.toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await statuses()).toEqual(["IN_PROGRESS"]);
+    expect(await deliver(merged)).toBe(200);
+    expect(await statuses()).toEqual(["COMPLETED"]);
+  });
+
   describe("the changelog's running draft", () => {
     const merged = (number: number, title: string, labels: string[] = []) =>
       github.webhook("pull_request", {

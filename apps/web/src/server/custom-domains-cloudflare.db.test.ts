@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { deleteCustomHostname } from "./cloudflare";
+import { requestTarget } from "./custom-domains";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { call } from "./operations/run";
 
@@ -55,8 +56,11 @@ test("a domain gets its custom hostname once it's verified, and its certificate 
   expect(atCloudflare(host)).toHaveLength(1);
   // Each look asks again while it's on its way.
   expect((await call(getDomain, as(), {})).domain?.certificate).toBe("pending");
+  // Not served until then: the same rule as for links (see portal-address.db.test.ts).
+  expect(await requestTarget(host)).toEqual({ kind: "unknown" });
   cloudflare.certificate(host, "active");
   expect((await call(getDomain, as(), {})).domain?.certificate).toBe("active");
+  expect(await requestTarget(host)).toMatchObject({ kind: "portal", slug: project.slug });
   expect(await prisma.customDomain.findUniqueOrThrow({ where: { projectId: project.id } })).toMatchObject({ certificate: "ACTIVE" });
 });
 

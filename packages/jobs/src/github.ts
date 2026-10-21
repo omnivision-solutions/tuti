@@ -51,8 +51,10 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   const { projectId, project } = installation;
   // Commit messages change when it's opened, reopened or pushed to; an edit only changes the title or description.
   const commits = input.action === "edited" ? [] : await commitMessages(input);
+  // Before any status changes: if it failed after, a retry wouldn't find the posts to tell the webhooks.
+  const portal = await portalAddress(project.slug);
   // A link to the post at either of the portal's addresses.
-  const portals = [...new Set([portalOrigin(project.slug), await portalAddress(project.slug)])];
+  const portals = [...new Set([portalOrigin(project.slug), portal])];
   const numbers = referencedPosts([input.title, input.body, ...commits].join("\n"), portals);
   const posts =
     numbers.length === 0
@@ -93,7 +95,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
         continue;
       }
       const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-      await postStatusChanged(projectId, post.id, postSummary(updated, await portalAddress(project.slug)), post.status);
+      await postStatusChanged(projectId, post.id, postSummary(updated, portal), post.status);
       started++;
     }
   }
@@ -236,13 +238,15 @@ async function moveTo(
   posts: { id: string; status: PostStatus }[],
 ): Promise<number> {
   let moved = 0;
+  // Before any status changes (see githubPullRequest).
+  const portal = await portalAddress(project.slug);
   for (const post of posts) {
     const { count } = await prisma.post.updateMany({ where: { id: post.id, status: post.status }, data: { status } });
     if (count === 0) {
       continue;
     }
     const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-    await postStatusChanged(project.id, post.id, postSummary(updated, await portalAddress(project.slug)), post.status);
+    await postStatusChanged(project.id, post.id, postSummary(updated, portal), post.status);
     moved++;
   }
   return moved;

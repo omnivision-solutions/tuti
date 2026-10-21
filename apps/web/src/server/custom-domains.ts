@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { portalAddress as lookUpPortalAddress, type PortalAddress } from "@tuti/jobs";
+import { liveDomain, portalAddress as lookUpPortalAddress, type PortalAddress } from "@tuti/jobs";
 
 import { customDomainTarget } from "@/lib/custom-domains";
 import { type HostTarget, resolveHost } from "@/lib/hosts";
@@ -44,7 +44,8 @@ async function customDomainSlug(hostname: string): Promise<string | null> {
   }
   const started = forgets;
   const domain = await prisma.customDomain.findFirst({
-    where: { hostname, verifiedAt: { not: null } },
+    // Live ones only: the same ones links go to (see liveDomain).
+    where: { hostname, ...liveDomain },
     select: { project: { select: { slug: true } } },
   });
   if (cache.size >= MAX_CACHED) {
