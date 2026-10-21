@@ -18,15 +18,20 @@ import { defineOperation, OperationError } from "./define";
 
 const ACCESS = ["public", "private"] as const;
 export type PortalAccess = (typeof ACCESS)[number];
+/** What the portal's home opens (feedback: its first board). */
+const HOMES = ["feedback", "roadmap", "changelog", "docs"] as const;
+export type PortalHomePage = (typeof HOMES)[number];
 
-export async function portalAccess(projectId: string): Promise<{ access: PortalAccess }> {
-  const { portalAccess } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true } });
-  return { access: portalAccess === "PRIVATE" ? "private" : "public" };
+/** Who may read the portal, and what its home opens (Settings, portal.get). */
+export async function portalAccess(projectId: string): Promise<{ access: PortalAccess; home: PortalHomePage }> {
+  const { portalAccess, portalHome } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, portalHome: true } });
+  return { access: portalAccess === "PRIVATE" ? "private" : "public", home: portalHome.toLowerCase() as PortalHomePage };
 }
 
 export const getPortal = defineOperation({
   name: "portal.get",
-  summary: "Get who may read the portal: public (anyone) or private (only the team, people your app signs in with SSO and readers added by email)",
+  summary:
+    "Get who may read the portal: public (anyone) or private (only the team, people your app signs in with SSO and readers added by email); and what its home page opens: feedback (the first board), roadmap, changelog or docs (the help center)",
   method: "GET",
   path: "/portal",
   scope: "read",
@@ -38,15 +43,24 @@ export const getPortal = defineOperation({
 export const updatePortal = defineOperation({
   name: "portal.update",
   summary:
-    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in)",
+    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs, the help center)",
   method: "PATCH",
   path: "/portal",
   scope: "write",
   access: "admin",
-  input: z.object({ access: z.enum(ACCESS, { error: "Pick public or private" }) }),
-  example: { access: "private" },
+  input: z.object({
+    access: z.enum(ACCESS, { error: "Pick public or private" }).optional(),
+    home: z.enum(HOMES, { error: "Pick feedback, roadmap, changelog or docs" }).optional(),
+  }),
+  example: { access: "private", home: "docs" },
   run: async ({ projectId }, input) => {
-    await prisma.project.update({ where: { id: projectId }, data: { portalAccess: input.access === "private" ? "PRIVATE" : "PUBLIC" } });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        ...(input.access && { portalAccess: input.access === "private" ? "PRIVATE" : "PUBLIC" }),
+        ...(input.home && { portalHome: input.home.toUpperCase() as Uppercase<PortalHomePage> }),
+      },
+    });
     return portalAccess(projectId);
   },
 });

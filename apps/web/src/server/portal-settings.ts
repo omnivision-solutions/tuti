@@ -2,7 +2,7 @@
 
 import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
-import { addPortalReaders as addPortalReadersOperation, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
+import { addPortalReaders as addPortalReadersOperation, type PortalHomePage, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { asAdmin, call } from "./operations/run";
 
 const DENIED = "Only project owners and admins can change who sees the portal";
@@ -11,6 +11,13 @@ const DENIED = "Only project owners and admins can change who sees the portal";
 export async function setPortalAccess(projectSlug: string, access: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, DENIED, (context) =>
     call(updatePortal, context, { access: access as "public" | "private" }),
+  );
+}
+
+/** Settings → Home page (see portal.update). */
+export async function setPortalHome(projectSlug: string, home: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change the portal's home page", (context) =>
+    call(updatePortal, context, { home: home as PortalHomePage }),
   );
 }
 
