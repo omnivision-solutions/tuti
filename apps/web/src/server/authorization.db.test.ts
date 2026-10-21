@@ -35,6 +35,7 @@ import * as changelogSeen from "./changelog-seen";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
+import * as groups from "./groups";
 import * as invitations from "./invitations";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
@@ -69,6 +70,7 @@ const modules = {
   github,
   docs,
   "docs-readers": docsReaders,
+  groups,
   invitations,
   "manage-posts": managePosts,
   media,
@@ -147,7 +149,7 @@ const matrix: Matrix = {
   branding: {
     saveBranding: {
       allowed: "ADMIN",
-      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com" })),
+      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
     },
   },
   changelog: {
@@ -329,6 +331,10 @@ const matrix: Matrix = {
     },
     finishUpload: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.finishUpload(f.mediaId) },
     uploadStatus: { allowed: "signed in", refusesSsoUsers: true, call: (_slug, f) => media.uploadStatus(f.mediaId) },
+  },
+  groups: {
+    saveGroup: { allowed: "ADMIN", call: (slug) => groups.saveGroup(slug, null, {}, form({ name: "Enterprise" })) },
+    deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.
@@ -598,6 +604,8 @@ async function createFixture() {
   const tab = await prisma.docsTab.create({ data: { projectId, slug: "docs", name: "Docs" } });
   const basics = await prisma.collection.create({ data: { projectId, slug: "basics", name: "Basics", tabId: tab.id } });
   await prisma.collection.create({ data: { projectId, slug: "guides", name: "Guides", order: 1, tabId: tab.id } });
+  // A reader group no collection is for.
+  await prisma.readerGroup.create({ data: { projectId, name: "Beta", claim: "beta" } });
   await prisma.article.createMany({
     data: [
       { projectId, slug: "matrix-article", title: "Matrix article", publishedAt: new Date(), collectionId: basics.id },

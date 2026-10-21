@@ -15,6 +15,7 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { docsContents, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
+import { updateGroup } from "./operations/groups";
 import { call } from "./operations/run";
 import { groupsOf } from "./portal-access";
 
@@ -53,6 +54,10 @@ async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) 
   return user;
 }
 
+/** The project's reader groups with these claims (named after them). */
+const addGroups = (...claims: string[]) =>
+  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, name: claim, claim })) });
+
 /** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
 async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
   const now = Math.floor(Date.now() / 1000);
@@ -74,6 +79,7 @@ async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID(
  * says "widget", and each has a section close to the question "widget help".
  */
 async function docsWithGroups() {
+  await addGroups("enterprise", "beta");
   await call(createCollection, as(), { name: "Basics" });
   await call(createCollection, as(), { name: "Enterprise", groups: ["Enterprise"] });
   await call(createCollection, as(), { name: "Setup", parent: "enterprise" });
@@ -207,6 +213,22 @@ describe("who sees what", () => {
   });
 });
 
+test("a group's claim changed: its collections are for whoever the app signs in with the new one", async () => {
+  await docsWithGroups();
+  const before = await ssoReader(["enterprise"]);
+  const after = await ssoReader(["plan:enterprise"]);
+  const reads = async (user: TestUser) => {
+    actAs(user);
+    return (await publishedArticle(project.slug, "saml")) !== null;
+  };
+  expect([await reads(before), await reads(after)]).toEqual([true, false]);
+  await call(updateGroup, as(), { group: "enterprise", claim: "plan:enterprise" });
+  expect([await reads(before), await reads(after)]).toEqual([false, true]);
+  const groups = await groupsOf(project.id, after.id);
+  expect((await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug)).toContain("saml");
+  expect((await searchDocs(project.id, "widget", 10, await groupsOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
+});
+
 test("each sign-in says the groups: a later token without one takes it away", async () => {
   await docsWithGroups();
   const sub = "user-42";
@@ -255,11 +277,21 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   expect((await md("saml")).status).toBe(404);
 });
 
-test("collections take groups (lowercase, once each) and say them", async () => {
+test("collections take groups by claim (lowercase, once each, only the project's) and say them", async () => {
+  await addGroups("partners", "plan:pro");
   expect(await call(createCollection, as(), { name: "Partners", groups: ["Partners", "partners", "plan:pro"] })).toMatchObject({
     groups: ["partners", "plan:pro"],
   });
   await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
+  // A group the project doesn't have (another project's included) is refused, and nothing changes.
+  const other = await createProject(owner);
+  await prisma.readerGroup.create({ data: { projectId: other.id, name: "Elsewhere", claim: "elsewhere" } });
+  await expect(call(createCollection, as(), { name: "Elsewhere", groups: ["elsewhere"] })).rejects.toMatchObject({
+    status: 400,
+    message: "There's no group “elsewhere”: add it in Settings → Groups first",
+  });
+  await expect(call(updateCollection, as(), { slug: "partners", groups: ["partners", "elsewhere"] })).rejects.toMatchObject({ status: 400 });
+  expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "partners", groups: ["partners", "plan:pro"] }]);
   expect(await call(updateCollection, as(), { slug: "partners", groups: [] })).toMatchObject({ groups: [] });
   expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "partners", groups: [] }]);
 });

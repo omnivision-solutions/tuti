@@ -5,7 +5,7 @@ import { ArrowDownIcon, ArrowUpIcon, FolderInputIcon, GripVerticalIcon } from "l
 import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabDialog } from "@/components/docs";
+import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, type GroupOption, TabDialog } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
@@ -20,7 +20,7 @@ type StructureCollection = {
   parent: string | null;
   /** At the top level, the tab it's in (null without tabs). */
   tab: string | null;
-  /** The reader groups it's for; empty: everyone. */
+  /** The reader groups it's for (their claims); empty: everyone. */
   groups: string[];
   articles: StructureArticle[];
 };
@@ -141,9 +141,12 @@ export function DocsStructure({
   tabs,
   collections,
   uncollected,
+  groups,
 }: {
   projectSlug: string;
   tabs: StructureTab[];
+  /** The project's reader groups, for collections to pick from. */
+  groups: GroupOption[];
   /** Each top-level collection (by tab), then the ones in it. */
   collections: StructureCollection[];
   uncollected: StructureArticle[];
@@ -387,7 +390,7 @@ export function DocsStructure({
                       }
                       places={places}
                     />
-                    <CollectionDialog projectSlug={projectSlug} collection={collection} />
+                    <CollectionDialog projectSlug={projectSlug} collection={collection} groups={groups} />
                     <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={inside.length > 0} />
                   </>
                 }
@@ -395,7 +398,8 @@ export function DocsStructure({
                 <span className="text-sm font-medium break-words">{collection.name}</span>
                 <span className="text-xs text-muted-foreground">
                   {`${count} ${count === 1 ? "article" : "articles"}`}
-                  {collection.groups.length > 0 && ` · Only for ${collection.groups.join(", ")}`}
+                  {collection.groups.length > 0 &&
+                    ` · Only for ${collection.groups.map((claim) => groups.find((g) => g.claim === claim)?.name ?? claim).join(", ")}`}
                 </span>
               </Row>
               {(count > 0 || inside.length > 0) && (

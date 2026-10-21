@@ -108,13 +108,19 @@ email, once their address is verified.
 
 ## Reader groups
 
-A collection in your docs can be for some groups only: set **Only for groups** on it (or
-`groups` in `collections.create` / `collections.update`). Then only your team and people your
-app signs in with one of those groups in the token's `groups` claim see the collection, its
+Add your groups in **Settings → Groups** (owners and admins; or `groups.create`): a name, the
+claim your token names the group by in `groups` (e.g. `enterprise`) and a description. The list
+shows how many people your app has signed in with each. Changing a group's claim changes who's
+in it.
+
+A collection in your docs can be for some groups only: tick them under **Only for groups** on it
+(or `groups`, their claims, in `collections.create` / `collections.update`). Then only your team
+and people your app signs in with one of those groups in the token's `groups` claim see the collection, its
 articles and the collections in it: in the docs, article pages, search, AI answers and
 the widget. Everyone else (signed out, signed up on the portal, other groups) doesn't see them
 at all, and `llms.txt` and the sitemap leave them out. A collection inside a restricted one is
-restricted by both.
+restricted by both. A group a collection is for can't be deleted until it's removed there,
+since that would open the collection to everyone.
 
 Groups come from the latest sign-in: send all of a user's groups in every token (e.g. from
 their plan), and a group they lose is gone the next time they sign in.

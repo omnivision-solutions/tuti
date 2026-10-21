@@ -4,7 +4,7 @@ import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { ancestry } from "@/lib/collection-tree";
-import { mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-groups";
+import { groupClaims, mayReadCollection, type ReaderGroups, restricted } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
 import { readerGroups } from "./portal-access";
@@ -83,7 +83,7 @@ export async function docsContents(projectSlug: string, options: { groups?: Read
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: readingOrder,
-      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: true, articles: articleSelect },
+      select: { id: true, projectId: true, parentId: true, tabId: true, slug: true, name: true, description: true, groups: groupClaims, articles: articleSelect },
     }),
     prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
@@ -205,7 +205,7 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
     ? ancestry(
         await prisma.collection.findMany({
           where: { projectId: article.projectId },
-          select: { id: true, parentId: true, groups: true, tab: { select: { slug: true } } },
+          select: { id: true, parentId: true, groups: groupClaims, tab: { select: { slug: true } } },
         }),
         article.collection.id,
       )

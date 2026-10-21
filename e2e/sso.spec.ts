@@ -76,15 +76,37 @@ test("a collection for one reader group: people the app signs in with that group
   const api = await apiFor(owner, slug);
   await api("/collections", { name: "Basics" });
 
-  // "Only for groups" on a new collection.
+  // Without groups, the collection dialog points to Settings → Groups.
   await owner.goto(`/app/${slug}/docs`);
   await owner.getByRole("button", { name: "New collection" }).click();
   const dialog = owner.getByRole("dialog");
+  await expect(dialog.getByRole("group", { name: "Only for groups" })).toContainText("It's for everyone who can read your docs.");
+  await checkpoint(owner, "team-docs-collection-no-groups", { fullPage: false });
+  await dialog.getByRole("link", { name: "Settings → Groups" }).click();
+  await expect(owner).toHaveURL(/\/settings#groups$/);
+
+  // A group in Settings → Groups: a name, the claim the app's token says and a description.
+  const groups = owner.getByRole("region", { name: "Groups" });
+  await expect(groups).toContainText("No groups yet");
+  await groups.getByRole("button", { name: "New group" }).click();
+  const groupDialog = owner.getByRole("dialog");
+  await groupDialog.getByLabel("Name").fill("Enterprise customers");
+  await groupDialog.getByLabel("Claim").fill("enterprise");
+  await groupDialog.getByLabel("Description").fill("On the Enterprise plan");
+  await checkpoint(owner, "team-settings-new-group", { fullPage: false });
+  await groupDialog.getByRole("button", { name: "Add group" }).click();
+  await expect(owner.getByText("Group added")).toBeVisible();
+  await expect(groups).toContainText("enterprise · 0 readers · On the Enterprise plan");
+
+  // "Only for groups" on a new collection: the group, picked from the list.
+  await owner.goto(`/app/${slug}/docs`);
+  await owner.getByRole("button", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Enterprise");
-  await dialog.getByLabel("Only for groups").fill("enterprise");
+  await dialog.getByRole("checkbox", { name: "Enterprise customers" }).check();
+  await checkpoint(owner, "team-docs-collection-pick-group", { fullPage: false });
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
-  await expect(owner.getByRole("region", { name: "Collections" })).toContainText("Only for enterprise");
+  await expect(owner.getByRole("region", { name: "Collections" })).toContainText("Only for Enterprise customers");
   await checkpoint(owner, "team-docs-collection-groups");
   for (const [title, collection] of [
     ["Getting started", "basics"],
@@ -108,4 +130,14 @@ test("a collection for one reader group: people the app signs in with that group
   await sam.getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-group-reader");
+
+  // The team sees Sam in the group, and can't delete it while the collection is for it.
+  await owner.goto(`/app/${slug}/settings#groups`);
+  await expect(groups).toContainText("enterprise · 1 reader");
+  await groups.scrollIntoViewIfNeeded();
+  await checkpoint(owner, "team-settings-groups", { fullPage: false });
+  await groups.getByRole("button", { name: "Delete Enterprise customers" }).click();
+  await owner.getByRole("alertdialog", { name: "Delete Enterprise customers?" }).getByRole("button", { name: "Delete" }).click();
+  await expect(owner.getByText("Used by Enterprise; remove it from them first")).toBeVisible();
+  await checkpoint(owner, "team-settings-group-in-use", { fullPage: false });
 });

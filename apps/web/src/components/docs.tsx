@@ -1,6 +1,7 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -393,15 +394,20 @@ export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { p
   );
 }
 
+export type GroupOption = { claim: string; name: string };
+
 /** Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and changes its description. */
 export function CollectionDialog({
   projectSlug,
   collection,
   parents = [],
   tabs = [],
+  groups,
 }: {
   projectSlug: string;
   collection?: { slug: string; name: string; description: string; groups: string[] };
+  /** The project's reader groups to pick from. */
+  groups: GroupOption[];
   /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
@@ -454,20 +460,34 @@ export function CollectionDialog({
                 placeholder="Optional, shown in your docs"
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor={`collection-groups-${id}`}>Only for groups</FieldLabel>
-              <Input
-                id={`collection-groups-${id}`}
-                name="groups"
-                defaultValue={collection?.groups.join(", ")}
-                placeholder="Everyone (e.g. enterprise, beta)"
-                autoComplete="off"
-              />
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-2 text-sm font-medium">Only for groups</legend>
+              {groups.length > 0 && (
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {groups.map((group) => (
+                    <label key={group.claim} className="flex items-center gap-2 text-sm break-words">
+                      <input
+                        type="checkbox"
+                        name="groups"
+                        value={group.claim}
+                        defaultChecked={collection?.groups.includes(group.claim)}
+                        className="size-4 accent-primary"
+                      />
+                      {group.name}
+                    </label>
+                  ))}
+                </div>
+              )}
               <FieldDescription>
-                Leave empty for everyone who can read your docs. With groups, only your team and people your app signs in with
-                one of them (the groups in its sign-in token) see it, its articles and the collections in it.
+                {groups.length > 0
+                  ? "None ticked: everyone who can read your docs. With groups, only your team and readers in one of them see it, its articles and the collections in it. Groups are in "
+                  : "It's for everyone who can read your docs. To make it for some readers only, add a group in "}
+                <Link href={`/app/${projectSlug}/settings#groups`} className="text-primary underline underline-offset-4">
+                  Settings → Groups
+                </Link>
+                .
               </FieldDescription>
-            </Field>
+            </fieldset>
             {!collection && parents.length > 0 && (
               <Field>
                 <FieldLabel id="collection-parent-label">Parent collection</FieldLabel>
