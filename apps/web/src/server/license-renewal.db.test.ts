@@ -150,6 +150,20 @@ test("a cancelled licence removes the key; tuti.so not answering keeps it", asyn
   expect((await state()).licenseKey).toBeNull();
 });
 
+test("a check that outlasted its claim leaves the project to the check that took over", async () => {
+  await sell();
+  await check();
+  const before = await state();
+  // While tuti.so answers, the lease runs out and another check claims the project.
+  tutiSo.mockImplementationOnce(async (url, init) => {
+    await prisma.project.update({ where: { id: project.id }, data: { licenseCheckedAt: new Date(Date.now() + 1000) } });
+    return POST(new Request(url, init));
+  });
+  await checkedDaysAgo(2);
+  expect(await renewLicense(project.id, { olderThan: DAY_MS })).toBe("busy");
+  expect((await state()).licenseKey).toBe(before.licenseKey);
+});
+
 test("keys expire by the latest time tuti.so has said it is, so setting the clock back doesn't help", async () => {
   await sell();
   await check();
