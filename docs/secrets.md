@@ -83,8 +83,8 @@ project's Viewer role (read-only; a prod-only role would need Infisical Enterpri
 `INFISICAL_TOKEN` is an access token of that identity. To change a value, edit it in
 Infisical and redeploy the apps that use it; there's nothing to copy.
 
-Values only the deployment itself needs, like the GitHub webhook secret Coolify checks,
-live in `/deploy`, which no app imports, so they stay out of the apps' environment.
+Infisical holds only what the apps read. The secret GitHub signs Coolify's deploy webhook
+with lives in GitHub and Coolify alone; to change it, set a new one in both.
 
 Coolify deploys `main` on every push, through a GitHub webhook signed with a
 shared secret (Coolify's own auto-deploy; no Coolify token lives in GitHub). `main`
