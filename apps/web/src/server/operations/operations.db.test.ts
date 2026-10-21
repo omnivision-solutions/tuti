@@ -90,7 +90,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
   "branding.get": () => ({}),
   // Like widget.update: admins only in the app (see the authorization matrix).
-  "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: false }),
+  "branding.update": () => ({ color: "#5b21b6", headerLinks: [{ label: "Docs", url: "https://docs.example.com" }], poweredBy: true }),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),

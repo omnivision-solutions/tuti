@@ -12,7 +12,7 @@ async function wordmark(page: Page, color: string) {
   return page.locator("#mark").screenshot({ omitBackground: true });
 }
 
-test("an admin brands the portal: logos, favicon, colour and links, without Powered by tuti", async ({ browser }, testInfo) => {
+test("an admin brands the portal: logos, favicon, colour and links; Powered by tuti stays without a licence", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
@@ -39,13 +39,18 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
   await card.getByRole("button", { name: "Add footer link" }).click();
   await card.getByLabel("Footer link 1 label").fill("Privacy");
   await card.getByLabel("Footer link 1 URL").fill("https://example.com/privacy");
-  await card.getByLabel('Show "Powered by tuti" in the footer').uncheck();
+  // Hiding Powered by tuti needs a licence for the project.
+  const poweredBy = card.getByLabel('Show "Powered by tuti" in the footer');
+  await poweredBy.uncheck();
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByText('Hiding "Powered by tuti" needs a licence for this project')).toBeVisible();
+  await poweredBy.check();
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await checkpoint(owner, "branding-settings");
   await owner.reload();
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
-  await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).not.toBeChecked();
+  await expect(owner.getByLabel('Show "Powered by tuti" in the footer')).toBeChecked();
 
   // Someone signed in on the portal (so the board shows its post form), in light and dark mode.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
@@ -75,7 +80,7 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
       "href",
       "https://example.com/privacy",
     );
-    await expect(visitor.getByText("Powered by")).toHaveCount(0);
+    await expect(visitor.getByRole("contentinfo").getByText("Powered by")).toBeVisible();
     // Focus rings are drawn in the accent too.
     await visitor.getByRole("button", { name: "Submit feedback" }).focus();
     await checkpoint(visitor, `branded-portal-${colorScheme}`);
@@ -83,7 +88,7 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
     // The help center is the same portal, branded the same way.
     await visitor.goto("/docs");
     await expect(visitor.getByRole("navigation", { name: "Footer" })).toBeVisible();
-    await expect(visitor.getByText("Powered by")).toHaveCount(0);
+    await expect(visitor.getByRole("contentinfo").getByText("Powered by")).toBeVisible();
     await visitor.context().close();
   }
 });

@@ -4,6 +4,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
+import { installationId, licensedUntil } from "../license";
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, luminance, textColorOn, type WidgetLink } from "./widget";
@@ -26,6 +27,7 @@ export type Branding = {
   color: string | null;
   headerLinks: WidgetLink[];
   footerLinks: WidgetLink[];
+  /** Whether the footer says "Powered by tuti": always, unless the project has a valid licence key. */
   poweredBy: boolean;
 };
 
@@ -33,18 +35,23 @@ const image = { select: { id: true, status: true, width: true, height: true } } 
 
 /** The project's branding, with each image's URL on the media host (its smallest stored size, at most 480px wide). */
 export async function branding(where: { id: string } | { slug: string }): Promise<Branding | null> {
-  const project = await prisma.project.findUnique({
-    where,
-    select: {
-      brandLogo: image,
-      brandLogoDark: image,
-      brandFavicon: image,
-      brandColor: true,
-      headerLinks: true,
-      footerLinks: true,
-      poweredBy: true,
-    },
-  });
+  const [project, installation] = await Promise.all([
+    prisma.project.findUnique({
+      where,
+      select: {
+        id: true,
+        brandLogo: image,
+        brandLogoDark: image,
+        brandFavicon: image,
+        brandColor: true,
+        headerLinks: true,
+        footerLinks: true,
+        poweredBy: true,
+        licenseKey: true,
+      },
+    }),
+    installationId(),
+  ]);
   if (!project) {
     return null;
   }
@@ -64,7 +71,8 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     color: project.brandColor,
     headerLinks: links(project.headerLinks),
     footerLinks: links(project.footerLinks),
-    poweredBy: project.poweredBy,
+    // Checked here, where the portal reads it, so turning poweredBy off in the database isn't enough.
+    poweredBy: project.poweredBy || !licensedUntil(project.licenseKey, { installation, project: project.id }),
   };
 }
 
@@ -111,7 +119,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), and poweredBy`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), and poweredBy (false needs a licence for the project)`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -138,8 +146,11 @@ export const updateBranding = defineOperation({
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({
           where: { id: projectId },
-          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true },
+          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, licenseKey: true },
         });
+        if (input.poweredBy === false && !licensedUntil(current.licenseKey, { installation: await installationId(), project: projectId })) {
+          throw new OperationError(400, "invalid_input", 'Hiding "Powered by tuti" needs a licence for this project');
+        }
         const names = Object.keys(IMAGES) as ImageName[];
         const before = names.map((name) => current[IMAGES[name]]).filter((id) => id !== null);
         const after = names.map((name) => (input[name] !== undefined ? input[name] : current[IMAGES[name]])).filter((id) => id !== null);
