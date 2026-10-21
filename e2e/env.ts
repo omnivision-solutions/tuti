@@ -8,6 +8,9 @@ export const APP_URL = `http://localhost:${PORT}`;
 /** A project's portal; *.localhost resolves to this machine in Chromium. */
 export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
 
+/** The project whose portal is on the app's own domain (APP_PORTAL_PROJECT). */
+export const APP_PORTAL_SLUG = "e2e-app-portal";
+
 export const serverEnv = {
   PORT: String(PORT),
   APP_URL,
@@ -27,4 +30,6 @@ export const serverEnv = {
   EMAIL_FROM: "Tuti Test <test@example.com>",
   // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine.
   CUSTOM_DOMAIN_TARGET: "customers.example.com",
+  // Tuti's own portal on the app's domain: the project app-portal.spec.ts makes.
+  APP_PORTAL_PROJECT: APP_PORTAL_SLUG,
 };

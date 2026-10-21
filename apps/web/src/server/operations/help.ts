@@ -189,7 +189,8 @@ async function freeSlug(
 }
 
 // Deleted articles don't hold on to their slugs (a restored one takes the next free one if its own is gone).
-// "new" and "insights" are the team's pages under /app/<project>/help, so no article can have them.
+// "new" and "insights" are the team's pages under /app/<project>/help, and /docs/api is the API
+// reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
 const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
   freeSlug(
     title,
@@ -199,7 +200,7 @@ const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title:
         where: { projectId, slug: { startsWith: prefix }, deletedAt: null, ...(except && { id: { not: except } }) },
         select: { slug: true },
       }),
-    ["new", "insights"],
+    ["new", "insights", "api"],
   );
 
 const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>

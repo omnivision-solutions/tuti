@@ -79,6 +79,8 @@ describe("articles", () => {
     expect((await call(createArticle, as(owner), { title: "???" })).slug).toBe("article");
     // "new" is the team's new-article page, so an article can't have it.
     expect((await call(createArticle, as(owner), { title: "New" })).slug).toBe("new-2");
+    // Nor /docs/api, the API reference.
+    expect((await call(createArticle, as(owner), { title: "API" })).slug).toBe("api-2");
 
     expect(await call(updateArticle, as(owner), { slug: "getting-started-2", title: "Inviting your team" })).toMatchObject({
       slug: "inviting-your-team",

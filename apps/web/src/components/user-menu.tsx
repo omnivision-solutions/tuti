@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
 
-export function UserMenu({ name, image }: { name: string; image: string | null }) {
+export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const router = useRouter();
   const initials = name
     .split(/\s+/)
@@ -39,7 +39,7 @@ export function UserMenu({ name, image }: { name: string; image: string | null }
           <DropdownMenuLabel className="truncate">{name}</DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/account" />}>
+        <DropdownMenuItem render={<Link href={accountHref} />}>
           <UserIcon />
           Account settings
         </DropdownMenuItem>

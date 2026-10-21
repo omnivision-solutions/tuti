@@ -1,10 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
 
-import { portalUrl } from "@/lib/hosts";
+import { appPortalProject, isAppPortalPath } from "@/lib/app-portal";
+import { appUrl, portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
+import { portalHomePath } from "@/server/portal-home";
 
 /**
  * Routes requests by host:
@@ -39,38 +41,28 @@ export async function proxy(request: NextRequest) {
     // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
     if (!target.customDomain && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
       const address = await portalAddress(target.slug);
-      if (address !== portalUrl(target.slug)) {
-        const response = NextResponse.redirect(new URL(pathname + request.nextUrl.search, address), 308);
+      // Not to localhost (Tuti's own portal on a local app): Next.js turns a redirect to the origin it
+      // serves into a bare path, which would send the browser round in circles; it reads it here then.
+      if (address !== portalUrl(target.slug) && new URL(address).hostname !== "localhost") {
+        // Tuti's own portal's home is its home page's part: the app's own / is the app's.
+        const path = pathname === "/" && target.slug === appPortalProject() ? ((await portalHomePath(target.slug)) ?? "/") : pathname;
+        const response = NextResponse.redirect(new URL(path + request.nextUrl.search, address), 308);
         // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
         response.headers.set("cache-control", "no-store");
         return response;
       }
     }
-    const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(target.slug, request.headers);
-    if (visitor === "refused") {
-      // On its own domain the portal stays there (help.acme.com/sign-in).
-      const origin = target.customDomain ? `${new URL(portalUrl(target.slug)).protocol}//${host}` : portalUrl(target.slug);
-      const signIn = new URL("/sign-in", origin);
-      if (pathname !== "/") {
-        signIn.searchParams.set("next", pathname + request.nextUrl.search);
-      }
-      const response = NextResponse.redirect(signIn);
-      response.headers.set("cache-control", "private, no-store");
-      return noFraming(response);
-    }
-    const url = request.nextUrl.clone();
-    const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
-    url.pathname = `/portal/${target.slug}${path === "/" ? "" : path}`;
-    const response = NextResponse.rewrite(url);
-    if (visitor === "allowed") {
-      // A private portal's feeds and files are for this reader only: no shared cache may keep them.
-      // (Set here, it wins over the routes' own public cache-control.)
-      response.headers.set("cache-control", "private, no-store");
-    }
-    return pathname === "/widget" ? response : noFraming(response);
+    // On its own domain the portal stays there (help.acme.com/sign-in).
+    const origin = target.customDomain ? `${new URL(portalUrl(target.slug)).protocol}//${host}` : portalUrl(target.slug);
+    return servePortal(request, target.slug, origin);
   }
 
   if (target.kind === "app") {
+    // Tuti's own portal, at its parts' paths (see lib/app-portal.ts).
+    const appPortal = appPortalProject();
+    if (appPortal && isAppPortalPath(pathname)) {
+      return servePortal(request, appPortal, appUrl().origin);
+    }
     if (pathname === "/portal" || pathname.startsWith("/portal/")) {
       return new NextResponse(null, { status: 404 });
     }
@@ -89,6 +81,31 @@ export async function proxy(request: NextRequest) {
 
   // Unknown host: nothing (custom domains are portals once verified).
   return new NextResponse(null, { status: 404 });
+}
+
+/** A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private. */
+async function servePortal(request: NextRequest, slug: string, origin: string) {
+  const { pathname } = request.nextUrl;
+  const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers);
+  if (visitor === "refused") {
+    const signIn = new URL("/sign-in", origin);
+    if (pathname !== "/") {
+      signIn.searchParams.set("next", pathname + request.nextUrl.search);
+    }
+    const response = NextResponse.redirect(signIn);
+    response.headers.set("cache-control", "private, no-store");
+    return noFraming(response);
+  }
+  const url = request.nextUrl.clone();
+  const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
+  url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
+  const response = NextResponse.rewrite(url);
+  if (visitor === "allowed") {
+    // A private portal's feeds and files are for this reader only: no shared cache may keep them.
+    // (Set here, it wins over the routes' own public cache-control.)
+    response.headers.set("cache-control", "private, no-store");
+  }
+  return pathname === "/widget" ? response : noFraming(response);
 }
 
 /**

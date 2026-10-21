@@ -4,6 +4,7 @@ import { getPortal, updatePortal } from "@/server/operations/portal";
 import { call } from "@/server/operations/run";
 import { createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 
+import FeedbackHome from "./feedback/page";
 import PortalHome from "./page";
 
 /** The portal's home opens what the team picked (Settings → Home page): the first board unless they did. */
@@ -31,6 +32,11 @@ test("the first board, then the roadmap, the changelog or the help center once p
     await call(updatePortal, as(), { home: pick });
     expect(await home()).toBe(path);
   }
+});
+
+test("/feedback opens the first board, whatever the home page", async () => {
+  await call(updatePortal, as(), { home: "docs" });
+  expect(await redirectTarget(FeedbackHome({ params: Promise.resolve({ project: project.slug }) } as never))).toBe("/feedback/feature-requests");
 });
 
 test("each setting changes on its own; bad values are refused", async () => {
