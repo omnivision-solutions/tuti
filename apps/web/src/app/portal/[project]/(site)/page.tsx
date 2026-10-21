@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { portalHomePath } from "@/server/portal-home";
+import { portalLinks } from "@/server/portal-base";
 
 /** The portal's home: what the team picked (Settings → Home page), the first board unless they did. */
 export default async function PortalHome(props: PageProps<"/portal/[project]">) {
@@ -9,5 +10,5 @@ export default async function PortalHome(props: PageProps<"/portal/[project]">) 
   if (!path) {
     notFound();
   }
-  redirect(path);
+  redirect((await portalLinks())(path));
 }

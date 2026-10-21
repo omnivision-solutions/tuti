@@ -16,9 +16,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { authClient } from "@/lib/auth-client";
+import { usePortalHref } from "@/components/portal-base";
 
 export function UserMenu({ name, image, accountHref = "/account" }: { name: string; image: string | null; accountHref?: string }) {
   const router = useRouter();
+  const at = usePortalHref();
   const initials = name
     .split(/\s+/)
     .map((part) => part[0])
@@ -46,7 +48,7 @@ export function UserMenu({ name, image, accountHref = "/account" }: { name: stri
         <DropdownMenuItem
           onClick={async () => {
             await authClient.signOut();
-            router.push("/");
+            router.push(at("/"));
             router.refresh();
           }}
         >

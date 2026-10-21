@@ -5,6 +5,7 @@ import { SignInLinkConfirm } from "@/components/sign-in-link-confirm";
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { safeRedirectPath } from "@/lib/redirects";
 import { failedSignInLinkPath, pendingSignInLink } from "@/server/sign-in-link-lookup";
+import { portalLinks } from "@/server/portal-base";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -18,7 +19,7 @@ export default async function SignInLinkPage(props: PageProps<"/portal/[project]
   const nextPath = safeRedirectPath(typeof next === "string" ? next : undefined, "/");
   const link = typeof token === "string" ? await pendingSignInLink(project, token) : null;
   if (!link) {
-    redirect(failedSignInLinkPath(nextPath));
+    redirect((await portalLinks())(failedSignInLinkPath(nextPath)));
   }
 
   return (

@@ -5,6 +5,7 @@ import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
+import { portalBase, portalLinks } from "@/server/portal-base";
 
 export default async function ChangelogEntryPage(props: PageProps<"/portal/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -19,12 +20,13 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   }
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href="/changelog">Changelog</BackLink>
+      <BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>
       <ChangelogEntryView
         entry={entry}
         mediaBaseUrl={mediaPublicUrl()}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
+        base={await portalBase()}
       />
     </div>
   );

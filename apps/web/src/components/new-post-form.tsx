@@ -14,6 +14,7 @@ import { postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
+import { usePortalHref } from "@/components/portal-base";
 
 const SUGGEST_DELAY_MS = 300;
 
@@ -36,6 +37,7 @@ export function NewPostForm({
   /** A title to start the first post with (the question from the help center's "Post this as feedback"). */
   defaultTitle?: string;
 }) {
+  const at = usePortalHref();
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
@@ -115,7 +117,7 @@ export function NewPostForm({
                   {similar.map((post) => (
                     <li key={post.id}>
                       <Link
-                        href={postPath({ ...post, board: { slug: post.boardSlug } })}
+                        href={at(postPath({ ...post, board: { slug: post.boardSlug } }))}
                         target={linkTarget}
                         className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
                       >

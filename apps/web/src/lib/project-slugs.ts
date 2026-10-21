@@ -12,6 +12,9 @@ const RESERVED_SLUGS = new Set([
   "status", "support", "test", "tuti", "www",
   // Our own subdomains: CI screenshots, uploaded media, and where custom domains point.
   "ci", "media", "media-dev", "customers",
+  // The portal's own pages: under a site's /portal they'd read like /portal/<project>/… (proxy.ts).
+  "changelog", "continue", "forgot-password", "reset-password", "roadmap", "sign-in", "sign-up",
+  "unsubscribe", "widget",
 ]);
 
 export function isReservedSlug(slug: string): boolean {

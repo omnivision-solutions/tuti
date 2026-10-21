@@ -9,6 +9,7 @@ import { BackLink } from "@/components/back-link";
 import { formatDate } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
+import { portalLinks } from "@/server/portal-base";
 
 /** Search results show the article's title and its first lines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">): Promise<Metadata> {
@@ -27,6 +28,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
 }
 
 export default async function ArticlePage(props: PageProps<"/portal/[project]/docs/[slug]">) {
+  const at = await portalLinks();
   const { project, slug } = await props.params;
   const article = await publishedArticle(project, slug);
   if (!article) {
@@ -34,7 +36,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/do
   }
   return (
     <article className="flex flex-col gap-6" aria-labelledby="article-title">
-      <BackLink href={article.section ? `/docs?${new URLSearchParams({ section: article.section })}` : "/docs"}>Help center</BackLink>
+      <BackLink href={at(article.section ? `/docs?${new URLSearchParams({ section: article.section })}` : "/docs")}>Help center</BackLink>
       <div className="flex flex-col gap-1">
         {article.collection && <p className="text-sm text-muted-foreground">{article.collection.name}</p>}
         <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { firstBoardPath } from "@/server/portal-home";
+import { portalLinks } from "@/server/portal-base";
 
 /** /feedback opens the first board. */
 export default async function FeedbackHome(props: PageProps<"/portal/[project]/feedback">) {
@@ -9,5 +10,5 @@ export default async function FeedbackHome(props: PageProps<"/portal/[project]/f
   if (!path) {
     notFound();
   }
-  redirect(path);
+  redirect((await portalLinks())(path));
 }

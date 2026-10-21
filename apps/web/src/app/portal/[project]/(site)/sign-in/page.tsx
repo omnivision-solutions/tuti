@@ -10,8 +10,10 @@ import { buttonVariants } from "@/components/ui/button";
 import { safeRedirectPath } from "@/lib/redirects";
 import { canReadPortal, invitedReader } from "@/server/portal-access";
 import { getSession } from "@/server/session";
+import { portalLinks } from "@/server/portal-base";
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
+  const at = await portalLinks();
   const [{ project }, { continue: handoff, link, next, reset }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
   const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
@@ -52,7 +54,7 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
       {reset === "done" && <PasswordChangedAlert />}
       {/* A plain link: /continue is a route that sets a cookie and leaves for the app host. */}
       <a
-        href={nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue"}
+        href={at(nextPath ? `/continue?${new URLSearchParams({ redirect: nextPath })}` : "/continue")}
         className={buttonVariants({ variant: "secondary", className: "w-full" })}
       >
         <TutiMark className="size-4" />
