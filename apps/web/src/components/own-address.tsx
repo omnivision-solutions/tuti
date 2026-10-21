@@ -38,6 +38,18 @@ export function OwnAddressSettings({
   const domainSettings = <CustomDomainSettings projectSlug={projectSlug} domain={domain} portalAddress={portalAddress} protocol={protocol} />;
   const siteSettings = <SiteMountSettings projectSlug={projectSlug} site={site} portalAddress={portalAddress} />;
 
+  // Both, from before a portal could only have one: show both, so either can be removed.
+  if (domain && site) {
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          Your portal has a domain of its own and a path of your site. It can only have one: remove the one you don&apos;t want.
+        </p>
+        {domainSettings}
+        {siteSettings}
+      </div>
+    );
+  }
   if (domain) {
     return (
       <div className="flex flex-col gap-4">
