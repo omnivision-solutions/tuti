@@ -1502,10 +1502,31 @@ export const updateTab = defineOperation({
   },
 });
 
+/**
+ * Before tab `tabId` stops governing them (deleted, or no longer first): its top-level collections, or
+ * the articles in no collection, that inherit take its "Who can read", so a tab change never opens
+ * what it kept closed (it may narrow). Call it with the project locked.
+ */
+async function keepTabAccess(tx: Prisma.TransactionClient, projectId: string, tabId: string, what: "collections" | "uncollected") {
+  const tab = await tx.docsTab.findUniqueOrThrow({ where: { id: tabId }, select: { access: true, groups: { select: { groupId: true } } } });
+  if (tab.access === "INHERIT") {
+    return;
+  }
+  if (what === "collections") {
+    const ids = (await tx.collection.findMany({ where: { projectId, tabId, parentId: null, access: "INHERIT" }, select: { id: true } })).map((c) => c.id);
+    await tx.collection.updateMany({ where: { id: { in: ids } }, data: { access: tab.access } });
+    await tx.collectionGroup.createMany({ data: ids.flatMap((collectionId) => tab.groups.map((g) => ({ collectionId, groupId: g.groupId }))), skipDuplicates: true });
+  } else {
+    const ids = (await tx.article.findMany({ where: { projectId, collectionId: null, access: "INHERIT" }, select: { id: true } })).map((a) => a.id);
+    await tx.article.updateMany({ where: { id: { in: ids } }, data: { access: tab.access } });
+    await tx.articleGroup.createMany({ data: ids.flatMap((articleId) => tab.groups.map((g) => ({ articleId, groupId: g.groupId }))), skipDuplicates: true });
+  }
+}
+
 export const reorderTab = defineOperation({
   name: "tabs.reorder",
   summary:
-    "Move a docs tab to `position` among the tabs (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs",
+    "Move a docs tab to `position` among the tabs (0 first; left out, last); the others keep their order around it. Readers see the tabs in this order, the first one when they open the docs. The articles in no collection keep who can read them when another tab becomes first",
   method: "POST",
   path: "/tabs/{slug}/reorder",
   scope: "write",
@@ -1517,7 +1538,13 @@ export const reorderTab = defineOperation({
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const { id } = await lockedTab(tx, projectId, input.slug);
-        await renumber(tx, "docs_tab", placed(await tabsOf(tx, projectId), id, input.position));
+        const tabs = await tabsOf(tx, projectId);
+        const order = placed(tabs, id, input.position);
+        // The first tab governs the articles in no collection: a new one mustn't open them.
+        if (tabs[0] && order[0] !== tabs[0].id) {
+          await keepTabAccess(tx, projectId, tabs[0].id, "uncollected");
+        }
+        await renumber(tx, "docs_tab", order);
         return tx.docsTab.findUniqueOrThrow({ where: { id }, select: tabSelect });
       }),
     ),
@@ -1526,7 +1553,7 @@ export const reorderTab = defineOperation({
 export const deleteTab = defineOperation({
   name: "tabs.delete",
   summary:
-    "Delete a docs tab. Its collections go last in the tab before it, with everything in them. The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
+    "Delete a docs tab. Its collections go last in the tab before it, with everything in them, and keep who can read them. The first tab is the docs' home (/docs): it can't be deleted while there are others (move another first; 409), and deleting it when it's the only one leaves the docs without tabs",
   method: "DELETE",
   path: "/tabs/{slug}",
   scope: "write",
@@ -1545,6 +1572,11 @@ export const deleteTab = defineOperation({
       const target = tabs[at - 1] ?? null;
       const inTab = (tabId: string | null) =>
         tx.collection.findMany({ where: siblingsWhere(projectId, null, tabId), orderBy: siblingOrder, select: { id: true } });
+      // What it governed keeps who can read it: its collections, and (the first tab) the articles in none.
+      await keepTabAccess(tx, projectId, id, "collections");
+      if (at === 0) {
+        await keepTabAccess(tx, projectId, id, "uncollected");
+      }
       const moving = await inTab(id);
       if (moving.length > 0) {
         const staying = target ? await inTab(target.id) : [];
