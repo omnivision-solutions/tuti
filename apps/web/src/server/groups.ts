@@ -28,7 +28,7 @@ function conditionsFrom(formData: FormData): unknown {
 export async function saveGroup(projectSlug: string, key: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
     name: String(formData.get("name") ?? ""),
-    claim: String(formData.get("claim") ?? "") || null,
+    claim: String(formData.get("claim") ?? "").trim() || null,
     description: String(formData.get("description") ?? ""),
     conditions: conditionsFrom(formData) as z.input<typeof groupConditions>,
   };

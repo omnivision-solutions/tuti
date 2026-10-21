@@ -221,7 +221,8 @@ test("in the app: owners and admins only", async () => {
     error: "A group needs an SSO group name or a condition",
   });
   expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "", conditions: "not json" }))).toMatchObject({ error: expect.any(String) });
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "", conditions, description: "" }))).toEqual({});
+  // A claim of only spaces is none too, as in the preview.
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "  ", conditions, description: "" }))).toEqual({});
   expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", claim: "pro", conditions: "[]", description: "Paying" }))).toEqual({});
   expect(await list()).toEqual([{ key: "pro", name: "Pro plan", claim: "pro", description: "Paying", conditions: [], readers: 0, sample: [] }]);
   expect(await deleteGroupAction(project.slug, "pro")).toEqual({});
