@@ -244,8 +244,15 @@ function PoweredByField({
   const check = async () => {
     setChecking(true);
     setMessage(null);
-    const result = await checkBrandingLicense(projectSlug);
-    setChecking(false);
+    let result: Awaited<ReturnType<typeof checkBrandingLicense>>;
+    try {
+      result = await checkBrandingLicense(projectSlug);
+    } catch {
+      setMessage(CHECKED.unreachable);
+      return;
+    } finally {
+      setChecking(false);
+    }
     if (result.licensedUntil) {
       setLicensedUntil(result.licensedUntil);
       setShown(false);
@@ -306,7 +313,7 @@ function PoweredByField({
               rel="noreferrer"
               className={buttonVariants()}
               // From now on, this installation checks daily whether the licence has been bought.
-              onClick={() => void checkBrandingLicense(projectSlug)}
+              onClick={() => void checkBrandingLicense(projectSlug).catch(() => undefined)}
             >
               Get a licence
             </a>
