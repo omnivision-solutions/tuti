@@ -1,4 +1,4 @@
-import { isReservedSlug, SLUG_PATTERN } from "./project-slugs";
+import { isUsableSlug, SLUG_PATTERN } from "./project-slugs";
 
 /**
  * Which part of Tuti a request is for, based on its Host header.
@@ -62,7 +62,7 @@ export function resolveHost(host: string | null): HostTarget {
   const match =
     portalHostPattern().exec(host) ?? (!isProduction() ? /^([a-z0-9-]+)\.localhost(?::\d+)?$/.exec(host) : null);
   const slug = match?.[1];
-  if (slug && !isReservedSlug(slug)) {
+  if (slug && isUsableSlug(slug)) {
     return { kind: "portal", slug };
   }
   return { kind: "unknown" };

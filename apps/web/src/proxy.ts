@@ -4,7 +4,7 @@ import { appPortalMount } from "@/lib/app-portal";
 import { portalUrl } from "@/lib/hosts";
 import { ASSET_PATH, BASE_HEADER, BASE_PATTERN } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
-import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
+import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
@@ -89,7 +89,7 @@ export async function proxy(request: NextRequest) {
     }
     const response = NextResponse.next();
     const project = /^\/app\/([^/]+)/.exec(pathname)?.[1];
-    if (project && SLUG_PATTERN.test(project) && !isReservedSlug(project)) {
+    if (project && SLUG_PATTERN.test(project) && isUsableSlug(project)) {
       response.cookies.set(LAST_PROJECT_COOKIE, project, {
         path: "/app",
         httpOnly: true,

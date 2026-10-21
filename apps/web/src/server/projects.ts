@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { appPortalProject, isAppPortalOwner } from "@/lib/app-portal";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
@@ -18,8 +19,7 @@ const createProjectSchema = z.object({
     .toLowerCase()
     .regex(SLUG_PATTERN, "Use lowercase letters, numbers and single dashes")
     .min(2)
-    .max(40)
-    .refine((slug) => !isReservedSlug(slug), "That URL is reserved"),
+    .max(40),
 });
 
 export async function createProject(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -34,6 +34,11 @@ export async function createProject(_prev: FormState, formData: FormData): Promi
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  // Reserved, except Tuti's own portal's (APP_PORTAL_PROJECT), and only for its owner (APP_PORTAL_OWNER,
+  // a verified address): nobody else can take it first, between the setting and the project.
+  if (isReservedSlug(parsed.data.slug) && !(parsed.data.slug === appPortalProject() && isAppPortalOwner(session.user))) {
+    return { error: "That URL is reserved" };
   }
 
   try {

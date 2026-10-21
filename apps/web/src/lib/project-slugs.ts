@@ -17,7 +17,14 @@ const RESERVED_SLUGS = new Set([
   "unsubscribe", "widget",
 ]);
 
-/** Reserved, except the one Tuti's own portal has (APP_PORTAL_PROJECT, e.g. "help"; see lib/app-portal.ts). */
 export function isReservedSlug(slug: string): boolean {
-  return RESERVED_SLUGS.has(slug) && slug !== process.env.APP_PORTAL_PROJECT?.trim();
+  return RESERVED_SLUGS.has(slug);
+}
+
+/**
+ * A slug in use: not reserved, or the one Tuti's own portal has (APP_PORTAL_PROJECT, e.g. "help";
+ * see lib/app-portal.ts), which stays reserved for creating projects (only APP_PORTAL_OWNER may).
+ */
+export function isUsableSlug(slug: string): boolean {
+  return !isReservedSlug(slug) || slug === process.env.APP_PORTAL_PROJECT?.trim();
 }
