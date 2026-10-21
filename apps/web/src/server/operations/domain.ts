@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { customDomainTarget, normalizeHostname, verificationRecord } from "@/lib/custom-domains";
 
-import { certificateStatus, cloudflareConfigured, createCustomHostname, deleteCustomHostname, getCustomHostname } from "../cloudflare";
+import { certificateStatus, CloudflareError, cloudflareConfigured, createCustomHostname, deleteCustomHostname, getCustomHostname } from "../cloudflare";
 import { forgetCustomDomain, txtRecords } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 
@@ -41,7 +41,13 @@ export async function customDomain(projectId: string) {
   let domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
   if (domain?.cloudflareId && domain.certificate !== "ACTIVE" && cloudflareConfigured()) {
     try {
-      const certificate = certificateStatus(await getCustomHostname(domain.cloudflareId));
+      const certificate = await getCustomHostname(domain.cloudflareId).then(certificateStatus, (error: unknown) => {
+        // Gone at Cloudflare (deleted there): there's no certificate coming; removing and adding the domain makes a new one.
+        if (error instanceof CloudflareError && error.status === 404) {
+          return "FAILED" as const;
+        }
+        throw error;
+      });
       if (certificate !== domain.certificate) {
         await prisma.customDomain.updateMany({ where: { projectId, cloudflareId: domain.cloudflareId }, data: { certificate } });
         domain = { ...domain, certificate };

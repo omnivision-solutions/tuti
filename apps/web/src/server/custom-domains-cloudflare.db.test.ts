@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { deleteCustomHostname } from "./cloudflare";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { call } from "./operations/run";
 
@@ -65,6 +66,19 @@ test("a certificate Cloudflare gave up on shows as failed", async () => {
   await call(verifyDomain, as(), {});
   cloudflare.certificate(host, "validation_timed_out");
   expect((await call(getDomain, as(), {})).domain?.certificate).toBe("failed");
+});
+
+test("a custom hostname deleted at Cloudflare shows as a failed certificate, not one forever on its way", async () => {
+  const host = hostname();
+  await add(host);
+  await call(verifyDomain, as(), {});
+  await deleteCustomHostname(atCloudflare(host)[0]!.id);
+  expect((await call(getDomain, as(), {})).domain?.certificate).toBe("failed");
+  // Adding it again makes a new one.
+  await call(removeDomain, as(), {});
+  await add(host);
+  expect((await call(verifyDomain, as(), {})).domain.certificate).toBe("pending");
+  expect(atCloudflare(host)).toHaveLength(1);
 });
 
 test("changing or removing the domain deletes its custom hostname", async () => {
