@@ -6,6 +6,7 @@ import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { type Listing, LISTINGS } from "@/lib/article-listing";
+import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
 import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
@@ -863,13 +864,14 @@ const collectionSelect = {
   description: true,
   order: true,
   parentId: true,
-  parent: { select: { slug: true, tab: { select: { slug: true } } } },
+  parent: { select: { slug: true } },
   tab: { select: { slug: true } },
   groups: true,
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-const collectionView = ({ slug, name, description, order, parent, tab, groups, _count }: CollectionRow) => ({
+/** Collection `row` for the API; `tree` is every collection in its project (for its tab, its top-level one's). */
+const collectionView = ({ id, slug, name, description, order, parent, groups, _count }: CollectionRow, tree: CollectionRow[]) => ({
   slug,
   name,
   description,
@@ -877,11 +879,17 @@ const collectionView = ({ slug, name, description, order, parent, tab, groups, _
   groups,
   /** The collection it's in (its slug), or null at the top level. */
   parent: parent?.slug ?? null,
-  /** The tab it's in (a collection in another is in its parent's), or null if the docs have no tabs. */
-  tab: (parent ? parent.tab : tab)?.slug ?? null,
+  /** The tab it's in (a collection in another is in its top-level one's), or null if the docs have no tabs. */
+  tab: ancestry(tree, id).at(-1)?.tab?.slug ?? null,
   order,
   articles: _count.articles,
 });
+
+/** Collection `id` for the API. */
+async function collectionIn(tx: Prisma.TransactionClient, projectId: string, id: string) {
+  const tree = await tx.collection.findMany({ where: { projectId }, select: collectionSelect });
+  return collectionView(tree.find((c) => c.id === id)!, tree);
+}
 
 const siblingOrder: Prisma.CollectionOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
 const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { name: "asc" }];
@@ -890,7 +898,7 @@ const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { 
 async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
   const collection = await tx.collection.findUnique({
     where: { projectId_slug: { projectId, slug } },
-    select: { id: true, name: true, parentId: true, tabId: true, parent: { select: { tabId: true } } },
+    select: { id: true, name: true, parentId: true, tabId: true },
   });
   if (!collection) {
     throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
@@ -898,35 +906,29 @@ async function lockedCollection(tx: Prisma.TransactionClient, projectId: string,
   return collection;
 }
 
+/** The project's collections, for parentFor and the way up to a top-level one. Read them with the project locked. */
+const treeOf = (tx: Prisma.TransactionClient, projectId: string) =>
+  tx.collection.findMany({ where: { projectId }, select: { id: true, slug: true, parentId: true, tabId: true } });
+
 /**
  * The id of collection `slug` (null: the top level) for `collection` (undefined: a new one) to go
- * in. Call it with the project locked. Collections go 2 levels deep at most: the parent must be at
- * the top level, and a collection with collections in it stays there. That also rules out cycles.
+ * in, from `tree` (treeOf): not the collection itself or one inside it (no loops), and the
+ * collection, with the ones in it, no more than MAX_COLLECTION_DEPTH levels deep there.
  */
-async function parentFor(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-  collection: { id: string; name: string } | undefined,
-  slug: string | null,
-) {
+function parentFor(tree: Awaited<ReturnType<typeof treeOf>>, collection: { id: string } | undefined, slug: string | null) {
   if (slug === null) {
     return null;
   }
-  const parent = await tx.collection.findUnique({
-    where: { projectId_slug: { projectId, slug } },
-    select: { id: true, name: true, parentId: true },
-  });
+  const parent = tree.find((c) => c.slug === slug);
   if (!parent) {
     throw new OperationError(400, "invalid_input", `There's no collection “${slug}”`);
   }
-  if (parent.id === collection?.id) {
-    throw new OperationError(400, "invalid_input", "A collection can't go inside itself");
+  const up = ancestry(tree, parent.id);
+  if (collection && up.some((c) => c.id === collection.id)) {
+    throw new OperationError(400, "invalid_input", "A collection can't go inside itself or one inside it");
   }
-  if (parent.parentId !== null) {
-    throw new OperationError(400, "invalid_input", `Collections go 2 levels deep at most, and “${parent.name}” is inside another`);
-  }
-  if (collection && (await tx.collection.count({ where: { parentId: collection.id } })) > 0) {
-    throw new OperationError(400, "invalid_input", `Collections go 2 levels deep at most, and “${collection.name}” has collections in it`);
+  if (up.length + (collection ? height(tree, collection.id) : 1) > MAX_COLLECTION_DEPTH) {
+    throw new OperationError(400, "invalid_input", `Collections go ${MAX_COLLECTION_DEPTH} levels deep at most`);
   }
   return parent.id;
 }
@@ -985,8 +987,8 @@ async function tabFor(
 
 /**
  * Where collection `collection` goes for `parent` (null: the top level; undefined: where it is) and
- * `tab`: at the top level, the named tab, else the one it's in (or its parent's, coming out
- * of it). Call it with the project locked.
+ * `tab`: at the top level, the named tab, else the one it's in (or its top-level one's, coming
+ * out of it). Call it with the project locked.
  */
 async function placeFor(
   tx: Prisma.TransactionClient,
@@ -994,8 +996,9 @@ async function placeFor(
   collection: Awaited<ReturnType<typeof lockedCollection>>,
   input: { parent?: string | null; tab?: string },
 ) {
-  const parentId = input.parent === undefined ? collection.parentId : await parentFor(tx, projectId, collection, input.parent);
-  const fallback = collection.parentId === null ? collection.tabId : (collection.parent?.tabId ?? null);
+  const tree = await treeOf(tx, projectId);
+  const parentId = input.parent === undefined ? collection.parentId : parentFor(tree, collection, input.parent);
+  const fallback = ancestry(tree, collection.id).at(-1)?.tabId ?? null;
   return { parentId, tabId: await tabFor(tx, projectId, { slug: input.tab, parentId, fallback }) };
 }
 
@@ -1010,14 +1013,14 @@ export const listCollections = defineOperation({
   input: z.object({}),
   run: async ({ projectId }) => {
     const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: readingOrder, select: collectionSelect });
-    return { collections: inTreeOrder(collections).map(collectionView) };
+    return { collections: inTreeOrder(collections).map((c) => collectionView(c, collections)) };
   },
 });
 
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `groups` makes it (and what's in it) for those reader groups only (from your app's SSO token), besides the team",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1031,27 +1034,26 @@ export const createCollection = defineOperation({
   }),
   example: { name: "Getting started", description: "The basics, in five minutes." },
   run: async ({ projectId }, input) =>
-    collectionView(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
-        const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
-        const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
-        return tx.collection.create({
-          data: {
-            projectId,
-            parentId,
-            tabId,
-            slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
-            name: input.name,
-            description: input.description,
-            groups: input.groups,
-            order: (last._max.order ?? -1) + 1,
-          },
-          select: collectionSelect,
-        });
-      }),
-    ),
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const parentId = parentFor(await treeOf(tx, projectId), undefined, input.parent ?? null);
+      const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
+      const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
+      const { id } = await tx.collection.create({
+        data: {
+          projectId,
+          parentId,
+          tabId,
+          slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
+          name: input.name,
+          description: input.description,
+          groups: input.groups,
+          order: (last._max.order ?? -1) + 1,
+        },
+        select: { id: true },
+      });
+      return collectionIn(tx, projectId, id);
+    }),
 });
 
 export const updateCollection = defineOperation({
@@ -1073,35 +1075,33 @@ export const updateCollection = defineOperation({
   }),
   example: { name: "Basics", parent: null },
   run: async ({ projectId }, input) =>
-    collectionView(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const collection = await lockedCollection(tx, projectId, input.slug);
-        const { id } = collection;
-        if (input.parent !== undefined || input.tab !== undefined) {
-          const place = await placeFor(tx, projectId, collection, input);
-          if (place.parentId !== collection.parentId || place.tabId !== collection.tabId) {
-            await placeCollection(tx, projectId, id, place);
-          }
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const collection = await lockedCollection(tx, projectId, input.slug);
+      const { id } = collection;
+      if (input.parent !== undefined || input.tab !== undefined) {
+        const place = await placeFor(tx, projectId, collection, input);
+        if (place.parentId !== collection.parentId || place.tabId !== collection.tabId) {
+          await placeCollection(tx, projectId, id, place);
         }
-        return tx.collection.update({
-          where: { id },
-          data: {
-            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
-            ...(input.description !== undefined && { description: input.description }),
-            ...(input.groups !== undefined && { groups: input.groups }),
-            ...(input.order !== undefined && { order: input.order }),
-          },
-          select: collectionSelect,
-        });
-      }),
-    ),
+      }
+      await tx.collection.update({
+        where: { id },
+        data: {
+          ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
+          ...(input.description !== undefined && { description: input.description }),
+          ...(input.groups !== undefined && { groups: input.groups }),
+          ...(input.order !== undefined && { order: input.order }),
+        },
+      });
+      return collectionIn(tx, projectId, id);
+    }),
 });
 
 export const reorderCollection = defineOperation({
   name: "collections.reorder",
   summary:
-    "Move a docs collection among its siblings, into another collection (`parent`, null for the top level; 2 levels deep at most) or to another tab (`tab`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
+    "Move a docs collection among its siblings, into another collection (`parent`, null for the top level; 5 levels deep at most, and not one inside it) or to another tab (`tab`, at the top level; left out, the one it's in, or was in through its parent), at `position` (0 first; left out, last); the others keep their order around it. Readers list collections in this order",
   method: "POST",
   path: "/collections/{slug}/reorder",
   scope: "write",
@@ -1109,14 +1109,12 @@ export const reorderCollection = defineOperation({
   input: z.object({ slug, parent: slug.nullable().optional(), tab: slug.optional(), position: position.optional() }),
   example: { parent: null, position: 0 },
   run: async ({ projectId }, input) =>
-    collectionView(
-      await prisma.$transaction(async (tx) => {
-        await lockProject(tx, projectId);
-        const collection = await lockedCollection(tx, projectId, input.slug);
-        await placeCollection(tx, projectId, collection.id, await placeFor(tx, projectId, collection, input), input.position);
-        return tx.collection.findUniqueOrThrow({ where: { id: collection.id }, select: collectionSelect });
-      }),
-    ),
+    prisma.$transaction(async (tx) => {
+      await lockProject(tx, projectId);
+      const collection = await lockedCollection(tx, projectId, input.slug);
+      await placeCollection(tx, projectId, collection.id, await placeFor(tx, projectId, collection, input), input.position);
+      return collectionIn(tx, projectId, collection.id);
+    }),
 });
 
 export const deleteCollection = defineOperation({
@@ -1139,7 +1137,7 @@ export const deleteCollection = defineOperation({
           orderBy: siblingOrder,
           select: { id: true },
         });
-        // Only a top-level collection has some in it, so they come up to the top level, in its tab.
+        // Up a level: into the one it was in, or at the top level in its tab.
         await tx.collection.updateMany({ where: { parentId: collection.id }, data: { parentId: collection.parentId, tabId: collection.tabId } });
         await renumber(
           tx,
