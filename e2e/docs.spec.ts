@@ -101,10 +101,22 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-docs-article-published");
 
   // The visitor finds it under its collection on the Docs tab, and reads it.
+  const scripts: Promise<string>[] = [];
+  visitor.on("response", (response) => {
+    if (response.request().resourceType() === "script") {
+      scripts.push(response.text());
+    }
+  });
   await visitor.goto("/");
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   const collection = visitor.getByRole("region", { name: "Getting started" });
   await expect(collection).toContainText("The basics, in five minutes.");
+  // With its icon, drawn on the server: no script the portal sends has Lucide's names (the app's picker loads them).
+  await expect(collection.getByRole("heading", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
+  expect(scripts.length).toBeGreaterThan(0);
+  for (const script of await Promise.all(scripts)) {
+    expect(script).not.toContain("a-arrow-down");
+  }
   await checkpoint(visitor, "portal-docs");
   await collection.getByRole("link", { name: "Inviting your team" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);

@@ -232,14 +232,16 @@ describe("readers", () => {
           slug: "billing",
           name: "Billing",
           description: "",
+          icon: null,
           articles: [link("card-payments", "Card payments")],
           // Collections without published articles are left out.
-          collections: [{ slug: "invoices", name: "Invoices", description: "", articles: [link("downloading-invoices", "Downloading invoices")], collections: [] }],
+          collections: [{ slug: "invoices", name: "Invoices", description: "", icon: null, articles: [link("downloading-invoices", "Downloading invoices")], collections: [] }],
         },
         {
           slug: "basics",
           name: "Basics",
           description: "",
+          icon: null,
           articles: [link("inviting-your-team", "Inviting your team"), link("your-first-board", "Your first board")],
           collections: [],
         },

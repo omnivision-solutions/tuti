@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import Link from "next/link";
 
+import { CollectionIcon } from "@/components/collection-icon";
 import type { DocsCollection } from "@/server/docs-queries";
 
 type Articles = { slug: string; title: string }[];
@@ -36,9 +37,10 @@ function CollectionSection({
     <section aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
       <Heading
         id={`collection-${collection.slug}`}
-        className={cn("font-heading font-bold tracking-tight break-words", !nested && !compact && "text-lg")}
+        className={cn("flex items-center gap-2 font-heading font-bold tracking-tight break-words", !nested && !compact && "text-lg")}
       >
-        {collection.name}
+        <CollectionIcon name={collection.icon} />
+        <span className="min-w-0">{collection.name}</span>
       </Heading>
       {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
       {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={href} />}
