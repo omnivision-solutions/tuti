@@ -120,7 +120,8 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           )}
           {brand.poweredBy && (
             <a
-              href={appUrl().origin}
+              // Tuti's own site on every installation, self-hosted too: it's the badge's whole point.
+              href="https://tuti.so"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
