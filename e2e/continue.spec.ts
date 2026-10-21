@@ -21,7 +21,7 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   await expect(ivy.getByText(`Signed in as ${ivy.email}`)).toBeVisible();
   await checkpoint(ivy, "continue-as");
   await ivy.getByRole("button", { name: "Continue as Ivy" }).click();
-  await ivy.waitForURL(`${portalUrl(slug)}/b/feature-requests`);
+  await ivy.waitForURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(ivy.getByRole("button", { name: "Submit feedback" })).toBeVisible();
   await expect(ivy.getByRole("link", { name: "Sign in" })).toHaveCount(0);
   await checkpoint(ivy, "portal-signed-in-as-account");
@@ -35,6 +35,6 @@ test("someone with a Tuti account continues on a portal with it", async ({ brows
   await bo.getByLabel("Password").fill("correct horse battery staple");
   await bo.getByRole("button", { name: "Sign in" }).click();
   await bo.getByRole("button", { name: "Continue as Olive Owner" }).click();
-  await bo.waitForURL(`${portalUrl(slug)}/b/feature-requests`);
+  await bo.waitForURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(bo.getByRole("button", { name: "Submit feedback" })).toBeVisible();
 });

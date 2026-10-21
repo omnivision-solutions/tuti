@@ -19,7 +19,7 @@ export function referencedPosts(text: string, projectSlug: string): number[] {
     numbers.add(Number(match[1]));
   }
   const host = new URL(portalOrigin(projectSlug)).host;
-  const portal = new RegExp(`https?://${escapeRegExp(host)}/p/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w./-])`, "gi");
+  const portal = new RegExp(`https?://${escapeRegExp(host)}/feedback/[a-z0-9-]+/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w./-])`, "gi");
   for (const match of text.matchAll(portal)) {
     numbers.add(Number(match[1]));
   }
@@ -194,7 +194,7 @@ async function commentFeedback(
   const posts = await prisma.post.findMany({
     where: { projectId: project.id, duplicateOfId: null, links: { some: { url: input.url } } },
     orderBy: [{ voteCount: "desc" }, { number: "asc" }],
-    select: { number: true, title: true, voteCount: true },
+    select: { number: true, title: true, voteCount: true, board: { select: { slug: true } } },
   });
   const lines = posts.map(
     (post) => `- [${plain(post.title)}](${portalPostUrl(project.slug, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,

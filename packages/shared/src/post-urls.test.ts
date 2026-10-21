@@ -19,8 +19,8 @@ describe("titleSlug", () => {
   });
 });
 
-test("postPath ends with the post number", () => {
-  expect(postPath({ title: "Dark mode", number: 12 })).toBe("/p/dark-mode-12");
+test("postPath is under the post's board and ends with its number", () => {
+  expect(postPath({ title: "Dark mode", number: 12, board: { slug: "ideas" } })).toBe("/feedback/ideas/dark-mode-12");
 });
 
 describe("postNumberFromParam", () => {
@@ -36,7 +36,7 @@ describe("postNumberFromParam", () => {
   });
 
   test("round-trips with postPath, even for titles ending in a number", () => {
-    const path = postPath({ title: "Support for 2024", number: 5 });
-    expect(postNumberFromParam(path.slice("/p/".length))).toBe(5);
+    const path = postPath({ title: "Support for 2024", number: 5, board: { slug: "ideas" } });
+    expect(postNumberFromParam(path.split("/").at(-1)!)).toBe(5);
   });
 });

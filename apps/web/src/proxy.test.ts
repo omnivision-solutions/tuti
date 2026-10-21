@@ -28,7 +28,7 @@ test("other paths on unknown hosts are still 404", async () => {
 test("other sites may frame a portal's /widget, and no other page", async () => {
   const framing = async (host: string, path: string) => (await proxy(request(host, path))).headers.get("content-security-policy");
   expect(await framing("acme.tuti.example", "/widget")).toBeNull();
-  expect(await framing("acme.tuti.example", "/b/ideas")).toBe("frame-ancestors 'none'");
+  expect(await framing("acme.tuti.example", "/feedback/ideas")).toBe("frame-ancestors 'none'");
   expect(await framing("acme.tuti.example", "/sign-in")).toBe("frame-ancestors 'none'");
   expect(await framing("tuti.example", "/widget")).toBe("frame-ancestors 'none'");
   expect(await framing("tuti.example", "/app/acme")).toBe("frame-ancestors 'none'");
@@ -36,7 +36,7 @@ test("other sites may frame a portal's /widget, and no other page", async () => 
 
 test("an article's .md URL is served by its Markdown route", async () => {
   const rewrite = async (path: string) => (await proxy(request("acme.tuti.example", path))).headers.get("x-middleware-rewrite");
-  expect(await rewrite("/help/inviting-your-team.md")).toBe("http://acme.tuti.example/portal/acme/help/inviting-your-team/md");
-  expect(await rewrite("/help/inviting-your-team")).toBe("http://acme.tuti.example/portal/acme/help/inviting-your-team");
+  expect(await rewrite("/docs/inviting-your-team.md")).toBe("http://acme.tuti.example/portal/acme/docs/inviting-your-team/md");
+  expect(await rewrite("/docs/inviting-your-team")).toBe("http://acme.tuti.example/portal/acme/docs/inviting-your-team");
   expect(await rewrite("/llms.txt")).toBe("http://acme.tuti.example/portal/acme/llms.txt");
 });

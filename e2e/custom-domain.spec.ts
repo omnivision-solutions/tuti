@@ -39,23 +39,23 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
 
   // The portal answers there (within seconds: servers keep lookups briefly), and its forms work there.
   await expect(async () => {
-    await visitor.goto("/b/feature-requests");
+    await visitor.goto("/feedback/feature-requests");
     await expect(visitor.getByRole("heading", { name: "Feature requests" })).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
-  await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Fb%2Ffeature-requests`);
+  await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
   await visitor.getByRole("link", { name: "Create an account" }).click();
   await visitor.getByLabel("Name").fill("Ada");
   await visitor.getByLabel("Email").fill(`e2e-${randomUUID()}@example.com`);
   await visitor.getByLabel("Password").fill("correct horse battery staple");
   await visitor.getByRole("button", { name: "Sign up" }).click();
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
-  await visitor.goto("/b/feature-requests");
+  await visitor.goto("/feedback/feature-requests");
   await visitor.getByLabel("Title").fill("Dark mode on our own domain");
   await visitor.getByRole("button", { name: "Submit feedback" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our own domain" }).click();
   // Its page is on that domain too.
-  await visitor.waitForURL((url) => url.origin === domainUrl && url.pathname.startsWith("/p/"));
+  await visitor.waitForURL((url) => url.origin === domainUrl && url.pathname.startsWith("/feedback/feature-requests/"));
   await expect(visitor.getByRole("heading", { name: "Dark mode on our own domain" })).toBeVisible();
   await checkpoint(visitor, "portal-on-custom-domain");
 

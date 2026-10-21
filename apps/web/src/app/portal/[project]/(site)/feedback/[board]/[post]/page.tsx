@@ -10,15 +10,15 @@ import { SignInLink } from "@/components/sign-in-link";
 import { Separator } from "@/components/ui/separator";
 import { VoteButton } from "@/components/vote-button";
 import { timeAgo } from "@/lib/format";
-import { postNumberFromParam, postPath } from "@/lib/post-urls";
+import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
 
-export default async function PortalPostPage(props: PageProps<"/portal/[project]/p/[post]">) {
-  const { project: projectSlug, post: param } = await props.params;
+export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {
+  const { project: projectSlug, board: boardParam, post: param } = await props.params;
   const number = postNumberFromParam(param);
   if (number === null) {
     notFound();
@@ -36,7 +36,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
         select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
       },
       project: { select: { team: { select: { userId: true } } } },
-      duplicateOf: { select: { number: true, title: true } },
+      duplicateOf: { select: { number: true, title: true, board: { select: { slug: true } } } },
       // The published changelog entry that shipped it, if any.
       changelogEntries: {
         where: { entry: { publishedAt: { not: null } } },
@@ -53,15 +53,15 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   if (post.duplicateOf) {
     permanentRedirect(postPath(post.duplicateOf));
   }
-  // Retitled since the link was made: send to the current URL.
-  if (param !== postPath(post).slice(3)) {
+  // Retitled or moved to another board since the link was made: send to the current URL.
+  if (`/feedback/${boardParam}/${param}` !== postPath(post)) {
     permanentRedirect(postPath(post));
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={`/b/${post.board.slug}`}>{post.board.name}</BackLink>
+      <BackLink href={boardPath(post.board)}>{post.board.name}</BackLink>
 
       <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />

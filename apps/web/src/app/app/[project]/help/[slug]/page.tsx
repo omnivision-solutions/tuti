@@ -43,7 +43,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/help/
   }
   // The editor shows the version saved last: a published article's unpublished changes, if it has some.
   const edited = article.changes ?? article;
-  const url = `${portalUrl(slug)}/help/${article.slug}`;
+  const url = `${portalUrl(slug)}/docs/${article.slug}`;
   const listing = article.listing.toLowerCase() as Listing;
 
   return (

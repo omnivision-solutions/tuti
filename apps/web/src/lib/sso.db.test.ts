@@ -53,9 +53,9 @@ async function visit(jwt: string, { redirect, host = `${slug}.localhost:3100` }:
 const ssoUsers = () => prisma.ssoIdentity.findMany({ where: { projectId }, include: { user: true } });
 
 test("signs a new user in and sends them to the requested page", async () => {
-  const result = await visit(await token({ email: "ada@example.com" }), { redirect: "/b/ideas?sort=top" });
+  const result = await visit(await token({ email: "ada@example.com" }), { redirect: "/feedback/ideas?sort=top" });
 
-  expect(result.location).toBe("/b/ideas?sort=top");
+  expect(result.location).toBe("/feedback/ideas?sort=top");
   const [identity, ...others] = await ssoUsers();
   expect(others).toEqual([]);
   expect(identity).toMatchObject({ externalId: "user-1", email: "ada@example.com", user: { name: "Ada" } });

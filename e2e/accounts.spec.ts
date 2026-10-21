@@ -58,7 +58,7 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await createProject(owner, "Acme", slug);
 
   const ada = await newPerson(browser, portalUrl(slug));
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await ada.getByRole("link", { name: "Create an account" }).click();
   await checkpoint(ada, "portal-sign-up");
@@ -79,7 +79,7 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await checkpoint(ada, "portal-sign-in");
   await ada.getByRole("button", { name: "Sign in" }).click();
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await expect(ada.getByRole("button", { name: "Submit feedback" })).toBeVisible();
 });
 
@@ -92,7 +92,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   // Signed out, with a post started (as "Post this as feedback" from the help center does).
   const title = "Can I pay with crypto?";
   const vera = await newPerson(browser, portalUrl(slug));
-  await vera.goto(`/b/feature-requests?${new URLSearchParams({ title })}`);
+  await vera.goto(`/feedback/feature-requests?${new URLSearchParams({ title })}`);
   await vera.getByRole("main").getByRole("link", { name: "Sign in" }).click();
   await vera.waitForURL(/\/sign-in\?next=/);
   const email = `e2e-${randomUUID()}@example.com`;
@@ -112,7 +112,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await expect(vera.getByText(`as ${email}`)).toBeVisible();
   await checkpoint(vera, "portal-sign-in-link-confirm");
   await vera.getByRole("main").getByRole("button", { name: "Sign in" }).click();
-  await vera.waitForURL(/\/b\/feature-requests\?title=/);
+  await vera.waitForURL(/\/feedback\/feature-requests\?title=/);
   await expect(vera.getByLabel("Title")).toHaveValue(title);
   await expect(vera.getByRole("button", { name: "Account" })).toBeVisible();
   await checkpoint(vera, "portal-signed-in-with-link");
@@ -144,7 +144,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await wes.goto(linkIn(await latestEmailTo(wesEmail), `${portalUrl(slug)}/sign-in/link?`));
   await wes.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   // The portal's home page sends people on to its first board.
-  await expect(wes).toHaveURL(`${portalUrl(slug)}/b/feature-requests`);
+  await expect(wes).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(wes.getByRole("navigation", { name: "Portal" })).toBeVisible();
   await expect(wes.getByRole("button", { name: "Account" })).toBeVisible();
 });

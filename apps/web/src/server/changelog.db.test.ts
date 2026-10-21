@@ -72,7 +72,7 @@ describe("changelog entries", () => {
       status: "draft",
       tags: ["new"],
       body: "New\nSwitch themes from your menu.",
-      posts: [{ number: dark.number, title: "Dark mode", url: expect.stringContaining("/p/dark-mode-") }],
+      posts: [{ number: dark.number, title: "Dark mode", url: expect.stringContaining("/feedback/feature-requests/dark-mode-") }],
       url: expect.stringMatching(/\/changelog\/1$/),
     });
 

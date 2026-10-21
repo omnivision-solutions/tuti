@@ -2,6 +2,7 @@ import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
 import { portalUrl } from "@/lib/hosts";
+import { boardPath } from "@/lib/post-urls";
 import { type HelpCollection, helpCenter } from "@/server/help-queries";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
@@ -33,7 +34,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   // For AI tools, like search engines: what's for everyone (not collections for some reader groups only).
   const { collections, uncollected, sections } = await helpCenter(slug, { groups: [] });
   const articleLinks = (articles: { slug: string; title: string }[]) =>
-    links(articles.map((article) => ({ name: article.title, url: `${portal}/help/${article.slug}.md` })));
+    links(articles.map((article) => ({ name: article.title, url: `${portal}/docs/${article.slug}.md` })));
   // A collection's heading, its articles, then the collections in it a level down.
   const section = (collection: HelpCollection, level: number): object[] => [
     heading(level, collection.name),
@@ -60,7 +61,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     links([{ name: "Changelog", url: `${portal}/changelog`, note: `What's new, improved and fixed in ${project.name}` }]),
     heading(2, "Feedback"),
     links([
-      ...project.boards.map((board) => ({ name: board.name, url: `${portal}/b/${board.slug}`, note: board.description })),
+      ...project.boards.map((board) => ({ name: board.name, url: `${portal}${boardPath(board)}`, note: board.description })),
       { name: "Roadmap", url: `${portal}/roadmap`, note: "What's planned, being built and done" },
     ]),
   ];

@@ -209,7 +209,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
                 />
                 <ItemRow
                   title="Feature requests"
-                  meta="/b/feature-requests · 12 posts"
+                  meta="/feedback/feature-requests · 12 posts"
                   actions={
                     <Button variant="ghost" size="sm">
                       Edit

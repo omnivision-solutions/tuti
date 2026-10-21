@@ -42,7 +42,7 @@ describe("articles", () => {
   test("a draft is the team's until it's published; unpublishing hides it again", async () => {
     const article = await call(createArticle, as(owner), { title: "Getting started", body: "Make a board." });
     expect(article).toMatchObject({ slug: "getting-started", status: "draft", body: "Make a board.", collection: null });
-    expect(article.url).toMatch(/\/help\/getting-started$/);
+    expect(article.url).toMatch(/\/docs\/getting-started$/);
 
     await expect(call(getArticle, as(visitor), { slug: "getting-started" })).rejects.toMatchObject({ status: 404 });
     await expect(call(listArticles, as(visitor), { status: "draft" })).rejects.toMatchObject({ status: 403 });

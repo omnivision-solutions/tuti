@@ -1,6 +1,8 @@
 import { prisma } from "@tuti/db";
 import { notFound, redirect } from "next/navigation";
 
+import { boardPath } from "@/lib/post-urls";
+
 export default async function PortalHome(props: PageProps<"/portal/[project]">) {
   const { project: slug } = await props.params;
 
@@ -13,5 +15,5 @@ export default async function PortalHome(props: PageProps<"/portal/[project]">) 
     notFound();
   }
 
-  redirect(`/b/${board.slug}`);
+  redirect(boardPath(board));
 }

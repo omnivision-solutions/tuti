@@ -190,7 +190,7 @@ describe("pull requests", () => {
   test("a PR that mentions posts links them and, opened, moves them to In progress", async () => {
     await postsWithStatus("OPEN", "COMPLETED", "OPEN");
     // Tests' portals are http://<project>.localhost:3100 (PORTAL_URL_TEMPLATE).
-    const body = `Fixes tuti#1. Also http://${project.slug}.localhost:3100/p/post-2-2 and mytuti#3, not tuti#30.`;
+    const body = `Fixes tuti#1. Also http://${project.slug}.localhost:3100/feedback/feature-requests/post-2-2 and mytuti#3, not tuti#30.`;
     expect(await deliver(pullRequest("opened", 42, "Dark mode", body))).toBe(200);
 
     const link = { url: "https://github.com/acme/app/pull/42", source: "REFERENCE", title: "Dark mode" };
@@ -277,7 +277,7 @@ describe("pull requests", () => {
       expect(more).toEqual([]);
       // People's titles stay text: no mentions, links or references.
       expect(first!.body).toContain(
-        `- [Ping @&#8203;team \\[here\\]\\(https://e\\.vil\\) \\#9](http://${project.slug}.localhost:3100/p/ping-team-here-https-e-vil-9-1) · 1 vote`,
+        `- [Ping @&#8203;team \\[here\\]\\(https://e\\.vil\\) \\#9](http://${project.slug}.localhost:3100/feedback/feature-requests/ping-team-here-https-e-vil-9-1) · 1 vote`,
       );
 
       // Someone quotes our comment; an edit links another post: our one comment is updated.
@@ -286,7 +286,7 @@ describe("pull requests", () => {
       expect(appComments(50)).toHaveLength(1);
       expect(appComments(50)[0]!.id).toBe(first!.id);
       const lines = appComments(50)[0]!.body.split("\n").filter((line) => line.startsWith("- "));
-      expect(lines).toEqual([expect.stringMatching(/^- \[Post 2\]\(.*\/p\/post-2-2\) · 3 votes$/), expect.stringContaining("· 1 vote")]);
+      expect(lines).toEqual([expect.stringMatching(/^- \[Post 2\]\(.*\/feedback\/[a-z0-9-]+\/post-2-2\) · 3 votes$/), expect.stringContaining("· 1 vote")]);
       expect(github.comments("acme/app", 50).filter((c) => !c.byApp).map((c) => c.body.split("\n").at(-1))).toEqual([
         "Nice!",
         "looks good",
@@ -446,13 +446,13 @@ describe("pull requests", () => {
     expect(
       referencedPosts(
         [
-          "http://acme.localhost:3100/p/dark-mode-7",
-          "https://acme.localhost:3100/p/9",
-          "http://other.localhost:3100/p/x-8", // another project
-          "http://acme.localhost:3100/b/x-10", // not a post
-          "https://acme.github.io/p/x-11", // look-alike hosts
-          "https://acme.localhost:3100.evil.example/p/x-12",
-          "https://acme.com/p/x-13",
+          "http://acme.localhost:3100/feedback/feature-requests/dark-mode-7",
+          "https://acme.localhost:3100/feedback/feature-requests/9",
+          "http://other.localhost:3100/feedback/feature-requests/x-8", // another project
+          "http://acme.localhost:3100/feedback/x-10", // not a post
+          "https://acme.github.io/feedback/x/x-11", // look-alike hosts
+          "https://acme.localhost:3100.evil.example/feedback/x/x-12",
+          "https://acme.com/feedback/x/x-13",
         ].join(" "),
         "acme",
       ).sort((a, b) => a - b),

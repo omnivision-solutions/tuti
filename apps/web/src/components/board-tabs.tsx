@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
  */
 export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: string; name: string }[]; newChangelog?: boolean }) {
   const pathname = usePathname();
-  const tabs = [...boards.map((board) => ({ href: `/b/${board.slug}`, name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/help", name: "Help" }];
+  const tabs = [...boards.map((board) => ({ href: boardPath(board), name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/docs", name: "Help" }];
 
   return (
     <div className="border-b">

@@ -136,7 +136,7 @@ export async function escalateQuestion(
     notHelpful,
     sources: articles.map((article) => ({
       title: article.title,
-      url: article.listing === "AI_ONLY" ? null : `${portalUrl(project.slug)}/help/${article.slug}`,
+      url: article.listing === "AI_ONLY" ? null : `${portalUrl(project.slug)}/docs/${article.slug}`,
     })),
     summary,
   };

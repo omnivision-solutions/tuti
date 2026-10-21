@@ -158,7 +158,7 @@ describe("reading", () => {
         comments: 0,
         author: { name: "Olive Owner" },
         createdAt: "2026-06-01T00:00:00.000Z",
-        url: `http://${project.slug}.localhost:3100/p/new-2`,
+        url: `http://${project.slug}.localhost:3100/feedback/feature-requests/new-2`,
       },
     ]);
     expect((await api("/posts?board=nope")).body.posts).toEqual([]);

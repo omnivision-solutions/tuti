@@ -11,7 +11,7 @@ import { portalUrl } from "@/lib/hosts";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
 
 /** Search results show the article's title and its first lines. */
-export async function generateMetadata(props: PageProps<"/portal/[project]/help/[slug]">): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">): Promise<Metadata> {
   const { project, slug } = await props.params;
   const article = await publishedArticle(project, slug);
   if (!article) {
@@ -26,7 +26,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/help/
   };
 }
 
-export default async function ArticlePage(props: PageProps<"/portal/[project]/help/[slug]">) {
+export default async function ArticlePage(props: PageProps<"/portal/[project]/docs/[slug]">) {
   const { project, slug } = await props.params;
   const article = await publishedArticle(project, slug);
   if (!article) {
@@ -34,7 +34,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
   }
   return (
     <article className="flex flex-col gap-6" aria-labelledby="article-title">
-      <BackLink href={article.section ? `/help?${new URLSearchParams({ section: article.section })}` : "/help"}>Help center</BackLink>
+      <BackLink href={article.section ? `/docs?${new URLSearchParams({ section: article.section })}` : "/docs"}>Help center</BackLink>
       <div className="flex flex-col gap-1">
         {article.collection && <p className="text-sm text-muted-foreground">{article.collection.name}</p>}
         <h1 id="article-title" className="font-heading text-2xl font-bold tracking-tight break-words">
@@ -46,7 +46,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/he
           </p>
         )}
       </div>
-      <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/help/${slug}.md`} />
+      <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/docs/${slug}.md`} />
       <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
       <ArticleFeedback projectSlug={project} slug={slug} />
     </article>

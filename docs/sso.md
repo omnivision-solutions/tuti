@@ -58,7 +58,7 @@ https://<project>.tuti.so/sso?token=<token>&redirect=<path>
 
 (or your portal's custom domain). The exact URL is shown on the Settings page.
 
-- `redirect` is optional: a path on your portal such as `/b/feature-requests`. Anything
+- `redirect` is optional: a path on your portal such as `/feedback/feature-requests`. Anything
   that isn't a same-site path is ignored, and the user lands on the portal's home page.
 - The sign-in only applies to your portal: sessions are per portal, so these users
   aren't signed in anywhere else on Tuti.

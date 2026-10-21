@@ -41,13 +41,13 @@ async function callback(url: URL, state: string | null, host = portalHost()) {
 }
 
 test("the portal sets a state cookie and sends the browser to the app host with it", async () => {
-  const response = await startContinue(new Request(`http://${portalHost()}/continue?redirect=/b/ideas`), {
+  const response = await startContinue(new Request(`http://${portalHost()}/continue?redirect=/feedback/ideas`), {
     params: Promise.resolve({ project: slug }),
   });
   const location = new URL(response.headers.get("location")!);
   expect(location.origin + location.pathname).toBe("http://tuti.localhost:3100/continue");
   expect(location.searchParams.get("portal")).toBe(slug);
-  expect(location.searchParams.get("redirect")).toBe("/b/ideas");
+  expect(location.searchParams.get("redirect")).toBe("/feedback/ideas");
   const state = location.searchParams.get("state");
   expect(response.headers.getSetCookie()).toEqual([
     expect.stringMatching(new RegExp(`^${HANDOFF_STATE_COOKIE}=${state}; .*HttpOnly.*SameSite=lax`, "i")),
@@ -56,10 +56,10 @@ test("the portal sets a state cookie and sends the browser to the app host with 
 
 test("confirming signs the same account into the portal, once", async () => {
   const state = randomSecret();
-  const url = await confirm(state, "/b/ideas");
+  const url = await confirm(state, "/feedback/ideas");
   expect(url.origin).toBe(`http://${portalHost()}`);
 
-  expect(await callback(url, state)).toEqual({ location: "/b/ideas", userId: ada.id });
+  expect(await callback(url, state)).toEqual({ location: "/feedback/ideas", userId: ada.id });
   // The code is gone after its first use.
   expect(await callback(url, state)).toEqual({ location: "/sign-in?continue=failed", userId: null });
 });

@@ -6,7 +6,7 @@ import { unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
-import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { helpCenter, publishedArticle } from "@/server/help-queries";
@@ -147,7 +147,7 @@ describe("deleting", () => {
       md: (await markdown(request, { params: Promise.resolve({ project: project.slug, slug: "refunds" }) })).status,
       helpCenter: JSON.stringify(await helpCenter(project.slug)).includes("refunds"),
       llms: (await (await llms(request, { params })).text()).includes("refunds"),
-      sitemap: (await (await sitemap(request, { params })).text()).includes("/help/refunds"),
+      sitemap: (await (await sitemap(request, { params })).text()).includes("/docs/refunds"),
       search: (await searchHelp(project.id, "refunds", 10, [])).map((r) => r.slug),
       export: Object.keys(await zipped()).filter((file) => file.includes("refunds")),
       insights: (await helpInsights(project.id)).articles.map((a) => a.slug),

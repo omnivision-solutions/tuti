@@ -16,7 +16,7 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
   // Ada verifies her email on the portal and asks for something.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
@@ -29,7 +29,7 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
 
   const email = await latestEmailTo(ada.email);
   expect(email.subject).toBe("Done: Dark mode");
-  expect(email.text).toContain(`${portalUrl(slug)}/p/dark-mode-1`);
+  expect(email.text).toContain(`${portalUrl(slug)}/feedback/feature-requests/dark-mode-1`);
 
   // The email's unsubscribe link asks first (link scanners open links), then stops Acme's emails.
   await ada.goto(linkIn(email, `${portalUrl(slug)}/unsubscribe`));

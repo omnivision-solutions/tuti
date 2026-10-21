@@ -115,7 +115,7 @@ export function NewPostForm({
                   {similar.map((post) => (
                     <li key={post.id}>
                       <Link
-                        href={postPath(post)}
+                        href={postPath({ ...post, board: { slug: post.boardSlug } })}
                         target={linkTarget}
                         className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted"
                       >

@@ -52,7 +52,7 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
   const storageState = await ada.context().storageState();
   for (const colorScheme of ["light", "dark"] as const) {
     const visitor = await (await browser.newContext({ colorScheme, storageState, baseURL: portalUrl(slug) })).newPage();
-    await visitor.goto("/b/feature-requests");
+    await visitor.goto("/feedback/feature-requests");
     // The logo for this mode, named for the project, links home; the other one is hidden.
     const logo = visitor.getByRole("banner").getByRole("link", { name: "Acme" }).getByRole("img", { name: "Acme" });
     await expect(logo).toBeVisible();
@@ -81,7 +81,7 @@ test("an admin brands the portal: logos, favicon, colour and links, without Powe
     await checkpoint(visitor, `branded-portal-${colorScheme}`);
 
     // The help center is the same portal, branded the same way.
-    await visitor.goto("/help");
+    await visitor.goto("/docs");
     await expect(visitor.getByRole("navigation", { name: "Footer" })).toBeVisible();
     await expect(visitor.getByText("Powered by")).toHaveCount(0);
     await visitor.context().close();

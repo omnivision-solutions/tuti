@@ -99,7 +99,7 @@ function articleView({ changes, ...article }: ArticleRow, projectSlug: string, t
     order: article.order,
     body: article.body,
     content: displayDoc(article),
-    url: `${portalUrl(projectSlug)}/help/${article.slug}`,
+    url: `${portalUrl(projectSlug)}/docs/${article.slug}`,
     /**
      * Only for the team: a published article's saved changes that readers don't see yet (null if
      * there are none), until articles.publishChanges or articles.discardChanges.
@@ -477,7 +477,7 @@ export const searchArticles = defineOperation({
   example: { q: "invite my team", limit: 5 },
   run: async ({ actor, projectId }, input) => {
     const [results, slug] = await Promise.all([searchHelp(projectId, input.q, input.limit, await actorGroups(actor, projectId)), projectSlug(projectId)]);
-    return { results: results.map((result) => ({ ...result, url: `${portalUrl(slug)}/help/${result.slug}` })) };
+    return { results: results.map((result) => ({ ...result, url: `${portalUrl(slug)}/docs/${result.slug}` })) };
   },
 });
 

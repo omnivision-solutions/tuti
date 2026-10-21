@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { readableProject } from "./portal-access";
 
-export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string };
+export type SimilarPost = { id: string; number: number; title: string; voteCount: number; boardName: string; boardSlug: string };
 
 const querySchema = z.string().trim().min(3).max(120);
 const LIMIT = 5;
@@ -45,7 +45,7 @@ export async function findSimilarPosts(projectSlug: string, title: string): Prom
 
 function trigramMatches(projectId: string, query: string) {
   return prisma.$queryRaw<SimilarPost[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName"
+    SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
     FROM post p
     JOIN board b ON b.id = p."boardId"
     WHERE p."projectId" = ${projectId}
@@ -66,7 +66,7 @@ async function embeddingMatches(projectId: string, query: string): Promise<Simil
     return [];
   }
   return prisma.$queryRaw<SimilarPost[]>`
-    SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName"
+    SELECT p.id, p.number, p.title, p."voteCount", b.name AS "boardName", b.slug AS "boardSlug"
     FROM post_embedding e
     JOIN post p ON p.id = e."postId"
     JOIN board b ON b.id = p."boardId"

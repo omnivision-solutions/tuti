@@ -16,7 +16,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await createProject(team, "Acme", slug);
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
-  await ada.goto("/b/feature-requests");
+  await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
@@ -138,7 +138,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   const feed = await (await ada.request.get(`${portalUrl(slug)}/changelog/rss.xml`)).text();
   expect(feed).toContain("<title>Dark mode is here</title>");
   await entry.getByRole("link", { name: "Dark mode", exact: true }).click();
-  await ada.waitForURL(/\/p\/dark-mode-1$/);
+  await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
 

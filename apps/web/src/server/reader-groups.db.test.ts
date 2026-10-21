@@ -6,7 +6,7 @@ import { FAKE_OPENAI_KEY, type OpenAIFake, startOpenAIFake } from "@tuti/testkit
 import { SignJWT } from "jose";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GET as markdown } from "@/app/portal/[project]/(site)/help/[slug]/md/route";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
@@ -200,8 +200,8 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   expect(text).not.toContain("saml");
   expect(text).not.toContain("Enterprise");
   const map = await (await sitemap(new Request("http://x"), { params })).text();
-  expect(map).toContain("/help/getting-started");
-  expect(map).not.toContain("/help/saml");
+  expect(map).toContain("/docs/getting-started");
+  expect(map).not.toContain("/docs/saml");
 
   actAs(owner);
   const md = (slug: string) => markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug }) });

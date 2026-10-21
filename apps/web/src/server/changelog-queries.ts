@@ -68,7 +68,7 @@ export async function publishedEntries(
       publishedAt: true,
       body: true,
       content: true,
-      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true } } } },
+      posts: { where: { post: { duplicateOfId: null } }, select: { post: { select: { number: true, title: true, board: { select: { slug: true } } } } } },
     },
   });
   const ids = entries.map((e) => e.id);

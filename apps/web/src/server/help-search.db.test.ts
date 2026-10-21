@@ -163,8 +163,8 @@ describe("search with embeddings", () => {
 
     const results = await search(query);
     expect(results).toEqual([
-      { slug: inviting, title: "Inviting your team", snippet: "Owners and admins send invites.", url: expect.stringMatching(/\/help\/inviting-your-team$/) },
-      { slug: roles, title: "Roles", snippet: "Admins manage boards.", url: expect.stringMatching(/\/help\/roles$/) },
+      { slug: inviting, title: "Inviting your team", snippet: "Owners and admins send invites.", url: expect.stringMatching(/\/docs\/inviting-your-team$/) },
+      { slug: roles, title: "Roles", snippet: "Admins manage boards.", url: expect.stringMatching(/\/docs\/roles$/) },
     ]);
     expect((await call(searchArticles, as(visitor), { q: query, limit: 1 })).results.map((r) => r.slug)).toEqual([inviting]);
   });

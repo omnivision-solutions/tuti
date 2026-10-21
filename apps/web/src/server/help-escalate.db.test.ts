@@ -160,7 +160,7 @@ describe("asking a person", () => {
     for (const text of ["They want to pay for their plan in crypto.", "Can I pay with crypto?", "You can pay by card.", "marked not helpful", "Billing", visitor]) {
       expect(team.text).toContain(text);
     }
-    expect(team.html).toContain(`/help/billing`);
+    expect(team.html).toContain(`/docs/billing`);
     // The note is text, never markup.
     expect(team.text).toContain("We're a <b>crypto</b> company.");
     expect(team.html).not.toContain("<b>crypto</b>");

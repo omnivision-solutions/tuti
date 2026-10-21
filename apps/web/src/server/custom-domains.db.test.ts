@@ -85,8 +85,8 @@ test("the portal answers on it: its pages, and a private portal's sign-in stays 
   await addAndPublish(host);
   await call(verifyDomain, as(), {});
   const visit = (path: string) => proxy(new NextRequest(`http://${host}${path}`, { headers: { host } }));
-  expect((await visit("/b/feature-requests")).headers.get("x-middleware-rewrite")).toBe(`http://${host}/portal/${project.slug}/b/feature-requests`);
-  expect((await visit("/help/getting-started.md")).headers.get("x-middleware-rewrite")).toBe(`http://${host}/portal/${project.slug}/help/getting-started/md`);
+  expect((await visit("/feedback/feature-requests")).headers.get("x-middleware-rewrite")).toBe(`http://${host}/portal/${project.slug}/feedback/feature-requests`);
+  expect((await visit("/docs/getting-started.md")).headers.get("x-middleware-rewrite")).toBe(`http://${host}/portal/${project.slug}/docs/getting-started/md`);
   // The app's own pages aren't there.
   expect((await visit("/app")).headers.get("x-middleware-rewrite")).toBe(`http://${host}/portal/${project.slug}/app`);
 
