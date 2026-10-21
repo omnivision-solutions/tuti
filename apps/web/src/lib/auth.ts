@@ -6,9 +6,9 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins/magic-link";
 
-import { requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget } from "@/server/custom-domains";
 
-import { allowedHostPatterns, appUrl, portalTemplate, portalUrl } from "./hosts";
+import { allowedHostPatterns, appUrl, portalTemplate } from "./hosts";
 import { hashSecret, portalHandoff } from "./portal-handoff";
 import { PASSWORD_RESET_MINUTES, SIGN_IN_LINK_MINUTES, type SignInLinkMetadata } from "./sign-in-link";
 import { jwtSso } from "./sso";
@@ -17,7 +17,7 @@ import { jwtSso } from "./sso";
 async function sendSignInLink({ email, token, metadata }: { email: string; token: string; metadata?: Record<string, unknown> }) {
   const { linkId, slug, projectName, next } = metadata as SignInLinkMetadata;
   await prisma.signInLink.update({ where: { id: linkId }, data: { tokenHash: hashSecret(token) } });
-  const url = new URL("/sign-in/link", portalUrl(slug));
+  const url = new URL("/sign-in/link", await portalAddress(slug));
   url.searchParams.set("token", token);
   if (next !== "/") {
     url.searchParams.set("next", next);
@@ -38,7 +38,7 @@ async function sendPasswordReset({ user, url, token }: { user: { email: string }
     data: { tokenHash: hashSecret(token) },
     select: { project: { select: { slug: true, name: true } } },
   });
-  const link = new URL("/reset-password", project ? portalUrl(project.slug) : appUrl());
+  const link = new URL("/reset-password", project ? await portalAddress(project.slug) : appUrl());
   link.searchParams.set("token", token);
   await sendEmail({
     to: user.email,

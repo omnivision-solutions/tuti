@@ -3,7 +3,7 @@
 import { prisma } from "@tuti/db";
 import { redirect } from "next/navigation";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { HANDOFF_TTL_SECONDS, hashSecret, isSecret, randomSecret } from "@/lib/portal-handoff";
 import { safeRedirectPath } from "@/lib/redirects";
 
@@ -36,7 +36,7 @@ export async function continueToPortal(projectSlug: string, state: string, redir
       expiresAt: new Date(Date.now() + HANDOFF_TTL_SECONDS * 1000),
     },
   });
-  const callback = new URL("/api/auth/continue/callback", portalUrl(projectSlug));
+  const callback = new URL("/api/auth/continue/callback", await portalAddress(projectSlug));
   callback.searchParams.set("code", code);
   callback.searchParams.set("redirect", safeRedirectPath(redirectPath, "/"));
   redirect(callback.toString());

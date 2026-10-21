@@ -3,6 +3,7 @@ import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma 
 import {
   enqueue,
   lockProject,
+  type PortalAddress,
   postSummary,
   postSummarySelect,
   queueDeliveries,
@@ -13,7 +14,7 @@ import {
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
@@ -31,7 +32,7 @@ import {
 } from "../release-notes";
 import { author, authorId, saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { postNumber, projectSlug } from "./read";
+import { postNumber, projectPortal, projectSlug } from "./read";
 
 /** Changelog entries (Phase 8): drafts the team writes, published on the portal's /changelog. */
 
@@ -70,8 +71,7 @@ const entrySelect = {
 type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
 /** An entry for the API; `counts` when several entries' reactions were read at once. */
-async function entryView(entry: EntryRow, slug: string, counts?: (entryId: string) => ReactionCounts) {
-  const portal = portalUrl(slug);
+async function entryView(entry: EntryRow, portal: PortalAddress, counts?: (entryId: string) => ReactionCounts) {
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   return {
     number: entry.number,
@@ -150,6 +150,7 @@ export const listChangelog = defineOperation({
   }),
   example: { status: "published", limit: 10 },
   run: async ({ actor, projectId }, input) => {
+    const portal = await projectPortal(projectId);
     if (input.status === "draft" && !(await isTeam(actor, projectId))) {
       throw new OperationError(403, "forbidden", "Only the project's team sees drafts");
     }
@@ -161,11 +162,10 @@ export const listChangelog = defineOperation({
       take: input.limit + 1,
       select: entrySelect,
     });
-    const slug = await projectSlug(projectId);
     const shown = entries.slice(0, input.limit);
     const counts = await reactionCounts(shown.map((entry) => entry.id));
     return {
-      entries: await Promise.all(shown.map((entry) => entryView(entry, slug, counts))),
+      entries: await Promise.all(shown.map((entry) => entryView(entry, portal, counts))),
       nextCursor: entries.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -180,12 +180,13 @@ export const getChangelogEntry = defineOperation({
   access: "anyone",
   input: z.object({ number: entryNumber }),
   run: async ({ actor, projectId }, { number }) => {
+    const portal = await projectPortal(projectId);
     const entry = await findEntry(projectId, number);
     // A draft is as good as missing to everyone but the team.
     if (!entry || (!entry.publishedAt && !(await isTeam(actor, projectId)))) {
       throw new OperationError(404, "not_found", `There's no changelog entry #${number}`);
     }
-    return entryView(entry, await projectSlug(projectId));
+    return entryView(entry, portal);
   },
 });
 
@@ -241,6 +242,7 @@ export const createChangelogEntry = defineOperation({
   input: z.object({ ...fields, tags: fields.tags.default([]), posts: fields.posts.default([]) }),
   example: { title: "Dark mode", body: "Switch themes from your profile menu.", tags: ["new"], posts: [12] },
   run: async ({ actor, projectId }, input) => {
+    const portal = await projectPortal(projectId);
     const text = await entryText(input, projectId);
     const posts = await postIds(projectId, input.posts);
     const entry = await saving(() =>
@@ -268,7 +270,7 @@ export const createChangelogEntry = defineOperation({
         return created;
       }),
     );
-    return entryView(entry, await projectSlug(projectId));
+    return entryView(entry, portal);
   },
 });
 
@@ -291,6 +293,7 @@ export const updateChangelogEntry = defineOperation({
   }),
   example: { tags: ["new", "improved"] },
   run: async ({ projectId }, input) => {
+    const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, input.number);
     if (entry.publishedAt && input.posts) {
       // Publishing completed its posts; a post added now wouldn't be. Same list is fine.
@@ -331,7 +334,7 @@ export const updateChangelogEntry = defineOperation({
         return saved;
       }),
     );
-    return entryView(updated, await projectSlug(projectId));
+    return entryView(updated, portal);
   },
 });
 
@@ -345,6 +348,7 @@ export const draftChangelogEntry = defineOperation({
   access: "team",
   input: z.object({ number: entryNumber }),
   run: async ({ projectId }, { number }) => {
+    const portal = await projectPortal(projectId);
     if (!aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
     }
@@ -352,8 +356,7 @@ export const draftChangelogEntry = defineOperation({
     if (entry.publishedAt) {
       throw new OperationError(409, "published", "Unpublish the entry to draft its text with AI");
     }
-    const slug = await projectSlug(projectId);
-    const { posts } = await entryView(entry, slug);
+    const { posts } = await entryView(entry, portal);
     if (posts.length === 0 && entry.pullRequests.length === 0 && entry.body.trim() === "") {
       throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
     }
@@ -384,7 +387,7 @@ export const draftChangelogEntry = defineOperation({
     if (count === 0) {
       throw new OperationError(409, "changed", "The entry changed while the AI was writing. Try again.");
     }
-    return entryView(await teamEntry(projectId, number), slug);
+    return entryView(await teamEntry(projectId, number), portal);
   },
 });
 
@@ -412,6 +415,7 @@ export const rewriteChangelogEntry = defineOperation({
   }),
   example: { mode: "section", section: "Dark mode", instruction: "Mention it follows the system setting" },
   run: async ({ projectId }, input) => {
+    const portal = await projectPortal(projectId);
     if (!aiEnabled()) {
       throw new OperationError(503, "ai_unavailable", "AI isn't set up on this server");
     }
@@ -432,8 +436,7 @@ export const rewriteChangelogEntry = defineOperation({
       throw new OperationError(400, "nothing_to_rewrite", "There's no text to rewrite yet");
     }
     await countAiEdit(projectId);
-    const slug = await projectSlug(projectId);
-    const { posts } = await entryView(entry, slug);
+    const { posts } = await entryView(entry, portal);
     let reply: string;
     try {
       reply = await complete(
@@ -584,6 +587,7 @@ export const publishChangelogEntry = defineOperation({
   run: async ({ projectId }, { number, announce }) => {
     const entry = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
+    const portal = await portalAddress(slug);
     // One transaction: published, its posts completed (and due for their shipped
     // emails), and the webhook deliveries saved. Sending happens after it commits.
     const shipped = await prisma.$transaction(async (tx) => {
@@ -617,7 +621,7 @@ export const publishChangelogEntry = defineOperation({
         const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
         deliveries.push(
           ...(await recordEvent(tx, projectId, "post.status_changed", {
-            post: postSummary(updated, slug),
+            post: postSummary(updated, portal),
             previousStatus: toApiStatus(current.status),
           })),
         );
@@ -626,7 +630,7 @@ export const publishChangelogEntry = defineOperation({
       const published = await tx.changelogEntry.findUniqueOrThrow({ where: { id: entry.id }, select: entrySelect });
       // Counts read in the transaction, on its connection (a second one could wait on the pool).
       const counts = await reactionCounts([published.id], tx);
-      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, slug, counts))));
+      deliveries.push(...(await recordEvent(tx, projectId, "changelog.published", await entryView(published, portal, counts))));
       return { deliveries, completed };
     });
     if (shipped) {
@@ -640,7 +644,7 @@ export const publishChangelogEntry = defineOperation({
         }
       }
     }
-    return entryView(await teamEntry(projectId, number), slug);
+    return entryView(await teamEntry(projectId, number), portal);
   },
 });
 
@@ -653,9 +657,10 @@ export const unpublishChangelogEntry = defineOperation({
   access: "team",
   input: z.object({ number: entryNumber }),
   run: async ({ projectId }, { number }) => {
+    const portal = await projectPortal(projectId);
     const entry = await teamEntry(projectId, number);
     await prisma.changelogEntry.update({ where: { id: entry.id }, data: { publishedAt: null } });
-    return entryView(await teamEntry(projectId, number), await projectSlug(projectId));
+    return entryView(await teamEntry(projectId, number), portal);
   },
 });
 

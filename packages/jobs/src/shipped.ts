@@ -2,7 +2,8 @@ import { prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
-import { portalOrigin, portalPostUrl } from "./events";
+import { portalPostUrl } from "./events";
+import { portalAddress } from "./portal-address";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
 /** An unsent claim (or a due post) this old belongs to a run that died or never started. */
@@ -122,8 +123,8 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     select: { id: true, email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },
   });
 
-  const origin = portalOrigin(project.slug);
-  const postUrl = portalPostUrl(project.slug, post);
+  const origin = await portalAddress(project.slug);
+  const postUrl = portalPostUrl(origin, post);
   const sentTo = new Set<string>();
   let emailed = 0;
   let failed = 0;

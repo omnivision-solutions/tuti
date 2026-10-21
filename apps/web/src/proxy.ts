@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { portalUrl } from "@/lib/hosts";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
-import { requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
 
 /**
@@ -34,6 +34,17 @@ export async function proxy(request: NextRequest) {
   if (target.kind === "portal") {
     if (pathname.startsWith("/api/")) {
       return NextResponse.next();
+    }
+    // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
+    // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
+    if (!target.customDomain && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
+      const address = await portalAddress(target.slug);
+      if (address !== portalUrl(target.slug)) {
+        const response = NextResponse.redirect(new URL(pathname + request.nextUrl.search, address), 308);
+        // Permanent for search engines, but not kept by browsers: if the domain is removed, the Tuti address is the portal again.
+        response.headers.set("cache-control", "no-store");
+        return response;
+      }
     }
     const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(target.slug, request.headers);
     if (visitor === "refused") {

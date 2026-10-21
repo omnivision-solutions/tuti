@@ -51,6 +51,8 @@ export async function customDomain(projectId: string) {
       if (certificate !== domain.certificate) {
         await prisma.customDomain.updateMany({ where: { projectId, cloudflareId: domain.cloudflareId }, data: { certificate } });
         domain = { ...domain, certificate };
+        // Live once its certificate is: links Tuti makes go there from now on.
+        forgetCustomDomain(domain.hostname);
       }
     } catch (error) {
       // What we knew stays: the next look asks again.

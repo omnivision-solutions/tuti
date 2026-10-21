@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { liveDomain, portalAddress as lookUpPortalAddress, type PortalAddress } from "@tuti/jobs";
 
 import { customDomainTarget } from "@/lib/custom-domains";
 import { type HostTarget, resolveHost } from "@/lib/hosts";
@@ -43,7 +44,8 @@ async function customDomainSlug(hostname: string): Promise<string | null> {
   }
   const started = forgets;
   const domain = await prisma.customDomain.findFirst({
-    where: { hostname, verifiedAt: { not: null } },
+    // Live ones only: the same ones links go to (see liveDomain).
+    where: { hostname, ...liveDomain },
     select: { project: { select: { slug: true } } },
   });
   if (cache.size >= MAX_CACHED) {
@@ -56,10 +58,33 @@ async function customDomainSlug(hostname: string): Promise<string | null> {
   return slug;
 }
 
-/** Forgets what this server knows about `hostname` (after it's verified or removed here). */
+/**
+ * A portal's public address, for every link Tuti makes to it: its custom domain once that's live,
+ * else its Tuti address (see portalAddress in @tuti/jobs). Kept as long as host lookups.
+ */
+const addresses = new Map<string, { address: PortalAddress; until: number }>();
+
+export async function portalAddress(projectSlug: string): Promise<PortalAddress> {
+  const cached = addresses.get(projectSlug);
+  if (cached && cached.until > Date.now()) {
+    return cached.address;
+  }
+  const started = forgets;
+  const address = await lookUpPortalAddress(projectSlug);
+  if (forgets === started) {
+    if (addresses.size >= MAX_CACHED) {
+      addresses.clear();
+    }
+    addresses.set(projectSlug, { address, until: Date.now() + CACHE_MS });
+  }
+  return address;
+}
+/** Forgets what this server knows about `hostname` (after it's verified, removed or its certificate changed here). */
 export function forgetCustomDomain(hostname: string) {
   forgets++;
   cache.delete(hostname);
+  // Which portal it was is gone with it: every address is looked up again.
+  addresses.clear();
 }
 
 /**

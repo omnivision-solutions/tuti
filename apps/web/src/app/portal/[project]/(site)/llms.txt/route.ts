@@ -1,7 +1,7 @@
 import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { boardPath } from "@/lib/post-urls";
 import { type HelpCollection, helpCenter } from "@/server/help-queries";
 
@@ -30,7 +30,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   if (!project) {
     return new Response("Not found", { status: 404 });
   }
-  const portal = portalUrl(slug);
+  const portal = await portalAddress(slug);
   // For AI tools, like search engines: what's for everyone (not collections for some reader groups only).
   const { collections, uncollected, sections } = await helpCenter(slug, { groups: [] });
   const articleLinks = (articles: { slug: string; title: string }[]) =>

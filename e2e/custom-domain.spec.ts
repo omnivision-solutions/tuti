@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { issueCertificate, publishTxt } from "./dns";
-import { APP_URL } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
 
 test("the team puts the portal on its own domain: adds it, verifies it with a TXT record, and people sign up and post there", async ({ browser }, testInfo) => {
@@ -42,6 +42,13 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
   await checkpoint(owner, "settings-custom-domain-verified");
 
+  // From now on its Tuti address sends people to the domain.
+  const elsewhere = await newPerson(browser, portalUrl(slug));
+  await expect(async () => {
+    await elsewhere.goto("/roadmap?from=old");
+    expect(elsewhere.url()).toBe(`${domainUrl}/roadmap?from=old`);
+  }).toPass({ timeout: 20_000 });
+
   // The portal answers there (within seconds: servers keep lookups briefly), and its forms work there.
   await expect(async () => {
     await visitor.goto("/feedback/feature-requests");
@@ -70,4 +77,9 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();
   await expect(owner.getByLabel("Domain")).toBeVisible();
   await expect(async () => expect((await visitor.request.get("/")).status()).toBe(404)).toPass({ timeout: 20_000 });
+  // And the Tuti address is the portal's again.
+  await expect(async () => {
+    await elsewhere.goto("/roadmap");
+    expect(elsewhere.url()).toBe(`${portalUrl(slug)}/roadmap`);
+  }).toPass({ timeout: 20_000 });
 });

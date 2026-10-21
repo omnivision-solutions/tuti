@@ -8,7 +8,7 @@ import { upsertProjectUser } from "@/lib/sso";
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { findPost, postNumber, postSummarySelect, projectSlug, summary } from "./read";
+import { findPost, postNumber, postSummarySelect, projectPortal, summary } from "./read";
 
 /** Longest plain text a post or comment may have (rich content is capped by size too). */
 export const MAX_TEXT_LENGTH = 5000;
@@ -90,6 +90,8 @@ export const createPost = defineOperation({
       throw new OperationError(400, "invalid_content", text.error);
     }
     const userId = await authorId(context, input.author);
+    // Before anything is written: a lookup failing after the post is saved would fail a request that did save it.
+    const portal = await projectPortal(projectId);
 
     const post = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -125,7 +127,7 @@ export const createPost = defineOperation({
     } catch (error) {
       log.error("Enqueueing the post-created job failed", { error, postId: post.id });
     }
-    const created = summary(post, await projectSlug(projectId));
+    const created = summary(post, portal);
     await emitEvent(projectId, "post.created", created);
     return created;
   },
@@ -154,6 +156,7 @@ export const createComment = defineOperation({
       throw new OperationError(400, "invalid_content", "Write something first");
     }
     const userId = await authorId(context, input.author);
+    const portal = await projectPortal(projectId);
 
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -175,7 +178,7 @@ export const createComment = defineOperation({
       content: displayDoc(comment),
       createdAt: comment.createdAt.toISOString(),
     };
-    const { url, number, title } = summary(post, await projectSlug(projectId));
+    const { url, number, title } = summary(post, portal);
     await emitEvent(projectId, "comment.created", { post: { number, title, url }, comment: created });
     return created;
   },

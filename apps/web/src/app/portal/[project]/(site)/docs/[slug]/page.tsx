@@ -7,7 +7,7 @@ import { ArticleActions } from "@/components/article-actions";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { formatDate } from "@/lib/format";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
 
 /** Search results show the article's title and its first lines. */
@@ -46,7 +46,7 @@ export default async function ArticlePage(props: PageProps<"/portal/[project]/do
           </p>
         )}
       </div>
-      <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${portalUrl(project)}/docs/${slug}.md`} />
+      <ArticleActions markdown={articleMarkdown(article)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
       <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
       <ArticleFeedback projectSlug={project} slug={slug} />
     </article>

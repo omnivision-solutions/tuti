@@ -2,6 +2,7 @@ import { type PostStatus, prisma } from "@tuti/db";
 import { embed, embeddingsEnabled, LINK_MIN_SIMILARITY, type JobInput, toVectorLiteral } from "@tuti/shared";
 
 import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
+import { portalAddress } from "./portal-address";
 import { installationApi } from "./github-api";
 import { addToRunningDraft, closeRunningDraft, skipsChangelog } from "./running-draft";
 import type { JobLogger, JobResult } from "./index";
@@ -10,18 +11,19 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
 
 /**
  * Post numbers a pull request mentions: `tuti#12` (as its own word), or a post's
- * URL on this project's portal: exactly its host (from PORTAL_URL_TEMPLATE), so
- * look-alikes like <project>.github.io don't count.
+ * URL on this project's portal: exactly one of its addresses (`portals`: its Tuti
+ * address, and its custom domain), so look-alikes like <project>.github.io don't count.
  */
-export function referencedPosts(text: string, projectSlug: string): number[] {
+export function referencedPosts(text: string, portals: string[]): number[] {
   const numbers = new Set<number>();
   for (const match of text.matchAll(/(?<![\w#/-])tuti#(\d{1,9})(?!\w)/gi)) {
     numbers.add(Number(match[1]));
   }
-  const host = new URL(portalOrigin(projectSlug)).host;
-  const portal = new RegExp(`https?://${escapeRegExp(host)}/feedback/[a-z0-9-]+/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w./-])`, "gi");
-  for (const match of text.matchAll(portal)) {
-    numbers.add(Number(match[1]));
+  for (const origin of portals) {
+    const portal = new RegExp(`https?://${escapeRegExp(new URL(origin).host)}/feedback/[a-z0-9-]+/(?:[a-z0-9-]*-)?(\\d{1,9})(?![\\w./-])`, "gi");
+    for (const match of text.matchAll(portal)) {
+      numbers.add(Number(match[1]));
+    }
   }
   return [...numbers];
 }
@@ -49,7 +51,11 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   const { projectId, project } = installation;
   // Commit messages change when it's opened, reopened or pushed to; an edit only changes the title or description.
   const commits = input.action === "edited" ? [] : await commitMessages(input);
-  const numbers = referencedPosts([input.title, input.body, ...commits].join("\n"), project.slug);
+  // Before any status changes: if it failed after, a retry wouldn't find the posts to tell the webhooks.
+  const portal = await portalAddress(project.slug);
+  // A link to the post at either of the portal's addresses.
+  const portals = [...new Set([portalOrigin(project.slug), portal])];
+  const numbers = referencedPosts([input.title, input.body, ...commits].join("\n"), portals);
   const posts =
     numbers.length === 0
       ? []
@@ -89,7 +95,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
         continue;
       }
       const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-      await postStatusChanged(projectId, post.id, postSummary(updated, project.slug), post.status);
+      await postStatusChanged(projectId, post.id, postSummary(updated, portal), post.status);
       started++;
     }
   }
@@ -196,8 +202,9 @@ async function commentFeedback(
     orderBy: [{ voteCount: "desc" }, { number: "asc" }],
     select: { number: true, title: true, voteCount: true, board: { select: { slug: true } } },
   });
+  const portal = await portalAddress(project.slug);
   const lines = posts.map(
-    (post) => `- [${plain(post.title)}](${portalPostUrl(project.slug, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
+    (post) => `- [${plain(post.title)}](${portalPostUrl(portal, post)}) · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`,
   );
   const body = `**Feedback this pull request completes** (${plain(project.name)})\n\n${lines.join("\n")}`;
 
@@ -231,13 +238,15 @@ async function moveTo(
   posts: { id: string; status: PostStatus }[],
 ): Promise<number> {
   let moved = 0;
+  // Before any status changes (see githubPullRequest).
+  const portal = await portalAddress(project.slug);
   for (const post of posts) {
     const { count } = await prisma.post.updateMany({ where: { id: post.id, status: post.status }, data: { status } });
     if (count === 0) {
       continue;
     }
     const updated = await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: postSummarySelect });
-    await postStatusChanged(project.id, post.id, postSummary(updated, project.slug), post.status);
+    await postStatusChanged(project.id, post.id, postSummary(updated, portal), post.status);
     moved++;
   }
   return moved;

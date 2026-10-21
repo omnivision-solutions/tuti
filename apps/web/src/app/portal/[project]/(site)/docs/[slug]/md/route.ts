@@ -1,4 +1,4 @@
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { articleMarkdown, publishedArticle } from "@/server/help-queries";
 
 /** A published article as Markdown, at /help/<slug>.md (proxy.ts sends it here), for AI tools. */
@@ -15,7 +15,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
       // copy kept from before would reach people that excludes. A restricted one isn't kept at all.
       "cache-control": article.restricted ? "private, no-store" : "private, max-age=300",
       // Search engines index the article's page, not this copy of it.
-      link: `<${portalUrl(project)}/docs/${slug}>; rel="canonical"`,
+      link: `<${await portalAddress(project)}/docs/${slug}>; rel="canonical"`,
       // Unlisted: for people with the link, not search engines.
       ...(article.listing === "UNLISTED" && { "x-robots-tag": "noindex" }),
     },

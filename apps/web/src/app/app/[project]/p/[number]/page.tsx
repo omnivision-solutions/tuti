@@ -16,7 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
 import { isEmptyDoc } from "@tuti/content";
@@ -100,7 +100,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         }
         actions={
           <a
-            href={`${portalUrl(slug)}${postPath(post)}`}
+            href={`${await portalAddress(slug)}${postPath(post)}`}
             target="_blank"
             rel="noreferrer"
             className={buttonVariants({ variant: "outline", size: "sm" })}

@@ -3,7 +3,7 @@ import { postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
-import { findPost, fromApiStatus, postNumber, postSummarySelect, projectSlug, STATUSES, summary } from "./read";
+import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, STATUSES, summary } from "./read";
 
 /** Team actions on posts: status, board and merging duplicates. */
 
@@ -30,12 +30,14 @@ export const updatePost = defineOperation({
       }
       boardId = board.id;
     }
+    // Before the change is written (see posts.create).
+    const portal = await projectPortal(projectId);
     const updated = await prisma.post.update({
       where: { id: post.id },
       data: { ...(input.status && { status: fromApiStatus(input.status) }), ...(boardId && { boardId }) },
       select: postSummarySelect,
     });
-    const result = summary(updated, await projectSlug(projectId));
+    const result = summary(updated, portal);
     if (updated.status !== post.status) {
       await postStatusChanged(projectId, post.id, result, post.status);
     }

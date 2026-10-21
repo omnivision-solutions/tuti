@@ -7,7 +7,7 @@ import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { Separator } from "@/components/ui/separator";
 import { publishedEntries } from "@/server/changelog-queries";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
@@ -19,7 +19,7 @@ const PAGE_SIZE = 20;
 export async function generateMetadata(props: PageProps<"/portal/[project]/changelog">) {
   const { project: slug } = await props.params;
   return {
-    alternates: { types: { "application/rss+xml": [{ url: `${portalUrl(slug)}/changelog/rss.xml`, title: "Changelog" }] } },
+    alternates: { types: { "application/rss+xml": [{ url: `${await portalAddress(slug)}/changelog/rss.xml`, title: "Changelog" }] } },
   };
 }
 

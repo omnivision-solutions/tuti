@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 
 import { author, authorId } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -19,7 +19,7 @@ export const getProject = defineOperation({
   input: z.object({}),
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true } });
-    return { ...project, portalUrl: portalUrl(project.slug) };
+    return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });
 
