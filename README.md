@@ -145,6 +145,6 @@ fetches the licence key from tuti.so and renews it there, at most daily, after a
 served.
 
 Only projects an admin asked a licence for (Check now in Settings → Branding, or `POST /license/check` in the API) contact tuti.so, and
-all they send is your installation's random id, the project's id, a one-time refresh token and the
-app version. If tuti.so can't be reached, the current key keeps working until it expires (35 days);
+all they send is your installation's random id, the project's id, a one-time refresh token (from
+the second request on), a random request id and the app version. If tuti.so can't be reached, the current key keeps working until it expires (35 days);
 then the badge is back. A portal never stops working over a licence.
