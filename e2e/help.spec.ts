@@ -679,3 +679,21 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   await expect(gap).toContainText("Escalated");
   await checkpoint(team, "team-help-gap-escalated");
 });
+
+test("a help-first team makes the help center the portal's home page", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/");
+  await expect(visitor).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
+
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("combobox", { name: "Home page" }).click();
+  await team.getByRole("option", { name: "Help center" }).click();
+  await expect(team.getByText("Your portal opens with help center now")).toBeVisible();
+  await checkpoint(team, "settings-home-page");
+  await visitor.goto("/");
+  await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);
+});

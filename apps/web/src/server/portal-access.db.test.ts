@@ -286,7 +286,7 @@ test("the team's API keys keep working on a private portal", async () => {
   const response = await get("posts");
   expect(response.status).toBe(200);
   expect(JSON.stringify(await response.json())).toContain("Dark mode");
-  expect(await (await get("portal")).json()).toEqual({ access: "private" });
+  expect(await (await get("portal")).json()).toEqual({ access: "private", home: "feedback" });
 });
 
 test("one project's private portal changes nothing for other projects, and its readers don't read other private ones", async () => {

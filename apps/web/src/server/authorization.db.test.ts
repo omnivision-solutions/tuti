@@ -338,6 +338,7 @@ const matrix: Matrix = {
   },
   "portal-settings": {
     setPortalAccess: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalAccess(slug, "private") },
+    setPortalHome: { allowed: "ADMIN", call: (slug) => portalSettings.setPortalHome(slug, "docs") },
     addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
     removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
     saveCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.saveCustomDomain(slug, {}, form({ hostname: `help.${slug}.example.org` })) },

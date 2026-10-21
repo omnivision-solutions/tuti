@@ -10,6 +10,7 @@ import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/com
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { PortalAccessSelect } from "@/components/portal-access-select";
+import { PortalHomeSelect } from "@/components/portal-home-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { SsoSettings } from "@/components/sso-settings";
 import { SupportEmailSettings } from "@/components/support-email";
@@ -63,7 +64,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
   const widget = (await widgetSettings({ id: project.id }))!;
   const brand = (await branding({ id: project.id }))!;
   const assistant = await assistantSettings(project.id);
-  const { access } = await portalAccess(project.id);
+  const { access, home } = await portalAccess(project.id);
   const domain = await customDomain(project.id);
   const portal = new URL(portalUrl(project.slug));
   const keys = await prisma.apiKey.findMany({
@@ -141,6 +142,16 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
           {access === "private" && (
             <PortalReaders projectSlug={project.slug} readers={await portalReaders(project.id)} />
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Home page</CardTitle>
+          <CardDescription>What your portal&apos;s address opens.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PortalHomeSelect projectSlug={project.slug} home={home} />
         </CardContent>
       </Card>
 
