@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { DocsWorkspace } from "@/components/docs-tree";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
-import { getMembership, isAdminRole } from "@/server/membership";
+import { isAdminRole } from "@/lib/roles";
+import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
 import { newCollectionParents, teamDocs, treeArticle } from "@/server/team-docs";
 
