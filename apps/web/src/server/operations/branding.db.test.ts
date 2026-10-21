@@ -290,6 +290,10 @@ test("Customize's forms each save their part: an empty image field removes it, e
   await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
   expect(await saveBranding(project.slug, {}, form({ part: "links" }, [["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
+  // Without a part, nothing is taken as one (a colour alone would otherwise remove the images).
+  await saveBranding(project.slug, {}, form({ part: "look", logo: logo.id, color: "#5b21b6" }));
+  expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }))).toEqual({ error: "Unknown branding form" });
+  expect(await get()).toMatchObject({ logo: { id: logo.id } });
 });
 
 test("branding is a project setting: members can't change it, admins can", async () => {

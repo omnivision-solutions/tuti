@@ -19,6 +19,9 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
     return typeof field === "string" ? field : "";
   };
   const part = text("part");
+  if (part !== "look" && part !== "links" && part !== "poweredBy") {
+    return { error: "Unknown branding form" };
+  }
   const input =
     part === "links"
       ? { headerLinks: linksFrom(formData, "headerLink"), footerLinks: linksFrom(formData, "footerLink") }
