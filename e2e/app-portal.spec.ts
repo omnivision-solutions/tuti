@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_PORTAL_SLUG, APP_URL, portalUrl } from "./env";
+import { APP_PORTAL_OWNER, APP_PORTAL_SLUG, APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
+import { latestEmailTo, linkIn } from "./mail";
 
 test("Tuti's own portal under its path on the app's domain: one sign-in for the app and the portal, and the rest of the app as it was", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
-  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  // Only its owner can create the project, once their address is verified.
+  const owner = await signUp(browser, APP_URL, "Olive Owner", APP_PORTAL_OWNER);
+  await owner.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER), `${APP_URL}/api/auth/verify-email`));
   await createProject(owner, "Tuti", APP_PORTAL_SLUG);
   const own = `${APP_URL}/${APP_PORTAL_SLUG}`;
 
@@ -23,6 +26,10 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   await owner.waitForURL(`${own}/feedback/feature-requests`);
   await owner.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Help" }).click();
   await owner.waitForURL(`${own}/docs`);
+  // The account, with its password, is the app's.
+  await owner.getByRole("button", { name: "Account" }).click();
+  await owner.getByRole("menuitem", { name: "Account settings" }).click();
+  await owner.waitForURL(`${APP_URL}/app/account`);
 
   // The rest of the app is as it was: its home, and the API reference under /docs.
   await owner.goto("/docs/api");

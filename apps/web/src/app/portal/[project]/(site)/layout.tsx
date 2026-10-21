@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
@@ -10,7 +11,7 @@ import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
-import { appUrl } from "@/lib/hosts";
+import { appUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
@@ -51,6 +52,7 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   }
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
+  const onApp = resolveHost((await headers()).get("host")).kind === "app";
   const css = brandCss(brand.color);
   const logo = (image: NonNullable<typeof brand.logo>, className?: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
@@ -95,7 +97,8 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           </nav>
         )}
         {session ? (
-          <UserMenu name={session.user.name} image={session.user.image ?? null} />
+          // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
+          <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
         ) : (
           <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
             Sign in

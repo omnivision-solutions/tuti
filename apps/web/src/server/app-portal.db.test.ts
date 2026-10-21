@@ -98,3 +98,12 @@ test("a slug that's one of the app's own paths is ignored (docs would take /docs
   expect(appPortalMount()).toBeNull();
   expect((await visit(app, "/docs/api")).headers.get("x-middleware-rewrite")).toBeNull();
 });
+
+test("an ordinary slug named as Tuti's own portal is only its owner's to create, too", async () => {
+  vi.stubEnv("APP_PORTAL_PROJECT", "tuti-portal");
+  const data = new FormData();
+  data.set("name", "Tuti");
+  data.set("slug", "tuti-portal");
+  actAs(await signUp("Someone"));
+  expect(await createProject(null as never, data)).toEqual({ error: "That URL is reserved" });
+});
