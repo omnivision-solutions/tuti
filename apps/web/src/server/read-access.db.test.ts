@@ -12,7 +12,7 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { WidgetDocs } from "@/components/widget-docs";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { docsContents, docsPage, everyCollection, movedArticle, publishedArticle } from "./docs-queries";
+import { docsContents, docsHome, docsPage, everyCollection, movedArticle, publishedArticle } from "./docs-queries";
 import { answerArticle, countArticleView } from "./docs-readers";
 import { answerSections, searchDocs } from "./docs-search";
 import {
@@ -70,7 +70,7 @@ const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectI
 
 test("the migration makes collections with groups “groups”, keeping them, and everything else inherit", async () => {
   const project = await createProject(owner);
-  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261021150000_read_access/migration.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261021160000_read_access/migration.sql", import.meta.url), "utf8");
   // Back to before it (this file's database is its own).
   await prisma.$executeRawUnsafe(`
     DROP TABLE "tab_group";
@@ -294,6 +294,30 @@ test("views count only for readers the article is for", async () => {
   actAs(await signUp("Stranger"));
   await countArticleView(project.slug, "endpoints");
   expect(await views()).toBe(1);
+});
+
+test("a tab's landing page or card a reader may not read isn't shown to them: they get the overview without it", async () => {
+  await call(updateTab, as(), { slug: "guides", landing: "page", landingPage: "getting-started" });
+  await call(updateTab, as(), { slug: "api", landing: "page", landingPage: "reference" });
+  await restrict("article", "getting-started", "SIGNED_IN");
+  await restrict("collection", "reference", "GROUPS", ["enterprise"]);
+  await call(createCollection, as(), { name: "More", tab: "api" });
+  const more = await call(createArticle, as(), { title: "Changelog notes", collection: "more" });
+  await call(publishArticle, as(), { slug: more.slug });
+  const shown = async () => {
+    const home = await docsHome(project.slug);
+    const api = await docsPage(project.slug, "api");
+    return {
+      home: home.landing.kind,
+      api: api?.kind === "tab" ? api.landing.kind : null,
+      apiCards: api?.kind === "tab" ? api.tab.collections.map((c) => c.slug) : null,
+    };
+  };
+  expect(await shown()).toEqual({ home: "overview", api: "overview", apiCards: ["more"] });
+  actAs(await signUp("Stranger"));
+  expect(await shown()).toEqual({ home: "article", api: "overview", apiCards: ["more"] });
+  actAs(await ssoReader(["enterprise"]));
+  expect(await shown()).toEqual({ home: "article", api: "collection", apiCards: ["reference", "more"] });
 });
 
 test("an old slug redirects only readers the page is for", async () => {

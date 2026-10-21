@@ -23,7 +23,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
 import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
@@ -31,6 +31,7 @@ import { keepingFields } from "@/lib/forms";
 import type { Access } from "@/lib/read-access";
 import type { AccessChoices } from "@/server/docs-queries";
 import type { FormState } from "@/server/form-state";
+import type { DocsLanding } from "@/server/operations/docs";
 import {
   deleteArticle,
   deleteCollection,
@@ -43,7 +44,6 @@ import {
   saveArticle,
   saveCollection,
   saveTab,
-  saveTabAccess,
   unpublishArticle,
 } from "@/server/docs";
 
@@ -605,12 +605,93 @@ export function DeleteCollectionButton({
   );
 }
 
+/** What a tab's path shows (see tabs.update), as the tab's settings offer it, with a sketch of each. */
+const LANDING_CHOICES: { value: DocsLanding; name: string; description: string; sketch: ReactNode }[] = [
+  {
+    value: "overview",
+    name: "Overview",
+    description: "Search and a card per collection",
+    sketch: (
+      <>
+        <span className="h-2 w-full rounded-sm bg-background" />
+        <span className="grid grid-cols-3 gap-1">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="h-5 rounded-sm border border-primary/40 bg-background" />
+          ))}
+        </span>
+      </>
+    ),
+  },
+  {
+    value: "first",
+    name: "First item",
+    description: "Follows the tab's order",
+    sketch: (
+      <span className="flex h-full gap-1.5">
+        <span className="flex w-1/4 flex-col gap-1">
+          <span className="h-1.5 rounded-sm bg-primary/60" />
+          <span className="h-1.5 rounded-sm bg-background" />
+          <span className="h-1.5 rounded-sm bg-background" />
+        </span>
+        <span className="flex flex-1 flex-col gap-1">
+          <span className="h-2 w-2/3 rounded-sm bg-foreground/30" />
+          <span className="h-1.5 rounded-sm bg-background" />
+          <span className="h-1.5 w-5/6 rounded-sm bg-background" />
+        </span>
+      </span>
+    ),
+  },
+  {
+    value: "page",
+    name: "A page you choose",
+    description: "Any article or collection here",
+    sketch: (
+      <span className="flex h-full gap-1.5">
+        <span className="flex w-1/4 flex-col gap-1">
+          <span className="h-1.5 rounded-sm bg-background" />
+          <span className="h-1.5 rounded-sm bg-background" />
+          <span className="h-1.5 rounded-sm bg-primary/60" />
+        </span>
+        <span className="flex flex-1 flex-col gap-1">
+          <span className="h-2 w-2/3 rounded-sm bg-foreground/30" />
+          <span className="h-1.5 rounded-sm bg-background" />
+          <span className="h-1.5 w-5/6 rounded-sm bg-background" />
+        </span>
+      </span>
+    ),
+  },
+];
+
+/** A tab, with its settings: what its path shows and the pages it can show (its collections and articles). */
+export type TabSettings = CollectionOption & {
+  landing: DocsLanding;
+  landingPage: string | null;
+  /** Who can read it, with its groups' keys (for access "groups"). */
+  access: Access;
+  groups: string[];
+  pages: { collections: CollectionOption[]; articles: { slug: string; title: string; published: boolean }[] };
+};
+
 /**
- * Adds a tab (`tab` undefined) or renames one. The first one takes the collections there
- * are, which the dialog says.
+ * Adds a tab (`tab` undefined; the first one takes the collections there are, which the dialog
+ * says), or a tab's settings: its name, its address (`home`: the first tab's is /docs), what
+ * its path shows and who can read it (`access`: the project's groups to pick from).
  */
-export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: string; tab?: CollectionOption; first?: boolean }) {
+export function TabDialog({
+  projectSlug,
+  tab,
+  first = false,
+  home = false,
+  access,
+}: {
+  projectSlug: string;
+  tab?: TabSettings;
+  first?: boolean;
+  home?: boolean;
+  access?: AccessChoices;
+}) {
   const [open, setOpen] = useState(false);
+  const [landing, setLanding] = useState(tab?.landing ?? "overview");
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveTab(projectSlug, tab?.slug ?? null, prev, formData);
     if (!result.error) {
@@ -620,15 +701,26 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
     return result;
   }, {});
   const id = tab?.slug ?? "new";
+  const pageItems = tab && [
+    ...tab.pages.collections.map((c) => ({ value: c.slug, label: c.name })),
+    ...tab.pages.articles.map((a) => ({ value: a.slug, label: a.published ? a.title : `${a.title} (draft)` })),
+  ];
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Rename ${tab.name}` : undefined} />}>
-        {tab ? "Rename" : "New tab"}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        // Opened again: as saved.
+        setLanding(tab?.landing ?? "overview");
+      }}
+    >
+      <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Settings for ${tab.name}` : undefined} />}>
+        {tab ? "Settings" : "New tab"}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className={tab && "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"}>
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{tab ? "Rename tab" : "New tab"}</DialogTitle>
+            <DialogTitle>{tab ? "Tab settings" : "New tab"}</DialogTitle>
             {!tab && (
               <DialogDescription>
                 Tabs sit at the top of your docs, each with its own collections
@@ -637,7 +729,7 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
             )}
           </DialogHeader>
           <FieldGroup className="my-4">
-            <Field data-invalid={state.error ? true : undefined}>
+            <Field data-invalid={state.error && !tab ? true : undefined}>
               <FieldLabel htmlFor={`tab-name-${id}`}>Name</FieldLabel>
               <Input
                 id={`tab-name-${id}`}
@@ -646,72 +738,96 @@ export function TabDialog({ projectSlug, tab, first = false }: { projectSlug: st
                 placeholder="Guides"
                 maxLength={40}
                 required
-                aria-invalid={state.error ? true : undefined}
+                aria-invalid={state.error && !tab ? true : undefined}
               />
-              {state.error && <FieldError>{state.error}</FieldError>}
+              {state.error && !tab && <FieldError>{state.error}</FieldError>}
             </Field>
+            {tab && (
+              <>
+                <Field>
+                  <FieldLabel htmlFor={`tab-address-${id}`}>Address</FieldLabel>
+                  <Input id={`tab-address-${id}`} readOnly value={home ? "/docs" : `/docs/${tab.slug}`} className="font-mono" />
+                  <FieldDescription>{home ? "Your docs' home: the first tab is at /docs." : "It follows the name."}</FieldDescription>
+                </Field>
+                <fieldset className="flex flex-col gap-2">
+                  <legend className="mb-2 text-sm font-medium">Landing page</legend>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {LANDING_CHOICES.map((choice) => (
+                      <label
+                        key={choice.value}
+                        className="flex cursor-pointer flex-col gap-2 rounded-xl border p-3 transition-colors has-checked:border-primary has-checked:bg-primary/5 has-focus-visible:ring-2 has-focus-visible:ring-ring"
+                      >
+                        <input
+                          type="radio"
+                          name="landing"
+                          value={choice.value}
+                          checked={landing === choice.value}
+                          onChange={() => setLanding(choice.value)}
+                          className="sr-only"
+                        />
+                        <span aria-hidden className="flex h-14 flex-col gap-1.5 rounded-md bg-muted p-2">
+                          {choice.sketch}
+                        </span>
+                        <span className="text-sm font-medium">{choice.name}</span>
+                        <span className="text-xs text-muted-foreground">{choice.description}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                {landing === "page" && pageItems && (
+                  <Field>
+                    <FieldLabel id={`tab-page-${id}`}>Page</FieldLabel>
+                    {pageItems.length > 0 ? (
+                      <Select name="landingPage" items={pageItems} defaultValue={tab.landingPage}>
+                        <SelectTrigger className="w-full" aria-labelledby={`tab-page-${id}`}>
+                          <SelectValue placeholder="Pick an article or collection" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tab.pages.collections.length > 0 && (
+                            <SelectGroup>
+                              <SelectLabel>Collections</SelectLabel>
+                              {pageItems.slice(0, tab.pages.collections.length).map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {item.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )}
+                          {tab.pages.articles.length > 0 && (
+                            <SelectGroup>
+                              <SelectLabel>Articles</SelectLabel>
+                              {pageItems.slice(tab.pages.collections.length).map((item) => (
+                                <SelectItem key={item.value} value={item.value}>
+                                  {item.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          )}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FieldDescription>This tab has no articles or collections yet.</FieldDescription>
+                    )}
+                    <FieldDescription>Readers who can&apos;t read it (a draft, or a collection for some groups) get the overview.</FieldDescription>
+                  </Field>
+                )}
+                {access && (
+                  <WhoCanRead
+                    id={`tab-access-${id}`}
+                    projectSlug={projectSlug}
+                    groups={access.groups}
+                    inherit={{ label: "Inherit", description: access.inherits[""]! }}
+                    defaultAccess={tab.access}
+                    defaultGroups={tab.groups}
+                  />
+                )}
+                {state.error && <FieldError>{state.error}</FieldError>}
+              </>
+            )}
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {tab ? "Save" : "Add tab"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** "Who can read" a tab: its collections and, on the first, the articles in no collection. */
-export function TabAccessDialog({
-  projectSlug,
-  tab,
-  first,
-  access,
-}: {
-  projectSlug: string;
-  tab: CollectionOption & { access: Access; groups: string[] };
-  /** It's the first tab, which the articles in no collection are under. */
-  first: boolean;
-  /** For "Who can read": the project's groups (a tab inherits from the portal). */
-  access: AccessChoices;
-}) {
-  const [open, setOpen] = useState(false);
-  const [, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveTabAccess(projectSlug, tab.slug, prev, formData);
-    if (result.error) {
-      toast.error(result.error);
-    } else {
-      setOpen(false);
-      toast.success("Access saved");
-    }
-    return result;
-  }, {});
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" aria-label={`Who can read ${tab.name}`} />}>Access</DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
-        <form {...keepingFields(action)}>
-          <DialogHeader>
-            <DialogTitle>Who can read {tab.name}</DialogTitle>
-            <DialogDescription>
-              Its collections and their articles{first ? ", and the articles in no collection" : ""}. A collection or article in it can
-              only narrow this.
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup className="my-4">
-            <WhoCanRead
-              id={`tab-access-${tab.slug}`}
-              projectSlug={projectSlug}
-              groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[""]! }}
-              defaultAccess={tab.access}
-              defaultGroups={tab.groups}
-            />
-          </FieldGroup>
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              Save
             </Button>
           </DialogFooter>
         </form>

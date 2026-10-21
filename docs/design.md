@@ -56,7 +56,9 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   "Powered by tuti" footer. Docs pages are wider (max-w-7xl, `DocsLayout`):
   the tab's tree on the left (a "Browse docs" menu on phones), the page at
   max-w-3xl, and an article's "On this page" on the right on wide screens;
-  their search box is in the header.
+  their search box is in the header. A tab's overview has a large search box
+  too, then a card per collection (icon, name, description; three per row
+  on wide screens, one on phones).
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
 
 ## Components

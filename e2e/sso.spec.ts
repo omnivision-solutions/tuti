@@ -130,7 +130,7 @@ test("a collection for one reader group: people the app signs in with that group
   await sam.goto(`/sso?token=${ssoToken(secret, { sub: "user-42", name: "Sam from Acme", groups: ["enterprise"] })}&redirect=${encodeURIComponent("/docs")}`);
   await expect(sam).toHaveURL(/\/docs$/);
   await expect(sam.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["Basics", "Enterprise"]);
-  await sam.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Setting up SAML" }).click();
+  await sam.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Setting up SAML" }).click();
   await expect(sam.getByRole("heading", { level: 1, name: "Setting up SAML" })).toBeVisible();
   await checkpoint(sam, "portal-docs-group-reader");
 
@@ -192,16 +192,18 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await reader.goto("/docs/pricing");
   await expect(reader.getByRole("heading", { level: 1, name: "Pricing" })).toBeVisible();
 
-  // The Enterprise tab, for the group: its Access dialog, then the badge on its row.
+  // The Enterprise tab, for the group: "Who can read" in its settings, then the badge on its row.
   const structure = owner.getByRole("region", { name: "Collections" });
-  await structure.getByRole("button", { name: "Who can read Enterprise" }).click();
-  const tabDialog = owner.getByRole("dialog", { name: "Who can read Enterprise" });
+  await structure.getByRole("button", { name: "Settings for Enterprise" }).click();
+  const tabDialog = owner.getByRole("dialog", { name: "Tab settings" });
+  await expect(tabDialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await tabDialog.getByRole("radio", { name: "Specific groups" }).check();
   await tabDialog.getByRole("checkbox", { name: "Enterprise customers" }).check();
+  await tabDialog.getByRole("group", { name: "Who can read" }).scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-docs-tab-who-can-read", { fullPage: false });
   await tabDialog.getByRole("button", { name: "Save" }).click();
-  await expect(owner.getByText("Access saved")).toBeVisible();
-  const enterpriseTab = structure.getByRole("listitem").filter({ has: owner.getByRole("button", { name: "Who can read Enterprise" }) });
+  await expect(owner.getByText("Tab saved")).toBeVisible();
+  const enterpriseTab = structure.getByRole("listitem").filter({ has: owner.getByRole("button", { name: "Settings for Enterprise" }) });
   await expect(enterpriseTab.getByText("Enterprise customers", { exact: true })).toBeVisible();
 
   // A collection in it inherits that, and says so.

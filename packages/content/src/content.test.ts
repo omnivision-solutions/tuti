@@ -311,6 +311,13 @@ describe("headings", () => {
     expect(docHeadings(doc(p(text("No headings"))))).toEqual([]);
   });
 
+  test("a heading never takes the id of the page's title", () => {
+    expect(docHeadings(doc(h(2, text("Article title")), h(3, text("Article title"))))).toEqual([
+      { id: "article-title-2", text: "Article title", level: 2 },
+      { id: "article-title-3", text: "Article title", level: 3 },
+    ]);
+  });
+
   test("RichText gives headings those ids only when asked (articles)", () => {
     const ids = (out: string) => [...out.matchAll(/<h[23] id="([^"]+)"/g)].map((m) => m[1]);
     const out = renderToStaticMarkup(createElement(RichText, { doc: article, headingIds: true }));

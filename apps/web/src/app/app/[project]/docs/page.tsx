@@ -15,11 +15,11 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
 import { lucideIcon } from "@/lib/lucide-icons";
-import { accessBadge, fromReadAccess } from "@/lib/read-access";
+import { accessBadge, fromReadAccess, toReadAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionPath, inTreeOrder, namedLevel, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
-import { restorableSince } from "@/server/operations/docs";
+import { restorableSince, tabSelect, tabView } from "@/server/operations/docs";
 
 const structureArticle = { slug: true, title: true, publishedAt: true } as const;
 const structureView = (article: { slug: string; title: string; publishedAt: Date | null }) => ({
@@ -54,7 +54,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         changes: { select: { articleId: true } },
       },
     }),
-    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true, ...levelSelect } }),
+    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: tabSelect }).then((rows) => rows.map(tabView)),
     prisma.collection.findMany({
       where: { projectId },
       orderBy: readingOrder,
@@ -165,7 +165,10 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           <CardContent>
             <DocsStructure
               projectSlug={slug}
-              tabs={tabs.map((tab) => ({ slug: tab.slug, name: tab.name, access: fromReadAccess(tab.access), groups: claimsOf(tab), badge: badge(tab) }))}
+              tabs={tabs.map((tab) => ({
+                ...tab,
+                badge: accessBadge({ access: toReadAccess(tab.access), groups: tab.groups.map((key) => names.get(key) ?? key) }),
+              }))}
               collections={inTreeOrder(collections).map((c) => ({
                 slug: c.slug,
                 name: c.name,

@@ -11,6 +11,7 @@ import {
   createCollection,
   createTab,
   deleteArticle as deleteArticleOperation,
+  type DocsLanding,
   deleteCollection as deleteCollectionOperation,
   deleteTab as deleteTabOperation,
   discardChanges as discardChangesOperation,
@@ -140,17 +141,15 @@ export async function moveCollection(
   );
 }
 
-/** Adds a tab (`slug` null) or renames tab `slug`. */
+/** Adds a tab (`slug` null), or saves tab `slug`'s settings: its name and landing page. */
 export async function saveTab(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const name = String(formData.get("name") ?? "");
+  // Its settings: checked by the operation (an unknown landing is a 400; "page" needs a page).
+  const landing = (formData.get("landing") || undefined) as DocsLanding | undefined;
+  const landingPage = landing === "page" ? String(formData.get("landingPage") ?? "") || undefined : undefined;
   return asTeam(projectSlug, DENIED, (context) =>
-    slug === null ? call(createTab, context, { name }) : call(updateTab, context, { slug: String(slug), name }),
+    slug === null ? call(createTab, context, { name }) : call(updateTab, context, { slug: String(slug), name, landing, landingPage, ...accessFrom(formData) }),
   );
-}
-
-/** Who can read tab `slug` (its Access dialog). */
-export async function saveTabAccess(projectSlug: string, slug: string, _state: FormState, formData: FormData): Promise<FormState> {
-  return asTeam(projectSlug, DENIED, (context) => call(updateTab, context, { slug: String(slug), ...accessFrom(formData) }));
 }
 
 /** A tab's up and down buttons: tab `slug` to `position`. */
