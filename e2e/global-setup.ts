@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -14,7 +14,7 @@ import { MAIL_DIR } from "./mail";
 /**
  * A throwaway Postgres, a local SMTP server (emails land in e2e-mail/), the
  * OpenAI fake (embeddings for duplicate detection), the model fake (AI drafting), the S3 fake (image uploads), the
- * DNS fake (custom domains' TXT records) and the
+ * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
  * with background jobs running inline.
  */
@@ -52,6 +52,9 @@ export default async function globalSetup() {
   const dns = await startDnsFake();
   // Journeys publish TXT records through the fake's /_fake/txt (e2e/dns.ts).
   process.env.E2E_DNS_URL = new URL(dns.url).origin;
+  const cloudflare = await startCloudflareFake();
+  // Journeys say when Cloudflare has a domain's certificate through /_fake/certificate (e2e/dns.ts).
+  process.env.E2E_CLOUDFLARE_URL = cloudflare.env.CLOUDFLARE_API_URL;
   const postgres = await startMigratedPostgres("tuti_e2e");
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
@@ -67,6 +70,7 @@ export default async function globalSetup() {
       ...s3.env,
       ...github.env,
       DNS_LOOKUP_URL: dns.url,
+      ...cloudflare.env,
       NODE_ENV: "production",
     },
     stdio: ["ignore", "pipe", "inherit"],
@@ -88,7 +92,7 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

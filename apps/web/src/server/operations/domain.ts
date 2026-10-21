@@ -1,23 +1,25 @@
 import { randomBytes } from "node:crypto";
 
-import { Prisma, prisma } from "@tuti/db";
+import { type CertificateStatus, Prisma, prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { customDomainTarget, normalizeHostname, verificationRecord } from "@/lib/custom-domains";
 
+import { certificateStatus, cloudflareConfigured, createCustomHostname, deleteCustomHostname, getCustomHostname } from "../cloudflare";
 import { forgetCustomDomain, txtRecords } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 
 /**
  * A portal on its own domain (help.acme.com), Phase 10: the team adds it, points it at Tuti (a
  * CNAME to CUSTOM_DOMAIN_TARGET) and proves it's theirs with a TXT record; once verified, the
- * portal answers there too (server/custom-domains.ts).
+ * portal answers there too (server/custom-domains.ts). With Cloudflare for SaaS set up
+ * (server/cloudflare.ts), a verified domain also gets a custom hostname there, for its certificate.
  */
 
 const OFF = "Custom domains aren't set up on this server (see CUSTOM_DOMAIN_TARGET in .env.example)";
 
-type Domain = { hostname: string; verificationToken: string; verifiedAt: Date | null };
+type Domain = { hostname: string; verificationToken: string; verifiedAt: Date | null; cloudflareId: string | null; certificate: CertificateStatus | null };
 
 const domainView = (domain: Domain) => {
   const txt = verificationRecord(domain.hostname, domain.verificationToken);
@@ -26,16 +28,46 @@ const domainView = (domain: Domain) => {
     hostname: domain.hostname,
     status: domain.verifiedAt ? ("verified" as const) : ("pending" as const),
     verifiedAt: domain.verifiedAt?.toISOString() ?? null,
+    // Its HTTPS certificate, when Cloudflare gets it one: pending (until the CNAME points at Tuti), active or failed.
+    certificate: domain.certificate && (domain.certificate.toLowerCase() as "pending" | "active" | "failed"),
     // What to add at the domain's DNS provider: where it points, and the record that proves it's yours.
     records: [...(target ? [{ type: "CNAME" as const, name: domain.hostname, value: target }] : []), { type: "TXT" as const, ...txt }],
   };
 };
-const domainSelect = { hostname: true, verificationToken: true, verifiedAt: true } as const;
+const domainSelect = { hostname: true, verificationToken: true, verifiedAt: true, cloudflareId: true, certificate: true } as const;
 
-/** The project's custom domain (Settings → Custom domain, and domain.get), or null. */
+/** The project's custom domain (Settings → Custom domain, and domain.get), or null; a certificate on its way is asked about again. */
 export async function customDomain(projectId: string) {
-  const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
+  let domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
+  if (domain?.cloudflareId && domain.certificate !== "ACTIVE" && cloudflareConfigured()) {
+    try {
+      const certificate = certificateStatus(await getCustomHostname(domain.cloudflareId));
+      if (certificate !== domain.certificate) {
+        await prisma.customDomain.updateMany({ where: { projectId, cloudflareId: domain.cloudflareId }, data: { certificate } });
+        domain = { ...domain, certificate };
+      }
+    } catch (error) {
+      // What we knew stays: the next look asks again.
+      log.error("Asking Cloudflare about a custom domain's certificate failed", { error });
+    }
+  }
   return domain && domainView(domain);
+}
+
+/**
+ * Deletes a custom hostname at Cloudflare unless a domain still uses it (another check of the same
+ * domain may have just verified it with this one). A failure is only logged: the hostname then
+ * routes to Tuti, which answers 404 for it, and adding the domain again uses it.
+ */
+async function releaseCustomHostname(cloudflareId: string | null) {
+  if (!cloudflareId || !cloudflareConfigured() || (await prisma.customDomain.count({ where: { cloudflareId } })) > 0) {
+    return;
+  }
+  try {
+    await deleteCustomHostname(cloudflareId);
+  } catch (error) {
+    log.error("Deleting a custom hostname at Cloudflare failed", { error, cloudflareId });
+  }
 }
 
 export const getDomain = defineOperation({
@@ -77,10 +109,18 @@ export const setDomain = defineOperation({
       return { domain: domainView(existing) };
     }
     // A new token each time, so a record added for an earlier claim doesn't verify this one.
-    const data = { hostname, verificationToken: randomBytes(16).toString("hex"), verifiedAt: null, addedById: actor.kind === "user" ? actor.userId : actor.createdById };
+    const data = {
+      hostname,
+      verificationToken: randomBytes(16).toString("hex"),
+      verifiedAt: null,
+      cloudflareId: null,
+      certificate: null,
+      addedById: actor.kind === "user" ? actor.userId : actor.createdById,
+    };
     const domain = await prisma.customDomain.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: domainSelect });
     if (existing) {
       forgetCustomDomain(existing.hostname);
+      await releaseCustomHostname(existing.cloudflareId);
     }
     return { domain: domainView(domain) };
   },
@@ -89,7 +129,7 @@ export const setDomain = defineOperation({
 export const verifyDomain = defineOperation({
   name: "domain.verify",
   summary:
-    "Check the custom domain's TXT record (see domain.get): once it's there, the domain is verified and the portal answers on it. DNS changes can take a few minutes to show",
+    "Check the custom domain's TXT record (see domain.get): once it's there, the domain is verified and the portal answers on it (where Tuti gets certificates through Cloudflare, `certificate` says when HTTPS works there: pending until the CNAME points at Tuti, then active). DNS changes can take a few minutes to show",
   method: "POST",
   path: "/domain/verify",
   scope: "write",
@@ -118,15 +158,31 @@ export const verifyDomain = defineOperation({
         `We couldn't find the TXT record ${record.name} with ${record.value} yet. DNS changes can take a few minutes to show`,
       );
     }
+    const taken = () => new OperationError(409, "conflict", `${domain.hostname} is already another portal's domain`);
+    if (await prisma.customDomain.findFirst({ where: { hostname: domain.hostname, verifiedAt: { not: null }, projectId: { not: projectId } }, select: { id: true } })) {
+      throw taken();
+    }
+    // Only now, with the domain shown to be theirs: anyone can make projects, so adding domains mustn't use up Cloudflare's.
+    let cloudflare: { cloudflareId: string; certificate: CertificateStatus } | undefined;
+    if (cloudflareConfigured()) {
+      try {
+        const hostname = await createCustomHostname(domain.hostname);
+        cloudflare = { cloudflareId: hostname.id, certificate: certificateStatus(hostname) };
+      } catch (error) {
+        log.error("Making a custom hostname at Cloudflare failed", { error });
+        throw new OperationError(502, "certificate_failed", "We couldn't set up the domain's certificate. Try again in a minute");
+      }
+    }
     try {
       // Only the domain that was checked: domain.set may have replaced it during the lookup.
       const { count } = await prisma.customDomain.updateMany({
         where: { projectId, hostname: domain.hostname, verificationToken: domain.verificationToken, verifiedAt: null },
-        data: { verifiedAt: new Date() },
+        data: { verifiedAt: new Date(), ...cloudflare },
       });
       const now = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
       // Unless the same check verified it meanwhile, it's another domain (or none) now.
       if (count === 0 && !(now?.hostname === domain.hostname && now.verificationToken === domain.verificationToken && now.verifiedAt)) {
+        await releaseCustomHostname(cloudflare?.cloudflareId ?? null);
         throw new OperationError(409, "conflict", "The domain changed while we checked it. Check again");
       }
       forgetCustomDomain(domain.hostname);
@@ -134,7 +190,8 @@ export const verifyDomain = defineOperation({
     } catch (error) {
       // Another portal verified it first (the hostname is unique among verified domains).
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new OperationError(409, "conflict", `${domain.hostname} is already another portal's domain`);
+        await releaseCustomHostname(cloudflare?.cloudflareId ?? null);
+        throw taken();
       }
       throw error;
     }
@@ -150,12 +207,13 @@ export const removeDomain = defineOperation({
   access: "admin",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: { hostname: true } });
+    const domain = await prisma.customDomain.findUnique({ where: { projectId }, select: { hostname: true, cloudflareId: true } });
     if (!domain) {
       throw new OperationError(404, "not_found", "The portal has no custom domain");
     }
     await prisma.customDomain.delete({ where: { projectId } });
     forgetCustomDomain(domain.hostname);
+    await releaseCustomHostname(domain.cloudflareId);
     return { removed: domain.hostname };
   },
 });

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { publishTxt } from "./dns";
+import { issueCertificate, publishTxt } from "./dns";
 import { APP_URL } from "./env";
 import { createProject, newPerson, signUp } from "./helpers";
 
@@ -34,6 +34,11 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await publishTxt(`_tuti.${domain}`, await txt.locator("code").nth(1).innerText());
   await owner.getByRole("button", { name: "Check DNS" }).click();
   await expect(owner.getByText(`${domain} is verified`)).toBeVisible();
+  // Cloudflare gets its certificate once the CNAME points at Tuti.
+  await expect(owner.getByText("Certificate pending", { exact: true })).toBeVisible();
+  await checkpoint(owner, "settings-custom-domain-certificate-pending");
+  await issueCertificate(domain);
+  await owner.getByRole("button", { name: "Check again" }).click();
   await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
   await checkpoint(owner, "settings-custom-domain-verified");
 
