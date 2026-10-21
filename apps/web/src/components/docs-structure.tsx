@@ -5,11 +5,14 @@ import { ArrowDownIcon, ArrowUpIcon, FolderInputIcon, GripVerticalIcon } from "l
 import { type DragEvent, type ReactNode, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, type GroupOption, TabDialog } from "@/components/docs";
+import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabAccessDialog, TabDialog } from "@/components/docs";
 import { LucideIcon } from "@/components/icon-field";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
+import type { Access } from "@/lib/read-access";
+import type { AccessChoices } from "@/server/docs-queries";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
@@ -21,15 +24,17 @@ type StructureCollection = {
   parent: string | null;
   /** At the top level, the tab it's in (null without tabs). */
   tab: string | null;
-  /** The reader groups it's for (their keys); empty: everyone. */
+  /** Who can read it, with its groups' keys (for access "groups"), and that as a badge (null: inherit). */
+  access: Access;
   groups: string[];
+  badge: string | null;
   /** Its Lucide icon's name, or null. */
   icon: string | null;
   /** Whether the installed Lucide has it (one it dropped since draws nothing). */
   knownIcon: boolean;
   articles: StructureArticle[];
 };
-type StructureTab = { slug: string; name: string };
+type StructureTab = { slug: string; name: string; access: Access; groups: string[]; badge: string | null };
 
 type Kind = "tab" | "collection" | "article";
 /** A row things can be dropped on: a tab, a collection, an article (in `collection`), or the articles in no collection. */
@@ -146,12 +151,12 @@ export function DocsStructure({
   tabs,
   collections,
   uncollected,
-  groups,
+  access,
 }: {
   projectSlug: string;
   tabs: StructureTab[];
-  /** The project's reader groups, for collections to pick from. */
-  groups: GroupOption[];
+  /** For "Who can read": the project's groups, and what each tab and collection lets read. */
+  access: AccessChoices;
   /** Each top-level collection (by tab), then the ones in it. */
   collections: StructureCollection[];
   uncollected: StructureArticle[];
@@ -397,19 +402,18 @@ export function DocsStructure({
                       }
                       places={places}
                     />
-                    <CollectionDialog projectSlug={projectSlug} collection={collection} groups={groups} />
+                    <CollectionDialog projectSlug={projectSlug} collection={collection} access={access} />
                     <DeleteCollectionButton projectSlug={projectSlug} slug={collection.slug} name={collection.name} hasChildren={inside.length > 0} />
                   </>
                 }
               >
-                <span className="flex items-center gap-1.5 text-sm font-medium break-words">
+                <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium break-words">
                   {collection.icon && collection.knownIcon && <LucideIcon name={collection.icon} />}
                   <span className="min-w-0">{collection.name}</span>
+                  {collection.badge && <Badge variant="outline">{collection.badge}</Badge>}
                 </span>
                 <span className="text-xs text-muted-foreground">
                   {`${count} ${count === 1 ? "article" : "articles"}`}
-                  {collection.groups.length > 0 &&
-                    ` · Only for ${collection.groups.map((key) => groups.find((g) => g.key === key)?.name ?? key).join(", ")}`}
                 </span>
               </Row>
               {(count > 0 || inside.length > 0) && (
@@ -450,6 +454,7 @@ export function DocsStructure({
                     places={[]}
                   />
                   <TabDialog projectSlug={projectSlug} tab={tab} />
+                  <TabAccessDialog projectSlug={projectSlug} tab={tab} first={index === 0} access={access} />
                   {/* The first is the docs' home: another goes first before it can go. */}
                   {(index > 0 || list.length === 1) && (
                     <DeleteTabButton projectSlug={projectSlug} tab={tab} movesTo={list[index - 1]?.name ?? null} />
@@ -457,7 +462,10 @@ export function DocsStructure({
                 </>
               }
             >
-              <span className="font-heading font-bold tracking-tight break-words">{tab.name}</span>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="font-heading font-bold tracking-tight break-words">{tab.name}</span>
+                {tab.badge && <Badge variant="outline">{tab.badge}</Badge>}
+              </span>
               <span className="text-xs text-muted-foreground">
                 {`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
                 {index === 0 && uncollected.length > 0 && " · also lists the articles in no collection"}

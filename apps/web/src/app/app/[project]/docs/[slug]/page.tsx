@@ -15,7 +15,9 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { displayDoc } from "@/server/content";
-import { collectionOptions } from "@/server/docs-queries";
+import { fromReadAccess } from "@/lib/read-access";
+import { claimsOf, levelSelect } from "@/lib/reader-groups";
+import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
@@ -34,6 +36,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
       publishedAt: true,
       showUpdatedDate: true,
       listing: true,
+      ...levelSelect,
       collection: { select: { slug: true, name: true } },
       changes: { select: { title: true, body: true, content: true, updatedAt: true, collection: { select: { slug: true, name: true } } } },
     },
@@ -100,9 +103,12 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           collection: edited.collection?.slug ?? null,
           showUpdatedDate: article.showUpdatedDate,
           listing,
+          access: fromReadAccess(article.access),
+          groups: claimsOf(article),
           published: article.publishedAt !== null,
         }}
         collections={await collectionOptions(membership.project.id)}
+        access={await accessChoices(membership.project.id)}
         mediaBaseUrl={mediaPublicUrl()}
       />
     </>

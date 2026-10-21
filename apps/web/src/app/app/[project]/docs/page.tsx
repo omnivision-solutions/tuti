@@ -15,8 +15,9 @@ import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
 import { lucideIcon } from "@/lib/lucide-icons";
-import { claimsOf, groupClaims } from "@/lib/reader-groups";
-import { collectionPath, inTreeOrder, readingOrder } from "@/server/docs-queries";
+import { accessBadge, fromReadAccess } from "@/lib/read-access";
+import { claimsOf, levelSelect } from "@/lib/reader-groups";
+import { accessChoices, collectionPath, inTreeOrder, namedLevel, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
 
@@ -39,7 +40,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, tabs, collections, uncollected, deleted, groups] = await Promise.all([
+  const [articles, tabs, collections, uncollected, deleted, access] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -48,11 +49,12 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         title: true,
         publishedAt: true,
         listing: true,
+        ...levelSelect,
         collection: { select: { name: true } },
         changes: { select: { articleId: true } },
       },
     }),
-    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true } }),
+    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: { slug: true, name: true, ...levelSelect } }),
     prisma.collection.findMany({
       where: { projectId },
       orderBy: readingOrder,
@@ -64,7 +66,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         description: true,
         parent: { select: { slug: true } },
         tab: { select: { slug: true } },
-        groups: groupClaims,
+        ...levelSelect,
         icon: true,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
@@ -86,8 +88,11 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
-    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
+    accessChoices(projectId),
   ]);
+  // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
+  const names = new Map(access.groups.map((g) => [g.key, g.name]));
+  const badge = (level: Parameters<typeof namedLevel>[0]) => accessBadge(namedLevel(level, names));
 
   return (
     <>
@@ -122,6 +127,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                   badges={
                     <>
                       {article.collection && <Badge variant="secondary">{article.collection.name}</Badge>}
+                      {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
                       {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
                     </>
                   }
@@ -151,7 +157,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 .filter((c) => ancestry(collections, c.id).length < MAX_COLLECTION_DEPTH)
                 .map((c) => ({ slug: c.slug, name: collectionPath(collections, c.id) }))}
               tabs={tabs}
-              groups={groups}
+              access={access}
             />
           </CardAction>
         </CardHeader>
@@ -159,20 +165,22 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           <CardContent>
             <DocsStructure
               projectSlug={slug}
-              tabs={tabs}
+              tabs={tabs.map((tab) => ({ slug: tab.slug, name: tab.name, access: fromReadAccess(tab.access), groups: claimsOf(tab), badge: badge(tab) }))}
               collections={inTreeOrder(collections).map((c) => ({
                 slug: c.slug,
                 name: c.name,
                 description: c.description,
                 parent: c.parent?.slug ?? null,
                 tab: c.tab?.slug ?? null,
+                access: fromReadAccess(c.access),
                 groups: claimsOf(c),
+                badge: badge(c),
                 icon: c.icon,
                 knownIcon: Boolean(lucideIcon(c.icon)),
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}
-              groups={groups}
+              access={access}
             />
           </CardContent>
         )}

@@ -11,8 +11,8 @@ import { defineOperation, OperationError } from "./define";
 /**
  * Reader groups (Settings → Groups): who's in one is worked out when they read, from their latest
  * SSO sign-in: its `groups` claim naming the group's `claim`, or its `attributes` matching all of the
- * group's conditions (lib/group-conditions.ts). Docs collections can be for some groups only
- * (collections.*, see lib/reader-groups.ts), named by the group's `key`.
+ * group's conditions (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
+ * (tabs.*, collections.*, articles.*, see lib/read-access.ts), named by the group's `key`.
  */
 
 const groupFields = {
@@ -88,7 +88,7 @@ const notFound = (key: string) => new OperationError(404, "not_found", `There's 
 export const listGroups = defineOperation({
   name: "groups.list",
   summary:
-    "List the reader groups by name, each with its `key` (how collections.* and these paths name it): someone your app's SSO signed in is in one when their latest token's `groups` has its `claim`, or its `attributes` match all of its `conditions`; `readers` counts them now and `sample` names up to 3. Collections can be for some groups only (`groups` on collections.*)",
+    "List the reader groups by name, each with its `key` (how tabs.*, collections.*, articles.* and these paths name it): someone your app's SSO signed in is in one when their latest token's `groups` has its `claim`, or its `attributes` match all of its `conditions`; `readers` counts them now and `sample` names up to 3. Tabs, collections and articles can be for some groups only (`access` groups, with `groups`, on tabs.*, collections.* and articles.*)",
   method: "GET",
   path: "/groups",
   scope: "read",
@@ -138,7 +138,7 @@ export const createGroup = defineOperation({
 export const updateGroup = defineOperation({
   name: "groups.update",
   summary:
-    "Change a reader group (`group` is its key, which stays): its name, description, `claim` (null for none) or `conditions` (all of them; [] for none). Then it's whoever your app's SSO signs in with the claim or matching the conditions, and the collections for it follow. It keeps a claim or a condition",
+    "Change a reader group (`group` is its key, which stays): its name, description, `claim` (null for none) or `conditions` (all of them; [] for none). Then it's whoever your app's SSO signs in with the claim or matching the conditions, and the tabs, collections and articles for it follow. It keeps a claim or a condition",
   method: "PATCH",
   path: "/groups/{group}",
   scope: "write",

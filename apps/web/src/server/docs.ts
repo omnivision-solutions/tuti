@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import type { Listing } from "@/lib/article-listing";
+import type { Access } from "@/lib/read-access";
 
 import type { FormState } from "./form-state";
 import {
@@ -31,6 +32,12 @@ import { asTeam, call } from "./operations/run";
 
 const DENIED = "Only the project's team can edit the docs";
 
+/** A form's "Who can read" (WhoCanRead): its access, with its ticked groups only for "groups". Checked by the operation. */
+function accessFrom(formData: FormData): { access?: Access; groups?: string[] } {
+  const access = (formData.get("access") || undefined) as Access | undefined;
+  return access === undefined ? {} : { access, groups: access === "groups" ? formData.getAll("groups").map(String) : [] };
+}
+
 /** Saves the editor's form: a new draft when `slug` is null, or changes to article `slug`. Opens its new address if it moved. */
 export async function saveArticle(projectSlug: string, slug: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
@@ -41,6 +48,7 @@ export async function saveArticle(projectSlug: string, slug: string | null, _sta
     showUpdatedDate: formData.get("showUpdatedDate") === "on",
     // Checked by the operation (an unknown listing is a 400).
     listing: (formData.get("listing") || undefined) as Listing | undefined,
+    ...accessFrom(formData),
   };
   let saved: string | undefined;
   const result = await asTeam(projectSlug, DENIED, async (context) => {
@@ -104,8 +112,7 @@ export async function saveCollection(projectSlug: string, slug: string | null, _
   const input = {
     name: String(formData.get("name") ?? ""),
     description: String(formData.get("description") ?? ""),
-    // The ticked groups' claims, checked by the operation.
-    groups: formData.getAll("groups").map(String),
+    ...accessFrom(formData),
     // A Lucide icon's name; empty for none.
     icon: String(formData.get("icon") ?? "") || null,
   };
@@ -139,6 +146,11 @@ export async function saveTab(projectSlug: string, slug: string | null, _state: 
   return asTeam(projectSlug, DENIED, (context) =>
     slug === null ? call(createTab, context, { name }) : call(updateTab, context, { slug: String(slug), name }),
   );
+}
+
+/** Who can read tab `slug` (its Access dialog). */
+export async function saveTabAccess(projectSlug: string, slug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asTeam(projectSlug, DENIED, (context) => call(updateTab, context, { slug: String(slug), ...accessFrom(formData) }));
 }
 
 /** A tab's up and down buttons: tab `slug` to `position`. */

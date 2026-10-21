@@ -26,7 +26,7 @@ The token is a JWT signed with **HS256** using the secret.
 | `email` | no | Stored for notifications. Not used to match accounts. |
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
-| `groups` | no | Reader groups, e.g. `["enterprise"]`: which restricted collections in your docs they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
+| `groups` | no | Reader groups, e.g. `["enterprise"]`: which tabs, collections and articles for some groups in your docs they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
 | `attributes` | no | What you know about the user, e.g. `{ "plan": "pro", "seats": 12 }`, for groups' conditions to match (see [Attributes](#attributes)). Strings, numbers and booleans, up to 50. Each sign-in replaces them. |
 
 Node example with [`jose`](https://github.com/panva/jose):
@@ -135,16 +135,29 @@ How conditions compare:
   the portal are in none, even for a group whose only condition is "is not".
 
 Each group has a `key`, made from its name when you add it and never changed: the API's
-`/groups/{key}` and the `groups` on `collections.*` name groups by it (`groups.list` has them).
+`/groups/{key}` and the `groups` on `tabs.*`, `collections.*` and `articles.*` name groups by it
+(`groups.list` has them).
 
-A collection in your docs can be for some groups only: tick them under **Only for groups** on it
-(or `groups`, their keys, in `collections.create` / `collections.update`). Then only your team
-and people your app signs in who are in one of those groups see the collection, its
-articles and the collections in it: in the docs, article pages, search, AI answers and
-the widget. Everyone else (signed out, signed up on the portal, other groups) doesn't see them
-at all, and `llms.txt` and the sitemap leave them out. A collection inside a restricted one is
-restricted by both. A group a collection is for can't be deleted until it's removed there,
-since that would open the collection to everyone.
+### Who can read
+
+Each tab, collection and article in your docs has **Who can read** (the tab's **Access**, the
+collection's dialog, the article's editor; `access` on `tabs.*`, `collections.*` and `articles.*`):
+
+- **Inherit** (`inherit`, the default): whoever may read what it's in. For a tab, everyone who
+  may read your portal.
+- **Signed-in readers** (`signed_in`): anyone signed in on your portal, however they signed in.
+- **Specific groups** (`groups`, with `groups`: their keys): people your app signs in who are in one
+  of them. With none picked, only your team.
+
+A page is for whoever every level above it lets in: its tab, each collection it's in, then the
+page itself, so a collection or article can only narrow what's above it (an article in no
+collection is under the first tab). Your team reads everything. Everyone else doesn't see what
+isn't for them at all: in the docs, the tabs, article pages and their `.md`, search, AI answers and
+the widget. `llms.txt` and the sitemap only list what's for everyone. In the API, `groups` without
+`access` still works as it did for collections: some groups mean `groups`, none `inherit`.
+
+A group a tab, collection or article is for can't be deleted until it's removed there, so who can
+read what never changes behind your back.
 
 Groups and attributes come from the latest sign-in: send all of a user's groups and attributes in
 every token (e.g. from their plan), and one they lose is gone the next time they sign in.

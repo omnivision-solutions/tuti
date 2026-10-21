@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { ArticleForm } from "@/components/docs";
 import { PageHeader } from "@/components/page-header";
-import { collectionOptions } from "@/server/docs-queries";
+import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { MAX_ARTICLE_TITLE } from "@/server/operations/docs";
 
@@ -23,6 +23,7 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
         projectSlug={slug}
         article={null}
         collections={await collectionOptions(membership.project.id)}
+        access={await accessChoices(membership.project.id)}
         mediaBaseUrl={mediaPublicUrl()}
         defaultTitle={typeof title === "string" ? title.trim().slice(0, MAX_ARTICLE_TITLE) : undefined}
       />

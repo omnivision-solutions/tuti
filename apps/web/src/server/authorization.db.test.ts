@@ -218,6 +218,7 @@ const matrix: Matrix = {
     moveCollection: { allowed: "MEMBER", call: (slug) => docs.moveCollection(slug, "guides", "basics", 0) },
     moveArticle: { allowed: "MEMBER", call: (slug) => docs.moveArticle(slug, "matrix-draft", "basics", 0) },
     saveTab: { allowed: "MEMBER", call: (slug) => docs.saveTab(slug, null, {}, form({ name: "API" })) },
+    saveTabAccess: { allowed: "MEMBER", call: (slug) => docs.saveTabAccess(slug, "docs", {}, form({ access: "signed_in" })) },
     moveTab: { allowed: "MEMBER", call: (slug) => docs.moveTab(slug, "docs", 0) },
     deleteTab: { allowed: "MEMBER", call: (slug) => docs.deleteTab(slug, "docs") },
     dismissDocsGap: { allowed: "MEMBER", call: (slug) => docs.dismissDocsGap(slug, "How do I invite?") },

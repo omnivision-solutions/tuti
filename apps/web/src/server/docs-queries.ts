@@ -4,7 +4,7 @@ import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { ancestry } from "@/lib/collection-tree";
-import { type Level, readable, type Reader, restricted } from "@/lib/read-access";
+import { describeAccess, type Level, type NamedLevel, readable, type Reader, restricted } from "@/lib/read-access";
 import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
@@ -44,6 +44,40 @@ export async function collectionOptions(projectId: string) {
   const collections = await prisma.collection.findMany({ where: { projectId }, orderBy: readingOrder, select: { id: true, parentId: true, slug: true, name: true } });
   return inTreeOrder(collections).map((c) => ({ slug: c.slug, name: collectionPath(collections, c.id) }));
 }
+
+/** A level's groups by name (`names`: the project's groups' names by key), for the team. */
+export const namedLevel = (level: Level, names: Map<string, string>): NamedLevel => ({
+  access: level.access,
+  groups: level.groups.map((g) => names.get(g.group.key) ?? g.group.key),
+});
+
+/**
+ * For the team's "Who can read": the project's groups, and who may read a page that inherits under
+ * each tab and collection (with everything above it), in words, by slug (tabs and collections share
+ * them; "" is the top level of docs without tabs). Articles in no collection are under the first tab.
+ */
+export async function accessChoices(projectId: string) {
+  const [tabs, collections, groups] = await Promise.all([
+    prisma.docsTab.findMany({ where: { projectId }, orderBy: tabOrder, select: { id: true, slug: true, name: true, ...levelSelect } }),
+    prisma.collection.findMany({ where: { projectId }, select: { id: true, parentId: true, tabId: true, slug: true, ...levelSelect } }),
+    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
+  ]);
+  const names = new Map(groups.map((g) => [g.key, g.name]));
+  const tabOf = new Map(tabs.map((tab) => [tab.id, tab]));
+  const words = (levels: (Level | undefined)[]) => describeAccess(levels.flatMap((level) => (level ? [namedLevel(level, names)] : [])));
+  const inherits: Record<string, string> = Object.fromEntries([
+    ["", words([])],
+    ...tabs.map((tab) => [tab.slug, words([tab])]),
+    ...collections.map((c) => {
+      const up = ancestry(collections, c.id);
+      const tabId = up.at(-1)?.tabId;
+      return [c.slug, words([tabId ? tabOf.get(tabId) : undefined, ...up])];
+    }),
+  ]);
+  return { groups, inherits, firstTab: tabs[0] ? { slug: tabs[0].slug, name: tabs[0].name } : null };
+}
+
+export type AccessChoices = Awaited<ReturnType<typeof accessChoices>>;
 
 /**
  * What readers may see: published articles, as far as each one's listing lets them. A deleted
