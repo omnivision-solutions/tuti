@@ -15,8 +15,22 @@ import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { docsContents, docsPage, everyCollection, movedArticle, publishedArticle } from "./docs-queries";
 import { answerArticle, countArticleView } from "./docs-readers";
 import { answerSections, searchDocs } from "./docs-search";
-import { createArticle, createCollection, createTab, getArticle, listArticles, publishArticle, updateCollection } from "./operations/docs";
+import {
+  createArticle,
+  createCollection,
+  createTab,
+  deleteArticle,
+  getArticle,
+  listArticles,
+  listCollections,
+  listTabs,
+  publishArticle,
+  updateArticle,
+  updateCollection,
+  updateTab,
+} from "./operations/docs";
 import { answerQuestion } from "./operations/docs-ask";
+import { deleteGroup } from "./operations/groups";
 import { call } from "./operations/run";
 import { readerOf } from "./portal-access";
 
@@ -305,5 +319,76 @@ test("AI answers recheck their sources: one restricted while the model writes is
   expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", reader)).toMatchObject({ status: "no_answer", sources: [] });
   expect(await prisma.docsQuestion.findFirst({ where: { projectId: project.id }, orderBy: { createdAt: "desc" }, select: { cause: true } })).toEqual({
     cause: "SOURCE_UNPUBLISHED",
+  });
+});
+
+describe("the operations: access on tabs.*, collections.* and articles.*", () => {
+  test("each takes access and groups, and says them", async () => {
+    expect(await call(createTab, as(), { name: "Partners", access: "groups", groups: ["enterprise", "Beta", "beta"] })).toMatchObject({
+      access: "groups",
+      groups: ["beta", "enterprise"],
+    });
+    expect(await call(updateTab, as(), { slug: "api", access: "signed_in" })).toMatchObject({ slug: "api", name: "API", access: "signed_in", groups: [] });
+    expect((await call(listTabs, as(), {})).tabs.map((t) => [t.slug, t.access, t.groups])).toEqual([
+      ["guides", "inherit", []],
+      ["api", "signed_in", []],
+      ["partners", "groups", ["beta", "enterprise"]],
+    ]);
+
+    expect(await call(createCollection, as(), { name: "Pro", access: "signed_in" })).toMatchObject({ access: "signed_in", groups: [] });
+    expect(await call(updateCollection, as(), { slug: "pro", access: "groups", groups: ["enterprise"] })).toMatchObject({ access: "groups", groups: ["enterprise"] });
+    expect((await call(listCollections, as(), {})).collections.find((c) => c.slug === "pro")).toMatchObject({ access: "groups", groups: ["enterprise"] });
+
+    expect(await call(createArticle, as(), { title: "Partner pricing", access: "groups", groups: ["beta"] })).toMatchObject({ access: "groups", groups: ["beta"] });
+    expect(await call(updateArticle, as(), { slug: "endpoints", access: "signed_in" })).toMatchObject({ access: "signed_in", groups: [] });
+    expect(await call(getArticle, as(), { slug: "endpoints" })).toMatchObject({ access: "signed_in", groups: [] });
+    expect((await call(listArticles, as(), {})).articles.find((a) => a.slug === "endpoints")).toMatchObject({ access: "signed_in" });
+    // A published article's access changes at once, like its listing: readers don't wait for a publish.
+    expect(await publishedArticle(project.slug, "endpoints")).toBeNull();
+    // Readers it's for don't get who else may read it.
+    const reader = { actor: { kind: "user" as const, userId: (await signUp("Stranger")).id }, projectId: project.id };
+    expect(await call(getArticle, reader, { slug: "endpoints" })).not.toHaveProperty("access");
+  });
+
+  test("groups alone, as collections' groups did: some make it “groups”, none “inherit”", async () => {
+    expect(await call(createCollection, as(), { name: "Enterprise", groups: ["enterprise"] })).toMatchObject({ access: "groups", groups: ["enterprise"] });
+    expect(await call(createCollection, as(), { name: "Open", groups: [] })).toMatchObject({ access: "inherit", groups: [] });
+    expect(await call(updateCollection, as(), { slug: "enterprise", groups: [] })).toMatchObject({ access: "inherit", groups: [] });
+    expect(await call(updateCollection, as(), { slug: "enterprise", groups: ["beta"] })).toMatchObject({ access: "groups", groups: ["beta"] });
+    // Neither: unchanged.
+    expect(await call(updateCollection, as(), { slug: "enterprise", name: "Enterprise plan" })).toMatchObject({ access: "groups", groups: ["beta"] });
+  });
+
+  test("“groups” without groups keeps the ones it has; another access drops them, so going back is only the team", async () => {
+    await call(updateCollection, as(), { slug: "basics", access: "groups", groups: ["enterprise"] });
+    expect(await call(updateCollection, as(), { slug: "basics", access: "groups" })).toMatchObject({ access: "groups", groups: ["enterprise"] });
+    expect(await call(updateCollection, as(), { slug: "basics", access: "signed_in" })).toMatchObject({ access: "signed_in", groups: [] });
+    expect(await call(updateCollection, as(), { slug: "basics", access: "groups" })).toMatchObject({ access: "groups", groups: [] });
+  });
+
+  test("unknown groups, or groups with another access, are refused and change nothing", async () => {
+    await expect(call(updateTab, as(), { slug: "api", access: "groups", groups: ["nobody"] })).rejects.toMatchObject({
+      status: 400,
+      message: "There's no group “nobody”: add it in Settings → Groups first",
+    });
+    await expect(call(updateArticle, as(), { slug: "endpoints", access: "signed_in", groups: ["beta"] })).rejects.toMatchObject({
+      status: 400,
+      message: "Groups go with access “groups”",
+    });
+    await expect(call(createCollection, as(), { name: "Bad", access: "everyone" as never })).rejects.toMatchObject({ status: 400 });
+    expect((await call(listTabs, as(), {})).tabs.map((t) => t.access)).toEqual(["inherit", "inherit"]);
+    expect(await call(getArticle, as(), { slug: "endpoints" })).toMatchObject({ access: "inherit" });
+  });
+
+  test("a group a tab, collection or live article is for can't be deleted; a deleted article lets it go", async () => {
+    await call(updateTab, as(), { slug: "api", access: "groups", groups: ["enterprise"] });
+    await call(updateCollection, as(), { slug: "basics", access: "groups", groups: ["enterprise"] });
+    await call(updateArticle, as(), { slug: "contact", access: "groups", groups: ["enterprise", "beta"] });
+    await expect(call(deleteGroup, as(), { group: "enterprise" })).rejects.toMatchObject({
+      status: 409,
+      message: "Used by API, Basics and Contact; remove it from them first",
+    });
+    await call(deleteArticle, as(), { slug: "contact" });
+    expect(await call(deleteGroup, as(), { group: "beta" })).toEqual({ deleted: "beta" });
   });
 });

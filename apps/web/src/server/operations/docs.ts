@@ -10,7 +10,8 @@ import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
-import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
+import { type Access, ACCESSES, fromReadAccess, type Level, toReadAccess } from "@/lib/read-access";
+import { claimsOf, levelSelect, MAX_READER_GROUPS, readerGroup } from "@/lib/reader-groups";
 
 import { attachMedia, displayDoc, readContent } from "../content";
 import { inTreeOrder, listedArticle, readableArticle, readingOrder } from "../docs-queries";
@@ -54,17 +55,51 @@ const articleFields = {
    */
   listing: z.enum(LISTINGS).optional(),
 };
-const collectionFields = {
-  name: z.string().trim().min(1, "Name is required").max(60),
-  description: z.string().trim().max(300),
+
+/** "Who can read" on tabs.*, collections.* and articles.* (see accessChange). */
+const accessFields = {
   /**
-   * Who may read it (its articles and the collections in it) besides the team: people in one of
-   * these groups (by key: groups.list). Empty: everyone.
+   * Who may read it (and what's in it), on top of what's above it: `inherit` (what the level above
+   * allows; for a tab, everyone who may read the portal), `signed_in` (anyone signed in on the
+   * portal) or `groups` (readers in one of `groups`; with none, only the team). The team reads everything.
+   */
+  access: z.enum(ACCESSES).optional(),
+  /**
+   * With `access: "groups"`, the groups (keys: groups.list); left out, the ones it has. Without
+   * `access`, groups alone set it: some make it `groups`, none `inherit` (as collections' `groups` did).
    */
   groups: z
     .array(readerGroup)
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
-    .transform((groups) => [...new Set(groups)]),
+    .transform((groups) => [...new Set(groups)])
+    .optional(),
+};
+
+/**
+ * What an operation's `access` and `groups` change (undefined: neither was sent): the access, and
+ * links to the groups (undefined: keep the ones it has; none unless it's `groups`). Unknown groups,
+ * or groups with another access, are refused. Call it with the project locked.
+ */
+async function accessChange(tx: Prisma.TransactionClient, projectId: string, input: { access?: Access; groups?: string[] }) {
+  const access = input.access ?? (input.groups === undefined ? undefined : input.groups.length > 0 ? "groups" : "inherit");
+  if (access === undefined) {
+    return undefined;
+  }
+  if (access !== "groups" && input.groups?.length) {
+    throw new OperationError(400, "invalid_input", "Groups go with access “groups”");
+  }
+  return {
+    access: toReadAccess(access),
+    groups: access !== "groups" ? [] : input.groups === undefined ? undefined : await groupLinks(tx, projectId, input.groups),
+  };
+}
+
+/** "Who can read" for the API, from `levelSelect`: its access and its groups' keys. */
+const accessView = (level: Level) => ({ access: fromReadAccess(level.access), groups: claimsOf(level) });
+
+const collectionFields = {
+  name: z.string().trim().min(1, "Name is required").max(60),
+  description: z.string().trim().max(300),
   /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
   icon: z
     .string()
@@ -93,6 +128,7 @@ const articleSelect = {
   deletedAt: true,
   showUpdatedDate: true,
   listing: true,
+  ...levelSelect,
   order: true,
   createdAt: true,
   updatedAt: true,
@@ -122,10 +158,12 @@ function articleView({ changes, ...article }: ArticleRow, portal: string, team: 
     content: displayDoc(article),
     url: `${portal}/docs/${article.slug}`,
     /**
-     * Only for the team: a published article's saved changes that readers don't see yet (null if
-     * there are none), until articles.publishChanges or articles.discardChanges.
+     * Only for the team: who can read it (`access`, `groups`; changed at once, like the listing), and a
+     * published article's saved changes that readers don't see yet (null if there are none), until
+     * articles.publishChanges or articles.discardChanges.
      */
     ...(team && {
+      ...accessView(article),
       changes: changes && {
         title: changes.title,
         body: changes.body,
@@ -359,18 +397,25 @@ async function applyChanges(tx: Prisma.TransactionClient, articleId: string, pub
  * Saves changes to a live article and records them as a revision. Call it with the project locked
  * (lockProject). A draft's text changes at once, and its slug follows its title. A published one
  * keeps its slug, and its title, text and collection wait as unpublished changes (unless `publish`,
- * which makes them live with any saved before); its listing and "Updated" setting change at once.
+ * which makes them live with any saved before); its listing, who can read it and "Updated" setting change at once.
  */
 async function saveChanges(
   tx: Prisma.TransactionClient,
   projectId: string,
   article: { id: string; slug: string },
   authorId: string | null,
-  changes: { title?: string; text?: ArticleText; collectionId?: string | null; showUpdatedDate?: boolean; listing?: ArticleListing },
+  changes: {
+    title?: string;
+    text?: ArticleText;
+    collectionId?: string | null;
+    showUpdatedDate?: boolean;
+    listing?: ArticleListing;
+    access?: Awaited<ReturnType<typeof accessChange>>;
+  },
   publish = false,
 ) {
   const current = await lockedArticle(tx, article);
-  const { title, text, collectionId, showUpdatedDate, listing } = changes;
+  const { title, text, collectionId, showUpdatedDate, listing, access } = changes;
   const version = {
     ...(title !== undefined && { title }),
     ...(text && { body: text.text, content: text.doc }),
@@ -379,6 +424,7 @@ async function saveChanges(
   const data: Prisma.ArticleUncheckedUpdateInput = {
     ...(showUpdatedDate !== undefined && { showUpdatedDate }),
     ...(listing !== undefined && { listing }),
+    ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
   };
   if (current.publishedAt) {
     if (Object.keys(version).length > 0) {
@@ -511,12 +557,13 @@ export const searchArticles = defineOperation({
 
 export const createArticle = defineOperation({
   name: "articles.create",
-  summary: "Write a docs article (a draft until it's published); its slug comes from the title",
+  summary:
+    "Write a docs article (a draft until it's published); its slug comes from the title. `access` says who can read it once it's published, on top of its collection and tab (`inherit`, the default; `signed_in`; or `groups`, with `groups`)",
   method: "POST",
   path: "/articles",
   scope: "write",
   access: "team",
-  input: z.object(articleFields),
+  input: z.object({ ...articleFields, ...accessFields }),
   example: { title: "Getting started", body: "Create a board, then share your portal.", collection: "basics" },
   run: async ({ actor, projectId }, input) => {
     // Before anything is written: a lookup failing after would fail a request that did its work.
@@ -526,6 +573,7 @@ export const createArticle = defineOperation({
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const collection = await collectionId(tx, projectId, input.collection);
+        const access = await accessChange(tx, projectId, input);
         const created = await tx.article.create({
           data: {
             projectId,
@@ -537,6 +585,7 @@ export const createArticle = defineOperation({
             order: await lastArticle(tx, projectId, collection ?? null),
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
+            ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
             createdById: authorOf(actor),
           },
           select: articleSelect,
@@ -553,7 +602,7 @@ export const createArticle = defineOperation({
 export const updateArticle = defineOperation({
   name: "articles.update",
   summary:
-    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing and showUpdatedDate change at once",
+    "Change a docs article: its title, text, collection or `listing` (everywhere, unlisted, hidden or ai_only) (a draft's slug follows its title; a published one keeps it). Each change is kept as a version (see articles.revisions). On a published article, changes to the title, text and collection are kept as unpublished `changes` (readers see the published version until articles.publishChanges); with `publish: true` they go live at once, with any changes saved before. The listing, who can read it (`access` and `groups`, as in articles.create) and showUpdatedDate change at once",
   method: "PATCH",
   path: "/articles/{slug}",
   scope: "write",
@@ -561,6 +610,7 @@ export const updateArticle = defineOperation({
   input: z.object({
     slug,
     ...articleFields,
+    ...accessFields,
     title: articleFields.title.optional(),
     /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
     publish: z.boolean().optional(),
@@ -586,6 +636,7 @@ export const updateArticle = defineOperation({
             collectionId: collection,
             showUpdatedDate: input.showUpdatedDate,
             listing: input.listing && toListing(input.listing),
+            access: await accessChange(tx, projectId, input),
           },
           input.publish,
         );
@@ -883,26 +934,29 @@ const collectionSelect = {
   parentId: true,
   parent: { select: { slug: true } },
   tab: { select: { slug: true } },
-  groups: groupClaims,
+  ...levelSelect,
   icon: true,
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
 /** Collection `row` for the API; `tree` is every collection in its project (for its tab, its top-level one's). */
-const collectionView = ({ id, slug, name, description, icon, order, parent, groups, _count }: CollectionRow, tree: CollectionRow[]) => ({
-  slug,
-  name,
-  description,
+const collectionView = (row: CollectionRow, tree: CollectionRow[]) => ({
+  slug: row.slug,
+  name: row.name,
+  description: row.description,
   /** Its Lucide icon's name, or null for none. */
-  icon,
-  /** Reader groups it's for (their keys; besides the team); empty: everyone. One inside others is also limited by theirs. */
-  groups: claimsOf({ groups }),
+  icon: row.icon,
+  /**
+   * Who can read it (`access`), and with `groups` the reader groups (keys); on top of its tab and the
+   * collections it's in, which can only narrow it.
+   */
+  ...accessView(row),
   /** The collection it's in (its slug), or null at the top level. */
-  parent: parent?.slug ?? null,
+  parent: row.parent?.slug ?? null,
   /** The tab it's in (a collection in another is in its top-level one's), or null if the docs have no tabs. */
-  tab: ancestry(tree, id).at(-1)?.tab?.slug ?? null,
-  order,
-  articles: _count.articles,
+  tab: ancestry(tree, row.id).at(-1)?.tab?.slug ?? null,
+  order: row.order,
+  articles: row._count.articles,
 });
 
 /** Collection `id` for the API. */
@@ -953,7 +1007,7 @@ function parentFor(tree: Awaited<ReturnType<typeof treeOf>>, collection: { id: s
   return parent.id;
 }
 
-/** Links to the project's groups with these keys, for a collection; one that isn't there is refused. Call it with the project locked. */
+/** Links to the project's groups with these keys, for a tab, collection or article; one that isn't there is refused. Call it with the project locked. */
 async function groupLinks(tx: Prisma.TransactionClient, projectId: string, keys: string[]) {
   const groups = await tx.readerGroup.findMany({ where: { projectId, key: { in: keys } }, select: { id: true, key: true } });
   const missing = keys.find((key) => !groups.some((group) => group.key === key));
@@ -1050,15 +1104,15 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `groups` (keys of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team; `icon` names a Lucide icon (lucide.dev) shown next to its name",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 5 levels deep at most), after the others there; its slug comes from the name. `access` says who can read it and what's in it, on top of its tab and the collections it's in (`inherit`, the default; `signed_in`; or `groups`, readers in one of `groups`, keys of the project's reader groups (see groups.list), besides the team; `groups` alone, as before, means `groups`); `icon` names a Lucide icon (lucide.dev) shown next to its name",
   method: "POST",
   path: "/collections",
   scope: "write",
   access: "team",
   input: z.object({
     ...collectionFields,
+    ...accessFields,
     description: collectionFields.description.default(""),
-    groups: collectionFields.groups.default([]),
     icon: collectionFields.icon.default(null),
     parent: slug.nullable().optional(),
     tab: slug.optional(),
@@ -1071,6 +1125,7 @@ export const createCollection = defineOperation({
       const parentId = parentFor(await treeOf(tx, projectId), undefined, input.parent ?? null);
       const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
       const last = await tx.collection.aggregate({ where: siblingsWhere(projectId, parentId, tabId), _max: { order: true } });
+      const access = await accessChange(tx, projectId, input);
       const { id } = await tx.collection.create({
         data: {
           projectId,
@@ -1079,8 +1134,7 @@ export const createCollection = defineOperation({
           slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
           name: input.name,
           description: input.description,
-          access: input.groups.length > 0 ? "GROUPS" : "INHERIT",
-          groups: { create: await groupLinks(tx, projectId, input.groups) },
+          ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
           icon: input.icon,
           order: (last._max.order ?? -1) + 1,
         },
@@ -1093,7 +1147,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: keys of the project's reader groups, see groups.list; empty, everyone), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who can read it (`access` and `groups`, as in collections.create; `groups` alone, as before: some make it `groups`, none `inherit`), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1102,7 +1156,7 @@ export const updateCollection = defineOperation({
     slug,
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
-    groups: collectionFields.groups.optional(),
+    ...accessFields,
     icon: collectionFields.icon.optional(),
     parent: slug.nullable().optional(),
     tab: slug.optional(),
@@ -1121,15 +1175,13 @@ export const updateCollection = defineOperation({
           await placeCollection(tx, projectId, id, place);
         }
       }
+      const access = await accessChange(tx, projectId, input);
       await tx.collection.update({
         where: { id },
         data: {
           ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
           ...(input.description !== undefined && { description: input.description }),
-          ...(input.groups !== undefined && {
-            access: input.groups.length > 0 ? "GROUPS" : "INHERIT",
-            groups: { deleteMany: {}, create: await groupLinks(tx, projectId, input.groups) },
-          }),
+          ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
           ...(input.icon !== undefined && { icon: input.icon }),
           ...(input.order !== undefined && { order: input.order }),
         },
@@ -1198,12 +1250,14 @@ export const deleteCollection = defineOperation({
   },
 });
 
-const tabSelect = { id: true, slug: true, name: true, order: true, _count: { select: { collections: true } } } as const;
+const tabSelect = { id: true, slug: true, name: true, order: true, ...levelSelect, _count: { select: { collections: true } } } as const;
 type TabRow = Prisma.DocsTabGetPayload<{ select: typeof tabSelect }>;
-const tabView = ({ slug, name, order, _count }: TabRow) => ({
+const tabView = ({ slug, name, order, _count, ...level }: TabRow) => ({
   slug,
   name,
   order,
+  /** Who can read it (`access`), and with `groups` the reader groups (keys): its collections and, on the first, the articles in none. */
+  ...accessView(level),
   /** Its top-level collections (each with the ones in it). */
   collections: _count.collections,
 });
@@ -1235,20 +1289,27 @@ export const listTabs = defineOperation({
 export const createTab = defineOperation({
   name: "tabs.create",
   summary:
-    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one",
+    "Add a docs tab, after the others; its slug comes from the name. The first one takes every top-level collection: once there are tabs, each top-level collection is in one. `access` says who can read it (`inherit`, the default: everyone who may read the portal; `signed_in`; or `groups`, with `groups`), and so what's in it; the first tab's is also the articles' in no collection",
   method: "POST",
   path: "/tabs",
   scope: "write",
   access: "team",
-  input: z.object({ name: tabName }),
+  input: z.object({ name: tabName, ...accessFields }),
   example: { name: "Guides" },
   run: async ({ projectId }, input) =>
     tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const last = await tx.docsTab.aggregate({ where: { projectId }, _max: { order: true } });
+        const access = await accessChange(tx, projectId, input);
         const tab = await tx.docsTab.create({
-          data: { projectId, slug: await freeDocsSlug(tx, projectId, input.name, "tab"), name: input.name, order: (last._max.order ?? -1) + 1 },
+          data: {
+            projectId,
+            slug: await freeDocsSlug(tx, projectId, input.name, "tab"),
+            name: input.name,
+            order: (last._max.order ?? -1) + 1,
+            ...(access && { access: access.access, groups: { create: access.groups ?? [] } }),
+          },
           select: { id: true },
         });
         // The first tab: the collections there are go in it, in their order.
@@ -1262,21 +1323,25 @@ export const createTab = defineOperation({
 
 export const updateTab = defineOperation({
   name: "tabs.update",
-  summary: "Rename a docs tab; its slug follows the name",
+  summary: "Rename a docs tab (its slug follows the name), or change who can read it (`access` and `groups`, as in tabs.create)",
   method: "PATCH",
   path: "/tabs/{slug}",
   scope: "write",
   access: "team",
-  input: z.object({ slug, name: tabName }),
+  input: z.object({ slug, name: tabName.optional(), ...accessFields }),
   example: { name: "API reference" },
   run: async ({ projectId }, input) =>
     tabView(
       await prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         const { id } = await lockedTab(tx, projectId, input.slug);
+        const access = await accessChange(tx, projectId, input);
         return tx.docsTab.update({
           where: { id },
-          data: { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) },
+          data: {
+            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", { id, slug: input.slug }) }),
+            ...(access && { access: access.access, ...(access.groups && { groups: { deleteMany: {}, create: access.groups } }) }),
+          },
           select: tabSelect,
         });
       }),

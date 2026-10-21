@@ -173,27 +173,34 @@ export const updateGroup = defineOperation({
 export const deleteGroup = defineOperation({
   name: "groups.delete",
   summary:
-    "Delete a reader group (by key). One a collection is for is refused (409): taking it away would open the collection to everyone, so remove it from them first",
+    "Delete a reader group (by key). One a tab, collection or article is for is refused (409): taking it away would change who can read them, so remove it from them first. Deleted articles let it go",
   method: "DELETE",
   path: "/groups/{group}",
   scope: "write",
   access: "admin",
   input: z.object({ group: readerGroup }),
   run: async ({ projectId }, input) => {
-    // Locked, so a collection being saved with it lands first (and is named here) or finds it gone.
+    // Locked, so a tab, collection or article being saved with it lands first (and is named here) or finds it gone.
     await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
       const group = await tx.readerGroup.findUnique({
         where: { projectId_key: { projectId, key: input.group } },
-        select: { id: true, collections: { select: { collection: { select: { name: true } } }, orderBy: { collection: { name: "asc" } } } },
+        select: {
+          id: true,
+          tabs: { select: { tab: { select: { name: true } } }, orderBy: { tab: { name: "asc" } } },
+          collections: { select: { collection: { select: { name: true } } }, orderBy: { collection: { name: "asc" } } },
+          articles: { where: { article: { deletedAt: null } }, select: { article: { select: { title: true } } }, orderBy: { article: { title: "asc" } } },
+        },
       });
       if (!group) {
         throw notFound(input.group);
       }
-      if (group.collections.length > 0) {
-        const names = new Intl.ListFormat("en-GB").format(group.collections.map((c) => c.collection.name));
-        throw new OperationError(409, "conflict", `Used by ${names}; remove it from them first`);
+      const users = [...group.tabs.map((t) => t.tab.name), ...group.collections.map((c) => c.collection.name), ...group.articles.map((a) => a.article.title)];
+      if (users.length > 0) {
+        throw new OperationError(409, "conflict", `Used by ${new Intl.ListFormat("en-GB").format(users)}; remove it from them first`);
       }
+      // A deleted article restored later is for none of its groups then: only the team, until it's given others.
+      await tx.articleGroup.deleteMany({ where: { groupId: group.id } });
       await tx.readerGroup.delete({ where: { id: group.id } });
     });
     return { deleted: input.group };
