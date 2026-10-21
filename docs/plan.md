@@ -266,7 +266,7 @@ Docs: the top bar, tabs and access (asked 2026-10-21, from a second look at Fern
 
 One PR per item, in this order: each needs the ones before it. Inside a PR, similar changes are committed together, one commit per kind (schema and migration; server and operations with their database tests and the matrices; UI with its journeys and screenshots; docs), each green on its own.
 
-- [ ] **1. Docs, in the UI.** The portal's Help tab and its pages' titles ("Help center" → "Docs"), the team's "Help center" in `/app` (now at `/app/<project>/docs`, with its Insights and History pages), Settings → Home page, the widget's Help tab, emails and `docs/*.md`. No redirect from `/app/<project>/help` (no customers yet).
+- [x] **1. Docs, in the UI.** The portal's Help tab and its pages' titles ("Help center" → "Docs"), the team's "Help center" in `/app` (now at `/app/<project>/docs`, with its Insights and History pages), Settings → Home page, the widget's Help tab, emails and `docs/*.md`. No redirect from `/app/<project>/help` (no customers yet).
   - Commits: the portal and the widget; the app (route and sidebar); the docs
   - Tests: journeys that name "Help center" or "Help" follow; a screenshot of the portal and the app
 - [ ] **2. Docs, in the API and the code.** While there are no customers: `sections.*` → `tabs.*` and `section` → `tab` on `collections.*` and `articles.*`; `help.ask`, `help.escalate`, `help.insights`, `help.dismissGap` → `docs.*` (REST paths, MCP tools, API docs). In the code: `HelpSection` → `DocsTab` and `sectionId` → `tabId` (the tables renamed by a migration), files and helpers named `help-*` → `docs-*`. Readers' files follow: the export's `help/<section>/…` → `docs/<tab>/…` and `tab` in its front matter, `llms.txt`'s headings.
