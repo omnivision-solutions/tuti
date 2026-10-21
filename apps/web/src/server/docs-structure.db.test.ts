@@ -232,14 +232,16 @@ describe("readers", () => {
           slug: "billing",
           name: "Billing",
           description: "",
+          icon: null,
           articles: [link("card-payments", "Card payments")],
           // Collections without published articles are left out.
-          collections: [{ slug: "invoices", name: "Invoices", description: "", articles: [link("downloading-invoices", "Downloading invoices")], collections: [] }],
+          collections: [{ slug: "invoices", name: "Invoices", description: "", icon: null, articles: [link("downloading-invoices", "Downloading invoices")], collections: [] }],
         },
         {
           slug: "basics",
           name: "Basics",
           description: "",
+          icon: null,
           articles: [link("inviting-your-team", "Inviting your team"), link("your-first-board", "Your first board")],
           collections: [],
         },
@@ -247,17 +249,18 @@ describe("readers", () => {
       uncollected: [],
       // No tabs: one page.
       tabs: [],
+      home: null,
     });
 
     const portal = `http://${project.slug}.localhost:3100`;
     const text = await (await llms(new Request("http://x"), { params: Promise.resolve({ project: project.slug }) })).text();
     expect(text).toContain(
       [
-        "## Billing",
+        `## [Billing](${portal}/docs/billing)`,
         `- [Card payments](${portal}/docs/card-payments.md)`,
-        "### Invoices",
+        `### [Invoices](${portal}/docs/invoices)`,
         `- [Downloading invoices](${portal}/docs/downloading-invoices.md)`,
-        "## Basics",
+        `## [Basics](${portal}/docs/basics)`,
         `- [Inviting your team](${portal}/docs/inviting-your-team.md)\n- [Your first board](${portal}/docs/your-first-board.md)`,
         "## Changelog",
       ].join("\n\n"),

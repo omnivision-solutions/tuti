@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { IconField } from "@/components/icon-field";
 import { RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
@@ -405,7 +406,7 @@ export function CollectionDialog({
   groups,
 }: {
   projectSlug: string;
-  collection?: { slug: string; name: string; description: string; groups: string[] };
+  collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null; knownIcon: boolean };
   /** The project's reader groups to pick from. */
   groups: GroupOption[];
   /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
@@ -449,6 +450,7 @@ export function CollectionDialog({
               />
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
+            <IconField defaultValue={collection?.icon ?? null} known={collection?.knownIcon ?? true} />
             <Field>
               <FieldLabel htmlFor={`collection-description-${id}`}>Description</FieldLabel>
               <Textarea

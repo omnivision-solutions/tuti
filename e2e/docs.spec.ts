@@ -20,12 +20,41 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
   await team.getByRole("button", { name: "New collection" }).click();
-  const dialog = team.getByRole("dialog");
+  const dialog = team.getByRole("dialog", { name: "New collection" });
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
+  // An icon, found by searching Lucide's names: the search box has focus, an arrow key reaches the icons, Enter picks one.
+  await dialog.getByRole("button", { name: "Add icon" }).click();
+  const picker = team.getByRole("dialog", { name: "Pick an icon" });
+  await expect(picker.getByRole("searchbox", { name: "Search icons" })).toBeFocused();
+  await expect(picker.getByRole("button").nth(47).locator("svg")).toBeVisible();
+  await checkpoint(team, "team-docs-collection-icon-picker");
+  // More come as the grid scrolls.
+  const grid = picker.getByRole("group", { name: "Icons" });
+  await expect(grid.getByRole("button")).toHaveCount(64);
+  await grid.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect(grid.getByRole("button")).toHaveCount(128);
+  await team.keyboard.type("rocket");
+  await expect(picker.getByRole("button", { name: "rocket", exact: true }).locator("svg")).toBeVisible();
+  await team.keyboard.press("ArrowDown");
+  await team.keyboard.press("Enter");
+  await expect(picker).toBeHidden();
+  await expect(dialog.getByRole("button", { name: "Change icon (rocket)" })).toBeVisible();
+  // Escape closes the picker, not the dialog; "Remove icon" takes it off.
+  await dialog.getByRole("button", { name: "Change icon (rocket)" }).click();
+  await expect(picker.getByRole("searchbox", { name: "Search icons" })).toBeFocused();
+  await team.keyboard.press("Escape");
+  await expect(picker).toBeHidden();
+  await dialog.getByRole("button", { name: "Remove icon" }).click();
+  await expect(dialog.getByRole("button", { name: "Add icon" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Add icon" }).click();
+  await picker.getByRole("searchbox", { name: "Search icons" }).fill("rocket");
+  await picker.getByRole("button", { name: "rocket", exact: true }).click();
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(team.getByText("0 articles")).toBeVisible();
+  // Its row shows the icon.
+  await expect(team.getByRole("region", { name: "Collections" }).locator("svg.lucide-rocket")).toBeVisible();
   await checkpoint(team, "team-docs");
 
   // A draft: title, collection, a heading, text and a table.
@@ -72,10 +101,22 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-docs-article-published");
 
   // The visitor finds it under its collection on the Docs tab, and reads it.
+  const scripts: Promise<string>[] = [];
+  visitor.on("response", (response) => {
+    if (response.request().resourceType() === "script") {
+      scripts.push(response.text());
+    }
+  });
   await visitor.goto("/");
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" }).click();
   const collection = visitor.getByRole("region", { name: "Getting started" });
   await expect(collection).toContainText("The basics, in five minutes.");
+  // With its icon, drawn on the server: no script the portal sends has Lucide's names (the app's picker loads them).
+  await expect(collection.getByRole("heading", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
+  expect(scripts.length).toBeGreaterThan(0);
+  for (const script of await Promise.all(scripts)) {
+    expect(script).not.toContain("a-arrow-down");
+  }
   await checkpoint(visitor, "portal-docs");
   await collection.getByRole("link", { name: "Inviting your team" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
@@ -373,8 +414,8 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   const billing = main.getByRole("region", { name: "Billing" });
   await expect(billing.getByRole("heading", { level: 3 })).toHaveText(["Invoices"]);
-  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("link")).toHaveText(["Downloading invoices"]);
-  await expect(main.getByRole("region", { name: "Getting started" }).getByRole("link")).toHaveText(["Your first board", "Inviting your team"]);
+  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("listitem")).toHaveText(["Downloading invoices"]);
+  await expect(main.getByRole("region", { name: "Getting started" }).getByRole("listitem")).toHaveText(["Your first board", "Inviting your team"]);
   await checkpoint(visitor, "portal-docs-nested");
   // An old URL of an article (and of its Markdown) sends readers to its current one.
   await visitor.goto("/docs/payments");
@@ -483,21 +524,42 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(team.getByText("Tab saved")).toBeVisible();
   await checkpoint(team, "team-docs-tabs");
 
-  // Readers get a tab for each one with something to read, the first open; an article leads back to its tab.
+  // Readers get a tab for each one with something to read: the first at /docs, the others at their own path.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
-  const docsTabs = main.getByRole("navigation", { name: "Docs tabs" });
+  // They're the row under the header's Docs.
+  await expect(visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Docs" })).toHaveAttribute("aria-current", "page");
+  const docsTabs = visitor.getByRole("navigation", { name: "Docs tabs" });
   await expect(docsTabs.getByRole("link")).toHaveText(["API reference", "Guides"]);
   await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("aria-current", "page");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).toHaveAttribute("href", "/docs");
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Endpoints", "Webhooks"]);
   await checkpoint(visitor, "portal-docs-tabs");
   await docsTabs.getByRole("link", { name: "Guides" }).click();
-  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\/guides$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
+  await checkpoint(visitor, "portal-docs-tab");
+  // A collection has a page, in its tab; an article leads back to its tab.
+  await main.getByRole("link", { name: "Billing" }).click();
+  await expect(visitor).toHaveURL(/\/docs\/billing$/);
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Billing");
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-docs-collection");
   await main.getByRole("link", { name: "Card payments" }).click();
+  await expect(main.getByRole("heading", { level: 1 })).toHaveText("Card payments");
+  await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+  await expect(docsTabs.getByRole("link", { name: "API reference" })).not.toHaveAttribute("aria-current");
   await main.getByRole("link", { name: "Docs", exact: true }).click();
-  await expect(visitor).toHaveURL(/\/docs\?section=guides$/);
+  await expect(visitor).toHaveURL(/\/docs\/guides$/);
+  // Off Docs, its row goes (the boards' row isn't there either, with one board).
+  await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" }).click();
+  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
+  await expect(docsTabs).toHaveCount(0);
+  await expect(visitor.getByRole("navigation", { name: "Boards" })).toHaveCount(0);
+  // The first tab has one address: /docs.
+  await visitor.goto("/docs/api-reference");
+  await expect(visitor).toHaveURL(/\/docs$/);
   // A search covers every tab.
   await visitor.goto("/docs?q=payloads");
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
@@ -510,13 +572,14 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(visitor.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
   await checkpoint(visitor, "widget-docs-tabs");
 
-  // Deleting a tab moves its collections to the one next to it.
-  await structure.getByRole("button", { name: "Delete API reference" }).click();
+  // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.
+  await expect(structure.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
+  await structure.getByRole("button", { name: "Delete Guides" }).click();
   const confirm = team.getByRole("alertdialog");
-  await expect(confirm).toContainText("Its collections move to Guides");
+  await expect(confirm).toContainText("Its collections move to API reference");
   await confirm.getByRole("button", { name: "Delete" }).click();
-  await expect(team.getByText("API reference deleted")).toBeVisible();
-  await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/, /^Endpoints/, /^Webhooks/, /^Errors/]);
+  await expect(team.getByText("Guides deleted")).toBeVisible();
+  await expect(rows("Collections in API reference")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
 });
 
 

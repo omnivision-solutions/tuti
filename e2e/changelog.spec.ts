@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 import { modelRequests, nextModelReply } from "./model";
 
 test("the team writes what shipped, publishes it, and people see it on the portal", async ({ browser }, testInfo) => {
@@ -286,4 +286,30 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.getByText("There's no changelog entry #1")).toBeVisible();
   await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
   await expect(heart).toHaveAttribute("aria-pressed", "false");
+});
+
+test("older changelog entries are a page further: /changelog/page/2", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // One more than a page holds (20).
+  for (let n = 1; n <= 21; n++) {
+    await api("/changelog", { title: `Release ${n}` });
+    await api(`/changelog/${n}/publish`, {});
+  }
+
+  const reader = await newPerson(browser, portalUrl(slug));
+  await reader.goto("/changelog");
+  const main = reader.getByRole("main");
+  await expect(main.getByRole("heading", { name: "Release 21" })).toBeVisible();
+  await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toHaveCount(0);
+  await main.getByRole("link", { name: "Older entries" }).click();
+  await expect(reader).toHaveURL(/\/changelog\/page\/2$/);
+  await expect(main.getByRole("heading", { name: "Release 1", exact: true })).toBeVisible();
+  await expect(main.getByRole("link", { name: "Older entries" })).toHaveCount(0);
+  await checkpoint(reader, "portal-changelog-page-2");
+  await main.getByRole("link", { name: "Newer entries" }).click();
+  await expect(reader).toHaveURL(/\/changelog$/);
 });

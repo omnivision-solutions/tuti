@@ -318,7 +318,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(tabs.getByRole("link", { name: "Docs" })).toHaveCount(0);
 
   // The team publishes two articles, one in a collection.
-  const collection = await api("/collections", { name: "Getting started", description: "The basics, in five minutes." });
+  const collection = await api("/collections", { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" });
   const text = (value: string) => ({ type: "text", text: value });
   const content = {
     type: "doc",
@@ -338,6 +338,8 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await tabs.getByRole("link", { name: "Docs" }).click();
   const section = widget.getByRole("region", { name: "Getting started" });
   await expect(section).toContainText("The basics, in five minutes.");
+  // With its icon, drawn on the server.
+  await expect(section.getByRole("heading", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await expect(section.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(widget.getByRole("region", { name: "More articles" }).getByRole("link", { name: "Exporting your data" })).toBeVisible();
   await checkpoint(visitor, "widget-docs");
