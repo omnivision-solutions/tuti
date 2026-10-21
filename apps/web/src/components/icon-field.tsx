@@ -23,7 +23,8 @@ export function LucideIcon({ name, className }: { name: string; className?: stri
 
 /**
  * A form's `icon` field (a Lucide icon's name, empty for none): "Add icon" opens a searchable grid; "Remove icon".
- * A stored icon Lucide no longer has (`known` false) shows as none, but is sent unchanged until another is picked.
+ * A stored icon Lucide no longer has (`known` false) shows as none, but is sent unchanged until another is picked
+ * or it's removed.
  */
 export function IconField({ defaultValue, known = true }: { defaultValue: string | null; known?: boolean }) {
   const [value, setIcon] = useState(defaultValue);
@@ -56,7 +57,7 @@ export function IconField({ defaultValue, known = true }: { defaultValue: string
             />
           </PopoverContent>
         </Popover>
-        {icon && (
+        {value && (
           <Button type="button" variant="ghost" size="sm" onClick={() => setIcon(null)}>
             Remove icon
           </Button>
