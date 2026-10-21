@@ -37,6 +37,7 @@ lives in `/shared`, which the others import.
 | `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings) | — |
 | `/web` ← shared | `BETTER_AUTH_SECRET`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
+| `/licensing` (prod only) | `LICENSE_PRIVATE_KEY`: signs licence keys (`scripts/issue-license.mjs`); never loaded by an app | — |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
 Use separate Hatchet tenants/tokens for `dev` and `prod`, so local runs never

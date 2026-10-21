@@ -147,7 +147,7 @@ const matrix: Matrix = {
   branding: {
     saveBranding: {
       allowed: "ADMIN",
-      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com" })),
+      call: (slug) => branding.saveBranding(slug, {}, form({ color: "#5b21b6", headerLinkLabel: "Docs", headerLinkUrl: "https://docs.example.com", poweredBy: "on" })),
     },
   },
   changelog: {

@@ -136,3 +136,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.
 ## License
 
 [AGPL-3.0](LICENSE). Embeddable SDKs/widgets (when they exist) will be MIT.
+
+Portals say "Powered by tuti" in the footer. Hiding it needs a licence key for the project
+(a flat monthly fee per project, self-hosted or not), entered in Settings → Branding.

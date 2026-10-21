@@ -189,6 +189,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         <CardContent>
           <BrandingSettings
             projectSlug={project.slug}
+            projectId={project.id}
             logo={brand.logo}
             logoDark={brand.logoDark}
             favicon={brand.favicon}
@@ -197,6 +198,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
             headerLinks={brand.headerLinks}
             footerLinks={brand.footerLinks}
             poweredBy={brand.poweredBy}
+            licensedUntil={brand.licensedUntil}
           />
         </CardContent>
       </Card>

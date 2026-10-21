@@ -4,6 +4,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
+import { licensedUntil } from "../license";
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, luminance, textColorOn, type WidgetLink } from "./widget";
@@ -26,7 +27,10 @@ export type Branding = {
   color: string | null;
   headerLinks: WidgetLink[];
   footerLinks: WidgetLink[];
+  /** Whether the footer says "Powered by tuti": always, unless the project has a valid licence key. */
   poweredBy: boolean;
+  /** When the project's licence key expires, or null without a valid one. */
+  licensedUntil: Date | null;
 };
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
@@ -36,6 +40,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
   const project = await prisma.project.findUnique({
     where,
     select: {
+      id: true,
       brandLogo: image,
       brandLogoDark: image,
       brandFavicon: image,
@@ -43,6 +48,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
       headerLinks: true,
       footerLinks: true,
       poweredBy: true,
+      licenseKey: true,
     },
   });
   if (!project) {
@@ -53,6 +59,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     storage && media?.status === "READY" && media.width && media.height
       ? { id: media.id, url: storage.publicUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
       : null;
+  const until = licensedUntil(project.licenseKey, project.id);
   const links = (value: unknown) => {
     const parsed = z.array(httpsLink).safeParse(value);
     return parsed.success ? parsed.data : [];
@@ -64,7 +71,9 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     color: project.brandColor,
     headerLinks: links(project.headerLinks),
     footerLinks: links(project.footerLinks),
-    poweredBy: project.poweredBy,
+    // Checked here, where the portal reads it, so turning poweredBy off in the database isn't enough.
+    poweredBy: project.poweredBy || !until,
+    licensedUntil: until,
   };
 }
 
@@ -100,7 +109,7 @@ const upload = z.string().trim().min(1).nullable().optional();
 
 export const getBranding = defineOperation({
   name: "branding.get",
-  summary: "Get the portal's branding: logos, favicon, colour, header and footer links, and whether it says \"Powered by tuti\"",
+  summary: "Get the portal's branding: logos, favicon, colour, header and footer links, whether it says \"Powered by tuti\", and until when the project's licence key lets it hide that",
   method: "GET",
   path: "/branding",
   scope: "read",
@@ -111,7 +120,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), and poweredBy`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a valid licence key for this project), and licenseKey (null to remove)`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -124,6 +133,7 @@ export const updateBranding = defineOperation({
     headerLinks: links("header"),
     footerLinks: links("footer"),
     poweredBy: z.boolean().optional(),
+    licenseKey: z.string().trim().min(1).nullable().optional(),
   }),
   example: {
     color: "#5b21b6",
@@ -138,8 +148,15 @@ export const updateBranding = defineOperation({
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({
           where: { id: projectId },
-          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true },
+          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, licenseKey: true },
         });
+        if (input.licenseKey && !licensedUntil(input.licenseKey, projectId)) {
+          throw new OperationError(400, "invalid_input", "That licence key isn't for this project, or it has expired");
+        }
+        const licenseKey = input.licenseKey !== undefined ? input.licenseKey : current.licenseKey;
+        if (input.poweredBy === false && !licensedUntil(licenseKey, projectId)) {
+          throw new OperationError(400, "invalid_input", 'Hiding "Powered by tuti" needs a licence key for this project');
+        }
         const names = Object.keys(IMAGES) as ImageName[];
         const before = names.map((name) => current[IMAGES[name]]).filter((id) => id !== null);
         const after = names.map((name) => (input[name] !== undefined ? input[name] : current[IMAGES[name]])).filter((id) => id !== null);
@@ -162,6 +179,7 @@ export const updateBranding = defineOperation({
             ...(input.headerLinks !== undefined && { headerLinks: input.headerLinks }),
             ...(input.footerLinks !== undefined && { footerLinks: input.footerLinks }),
             ...(input.poweredBy !== undefined && { poweredBy: input.poweredBy }),
+            ...(input.licenseKey !== undefined && { licenseKey: input.licenseKey }),
           },
         });
         // Replaced images stay attached: the daily release-media job releases them once nothing in the

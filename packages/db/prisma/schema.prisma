@@ -145,6 +145,9 @@ model Project {
   headerLinks           Json         @default("[]")
   footerLinks           Json         @default("[]")
   poweredBy             Boolean      @default(true)
+  /// The project's Tuti licence key (see server/license.ts): signed by Tuti for this project
+  /// with an expiry. While it's valid, poweredBy can be off; without it the footer says it anyway.
+  licenseKey            String?
   /// Who may read the portal (see the portal.* operations and server/portal-access.ts): anyone, or
   /// when private only the project's team and the people its SSO signs in.
   portalAccess          PortalAccess @default(PUBLIC)

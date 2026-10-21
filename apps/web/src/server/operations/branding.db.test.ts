@@ -6,10 +6,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import type { z } from "zod";
 
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { issueLicense } from "@/test/license";
 
 import { saveBranding } from "../branding";
 import { brandCss, getBranding, updateBranding } from "./branding";
 import { call } from "./run";
+
+vi.mock("@/server/license-key", async () => (await import("@/test/license")).testLicenseKey);
 
 let s3: S3Fake;
 let owner: TestUser;
@@ -71,11 +74,13 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     headerLinks: [],
     footerLinks: [],
     poweredBy: true,
+    licensedUntil: null,
   });
 });
 
 test("admins set the colour, links and Powered by; each change leaves the rest", async () => {
   const saved = await update({
+    licenseKey: issueLicense(project.id),
     color: "#5B21B6",
     headerLinks: [{ label: " Docs ", url: " https://docs.example.com " }],
     footerLinks: [
@@ -117,7 +122,7 @@ test("settings are checked: https links, at most 5 of each, a real colour, and i
   await refused({ favicon: "no-such-upload" }, gone);
 
   // Nothing was saved.
-  expect(await get()).toEqual({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true });
+  expect(await get()).toEqual({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true, licensedUntil: null });
 
   // An image already in use (a post's, or the logo just replaced) can be the logo: release-media checks every use.
   const inUse = await uploaded({ attachedAt: new Date() });
@@ -215,8 +220,38 @@ test("one image may be both logos; it's released only once neither uses it", asy
 
 test("another project's branding is its own", async () => {
   const other = await createProject(owner);
-  await update({ color: "#5b21b6", poweredBy: false, headerLinks: [{ label: "Docs", url: "https://docs.example.com" }] });
-  expect(await call(getBranding, team(other.id), {})).toMatchObject({ color: null, poweredBy: true, headerLinks: [] });
+  await update({ color: "#5b21b6", poweredBy: false, licenseKey: issueLicense(project.id), headerLinks: [{ label: "Docs", url: "https://docs.example.com" }] });
+  expect(await call(getBranding, team(other.id), {})).toMatchObject({ color: null, poweredBy: true, licensedUntil: null, headerLinks: [] });
+});
+
+test('"Powered by tuti" stays without a licence key for the project, however it was turned off', async () => {
+  const needsLicence = { status: 400, message: 'Hiding "Powered by tuti" needs a licence key for this project' };
+  await expect(update({ poweredBy: false })).rejects.toMatchObject(needsLicence);
+  const wrongKey = { status: 400, message: "That licence key isn't for this project, or it has expired" };
+  const other = await createProject(owner);
+  await expect(update({ poweredBy: false, licenseKey: issueLicense(other.id) })).rejects.toMatchObject(wrongKey);
+  await expect(update({ poweredBy: false, licenseKey: issueLicense(project.id, -1) })).rejects.toMatchObject(wrongKey);
+  await expect(update({ licenseKey: "not-a-key" })).rejects.toMatchObject(wrongKey);
+  expect(await get()).toMatchObject({ poweredBy: true, licensedUntil: null });
+
+  // Turned off in the database, or with a key that has since expired: the portal still says it.
+  await prisma.project.update({ where: { id: project.id }, data: { poweredBy: false } });
+  expect(await get()).toMatchObject({ poweredBy: true });
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey: issueLicense(project.id, -1) } });
+  expect(await get()).toMatchObject({ poweredBy: true, licensedUntil: null });
+  await prisma.project.update({ where: { id: project.id }, data: { licenseKey: issueLicense(other.id) } });
+  expect(await get()).toMatchObject({ poweredBy: true, licensedUntil: null });
+});
+
+test("with a licence key, admins hide it until the key expires or is removed", async () => {
+  const saved = await update({ poweredBy: false, licenseKey: issueLicense(project.id, 30) });
+  expect(saved.poweredBy).toBe(false);
+  expect(saved.licensedUntil!.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
+  // The key stays: later saves don't need it again.
+  expect(await update({ poweredBy: true })).toMatchObject({ poweredBy: true });
+  expect(await update({ poweredBy: false })).toMatchObject({ poweredBy: false });
+  expect(await update({ licenseKey: null })).toMatchObject({ poweredBy: true, licensedUntil: null });
+  await expect(update({ poweredBy: false })).rejects.toMatchObject({ status: 400 });
 });
 
 test("the app's form saves everything: an empty image field removes it, empty link rows are skipped", async () => {
@@ -241,9 +276,14 @@ test("the app's form saves everything: an empty image field removes it, empty li
   ).toEqual({});
   expect(await get()).toMatchObject({ logo: { id: logo.id }, color: "#5b21b6", headerLinks: [{ label: "Docs" }], footerLinks: [], poweredBy: true });
 
-  // An unchecked checkbox isn't sent: Powered by is off.
-  expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6" }))).toEqual({});
-  expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false });
+  // An unchecked checkbox isn't sent: Powered by is off, which needs the licence key (kept once saved).
+  expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6" }))).toEqual({
+    error: 'Hiding "Powered by tuti" needs a licence key for this project',
+  });
+  expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6", licenseKey: ` ${issueLicense(project.id)} ` }))).toEqual({});
+  expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false, licensedUntil: expect.any(Date) });
+  expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6", licenseKey: "" }))).toEqual({});
+  expect(await get()).toMatchObject({ poweredBy: false, licensedUntil: expect.any(Date) });
   await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
   expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }, [["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
@@ -253,6 +293,7 @@ test("branding is a project setting: members can't change it, admins can", async
   const form = () => {
     const data = new FormData();
     data.set("color", "#5b21b6");
+    data.set("poweredBy", "on");
     return data;
   };
   actAs(await addMember(project.id, "MEMBER"));
