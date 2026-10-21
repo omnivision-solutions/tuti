@@ -50,7 +50,9 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
   (`app/app/layout.tsx`), content max-w-4xl.
-- **Portals**: header with the project name, board tabs, content max-w-3xl,
+- **Portals**: header with the project name and the four parts (Feedback,
+  Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
+  part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
   "Powered by tuti" footer.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
 

@@ -3,8 +3,9 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
-import { DocsCollections, DocsTabs } from "@/components/docs-collections";
+import { DocsCollections } from "@/components/docs-collections";
 import { PageHeader } from "@/components/page-header";
+import { PartRow } from "@/components/portal-nav";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { boardPath } from "@/lib/post-urls";
@@ -57,8 +58,8 @@ async function feedbackHref(projectSlug: string, question: string) {
 
 /**
  * /docs and a tab's page: a search box (`?q=` on /docs, over every tab), then each collection with
- * its published articles, then the articles in none. With tabs, the row of them and the one shown
- * (`tab`), with its collections; the first also has the articles in none.
+ * its published articles, then the articles in none. With tabs, the one shown (`tab`), with its
+ * collections; the first also has the articles in none. (The row of tabs is DocsTabsRow, under the header.)
  */
 export async function DocsIndex({ projectSlug, query, docs, tab }: { projectSlug: string; query: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
@@ -81,7 +82,6 @@ export async function DocsIndex({ projectSlug, query, docs, tab }: { projectSlug
         />
       )}
       {query && <SearchResults projectSlug={projectSlug} query={query} />}
-      {tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => at(docsTabPath(docs, t))} />}
       {!query && collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
@@ -93,4 +93,11 @@ export async function DocsIndex({ projectSlug, query, docs, tab }: { projectSlug
       />
     </div>
   );
+}
+
+/** Docs' row under the header: its tabs with something to read (with two or more), `active` the one this page is in. */
+export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active: string | null }) {
+  const at = await portalLinks();
+  const links = docs.tabs.map((tab) => ({ href: at(docsTabPath(docs, tab.slug)), name: tab.name, active: tab.slug === active }));
+  return <PartRow label="Docs tabs" links={links} />;
 }
