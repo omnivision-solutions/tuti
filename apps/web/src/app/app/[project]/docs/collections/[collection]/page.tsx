@@ -130,9 +130,6 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
                   name: collection.name,
                   description: collection.description,
                   parent: collection.parent,
-                  tab: collection.tab,
-                  access: fromReadAccess(collection.access),
-                  groups: claimsOf(collection),
                   icon: collection.icon,
                   knownIcon: collection.knownIcon,
                 }}

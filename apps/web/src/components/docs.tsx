@@ -390,11 +390,9 @@ type CollectionSettings = {
   slug: string;
   name: string;
   description: string;
-  /** The collection it's in, or (at the top level) its tab: what it inherits from. */
+  /** The collection it's in, or null at the top level. */
   parent: string | null;
-  tab: string | null;
-  access: Access;
-  groups: string[];
+  /** Its Lucide icon's name, and whether the installed Lucide has it. */
   icon: string | null;
   knownIcon: boolean;
 };
@@ -545,69 +543,56 @@ export function AccessForm({
 }
 
 /**
- * Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and
- * changes its description, icon and who can read it. Opened by its own button, or (with `open`) by its owner.
+ * Adds a collection, at the top level (of a tab, with tabs) or in one of `parents`: the dialog a
+ * "+" menu opens (`open`), starting where it was opened.
  */
 export function CollectionDialog({
   projectSlug,
-  collection,
-  parents = [],
-  tabs = [],
+  parents,
+  tabs,
   access,
-  open: openProp,
+  open,
   onOpenChange,
-  defaultParent = null,
+  defaultParent,
   defaultTab,
 }: {
   projectSlug: string;
-  collection?: CollectionSettings;
   /** For "Who can read": the project's groups, and what each tab and collection lets read. */
   access: AccessChoices;
   /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
-  parents?: CollectionOption[];
+  parents: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
-  tabs?: CollectionOption[];
-  /** Opened and closed by its owner (a "+" menu), which has no button for it. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  /** Where a new one goes to start with: in collection `defaultParent`, else at the top level of tab `defaultTab`. */
-  defaultParent?: string | null;
+  tabs: CollectionOption[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Where it goes to start with: in collection `defaultParent`, else at the top level of tab `defaultTab`. */
+  defaultParent: string | null;
   defaultTab?: string;
 }) {
-  const [openState, setOpenState] = useState(false);
-  const open = openProp ?? openState;
-  const setOpen = onOpenChange ?? setOpenState;
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveCollection(projectSlug, collection?.slug ?? null, prev, formData);
+    const result = await saveCollection(projectSlug, null, prev, formData);
     if (!result.error) {
-      setOpen(false);
-      toast.success(collection ? "Collection saved" : "Collection added");
+      onOpenChange(false);
+      toast.success("Collection added");
     }
     return result;
   }, {});
-  const id = collection?.slug ?? "new";
   const tabItems = tabs.map((s) => ({ value: s.slug, label: s.name }));
-  // A new one's place, as picked: it inherits from there.
+  // Its place, as picked: it inherits from there.
   const [parent, setParent] = useState<string | null>(defaultParent);
   const [tab, setTab] = useState<string | null>(defaultTab ?? tabItems[0]?.value ?? null);
-  const above = collection ? (collection.parent ?? collection.tab) : (parent ?? tab);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {openProp === undefined && (
-        <DialogTrigger render={<Button variant={collection ? "ghost" : "outline"} size="sm" />}>
-          {collection ? "Edit" : "New collection"}
-        </DialogTrigger>
-      )}
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{collection ? "Edit collection" : "New collection"}</DialogTitle>
+            <DialogTitle>New collection</DialogTitle>
           </DialogHeader>
           <FieldGroup className="my-4">
-            <CollectionFields id={id} collection={collection} error={state.error} />
-            {!collection && parents.length > 0 && <ParentField id="collection" parents={parents} value={parent} onValueChange={setParent} />}
-            {!collection && tabItems.length > 0 && (
+            <CollectionFields id="new" error={state.error} />
+            {parents.length > 0 && <ParentField id="collection" parents={parents} value={parent} onValueChange={setParent} />}
+            {tabItems.length > 0 && (
               <Field>
                 <FieldLabel id="collection-tab-label">Tab</FieldLabel>
                 <Select name="tab" items={tabItems} value={tab} onValueChange={(value) => setTab(value as string | null)}>
@@ -626,17 +611,15 @@ export function CollectionDialog({
               </Field>
             )}
             <WhoCanRead
-              id={`collection-access-${id}`}
+              id="collection-access-new"
               projectSlug={projectSlug}
               groups={access.groups}
-              inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]! }}
-              defaultAccess={collection?.access}
-              defaultGroups={collection?.groups}
+              inherit={{ label: "Inherit", description: access.inherits[parent ?? tab ?? ""] ?? access.inherits[""]! }}
             />
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {collection ? "Save" : "Add collection"}
+              Add collection
             </Button>
           </DialogFooter>
         </form>
@@ -866,89 +849,42 @@ export function TabSettingsForm({ projectSlug, tab, home }: { projectSlug: strin
   );
 }
 
-/**
- * Adds a tab (`tab` undefined; the first one takes the collections there are, which the dialog
- * says), or a tab's settings: its name, its address (`home`: the first tab's is /docs), what
- * its path shows and who can read it (`access`: the project's groups to pick from).
- */
-export function TabDialog({
-  projectSlug,
-  tab,
-  first = false,
-  home = false,
-  access,
-}: {
-  projectSlug: string;
-  tab?: TabSettings;
-  first?: boolean;
-  home?: boolean;
-  access?: AccessChoices;
-}) {
+/** "New tab": adds one, after the others (`first`: the first one, which takes the collections there are, as the dialog says). */
+export function TabDialog({ projectSlug, first = false }: { projectSlug: string; first?: boolean }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveTab(projectSlug, tab?.slug ?? null, prev, formData);
+    const result = await saveTab(projectSlug, null, prev, formData);
     if (!result.error) {
       setOpen(false);
-      toast.success(tab ? "Tab saved" : "Tab added");
+      toast.success("Tab added");
     }
     return result;
   }, {});
-  const id = tab?.slug ?? "new";
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      {tab ? (
-        <DialogTrigger render={<Button variant="ghost" size="sm" aria-label={`Settings for ${tab.name}`} />}>Settings</DialogTrigger>
-      ) : (
-        <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start font-normal" />}>
-          <PlusIcon aria-hidden className="text-muted-foreground" />
-          New tab
-        </DialogTrigger>
-      )}
-      <DialogContent className={tab && "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" className="justify-start font-normal" />}>
+        <PlusIcon aria-hidden className="text-muted-foreground" />
+        New tab
+      </DialogTrigger>
+      <DialogContent>
         <form {...keepingFields(action)}>
           <DialogHeader>
-            <DialogTitle>{tab ? "Tab settings" : "New tab"}</DialogTitle>
-            {!tab && (
-              <DialogDescription>
-                Tabs sit at the top of your docs, each with its own collections
-                {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
-              </DialogDescription>
-            )}
+            <DialogTitle>New tab</DialogTitle>
+            <DialogDescription>
+              Tabs sit at the top of your docs, each with its own collections
+              {first ? ". Your collections go in this first one, and you can move them to the next ones." : "."}
+            </DialogDescription>
           </DialogHeader>
           <FieldGroup className="my-4">
-            <Field data-invalid={state.error && !tab ? true : undefined}>
-              <FieldLabel htmlFor={`tab-name-${id}`}>Name</FieldLabel>
-              <Input
-                id={`tab-name-${id}`}
-                name="name"
-                defaultValue={tab?.name}
-                placeholder="Guides"
-                maxLength={40}
-                required
-                aria-invalid={state.error && !tab ? true : undefined}
-              />
-              {state.error && !tab && <FieldError>{state.error}</FieldError>}
+            <Field data-invalid={state.error ? true : undefined}>
+              <FieldLabel htmlFor="tab-name-new">Name</FieldLabel>
+              <Input id="tab-name-new" name="name" placeholder="Guides" maxLength={40} required aria-invalid={state.error ? true : undefined} />
+              {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
-            {tab && (
-              <>
-                <TabLandingFields id={id} tab={tab} home={home} />
-                {access && (
-                  <WhoCanRead
-                    id={`tab-access-${id}`}
-                    projectSlug={projectSlug}
-                    groups={access.groups}
-                    inherit={{ label: "Inherit", description: access.inherits[""]! }}
-                    defaultAccess={tab.access}
-                    defaultGroups={tab.groups}
-                  />
-                )}
-                {state.error && <FieldError>{state.error}</FieldError>}
-              </>
-            )}
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
-              {tab ? "Save" : "Add tab"}
+              Add tab
             </Button>
           </DialogFooter>
         </form>

@@ -21,7 +21,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // A collection to put it in.
   await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
-  await team.getByRole("button", { name: "New collection" }).click();
+  // Docs without tabs have one "+" at the top of the tree.
+  await teamTree.getByRole("button", { name: "Add to your docs" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog", { name: "New collection" });
   await dialog.getByLabel("Name").fill("Getting started");
   await dialog.getByLabel("Description").fill("The basics, in five minutes.");
@@ -54,9 +56,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await picker.getByRole("button", { name: "rocket", exact: true }).click();
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
-  await expect(team.getByText("0 articles")).toBeVisible();
-  // Its row shows the icon.
-  await expect(team.getByRole("region", { name: "Collections" }).locator("svg.lucide-rocket")).toBeVisible();
+  // Its row in the tree shows the icon.
+  await expect(teamTree.getByRole("link", { name: "Getting started" }).locator("svg.lucide-rocket")).toBeVisible();
   await checkpoint(team, "team-docs");
 
   // A draft: title, collection, a heading, text and a table.
@@ -211,10 +212,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("1 search", { exact: true })).toBeVisible();
   await checkpoint(team, "team-docs-insights");
 
-  // Deleting the collection keeps its article. While it runs (slowed down here), Delete can't be clicked again.
-  await team.getByRole("link", { name: "Docs", exact: true }).first().click();
-  await team.waitForURL(`**/app/${slug}/docs`);
-  await expect(team.getByText("1 article", { exact: true })).toBeVisible();
+  // Deleting the collection, from its page, keeps its article. While it runs (slowed down here), Delete can't be clicked again.
+  await teamTree.getByRole("link", { name: "Getting started" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/collections/getting-started`);
+  await expect(team.getByRole("tabpanel", { name: "Content" }).getByRole("listitem")).toHaveText([/^Inviting your team/]);
   await team.route("**/*", async (route) => {
     if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -228,6 +229,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(deleting.getByRole("button", { name: "Delete" })).toBeDisabled();
   await expect(deleting.getByRole("button", { name: "Cancel" })).toBeDisabled();
   await expect(team.getByText("Getting started deleted")).toBeVisible();
+  // Its page is gone: the Docs home instead.
+  await team.waitForURL(`**/app/${slug}/docs`);
   await team.unroute("**/*");
   await expect(teamTree.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
@@ -397,48 +400,58 @@ test("the team arranges the docs: collections three levels deep, moves with the 
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // A collection in Billing.
+  // A collection in Billing, from Billing's "+" in the tree.
   await team.goto(`/app/${slug}/docs`);
-  await team.getByRole("button", { name: "New collection" }).click();
+  const structure = team.getByRole("navigation", { name: "Docs", exact: true });
+  await structure.getByRole("button", { name: "Add to Billing" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = team.getByRole("dialog");
   await dialog.getByLabel("Name").fill("Invoices");
-  await dialog.getByLabel("Parent collection").click();
-  await team.getByRole("option", { name: "Billing" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Parent collection" })).toContainText("Billing");
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
-  const structure = team.getByRole("region", { name: "Collections" });
   await expect(structure.getByRole("list", { name: "Collections in Billing" })).toContainText("Invoices");
 
-  // An article goes in it from its "Move to…" menu.
-  await structure.getByRole("button", { name: "Move Downloading invoices to…" }).click();
+  // An article goes in it from its handle's "Move to…" menu. Invoices opens to show it.
+  await structure.getByRole("button", { name: "Move Downloading invoices", exact: true }).click();
+  await team.getByRole("menuitem", { name: "Move to…" }).click();
   await team.getByRole("menuitem", { name: "Billing › Invoices" }).click();
   await expect(team.getByText("Downloading invoices moved")).toBeVisible();
+  await structure.getByRole("button", { name: "Invoices", exact: true }).click();
   await expect(structure.getByRole("list", { name: "Articles in Invoices" })).toContainText("Downloading invoices");
 
   // A third level: Taxes dropped on the middle of Invoices' row goes inside it.
-  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
+  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByRole("link", { name, exact: true }) });
   await row("Taxes").dragTo(row("Invoices"));
   await expect(team.getByText("Taxes moved")).toBeVisible();
   await expect(structure.getByRole("list", { name: "Collections in Invoices" })).toContainText("Taxes");
   // Billing's "Move to…" lists every collection, indented; it can't go in itself or the ones inside it.
-  await structure.getByRole("button", { name: "Move Billing to…" }).click();
+  await structure.getByRole("button", { name: "Move Billing", exact: true }).click();
+  await team.getByRole("menuitem", { name: "Move to…" }).click();
   for (const inside of ["Billing", "Billing › Invoices", "Billing › Invoices › Taxes"]) {
     await expect(team.getByRole("menuitem", { name: inside, exact: true })).toBeDisabled();
   }
   await expect(team.getByRole("menuitem", { name: "Getting started" })).toBeEnabled();
   await checkpoint(team, "team-docs-move-to-nested");
   await team.keyboard.press("Escape");
+  await team.keyboard.press("Escape");
 
   // With the keyboard: Billing up to the top, then "Your first board" before "Inviting your team".
-  const billingUp = structure.getByRole("button", { name: "Move Billing up" });
-  await billingUp.focus();
+  const billing = structure.getByRole("button", { name: "Move Billing", exact: true });
+  await billing.focus();
   await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Move up" }).press("Enter");
   await expect(team.getByText("Billing moved")).toBeVisible();
-  // It's first now: its up arrow is off, and focus is on its down arrow.
-  await expect(billingUp).toBeDisabled();
-  await expect(structure.getByRole("button", { name: "Move Billing down" })).toBeFocused();
-  await structure.getByRole("button", { name: "Move Your first board up" }).focus();
+  // It's first now: focus is back on its handle, and "Move up" is off.
+  await expect(billing).toBeFocused();
   await team.keyboard.press("Enter");
+  await expect(team.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
+  await team.keyboard.press("Escape");
+  await expect(team.getByRole("menu")).toHaveCount(0);
+  await structure.getByRole("button", { name: "Getting started", exact: true }).click();
+  await structure.getByRole("button", { name: "Move Your first board", exact: true }).focus();
+  await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Move up" }).press("Enter");
   await expect(team.getByText("Your first board moved")).toBeVisible();
   await expect(structure.getByRole("list", { name: "Articles in Getting started" }).getByRole("listitem")).toHaveText([
     /^Your first board/,
@@ -446,6 +459,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   ]);
   await checkpoint(team, "team-docs-structure");
   await team.setViewportSize({ width: 390, height: 844 });
+  await team.getByRole("button", { name: "Browse docs" }).click();
   await checkpoint(team, "team-docs-structure-phone");
   await team.setViewportSize({ width: 1280, height: 720 });
 
@@ -517,14 +531,15 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await visitor.reload();
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Getting started", "Billing"]);
 
-  // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the button that started it.
-  // The drag's move is done once its refreshed rows are in (they stream in after its toast; the buttons are off until
+  // A refused move (someone deleted the collection meanwhile) says why, and focus goes back to the handle that started it.
+  // The drag's move is done once its refreshed rows are in (they stream in after its toast; the handles are off until
   // then). Only then is the collection deleted, so the page still shows it.
-  const moveTo = structure.getByRole("button", { name: "Move Inviting your team to…" });
+  const moveTo = structure.getByRole("button", { name: "Move Inviting your team", exact: true });
   await expect(moveTo).toBeEnabled();
   await api("/collections/billing", {}, "DELETE");
   await moveTo.focus();
   await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Move to…" }).press("ArrowRight");
   await team.getByRole("menuitem", { name: "Billing", exact: true }).press("Enter");
   await expect(team.getByText("There's no collection “billing”")).toBeVisible();
   await expect(moveTo).toBeFocused();
@@ -680,9 +695,9 @@ test("the team splits the docs into tabs: the first takes the collections, other
     await api(`/articles/${article.slug}/publish`, {});
   }
 
-  // The first tab: the dialog says the collections go in it.
+  // The first tab, from "New tab" under the tree: the dialog says the collections go in it.
   await team.goto(`/app/${slug}/docs`);
-  const structure = team.getByRole("region", { name: "Collections" });
+  const structure = team.getByRole("navigation", { name: "Docs", exact: true });
   // A list's own rows (not the ones nested in them).
   const rows = (name: string) => structure.getByRole("list", { name, exact: true }).locator(":scope > li");
   await team.getByRole("button", { name: "New tab" }).click();
@@ -691,12 +706,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await dialog.getByLabel("Name").fill("Guides");
   await dialog.getByRole("button", { name: "Add tab" }).click();
   await expect(team.getByText("Tab added")).toBeVisible();
-  await expect(rows("Collections in Guides")).toHaveText([
-    /^Getting started/,
-    /^Billing/,
-    /^Endpoints/,
-    /^Webhooks/,
-  ]);
+  await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/, /^Endpoints/, /^Webhooks/]);
 
   await team.getByRole("button", { name: "New tab" }).click();
   await expect(dialog).not.toContainText("Your collections go in this first one");
@@ -705,37 +715,42 @@ test("the team splits the docs into tabs: the first takes the collections, other
   // The first one's toast may still be up: the new row says it's done.
   await expect(rows("Tabs")).toHaveText([/^Guides/, /^API/]);
 
-  // Endpoints to API from its menu, with the keyboard; Webhooks dragged onto API's row.
-  const moveTo = structure.getByRole("button", { name: "Move Endpoints to…" });
+  // Endpoints to API from its handle's menu, with the keyboard; Webhooks dragged onto API's row.
+  const moveTo = structure.getByRole("button", { name: "Move Endpoints", exact: true });
   await moveTo.focus();
   await team.keyboard.press("Enter");
+  await team.getByRole("menuitem", { name: "Move to…" }).press("ArrowRight");
   await team.getByRole("menuitem", { name: "Tab: API" }).press("Enter");
   await expect(team.getByText("Endpoints moved")).toBeVisible();
   await expect(moveTo).toBeFocused();
-  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
-  await expect(structure.getByRole("button", { name: "Move Webhooks to…" })).toBeEnabled();
+  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByRole("link", { name, exact: true }) });
+  await expect(structure.getByRole("button", { name: "Move Webhooks", exact: true })).toBeEnabled();
   await row("Webhooks").dragTo(row("API"));
   await expect(team.getByText("Webhooks moved")).toBeVisible();
   await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/]);
   await expect(rows("Collections in Guides")).toHaveText([/^Getting started/, /^Billing/]);
 
-  // A new collection goes in the tab picked.
-  await team.getByRole("button", { name: "New collection" }).click();
+  // A new collection from a tab's "+" goes in that tab.
+  await structure.getByRole("button", { name: "Add to API" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Errors");
-  await dialog.getByLabel("Tab").click();
-  await team.getByRole("option", { name: "API" }).click();
+  await expect(dialog.getByRole("combobox", { name: "Tab" })).toContainText("API");
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(team.getByText("Collection added")).toBeVisible();
   await expect(rows("Collections in API")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
 
-  // API first, then renamed.
-  await structure.getByRole("button", { name: "Move API up" }).click();
+  // API first, then renamed in its page's Settings: the page follows.
+  await structure.getByRole("button", { name: "Move API", exact: true }).click();
+  await team.getByRole("menuitem", { name: "Move up" }).click();
   await expect(team.getByText("API moved")).toBeVisible();
   await expect(rows("Tabs")).toHaveText([/^API/, /^Guides/]);
-  await structure.getByRole("button", { name: "Settings for API" }).click();
-  await dialog.getByLabel("Name").fill("API reference");
-  await dialog.getByRole("button", { name: "Save" }).click();
+  await structure.getByRole("link", { name: "API", exact: true }).click();
+  await team.getByRole("tab", { name: "Settings" }).click();
+  const settings = team.getByRole("tabpanel", { name: "Settings" });
+  await settings.getByLabel("Name").fill("API reference");
+  await settings.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Tab saved")).toBeVisible();
+  await team.waitForURL(`**/app/${slug}/docs/tabs/api-reference`);
   await checkpoint(team, "team-docs-tabs");
 
   // Readers get a tab for each one with something to read: the first at /docs, the others at their own path.
@@ -799,12 +814,15 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await checkpoint(visitor, "widget-docs-tabs");
 
   // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.
-  await expect(structure.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
-  await structure.getByRole("button", { name: "Delete Guides" }).click();
+  await expect(team.getByRole("heading", { level: 1 })).toHaveText("API reference");
+  await expect(team.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
+  await structure.getByRole("link", { name: "Guides", exact: true }).click();
+  await team.getByRole("button", { name: "Delete Guides" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Its collections move to API reference");
   await confirm.getByRole("button", { name: "Delete" }).click();
   await expect(team.getByText("Guides deleted")).toBeVisible();
+  await team.waitForURL(`**/app/${slug}/docs`);
   await expect(rows("Collections in API reference")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/, /^Getting started/, /^Billing/]);
 });
 
@@ -856,23 +874,24 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(visitor).toHaveURL(/\/docs\?q=listing$/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
 
-  // The team makes API's path show an article: the tab's settings have its address and what it shows.
+  // The team makes API's path show an article: the tab's page has its address and what it shows in Settings.
   await team.goto(`/app/${slug}/docs`);
-  const structure = team.getByRole("region", { name: "Collections" });
-  await structure.getByRole("button", { name: "Settings for Guides" }).click();
-  const dialog = team.getByRole("dialog");
-  await expect(dialog.getByLabel("Address")).toHaveValue("/docs");
-  await expect(dialog).toContainText("Your docs' home");
-  await dialog.getByRole("button", { name: "Close" }).click();
-  await expect(dialog).toHaveCount(0);
-  await structure.getByRole("button", { name: "Settings for API" }).click();
-  await expect(dialog.getByLabel("Address")).toHaveValue("/docs/api");
-  await expect(dialog.getByRole("radio", { name: /^Overview/ })).toBeChecked();
-  await dialog.getByText("A page you choose").click();
-  await dialog.getByRole("combobox", { name: "Page" }).click();
+  const structure = team.getByRole("navigation", { name: "Docs", exact: true });
+  const settings = team.getByRole("tabpanel", { name: "Settings" });
+  await structure.getByRole("link", { name: "Guides", exact: true }).click();
+  await team.getByRole("tab", { name: "Settings" }).click();
+  await expect(settings.getByLabel("Address")).toHaveValue("/docs");
+  await expect(settings).toContainText("Your docs' home");
+  await structure.getByRole("link", { name: "API", exact: true }).click();
+  await team.waitForURL(`**/app/${slug}/docs/tabs/api`);
+  await team.getByRole("tab", { name: "Settings" }).click();
+  await expect(settings.getByLabel("Address")).toHaveValue("/docs/api");
+  await expect(settings.getByRole("radio", { name: /^Overview/ })).toBeChecked();
+  await settings.getByText("A page you choose").click();
+  await settings.getByRole("combobox", { name: "Page" }).click();
   await team.getByRole("option", { name: "Listing posts" }).click();
   await checkpoint(team, "team-docs-tab-settings", { fullPage: false });
-  await dialog.getByRole("button", { name: "Save" }).click();
+  await settings.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("Tab saved")).toBeVisible();
 
   // Readers get that article at the tab's path, which is its canonical address there; the article's own path keeps its own.
@@ -887,12 +906,14 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await expect(visitor.locator('link[rel="canonical"]')).toHaveAttribute("href", `${portal}/docs/listing-posts`);
 
   // Back to the overview: the tab's cards.
-  await structure.getByRole("button", { name: "Settings for API" }).click();
-  await expect(dialog.getByRole("radio", { name: /^A page you choose/ })).toBeChecked();
-  await dialog.getByText("Overview", { exact: true }).click();
-  await expect(dialog.getByRole("combobox", { name: "Page" })).toHaveCount(0);
-  await dialog.getByRole("button", { name: "Save" }).click();
-  await expect(dialog).toHaveCount(0);
+  await team.reload();
+  await team.getByRole("tab", { name: "Settings" }).click();
+  await expect(settings.getByRole("radio", { name: /^A page you choose/ })).toBeChecked();
+  await settings.getByText("Overview", { exact: true }).click();
+  await expect(settings.getByRole("combobox", { name: "Page" })).toHaveCount(0);
+  const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+  await settings.getByRole("button", { name: "Save" }).click();
+  await saved;
   await visitor.goto("/docs/api");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("API");
   await expect(cards).toHaveText([/^Endpoints/]);
