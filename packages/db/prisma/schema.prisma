@@ -992,14 +992,14 @@ model ChangelogEntryPullRequest {
 
 /// A docs collection: a group of articles on the portal's /docs.
 model Collection {
-  id          String   @id @default(cuid())
+  id          String     @id @default(cuid())
   projectId   String
   /// From the name; no other collection, tab or (live) article in the project has it, so /docs/<slug> is one page.
   slug        String
   name        String
-  description String   @default("")
+  description String     @default("")
   /// Among its siblings (same parent), collections are listed by this, then by name; new ones go last.
-  order       Int      @default(0)
+  order       Int        @default(0)
   /// The collection it's in, in the same project. At most 2 levels: a collection with a parent has
   /// no children (checked under the project's lock). Deleting the parent moves its children up a level.
   parentId    String?
@@ -1010,8 +1010,10 @@ model Collection {
   /// A Lucide icon by name (kebab-case, e.g. "credit-card"), checked against the installed Lucide
   /// when set. One Lucide later drops draws nothing.
   icon        String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  /// Who may read it (and what's in it), on top of its tab and the collections it's in.
+  access      ReadAccess @default(INHERIT)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parent    Collection?       @relation("CollectionParent", fields: [parentId], references: [id], onDelete: SetNull)
@@ -1020,8 +1022,7 @@ model Collection {
   articles  Article[]
   revisions ArticleRevision[]
   changes   ArticleChanges[]
-  /// Who may read it (and the articles and collections in it) besides the team: people in one of
-  /// these groups. None: everyone who may read the portal.
+  /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
   groups    CollectionGroup[]
   redirects DocsRedirect[]
 
@@ -1051,16 +1052,56 @@ model ReaderGroup {
   updatedAt   DateTime @updatedAt
 
   project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tabs        TabGroup[]
   collections CollectionGroup[]
+  articles    ArticleGroup[]
 
   @@unique([projectId, key])
   @@unique([projectId, claim])
   @@map("reader_group")
 }
 
-/// A group a collection is for. A group in use can't be deleted (NO ACTION, checked at the end of
-/// the statement, so deleting the project, which takes both, still works): dropping it would open
-/// the collection to everyone.
+/// Who may read a tab, a collection or an article, on top of everything above it (the tab, then
+/// each collection, then the article): a page is readable when every level allows it, so a level
+/// can only narrow what's above. The team reads everything. See apps/web lib/reader-groups.ts.
+enum ReadAccess {
+  /// What the level above allows (for a tab: everyone who may read the portal).
+  INHERIT
+  /// Anyone signed in on the portal.
+  SIGNED_IN
+  /// Readers in one of its groups (its *Group rows); with none, only the team.
+  GROUPS
+}
+
+/// A group a tab is for (with `access` GROUPS). A group in use can't be deleted, as for CollectionGroup.
+model TabGroup {
+  tabId   String
+  groupId String
+
+  tab   DocsTab     @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  group ReaderGroup @relation(fields: [groupId], references: [id], onDelete: NoAction)
+
+  @@id([tabId, groupId])
+  @@index([groupId])
+  @@map("tab_group")
+}
+
+/// A group an article is for (with `access` GROUPS). A group in use can't be deleted, as for CollectionGroup.
+model ArticleGroup {
+  articleId String
+  groupId   String
+
+  article Article     @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  group   ReaderGroup @relation(fields: [groupId], references: [id], onDelete: NoAction)
+
+  @@id([articleId, groupId])
+  @@index([groupId])
+  @@map("article_group")
+}
+
+/// A group a collection is for (with `access` GROUPS). A group in use can't be deleted (NO ACTION,
+/// checked at the end of the statement, so deleting the project, which takes both, still works):
+/// the team takes it off first, so who may read what never changes behind their back.
 model CollectionGroup {
   collectionId String
   groupId      String
@@ -1076,19 +1117,23 @@ model CollectionGroup {
 /// A tab of the docs ("Guides", "API"), with top-level collections in it. The first one also
 /// lists the articles in no collection.
 model DocsTab {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   projectId String
   /// From the name; no other tab, collection or (live) article in the project has it, so /docs/<slug> is one page.
   slug      String
   name      String
   /// Tabs are listed by this, then by name; new ones go last.
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  order     Int        @default(0)
+  /// Who may read it: its collections and, on the first tab, the articles in no collection.
+  access    ReadAccess @default(INHERIT)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections Collection[]
   redirects   DocsRedirect[]
+  /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
+  groups      TabGroup[]
 
   @@unique([projectId, slug])
   @@map("docs_tab")
@@ -1155,6 +1200,9 @@ model Article {
   /// Where a published article is served (see ArticleListing). Changed at once, never kept
   /// as an unpublished change: it says who may read the article, not what it says.
   listing         ArticleListing @default(EVERYWHERE)
+  /// Who may read it, on top of its collections and their tab (in no collection: the first tab's).
+  /// Like `listing`, changed at once, never kept as an unpublished change.
+  access          ReadAccess     @default(INHERIT)
   /// When changes to it last went live while it was published: the portal's "Updated" date.
   revisedAt       DateTime?
   /// At most one collection; deleting it leaves its articles uncollected.
@@ -1173,6 +1221,8 @@ model Article {
   revisions  ArticleRevision[]
   changes    ArticleChanges?
   redirects  DocsRedirect[]
+  /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
+  groups     ArticleGroup[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
