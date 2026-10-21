@@ -125,4 +125,40 @@ describe("the migration", () => {
     // Another project's are its own.
     expect(await slugs(other.id)).toEqual({ articles: [], tabs: ["billing→billing"], collections: ["basics→basics"] });
   });
+
+  test("renames articles called “tabs” or “collections” (the app's pages now); a published one's old slug redirects", async () => {
+    const sql = readFileSync(
+      new URL("../../../../packages/db/prisma/migrations/20261021190000_docs_app_page_slugs/migration.sql", import.meta.url),
+      "utf8",
+    );
+    // As the app let them be made before: "tabs" and "collections" weren't reserved.
+    const article = async (title: string, slug: string) => {
+      const created = await call(createArticle, as(), { title });
+      const { id } = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: created.slug, deletedAt: null } });
+      return prisma.article.update({ where: { id }, data: { slug } });
+    };
+    const tabs = await article("Tabs", "tabs");
+    await call(publishArticle, as(), { slug: "tabs" });
+    const collections = await article("Collections", "collections");
+    await article("Tabs again", "tabs-2");
+    // A redirect with the slug it takes goes; a deleted article's slug is free.
+    await call(createCollection, as(), { name: "Old" });
+    const old = await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "old" } });
+    await prisma.docsRedirect.create({ data: { projectId: project.id, slug: "tabs-3", collectionId: old.id } });
+    await article("Gone", "collections-2");
+    await call(deleteArticle, as(), { slug: "collections-2" });
+    const other = await createProject(owner);
+    await prisma.docsTab.create({ data: { projectId: other.id, slug: "tabs", name: "Tabs" } });
+
+    await prisma.$executeRawUnsafe(sql);
+
+    expect((await prisma.article.findUniqueOrThrow({ where: { id: tabs.id } })).slug).toBe("tabs-3");
+    expect((await prisma.article.findUniqueOrThrow({ where: { id: collections.id } })).slug).toBe("collections-2");
+    // The published one's portal URL moved: its old one redirects. The draft had none.
+    expect(await prisma.docsRedirect.findMany({ where: { projectId: project.id }, select: { slug: true, articleId: true, collectionId: true } })).toEqual([
+      { slug: "tabs", articleId: tabs.id, collectionId: null },
+    ]);
+    // A tab may be called that: only articles are renamed.
+    expect((await prisma.docsTab.findFirstOrThrow({ where: { projectId: other.id } })).slug).toBe("tabs");
+  });
 });
