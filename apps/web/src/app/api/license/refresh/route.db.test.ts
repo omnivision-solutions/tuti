@@ -97,3 +97,29 @@ test("only Tuti's own installation is a licence server, and requests are checked
   expect(await refresh(null)).toMatchObject({ status: 404 });
   expect(await license()).toMatchObject({ generation: 0 });
 });
+
+test("two renewals with the same token at once: one renews, the other is a copy", async () => {
+  await sell();
+  const { token } = await refresh(null);
+  const { id } = await license();
+  const { renewals } = await prisma.$transaction(
+    async (tx) => {
+      // Holds the licence's row, so both renewals have started before either can renew.
+      await tx.$executeRaw`SELECT 1 FROM license WHERE id = ${id} FOR UPDATE`;
+      const renewals = Promise.all([refresh(token!), refresh(token!)]);
+      // Both wait for the row (with no lock of their own, both would have read the same generation by now).
+      for (let waiting = 0, tries = 0; waiting < 2 && tries < 100; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const [row] = await tx.$queryRaw<{ count: bigint }[]>`SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'`;
+        waiting = Number(row!.count);
+      }
+      // Wrapped: the transaction commits (letting them go) without waiting for them.
+      return { renewals };
+    },
+    { timeout: 10_000 },
+  );
+  const both = await renewals;
+  expect(both.map((answer) => answer.status).sort()).toEqual([200, 403]);
+  expect(both.find((answer) => answer.status === 403)).toMatchObject({ error: "in_use" });
+  expect(await license()).toMatchObject({ generation: 2, refusedCount: 1 });
+});
