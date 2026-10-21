@@ -11,6 +11,7 @@ import { mailbox } from "@/test/mailbox";
 
 import { forgetCustomDomain, portalAddress } from "./custom-domains";
 import { getDomain, removeDomain, setDomain, verifyDomain } from "./operations/domain";
+import { createChangelogEntry } from "./operations/changelog";
 import { createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { escalateHelp } from "./operations/help-escalate";
@@ -142,6 +143,8 @@ test("a failing address lookup fails a request before it writes anything, so a r
   try {
     await expect(call(createPost, as(), { board: board.slug, title: "Dark mode" })).rejects.toThrow("database down");
     await expect(call(updatePost, as(), { number: 1, status: "planned" })).rejects.toThrow("database down");
+    await expect(call(createArticle, as(), { title: "Billing", body: "Hi" })).rejects.toThrow("database down");
+    await expect(call(createChangelogEntry, as(), { title: "Dark mode", body: "Shipped" })).rejects.toThrow("database down");
     await expect(call(addPortalReaders, as(), { emails: ["e2e-reader@example.com"] })).rejects.toThrow("database down");
     await expect(call(escalateHelp, as(), { questionId: question.id, email: owner.email, note: "" })).rejects.toThrow("database down");
   } finally {
@@ -150,6 +153,8 @@ test("a failing address lookup fails a request before it writes anything, so a r
   // Only the post from before; its status unchanged, so a retry changes it (and tells the webhooks).
   expect(await prisma.post.findMany({ where: { projectId: project.id }, select: { title: true, status: true } })).toEqual([{ title: "Night mode", status: "OPEN" }]);
   expect(await prisma.portalReader.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.article.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
   // Not claimed: asking a person again works.
   expect(await prisma.helpQuestion.findUniqueOrThrow({ where: { id: question.id } })).toMatchObject({ escalatedAt: null });
 });

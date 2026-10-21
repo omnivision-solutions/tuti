@@ -494,6 +494,8 @@ export const createArticle = defineOperation({
   input: z.object(articleFields),
   example: { title: "Getting started", body: "Create a board, then share your portal.", collection: "basics" },
   run: async ({ actor, projectId }, input) => {
+    // Before anything is written: a lookup failing after would fail a request that did its work.
+    const portal = await portalOf(projectId);
     const text = await articleText(input, projectId);
     const article = await saving(() =>
       prisma.$transaction(async (tx) => {
@@ -519,7 +521,7 @@ export const createArticle = defineOperation({
         return created;
       }),
     );
-    return articleView(article, await portalOf(projectId), true);
+    return articleView(article, portal, true);
   },
 });
 
@@ -540,6 +542,8 @@ export const updateArticle = defineOperation({
   }),
   example: { body: "Owners and admins invite from the Team page.", publish: true },
   run: async ({ actor, projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     const text = input.body !== undefined || input.content !== undefined ? await articleText(input, projectId) : undefined;
     const updated = await saving(() =>
@@ -565,7 +569,7 @@ export const updateArticle = defineOperation({
     if (updated.publishedAt && input.publish) {
       await indexArticle(updated.id);
     }
-    return articleView(updated, await portalOf(projectId), true);
+    return articleView(updated, portal, true);
   },
 });
 
@@ -603,6 +607,8 @@ export const restoreArticle = defineOperation({
   access: "team",
   input: z.object({ slug, revision: z.string().trim().min(1).max(100).optional() }),
   run: async ({ actor, projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const restorable = { projectId, slug: input.slug, OR: [{ deletedAt: null }, { deletedAt: { gte: restorableSince() } }] };
     let article: { id: string; slug: string; deletedAt: Date | null } | null;
     let version: (Prisma.ArticleRevisionGetPayload<{ select: typeof versionSelect }> & { text: ArticleText }) | undefined;
@@ -651,7 +657,7 @@ export const restoreArticle = defineOperation({
         );
       }),
     );
-    return articleView(restored, await portalOf(projectId), true);
+    return articleView(restored, portal, true);
   },
 });
 
@@ -664,6 +670,8 @@ export const publishArticle = defineOperation({
   access: "team",
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // Only the first publish sets the date. Locked, so a draft's slug can't change as it's published.
     await prisma.$transaction(async (tx) => {
@@ -671,7 +679,7 @@ export const publishArticle = defineOperation({
       await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
     });
     await indexArticle(article.id);
-    return articleView(await teamArticle(projectId, input.slug), await portalOf(projectId), true);
+    return articleView(await teamArticle(projectId, input.slug), portal, true);
   },
 });
 
@@ -705,6 +713,8 @@ export const publishChanges = defineOperation({
   access: "team",
   input: changesInput,
   run: async ({ actor, projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // One transaction, locked like a save: the changes saved last are the ones that go live.
     const published = await prisma.$transaction(async (tx) => {
@@ -718,7 +728,7 @@ export const publishChanges = defineOperation({
     if (published.publishedAt) {
       await indexArticle(article.id);
     }
-    return articleView(published, await portalOf(projectId), true);
+    return articleView(published, portal, true);
   },
 });
 
@@ -732,6 +742,8 @@ export const discardChanges = defineOperation({
   access: "team",
   input: changesInput,
   run: async ({ actor, projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     const discarded = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
@@ -741,7 +753,7 @@ export const discardChanges = defineOperation({
       await recordRevision(tx, article.id, authorOf(actor));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
     });
-    return articleView(discarded, await portalOf(projectId), true);
+    return articleView(discarded, portal, true);
   },
 });
 
@@ -754,6 +766,8 @@ export const unpublishArticle = defineOperation({
   access: "team",
   input: z.object({ slug }),
   run: async ({ projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // Its chunks go with it, so search and AI answers stop using it at once. Its unpublished
     // changes become the draft's text (it's what was saved last; nothing of it goes live).
@@ -764,7 +778,7 @@ export const unpublishArticle = defineOperation({
       await tx.article.update({ where: { id: article.id }, data: { publishedAt: null } });
       await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
     });
-    return articleView(await teamArticle(projectId, input.slug), await portalOf(projectId), true);
+    return articleView(await teamArticle(projectId, input.slug), portal, true);
   },
 });
 
@@ -805,6 +819,8 @@ export const reorderArticle = defineOperation({
   input: z.object({ slug, collection: slug.nullable().optional(), position: position.optional() }),
   example: { collection: "basics", position: 0 },
   run: async ({ actor, projectId }, input) => {
+    // Looked up before writing, like articles.create.
+    const portal = await portalOf(projectId);
     const article = await teamArticle(projectId, input.slug);
     // One transaction under the project's lock: moves at the same time renumber one after the other, never over each other.
     const moved = await prisma.$transaction(async (tx) => {
@@ -827,7 +843,7 @@ export const reorderArticle = defineOperation({
       await renumber(tx, "article", placed(siblings, article.id, input.position));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
     });
-    return articleView(moved, await portalOf(projectId), true);
+    return articleView(moved, portal, true);
   },
 });
 
