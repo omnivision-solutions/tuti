@@ -6,6 +6,7 @@ import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { type Listing, LISTINGS } from "@/lib/article-listing";
+import { lucideIcon } from "@/lib/lucide-icons";
 import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
 import { claimsOf, groupClaims, MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
@@ -63,7 +64,23 @@ const collectionFields = {
     .array(readerGroup)
     .max(MAX_READER_GROUPS, `Up to ${MAX_READER_GROUPS} groups`)
     .transform((groups) => [...new Set(groups)]),
+  /** A Lucide icon by name (kebab-case, as on lucide.dev, e.g. `credit-card`), shown next to its name; null for none. See checkIcon. */
+  icon: z
+    .string()
+    .trim()
+    .transform((name) => name || null)
+    .nullable(),
 };
+
+/**
+ * Refuses an icon the installed Lucide doesn't have, unless it's the one the collection has
+ * (`current`): one Lucide dropped since stays, so it doesn't block saving the collection's other fields.
+ */
+function checkIcon(icon: string | null | undefined, current: string | null = null) {
+  if (icon && icon !== current && !lucideIcon(icon)) {
+    throw new OperationError(400, "invalid_input", `No icon named “${icon}”`);
+  }
+}
 
 const articleSelect = {
   id: true,
@@ -866,13 +883,16 @@ const collectionSelect = {
   parent: { select: { slug: true, tab: { select: { slug: true } } } },
   tab: { select: { slug: true } },
   groups: groupClaims,
+  icon: true,
   _count: { select: { articles: { where: { deletedAt: null } } } },
 } as const;
 type CollectionRow = Prisma.CollectionGetPayload<{ select: typeof collectionSelect }>;
-const collectionView = ({ slug, name, description, order, parent, tab, groups, _count }: CollectionRow) => ({
+const collectionView = ({ slug, name, description, icon, order, parent, tab, groups, _count }: CollectionRow) => ({
   slug,
   name,
   description,
+  /** Its Lucide icon's name, or null for none. */
+  icon,
   /** Reader groups it's for (their keys; besides the team); empty: everyone. One inside another is also limited by its parent's. */
   groups: claimsOf({ groups }),
   /** The collection it's in (its slug), or null at the top level. */
@@ -890,7 +910,7 @@ const tabOrder: Prisma.DocsTabOrderByWithRelationInput[] = [{ order: "asc" }, { 
 async function lockedCollection(tx: Prisma.TransactionClient, projectId: string, slug: string) {
   const collection = await tx.collection.findUnique({
     where: { projectId_slug: { projectId, slug } },
-    select: { id: true, name: true, parentId: true, tabId: true, parent: { select: { tabId: true } } },
+    select: { id: true, name: true, icon: true, parentId: true, tabId: true, parent: { select: { tabId: true } } },
   });
   if (!collection) {
     throw new OperationError(404, "not_found", `There's no collection “${slug}”`);
@@ -1012,7 +1032,7 @@ async function placeFor(
 export const listCollections = defineOperation({
   name: "collections.list",
   summary:
-    "List the docs' collections in order (by tab, each top-level one, then the ones in it), with the collection each is in (`parent`), its tab and how many articles each has",
+    "List the docs' collections in order (by tab, each top-level one, then the ones in it), with the collection each is in (`parent`), its tab, its icon and how many articles each has",
   method: "GET",
   path: "/collections",
   scope: "read",
@@ -1027,7 +1047,7 @@ export const listCollections = defineOperation({
 export const createCollection = defineOperation({
   name: "collections.create",
   summary:
-    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` (keys of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team",
+    "Add a docs collection, at the top level (in `tab`; left out, the first one, if the docs have tabs) or in another collection (`parent`; 2 levels deep at most), after the others there; its slug comes from the name. `groups` (keys of the project's reader groups, see groups.list) makes it (and what's in it) for those groups only, besides the team; `icon` names a Lucide icon (lucide.dev) shown next to its name",
   method: "POST",
   path: "/collections",
   scope: "write",
@@ -1036,13 +1056,15 @@ export const createCollection = defineOperation({
     ...collectionFields,
     description: collectionFields.description.default(""),
     groups: collectionFields.groups.default([]),
+    icon: collectionFields.icon.default(null),
     parent: slug.nullable().optional(),
     tab: slug.optional(),
   }),
-  example: { name: "Getting started", description: "The basics, in five minutes." },
+  example: { name: "Getting started", description: "The basics, in five minutes.", icon: "rocket" },
   run: async ({ projectId }, input) =>
     collectionView(
       await prisma.$transaction(async (tx) => {
+        checkIcon(input.icon);
         await lockProject(tx, projectId);
         const parentId = await parentFor(tx, projectId, undefined, input.parent ?? null);
         const tabId = await tabFor(tx, projectId, { slug: input.tab, parentId });
@@ -1056,6 +1078,7 @@ export const createCollection = defineOperation({
             name: input.name,
             description: input.description,
             groups: { create: await groupLinks(tx, projectId, input.groups) },
+            icon: input.icon,
             order: (last._max.order ?? -1) + 1,
           },
           select: collectionSelect,
@@ -1067,7 +1090,7 @@ export const createCollection = defineOperation({
 export const updateCollection = defineOperation({
   name: "collections.update",
   summary:
-    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: keys of the project's reader groups, see groups.list; empty, everyone) or set its `order` among its siblings. To move it to a place, see collections.reorder",
+    "Rename a docs collection (its slug follows the name), change its description, move it into another collection (`parent`, null for the top level; it goes last there), to another tab (`tab`, at the top level), set who may read it (`groups`: keys of the project's reader groups, see groups.list; empty, everyone), its `icon` (a Lucide icon's name; null removes it) or set its `order` among its siblings. To move it to a place, see collections.reorder",
   method: "PATCH",
   path: "/collections/{slug}",
   scope: "write",
@@ -1077,6 +1100,7 @@ export const updateCollection = defineOperation({
     name: collectionFields.name.optional(),
     description: collectionFields.description.optional(),
     groups: collectionFields.groups.optional(),
+    icon: collectionFields.icon.optional(),
     parent: slug.nullable().optional(),
     tab: slug.optional(),
     order: position.optional(),
@@ -1088,6 +1112,7 @@ export const updateCollection = defineOperation({
         await lockProject(tx, projectId);
         const collection = await lockedCollection(tx, projectId, input.slug);
         const { id } = collection;
+        checkIcon(input.icon, collection.icon);
         if (input.parent !== undefined || input.tab !== undefined) {
           const place = await placeFor(tx, projectId, collection, input);
           if (place.parentId !== collection.parentId || place.tabId !== collection.tabId) {
@@ -1100,6 +1125,7 @@ export const updateCollection = defineOperation({
             ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", { id, slug: input.slug }) }),
             ...(input.description !== undefined && { description: input.description }),
             ...(input.groups !== undefined && { groups: { deleteMany: {}, create: await groupLinks(tx, projectId, input.groups) } }),
+            ...(input.icon !== undefined && { icon: input.icon }),
             ...(input.order !== undefined && { order: input.order }),
           },
           select: collectionSelect,

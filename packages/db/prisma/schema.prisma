@@ -996,6 +996,9 @@ model Collection {
   /// parent's). Once a project has tabs, every top-level collection is in one (kept under the
   /// project's lock); without any, all are null.
   tabId       String?
+  /// A Lucide icon by name (kebab-case, e.g. "credit-card"), checked against the installed Lucide
+  /// when set. One Lucide later drops draws nothing.
+  icon        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

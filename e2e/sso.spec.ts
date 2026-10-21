@@ -179,6 +179,11 @@ test("a group from conditions: readers whose token's attributes match read its c
   await condition.getByLabel("Value").fill("pro, enterprise");
   await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
   await checkpoint(owner, "team-settings-group-conditions-preview", { fullPage: false });
+  // On a phone, each condition's row wraps instead of squeezing its fields.
+  const desktop = owner.viewportSize()!;
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(owner, "team-settings-group-conditions-preview-phone", { fullPage: false });
+  await owner.setViewportSize(desktop);
   // Values match exactly: "Pro" isn't "pro".
   await condition.getByLabel("Value").fill("Pro");
   await expect(preview).toHaveText("No readers match now.");

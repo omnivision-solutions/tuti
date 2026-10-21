@@ -242,7 +242,7 @@ test("the dialog's preview: who a group with these rules would have now", async 
 });
 
 test("the migration gives today's groups their claim as their key, no conditions, and SSO users no attributes", async () => {
-  const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261021120000_group_conditions/migration.sql", import.meta.url), "utf8");
+  const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261021130000_group_conditions/migration.sql", import.meta.url), "utf8");
   // Back to before it, with a group and an SSO user as they were then.
   // (This file's database is its own: the other tests' groups can go.)
   await prisma.$executeRawUnsafe(`
