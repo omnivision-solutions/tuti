@@ -9,6 +9,7 @@ import { customDomainTarget, normalizeHostname, verificationRecord } from "@/lib
 import { certificateStatus, CloudflareError, cloudflareConfigured, createCustomHostname, deleteCustomHostname, getCustomHostname } from "../cloudflare";
 import { forgetCustomDomain, txtRecords } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
+import { lockOwnAddress } from "./own-address";
 
 /**
  * A portal on its own domain (help.acme.com), Phase 10: the team adds it, points it at Tuti (a
@@ -93,7 +94,7 @@ export const getDomain = defineOperation({
 export const setDomain = defineOperation({
   name: "domain.set",
   summary:
-    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other): add the DNS records it returns, then domain.verify. Until then the portal stays where it is",
+    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is",
   method: "POST",
   path: "/domain",
   scope: "write",
@@ -112,21 +113,28 @@ export const setDomain = defineOperation({
     if (await prisma.customDomain.findFirst({ where: { hostname, verifiedAt: { not: null }, projectId: { not: projectId } }, select: { id: true } })) {
       throw new OperationError(409, "conflict", `${hostname} is already another portal's domain`);
     }
-    const existing = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
-    if (existing?.hostname === hostname) {
-      return { domain: domainView(existing) };
-    }
-    // A new token each time, so a record added for an earlier claim doesn't verify this one.
-    const data = {
-      hostname,
-      verificationToken: randomBytes(16).toString("hex"),
-      verifiedAt: null,
-      cloudflareId: null,
-      certificate: null,
-      addedById: actor.kind === "user" ? actor.userId : actor.createdById,
-    };
-    const domain = await prisma.customDomain.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: domainSelect });
-    if (existing) {
+    const { existing, domain, unchanged } = await prisma.$transaction(async (tx) => {
+      await lockOwnAddress(tx, projectId);
+      const existing = await tx.customDomain.findUnique({ where: { projectId }, select: domainSelect });
+      if (existing?.hostname === hostname) {
+        return { existing, domain: existing, unchanged: true };
+      }
+      const mount = await tx.siteMount.findUnique({ where: { projectId }, select: { origin: true, path: true } });
+      if (mount) {
+        throw new OperationError(409, "conflict", `Your portal is on your site at ${mount.origin}${mount.path}. Remove it there first to give it a domain of its own`);
+      }
+      // A new token each time, so a record added for an earlier claim doesn't verify this one.
+      const data = {
+        hostname,
+        verificationToken: randomBytes(16).toString("hex"),
+        verifiedAt: null,
+        cloudflareId: null,
+        certificate: null,
+        addedById: actor.kind === "user" ? actor.userId : actor.createdById,
+      };
+      return { existing, unchanged: false, domain: await tx.customDomain.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: domainSelect }) };
+    });
+    if (existing && !unchanged) {
       forgetCustomDomain(existing.hostname);
       await releaseCustomHostname(existing.cloudflareId);
     }

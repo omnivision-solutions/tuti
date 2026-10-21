@@ -15,9 +15,16 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/settings`);
+  // The portal's own address is a domain of its own or a path of the site: they pick the path.
+  await checkpoint(owner, "settings-own-address-choice");
+  await owner.getByRole("radio", { name: /A path of your site/ }).check();
   await owner.getByLabel("Address").fill(`${siteUrl()}/portal`);
   await owner.getByRole("button", { name: "Add address" }).click();
   await expect(owner.getByText("Waiting for your site")).toBeVisible();
+  // Not both: with the path set, there's no domain to add until it's removed.
+  await expect(owner.getByRole("radio", { name: /A domain of its own/ })).toHaveCount(0);
+  await expect(owner.getByLabel("Domain", { exact: true })).toHaveCount(0);
+  await expect(owner.getByText("To give your portal a domain of its own instead, remove it from your site first.")).toBeVisible();
   await expect(owner.getByRole("definition").filter({ hasText: `${portalUrl(slug)}/portal/*` })).toBeVisible();
   // Not forwarded yet.
   await owner.getByRole("button", { name: "Check setup" }).click();
@@ -85,6 +92,8 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("button", { name: "Remove" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${siteUrl()}/portal removed`)).toBeVisible();
+  // And either can be picked again.
+  await expect(owner.getByRole("radio", { name: /A domain of its own/ })).toBeVisible();
   await expect(async () => {
     await elsewhere.goto("/roadmap");
     expect(elsewhere.url()).toBe(`${portalUrl(slug)}/roadmap`);
