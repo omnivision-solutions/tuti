@@ -304,7 +304,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(team, "team-docs-article-restored");
 });
 
-test("the team arranges the docs: a collection in another, moves with the keyboard and by dragging, and the portal follows", async ({
+test("the team arranges the docs: collections three levels deep, moves with the keyboard and by dragging, and the portal and widget follow", async ({
   browser,
 }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -319,10 +319,12 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await api("/articles", { title: "Payments", body: "Card payments.", collection: "billing" });
   await api("/articles/payments", { title: "Card payments" }, "PATCH");
   await api("/articles/card-payments/publish", {});
+  await api("/collections", { name: "Taxes" });
   for (const [title, collection] of [
     ["Inviting your team", "getting-started"],
     ["Your first board", "getting-started"],
     ["Downloading invoices", "billing"],
+    ["VAT rates", "taxes"],
   ]) {
     const article = await api("/articles", { title, body: `${title}.`, collection });
     await api(`/articles/${article.slug}/publish`, {});
@@ -345,6 +347,20 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await team.getByRole("menuitem", { name: "Billing › Invoices" }).click();
   await expect(team.getByText("Downloading invoices moved")).toBeVisible();
   await expect(structure.getByRole("list", { name: "Articles in Invoices" })).toContainText("Downloading invoices");
+
+  // A third level: Taxes dropped on the middle of Invoices' row goes inside it.
+  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
+  await row("Taxes").dragTo(row("Invoices"));
+  await expect(team.getByText("Taxes moved")).toBeVisible();
+  await expect(structure.getByRole("list", { name: "Collections in Invoices" })).toContainText("Taxes");
+  // Billing's "Move to…" lists every collection, indented; it can't go in itself or the ones inside it.
+  await structure.getByRole("button", { name: "Move Billing to…" }).click();
+  for (const inside of ["Billing", "Billing › Invoices", "Billing › Invoices › Taxes"]) {
+    await expect(team.getByRole("menuitem", { name: inside, exact: true })).toBeDisabled();
+  }
+  await expect(team.getByRole("menuitem", { name: "Getting started" })).toBeEnabled();
+  await checkpoint(team, "team-docs-move-to-nested");
+  await team.keyboard.press("Escape");
 
   // With the keyboard: Billing up to the top, then "Your first board" before "Inviting your team".
   const billingUp = structure.getByRole("button", { name: "Move Billing up" });
@@ -373,9 +389,34 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Billing", "Getting started"]);
   const billing = main.getByRole("region", { name: "Billing" });
   await expect(billing.getByRole("heading", { level: 3 })).toHaveText(["Invoices"]);
-  await expect(billing.getByRole("region", { name: "Invoices" }).getByRole("listitem")).toHaveText(["Downloading invoices"]);
+  const invoices = billing.getByRole("region", { name: "Invoices" });
+  await expect(invoices.getByRole("heading", { level: 4 })).toHaveText(["Taxes"]);
+  await expect(invoices.getByRole("listitem")).toHaveText(["Downloading invoices", "VAT rates"]);
   await expect(main.getByRole("region", { name: "Getting started" }).getByRole("listitem")).toHaveText(["Your first board", "Inviting your team"]);
   await checkpoint(visitor, "portal-docs-nested");
+  // A collection's page: the ones in it a level up, and the way back to the one it's in.
+  await invoices.getByRole("link", { name: "Invoices", exact: true }).click();
+  await expect(visitor).toHaveURL(/\/docs\/invoices$/);
+  await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Taxes"]);
+  await expect(main.getByRole("link", { name: "Billing" })).toHaveAttribute("href", "/docs/billing");
+  await checkpoint(visitor, "portal-docs-collection-nested");
+
+  // The widget's Docs tab goes a level at a time: a collection opens its own list, with a way back.
+  await visitor.goto("/widget?tab=docs");
+  await expect(visitor.getByRole("list", { name: "Collections" }).getByRole("link")).toHaveText(["Billing", "Getting started"]);
+  await visitor.getByRole("link", { name: "Billing" }).click();
+  await visitor.getByRole("list", { name: "Collections in Billing" }).getByRole("link", { name: "Invoices" }).click();
+  await expect(visitor.getByRole("heading", { level: 2 })).toHaveText("Invoices");
+  await expect(visitor.getByRole("link", { name: "Downloading invoices" })).toBeVisible();
+  await visitor.getByRole("list", { name: "Collections in Invoices" }).getByRole("link", { name: "Taxes" }).click();
+  await checkpoint(visitor, "widget-docs-nested");
+  await visitor.getByRole("link", { name: "VAT rates" }).click();
+  await expect(visitor.getByRole("heading", { level: 1 })).toHaveText("VAT rates");
+  await visitor.getByRole("link", { name: "Taxes" }).click();
+  await visitor.getByRole("link", { name: "Invoices", exact: true }).click();
+  await visitor.getByRole("link", { name: "Billing" }).click();
+  await visitor.getByRole("link", { name: "All articles" }).click();
+  await expect(visitor.getByRole("list", { name: "Collections" })).toBeVisible();
   // An old URL of an article (and of its Markdown) sends readers to its current one.
   await visitor.goto("/docs/payments");
   await expect(visitor).toHaveURL(/\/docs\/card-payments$/);
@@ -385,7 +426,6 @@ test("the team arranges the docs: a collection in another, moves with the keyboa
   await visitor.goto("/docs");
 
   // Dragged by its row: Getting started back above Billing.
-  const row = (name: string) => structure.locator("[draggable=true]").filter({ has: team.getByText(name, { exact: true }) });
   await row("Getting started").dragTo(row("Billing"), { targetPosition: { x: 40, y: 2 } });
   await expect(team.getByText("Getting started moved")).toBeVisible();
   await visitor.reload();

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { CollectionDialog, DeleteCollectionButton, DeleteTabButton, TabDialog } from "@/components/docs";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ancestry, height, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { moveArticle, moveCollection, moveTab } from "@/server/docs";
 
 type StructureArticle = { slug: string; title: string; published: boolean };
@@ -39,6 +40,10 @@ const positionAt = (siblings: { slug: string }[], slug: string, target: string, 
   siblings.filter((s) => s.slug !== slug).findIndex((s) => s.slug === target) + (where === "after" ? 1 : 0);
 const otherButton = (id: string) => (id.endsWith("-up") ? id.replace(/-up$/, "-down") : id.replace(/-down$/, "-up"));
 
+/** A place in a "Move to…" menu: a collection is indented by how deep it is (`depth`: 0 at the top level) and named with the ones it's in (`name`). */
+type Place = { key: string; label: string; name?: string; depth?: number; disabled?: boolean; move: () => void };
+const INDENT = ["", "pl-5", "pl-8", "pl-11", "pl-14"];
+
 /** Up and down buttons, and a "Move to…" menu of the other places it can go. */
 function MoveButtons({
   id,
@@ -53,7 +58,7 @@ function MoveButtons({
   disabled: boolean;
   up?: () => void;
   down?: () => void;
-  places: { label: string; move: () => void }[];
+  places: Place[];
 }) {
   return (
     <>
@@ -72,7 +77,13 @@ function MoveButtons({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto min-w-48">
             {places.map((place) => (
-              <DropdownMenuItem key={place.label} onClick={place.move}>
+              <DropdownMenuItem
+                key={place.key}
+                onClick={place.move}
+                disabled={place.disabled}
+                aria-label={place.name}
+                className={cn("break-words", INDENT[place.depth ?? 0])}
+              >
                 {place.label}
               </DropdownMenuItem>
             ))}
@@ -120,7 +131,7 @@ function Row({
 
 /**
  * The docs' structure for the team: its tabs if it has some, each with
- * its collections (2 levels deep at most), each with its articles and then the collections in it,
+ * its collections (5 levels deep at most), each with its articles and then the collections in it,
  * and the articles in no collection, in the order readers see them. Rows are dragged into place, or
  * moved with each row's buttons (up, down, and "Move to…" another collection or tab), which work
  * from the keyboard. A drop or a button is one move, applied at once on the server under the project's lock.
@@ -162,10 +173,22 @@ export function DocsStructure({
   const siblingsOf = (c: StructureCollection) => (c.parent === null ? childrenOf(null).filter((s) => s.tab === c.tab) : childrenOf(c.parent));
   const articlesIn = (collection: string | null) =>
     collection === null ? uncollected : (collections.find((c) => c.slug === collection)?.articles ?? []);
-  const label = (c: StructureCollection) => {
-    const parent = collections.find((p) => p.slug === c.parent);
-    return parent ? `${parent.name} › ${c.name}` : c.name;
-  };
+  // The tree by slug, for the checks the server makes too.
+  const tree = collections.map((c) => ({ id: c.slug, parentId: c.parent, name: c.name }));
+  /** How deep collection `slug` is: 1 at the top level. */
+  const depthOf = (slug: string) => ancestry(tree, slug).length;
+  /** Whether collection `slug` is collection `of` or one inside it. */
+  const within = (slug: string, of: string) => ancestry(tree, slug).some((c) => c.id === of);
+  /** A collection as a "Move to…" place: indented, and named with the ones it's in ("Billing › Invoices"). */
+  const placeOf = (c: StructureCollection) => ({
+    key: c.slug,
+    label: c.name,
+    name: ancestry(tree, c.slug)
+      .map((p) => p.name)
+      .reverse()
+      .join(" › "),
+    depth: depthOf(c.slug) - 1,
+  });
 
   const move = ({ kind, slug, name, into, tab, position }: Move, focus?: string) => {
     refocus.current = focus ?? null;
@@ -210,16 +233,13 @@ export function DocsStructure({
         return { ...base, into: null, tab: over.slug, where: "into" };
       }
       const row = over.kind === "collection" ? collections.find((c) => c.slug === over.slug) : undefined;
-      if (!row) {
+      // Not on itself or one inside it: there's nowhere there for it to go.
+      if (!row || within(row.slug, dragged.slug)) {
         return null;
       }
-      // Only a collection with none in it goes inside another: into a top-level one (its middle), or next to one inside.
-      const flat = childrenOf(dragged.slug).length === 0;
-      if (row.parent === null && flat && y > 0.25 && y < 0.75) {
+      // On a collection's middle: inside it (the server says if that's too deep).
+      if (y > 0.25 && y < 0.75) {
         return { ...base, into: row.slug, where: "into" };
-      }
-      if (row.parent !== null && !flat) {
-        return null;
       }
       return {
         ...base,
@@ -296,8 +316,8 @@ export function DocsStructure({
           const over: Over = { kind: "article", slug: article.slug, collection };
           const base = { kind: "article" as const, slug: article.slug, name: article.title };
           const places = [
-            ...collections.filter((c) => c.slug !== collection).map((c) => ({ label: label(c), move: () => move({ ...base, into: c.slug }, `${id}-to`) })),
-            ...(collection === null ? [] : [{ label: "No collection", move: () => move({ ...base, into: null }, `${id}-to`) }]),
+            ...collections.filter((c) => c.slug !== collection).map((c) => ({ ...placeOf(c), move: () => move({ ...base, into: c.slug }, `${id}-to`) })),
+            ...(collection === null ? [] : [{ key: "", label: "No collection", move: () => move({ ...base, into: null }, `${id}-to`) }]),
           ];
           return (
             <li key={article.slug}>
@@ -333,18 +353,20 @@ export function DocsStructure({
           const over: Over = { kind: "collection", slug: collection.slug };
           const inside = childrenOf(collection.slug);
           const base = { kind: "collection" as const, slug: collection.slug, name: collection.name };
-          const places = [
-            ...(collection.parent === null ? [] : [{ label: "Top level", move: () => move({ ...base, into: null }, `${id}-to`) }]),
+          // Every collection, but the ones it's in already or can't go in: itself, one inside it, or too deep for the ones in it.
+          const levels = height(tree, collection.slug);
+          const places: Place[] = [
+            ...(collection.parent === null ? [] : [{ key: "", label: "Top level", move: () => move({ ...base, into: null }, `${id}-to`) }]),
             ...(collection.parent === null
               ? tabs
                   .filter((s) => s.slug !== collection.tab)
-                  .map((s) => ({ label: `Tab: ${s.name}`, move: () => move({ ...base, into: null, tab: s.slug }, `${id}-to`) }))
+                  .map((s) => ({ key: `tab:${s.slug}`, label: `Tab: ${s.name}`, move: () => move({ ...base, into: null, tab: s.slug }, `${id}-to`) }))
               : []),
-            ...(inside.length > 0
-              ? []
-              : childrenOf(null)
-                  .filter((c) => c.slug !== collection.slug && c.slug !== collection.parent)
-                  .map((c) => ({ label: `Into ${c.name}`, move: () => move({ ...base, into: c.slug }, `${id}-to`) }))),
+            ...collections.map((c) => ({
+              ...placeOf(c),
+              move: () => move({ ...base, into: c.slug }, `${id}-to`),
+              disabled: c.slug === collection.parent || within(c.slug, collection.slug) || depthOf(c.slug) + levels > MAX_COLLECTION_DEPTH,
+            })),
           ];
           const count = collection.articles.length;
           return (
