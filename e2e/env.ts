@@ -10,6 +10,8 @@ export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
 
 /** The project whose portal is on the app's own domain (APP_PORTAL_PROJECT). */
 export const APP_PORTAL_SLUG = "e2e-app-portal";
+/** The only account that can create it (APP_PORTAL_OWNER), once its address is verified. */
+export const APP_PORTAL_OWNER = "e2e-app-portal-owner@example.com";
 
 export const serverEnv = {
   PORT: String(PORT),
@@ -32,4 +34,6 @@ export const serverEnv = {
   CUSTOM_DOMAIN_TARGET: "customers.example.com",
   // Tuti's own portal on the app's domain: the project app-portal.spec.ts makes.
   APP_PORTAL_PROJECT: APP_PORTAL_SLUG,
+  // Only this address (verified) can create that project.
+  APP_PORTAL_OWNER: APP_PORTAL_OWNER,
 };
