@@ -206,7 +206,7 @@ test("a group from conditions: readers whose token's attributes match read its c
   await expect(bea.getByRole("link", { name: "Bulk export" })).toHaveCount(0);
   expect((await bea.request.get("/docs/bulk-export")).status()).toBe(404);
   const ada = await signIn("user-1", "Ada from Acme", { plan: "pro", seats: 12 });
-  await ada.getByRole("link", { name: "Bulk export" }).click();
+  await ada.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Bulk export" }).click();
   await expect(ada.getByRole("heading", { level: 1, name: "Bulk export" })).toBeVisible();
   await checkpoint(ada, "portal-docs-condition-group-reader");
 });
