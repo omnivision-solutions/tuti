@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { visibleArticle } from "@/lib/reader-groups";
 import { listedArticle } from "@/server/help-queries";
@@ -55,7 +55,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     // ponytail: one file of up to 50,000 URLs; a sitemap index of several files when a portal outgrows it.
     ...project.posts.map((post) => ({ path: postPath(post), lastmod: post.updatedAt })),
   ].slice(0, MAX_URLS);
-  const portal = portalUrl(slug);
+  const portal = await portalAddress(slug);
   const sitemap = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',

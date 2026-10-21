@@ -4,7 +4,7 @@ import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { hashSecret } from "@/lib/portal-handoff";
 import { DOMAIN_ENTRY, OPEN_DOMAINS } from "@/lib/reader-domains";
 
@@ -139,7 +139,7 @@ export const addPortalReaders = defineOperation({
         where: { id: actor.kind === "user" ? actor.userId : actor.createdById },
         select: { name: true, email: true },
       });
-      const url = `${portalUrl(project.slug)}/sign-in`;
+      const url = `${await portalAddress(project.slug)}/sign-in`;
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
         toEmail.map((email) =>

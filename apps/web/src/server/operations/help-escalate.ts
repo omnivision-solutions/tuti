@@ -3,7 +3,7 @@ import { emailConfigured, escalationEmail, sendEmail } from "@tuti/email";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 
 import { countEmailedLink } from "../email-link-limits";
 import { getSession } from "../session";
@@ -127,6 +127,7 @@ export async function escalateQuestion(
     }),
     summarize(projectId, { question: question.question, answer: question.answer, notHelpful, note }, timeoutMs),
   ]);
+  const portal = await portalAddress(project.slug);
   const content = {
     projectName: project.name,
     from: input.email,
@@ -136,7 +137,7 @@ export async function escalateQuestion(
     notHelpful,
     sources: articles.map((article) => ({
       title: article.title,
-      url: article.listing === "AI_ONLY" ? null : `${portalUrl(project.slug)}/docs/${article.slug}`,
+      url: article.listing === "AI_ONLY" ? null : `${portal}/docs/${article.slug}`,
     })),
     summary,
   };

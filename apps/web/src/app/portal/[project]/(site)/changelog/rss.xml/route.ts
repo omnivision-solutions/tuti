@@ -1,7 +1,7 @@
 import { toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { publishedEntries } from "@/server/changelog-queries";
 
 /** Characters XML 1.0 forbids (most control characters): one would make the whole feed invalid. */
@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   if (!project) {
     return new Response("Not found", { status: 404 });
   }
-  const portal = portalUrl(slug);
+  const portal = await portalAddress(slug);
   const entries = await publishedEntries(slug);
   const items = entries.map((entry) => {
     const url = `${portal}/changelog/${entry.number}`;

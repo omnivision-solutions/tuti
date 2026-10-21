@@ -5,7 +5,7 @@ import { CreateBoardForm, DeleteBoardButton, EditBoardDialog } from "@/component
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 
@@ -17,7 +17,7 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/boards
   }
   const { project, role } = membership;
   const isAdmin = isAdminRole(role);
-  const portal = portalUrl(project.slug);
+  const portal = await portalAddress(project.slug);
 
   const boards = await prisma.board.findMany({
     where: { projectId: project.id },

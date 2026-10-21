@@ -13,7 +13,7 @@ import {
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { REACTIONS, type ReactionCounts } from "@/lib/reactions";
 
@@ -71,7 +71,7 @@ type EntryRow = NonNullable<Awaited<ReturnType<typeof findEntry>>>;
 
 /** An entry for the API; `counts` when several entries' reactions were read at once. */
 async function entryView(entry: EntryRow, slug: string, counts?: (entryId: string) => ReactionCounts) {
-  const portal = portalUrl(slug);
+  const portal = await portalAddress(slug);
   const reactions = (counts ?? (await reactionCounts([entry.id])))(entry.id);
   return {
     number: entry.number,
@@ -584,6 +584,7 @@ export const publishChangelogEntry = defineOperation({
   run: async ({ projectId }, { number, announce }) => {
     const entry = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
+    const portal = await portalAddress(slug);
     // One transaction: published, its posts completed (and due for their shipped
     // emails), and the webhook deliveries saved. Sending happens after it commits.
     const shipped = await prisma.$transaction(async (tx) => {
@@ -617,7 +618,7 @@ export const publishChangelogEntry = defineOperation({
         const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
         deliveries.push(
           ...(await recordEvent(tx, projectId, "post.status_changed", {
-            post: postSummary(updated, slug),
+            post: postSummary(updated, portal),
             previousStatus: toApiStatus(current.status),
           })),
         );

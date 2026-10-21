@@ -5,6 +5,7 @@ import { log } from "@tuti/shared";
 import { postPath } from "@tuti/shared/post-urls";
 
 import { enqueue } from "./index";
+import type { PortalAddress } from "./portal-address";
 
 /**
  * Tells a project's webhooks that something happened: one delivery per webhook
@@ -116,9 +117,9 @@ export const postSummarySelect = {
 /** Statuses as the API spells them. */
 export const toApiStatus = (status: PostStatus) => status.toLowerCase();
 
-/** The post's public URL on its project's portal (PORTAL_URL_TEMPLATE, e.g. https://{project}.tuti.so). */
-export function portalPostUrl(projectSlug: string, post: { title: string; number: number; board: { slug: string } }) {
-  return `${portalOrigin(projectSlug)}${postPath(post)}`;
+/** The post's public URL on its project's portal (`portal`: the portal's address, see portalAddress). */
+export function portalPostUrl(portal: PortalAddress, post: { title: string; number: number; board: { slug: string } }) {
+  return `${portal}${postPath(post)}`;
 }
 
 /** A project's portal origin from PORTAL_URL_TEMPLATE (required, like in the web app). */
@@ -130,7 +131,8 @@ export function portalOrigin(projectSlug: string): string {
   return new URL(template.replace("{project}", projectSlug)).origin;
 }
 
-export const postSummary = (post: PostRow, projectSlug: string) => ({
+/** A post for the API and webhooks; `portal` is its portal's address (portalAddress). */
+export const postSummary = (post: PostRow, portal: PortalAddress) => ({
   number: post.number,
   title: post.title,
   status: toApiStatus(post.status),
@@ -139,5 +141,5 @@ export const postSummary = (post: PostRow, projectSlug: string) => ({
   comments: post.commentCount,
   author: { name: post.author.name },
   createdAt: post.createdAt.toISOString(),
-  url: portalPostUrl(projectSlug, post),
+  url: portalPostUrl(portal, post),
 });

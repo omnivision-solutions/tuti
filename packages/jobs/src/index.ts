@@ -15,6 +15,7 @@ export { lockProject, RUNNING_DRAFT_TITLE } from "./running-draft";
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { referencedPosts } from "./github";
+export { portalAddress, type PortalAddress } from "./portal-address";
 export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 
 export type JobLogger = { info(message: string): void; warn(message: string): void };

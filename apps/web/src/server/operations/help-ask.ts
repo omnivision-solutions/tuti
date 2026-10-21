@@ -3,7 +3,7 @@ import { lockProject } from "@tuti/jobs";
 import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { type ReaderGroups, visibleArticle } from "@/lib/reader-groups";
 
 import { type AnswerSection, answerSections } from "../help-search";
@@ -98,14 +98,14 @@ function readAnswer(reply: string, sections: AnswerSection[]): { answer: string;
 }
 
 /** Each article once, in order. */
-function sourcesOf(sections: AnswerSection[], slug: string): HelpAnswer["sources"] {
+function sourcesOf(sections: AnswerSection[], portal: string): HelpAnswer["sources"] {
   const seen = new Set<string>();
   return sections
     .filter((section) => !seen.has(section.articleId) && seen.add(section.articleId))
     .map((section) => ({
       slug: section.slug,
       title: section.title,
-      url: section.listing === "AI_ONLY" ? null : `${portalUrl(slug)}/docs/${section.slug}`,
+      url: section.listing === "AI_ONLY" ? null : `${portal}/docs/${section.slug}`,
     }));
 }
 
@@ -159,7 +159,7 @@ export async function answerQuestion(
         articleIds: [...new Set(answer?.cited.map((section) => section.articleId))],
       },
     });
-    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, slug) };
+    return { id, status, answer: answer?.answer ?? null, sources: sourcesOf(answer?.cited ?? fallback, await portalAddress(slug)) };
   };
 
   // A topic the team put off-limits: a fixed reply, decided here rather than by the model (which isn't asked).

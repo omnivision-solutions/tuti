@@ -4,6 +4,7 @@ import { z } from "zod";
 
 
 import { displayDoc } from "../content";
+import { portalAddress } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 import { linkSelect, linkView } from "./link-view";
 
@@ -14,6 +15,11 @@ export const fromApiStatus = (status: (typeof STATUSES)[number]) => status.toUpp
 
 export async function projectSlug(projectId: string) {
   return (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true } })).slug;
+}
+
+/** The project's portal address (see portalAddress), for links to its posts and articles. */
+export async function projectPortal(projectId: string) {
+  return portalAddress(await projectSlug(projectId));
 }
 
 export const listBoards = defineOperation({
@@ -67,10 +73,10 @@ export const listPosts = defineOperation({
       take: input.limit + 1,
       select: postSummarySelect,
     });
-    const slug = await projectSlug(projectId);
+    const portal = await projectPortal(projectId);
     const more = posts.length > input.limit;
     return {
-      posts: posts.slice(0, input.limit).map((post) => summary(post, slug)),
+      posts: posts.slice(0, input.limit).map((post) => summary(post, portal)),
       nextCursor: more ? String(input.cursor + input.limit) : null,
     };
   },
@@ -101,7 +107,7 @@ export const getPost = defineOperation({
     const post = await findPost(projectId, number);
     const links = await prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect });
     return {
-      ...summary(post, await projectSlug(projectId)),
+      ...summary(post, await projectPortal(projectId)),
       body: post.body,
       content: displayDoc(post),
       mergedInto: post.duplicateOf?.number ?? null,
@@ -171,8 +177,8 @@ export const getRoadmap = defineOperation({
   access: "anyone",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const [columns, slug] = await Promise.all([roadmapColumns(projectId), projectSlug(projectId)]);
-    return Object.fromEntries(ROADMAP.map(({ key }, i) => [key, columns[i]!.map((post) => summary(post, slug))])) as Record<
+    const [columns, portal] = await Promise.all([roadmapColumns(projectId), projectPortal(projectId)]);
+    return Object.fromEntries(ROADMAP.map(({ key }, i) => [key, columns[i]!.map((post) => summary(post, portal))])) as Record<
       (typeof ROADMAP)[number]["key"],
       ReturnType<typeof summary>[]
     >;

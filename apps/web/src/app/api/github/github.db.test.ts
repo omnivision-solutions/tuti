@@ -442,7 +442,7 @@ describe("pull requests", () => {
 
   test("references: own words only, on this project's portal only", async () => {
     const { referencedPosts } = await import("@tuti/jobs");
-    expect(referencedPosts("tuti#1, (tuti#2) TUTI#3 x-tuti#4 tuti#5a #tuti#6", "acme").sort()).toEqual([1, 2, 3]);
+    expect(referencedPosts("tuti#1, (tuti#2) TUTI#3 x-tuti#4 tuti#5a #tuti#6", ["http://acme.localhost:3100"]).sort()).toEqual([1, 2, 3]);
     expect(
       referencedPosts(
         [
@@ -454,9 +454,11 @@ describe("pull requests", () => {
           "https://acme.localhost:3100.evil.example/feedback/x/x-12",
           "https://acme.com/feedback/x/x-13",
         ].join(" "),
-        "acme",
+        ["http://acme.localhost:3100"],
       ).sort((a, b) => a - b),
     ).toEqual([7, 9]);
+    // The portal's custom domain counts too, once it's one of its addresses.
+    expect(referencedPosts("https://help.acme.com/feedback/ideas/dark-mode-14 https://acme.com/feedback/x/x-13", ["http://acme.localhost:3100", "https://help.acme.com"])).toEqual([14]);
   });
 });
 

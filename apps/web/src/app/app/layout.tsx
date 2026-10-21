@@ -6,7 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
@@ -20,10 +20,9 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   }
 
   const invitations = await pendingInvitationsFor(session.user);
-  const projects = (await listMyProjects(session.user.id)).map((project) => ({
-    ...project,
-    portalUrl: portalUrl(project.slug),
-  }));
+  const projects = await Promise.all(
+    (await listMyProjects(session.user.id)).map(async (project) => ({ ...project, portalUrl: await portalAddress(project.slug) })),
+  );
   const lastSlug = (await cookies()).get(LAST_PROJECT_COOKIE)?.value;
   const fallbackSlug = projects.find((p) => p.slug === lastSlug)?.slug ?? projects[0]?.slug ?? null;
 

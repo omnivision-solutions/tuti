@@ -11,7 +11,7 @@ import { PostStatusSelect } from "@/components/post-status-select";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 
@@ -50,7 +50,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]">) {
       },
     },
   });
-  const portal = portalUrl(slug);
+  const portal = await portalAddress(slug);
   const filtered = Boolean(filters.status || filters.board || duplicatesOnly);
 
   return (

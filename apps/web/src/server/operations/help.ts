@@ -6,7 +6,7 @@ import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { type Listing, LISTINGS } from "@/lib/article-listing";
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 import { titleSlug } from "@/lib/post-urls";
 import { MAX_READER_GROUPS, readerGroup, visibleArticle } from "@/lib/reader-groups";
 
@@ -84,7 +84,10 @@ const articleSelect = {
 type ArticleRow = Prisma.ArticleGetPayload<{ select: typeof articleSelect }>;
 
 /** `team`: the caller is on the project's team, so it sees the article's unpublished changes. */
-function articleView({ changes, ...article }: ArticleRow, projectSlug: string, team: boolean) {
+/** The project's portal address, for article links. */
+const portalOf = async (projectId: string) => portalAddress(await projectSlug(projectId));
+
+function articleView({ changes, ...article }: ArticleRow, portal: string, team: boolean) {
   return {
     slug: article.slug,
     title: article.title,
@@ -99,7 +102,7 @@ function articleView({ changes, ...article }: ArticleRow, projectSlug: string, t
     order: article.order,
     body: article.body,
     content: displayDoc(article),
-    url: `${portalUrl(projectSlug)}/docs/${article.slug}`,
+    url: `${portal}/docs/${article.slug}`,
     /**
      * Only for the team: a published article's saved changes that readers don't see yet (null if
      * there are none), until articles.publishChanges or articles.discardChanges.
@@ -432,9 +435,9 @@ export const listArticles = defineOperation({
       take: input.limit + 1,
       select: articleSelect,
     });
-    const slug = await projectSlug(projectId);
+    const portal = await portalOf(projectId);
     return {
-      articles: articles.slice(0, input.limit).map((article) => articleView(article, slug, team)),
+      articles: articles.slice(0, input.limit).map((article) => articleView(article, portal, team)),
       nextCursor: articles.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
@@ -459,7 +462,7 @@ export const getArticle = defineOperation({
     if (!article || (!team && (!served || !(await visible(article.id))))) {
       throw new OperationError(404, "not_found", `There's no article “${input.slug}”`);
     }
-    return articleView(article, await projectSlug(projectId), team);
+    return articleView(article, await portalOf(projectId), team);
   },
 });
 
@@ -476,8 +479,8 @@ export const searchArticles = defineOperation({
   }),
   example: { q: "invite my team", limit: 5 },
   run: async ({ actor, projectId }, input) => {
-    const [results, slug] = await Promise.all([searchHelp(projectId, input.q, input.limit, await actorGroups(actor, projectId)), projectSlug(projectId)]);
-    return { results: results.map((result) => ({ ...result, url: `${portalUrl(slug)}/docs/${result.slug}` })) };
+    const [results, portal] = await Promise.all([searchHelp(projectId, input.q, input.limit, await actorGroups(actor, projectId)), portalOf(projectId)]);
+    return { results: results.map((result) => ({ ...result, url: `${portal}/docs/${result.slug}` })) };
   },
 });
 
@@ -516,7 +519,7 @@ export const createArticle = defineOperation({
         return created;
       }),
     );
-    return articleView(article, await projectSlug(projectId), true);
+    return articleView(article, await portalOf(projectId), true);
   },
 });
 
@@ -562,7 +565,7 @@ export const updateArticle = defineOperation({
     if (updated.publishedAt && input.publish) {
       await indexArticle(updated.id);
     }
-    return articleView(updated, await projectSlug(projectId), true);
+    return articleView(updated, await portalOf(projectId), true);
   },
 });
 
@@ -648,7 +651,7 @@ export const restoreArticle = defineOperation({
         );
       }),
     );
-    return articleView(restored, await projectSlug(projectId), true);
+    return articleView(restored, await portalOf(projectId), true);
   },
 });
 
@@ -668,7 +671,7 @@ export const publishArticle = defineOperation({
       await tx.article.updateMany({ where: { id: article.id, publishedAt: null, deletedAt: null }, data: { publishedAt: new Date() } });
     });
     await indexArticle(article.id);
-    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId), true);
+    return articleView(await teamArticle(projectId, input.slug), await portalOf(projectId), true);
   },
 });
 
@@ -715,7 +718,7 @@ export const publishChanges = defineOperation({
     if (published.publishedAt) {
       await indexArticle(article.id);
     }
-    return articleView(published, await projectSlug(projectId), true);
+    return articleView(published, await portalOf(projectId), true);
   },
 });
 
@@ -738,7 +741,7 @@ export const discardChanges = defineOperation({
       await recordRevision(tx, article.id, authorOf(actor));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
     });
-    return articleView(discarded, await projectSlug(projectId), true);
+    return articleView(discarded, await portalOf(projectId), true);
   },
 });
 
@@ -761,7 +764,7 @@ export const unpublishArticle = defineOperation({
       await tx.article.update({ where: { id: article.id }, data: { publishedAt: null } });
       await tx.articleChunk.deleteMany({ where: { articleId: article.id } });
     });
-    return articleView(await teamArticle(projectId, input.slug), await projectSlug(projectId), true);
+    return articleView(await teamArticle(projectId, input.slug), await portalOf(projectId), true);
   },
 });
 
@@ -824,7 +827,7 @@ export const reorderArticle = defineOperation({
       await renumber(tx, "article", placed(siblings, article.id, input.position));
       return tx.article.findUniqueOrThrow({ where: { id: article.id }, select: articleSelect });
     });
-    return articleView(moved, await projectSlug(projectId), true);
+    return articleView(moved, await portalOf(projectId), true);
   },
 });
 

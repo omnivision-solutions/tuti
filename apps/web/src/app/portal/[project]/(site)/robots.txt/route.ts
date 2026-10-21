@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 
-import { portalUrl } from "@/lib/hosts";
+import { portalAddress } from "@/server/custom-domains";
 
 /** Public portals welcome crawlers and point them to the sitemap; private ones keep them out. */
 export async function GET(_request: Request, { params }: RouteContext<"/portal/[project]/robots.txt">) {
@@ -12,7 +12,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   const body =
     project.portalAccess === "PRIVATE"
       ? "User-agent: *\nDisallow: /\n"
-      : `User-agent: *\nAllow: /\n\nSitemap: ${portalUrl(slug)}/sitemap.xml\n`;
+      : `User-agent: *\nAllow: /\n\nSitemap: ${await portalAddress(slug)}/sitemap.xml\n`;
   return new Response(body, {
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" },
   });
