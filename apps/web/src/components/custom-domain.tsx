@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useActionState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -25,6 +26,8 @@ import type { FormState } from "@/server/form-state";
 type Domain = {
   hostname: string;
   status: "pending" | "verified";
+  /** Where Cloudflare gets the domain's certificate: its status; null where the server's proxy does. */
+  certificate: "pending" | "active" | "failed" | null;
   records: { type: "CNAME" | "TXT"; name: string; value: string }[];
 };
 
@@ -37,14 +40,26 @@ export function CustomDomainSettings({ projectSlug, domain, portalAddress, proto
     return <AddDomainForm projectSlug={projectSlug} portalAddress={portalAddress} />;
   }
   const verified = domain.status === "verified";
+  const target = domain.records.find((record) => record.type === "CNAME")?.value;
+  const badge = !verified
+    ? { label: "Waiting for DNS", variant: "secondary" as const }
+    : domain.certificate === "pending"
+      ? { label: "Certificate pending", variant: "secondary" as const }
+      : domain.certificate === "failed"
+        ? { label: "Certificate failed", variant: "destructive" as const }
+        : { label: "Verified", variant: "default" as const };
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium break-all">{domain.hostname}</span>
-        <Badge variant={verified ? "default" : "secondary"}>{verified ? "Verified" : "Waiting for DNS"}</Badge>
+        <Badge variant={badge.variant}>{badge.label}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        {verified ? (
+        {verified && domain.certificate === "pending" ? (
+          `Verified. Your portal's HTTPS certificate there is on its way: it takes a few minutes once ${domain.hostname} points at ${target}. Check again in a moment.`
+        ) : verified && domain.certificate === "failed" ? (
+          `We couldn't get an HTTPS certificate for ${domain.hostname}. Check that its CNAME points at ${target}, then remove the domain and add it again.`
+        ) : verified ? (
           <>
             Your portal answers at{" "}
             <a href={`${protocol}//${domain.hostname}`} className="underline" target="_blank" rel="noreferrer">
@@ -71,6 +86,7 @@ export function CustomDomainSettings({ projectSlug, domain, portalAddress, proto
       </dl>
       <div className="flex flex-wrap gap-2">
         {!verified && <CheckDnsButton projectSlug={projectSlug} hostname={domain.hostname} />}
+        {verified && domain.certificate === "pending" && <CheckCertificateButton />}
         <RemoveDomainButton projectSlug={projectSlug} hostname={domain.hostname} portalAddress={portalAddress} />
       </div>
     </div>
@@ -111,6 +127,17 @@ function CheckDnsButton({ projectSlug, hostname }: { projectSlug: string; hostna
       }
     >
       {pending ? "Checking…" : "Check DNS"}
+    </Button>
+  );
+}
+
+/** Asks again (the page asks Cloudflare about a certificate on its way each time it's shown). */
+function CheckCertificateButton() {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button disabled={pending} onClick={() => startTransition(() => router.refresh())}>
+      {pending ? "Checking…" : "Check again"}
     </Button>
   );
 }

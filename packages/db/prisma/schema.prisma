@@ -462,20 +462,31 @@ model PortalReader {
   @@map("portal_reader")
 }
 
+enum CertificateStatus {
+  PENDING
+  ACTIVE
+  FAILED
+}
+
 /// A portal's own domain (help.acme.com) in place of <project>.tuti.so, one per project. It serves
 /// the portal once verified: a TXT record at _tuti.<hostname> with this project's token shows the
 /// team controls the domain's DNS. The hostname is unique only among verified ones, so adding
 /// someone else's domain first can't keep them from using it.
 model CustomDomain {
-  id                String    @id @default(cuid())
-  projectId         String    @unique
+  id                String             @id @default(cuid())
+  projectId         String             @unique
   /// Lowercase ASCII (international names as punycode), no port.
   hostname          String
   /// Goes in the TXT record, so not a secret: it ties the record to this project.
   verificationToken String
   verifiedAt        DateTime?
+  /// Its custom hostname at Cloudflare for SaaS (made once it's verified, when the server uses
+  /// Cloudflare for customers' certificates), and that certificate's status: PENDING until
+  /// Cloudflare has it (the CNAME must point at CUSTOM_DOMAIN_TARGET), then ACTIVE, or FAILED.
+  cloudflareId      String?            @unique
+  certificate       CertificateStatus?
   addedById         String?
-  createdAt         DateTime  @default(now())
+  createdAt         DateTime           @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   addedBy User?   @relation("CustomDomainAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
