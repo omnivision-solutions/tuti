@@ -53,6 +53,10 @@ async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) 
   return user;
 }
 
+/** The project's reader groups with these claims (named after them). */
+const addGroups = (...claims: string[]) =>
+  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, name: claim, claim })) });
+
 /** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
 async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
   const now = Math.floor(Date.now() / 1000);
@@ -74,6 +78,7 @@ async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID(
  * says "widget", and each has a section close to the question "widget help".
  */
 async function docsWithGroups() {
+  await addGroups("enterprise", "beta");
   await call(createCollection, as(), { name: "Basics" });
   await call(createCollection, as(), { name: "Enterprise", groups: ["Enterprise"] });
   await call(createCollection, as(), { name: "Setup", parent: "enterprise" });
@@ -212,11 +217,21 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   expect((await md("saml")).status).toBe(404);
 });
 
-test("collections take groups (lowercase, once each) and say them", async () => {
+test("collections take groups by claim (lowercase, once each, only the project's) and say them", async () => {
+  await addGroups("partners", "plan:pro");
   expect(await call(createCollection, as(), { name: "Partners", groups: ["Partners", "partners", "plan:pro"] })).toMatchObject({
     groups: ["partners", "plan:pro"],
   });
   await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
+  // A group the project doesn't have (another project's included) is refused, and nothing changes.
+  const other = await createProject(owner);
+  await prisma.readerGroup.create({ data: { projectId: other.id, name: "Elsewhere", claim: "elsewhere" } });
+  await expect(call(createCollection, as(), { name: "Elsewhere", groups: ["elsewhere"] })).rejects.toMatchObject({
+    status: 400,
+    message: "There's no group “elsewhere”: add it in Settings → Groups first",
+  });
+  await expect(call(updateCollection, as(), { slug: "partners", groups: ["partners", "elsewhere"] })).rejects.toMatchObject({ status: 400 });
+  expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "partners", groups: ["partners", "plan:pro"] }]);
   expect(await call(updateCollection, as(), { slug: "partners", groups: [] })).toMatchObject({ groups: [] });
   expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "partners", groups: [] }]);
 });

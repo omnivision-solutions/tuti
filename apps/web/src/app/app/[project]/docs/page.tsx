@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
+import { claimsOf, groupClaims } from "@/lib/reader-groups";
 import { inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -61,7 +62,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         description: true,
         parent: { select: { slug: true } },
         tab: { select: { slug: true } },
-        groups: true,
+        groups: groupClaims,
         articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
       },
     }),
@@ -160,7 +161,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 description: c.description,
                 parent: c.parent?.slug ?? null,
                 tab: c.tab?.slug ?? null,
-                groups: c.groups,
+                groups: claimsOf(c),
                 articles: c.articles.map(structureView),
               }))}
               uncollected={uncollected.map(structureView)}

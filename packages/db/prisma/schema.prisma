@@ -209,7 +209,8 @@ model Project {
   articleChunks        ArticleChunk[]
   collections          Collection[]
   docsTabs             DocsTab[]
-  portalReaders        PortalReader[]
+  readerGroups         ReaderGroup[]
+  portalReaders      PortalReader[]
   portalReaderEmails   PortalReaderEmail[]
   customDomain         CustomDomain?
   siteMount            SiteMount?
@@ -251,8 +252,8 @@ model SsoIdentity {
   userId     String   @unique
   /// Email as asserted by the project's app (User.email is a placeholder).
   email      String?
-  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: which restricted
-  /// docs collections they may read (Collection.groups).
+  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
+  /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
   groups     String[] @default([])
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -991,9 +992,6 @@ model Collection {
   /// parent's). Once a project has tabs, every top-level collection is in one (kept under the
   /// project's lock); without any, all are null.
   tabId       String?
-  /// Who may read it (and the articles and collections in it) besides the team: people the project's
-  /// SSO signs in with one of these groups (lowercase). Empty: everyone who may read the portal.
-  groups      String[] @default([])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -1004,11 +1002,49 @@ model Collection {
   articles  Article[]
   revisions ArticleRevision[]
   changes   ArticleChanges[]
+  /// Who may read it (and the articles and collections in it) besides the team: people in one of
+  /// these groups. None: everyone who may read the portal.
+  groups    CollectionGroup[]
 
   @@unique([projectId, slug])
   @@index([parentId])
   @@index([tabId])
   @@map("collection")
+}
+
+/// A group of readers (Settings → Groups): the people the project's SSO signs in with `claim` in
+/// their token's `groups` (SsoIdentity.groups), worked out when they read. Collections can be for
+/// some groups only.
+model ReaderGroup {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  /// Matched against the token's `groups` (lowercase), unique in the project. Changing it changes who's in it.
+  claim       String
+  description String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collections CollectionGroup[]
+
+  @@unique([projectId, claim])
+  @@map("reader_group")
+}
+
+/// A group a collection is for. A group in use can't be deleted (NO ACTION, checked at the end of
+/// the statement, so deleting the project, which takes both, still works): dropping it would open
+/// the collection to everyone.
+model CollectionGroup {
+  collectionId String
+  groupId      String
+
+  collection Collection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  group      ReaderGroup @relation(fields: [groupId], references: [id], onDelete: NoAction)
+
+  @@id([collectionId, groupId])
+  @@index([groupId])
+  @@map("collection_group")
 }
 
 /// A tab of the docs ("Guides", "API"), with top-level collections in it. The first one also
