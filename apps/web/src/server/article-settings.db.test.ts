@@ -1,8 +1,15 @@
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
+import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
+import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
+import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
+import { SIGNED_OUT } from "@/lib/read-access";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
+import { docsContents } from "./docs-queries";
+import { searchDocs } from "./docs-search";
 import { createArticle, createCollection, createTab, getArticle, listArticles, publishArticle, updateArticle } from "./operations/docs";
 import { call } from "./operations/run";
 
@@ -136,5 +143,52 @@ describe("description, keywords and noindex", () => {
     expect(article).not.toHaveProperty("keywords");
     expect(article).not.toHaveProperty("customSlug");
     expect((await call(listArticles, reader, {})).articles[0]).not.toHaveProperty("keywords");
+  });
+});
+
+describe("readers' pages", () => {
+  beforeEach(() => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    actAs(null);
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  const params = (more: object = {}) => ({ params: Promise.resolve({ project: project.slug, ...more }) });
+  async function published(title: string, settings: { description?: string; noindex?: boolean } = {}) {
+    const { slug } = await call(createArticle, as(), { title, body: "Plans are billed monthly, by card.", ...settings });
+    await call(publishArticle, as(), { slug });
+    return slug;
+  }
+
+  test("the meta description is the team's, else the text's first lines", async () => {
+    const own = await published("Billing", { description: "How we charge." });
+    expect(await generateMetadata(params({ slug: own }) as never)).toMatchObject({
+      description: "How we charge.",
+      openGraph: { title: "Billing", description: "How we charge." },
+    });
+    const plain = await published("Refunds");
+    expect(await generateMetadata(params({ slug: plain }) as never)).toMatchObject({ description: "Plans are billed monthly, by card." });
+  });
+
+  test("blocking search indexing: noindex, out of the sitemap and llms.txt, still listed in the docs and search", async () => {
+    const hidden = await published("Billing", { noindex: true });
+    const shown = await published("Refunds");
+
+    const metadata = (slug: string) => generateMetadata(params({ slug }) as never);
+    expect((await metadata(hidden)).robots).toEqual({ index: false });
+    expect((await metadata(shown)).robots).toBeUndefined();
+    const md = (slug: string) => markdown(new Request("http://x"), params({ slug }) as never);
+    expect((await md(hidden)).headers.get("x-robots-tag")).toBe("noindex");
+    expect((await md(shown)).headers.get("x-robots-tag")).toBeNull();
+
+    const xml = await (await sitemap(new Request("http://x"), params() as never)).text();
+    expect(xml).toContain(`/docs/${shown}<`);
+    expect(xml).not.toContain(`/docs/${hidden}`);
+    const text = await (await llms(new Request("http://x"), params() as never)).text();
+    expect(text).toContain(`/docs/${shown}.md`);
+    expect(text).not.toContain(`/docs/${hidden}`);
+
+    expect((await docsContents(project.slug)).uncollected.map((a) => a.slug)).toEqual([hidden, shown]);
+    expect((await searchDocs(project.id, "billed", 10, SIGNED_OUT)).map((r) => r.slug).sort()).toEqual([hidden, shown]);
   });
 });

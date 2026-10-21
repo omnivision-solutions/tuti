@@ -135,11 +135,13 @@ export type DocsTabView = {
  * splits the same by tab, leaving out the ones with nothing to read; it's empty when the docs
  * have no tabs. The first tab has the articles in no collection, and is at /docs (`home`: its
  * slug, whether or not it has anything to read; null without tabs). Once per request for the
- * reader: the docs pages, their tabs row and their tree share it.
+ * reader: the docs pages, their tabs row and their tree share it. `indexable` (llms.txt) leaves out
+ * the articles whose team blocked search indexing.
  */
-export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader } = {}) => {
+export const docsContents = cache(async (projectSlug: string, options: { reader?: Reader; indexable?: boolean } = {}) => {
   const order: Prisma.ArticleOrderByWithRelationInput[] = [{ order: "asc" }, { title: "asc" }];
-  const articleSelect = { where: listedArticle, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
+  const listed = { ...listedArticle, ...(options.indexable && { noindex: false }) };
+  const articleSelect = { where: listed, orderBy: order, select: { projectId: true, slug: true, title: true, ...levelSelect } } as const;
   const [rows, uncollected, tabRows] = await Promise.all([
     prisma.collection.findMany({
       where: { project: { slug: projectSlug } },
@@ -157,7 +159,7 @@ export const docsContents = cache(async (projectSlug: string, options: { reader?
         articles: articleSelect,
       },
     }),
-    prisma.article.findMany({ ...articleSelect, where: { ...listedArticle, project: { slug: projectSlug }, collectionId: null } }),
+    prisma.article.findMany({ ...articleSelect, where: { ...listed, project: { slug: projectSlug }, collectionId: null } }),
     prisma.docsTab.findMany({
       where: { project: { slug: projectSlug } },
       orderBy: tabOrder,
@@ -350,6 +352,8 @@ export const publishedArticle = cache(async (projectSlug: string, slug: string) 
       publishedAt: true,
       showUpdatedDate: true,
       listing: true,
+      description: true,
+      noindex: true,
       revisedAt: true,
       collection: { select: { id: true, slug: true, name: true } },
       project: { select: { name: true } },

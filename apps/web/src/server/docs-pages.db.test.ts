@@ -270,7 +270,11 @@ describe("for search engines", () => {
     await call(updateTab, as(), { slug: "api", landing: "page", landingPage: "endpoints" });
     await call(updateCollection, as(), { slug: "endpoints", description: "Every endpoint." });
     const article = { title: `Start here · ${project.name}`, description: "Start here." };
-    expect(await docs()).toEqual({ ...article, alternates: { canonical: `${portal}/docs` } });
+    expect(await docs()).toEqual({
+      ...article,
+      openGraph: { title: "Start here", description: "Start here." },
+      alternates: { canonical: `${portal}/docs` },
+    });
     expect(await meta("start-here")).toEqual({ ...article, canonical: `${portal}/docs/start-here` });
     expect(await meta("api")).toEqual({ title: "Endpoints · Docs", description: "Every endpoint.", canonical: `${portal}/docs/api` });
     expect(await meta("endpoints")).toEqual({ title: "Endpoints · Docs", description: "Every endpoint.", canonical: `${portal}/docs/endpoints` });
