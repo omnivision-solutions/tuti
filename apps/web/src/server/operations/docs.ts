@@ -170,48 +170,37 @@ function placed(siblings: { id: string }[], id: string, position: number | undef
 }
 
 /**
- * A slug from `text` that `taken` doesn't have: "getting-started", then "getting-started-2", …
- * Call it with the project locked (lockProject), so two saves can't pick the same one.
+ * A slug from `text` for a tab, collection or article (`except`, when it has one) that no other tab,
+ * collection or live article in the project has, so /docs/<slug> is one page: "getting-started",
+ * then "getting-started-2", … Call it with the project locked (lockProject), so two saves can't pick
+ * the same one. Deleted articles don't hold on to their slugs (a restored one takes the next free
+ * one if its own is gone).
  */
-async function freeSlug(
+async function freeDocsSlug(
+  tx: Prisma.TransactionClient,
+  projectId: string,
   text: string,
-  fallback: string,
-  taken: (prefix: string) => Promise<{ slug: string }[]>,
-  reserved: string[] = [],
+  fallback: "tab" | "collection" | "article",
+  except?: string,
 ) {
   const base = titleSlug(text, fallback);
-  const used = new Set([...reserved, ...(await taken(base)).map((row) => row.slug)]);
+  // Ids are unique across the three tables (cuids), so `except` needs no kind.
+  const where = { projectId, slug: { startsWith: base }, ...(except && { id: { not: except } }) };
+  const select = { slug: true } as const;
+  const taken = [
+    ...(await tx.docsTab.findMany({ where, select })),
+    ...(await tx.collection.findMany({ where, select })),
+    ...(await tx.article.findMany({ where: { ...where, deletedAt: null }, select })),
+  ];
+  // "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
+  // reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
+  const used = new Set([...(fallback === "article" ? ["new", "insights", "api"] : []), ...taken.map((row) => row.slug)]);
   let candidate = base;
   for (let n = 2; used.has(candidate); n++) {
     candidate = `${base}-${n}`;
   }
   return candidate;
 }
-
-// Deleted articles don't hold on to their slugs (a restored one takes the next free one if its own is gone).
-// "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
-// reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
-const freeArticleSlug = (tx: Prisma.TransactionClient, projectId: string, title: string, except?: string) =>
-  freeSlug(
-    title,
-    "article",
-    (prefix) =>
-      tx.article.findMany({
-        where: { projectId, slug: { startsWith: prefix }, deletedAt: null, ...(except && { id: { not: except } }) },
-        select: { slug: true },
-      }),
-    ["new", "insights", "api"],
-  );
-
-const freeCollectionSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
-  freeSlug(name, "collection", (prefix) =>
-    tx.collection.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
-  );
-
-const freeTabSlug = (tx: Prisma.TransactionClient, projectId: string, name: string, except?: string) =>
-  freeSlug(name, "tab", (prefix) =>
-    tx.docsTab.findMany({ where: { projectId, slug: { startsWith: prefix }, ...(except && { id: { not: except } }) }, select: { slug: true } }),
-  );
 
 /** Embeds a published article's sections for search, in the background. Never fails the save: search still matches its words. */
 async function indexArticle(articleId: string) {
@@ -369,7 +358,7 @@ async function saveChanges(
     Object.assign(
       data,
       version,
-      retitled && { slug: await freeArticleSlug(tx, projectId, title, article.id) },
+      retitled && { slug: await freeDocsSlug(tx, projectId, title, "article", article.id) },
       moved && { order: await lastArticle(tx, projectId, collectionId) },
     );
   }
@@ -505,7 +494,7 @@ export const createArticle = defineOperation({
         const created = await tx.article.create({
           data: {
             projectId,
-            slug: await freeArticleSlug(tx, projectId, input.title),
+            slug: await freeDocsSlug(tx, projectId, input.title, "article"),
             title: input.title,
             body: text.text,
             content: text.doc,
@@ -601,7 +590,7 @@ export const listRevisions = defineOperation({
 
 export const restoreArticle = defineOperation({
   name: "articles.restore",
-  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless another article has taken it`,
+  summary: `Restore a docs article. With \`revision\` (from articles.revisions), that version becomes the current one, saved as a new version (on a published article, as unpublished \`changes\`, like any save). Without it, the article most recently deleted with this slug (in the last ${DELETED_ARTICLE_DAYS} days) comes back as a draft, under the same slug unless a tab, a collection or another article has taken it (then the next free one)`,
   method: "POST",
   path: "/articles/{slug}/restore",
   scope: "write",
@@ -643,10 +632,10 @@ export const restoreArticle = defineOperation({
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
         if (deletedAt) {
-          // Back as a draft (deleting unpublished it), under its slug unless another article has it now.
+          // Back as a draft (deleting unpublished it), under its slug unless a tab, a collection or another article has it now.
           await tx.article.updateMany({
             where: { id, deletedAt: { not: null } },
-            data: { deletedAt: null, slug: await freeArticleSlug(tx, projectId, article.slug, id) },
+            data: { deletedAt: null, slug: await freeDocsSlug(tx, projectId, article.slug, "article", id) },
           });
         }
         return saveChanges(
@@ -1034,7 +1023,7 @@ export const createCollection = defineOperation({
             projectId,
             parentId,
             tabId,
-            slug: await freeCollectionSlug(tx, projectId, input.name),
+            slug: await freeDocsSlug(tx, projectId, input.name, "collection"),
             name: input.name,
             description: input.description,
             groups: input.groups,
@@ -1079,7 +1068,7 @@ export const updateCollection = defineOperation({
         return tx.collection.update({
           where: { id },
           data: {
-            ...(input.name !== undefined && { name: input.name, slug: await freeCollectionSlug(tx, projectId, input.name, id) }),
+            ...(input.name !== undefined && { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "collection", id) }),
             ...(input.description !== undefined && { description: input.description }),
             ...(input.groups !== undefined && { groups: input.groups }),
             ...(input.order !== undefined && { order: input.order }),
@@ -1202,7 +1191,7 @@ export const createTab = defineOperation({
         await lockProject(tx, projectId);
         const last = await tx.docsTab.aggregate({ where: { projectId }, _max: { order: true } });
         const tab = await tx.docsTab.create({
-          data: { projectId, slug: await freeTabSlug(tx, projectId, input.name), name: input.name, order: (last._max.order ?? -1) + 1 },
+          data: { projectId, slug: await freeDocsSlug(tx, projectId, input.name, "tab"), name: input.name, order: (last._max.order ?? -1) + 1 },
           select: { id: true },
         });
         // The first tab: the collections there are go in it, in their order.
@@ -1230,7 +1219,7 @@ export const updateTab = defineOperation({
         const { id } = await lockedTab(tx, projectId, input.slug);
         return tx.docsTab.update({
           where: { id },
-          data: { name: input.name, slug: await freeTabSlug(tx, projectId, input.name, id) },
+          data: { name: input.name, slug: await freeDocsSlug(tx, projectId, input.name, "tab", id) },
           select: tabSelect,
         });
       }),
