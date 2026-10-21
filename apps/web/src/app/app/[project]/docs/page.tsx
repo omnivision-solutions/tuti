@@ -12,10 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
+import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
 import { lucideIcon } from "@/lib/lucide-icons";
 import { claimsOf, groupClaims } from "@/lib/reader-groups";
-import { inTreeOrder, readingOrder } from "@/server/docs-queries";
+import { collectionPath, inTreeOrder, readingOrder } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
 
@@ -85,7 +86,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
       },
     }),
-    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { claim: "asc" }], select: { claim: true, name: true } }),
+    prisma.readerGroup.findMany({ where: { projectId }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } }),
   ]);
 
   return (
@@ -147,8 +148,8 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             <CollectionDialog
               projectSlug={slug}
               parents={inTreeOrder(collections)
-                .filter((c) => c.parentId === null)
-                .map((c) => ({ slug: c.slug, name: c.name }))}
+                .filter((c) => ancestry(collections, c.id).length < MAX_COLLECTION_DEPTH)
+                .map((c) => ({ slug: c.slug, name: collectionPath(collections, c.id) }))}
               tabs={tabs}
               groups={groups}
             />

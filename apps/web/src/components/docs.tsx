@@ -395,7 +395,7 @@ export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { p
   );
 }
 
-export type GroupOption = { claim: string; name: string };
+export type GroupOption = { key: string; name: string };
 
 /** Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and changes its description. */
 export function CollectionDialog({
@@ -409,7 +409,7 @@ export function CollectionDialog({
   collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null; knownIcon: boolean };
   /** The project's reader groups to pick from. */
   groups: GroupOption[];
-  /** The top-level collections a new one can go in (collections go 2 levels deep at most). */
+  /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
   tabs?: CollectionOption[];
@@ -467,12 +467,12 @@ export function CollectionDialog({
               {groups.length > 0 && (
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {groups.map((group) => (
-                    <label key={group.claim} className="flex items-center gap-2 text-sm break-words">
+                    <label key={group.key} className="flex items-center gap-2 text-sm break-words">
                       <input
                         type="checkbox"
                         name="groups"
-                        value={group.claim}
-                        defaultChecked={collection?.groups.includes(group.claim)}
+                        value={group.key}
+                        defaultChecked={collection?.groups.includes(group.key)}
                         className="size-4 accent-primary"
                       />
                       {group.name}
@@ -546,7 +546,7 @@ export function DeleteCollectionButton({
   projectSlug: string;
   slug: string;
   name: string;
-  /** It has collections in it, which move up to the top level. */
+  /** It has collections in it, which move up a level. */
   hasChildren?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
@@ -557,7 +557,7 @@ export function DeleteCollectionButton({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Its articles stay, without a collection.{hasChildren && " The collections in it move up to the top level."}
+            Its articles stay, without a collection.{hasChildren && " The collections in it move up a level, in its place."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

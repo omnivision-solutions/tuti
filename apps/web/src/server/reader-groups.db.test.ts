@@ -12,10 +12,10 @@ import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route"
 import { generateSsoSecret, upsertProjectUser, verifySsoToken } from "@/lib/sso";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
-import { docsContents, publishedArticle } from "./docs-queries";
+import { docsContents, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
-import { updateGroup } from "./operations/groups";
+import { createGroup, updateGroup } from "./operations/groups";
 import { call } from "./operations/run";
 import { groupsOf } from "./portal-access";
 
@@ -56,7 +56,7 @@ async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) 
 
 /** The project's reader groups with these claims (named after them). */
 const addGroups = (...claims: string[]) =>
-  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, name: claim, claim })) });
+  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, key: claim, name: claim, claim })) });
 
 /** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
 async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
@@ -111,12 +111,13 @@ describe("who sees what", () => {
     const userId = user?.id ?? null;
     const groups = await groupsOf(project.id, userId);
     const center = await docsContents(project.slug);
-    const pages = await Promise.all(["getting-started", "saml", "rolling-out", "new-editor", "contact"].map((slug) => publishedArticle(project.slug, slug)));
+    const slugs = (await prisma.article.findMany({ where: { projectId: project.id }, select: { slug: true } })).map((a) => a.slug);
+    const pages = await Promise.all(slugs.map((slug) => publishedArticle(project.slug, slug)));
     const actor = userId ? { kind: "user" as const, userId } : null;
     return {
-      docsContents: [...center.collections.flatMap((c) => [...c.articles, ...c.collections.flatMap((n) => n.articles)]), ...center.uncollected].map((a) => a.slug).sort(),
+      docsContents: [...everyCollection(center.collections).flatMap((c) => c.articles), ...center.uncollected].map((a) => a.slug).sort(),
       collections: center.collections.map((c) => [c.slug, ...c.collections.map((n) => n.slug)].join(">")),
-      pages: pages.flatMap((page, i) => (page ? [["getting-started", "saml", "rolling-out", "new-editor", "contact"][i]!] : [])).sort(),
+      pages: pages.flatMap((page, i) => (page ? [slugs[i]!] : [])).sort(),
       search: (await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug).sort(),
       answers: [...new Set((await answerSections(project.id, "widget help", 10, groups, 2000))!.map((s) => s.slug))].sort(),
       ...(actor && {
@@ -168,6 +169,48 @@ describe("who sees what", () => {
     expect((await seen(both)).pages).toContain("rolling-out");
     expect((await seen(enterpriseOnly)).pages).not.toContain("rolling-out");
   });
+
+  test("however deep, every collection above counts: one three levels into Enterprise is for enterprise, and one for beta there needs both", async () => {
+    await call(createCollection, as(), { name: "Keys", parent: "setup" });
+    await call(createCollection, as(), { name: "Preview", parent: "setup", groups: ["beta"] });
+    for (const [title, collection] of [
+      ["Rotating keys", "keys"],
+      ["Early access", "preview"],
+    ] as const) {
+      const body = `The ${title} widget.`;
+      openai.setVector(articleChunkText(title, { heading: "", text: body }), [0.9, Math.sqrt(1 - 0.81)]);
+      const { slug } = await call(createArticle, as(), { title, body, collection });
+      await call(publishArticle, as(), { slug });
+    }
+    /** What `user` reads of the two, in every way (but the collections' names). */
+    const deep = async (user: TestUser | null) =>
+      Object.fromEntries(
+        Object.entries(await seen(user))
+          .filter(([way]) => way !== "collections")
+          .map(([way, slugs]) => [way, slugs.filter((s) => s === "rotating-keys" || s === "early-access")]),
+      );
+    const every = (slugs: string[], api = true) => ({
+      docsContents: slugs,
+      pages: slugs,
+      search: slugs,
+      answers: slugs,
+      ...(api && { api: slugs }),
+    });
+    expect(await deep(null)).toEqual(every([], false));
+    expect(await deep(await ssoReader(["beta"]))).toEqual(every([]));
+    expect(await deep(await ssoReader(["enterprise"]))).toEqual(every(["rotating-keys"]));
+    expect(await deep(await ssoReader(["enterprise", "beta"]))).toEqual(every(["early-access", "rotating-keys"]));
+    expect(await deep(owner)).toEqual(every(["early-access", "rotating-keys"]));
+
+    // Nor for search engines and AI tools, and its .md isn't cached for others.
+    actAs(null);
+    const params = Promise.resolve({ project: project.slug });
+    expect(await (await llms(new Request("http://x"), { params })).text()).not.toContain("rotating-keys");
+    expect(await (await sitemap(new Request("http://x"), { params })).text()).not.toContain("rotating-keys");
+    actAs(owner);
+    const md = await markdown(new Request("http://x"), { params: Promise.resolve({ project: project.slug, slug: "rotating-keys" }) });
+    expect(md.headers.get("cache-control")).toBe("private, no-store");
+  });
 });
 
 test("a group's claim changed: its collections are for whoever the app signs in with the new one", async () => {
@@ -202,7 +245,68 @@ test("each sign-in says the groups: a later token without one takes it away", as
   await expect(signIn({ groups: ["no spaces"] })).rejects.toThrow("invalid_claims");
 });
 
+describe("groups from conditions", () => {
+  /** Docs as above, with Enterprise for whoever's on the enterprise plan (or, by claim, in "enterprise"). */
+  beforeEach(async () => {
+    await docsWithGroups();
+    await call(updateGroup, as(), { group: "enterprise", conditions: [{ attribute: "plan", op: "is_one_of", value: ["enterprise", "custom"] }] });
+  });
+  /** Whether they read the SAML article (in Enterprise): its page, and in search. */
+  const reads = async (user: TestUser) => {
+    actAs(user);
+    const page = await publishedArticle(project.slug, "saml");
+    return { page: page !== null, search: (await searchDocs(project.id, "widget", 10, await groupsOf(project.id, user.id))).some((r) => r.slug === "saml") };
+  };
+  const yes = { page: true, search: true };
+  const no = { page: false, search: false };
+  /** Someone (with a session) the project's app signed in with `claims`. */
+  const signedIn = async (claims: Record<string, unknown>, sub = `user-${randomUUID()}`) => {
+    const reader = await ssoReader([], sub);
+    await signIn(claims, sub);
+    return reader;
+  };
+
+  test("readers whose attributes match read its collections; a later sign-in without them doesn't", async () => {
+    const sub = "user-7";
+    const reader = await signedIn({ attributes: { plan: "custom", seats: 40 } }, sub);
+    expect(await groupsOf(project.id, reader.id)).toEqual(["enterprise"]);
+    expect(await reads(reader)).toEqual(yes);
+    await signIn({ attributes: { plan: "pro" } }, sub);
+    expect(await groupsOf(project.id, reader.id)).toEqual([]);
+    expect(await reads(reader)).toEqual(no);
+    await signIn({ attributes: { plan: "enterprise" } }, sub);
+    expect(await reads(reader)).toEqual(yes);
+    // Left out of the token: gone too.
+    await signIn({}, sub);
+    expect(await reads(reader)).toEqual(no);
+  });
+
+  test("its claim or its conditions: either lets them in", async () => {
+    expect(await reads(await signedIn({ groups: ["enterprise"], attributes: { plan: "free" } }))).toEqual(yes);
+    expect(await reads(await signedIn({ attributes: { plan: "enterprise" } }))).toEqual(yes);
+    expect(await reads(await signedIn({ groups: ["beta"], attributes: { plan: "Enterprise", enterprise: true } }))).toEqual(no);
+    // Without its claim, only the conditions do.
+    await call(updateGroup, as(), { group: "enterprise", claim: null });
+    expect(await reads(await signedIn({ groups: ["enterprise"] }))).toEqual(no);
+  });
+
+  test("only people the project's SSO signs in: not others, even for a group of everyone without an attribute", async () => {
+    await call(updateGroup, as(), { group: "enterprise", claim: null, conditions: [{ attribute: "plan", op: "is_not", value: "free" }] });
+    expect(await reads(await signedIn({}))).toEqual(yes);
+    expect(await reads(await signedIn({ attributes: { plan: "free" } }))).toEqual(no);
+    expect(await reads(await signUp("Stranger"))).toEqual(no);
+    actAs(null);
+    expect(await publishedArticle(project.slug, "saml")).toBeNull();
+    // Another project's SSO users neither.
+    const other = await createProject(owner);
+    const elsewhere = await signUp("Elsewhere");
+    await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, attributes: { plan: "pro" } } });
+    expect(await groupsOf(project.id, elsewhere.id)).toEqual([]);
+  });
+});
+
 test("a first sign-in that loses the race to create the person still sets their groups", async () => {
+  await addGroups("enterprise");
   for (let i = 0; i < 10; i++) {
     const externalId = `user-${randomUUID()}`;
     // An API call on their behalf (no groups) and their first sign-in, at the same time.
@@ -234,7 +338,18 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   expect((await md("saml")).status).toBe(404);
 });
 
-test("collections take groups by claim (lowercase, once each, only the project's) and say them", async () => {
+test("collections take groups by key, with or without a claim", async () => {
+  await call(createGroup, as(), { name: "Pro customers", conditions: [{ attribute: "plan", op: "is", value: "pro" }] });
+  await call(createGroup, as(), { name: "Partners", claim: "partner" });
+  expect(await call(createCollection, as(), { name: "Pro", groups: ["pro-customers", "partners"] })).toMatchObject({ groups: ["partners", "pro-customers"] });
+  // Claims aren't keys.
+  await expect(call(createCollection, as(), { name: "Partner", groups: ["partner"] })).rejects.toMatchObject({ status: 400 });
+  // A group's key stays when its claim changes, and so do its collections.
+  await call(updateGroup, as(), { group: "partners", claim: "partner-2" });
+  expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "pro", groups: ["partners", "pro-customers"] }]);
+});
+
+test("collections take groups by key (lowercase, once each, only the project's) and say them", async () => {
   await addGroups("partners", "plan:pro");
   expect(await call(createCollection, as(), { name: "Partners", groups: ["Partners", "partners", "plan:pro"] })).toMatchObject({
     groups: ["partners", "plan:pro"],
@@ -242,7 +357,7 @@ test("collections take groups by claim (lowercase, once each, only the project's
   await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
   // A group the project doesn't have (another project's included) is refused, and nothing changes.
   const other = await createProject(owner);
-  await prisma.readerGroup.create({ data: { projectId: other.id, name: "Elsewhere", claim: "elsewhere" } });
+  await prisma.readerGroup.create({ data: { projectId: other.id, key: "elsewhere", name: "Elsewhere", claim: "elsewhere" } });
   await expect(call(createCollection, as(), { name: "Elsewhere", groups: ["elsewhere"] })).rejects.toMatchObject({
     status: 400,
     message: "There's no group “elsewhere”: add it in Settings → Groups first",

@@ -4,38 +4,35 @@ import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
 import { BackLink } from "@/components/back-link";
+import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
-import { DocsCollections, DocsTabs } from "@/components/docs-collections";
+import { ArticleLinks, DocsTabs } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { docsContents, movedArticle, publishedArticle } from "@/server/docs-queries";
+import { type DocsCollection, docsContents, findCollection, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchDocs } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { readerGroups } from "@/server/portal-access";
 
-/** A widget Docs URL: the list (with the search, if any, or in a docs tab) or an article. */
-function docsHref(query: string, article?: string, docsTab?: string) {
+/** A widget Docs URL: the list (with the search, if any, or in a docs tab, or a collection's) or an article (opened from there). */
+function docsHref({ q, docsTab, collection, article }: { q?: string; docsTab?: string; collection?: string; article?: string }) {
   const params = new URLSearchParams({ tab: "docs" });
-  if (query) {
-    params.set("q", query);
-  }
-  if (docsTab) {
-    params.set("docsTab", docsTab);
-  }
-  if (article) {
-    params.set("article", article);
+  for (const [key, value] of Object.entries({ q, docsTab, collection, article })) {
+    if (value) {
+      params.set(key, value);
+    }
   }
   return `/widget?${params}`;
 }
 
 /**
  * The widget's Docs tab: the portal's docs at panel size. A search (`q`) with the
- * portal's "Ask AI", the collections with their articles, or one article (`article`), which
- * also opens on the portal in a new tab. Article links keep the search, so going back
- * returns to the results. "Post this as feedback" opens the widget's own Feedback tab; "Ask a person"
+ * portal's "Ask AI", the docs a level at a time (the collections and the articles in none, or
+ * a collection's, `collection`), or one article (`article`), which also opens on the portal in
+ * a new tab. Article links keep the search or the collection, so going back returns there. "Post this as feedback" opens the widget's own Feedback tab; "Ask a person"
  * works as on the portal.
  */
 export async function WidgetDocs({
@@ -44,6 +41,7 @@ export async function WidgetDocs({
   query,
   article,
   docsTab,
+  collection,
   hasBoard,
 }: {
   projectId: string;
@@ -52,6 +50,8 @@ export async function WidgetDocs({
   article?: string;
   /** The docs tab the list shows, or the article was opened from. */
   docsTab?: string;
+  /** The collection the list shows, or the article was opened from. */
+  collection?: string;
   /** Whether the Feedback tab can take a post (the project has a board). */
   hasBoard: boolean;
 }) {
@@ -60,8 +60,9 @@ export async function WidgetDocs({
       <WidgetArticle
         projectSlug={projectSlug}
         slug={article}
-        back={docsHref(query, undefined, query ? undefined : docsTab)}
+        back={docsHref(query ? { q: query } : { docsTab, collection })}
         backLabel={query ? "Search results" : "All articles"}
+        from={query ? undefined : collection}
       />
     );
   }
@@ -83,7 +84,7 @@ export async function WidgetDocs({
           askAPerson={await askAPerson(projectSlug)}
         />
       )}
-      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} docsTab={docsTab} />}
+      {query ? <SearchResults projectId={projectId} query={query} /> : <Collections projectSlug={projectSlug} docsTab={docsTab} collection={collection} />}
     </div>
   );
 }
@@ -96,7 +97,7 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
         title={`No articles match “${query}”`}
         description="Try other words, or browse all articles."
         action={
-          <Link href={docsHref("")} className={buttonVariants({ variant: "outline" })}>
+          <Link href={docsHref({})} className={buttonVariants({ variant: "outline" })}>
             All articles
           </Link>
         }
@@ -107,7 +108,7 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
     <ul aria-label="Search results" className="flex flex-col gap-4">
       {results.map((result) => (
         <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={docsHref(query, result.slug)} className="break-words text-primary hover:underline">
+          <Link href={docsHref({ q: query, article: result.slug })} className="break-words text-primary hover:underline">
             {result.title}
           </Link>
           {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
@@ -117,23 +118,92 @@ async function SearchResults({ projectId, query }: { projectId: string; query: s
   );
 }
 
+/** Collections as links that open them, each with its description. */
+function CollectionLinks({ collections, label, href }: { collections: DocsCollection[]; label: string; href: (slug: string) => string }) {
+  return (
+    <ul aria-label={label} className="flex flex-col gap-3">
+      {collections.map((collection) => (
+        <li key={collection.slug} className="flex flex-col gap-0.5">
+          <Link href={href(collection.slug)} className="flex items-center gap-2 font-medium hover:underline">
+            <CollectionIcon name={collection.icon} />
+            <span className="min-w-0 break-words">{collection.name}</span>
+          </Link>
+          {collection.description && <p className="text-sm break-words text-muted-foreground">{collection.description}</p>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
- * Like the portal's /docs: each collection with its published articles and the collections in it,
- * then the articles in none; with tabs, the first by default.
+ * The portal's docs a level at a time, so any depth fits the panel: with tabs, the first by
+ * default; the tab's collections (each opens its own list) and, on the first, the articles in
+ * none. A collection's list (`collection`): the way back, its articles, then the collections in it.
  */
-async function Collections({ projectSlug, docsTab }: { projectSlug: string; docsTab?: string }) {
+async function Collections({ projectSlug, docsTab, collection: slug }: { projectSlug: string; docsTab?: string; collection?: string }) {
   const docs = await docsContents(projectSlug);
-  const tab = docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0];
+  // One this reader may read, else the top level.
+  const found = slug ? findCollection(docs, slug) : null;
+  const tab = found ? found.tab : (docs.tabs.find((t) => t.slug === docsTab) ?? docs.tabs[0]);
+  const at = { docsTab: tab?.slug };
+  const tabs = tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => docsHref({ docsTab: t })} compact />;
+  if (found) {
+    const { collection, parent } = found;
+    return (
+      <>
+        {tabs}
+        <div className="flex flex-col gap-2">
+          <BackLink href={docsHref(parent ? { ...at, collection: parent.slug } : at)}>{parent ? parent.name : "All articles"}</BackLink>
+          <h2 className="flex items-center gap-2 font-heading text-lg font-bold tracking-tight break-words">
+            <CollectionIcon name={collection.icon} />
+            <span className="min-w-0">{collection.name}</span>
+          </h2>
+          {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
+        </div>
+        {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={(article) => docsHref({ ...at, collection: collection.slug, article })} />}
+        {collection.collections.length > 0 && (
+          <CollectionLinks
+            collections={collection.collections}
+            label={`Collections in ${collection.name}`}
+            href={(child) => docsHref({ ...at, collection: child })}
+          />
+        )}
+      </>
+    );
+  }
   const { collections, uncollected } = tab ?? docs;
   return (
     <>
-      {tab && <DocsTabs tabs={docs.tabs} active={tab.slug} href={(t) => docsHref("", undefined, t)} compact />}
-      <DocsCollections collections={collections} uncollected={uncollected} href={(slug) => docsHref("", slug, tab?.slug)} compact />
+      {tabs}
+      {collections.length > 0 && <CollectionLinks collections={collections} label="Collections" href={(c) => docsHref({ ...at, collection: c })} />}
+      {uncollected.length > 0 && (
+        <section aria-labelledby={collections.length > 0 ? "more-articles" : undefined} className="flex flex-col gap-2">
+          {collections.length > 0 && (
+            <h2 id="more-articles" className="font-heading font-bold tracking-tight">
+              More articles
+            </h2>
+          )}
+          <ArticleLinks articles={uncollected} href={(article) => docsHref({ ...at, article })} />
+        </section>
+      )}
     </>
   );
 }
 
-async function WidgetArticle({ projectSlug, slug: asked, back, backLabel }: { projectSlug: string; slug: string; back: string; backLabel: string }) {
+async function WidgetArticle({
+  projectSlug,
+  slug: asked,
+  back,
+  backLabel,
+  from,
+}: {
+  projectSlug: string;
+  slug: string;
+  back: string;
+  backLabel: string;
+  /** The collection it was opened from: the way back is named after it. */
+  from?: string;
+}) {
   // An old slug of an article that has since moved opens it where it is now.
   const moved = (await publishedArticle(projectSlug, asked)) ? null : await movedArticle(projectSlug, asked);
   const slug = moved ?? asked;
@@ -154,7 +224,7 @@ async function WidgetArticle({ projectSlug, slug: asked, back, backLabel }: { pr
   return (
     <article className="flex flex-col gap-4" aria-labelledby="article-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <BackLink href={back}>{backLabel}</BackLink>
+        <BackLink href={back}>{from && article.collection?.slug === from ? article.collection.name : backLabel}</BackLink>
         <Link
           href={`/docs/${slug}`}
           target="_blank"

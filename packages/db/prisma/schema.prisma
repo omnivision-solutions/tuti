@@ -267,6 +267,9 @@ model SsoIdentity {
   /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
   /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
   groups     String[] @default([])
+  /// The `attributes` claim of their latest sign-in (strings, numbers and booleans by name, up to 50;
+  /// lib/reader-groups.ts readerAttributes), matched against groups' conditions.
+  attributes Json     @default("{}")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -1034,9 +1037,15 @@ model Collection {
 model ReaderGroup {
   id          String   @id @default(cuid())
   projectId   String
+  /// From the name when it's made, unique in the project and never changed: how the API and
+  /// collections name it (`/groups/{key}`, `groups` on collections.*).
+  key         String
   name        String
-  /// Matched against the token's `groups` (lowercase), unique in the project. Changing it changes who's in it.
-  claim       String
+  /// Matched against the token's `groups` (lowercase), unique in the project when set. Changing it changes who's in it.
+  claim       String?
+  /// Matched against the token's `attributes`, all of them (lib/reader-groups.ts GroupCondition[]).
+  /// A reader is in the group when the claim matches or, with at least one condition, all of them do.
+  conditions  Json     @default("[]")
   description String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -1044,6 +1053,7 @@ model ReaderGroup {
   project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   collections CollectionGroup[]
 
+  @@unique([projectId, key])
   @@unique([projectId, claim])
   @@map("reader_group")
 }

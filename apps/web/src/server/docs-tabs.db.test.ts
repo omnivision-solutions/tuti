@@ -24,7 +24,7 @@ import { call } from "./operations/run";
 
 /**
  * Docs tabs: once there's one, every top-level collection is in one, the
- * ones inside others are in their parent's, and every list is by tab, then by order there.
+ * ones inside others are in their top-level one's, and every list is by tab, then by order there.
  */
 
 let owner: TestUser;
@@ -94,6 +94,28 @@ describe("tabs", () => {
       message: "A collection inside another is in that one's tab, so it can't have its own",
     });
     await expect(call(reorderCollection, as(), { slug: "teams", tab: "nope" })).rejects.toMatchObject(refused);
+  });
+
+  test("a collection deep in others is in its top-level one's tab, and stays in it coming out to the top level", async () => {
+    await call(createTab, as(), { name: "Guides" });
+    await call(createTab, as(), { name: "API" });
+    await collections("Basics");
+    await call(createCollection, as(), { name: "Webhooks", tab: "api" });
+    await call(createCollection, as(), { name: "Signatures", parent: "webhooks" });
+    expect(await call(createCollection, as(), { name: "Rotating", parent: "signatures" })).toMatchObject({ tab: "api", parent: "signatures" });
+    const { slug } = await call(createArticle, as(), { title: "New keys", body: "New keys.", collection: "rotating" });
+    await call(publishArticle, as(), { slug });
+
+    // Its top-level one moves to another tab, and it follows; so does the way back from its article.
+    await call(reorderCollection, as(), { slug: "webhooks", tab: "guides" });
+    expect(await tree()).toEqual(["guides:basics", "guides:webhooks", "guides:webhooks/signatures", "guides:signatures/rotating"]);
+    expect(await publishedArticle(project.slug, slug)).toMatchObject({ tab: "guides" });
+    // Out to the top level from the third: in that tab.
+    expect(await call(reorderCollection, as(), { slug: "rotating", parent: null })).toMatchObject({ tab: "guides", parent: null });
+    // A top-level one going in another has no tab of its own any more: it's in that one's, wherever it goes.
+    await call(reorderCollection, as(), { slug: "basics", parent: "signatures" });
+    await call(reorderCollection, as(), { slug: "webhooks", tab: "api" });
+    expect(await tree()).toEqual(["guides:rotating", "api:webhooks", "api:webhooks/signatures", "api:signatures/basics"]);
   });
 
   test("tabs are reordered and renamed, and every list follows: readers, the editor's picker, collections.list", async () => {
