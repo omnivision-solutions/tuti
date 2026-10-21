@@ -35,7 +35,7 @@ lives in `/shared`, which the others import.
 | Folder | Holds | Local file (dev) |
 |---|---|---|
 | `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings) | — |
-| `/web` ← shared | `BETTER_AUTH_SECRET`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587) | `apps/web/.env` |
+| `/web` ← shared | `BETTER_AUTH_SECRET`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587), `LICENSE_PRIVATE_KEY` (prod only: makes tuti.so the licence server; `scripts/license.mjs` sells licences) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
