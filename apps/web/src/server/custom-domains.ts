@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { liveDomain, portalAddress as lookUpPortalAddress, type PortalAddress } from "@tuti/jobs";
 
 import { customDomainTarget } from "@/lib/custom-domains";
+import { BASE_PATTERN } from "@/lib/portal-base";
 import { type HostTarget, resolveHost } from "@/lib/hosts";
 
 /**
@@ -79,12 +80,35 @@ export async function portalAddress(projectSlug: string): Promise<PortalAddress>
   }
   return address;
 }
+/**
+ * Where a portal is on its team's site, once that's verified (see SiteMount): the site's origin and
+ * the path; null for none. Kept as long as host lookups.
+ */
+export async function siteMount(projectSlug: string): Promise<{ origin: string; path: string } | null> {
+  const cached = mounts.get(projectSlug);
+  if (cached && cached.until > Date.now()) {
+    return cached.mount;
+  }
+  const started = forgets;
+  const row = await prisma.siteMount.findFirst({ where: { project: { slug: projectSlug }, verifiedAt: { not: null } }, select: { origin: true, path: true } });
+  const mount = row && BASE_PATTERN.test(row.path) ? row : null;
+  if (forgets === started) {
+    if (mounts.size >= MAX_CACHED) {
+      mounts.clear();
+    }
+    mounts.set(projectSlug, { mount, until: Date.now() + CACHE_MS });
+  }
+  return mount;
+}
+const mounts = new Map<string, { mount: { origin: string; path: string } | null; until: number }>();
+
 /** Forgets what this server knows about `hostname` (after it's verified, removed or its certificate changed here). */
 export function forgetCustomDomain(hostname: string) {
   forgets++;
   cache.delete(hostname);
   // Which portal it was is gone with it: every address is looked up again.
   addresses.clear();
+  mounts.clear();
 }
 
 /**

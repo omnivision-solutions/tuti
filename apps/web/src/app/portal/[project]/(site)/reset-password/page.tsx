@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { NewPasswordForm } from "@/components/password-reset-forms";
 import { FAILED_PASSWORD_RESET_PATH, pendingPasswordReset } from "@/server/sign-in-link-lookup";
+import { portalLinks } from "@/server/portal-base";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -11,7 +12,7 @@ export default async function PortalResetPasswordPage(props: PageProps<"/portal/
   const [{ project }, { token }] = await Promise.all([props.params, props.searchParams]);
   const account = typeof token === "string" ? await pendingPasswordReset(project, token) : null;
   if (!account) {
-    redirect(FAILED_PASSWORD_RESET_PATH);
+    redirect((await portalLinks())(FAILED_PASSWORD_RESET_PATH));
   }
   return <NewPasswordForm token={token as string} email={account.email} />;
 }

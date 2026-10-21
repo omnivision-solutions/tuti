@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ChangelogReactions } from "@/components/changelog-reactions";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/format";
+import { withBase } from "@/lib/portal-base";
 import { postPath } from "@/lib/post-urls";
 import type { Reaction, ReactionCounts } from "@/lib/reactions";
 
@@ -30,6 +31,7 @@ export function ChangelogEntryView({
   heading = "h2",
   linkTarget,
   react,
+  base = "",
 }: {
   entry: PublishedEntry;
   mediaBaseUrl: string | null;
@@ -38,8 +40,11 @@ export function ChangelogEntryView({
   linkTarget?: "_blank";
   /** Shows the reaction buttons (on the portal's pages, not in the widget). */
   react?: { projectSlug: string; signedIn: boolean };
+  /** The path the portal is under on the team's site (see lib/portal-base.ts). */
+  base?: string;
 }) {
   const Title = heading;
+  const at = (path: string) => withBase(base, path);
   return (
     <article className="flex flex-col gap-3" aria-labelledby={`entry-${entry.number}`}>
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -52,7 +57,7 @@ export function ChangelogEntryView({
       </div>
       <Title id={`entry-${entry.number}`} className="font-heading text-xl font-bold tracking-tight break-words">
         {heading === "h2" ? (
-          <Link href={`/changelog/${entry.number}`} target={linkTarget} className="hover:underline">
+          <Link href={at(`/changelog/${entry.number}`)} target={linkTarget} className="hover:underline">
             {entry.title}
           </Link>
         ) : (
@@ -66,7 +71,7 @@ export function ChangelogEntryView({
           {entry.posts.map((post, i) => (
             <span key={post.number}>
               {i > 0 && ", "}
-              <Link href={postPath(post)} target={linkTarget} className="text-foreground hover:underline">
+              <Link href={at(postPath(post))} target={linkTarget} className="text-foreground hover:underline">
                 {post.title}
               </Link>
             </span>

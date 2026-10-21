@@ -13,9 +13,11 @@ import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
 import { PASSWORD_RESET_MINUTES } from "@/lib/sign-in-link";
 import { emailPasswordReset, setNewPassword } from "@/server/password-reset";
+import { usePortalHref } from "@/components/portal-base";
 
 /** "Forgot your password?" on the app and on portals (server/password-reset.ts). `failed`: a reset link didn't work. */
 export function ForgotPasswordForm({ failed }: { failed: boolean }) {
+  const at = usePortalHref();
   const [error, setError] = useState<string>();
   const [sentTo, setSentTo] = useState<string>();
   const [pending, startTransition] = useTransition();
@@ -66,7 +68,7 @@ export function ForgotPasswordForm({ failed }: { failed: boolean }) {
             <Button type="submit" disabled={pending} className="w-full">
               {pending ? "…" : "Email me a link"}
             </Button>
-            <Link href="/sign-in" className="text-sm text-foreground underline underline-offset-4">
+            <Link href={at("/sign-in")} className="text-sm text-foreground underline underline-offset-4">
               Back to sign in
             </Link>
           </CardFooter>

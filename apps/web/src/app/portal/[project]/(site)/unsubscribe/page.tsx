@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { findOptOut } from "@/server/unsubscribe";
+import { portalLinks } from "@/server/portal-base";
 
 export default async function UnsubscribePage(props: PageProps<"/portal/[project]/unsubscribe">) {
   const [{ project: slug }, { token }] = await Promise.all([props.params, props.searchParams]);
@@ -24,7 +25,7 @@ export default async function UnsubscribePage(props: PageProps<"/portal/[project
           <p className="text-muted-foreground">
             You won&apos;t hear from {found.project.name} when posts you asked for are done.
           </p>
-          <form method="post" action={`/unsubscribe/confirm?token=${encodeURIComponent(value)}`}>
+          <form method="post" action={(await portalLinks())(`/unsubscribe/confirm?token=${encodeURIComponent(value)}`)}>
             <Button type="submit">Unsubscribe</Button>
           </form>
         </>

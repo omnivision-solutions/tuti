@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
 import { SIGN_IN_LINK_MINUTES } from "@/lib/sign-in-link";
 import { emailSignInLink } from "@/server/sign-in-link";
+import { usePortalHref } from "@/components/portal-base";
 
 /**
  * Used on the apex (team accounts → /app) and on portals (end users → the portal).
@@ -36,6 +37,7 @@ export function AuthForm({
   forgotPassword?: boolean;
   signUp?: boolean;
 }) {
+  const at = usePortalHref();
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [linkError, setLinkError] = useState<string>();
@@ -124,7 +126,7 @@ export function AuthForm({
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                 <FieldLabel htmlFor="password">Password</FieldLabel>
                 {forgotPassword && !isSignUp && (
-                  <Link href="/forgot-password" className="text-sm text-muted-foreground underline-offset-4 hover:underline">
+                  <Link href={at("/forgot-password")} className="text-sm text-muted-foreground underline-offset-4 hover:underline">
                     Forgot your password?
                   </Link>
                 )}
@@ -161,10 +163,12 @@ export function AuthForm({
           <p className="text-sm text-muted-foreground">
             {isSignUp ? "Have an account? " : "New here? "}
             <Link
-              href={`${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
-                ...(next && { next }),
-                ...(defaultEmail && { email: defaultEmail }),
-              })}`}
+              href={at(
+                `${isSignUp ? "/sign-in" : "/sign-up"}?${new URLSearchParams({
+                  ...(next && { next }),
+                  ...(defaultEmail && { email: defaultEmail }),
+                })}`,
+              )}
               className="text-foreground underline underline-offset-4"
             >
               {isSignUp ? "Sign in" : "Create an account"}

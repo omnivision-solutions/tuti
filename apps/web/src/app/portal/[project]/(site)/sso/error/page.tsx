@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { SSO_ERROR_CODES, type SsoErrorCode } from "@/lib/sso";
+import { portalLinks } from "@/server/portal-base";
 
 const MESSAGES: Record<SsoErrorCode, string> = {
   sso_not_enabled: "Single sign-on isn't enabled for this project.",
@@ -28,7 +29,7 @@ export default async function SsoErrorPage(props: PageProps<"/portal/[project]/s
           {known && <code className="font-mono text-xs">{known}</code>}
         </AlertDescription>
       </Alert>
-      <Link href="/" className={buttonVariants({ variant: "outline" })}>
+      <Link href={(await portalLinks())("/")} className={buttonVariants({ variant: "outline" })}>
         Continue to the board
       </Link>
     </div>

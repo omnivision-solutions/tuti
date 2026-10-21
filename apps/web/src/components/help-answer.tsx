@@ -13,6 +13,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { answerBlocks } from "@/lib/answer-text";
 import { askHelp, escalateHelp, rateHelpAnswer } from "@/server/help-readers";
 import type { HelpAnswer as Answer } from "@/server/operations/help-ask";
+import { usePortalHref } from "@/components/portal-base";
 
 /**
  * "Ask AI" above the help center's search results. The AI only answers when the visitor
@@ -35,6 +36,7 @@ export function HelpAnswer({
   askAPerson: { email: string } | null;
   widget?: boolean;
 }) {
+  const at = usePortalHref();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [rated, setRated] = useState<boolean | null>(null);
   const [pending, startTransition] = useTransition();
@@ -106,7 +108,7 @@ export function HelpAnswer({
                   {source.url === null ? (
                     <span className="break-words">{source.title}</span>
                   ) : (
-                    <Link href={`/docs/${source.slug}`} target={widget ? "_blank" : undefined} className="break-words text-primary hover:underline">
+                    <Link href={at(`/docs/${source.slug}`)} target={widget ? "_blank" : undefined} className="break-words text-primary hover:underline">
                       {source.title}
                     </Link>
                   )}

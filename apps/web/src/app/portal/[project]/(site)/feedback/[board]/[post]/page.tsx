@@ -16,8 +16,10 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
+import { portalLinks } from "@/server/portal-base";
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {
+  const at = await portalLinks();
   const { project: projectSlug, board: boardParam, post: param } = await props.params;
   const number = postNumberFromParam(param);
   if (number === null) {
@@ -51,17 +53,17 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
   }
   // Merged into another post: that's where its votes and comments are now.
   if (post.duplicateOf) {
-    permanentRedirect(postPath(post.duplicateOf));
+    permanentRedirect(at(postPath(post.duplicateOf)));
   }
   // Retitled or moved to another board since the link was made: send to the current URL.
   if (`/feedback/${boardParam}/${param}` !== postPath(post)) {
-    permanentRedirect(postPath(post));
+    permanentRedirect(at(postPath(post)));
   }
   const teamUserIds = new Set(post.project.team.map((m) => m.userId));
 
   return (
     <div className="flex flex-col gap-6">
-      <BackLink href={boardPath(post.board)}>{post.board.name}</BackLink>
+      <BackLink href={at(boardPath(post.board))}>{post.board.name}</BackLink>
 
       <article className="flex items-start gap-4">
         <VoteButton postId={post.id} count={post.voteCount} voted={post.votes.length > 0} disabled={!session} />
@@ -76,7 +78,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
           {post.changelogEntries[0] && (
             <p className="text-sm text-muted-foreground">
               Shipped in{" "}
-              <Link href={`/changelog/${post.changelogEntries[0].entry.number}`} className="text-foreground hover:underline">
+              <Link href={at(`/changelog/${post.changelogEntries[0].entry.number}`)} className="text-foreground hover:underline">
                 {post.changelogEntries[0].entry.title}
               </Link>
             </p>

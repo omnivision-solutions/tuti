@@ -6,15 +6,18 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { BoardTabs } from "@/components/board-tabs";
+import { PortalBaseProvider } from "@/components/portal-base";
 import { SignInLink } from "@/components/sign-in-link";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
 import { appUrl, resolveHost } from "@/lib/hosts";
+import { withBase } from "@/lib/portal-base";
 import { cn } from "@/lib/utils";
 import { branding, brandCss } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
+import { portalBase } from "@/server/portal-base";
 import { portalHomePath } from "@/server/portal-home";
 import { getSession } from "@/server/session";
 
@@ -63,12 +66,13 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
   // An announcement they haven't seen anywhere (here, or in the widget on any device).
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
+  const base = await portalBase();
   return (
-    <>
+    <PortalBaseProvider base={base} slug={slug}>
       {css && <style>{css}</style>}
       <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
         {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
-        <Link href={onApp ? ((await portalHomePath(slug)) ?? "/") : "/"} className="font-heading text-lg font-bold tracking-tight">
+        <Link href={onApp ? ((await portalHomePath(slug)) ?? "/") : withBase(base, "/")} className="font-heading text-lg font-bold tracking-tight">
           {brand.logo ? (
             <>
               {logo(brand.logo, brand.logoDark ? "dark:hidden" : undefined)}
@@ -124,6 +128,6 @@ export default async function PortalLayout({ children, params }: LayoutProps<"/p
           )}
         </footer>
       )}
-    </>
+    </PortalBaseProvider>
   );
 }

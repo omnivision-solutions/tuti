@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { publishedEntries } from "@/server/changelog-queries";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
+import { portalBase, portalLinks } from "@/server/portal-base";
 
 const PAGE_SIZE = 20;
 
@@ -25,6 +26,8 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/chang
 
 /** What shipped, newest first, a page at a time (`?page=2` for older ones). */
 export default async function ChangelogPage(props: PageProps<"/portal/[project]/changelog">) {
+  const at = await portalLinks();
+  const base = await portalBase();
   const [{ project: slug }, { page: param }] = await Promise.all([props.params, props.searchParams]);
   const page = Math.max(1, Math.min(10_000, Number(param) || 1));
   // One more than a page, to know whether there are older ones.
@@ -43,7 +46,7 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
         title="Changelog"
         description="What's new, improved and fixed."
         actions={
-          <a href="/changelog/rss.xml" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
             <RssIcon aria-hidden /> RSS
           </a>
         }
@@ -54,21 +57,21 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
         entries.map((entry, i) => (
           <div key={entry.number} className="flex flex-col gap-8">
             {i > 0 && <Separator />}
-            <ChangelogEntryView entry={entry} mediaBaseUrl={mediaPublicUrl()} react={{ projectSlug: slug, signedIn: !!session }} />
+            <ChangelogEntryView entry={entry} mediaBaseUrl={mediaPublicUrl()} react={{ projectSlug: slug, signedIn: !!session }} base={base} />
           </div>
         ))
       )}
       {(older || page > 1) && (
         <nav aria-label="Changelog pages" className="flex justify-between gap-4">
           {page > 1 ? (
-            <Link href={page === 2 ? "/changelog" : `/changelog?page=${page - 1}`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={at(page === 2 ? "/changelog" : `/changelog?page=${page - 1}`)} className={buttonVariants({ variant: "outline" })}>
               Newer entries
             </Link>
           ) : (
             <span />
           )}
           {older && (
-            <Link href={`/changelog?page=${page + 1}`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={at(`/changelog?page=${page + 1}`)} className={buttonVariants({ variant: "outline" })}>
               Older entries
             </Link>
           )}

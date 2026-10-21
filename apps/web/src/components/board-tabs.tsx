@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 
+import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils";
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
  */
 export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: string; name: string }[]; newChangelog?: boolean }) {
-  const pathname = usePathname();
+  const pathname = usePortalPath();
+  const at = usePortalHref();
   const tabs = [...boards.map((board) => ({ href: boardPath(board), name: board.name })), { href: "/roadmap", name: "Roadmap" }, { href: "/changelog", name: "Changelog" }, { href: "/docs", name: "Help" }];
 
   return (
@@ -22,7 +23,7 @@ export function BoardTabs({ boards, newChangelog = false }: { boards: { slug: st
           return (
             <Link
               key={href}
-              href={href}
+              href={at(href)}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "border-b-2 px-3 py-2 text-sm whitespace-nowrap transition-colors first:-ml-3",

@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { appPortalProject, isAppPortalPath } from "@/lib/app-portal";
 import { appUrl, portalUrl } from "@/lib/hosts";
+import { BASE_HEADER } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isReservedSlug, SLUG_PATTERN } from "@/lib/project-slugs";
-import { portalAddress, requestTarget } from "@/server/custom-domains";
+import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
 import { portalVisitor } from "@/server/portal-access";
 import { portalHomePath } from "@/server/portal-home";
 
@@ -36,6 +37,12 @@ export async function proxy(request: NextRequest) {
   if (target.kind === "portal") {
     if (pathname.startsWith("/api/")) {
       return NextResponse.next();
+    }
+    // Under a path of the team's own site (acme.com/portal, forwarded here path and all): the portal,
+    // with that path added back to its links (see lib/portal-base.ts). Not sent on anywhere else.
+    const mount = await siteMount(target.slug);
+    if (mount && (pathname === mount.path || pathname.startsWith(`${mount.path}/`))) {
+      return servePortal(request, target.slug, `${mount.origin}${mount.path}`, pathname.slice(mount.path.length) || "/", mount.path);
     }
     // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
     // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
@@ -83,12 +90,14 @@ export async function proxy(request: NextRequest) {
   return new NextResponse(null, { status: 404 });
 }
 
-/** A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private. */
-async function servePortal(request: NextRequest, slug: string, origin: string) {
-  const { pathname } = request.nextUrl;
+/**
+ * A portal page or file, for `slug`'s portal at `origin`: its readers only, if it's private.
+ * `pathname` is the portal's own path; `base`, the path it's under on the team's site, if any.
+ */
+async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, base = "") {
   const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers);
   if (visitor === "refused") {
-    const signIn = new URL("/sign-in", origin);
+    const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
     if (pathname !== "/") {
       signIn.searchParams.set("next", pathname + request.nextUrl.search);
     }
@@ -99,7 +108,10 @@ async function servePortal(request: NextRequest, slug: string, origin: string) {
   const url = request.nextUrl.clone();
   const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
   url.pathname = `/portal/${slug}${path === "/" ? "" : path}`;
-  const response = NextResponse.rewrite(url);
+  // Always set, so a request can't say a path of its own.
+  const forwarded = new Headers(request.headers);
+  forwarded.set(BASE_HEADER, base);
+  const response = NextResponse.rewrite(url, { request: { headers: forwarded } });
   if (visitor === "allowed") {
     // A private portal's feeds and files are for this reader only: no shared cache may keep them.
     // (Set here, it wins over the routes' own public cache-control.)

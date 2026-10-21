@@ -5,6 +5,8 @@ import { proxy } from "./proxy";
 
 // Offline: every portal is public here (private portals: proxy.db.test.ts).
 vi.mock("@/server/portal-access", () => ({ portalVisitor: async () => "public" }));
+// No portal is under a path of a site here (that's site-mount.db.test.ts).
+vi.mock("@/server/custom-domains", async (original) => ({ ...(await original<typeof import("@/server/custom-domains")>()), siteMount: async () => null }));
 
 beforeEach(() => {
   vi.stubEnv("NODE_ENV", "production");

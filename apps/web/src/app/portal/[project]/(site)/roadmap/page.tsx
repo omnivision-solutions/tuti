@@ -6,9 +6,11 @@ import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { postPath } from "@/lib/post-urls";
 import { ROADMAP, roadmapColumns } from "@/server/operations/read";
+import { portalLinks } from "@/server/portal-base";
 
 /** What's planned, being built and done, from the posts' statuses. */
 export default async function RoadmapPage(props: PageProps<"/portal/[project]/roadmap">) {
+  const at = await portalLinks();
   const { project: slug } = await props.params;
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
   if (!project) {
@@ -34,7 +36,7 @@ export default async function RoadmapPage(props: PageProps<"/portal/[project]/ro
                 <ul className="flex flex-col gap-2">
                   {posts.map((post) => (
                     <li key={post.number} className="rounded-xl border bg-card p-3 text-sm">
-                      <Link href={postPath(post)} className="font-medium break-words hover:underline">
+                      <Link href={at(postPath(post))} className="font-medium break-words hover:underline">
                         {post.title}
                       </Link>
                       <p className="mt-1 text-xs text-muted-foreground">
