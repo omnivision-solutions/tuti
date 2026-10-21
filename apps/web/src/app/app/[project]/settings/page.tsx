@@ -194,7 +194,7 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="branding" className="scroll-mt-6">
         <CardHeader>
           <CardTitle>Branding</CardTitle>
           <CardDescription>How your portal and docs look: your logo, favicon, colour and links.</CardDescription>

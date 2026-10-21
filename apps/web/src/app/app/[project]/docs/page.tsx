@@ -4,34 +4,23 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { CollectionDialog, RestoreDeletedButton, TabDialog } from "@/components/docs";
-import { DocsStructure } from "@/components/docs-structure";
+import { RestoreDeletedButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
-import { ancestry, MAX_COLLECTION_DEPTH } from "@/lib/collection-tree";
 import { formatDate, timeAgo } from "@/lib/format";
-import { lucideIcon } from "@/lib/lucide-icons";
-import { accessBadge, fromNoAccess, fromReadAccess, toReadAccess } from "@/lib/read-access";
-import { claimsOf, levelSelect } from "@/lib/reader-groups";
-import { accessChoices, collectionPath, inTreeOrder, namedLevel, readingOrder } from "@/server/docs-queries";
+import { levelSelect } from "@/lib/reader-groups";
+import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
-import { restorableSince, tabSelect, tabView } from "@/server/operations/docs";
-
-const structureArticle = { slug: true, title: true, publishedAt: true } as const;
-const structureView = (article: { slug: string; title: string; publishedAt: Date | null }) => ({
-  slug: article.slug,
-  title: article.title,
-  published: article.publishedAt !== null,
-});
+import { restorableSince } from "@/server/operations/docs";
+import { accessBadgeFor } from "@/server/team-docs";
 
 /**
- * The team's docs: articles (drafts first, then latest edited), the collections they're
- * grouped in with their articles in the order readers see them (rearranged here), and articles
- * deleted lately (which can be restored).
+ * The team's docs: articles (drafts first, then latest edited) and articles deleted lately (which
+ * can be restored). The tree beside it (the layout's) arranges them in tabs and collections.
  */
 export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs">) {
   const { project: slug } = await props.params;
@@ -40,7 +29,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, tabs, collections, uncollected, deleted, access] = await Promise.all([
+  const [articles, deleted, access] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -53,28 +42,6 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         collection: { select: { name: true } },
         changes: { select: { articleId: true } },
       },
-    }),
-    prisma.docsTab.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { name: "asc" }], select: tabSelect }).then((rows) => rows.map(tabView)),
-    prisma.collection.findMany({
-      where: { projectId },
-      orderBy: readingOrder,
-      select: {
-        id: true,
-        parentId: true,
-        slug: true,
-        name: true,
-        description: true,
-        parent: { select: { slug: true } },
-        tab: { select: { slug: true } },
-        ...levelSelect,
-        icon: true,
-        articles: { where: { deletedAt: null }, orderBy: [{ order: "asc" }, { title: "asc" }], select: structureArticle },
-      },
-    }),
-    prisma.article.findMany({
-      where: { projectId, deletedAt: null, collectionId: null },
-      orderBy: [{ order: "asc" }, { title: "asc" }],
-      select: structureArticle,
     }),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -91,8 +58,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     accessChoices(projectId),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
-  const names = new Map(access.groups.map((g) => [g.key, g.name]));
-  const badge = (level: Parameters<typeof namedLevel>[0]) => accessBadge(namedLevel(level, names));
+  const badge = accessBadgeFor(access);
 
   return (
     <>
@@ -113,7 +79,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
       {articles.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin." />
       ) : (
-        <Card>
+        <Card role="region" aria-label="Articles">
           <CardContent>
             <ItemList>
               {articles.map((article) => (
@@ -142,57 +108,10 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           </CardContent>
         </Card>
       )}
-      <Card role="region" aria-labelledby="docs-collections">
-        <CardHeader>
-          <CardTitle id="docs-collections">Collections</CardTitle>
-          <CardDescription>
-            Group articles by topic, with collections inside collections if you need them, and tabs above them. Your docs
-            list them in this order: drag them into place, or use the arrows.
-          </CardDescription>
-          <CardAction className="flex flex-wrap justify-end gap-2">
-            <TabDialog projectSlug={slug} first={tabs.length === 0 && collections.length > 0} />
-            <CollectionDialog
-              projectSlug={slug}
-              parents={inTreeOrder(collections)
-                .filter((c) => ancestry(collections, c.id).length < MAX_COLLECTION_DEPTH)
-                .map((c) => ({ slug: c.slug, name: collectionPath(collections, c.id) }))}
-              tabs={tabs}
-              access={access}
-            />
-          </CardAction>
-        </CardHeader>
-        {(tabs.length > 0 || collections.length > 0 || uncollected.length > 0) && (
-          <CardContent>
-            <DocsStructure
-              projectSlug={slug}
-              tabs={tabs.map((tab) => ({
-                ...tab,
-                badge: accessBadge({ access: toReadAccess(tab.access), groups: tab.groups.map((key) => names.get(key) ?? key) }),
-              }))}
-              collections={inTreeOrder(collections).map((c) => ({
-                slug: c.slug,
-                name: c.name,
-                description: c.description,
-                parent: c.parent?.slug ?? null,
-                tab: c.tab?.slug ?? null,
-                access: fromReadAccess(c.access),
-                groups: claimsOf(c),
-                noAccess: fromNoAccess(c.noAccess),
-                badge: badge(c),
-                icon: c.icon,
-                knownIcon: Boolean(lucideIcon(c.icon)),
-                articles: c.articles.map(structureView),
-              }))}
-              uncollected={uncollected.map(structureView)}
-              access={access}
-            />
-          </CardContent>
-        )}
-      </Card>
       {deleted.length > 0 && (
-        <Card role="region" aria-labelledby="recently-deleted">
+        <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-6">
           <CardHeader>
-            <CardTitle id="recently-deleted">Recently deleted</CardTitle>
+            <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
             <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
           </CardHeader>
           <CardContent>

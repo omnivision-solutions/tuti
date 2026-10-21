@@ -81,6 +81,9 @@ describe("articles", () => {
     expect((await call(createArticle, as(owner), { title: "New" })).slug).toBe("new-2");
     // Nor /docs/api, the API reference.
     expect((await call(createArticle, as(owner), { title: "API" })).slug).toBe("api-2");
+    // Nor the app's pages of a tab or a collection (/app/<project>/docs/tabs/…, /collections/…).
+    expect((await call(createArticle, as(owner), { title: "Tabs" })).slug).toBe("tabs-2");
+    expect((await call(createArticle, as(owner), { title: "Collections" })).slug).toBe("collections-2");
 
     expect(await call(updateArticle, as(owner), { slug: "getting-started-2", title: "Inviting your team" })).toMatchObject({
       slug: "inviting-your-team",

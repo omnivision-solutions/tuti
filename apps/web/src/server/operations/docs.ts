@@ -302,10 +302,11 @@ async function freeDocsSlug(
 }
 
 /**
- * "new" and "insights" are the team's pages under /app/<project>/docs, and /docs/api is the API
- * reference (Tuti's own on the app's domain, and later each portal's from an OpenAPI file), so no article can have them.
+ * "new", "insights", "tabs" and "collections" are the team's pages under /app/<project>/docs (a tab's
+ * and a collection's are under the last two), and /docs/api is the API reference (Tuti's own on the
+ * app's domain, and later each portal's from an OpenAPI file), so no article can have them.
  */
-const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api"];
+const RESERVED_ARTICLE_SLUGS = ["new", "insights", "api", "tabs", "collections"];
 
 /** The tabs, collections and live articles in the project (but `page`) whose slug matches `slug`, with their names. */
 async function docsSlugsTaken(tx: Prisma.TransactionClient, projectId: string, slug: Prisma.StringFilter | string, page?: { id: string }) {
