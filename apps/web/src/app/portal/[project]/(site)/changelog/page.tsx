@@ -46,7 +46,7 @@ export default async function ChangelogPage(props: PageProps<"/portal/[project]/
         title="Changelog"
         description="What's new, improved and fixed."
         actions={
-          <a href="/changelog/rss.xml" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+          <a href={at("/changelog/rss.xml")} className={buttonVariants({ variant: "ghost", size: "sm" })}>
             <RssIcon aria-hidden /> RSS
           </a>
         }
