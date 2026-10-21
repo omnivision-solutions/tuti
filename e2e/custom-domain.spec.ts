@@ -18,7 +18,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/settings`);
-  await owner.getByLabel("Domain").fill(domain);
+  await owner.getByLabel("Domain", { exact: true }).fill(domain);
   await owner.getByRole("button", { name: "Add domain" }).click();
   await expect(owner.getByText("Waiting for DNS")).toBeVisible();
   const txt = owner.getByRole("definition").filter({ hasText: `_tuti.${domain}` });
@@ -75,7 +75,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await owner.getByRole("button", { name: "Remove" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();
-  await expect(owner.getByLabel("Domain")).toBeVisible();
+  await expect(owner.getByLabel("Domain", { exact: true })).toBeVisible();
   await expect(async () => expect((await visitor.request.get("/")).status()).toBe(404)).toPass({ timeout: 20_000 });
   // And the Tuti address is the portal's again.
   await expect(async () => {

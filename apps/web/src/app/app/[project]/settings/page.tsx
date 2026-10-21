@@ -5,12 +5,11 @@ import { notFound } from "next/navigation";
 import { ApiKeys } from "@/components/api-keys";
 import { AssistantSettings } from "@/components/assistant-settings";
 import { BrandingSettings } from "@/components/branding-settings";
-import { CustomDomainSettings } from "@/components/custom-domain";
-import { SiteMountSettings } from "@/components/site-mount";
 import { CloseOnSelect, DisconnectGithubButton, PrCommentsCheckbox } from "@/components/github-connection";
 import { Webhooks } from "@/components/webhooks";
 import { PageHeader } from "@/components/page-header";
 import { PortalAccessSelect } from "@/components/portal-access-select";
+import { OwnAddressSettings } from "@/components/own-address";
 import { PortalHomeSelect } from "@/components/portal-home-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { ReaderGroups } from "@/components/reader-groups";
@@ -175,26 +174,23 @@ export default async function SettingsPage(props: PageProps<"/app/[project]/sett
         </CardContent>
       </Card>
 
-      {/* Only where the server says where customers point their domains (and for one added before that changed). */}
-      {(customDomainTarget() || domain) && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Custom domain</CardTitle>
-            <CardDescription>Your portal and docs at an address of your own, like help.example.com.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <CustomDomainSettings projectSlug={project.slug} domain={domain} portalAddress={portal.host} protocol={portal.protocol} />
-          </CardContent>
-        </Card>
-      )}
-
       <Card>
         <CardHeader>
-          <CardTitle>Your site</CardTitle>
-          <CardDescription>Your portal and docs under a path of your own site, like example.com/portal.</CardDescription>
+          <CardTitle>Your own address</CardTitle>
+          <CardDescription>
+            Your portal and docs at an address of yours: a domain of its own, like help.example.com, or a path of your site, like
+            example.com/portal. One or the other.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <SiteMountSettings projectSlug={project.slug} site={site} portalAddress={portal.host} />
+          <OwnAddressSettings
+            projectSlug={project.slug}
+            domain={domain}
+            site={site}
+            domainsOn={Boolean(customDomainTarget())}
+            portalAddress={portal.host}
+            protocol={portal.protocol}
+          />
         </CardContent>
       </Card>
 

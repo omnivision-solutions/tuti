@@ -156,7 +156,7 @@ afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.clo
 afterEach(() => model.done());
 
 /** Fresh posts #1 and #2 (with a link on #1) for each case; numbers restart per fixture. */
-async function createFixture() {
+async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.post.deleteMany({ where: { projectId: project.id } });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
   await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2 } });
@@ -174,15 +174,19 @@ async function createFixture() {
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
   await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", claim: "beta" } });
-  // A custom domain waiting for DNS, with its TXT record there to verify it.
+  // The portal's own address, one or the other like a real project's: the portal on a site, waiting
+  // for its check, which the site answers (for site.*); else a custom domain waiting for DNS, with
+  // its TXT record there to verify it.
   await prisma.customDomain.deleteMany({ where: { projectId: project.id } });
-  await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
-  dns.txt("_tuti.docs.example.com", ["tuti-verify=matrix"]);
-  // The portal on a site, waiting for its check, which the site answers.
   await prisma.siteMount.deleteMany({ where: { projectId: project.id } });
-  await prisma.siteMount.create({ data: { projectId: project.id, origin: site.origin, path: "/portal", verificationToken: "matrix" } });
-  site.answer("/portal/.well-known/tuti-site", "tuti-site=matrix");
-  site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
+  if (own === "site") {
+    await prisma.siteMount.create({ data: { projectId: project.id, origin: site.origin, path: "/portal", verificationToken: "matrix" } });
+    site.answer("/portal/.well-known/tuti-site", "tuti-site=matrix");
+    site.answer("/_tuti/.well-known/tuti-site", "tuti-site=matrix");
+  } else {
+    await prisma.customDomain.create({ data: { projectId: project.id, hostname: "docs.example.com", verificationToken: "matrix" } });
+    dns.txt("_tuti.docs.example.com", ["tuti-verify=matrix"]);
+  }
   // A reader, to remove.
   await prisma.portalReader.deleteMany({ where: { projectId: project.id } });
   await prisma.portalReader.create({ data: { projectId: project.id, email: "e2e-reader@example.com" } });
@@ -324,7 +328,8 @@ test("every operation is in this matrix", () => {
 
 test.each(operations.map((operation) => ({ name: operation.name, operation })))("$name", async ({ operation }) => {
   const input = () => cases[operation.name as OperationName](fixture);
-  let fixture = await createFixture();
+  const own = operation.name.startsWith("site.") ? "site" : "domain";
+  let fixture = await createFixture(own);
   // AI answers need embeddings: on for docs.ask only. Nothing is close to its question, so the model isn't asked.
   vi.stubEnv("OPENAI_API_KEY", operation.name === "docs.ask" ? FAKE_OPENAI_KEY : "");
 
@@ -345,7 +350,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   }
 
   // A read and write key can run it.
-  fixture = await createFixture();
+  fixture = await createFixture(own);
   if (operation.name === "changelog.draft" || operation.name === "changelog.rewrite") {
     model.reply(JSON.stringify({ title: "Matrix release", notes: "Shipped." }));
   }

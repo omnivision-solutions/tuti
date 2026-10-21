@@ -11,6 +11,7 @@ import { normalizeSiteUrl } from "@/lib/site-mounts";
 
 import { forgetCustomDomain } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
+import { lockOwnAddress } from "./own-address";
 import { projectSlug } from "./read";
 
 /**
@@ -66,7 +67,7 @@ export const getSite = defineOperation({
 export const setSite = defineOperation({
   name: "site.set",
   summary:
-    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify",
+    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify",
   method: "POST",
   path: "/site",
   scope: "write",
@@ -79,13 +80,23 @@ export const setSite = defineOperation({
       throw new OperationError(400, "invalid_input", normalized.error);
     }
     const slug = await projectSlug(projectId);
-    const existing = await prisma.siteMount.findUnique({ where: { projectId }, select: mountSelect });
-    if (existing && existing.origin === normalized.origin && existing.path === normalized.path) {
-      return { site: siteView(existing, slug) };
+    const { mount, unchanged } = await prisma.$transaction(async (tx) => {
+      await lockOwnAddress(tx, projectId);
+      const existing = await tx.siteMount.findUnique({ where: { projectId }, select: mountSelect });
+      if (existing && existing.origin === normalized.origin && existing.path === normalized.path) {
+        return { mount: existing, unchanged: true };
+      }
+      const domain = await tx.customDomain.findUnique({ where: { projectId }, select: { hostname: true } });
+      if (domain) {
+        throw new OperationError(409, "conflict", `Your portal is on ${domain.hostname}. Remove that domain first to put it under a path of your site`);
+      }
+      // A new token each time, so a check that passed for an earlier address doesn't pass this one.
+      const data = { ...normalized, verificationToken: randomBytes(16).toString("hex"), verifiedAt: null };
+      return { mount: await tx.siteMount.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: mountSelect }), unchanged: false };
+    });
+    if (unchanged) {
+      return { site: siteView(mount, slug) };
     }
-    // A new token each time, so a check that passed for an earlier address doesn't pass this one.
-    const data = { ...normalized, verificationToken: randomBytes(16).toString("hex"), verifiedAt: null };
-    const mount = await prisma.siteMount.upsert({ where: { projectId }, create: { projectId, ...data }, update: data, select: mountSelect });
     forgetCustomDomain("");
     return { site: siteView(mount, slug) };
   },
