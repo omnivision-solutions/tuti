@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
   return new Response(articleMarkdown(article), {
     headers: {
       "content-type": "text/markdown; charset=utf-8",
-      // Never from a shared cache: its collection may become for some reader groups only at any time, and a
+      // Never from a shared cache: it (or its collection or tab) may become for some readers only at any time, and a
       // copy kept from before would reach people that excludes. A restricted one isn't kept at all.
       "cache-control": article.restricted ? "private, no-store" : "private, max-age=300",
       // Search engines index the article's page, not this copy of it.

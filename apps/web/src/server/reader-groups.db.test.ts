@@ -17,7 +17,7 @@ import { answerSections, searchDocs } from "./docs-search";
 import { createArticle, createCollection, getArticle, listArticles, listCollections, publishArticle, updateCollection } from "./operations/docs";
 import { createGroup, updateGroup } from "./operations/groups";
 import { call } from "./operations/run";
-import { groupsOf } from "./portal-access";
+import { readerOf } from "./portal-access";
 
 /**
  * Reader groups: the project's app says in its SSO token which groups someone is in, and a
@@ -109,7 +109,7 @@ describe("who sees what", () => {
   async function seen(user: TestUser | null) {
     actAs(user);
     const userId = user?.id ?? null;
-    const groups = await groupsOf(project.id, userId);
+    const groups = await readerOf(project.id, userId);
     const center = await docsContents(project.slug);
     const slugs = (await prisma.article.findMany({ where: { projectId: project.id }, select: { slug: true } })).map((a) => a.slug);
     const pages = await Promise.all(slugs.map((slug) => publishedArticle(project.slug, slug)));
@@ -258,9 +258,9 @@ test("a group's claim changed: its collections are for whoever the app signs in 
   expect([await reads(before), await reads(after)]).toEqual([true, false]);
   await call(updateGroup, as(), { group: "enterprise", claim: "plan:enterprise" });
   expect([await reads(before), await reads(after)]).toEqual([false, true]);
-  const groups = await groupsOf(project.id, after.id);
+  const groups = await readerOf(project.id, after.id);
   expect((await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug)).toContain("saml");
-  expect((await searchDocs(project.id, "widget", 10, await groupsOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
+  expect((await searchDocs(project.id, "widget", 10, await readerOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
 });
 
 test("each sign-in says the groups: a later token without one takes it away", async () => {
@@ -268,14 +268,14 @@ test("each sign-in says the groups: a later token without one takes it away", as
   const sub = "user-42";
   const reader = await ssoReader([], sub);
   expect(await signIn({ groups: ["enterprise", "Enterprise"] }, sub)).toBe(reader.id);
-  expect(await groupsOf(project.id, reader.id)).toEqual(["enterprise"]);
+  expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
   actAs(reader);
   expect(await publishedArticle(project.slug, "saml")).toMatchObject({ title: "SAML" });
   await signIn({}, sub);
-  expect(await groupsOf(project.id, reader.id)).toEqual([]);
+  expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: [] });
   expect(await publishedArticle(project.slug, "saml")).toBeNull();
   // A new person's first sign-in keeps them too; bad group names are refused like any bad claim.
-  expect(await groupsOf(project.id, await signIn({ groups: ["beta"] }))).toEqual(["beta"]);
+  expect(await readerOf(project.id, await signIn({ groups: ["beta"] }))).toEqual({ signedIn: true, groups: ["beta"] });
   await expect(signIn({ groups: ["no spaces"] })).rejects.toThrow("invalid_claims");
 });
 
@@ -289,7 +289,7 @@ describe("groups from conditions", () => {
   const reads = async (user: TestUser) => {
     actAs(user);
     const page = await publishedArticle(project.slug, "saml");
-    return { page: page !== null, search: (await searchDocs(project.id, "widget", 10, await groupsOf(project.id, user.id))).some((r) => r.slug === "saml") };
+    return { page: page !== null, search: (await searchDocs(project.id, "widget", 10, await readerOf(project.id, user.id))).some((r) => r.slug === "saml") };
   };
   const yes = { page: true, search: true };
   const no = { page: false, search: false };
@@ -303,10 +303,10 @@ describe("groups from conditions", () => {
   test("readers whose attributes match read its collections; a later sign-in without them doesn't", async () => {
     const sub = "user-7";
     const reader = await signedIn({ attributes: { plan: "custom", seats: 40 } }, sub);
-    expect(await groupsOf(project.id, reader.id)).toEqual(["enterprise"]);
+    expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
     expect(await reads(reader)).toEqual(yes);
     await signIn({ attributes: { plan: "pro" } }, sub);
-    expect(await groupsOf(project.id, reader.id)).toEqual([]);
+    expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: [] });
     expect(await reads(reader)).toEqual(no);
     await signIn({ attributes: { plan: "enterprise" } }, sub);
     expect(await reads(reader)).toEqual(yes);
@@ -335,7 +335,7 @@ describe("groups from conditions", () => {
     const other = await createProject(owner);
     const elsewhere = await signUp("Elsewhere");
     await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, attributes: { plan: "pro" } } });
-    expect(await groupsOf(project.id, elsewhere.id)).toEqual([]);
+    expect(await readerOf(project.id, elsewhere.id)).toEqual({ signedIn: true, groups: [] });
   });
 });
 
@@ -348,7 +348,7 @@ test("a first sign-in that loses the race to create the person still sets their 
       upsertProjectUser(project.id, externalId, { name: "From the API" }),
       upsertProjectUser(project.id, externalId, { groups: ["enterprise"] }),
     ]);
-    expect(await groupsOf(project.id, userId)).toEqual(["enterprise"]);
+    expect(await readerOf(project.id, userId)).toEqual({ signedIn: true, groups: ["enterprise"] });
   }
 });
 

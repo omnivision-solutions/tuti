@@ -4,10 +4,11 @@ import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
-import { type ReaderGroups, visibleArticle } from "@/lib/reader-groups";
+import type { Reader } from "@/lib/read-access";
 
+import { readableArticle } from "../docs-queries";
 import { type AnswerSection, answerSections } from "../docs-search";
-import { actorGroups } from "../portal-access";
+import { actorReader } from "../portal-access";
 import { ANSWER_LENGTHS, type AssistantSettings, assistantSettings, offLimitsTopic } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
@@ -136,8 +137,8 @@ export async function answerQuestion(
   askerId: string,
   question: string,
   source: DocsQuestionSource,
-  /** The asker's reader groups: answers only come from articles they may read (null: the team). */
-  groups: ReaderGroups,
+  /** The asker: answers only come from articles they may read (null: the team). */
+  reader: Reader,
   timeoutMs = ANSWER_TIMEOUT_MS,
 ): Promise<DocsAnswer> {
   if (!answersEnabled()) {
@@ -166,7 +167,7 @@ export async function answerQuestion(
   if (offLimitsTopic(question, settings.offLimits)) {
     return finish("off_limits");
   }
-  const sections = await answerSections(projectId, question, ANSWER_SECTIONS, groups, EMBED_TIMEOUT_MS);
+  const sections = await answerSections(projectId, question, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS);
   if (!sections) {
     return finish("failed");
   }
@@ -179,14 +180,14 @@ export async function answerQuestion(
     reply = await complete({ ...answerPrompt(question, sections, settings), timeoutMs });
   } catch (error) {
     log.warn("AI docs answer failed", { projectId, error });
-    return finish("failed", { fallback: await stillUsable(projectId, sections, groups) });
+    return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });
   }
   const answer = readAnswer(reply, sections);
   if (!answer) {
     return finish("no_answer", { cause: "NO_VALID_CITATION" });
   }
   // An article unpublished or hidden while the model wrote may be in the answer: don't show it.
-  const cited = await stillUsable(projectId, answer.cited, groups);
+  const cited = await stillUsable(projectId, answer.cited, reader);
   return cited.length === answer.cited.length
     ? finish("answered", { answer: { ...answer, cited } })
     : finish("no_answer", { cause: "SOURCE_UNPUBLISHED" });
@@ -194,10 +195,10 @@ export async function answerQuestion(
 
 /**
  * The sections whose articles AI answers may still use, read again after the model's wait (they may
- * have been unpublished, hidden or restricted to other reader groups since), each with its listing
+ * have been unpublished, hidden or restricted to other readers since), each with its listing
  * now (one made AI only isn't linked).
  */
-async function stillUsable(projectId: string, sections: AnswerSection[], groups: ReaderGroups): Promise<AnswerSection[]> {
+async function stillUsable(projectId: string, sections: AnswerSection[], reader: Reader): Promise<AnswerSection[]> {
   const current = await prisma.article.findMany({
     where: {
       id: { in: sections.map((section) => section.articleId) },
@@ -205,7 +206,7 @@ async function stillUsable(projectId: string, sections: AnswerSection[], groups:
       publishedAt: { not: null },
       deletedAt: null,
       listing: { not: "HIDDEN" },
-      ...visibleArticle(groups),
+      ...(await readableArticle(projectId, reader)),
     },
     select: { id: true, listing: true },
   });
@@ -232,5 +233,5 @@ export const askDocs = defineOperation({
   input: askFields,
   example: { q: "How do I invite my team?" },
   run: async ({ actor, projectId }, input) =>
-    answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API", await actorGroups(actor, projectId)),
+    answerQuestion(projectId, actor.kind === "user" ? actor.userId : actor.keyId, input.q, "API", await actorReader(actor, projectId)),
 });

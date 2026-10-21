@@ -12,6 +12,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import WidgetPage from "@/app/portal/[project]/widget/page";
 import { type Listing, LISTINGS } from "@/lib/article-listing";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
@@ -155,20 +156,20 @@ describe("the portal", () => {
 describe("search and AI answers", () => {
   test("search by words finds articles listed everywhere", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
-    expect(sorted((await searchDocs(project.id, "zebra", 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
+    expect(sorted((await searchDocs(project.id, "zebra", 20, SIGNED_OUT)).map((r) => r.slug))).toEqual(expected("listed"));
   });
 
   test("search by meaning finds articles listed everywhere, and so does articles.search", async () => {
-    expect(sorted((await searchDocs(project.id, QUESTION, 20, [])).map((r) => r.slug))).toEqual(expected("listed"));
+    expect(sorted((await searchDocs(project.id, QUESTION, 20, SIGNED_OUT)).map((r) => r.slug))).toEqual(expected("listed"));
     expect(sorted((await call(searchArticles, as(visitor), { q: QUESTION })).results.map((r) => r.slug))).toEqual(expected("listed"));
   });
 
   test("AI answers use every listing but hidden; an AI-only source is named without a link", async () => {
-    const sections = (await answerSections(project.id, QUESTION, 20, [], 3000))!;
+    const sections = (await answerSections(project.id, QUESTION, 20, SIGNED_OUT, 3000))!;
     expect(sorted(sections.map((s) => s.slug))).toEqual(expected("ai"));
 
     model.reply(JSON.stringify({ answer: "Use the zebra crossing.", sources: sections.map((_, i) => `s${i + 1}`) }));
-    const answer = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", []);
+    const answer = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT);
     expect(answer.status).toBe("answered");
     expect(Object.fromEntries(answer.sources.map((s) => [s.slug, s.url]))).toEqual(
       Object.fromEntries(
@@ -185,11 +186,11 @@ describe("search and AI answers", () => {
         call(updateArticle, as(owner), { slug, listing }),
       );
     citeAllWhile("hidden");
-    expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", [])).toMatchObject({ status: "no_answer", sources: [] });
+    expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT)).toMatchObject({ status: "no_answer", sources: [] });
 
     await call(updateArticle, as(owner), { slug, listing: "everywhere" });
     citeAllWhile("ai_only");
-    const answer = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", []);
+    const answer = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT);
     expect(answer.sources.find((s) => s.slug === slug)).toEqual({ slug, title: "everywhere guide", url: null });
 
     // When the model is too slow, the closest articles are offered instead: not one hidden meanwhile.
@@ -200,7 +201,7 @@ describe("search and AI answers", () => {
       await held;
     });
     try {
-      const failed = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", [], 1000);
+      const failed = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, 1000);
       expect(failed.status).toBe("failed");
       expect(sorted(failed.sources.map((s) => s.slug))).toEqual([slug, slugOf("ai_only")].sort());
     } finally {

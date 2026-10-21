@@ -1,7 +1,6 @@
 "use client";
 
 import type { Doc } from "@tuti/content";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -26,8 +25,11 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { type GroupOption, WhoCanRead } from "@/components/who-can-read";
 import { type Listing, LISTING_DESCRIPTIONS, LISTING_LABELS, LISTINGS } from "@/lib/article-listing";
 import { keepingFields } from "@/lib/forms";
+import type { Access } from "@/lib/read-access";
+import type { AccessChoices } from "@/server/docs-queries";
 import type { FormState } from "@/server/form-state";
 import type { DocsLanding } from "@/server/operations/docs";
 import {
@@ -52,21 +54,27 @@ type Article = {
   collection: string | null;
   showUpdatedDate: boolean;
   listing: Listing;
+  access: Access;
+  /** Its groups' keys (with access "groups"). */
+  groups: string[];
   published: boolean;
 };
 type CollectionOption = { slug: string; name: string };
 
-/** Writes a new article (`article` null) or edits one: title, collection, listing and text. */
+/** Writes a new article (`article` null) or edits one: title, collection, listing, who can read it and text. */
 export function ArticleForm({
   projectSlug,
   article,
   collections,
+  access,
   mediaBaseUrl,
   defaultTitle,
 }: {
   projectSlug: string;
   article: Article | null;
   collections: CollectionOption[];
+  /** For "Who can read": the project's groups, and what each collection (or the first tab, for none) lets read. */
+  access: AccessChoices;
   mediaBaseUrl: string | null;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
@@ -80,6 +88,9 @@ export function ArticleForm({
   }, {});
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   const [listing, setListing] = useState<Listing>(article?.listing ?? "everywhere");
+  const [collection, setCollection] = useState<string | null>(article?.collection ?? null);
+  // It inherits from its collection, or (in none) from the first tab.
+  const parent = collection === null ? access.firstTab : collections.find((c) => c.slug === collection);
 
   return (
     <form {...keepingFields(action)}>
@@ -100,7 +111,7 @@ export function ArticleForm({
         </Field>
         <Field>
           <FieldLabel id="article-collection-label">Collection</FieldLabel>
-          <Select name="collection" items={items} defaultValue={article?.collection ?? null}>
+          <Select name="collection" items={items} value={collection} onValueChange={(value) => setCollection(value as string | null)}>
             <SelectTrigger className="w-full sm:w-64" aria-labelledby="article-collection-label">
               <SelectValue />
             </SelectTrigger>
@@ -129,6 +140,17 @@ export function ArticleForm({
           </Select>
           <FieldDescription id="article-listing-description">{LISTING_DESCRIPTIONS[listing]}</FieldDescription>
         </Field>
+        <WhoCanRead
+          id="article-access"
+          projectSlug={projectSlug}
+          groups={access.groups}
+          inherit={{
+            label: parent ? `Inherit from ${parent.name}` : "Inherit",
+            description: access.inherits[parent?.slug ?? ""] ?? access.inherits[""]!,
+          }}
+          defaultAccess={article?.access}
+          defaultGroups={article?.groups}
+        />
         <Field>
           <FieldLabel id="article-body-label">Article</FieldLabel>
           <RichEditor
@@ -396,20 +418,34 @@ export function RestoreDeletedButton({ projectSlug, slug, revision, title }: { p
   );
 }
 
-export type GroupOption = { key: string; name: string };
+export type { GroupOption };
 
-/** Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and changes its description. */
+/**
+ * Adds a collection (at the top level or in one of `parents`), or (with `collection`) renames one and
+ * changes its description, icon and who can read it.
+ */
 export function CollectionDialog({
   projectSlug,
   collection,
   parents = [],
   tabs = [],
-  groups,
+  access,
 }: {
   projectSlug: string;
-  collection?: { slug: string; name: string; description: string; groups: string[]; icon: string | null; knownIcon: boolean };
-  /** The project's reader groups to pick from. */
-  groups: GroupOption[];
+  collection?: {
+    slug: string;
+    name: string;
+    description: string;
+    /** The collection it's in, or (at the top level) its tab: what it inherits from. */
+    parent: string | null;
+    tab: string | null;
+    access: Access;
+    groups: string[];
+    icon: string | null;
+    knownIcon: boolean;
+  };
+  /** For "Who can read": the project's groups, and what each tab and collection lets read. */
+  access: AccessChoices;
   /** The collections a new one can go in (the ones less than 5 levels deep), named with the ones they're in. */
   parents?: CollectionOption[];
   /** The tabs a new top-level one can go in, the first by default. */
@@ -427,13 +463,17 @@ export function CollectionDialog({
   const id = collection?.slug ?? "new";
   const parentItems = [{ value: null, label: "None (top level)" }, ...parents.map((c) => ({ value: c.slug, label: c.name }))];
   const tabItems = tabs.map((s) => ({ value: s.slug, label: s.name }));
+  // A new one's place, as picked: it inherits from there.
+  const [parent, setParent] = useState<string | null>(null);
+  const [tab, setTab] = useState<string | null>(tabItems[0]?.value ?? null);
+  const above = collection ? (collection.parent ?? collection.tab) : (parent ?? tab);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant={collection ? "ghost" : "outline"} size="sm" />}>
         {collection ? "Edit" : "New collection"}
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>{collection ? "Edit collection" : "New collection"}</DialogTitle>
@@ -463,38 +503,10 @@ export function CollectionDialog({
                 placeholder="Optional, shown in your docs"
               />
             </Field>
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium">Only for groups</legend>
-              {groups.length > 0 && (
-                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                  {groups.map((group) => (
-                    <label key={group.key} className="flex items-center gap-2 text-sm break-words">
-                      <input
-                        type="checkbox"
-                        name="groups"
-                        value={group.key}
-                        defaultChecked={collection?.groups.includes(group.key)}
-                        className="size-4 accent-primary"
-                      />
-                      {group.name}
-                    </label>
-                  ))}
-                </div>
-              )}
-              <FieldDescription>
-                {groups.length > 0
-                  ? "None ticked: everyone who can read your docs. With groups, only your team and readers in one of them see it, its articles and the collections in it. Groups are in "
-                  : "It's for everyone who can read your docs. To make it for some readers only, add a group in "}
-                <Link href={`/app/${projectSlug}/settings#groups`} className="text-primary underline underline-offset-4">
-                  Settings → Groups
-                </Link>
-                .
-              </FieldDescription>
-            </fieldset>
             {!collection && parents.length > 0 && (
               <Field>
                 <FieldLabel id="collection-parent-label">Parent collection</FieldLabel>
-                <Select name="parent" items={parentItems} defaultValue={null}>
+                <Select name="parent" items={parentItems} value={parent} onValueChange={(value) => setParent(value as string | null)}>
                   <SelectTrigger className="w-full" aria-labelledby="collection-parent-label">
                     <SelectValue />
                   </SelectTrigger>
@@ -511,7 +523,7 @@ export function CollectionDialog({
             {!collection && tabItems.length > 0 && (
               <Field>
                 <FieldLabel id="collection-tab-label">Tab</FieldLabel>
-                <Select name="tab" items={tabItems} defaultValue={tabItems[0].value}>
+                <Select name="tab" items={tabItems} value={tab} onValueChange={(value) => setTab(value as string | null)}>
                   <SelectTrigger className="w-full" aria-labelledby="collection-tab-label">
                     <SelectValue />
                   </SelectTrigger>
@@ -526,6 +538,14 @@ export function CollectionDialog({
                 {parentItems.length > 1 && <FieldDescription>A collection inside another is in that one&apos;s tab.</FieldDescription>}
               </Field>
             )}
+            <WhoCanRead
+              id={`collection-access-${id}`}
+              projectSlug={projectSlug}
+              groups={access.groups}
+              inherit={{ label: "Inherit", description: access.inherits[above ?? ""] ?? access.inherits[""]! }}
+              defaultAccess={collection?.access}
+              defaultGroups={collection?.groups}
+            />
           </FieldGroup>
           <DialogFooter>
             <Button type="submit" disabled={pending}>
@@ -646,15 +666,30 @@ const LANDING_CHOICES: { value: DocsLanding; name: string; description: string; 
 export type TabSettings = CollectionOption & {
   landing: DocsLanding;
   landingPage: string | null;
+  /** Who can read it, with its groups' keys (for access "groups"). */
+  access: Access;
+  groups: string[];
   pages: { collections: CollectionOption[]; articles: { slug: string; title: string; published: boolean }[] };
 };
 
 /**
  * Adds a tab (`tab` undefined; the first one takes the collections there are, which the dialog
- * says), or a tab's settings: its name, its address (`home`: the first tab's is /docs) and what
- * its path shows.
+ * says), or a tab's settings: its name, its address (`home`: the first tab's is /docs), what
+ * its path shows and who can read it (`access`: the project's groups to pick from).
  */
-export function TabDialog({ projectSlug, tab, first = false, home = false }: { projectSlug: string; tab?: TabSettings; first?: boolean; home?: boolean }) {
+export function TabDialog({
+  projectSlug,
+  tab,
+  first = false,
+  home = false,
+  access,
+}: {
+  projectSlug: string;
+  tab?: TabSettings;
+  first?: boolean;
+  home?: boolean;
+  access?: AccessChoices;
+}) {
   const [open, setOpen] = useState(false);
   const [landing, setLanding] = useState(tab?.landing ?? "overview");
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
@@ -682,7 +717,7 @@ export function TabDialog({ projectSlug, tab, first = false, home = false }: { p
       <DialogTrigger render={<Button variant={tab ? "ghost" : "outline"} size="sm" aria-label={tab ? `Settings for ${tab.name}` : undefined} />}>
         {tab ? "Settings" : "New tab"}
       </DialogTrigger>
-      <DialogContent className={tab && "sm:max-w-xl"}>
+      <DialogContent className={tab && "max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl"}>
         <form {...keepingFields(action)}>
           <DialogHeader>
             <DialogTitle>{tab ? "Tab settings" : "New tab"}</DialogTitle>
@@ -776,6 +811,16 @@ export function TabDialog({ projectSlug, tab, first = false, home = false }: { p
                     <FieldDescription>Readers who can&apos;t read it (a draft, or a collection for some groups) get the overview.</FieldDescription>
                   </Field>
                 )}
+                {access && (
+                  <WhoCanRead
+                    id={`tab-access-${id}`}
+                    projectSlug={projectSlug}
+                    groups={access.groups}
+                    inherit={{ label: "Inherit", description: access.inherits[""]! }}
+                    defaultAccess={tab.access}
+                    defaultGroups={tab.groups}
+                  />
+                )}
                 {state.error && <FieldError>{state.error}</FieldError>}
               </>
             )}
@@ -812,8 +857,8 @@ export function DeleteTabButton({
           <AlertDialogTitle>Delete {tab.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             {movesTo
-              ? `Its collections move to ${movesTo}, with their articles.`
-              : "It's the last tab, so your docs go back to one page with all your collections."}
+              ? `Its collections move to ${movesTo}, with their articles. They keep who can read them.`
+              : "It's the last tab, so your docs go back to one page with all your collections. They keep who can read them."}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

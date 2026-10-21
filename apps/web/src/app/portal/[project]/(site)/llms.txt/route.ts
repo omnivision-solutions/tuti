@@ -3,6 +3,7 @@ import { prisma } from "@tuti/db";
 
 import { portalAddress } from "@/server/custom-domains";
 import { boardPath } from "@/lib/post-urls";
+import { SIGNED_OUT } from "@/lib/read-access";
 import { type DocsCollection, docsContents, docsTabPath } from "@/server/docs-queries";
 
 const text = (value: string, href?: string) => ({ type: "text", text: value, ...(href && { marks: [{ type: "link", attrs: { href } }] }) });
@@ -31,8 +32,8 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     return new Response("Not found", { status: 404 });
   }
   const portal = await portalAddress(slug);
-  // For AI tools, like search engines: what's for everyone (not collections for some reader groups only).
-  const docs = await docsContents(slug, { groups: [] });
+  // For AI tools, like search engines: what's for everyone (nothing for signed-in readers or some groups only).
+  const docs = await docsContents(slug, { reader: SIGNED_OUT });
   const { collections, uncollected, tabs } = docs;
   const articleItem = (article: { slug: string; title: string }) => ({
     type: "listItem",

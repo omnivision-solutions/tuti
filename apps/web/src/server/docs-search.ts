@@ -1,7 +1,8 @@
 import { type ArticleListing, prisma } from "@tuti/db";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
-import { type ReaderGroups, visibleArticleSql } from "@/lib/reader-groups";
+import type { Reader } from "@/lib/read-access";
+import { visibleArticleSql } from "@/lib/reader-groups";
 
 export type DocsSearchResult = { slug: string; title: string; snippet: string };
 
@@ -16,18 +17,18 @@ const SEARCH_EMBED_TIMEOUT_MS = 2000;
  * articles that contain the query's words (Postgres full-text search), with the
  * passage around them: all there is without a key, and with one it still finds exact
  * terms, articles not embedded yet, and everything while OpenAI is down or slow.
- * Only articles readers with `groups` may read (null: the team, everything).
+ * Only articles `reader` may read (null: the team, everything).
  */
 export async function searchDocs(
   projectId: string,
   query: string,
   limit: number,
-  groups: ReaderGroups,
+  reader: Reader,
   embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
 ): Promise<DocsSearchResult[]> {
   const [byMeaning, byWords] = await Promise.all([
-    embeddingsEnabled() ? meaningMatches(projectId, query, limit, groups, embedTimeoutMs) : [],
-    wordMatches(projectId, query, limit, groups),
+    embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs) : [],
+    wordMatches(projectId, query, limit, reader),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
   const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
@@ -52,7 +53,7 @@ function logSearch(projectId: string, query: string, results: number) {
     .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
 }
 
-async function meaningMatches(projectId: string, query: string, limit: number, groups: ReaderGroups, timeoutMs: number): Promise<DocsSearchResult[]> {
+async function meaningMatches(projectId: string, query: string, limit: number, reader: Reader, timeoutMs: number): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
     const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
@@ -73,7 +74,7 @@ async function meaningMatches(projectId: string, query: string, limit: number, g
     ) best
     JOIN article a ON a.id = best."articleId"
     WHERE a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND best.distance <= ${1 - SEARCH_MIN_SIMILARITY}
-      AND ${visibleArticleSql(groups)}
+      AND ${visibleArticleSql(reader)}
     ORDER BY best.distance, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, heading, text }) => ({ slug, title, snippet: snippet(text || heading) }));
@@ -84,14 +85,14 @@ export type AnswerSection = { articleId: string; slug: string; title: string; li
 /**
  * The published sections closest to a question, at least ANSWER_MIN_SIMILARITY alike, best
  * first: what AI answers may use (docs.ask). Every listing but hidden: unlisted articles are
- * public at their link anyway, and AI-only ones are there for this. Only articles the asker's
- * `groups` may read. Null if the question couldn't be embedded in time.
+ * public at their link anyway, and AI-only ones are there for this. Only articles the asker,
+ * `reader` may read. Null if the question couldn't be embedded in time.
  */
 export async function answerSections(
   projectId: string,
   question: string,
   limit: number,
-  groups: ReaderGroups,
+  reader: Reader,
   timeoutMs: number,
 ): Promise<AnswerSection[] | null> {
   let vector: string;
@@ -108,14 +109,14 @@ export async function answerSections(
     FROM article_chunk c
     JOIN article a ON a.id = c."articleId"
     WHERE c."projectId" = ${projectId} AND a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
-      AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(groups)}
+      AND a.listing <> 'HIDDEN' AND ${visibleArticleSql(reader)}
       AND c.embedding <=> ${vector}::vector <= ${1 - ANSWER_MIN_SIMILARITY}
     ORDER BY c.embedding <=> ${vector}::vector, a.title, c.position
     LIMIT ${limit}`;
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
-async function wordMatches(projectId: string, query: string, limit: number, groups: ReaderGroups): Promise<DocsSearchResult[]> {
+async function wordMatches(projectId: string, query: string, limit: number, reader: Reader): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut.
   const rows = await prisma.$queryRaw<{ slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean }[]>`
     SELECT a.slug, a.title, h.passage,
@@ -128,7 +129,7 @@ async function wordMatches(projectId: string, query: string, limit: number, grou
       SELECT ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""') AS passage
     ) h
     WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND d.words @@ q
-      AND ${visibleArticleSql(groups)}
+      AND ${visibleArticleSql(reader)}
     ORDER BY ts_rank(d.words, q) DESC, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, passage, cutStart, cutEnd }) => ({
