@@ -63,14 +63,15 @@ export function verifyWebhookSignature(secret: string, body: string, header: str
   return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
 }
 
+/** A GitHub account the Tuti App is installed on: "Organization" or "User". */
+export type GithubAccount = { login: string; type: string };
+
 /**
- * Proof that a person can see an installation (GitHub's setup redirect only says
- * which installation, and anyone can type one): after GitHub's web authorization
- * flow, we exchange its `code` and look for the installation among that user's
- * installations. Returns the installation's account and the repositories of it the
- * person can access (only those can be included in a project), or null.
+ * The person who came back from GitHub's web authorization flow: we exchange its `code` for
+ * their token, to ask GitHub (as them) which of the App's installations they can see and which
+ * repositories of each they can access. Null if the code isn't good.
  */
-export async function installationForUser(config: GithubConfig, code: string, redirectUri: string, installationId: number) {
+async function githubUser(config: GithubConfig, code: string, redirectUri: string) {
   const tokenResponse = await fetch(`${config.url}/login/oauth/access_token`, {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
@@ -95,19 +96,60 @@ export async function installationForUser(config: GithubConfig, code: string, re
       url = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get("link") ?? "")?.[1] ?? null;
     }
   }
-  let account: { login: string } | undefined;
-  for await (const { installations } of pages<{ installations: { id: number; account: { login: string } }[] }>("/user/installations")) {
-    account = installations.find((i) => i.id === installationId)?.account;
-    if (account) {
-      break;
-    }
-  }
-  if (!account) {
+  return {
+    async *installations() {
+      type Page = { installations: { id: number; account: { login: string; type?: string } }[] };
+      for await (const { installations } of pages<Page>("/user/installations")) {
+        for (const installation of installations) {
+          yield { id: installation.id, account: { login: installation.account.login, type: installation.account.type ?? "Organization" } };
+        }
+      }
+    },
+    async repositories(installationId: number) {
+      const repositories: GithubRepo[] = [];
+      for await (const page of pages<{ repositories: { id: number; full_name: string }[] }>(`/user/installations/${installationId}/repositories`)) {
+        repositories.push(...page.repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name })));
+      }
+      return repositories;
+    },
+  };
+}
+
+/**
+ * Proof that a person can see an installation (GitHub's setup redirect only says
+ * which installation, and anyone can type one): we look for it among the installations
+ * GitHub says they can see. Returns the installation's account and the repositories of it the
+ * person can access (only those can be included in a project), or null.
+ */
+export async function installationForUser(config: GithubConfig, code: string, redirectUri: string, installationId: number) {
+  const user = await githubUser(config, code, redirectUri);
+  if (!user) {
     return null;
   }
-  const repositories: GithubRepo[] = [];
-  for await (const page of pages<{ repositories: { id: number; full_name: string }[] }>(`/user/installations/${installationId}/repositories`)) {
-    repositories.push(...page.repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name })));
+  for await (const installation of user.installations()) {
+    if (installation.id === installationId) {
+      return { ...installation.account, repositories: await user.repositories(installationId) };
+    }
   }
-  return { login: account.login, repositories };
+  return null;
+}
+
+/** The App's installations the person can see (for "Connect GitHub" to offer), or null if the code isn't good. */
+export async function installationsForUser(config: GithubConfig, code: string, redirectUri: string) {
+  const user = await githubUser(config, code, redirectUri);
+  if (!user) {
+    return null;
+  }
+  const installations: { id: number; account: GithubAccount }[] = [];
+  for await (const installation of user.installations()) {
+    installations.push(installation);
+  }
+  return installations;
+}
+
+/** The installation's settings on GitHub, where its owners choose which repositories the App can see. */
+export function installationSettingsUrl(config: GithubConfig, installationId: number, account: GithubAccount) {
+  return account.type === "User"
+    ? `${config.url}/settings/installations/${installationId}`
+    : `${config.url}/organizations/${account.login}/settings/installations/${installationId}`;
 }

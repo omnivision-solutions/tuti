@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { githubConfig, installationForUser, verifyValue } from "@/lib/github";
+import { githubConfig, installationForUser, installationsForUser, signValue, verifyValue } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { adminProject, INSTALL_COOKIE, saveConnection } from "@/server/github-connect";
+import { ACCOUNTS_COOKIE, adminProject, INSTALL_COOKIE, saveConnection } from "@/server/github-connect";
 
 /**
  * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns
@@ -26,14 +26,35 @@ export async function GET(request: Request) {
   const done = (result: string) => {
     const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=${result}`, appUrl()));
     response.cookies.delete({ name: INSTALL_COOKIE, path: "/api/github" });
+    response.cookies.delete({ name: ACCOUNTS_COOKIE, path: "/" });
     return response;
   };
 
-  const installationId = Number(installation);
   const code = params.get("code");
-  const account =
-    code &&
-    (await installationForUser(config, code, new URL("/api/github/callback", appUrl()).href, installationId).catch(() => null));
+  const redirectUri = new URL("/api/github/callback", appUrl()).href;
+  // "Connect GitHub": the accounts the person has the App on, to pick from; none, so on to install it.
+  if (purpose === "choose") {
+    const installations = code ? await installationsForUser(config, code, redirectUri).catch(() => null) : null;
+    if (!installations) {
+      return done("unconfirmed");
+    }
+    if (installations.length === 0) {
+      return NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`);
+    }
+    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=choose`, appUrl()));
+    const accounts = installations.slice(0, 50).map((i) => `${i.id}:${i.account.type}:${i.account.login}`);
+    response.cookies.set(ACCOUNTS_COOKIE, signValue("accounts", [project.id, ...accounts]), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: appUrl().protocol === "https:",
+      path: "/",
+      maxAge: 15 * 60,
+    });
+    return response;
+  }
+
+  const installationId = Number(installation);
+  const account = code && (await installationForUser(config, code, redirectUri, installationId).catch(() => null));
   if (!account) {
     return done("unconfirmed");
   }

@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { githubConfig, signValue, verifyValue } from "@/lib/github";
+import { githubConfig, verifyValue } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { adminProject, INSTALL_COOKIE } from "@/server/github-connect";
+import { adminProject, authorizeRedirect, INSTALL_COOKIE } from "@/server/github-connect";
 
 /**
  * The App's Setup URL (step 2 of 3): GitHub sends people here after installing,
@@ -26,11 +26,5 @@ export async function GET(request: Request) {
   if (!Number.isSafeInteger(installationId) || installationId <= 0) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=unconfirmed`, appUrl()));
   }
-  const authorize = new URL(`${config.url}/login/oauth/authorize`);
-  authorize.search = new URLSearchParams({
-    client_id: config.clientId,
-    redirect_uri: new URL("/api/github/callback", appUrl()).href,
-    state: signValue("callback", [project.id, String(installationId), "install"]),
-  }).toString();
-  return NextResponse.redirect(authorize);
+  return authorizeRedirect(config, project.id, installationId, "install");
 }

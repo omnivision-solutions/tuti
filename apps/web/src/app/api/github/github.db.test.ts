@@ -11,11 +11,13 @@ import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestio
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { disconnectGithub, setGithubNewRepositories, setGithubRepository } from "@/server/github";
+import { accountsFromCookie } from "@/server/github-connect";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
 import { GET as refreshRoute } from "./refresh/route";
 import { GET as setup } from "./setup/route";
+import { GET as pickAccount } from "./use/route";
 import { POST as webhook } from "./webhook/route";
 
 let github: GithubFake;
@@ -39,31 +41,93 @@ afterEach(() => vi.unstubAllEnvs());
 const APP = "http://tuti.localhost:3100";
 const location = (response: Response) => response.headers.get("location") ?? "";
 
+const stateOf = (response: Response) => new URL(location(response)).searchParams.get("state")!;
+/** A cookie the response sets, as `name=value` with its value decoded (as Next reads it). */
+const cookieOf = (response: Response, name: string) => {
+  const cookie = response.headers
+    .getSetCookie()
+    .map((header) => header.split(";")[0]!)
+    .find((header) => header.startsWith(`${name}=`))!;
+  return `${name}=${decodeURIComponent(cookie.slice(name.length + 1))}`;
+};
+
 /**
- * The whole connect flow, as the browser goes through it: Connect GitHub → GitHub's
- * install page → our Setup URL (`installation_id`) → GitHub's authorize page → our
- * callback (`code`, `state`). `code` is whoever authorizes on GitHub.
+ * The connect flow for an account that has the App already, as the browser goes through it:
+ * Connect GitHub → GitHub's authorize page → our callback (`code`: whoever authorizes on GitHub)
+ * lists their accounts → they pick `installationId` → GitHub's authorize page again → our
+ * callback connects it. Returns where it ends.
  */
 async function connect(projectSlug: string, installationId: number, code: string) {
   const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}`));
+  if (!location(started).startsWith(`${github.url}/login/oauth/authorize`)) {
+    return location(started);
+  }
+  const listed = await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(started))}`));
+  if (!location(listed).endsWith("github=choose")) {
+    return location(listed);
+  }
+  const session = request.cookie;
+  request.cookie = `${session}; ${cookieOf(listed, "tuti_github_accounts")}`;
+  const picked = await pickAccount(new Request(`${APP}/api/github/use?project=${projectSlug}&installation=${installationId}`));
+  request.cookie = session;
+  if (!location(picked).startsWith(`${github.url}/login/oauth/authorize`)) {
+    return location(picked);
+  }
+  return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(picked))}`)));
+}
+
+/**
+ * A first install: "Install on another account" → GitHub's install page → our Setup URL
+ * (`installation_id`) → GitHub's authorize page → our callback.
+ */
+async function installAndConnect(projectSlug: string, installationId: number, code: string) {
+  const started = await install(new Request(`${APP}/api/github/install?project=${projectSlug}&new=1`));
   if (!location(started).startsWith(github.url)) {
     return location(started);
   }
-  const installCookie = started.headers.getSetCookie()[0]!.split(";")[0]!;
   const session = request.cookie;
-  request.cookie = `${session}; ${installCookie}`;
+  request.cookie = `${session}; ${cookieOf(started, "tuti_github_install")}`;
   const authorize = await setup(new Request(`${APP}/api/github/setup?installation_id=${installationId}&setup_action=install`));
   request.cookie = session;
   if (!location(authorize).startsWith(`${github.url}/login/oauth/authorize`)) {
     return location(authorize);
   }
-  const state = new URL(location(authorize)).searchParams.get("state")!;
-  return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(state)}`)));
+  return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(stateOf(authorize))}`)));
 }
 
 const connected = (projectId: string) => prisma.githubInstallation.findUnique({ where: { projectId } });
 
 describe("connecting", () => {
+  test("Connect GitHub offers the accounts the person has the app on; without any, it's on to installing it", async () => {
+    github.user("code-0", []);
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const listed = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(started))}`));
+    expect(location(listed)).toBe(`${github.url}/apps/tuti-test/installations/new`);
+    // The project is remembered for the Setup URL GitHub comes back to.
+    expect(cookieOf(started, "tuti_github_install")).toBeTruthy();
+
+    github.user("code-0", [{ id: 520, account: "acme" }, { id: 521, account: "olive", type: "User" }]);
+    const again = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const offered = await callback(new Request(`${APP}/api/github/callback?code=code-0&state=${encodeURIComponent(stateOf(again))}`));
+    expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations?github=choose`);
+    expect(accountsFromCookie(cookieOf(offered, "tuti_github_accounts").slice("tuti_github_accounts=".length), project.id)).toEqual([
+      { id: 520, account: { login: "acme", type: "Organization" } },
+      { id: 521, account: { login: "olive", type: "User" } },
+    ]);
+    expect(await connected(project.id)).toBeNull();
+    // Only an offered account can be picked, and only for this project.
+    request.cookie = `${request.cookie}; ${cookieOf(offered, "tuti_github_accounts")}`;
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${project.slug}&installation=999`)))).toMatch(/github=expired$/);
+    const other = await createProject(owner);
+    expect(location(await pickAccount(new Request(`${APP}/api/github/use?project=${other.slug}&installation=520`)))).toMatch(/github=expired$/);
+  });
+
+  test("a first install comes back through the Setup URL and connects", async () => {
+    github.user("code-new", [{ id: 530, account: "acme" }]);
+    expect(await installAndConnect(project.slug, 530, "code-new")).toMatch(/github=connected$/);
+    expect(await connected(project.id)).toMatchObject({ installationId: 530, accountLogin: "acme", accountType: "Organization" });
+  });
+
   test("the person who installs can see the installation: the project is connected", async () => {
     github.user("code-1", [{ id: 501, account: "acme" }]);
     expect(await connect(project.slug, 501, "code-1")).toBe(`${APP}/app/${project.slug}/settings/integrations?github=connected`);
@@ -73,13 +137,16 @@ describe("connecting", () => {
   test("the installation may be on any page of the person's installations", async () => {
     const many = Array.from({ length: 250 }, (_, i) => ({ id: 10_000 + i, account: `org-${i}` }));
     github.user("code-many", many);
-    expect(await connect(project.slug, 10_249, "code-many")).toMatch(/github=connected$/);
+    expect(await installAndConnect(project.slug, 10_249, "code-many")).toMatch(/github=connected$/);
   });
 
   test("someone else's installation can't be claimed", async () => {
     github.user("code-2", [{ id: 777, account: "mine" }]); // can see 777, not 501
-    expect(await connect(project.slug, 501, "code-2")).toMatch(/github=unconfirmed$/);
-    expect(await connect(project.slug, 501, "made-up")).toMatch(/github=unconfirmed$/);
+    // GitHub's Setup URL only says which installation, and anyone can type one there.
+    expect(await installAndConnect(project.slug, 501, "code-2")).toMatch(/github=unconfirmed$/);
+    expect(await installAndConnect(project.slug, 501, "made-up")).toMatch(/github=unconfirmed$/);
+    // Nor can it be picked when it wasn't offered.
+    expect(await connect(project.slug, 501, "code-2")).toMatch(/github=expired$/);
     expect(await connected(project.id)).toBeNull();
   });
 
