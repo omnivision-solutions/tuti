@@ -45,7 +45,7 @@ export type GithubFake = {
   close(): Promise<void>;
 };
 
-export type FakeInstallation = { id: number; account: string; repositories?: { id: number; fullName: string }[] };
+export type FakeInstallation = { id: number; account: string; type?: "Organization" | "User"; repositories?: { id: number; fullName: string }[] };
 
 /** The App's webhook secret in the fake's `env`, for signing deliveries from other processes (journeys). */
 export const FAKE_GITHUB_WEBHOOK_SECRET = "test-github-webhook-secret";
@@ -93,7 +93,7 @@ export async function startGithubFake(): Promise<GithubFake> {
       // X-Forwarded-For, which each journey person has to itself) does (see nextInstall).
       if (req.method === "POST" && url.pathname === "/_fake/next-install") {
         const next = JSON.parse(raw || "{}") as FakeInstallation & { forwardedFor: string; setupUrl: string; code: string };
-        users.set(next.code, [{ id: next.id, account: next.account, repositories: next.repositories }]);
+        users.set(next.code, [{ id: next.id, account: next.account, type: next.type, repositories: next.repositories }]);
         installsFor.set(next.forwardedFor, { setupUrl: next.setupUrl, id: next.id, code: next.code });
         return send(200, {});
       }
@@ -115,7 +115,7 @@ export async function startGithubFake(): Promise<GithubFake> {
         // Paged like GitHub, with a Link header to the next page.
         const items: unknown[] = installation
           ? (installation.repositories ?? []).map((repo) => ({ id: repo.id, full_name: repo.fullName }))
-          : installations.map((i) => ({ id: i.id, account: { login: i.account } }));
+          : installations.map((i) => ({ id: i.id, account: { login: i.account, type: i.type ?? "Organization" } }));
         const perPage = Number(url.searchParams.get("per_page") ?? 30);
         const page = Number(url.searchParams.get("page") ?? 1);
         const slice = items.slice((page - 1) * perPage, page * perPage);

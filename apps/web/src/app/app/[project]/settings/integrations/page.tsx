@@ -1,18 +1,21 @@
 import { prisma } from "@tuti/db";
 import { listedRepositories } from "@tuti/jobs";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
-import { CloseOnSelect, DisconnectGithubButton, GithubRepositories, PrCommentsCheckbox } from "@/components/github-connection";
+import { CloseOnSelect, DisconnectGithubButton, GithubAccountChoice, GithubRepositories, PrCommentsCheckbox } from "@/components/github-connection";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { githubConfig } from "@/lib/github";
+import { githubConfig, installationSettingsUrl } from "@/lib/github";
 import { repositoryRows } from "@/lib/github-repository-rows";
+import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
 import { getSession } from "@/server/session";
 
 const GITHUB_RESULTS: Record<string, string> = {
   connected: "GitHub is connected.",
+  expired: "That took too long. Try connecting again.",
   refreshed: "Repositories refreshed.",
   unconfirmed: "GitHub couldn't confirm that you can use that installation. Try connecting again.",
 };
@@ -27,12 +30,16 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
   }
   const viewerId = (await getSession())?.user.id ?? "";
   const github = githubConfig();
+  // Back from "Connect GitHub" with the accounts the person has the app on.
+  const accounts =
+    githubResult === "choose" ? accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id) : [];
   const installation = await prisma.githubInstallation.findUnique({
     where: { projectId: project.id },
     select: {
       id: true,
       installationId: true,
       accountLogin: true,
+      accountType: true,
       closeOn: true,
       commentOnPullRequests: true,
       includeNewRepositories: true,
@@ -69,7 +76,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
           {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
-            <Alert variant={githubResult === "unconfirmed" ? "destructive" : "default"}>
+            <Alert variant={githubResult === "unconfirmed" || githubResult === "expired" ? "destructive" : "default"}>
               <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
             </Alert>
           )}
@@ -86,6 +93,8 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               <CloseOnSelect projectSlug={project.slug} closeOn={installation.closeOn} />
               <PrCommentsCheckbox projectSlug={project.slug} on={installation.commentOnPullRequests} />
             </>
+          ) : accounts.length > 0 ? (
+            <GithubAccountChoice projectSlug={project.slug} accounts={accounts} />
           ) : (
             <a href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`} className={buttonVariants({ className: "self-start" })}>
               Connect GitHub
@@ -98,8 +107,8 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           <CardHeader>
             <CardTitle>Repositories</CardTitle>
             <CardDescription>
-              Pull requests and releases from the repositories you include link to and complete this project&apos;s posts. Each
-              repository belongs to one project; other projects can connect @{installation.accountLogin} for theirs.
+              Pull requests and releases from these repositories link to and complete this project&apos;s posts. A repository
+              belongs to one project; other projects can connect @{installation.accountLogin} for theirs.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -120,6 +129,10 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               )}
               includeNew={installation.includeNewRepositories}
               newElsewhere={newElsewhere ? projectName(newElsewhere.project) : null}
+              manageUrl={installationSettingsUrl(github, installation.installationId, {
+                login: installation.accountLogin,
+                type: installation.accountType,
+              })}
             />
           </CardContent>
         </Card>

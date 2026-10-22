@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
 import { NextResponse } from "next/server";
 
-import { githubConfig, signValue } from "@/lib/github";
+import { githubConfig } from "@/lib/github";
 import { appUrl } from "@/lib/hosts";
-import { adminProject } from "@/server/github-connect";
+import { adminProject, authorizeRedirect } from "@/server/github-connect";
 
 /**
  * "Refresh" on Settings → Integrations: asks GitHub again (its web authorization flow, which
@@ -23,11 +23,5 @@ export async function GET(request: Request) {
   if (!connection) {
     return NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations`, appUrl()));
   }
-  const authorize = new URL(`${config.url}/login/oauth/authorize`);
-  authorize.search = new URLSearchParams({
-    client_id: config.clientId,
-    redirect_uri: new URL("/api/github/callback", appUrl()).href,
-    state: signValue("callback", [project.id, String(connection.installationId), "refresh"]),
-  }).toString();
-  return NextResponse.redirect(authorize);
+  return authorizeRedirect(config, project.id, connection.installationId, "refresh");
 }

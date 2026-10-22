@@ -16,7 +16,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const id = randomInt(1_000_000, 2_000_000_000);
   const account = { id, account: "acme-e2e", repositories: [{ id, fullName: "acme-e2e/app" }, { id: id + 1, fullName: "acme-e2e/ios" }] };
 
-  // The GitHub fake's install and authorize pages send the browser straight back, like GitHub.
+  // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
   await expect(owner.getByText("GitHub is connected.")).toBeVisible();
   await expect(owner.getByText("Connected to @acme-e2e.")).toBeVisible();
@@ -29,31 +29,41 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("checkbox", { name: /Comment on pull requests/ })).toBeChecked();
 
   // The first project on the account takes its repositories; this one lets the iOS app go.
-  await expect(owner.getByText("2 of 2")).toBeVisible();
-  await expect(owner.getByRole("switch", { name: "Include new repositories" })).toBeChecked();
-  await owner.getByRole("switch", { name: "Include acme-e2e/ios" }).uncheck();
-  await expect(owner.getByText("acme-e2e/ios left out")).toBeVisible();
-  await expect(owner.getByText("1 of 2")).toBeVisible();
+  const ours = owner.getByRole("list", { name: "This project's repositories" });
+  await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
+  await expect(owner.getByRole("switch", { name: "Add new repositories automatically" })).toBeChecked();
+  await owner.getByRole("button", { name: "Remove acme-e2e/ios" }).click();
+  await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
+  await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
+  // Which repositories the app can see is the account's to choose, on GitHub.
+  await expect(owner.getByRole("link", { name: "Manage access on GitHub" })).toHaveAttribute(
+    "href",
+    new RegExp(`/organizations/acme-e2e/settings/installations/${id}$`),
+  );
   await checkpoint(owner, "settings-github-connected");
 
-  // The second project connects the same account: it starts with none, and takes the iOS app.
+  // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, account);
-  await expect(owner.getByText("0 of 2")).toBeVisible();
-  await expect(owner.getByText("No repository is included", { exact: false })).toBeVisible();
-  await expect(owner.getByRole("switch", { name: "Include acme-e2e/app" })).toBeDisabled();
-  await expect(owner.getByText("In Acme", { exact: true })).toBeVisible();
-  await expect(owner.getByRole("switch", { name: "Include new repositories" })).toBeDisabled();
+  await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
+  await owner.getByRole("button", { name: "Add repository" }).click();
+  const toAdd = owner.getByRole("list", { name: "Repositories to add" });
+  await expect(toAdd.getByRole("button", { name: /acme-e2e\/app/ })).toBeDisabled();
+  await expect(toAdd.getByText("In Acme", { exact: true })).toBeVisible();
+  await owner.getByRole("textbox", { name: "Search repositories" }).fill("ios");
+  await expect(toAdd.getByRole("button")).toHaveCount(1);
+  await checkpoint(owner, "settings-github-add-repository", { fullPage: false });
+  await toAdd.getByRole("button", { name: "acme-e2e/ios" }).click();
+  await expect(owner.getByText("acme-e2e/ios added")).toBeVisible();
+  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
+  await expect(owner.getByRole("switch", { name: "Add new repositories automatically" })).toBeDisabled();
   await expect(owner.getByText("New repositories from @acme-e2e go to Acme.")).toBeVisible();
-  await owner.getByRole("switch", { name: "Include acme-e2e/ios" }).check();
-  await expect(owner.getByText("acme-e2e/ios included")).toBeVisible();
-  await expect(owner.getByText("1 of 2")).toBeVisible();
   await checkpoint(owner, "settings-github-repositories");
 
-  // Refresh asks GitHub again and comes back.
-  await owner.getByRole("link", { name: "Refresh" }).click();
+  // Refresh list asks GitHub again and comes back.
+  await owner.getByRole("link", { name: "Refresh list" }).click();
   await owner.waitForURL(`**/app/${mobile}/settings/integrations?github=refreshed`);
   await expect(owner.getByText("Repositories refreshed.")).toBeVisible();
-  await expect(owner.getByRole("switch", { name: "Include acme-e2e/ios" })).toBeChecked();
+  await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
 
   await owner.getByRole("button", { name: "Disconnect" }).click();
   await expect(owner.getByText("GitHub disconnected")).toBeVisible();

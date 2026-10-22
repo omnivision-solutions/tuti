@@ -30,7 +30,10 @@ export async function connectGithub(
   });
   expect(response.ok).toBe(true);
   await admin.goto(`/app/${slug}/settings/integrations`);
+  // GitHub (the fake) says which accounts they have the app on; they pick this one.
   await admin.getByRole("link", { name: "Connect GitHub" }).click();
+  await admin.waitForURL(`**/app/${slug}/settings/integrations?github=choose`);
+  await admin.getByRole("link", { name: `Connect @${installation.account ?? "acme"}` }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=connected`);
   return id;
 }

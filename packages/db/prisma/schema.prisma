@@ -501,6 +501,8 @@ model GithubInstallation {
   installationId         Int
   /// The GitHub user or organisation it's installed on.
   accountLogin           String
+  /// GitHub's type for that account: "Organization" or "User" (their settings live at different addresses).
+  accountType            String        @default("Organization")
   /// When linked posts become Completed: when a release ships their pull request
   /// (default: merged isn't shipped), or when it's merged (repos without releases).
   closeOn                GithubCloseOn @default(RELEASE)
