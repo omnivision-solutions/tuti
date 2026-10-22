@@ -6,7 +6,11 @@ const dbTests = sources.map((pattern) => pattern.replace(".test.ts", ".db.test.t
 
 export default defineConfig({
   resolve: {
-    alias: { "@/": fileURLToPath(new URL("./apps/web/src/", import.meta.url)) },
+    alias: {
+      "@/": fileURLToPath(new URL("./apps/web/src/", import.meta.url)),
+      // Next.js compiles next/font when the app is built: tests get a stand-in (see the file).
+      "next/font/google": fileURLToPath(new URL("./apps/web/src/test/next-font-google.ts", import.meta.url)),
+    },
   },
   test: {
     projects: [
