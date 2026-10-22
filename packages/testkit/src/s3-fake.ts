@@ -5,7 +5,7 @@ export type S3Fake = {
   /** Endpoint to use as MEDIA_S3_ENDPOINT (path-style: <url>/<bucket>/<key>). */
   url: string;
   bucket: string;
-  /** Env vars that point the app at this fake (public URL included). */
+  /** Env vars that point the app at this fake. */
   env: Record<string, string>;
   /** Stored objects by key. */
   objects: Map<string, { body: Buffer; contentType: string }>;
@@ -16,8 +16,9 @@ export type S3Fake = {
 
 /**
  * A local stand-in for S3-compatible storage: PUT, GET, HEAD and DELETE on
- * path-style URLs, presigned or not (signatures aren't checked), with CORS so
- * browsers can upload to it. Also serves objects publicly at <url>/<bucket>/<key>.
+ * path-style URLs, with CORS so browsers can upload to it. Like the real (private)
+ * bucket, it refuses requests that aren't signed, presigned or with a signed header;
+ * signatures themselves aren't checked.
  */
 export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
   const objects = new Map<string, { body: Buffer; contentType: string }>();
@@ -32,7 +33,12 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       res.writeHead(204).end();
       return;
     }
-    const path = decodeURIComponent(new URL(req.url ?? "/", "http://fake").pathname);
+    const url = new URL(req.url ?? "/", "http://fake");
+    if (!url.searchParams.has("X-Amz-Signature") && !req.headers.authorization) {
+      res.writeHead(403).end();
+      return;
+    }
+    const path = decodeURIComponent(url.pathname);
     const prefix = `/${bucket}/`;
     if (!path.startsWith(prefix)) {
       res.writeHead(404).end();
@@ -84,7 +90,6 @@ export async function startS3Fake(bucket = "tuti-media-test"): Promise<S3Fake> {
       MEDIA_S3_BUCKET: bucket,
       MEDIA_S3_ACCESS_KEY_ID: "test-access-key",
       MEDIA_S3_SECRET_ACCESS_KEY: "test-secret-key",
-      MEDIA_PUBLIC_URL: `${url}/${bucket}`,
     },
     close: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
   };

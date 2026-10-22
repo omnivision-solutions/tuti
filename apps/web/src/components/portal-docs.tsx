@@ -1,7 +1,6 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { ChevronRightIcon, LockIcon, SearchIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
@@ -44,6 +43,7 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { portalLinks } from "@/server/portal-base";
+import { mediaUrls } from "@/server/media-urls";
 
 /** Published articles matching `query`, each with the passage that matched (locked ones by their title, with none). */
 async function SearchResults({ projectSlug, query }: { projectSlug: string; query: string }) {
@@ -318,13 +318,13 @@ export async function DocsArticle({
                 {article.title}
               </h1>
             </div>
-            {readable && <ArticleActions markdown={articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
+            {readable && <ArticleActions markdown={await articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
           </div>
           {readable?.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt)} />}
         </div>
         {readable ? (
           <>
-            <RichText doc={readable.doc} mediaBaseUrl={mediaPublicUrl()} headingIds className="rich-text break-words" />
+            <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text break-words" />
             <ArticleFeedback projectSlug={project} slug={slug} />
           </>
         ) : (

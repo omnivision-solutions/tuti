@@ -1,6 +1,6 @@
 "use client";
 
-import type { Doc } from "@tuti/content";
+import type { Doc, MediaUrls } from "@tuti/content";
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useActionState, useState, useTransition } from "react";
@@ -63,14 +63,14 @@ export function ArticleForm({
   projectSlug,
   article,
   collections,
-  mediaBaseUrl,
+  mediaUrls,
   defaultTitle,
   defaultCollection,
 }: {
   projectSlug: string;
   article: Article | null;
   collections: CollectionOption[];
-  mediaBaseUrl: string | null;
+  mediaUrls: MediaUrls | null;
   /** A new article's title to start with (a question from the insights' gaps). */
   defaultTitle?: string;
   /** A new article's collection to start with (a collection's "New article"). */
@@ -126,7 +126,7 @@ export function ArticleForm({
             labelledBy="article-body-label"
             placeholder="Explain it step by step"
             initial={article?.content}
-            uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
+            uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
           />
         </Field>
         <label className="flex items-start gap-2">

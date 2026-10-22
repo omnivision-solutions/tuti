@@ -1,6 +1,5 @@
 import { type Doc, toMarkdown } from "@tuti/content";
 import { type DocsLanding, type NoAccess, type Prisma, prisma } from "@tuti/db";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { cache } from "react";
 
 import { ancestry } from "@/lib/collection-tree";
@@ -9,6 +8,7 @@ import { levelSelect, visibleArticle } from "@/lib/reader-groups";
 
 import { displayDoc } from "./content";
 import { portalAddress } from "./custom-domains";
+import { mediaUrls } from "./media-urls";
 import { currentReader } from "./portal-access";
 
 /** Reads for the docs pages: the team's editor and the portal. */
@@ -513,10 +513,10 @@ export async function movedArticle(projectSlug: string, slug: string): Promise<s
   return (await movedPage(projectSlug, slug))?.article ?? null;
 }
 
-/** An article as Markdown, its title as the heading: /docs/<slug>.md and "Copy as Markdown". */
-export function articleMarkdown(article: { title: string; doc: Doc }): string {
+/** An article as Markdown, its title as the heading: /docs/<slug>.md and "Copy as Markdown" (images signed for its reader). */
+export async function articleMarkdown(article: { title: string; doc: Doc }): Promise<string> {
   const title = { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: article.title }] };
-  return `${toMarkdown({ type: "doc", content: [title, ...(article.doc.content ?? [])] }, { mediaBaseUrl: mediaPublicUrl() })}\n`;
+  return `${toMarkdown({ type: "doc", content: [title, ...(article.doc.content ?? [])] }, { mediaUrls: await mediaUrls(article.doc) })}\n`;
 }
 
 /** How many articles the docs' home lists as popular, and over how many days their views count. */

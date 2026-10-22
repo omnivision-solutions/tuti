@@ -1,7 +1,7 @@
 "use client";
 
 import type { Editor } from "@tiptap/react";
-import type { Doc } from "@tuti/content";
+import type { Doc, MediaUrls } from "@tuti/content";
 import { SparklesIcon } from "lucide-react";
 import { type RefObject, useActionState, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -52,14 +52,14 @@ export function ChangelogForm({
   projectSlug,
   entry,
   posts,
-  mediaBaseUrl,
+  mediaUrls,
   canEditWithAi = false,
 }: {
   projectSlug: string;
   entry: Entry | null;
   /** Posts it can complete: planned, in progress, done, and the ones it already lists. */
   posts: PostOption[];
-  mediaBaseUrl: string | null;
+  mediaUrls: MediaUrls | null;
   /** AI is set up on this server: the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
 }) {
@@ -117,7 +117,7 @@ export function ChangelogForm({
             labelledBy="entry-body-label"
             placeholder="What's new for people, and how to use it"
             initial={entry?.content}
-            uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
+            uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
             onChange={() => setDirty(true)}
           />

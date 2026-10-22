@@ -1,4 +1,3 @@
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { RssIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -15,6 +14,7 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
+import { mediaUrls } from "@/server/media-urls";
 
 const PAGE_SIZE = 20;
 
@@ -48,6 +48,7 @@ export async function changelogPage(slug: string, page: number) {
     notFound();
   }
   const older = found.length > PAGE_SIZE;
+  const media = await mediaUrls(...entries.map((entry) => entry.doc));
   return (
     <div className="flex flex-col gap-8">
       {announced && <ChangelogSeen projectSlug={slug} at={announced.toISOString()} signedIn />}
@@ -66,7 +67,7 @@ export async function changelogPage(slug: string, page: number) {
         entries.map((entry, i) => (
           <div key={entry.number} className="flex flex-col gap-8">
             {i > 0 && <Separator />}
-            <ChangelogEntryView entry={entry} mediaBaseUrl={mediaPublicUrl()} react={{ projectSlug: slug, signedIn: !!session }} base={base} />
+            <ChangelogEntryView entry={entry} mediaUrls={media} react={{ projectSlug: slug, signedIn: !!session }} base={base} />
           </div>
         ))
       )}

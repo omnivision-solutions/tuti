@@ -128,7 +128,7 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 export function PortalLogo({ name, href }: { name: string; href: string }) {
   const { logo, logoDark, logoText, logoLink } = usePortalLook();
   const image = (image: LookImage, className?: string) => (
-    // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
+    // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
     <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-48 object-contain object-left", className)} />
   );
   const contents = logo ? (

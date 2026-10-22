@@ -1,12 +1,12 @@
 import { Button } from "@react-email/components";
 import { type Doc, isMediaId, isPixelSize, isSafeLink, isVideo } from "@tuti/content";
-import { emailImageKey, EMAIL_IMAGE_WIDTH } from "@tuti/content/media";
+import { emailImageKey, EMAIL_IMAGE_WIDTH, type MediaUrls } from "@tuti/content/media";
 import { Fragment, type ReactNode } from "react";
 
 import { colors } from "./layout";
 
 type Node = NonNullable<Doc["content"]>[number];
-type Context = { media?: string; linkUrl: string; tight?: boolean };
+type Context = { media?: MediaUrls; linkUrl: string; tight?: boolean };
 
 /** Width of the text inside Layout's card (480 container − 2×24 padding − 2×24 card padding). */
 const CONTENT_WIDTH = 384;
@@ -18,11 +18,12 @@ const mono = { fontFamily: "SFMono-Regular, Menlo, Consolas, monospace", fontSiz
  * Stored content (the same JSON as the page's RichText) as email-safe React: inline
  * styles only, no iframes or scripts, text never as HTML strings. Unknown nodes are
  * skipped and unsafe links render as text. Images use the email JPEG from the image
- * job (left out without `mediaBaseUrl`); videos become a link to `linkUrl`, the page
- * where they play (e.g. the changelog entry).
+ * job, from `mediaUrls` (left out without one there); those URLs must keep working
+ * (lastingMediaUrls in apps/web). Videos become a link to `linkUrl`, the page where
+ * they play (e.g. the changelog entry).
  */
-export function EmailRichText({ doc, mediaBaseUrl, linkUrl }: { doc: Doc; mediaBaseUrl?: string | null; linkUrl: string }) {
-  return <>{children(doc, { media: mediaBaseUrl ?? undefined, linkUrl })}</>;
+export function EmailRichText({ doc, mediaUrls, linkUrl }: { doc: Doc; mediaUrls?: MediaUrls | null; linkUrl: string }) {
+  return <>{children(doc, { media: mediaUrls ?? undefined, linkUrl })}</>;
 }
 
 function children(node: Node, ctx: Context): ReactNode[] {
@@ -106,7 +107,8 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
       ) : null;
     case "image": {
       const { mediaId, width, align, alt, w, h } = node.attrs ?? {};
-      if (!ctx.media || !isMediaId(mediaId) || !isPixelSize(w) || !isPixelSize(h)) {
+      const src = isMediaId(mediaId) && ctx.media?.[emailImageKey(mediaId)];
+      if (!src || !isPixelSize(w) || !isPixelSize(h)) {
         return null;
       }
       // The email JPEG is at most EMAIL_IMAGE_WIDTH wide; show it at the image's share of the column.
@@ -114,7 +116,7 @@ function renderNode(node: Node, key: number, ctx: Context): ReactNode {
       return (
         <div key={key} style={{ margin: "0 0 16px", textAlign: align === "left" || align === "right" ? align : "center" }}>
           <img
-            src={`${ctx.media}/${emailImageKey(mediaId)}`}
+            src={src}
             alt={typeof alt === "string" ? alt : ""}
             width={shown}
             height={Math.round((h * shown) / w)}

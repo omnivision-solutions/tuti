@@ -21,8 +21,8 @@ import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
+import { mediaUrls } from "@/server/media-urls";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -138,7 +138,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       )}
 
       {!isEmptyDoc(displayDoc(post)) && (
-        <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+        <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text break-words" />
       )}
 
       {!post.duplicateOf && <PostLinks projectSlug={slug} postId={post.id} links={post.links} suggestions={post.status === "COMPLETED" || post.status === "CLOSED" ? [] : post.linkSuggestions} />}

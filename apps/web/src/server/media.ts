@@ -1,6 +1,6 @@
 "use server";
 
-import { imageKey, originalKey, UPLOAD_IMAGE_TYPES } from "@tuti/content";
+import { emailImageKey, imageKey, imageWidths, type MediaUrls, originalKey, UPLOAD_IMAGE_TYPES } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
@@ -130,9 +130,9 @@ export async function finishUpload(mediaId: string): Promise<{ error?: string }>
 
 export type UploadStatus =
   | { status: "UPLOADING" | "PROCESSING" | "FAILED" }
-  | { status: "READY"; src: string; width: number; height: number };
+  | { status: "READY"; src: string; urls: MediaUrls; width: number; height: number };
 
-/** Whether the uploader's image is ready to show, and where. */
+/** Whether the uploader's image is ready to show, and where: `src` at full size, `urls` for every file (for the editor). */
 export async function uploadStatus(mediaId: string): Promise<UploadStatus | { error: string }> {
   const session = await getSession();
   const storage = mediaStorage();
@@ -146,9 +146,12 @@ export async function uploadStatus(mediaId: string): Promise<UploadStatus | { er
     return { error: "Upload not found" };
   }
   if (media.status === "READY" && media.width && media.height) {
+    const keys = [...imageWidths(media.width).map((width) => imageKey(media.id, width)), emailImageKey(media.id)];
+    const urls: MediaUrls = Object.fromEntries(await Promise.all(keys.map(async (key) => [key, await storage.signedUrl(key)])));
     return {
       status: "READY",
-      src: storage.publicUrl(imageKey(media.id, media.width)),
+      src: urls[imageKey(media.id, media.width)]!,
+      urls,
       width: media.width,
       height: media.height,
     };

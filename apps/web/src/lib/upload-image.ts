@@ -1,10 +1,12 @@
+import type { MediaUrls } from "@tuti/content";
+
 import { createUpload, finishUpload, uploadStatus } from "@/server/media";
 
 /** Uploads straight to media storage, then waits until the image is processed. */
 export async function uploadImage(
   projectSlug: string,
   file: File,
-): Promise<{ mediaId: string; src: string; w: number; h: number } | { error: string }> {
+): Promise<{ mediaId: string; src: string; urls: MediaUrls; w: number; h: number } | { error: string }> {
   const created = await createUpload(projectSlug, { type: file.type, size: file.size });
   if ("error" in created) {
     return created;
@@ -25,7 +27,7 @@ export async function uploadImage(
       return status;
     }
     if (status.status === "READY") {
-      return { mediaId: created.mediaId, src: status.src, w: status.width, h: status.height };
+      return { mediaId: created.mediaId, src: status.src, urls: status.urls, w: status.width, h: status.height };
     }
     if (status.status === "FAILED") {
       return { error: `${file.name} couldn't be used as an image` };

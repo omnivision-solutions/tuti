@@ -1,7 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, videoPageUrl } from "./links";
-import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isMediaId, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
+import { emailImageKey, imageKey, imageWidths } from "./media";
+import { IMAGE_ALIGNMENTS, IMAGE_SIZES, isCellSpan, isMediaId, isPixelSize, MAX_ALT_LENGTH, type Profile, schemaFor } from "./profiles";
 
 /** Rich content as stored: ProseMirror JSON (never HTML). */
 export type Doc = JSONContent & { type: "doc" };
@@ -90,6 +91,19 @@ export function mediaIdsIn(doc: JSONContent): string[] {
     }
   });
   return [...ids];
+}
+
+/** The stored files the images in a document show (every size, and the email JPEG), to sign their URLs. */
+export function imageKeysIn(doc: JSONContent): string[] {
+  const keys = new Set<string>();
+  visit(doc, (node) => {
+    const { mediaId, w } = node.attrs ?? {};
+    if (node.type === "image" && isMediaId(mediaId) && isPixelSize(w)) {
+      imageWidths(w).forEach((width) => keys.add(imageKey(mediaId, width)));
+      keys.add(emailImageKey(mediaId));
+    }
+  });
+  return [...keys];
 }
 
 /** Sets attributes of every image node, e.g. its real size from the upload. */

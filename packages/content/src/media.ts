@@ -18,6 +18,9 @@ export const originalKey = (mediaId: string) => `uploads/${mediaId}`;
 export const imageKey = (mediaId: string, width: number) => `m/${mediaId}/${width}.webp`;
 export const emailImageKey = (mediaId: string) => `m/${mediaId}/email.jpg`;
 
+/** URLs to load stored files from, by key: the bucket is private, so the server signs one per file (apps/web server/media-urls.ts). */
+export type MediaUrls = Record<string, string>;
+
 /** Every file an upload may have in storage (the original until processed, then its sizes). */
 export function mediaKeys(media: { id: string; width: number | null }): string[] {
   const sizes = media.width ? imageWidths(media.width).map((width) => imageKey(media.id, width)) : [];

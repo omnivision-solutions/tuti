@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
+import { lastingMediaUrl } from "../media-urls";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
   COLOR_SCHEMES,
@@ -76,7 +77,7 @@ export type Branding = {
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
 
-/** The project's branding, with each image's URL on the media host (its smallest stored size, at most 480px wide). */
+/** The project's branding, with a lasting link to each image (its smallest stored size, at most 480px wide). */
 export async function branding(where: { id: string } | { slug: string }): Promise<Branding | null> {
   const [project, installation] = await Promise.all([
     prisma.project.findUnique({
@@ -119,10 +120,11 @@ export async function branding(where: { id: string } | { slug: string }): Promis
   if (!project) {
     return null;
   }
+  // Lasting links: link cards are fetched long after the page, and API clients keep what they read.
   const storage = mediaStorage();
   const url = (media: { id: string; status: string; width: number | null; height: number | null } | null): BrandImage | null =>
     storage && media?.status === "READY" && media.width && media.height
-      ? { id: media.id, url: storage.publicUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
+      ? { id: media.id, url: lastingMediaUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
       : null;
   // Link cards want a JPEG about 1200 pixels wide: every image has one (made for emails).
   const shareImage = (media: Parameters<typeof url>[0]): BrandImage | null => {
@@ -131,7 +133,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
       return image;
     }
     const width = Math.min(image.width, EMAIL_IMAGE_WIDTH);
-    return { ...image, url: storage.publicUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
+    return { ...image, url: lastingMediaUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
   };
   const links = (value: unknown) => {
     const parsed = z.array(httpsLink).safeParse(value);

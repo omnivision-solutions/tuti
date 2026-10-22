@@ -17,7 +17,7 @@ import { boardPath, postPath } from "@/lib/post-urls";
 import { portalAddress } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
-import { mediaPublicUrl } from "@tuti/shared/storage";
+import { mediaUrls } from "@/server/media-urls";
 
 /** Sorted or filtered (`?sort=`, `?status=`), it's still the board: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]">): Promise<Metadata> {
@@ -66,7 +66,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       <PageHeader title={board.name} description={board.description} />
 
       {session ? (
-        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} mediaBaseUrl={mediaPublicUrl()} defaultTitle={title} />
+        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={await mediaUrls()} defaultTitle={title} />
       ) : (
         <p className="text-sm text-muted-foreground">
           <SignInLink className="text-foreground underline underline-offset-4">

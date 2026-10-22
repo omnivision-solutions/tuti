@@ -1,4 +1,3 @@
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
@@ -6,6 +5,7 @@ import { ChangelogEntryView } from "@/components/changelog-entry";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
+import { mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/portal/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -23,7 +23,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
       <BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>
       <ChangelogEntryView
         entry={entry}
-        mediaBaseUrl={mediaPublicUrl()}
+        mediaUrls={await mediaUrls(entry.doc)}
         heading="h1"
         react={{ projectSlug: slug, signedIn: !!session }}
         base={await portalBase()}

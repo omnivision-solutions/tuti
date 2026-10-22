@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { docHeadings, fromPlainText, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
+import { docHeadings, fromPlainText, imageKeysIn, isEmptyDoc, MAX_CHUNK_LENGTH, mediaIdsIn, parseDoc, toChunks, toPlainText, updateImages } from "./document";
 import { isSafeLink, parseVideoUrl, videoEmbedUrl } from "./links";
 import { RichText } from "./react";
 
@@ -257,26 +257,31 @@ describe("images", () => {
     expect(mediaIdsIn(content)).toEqual([MEDIA_ID]);
     updateImages(content, () => ({ w: 300, h: 200 }));
     expect(content.content[0]).toMatchObject({ attrs: { w: 300, h: 200 } });
+    expect(imageKeysIn(content)).toEqual([`m/${MEDIA_ID}/300.webp`, `m/${MEDIA_ID}/email.jpg`]);
     expect(toPlainText(content)).toBe("A chart\nx\nA chart");
   });
 
-  test("renders a responsive image from the media host, at its share of the column", () => {
-    const out = renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaBaseUrl: "https://media.example" }));
+  /** What the server's signing gives: a URL for each stored file. */
+  const signed = (d: object) => Object.fromEntries(imageKeysIn(d).map((key) => [key, `https://storage.example/${key}?sig=1`]));
+
+  test("renders a responsive image from its signed URLs, at its share of the column", () => {
+    const out = renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaUrls: signed(doc(image())) }));
     expect(out).toContain('<figure class="rich-image" data-width="50" data-align="right">');
-    expect(out).toContain(`src="https://media.example/m/${MEDIA_ID}/960.webp"`);
+    expect(out).toContain(`src="https://storage.example/m/${MEDIA_ID}/960.webp?sig=1"`);
     expect(out).toContain(
-      `srcSet="https://media.example/m/${MEDIA_ID}/480.webp 480w, https://media.example/m/${MEDIA_ID}/960.webp 960w, https://media.example/m/${MEDIA_ID}/1200.webp 1200w"`,
+      `srcSet="https://storage.example/m/${MEDIA_ID}/480.webp?sig=1 480w, https://storage.example/m/${MEDIA_ID}/960.webp?sig=1 960w, https://storage.example/m/${MEDIA_ID}/1200.webp?sig=1 1200w"`,
     );
     expect(out).toContain('sizes="(max-width: 768px) 100vw, 384px"');
     expect(out).toContain('width="1200" height="800" alt="A chart" loading="lazy"');
   });
 
-  test("without a media host, or without a real size, images are left out", () => {
+  test("without signed URLs, or without a real size, images are left out", () => {
     expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()) }))).toBe("<div></div>");
+    expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image()), mediaUrls: signed(doc(image({ mediaId: "c".repeat(25) }))) }))).toBe(
+      "<div></div>",
+    );
     for (const size of [{ w: null }, { h: 0 }, { w: -1200 }, { h: 1.5 }]) {
-      expect(
-        renderToStaticMarkup(createElement(RichText, { doc: doc(image(size)), mediaBaseUrl: "https://media.example" })),
-      ).toBe("<div></div>");
+      expect(renderToStaticMarkup(createElement(RichText, { doc: doc(image(size)), mediaUrls: signed(doc(image())) }))).toBe("<div></div>");
     }
   });
 });

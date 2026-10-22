@@ -1,5 +1,4 @@
 import { prisma } from "@tuti/db";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { ExternalLinkIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -21,6 +20,7 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { widgetSettings } from "@/server/operations/widget";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
+import { mediaUrls } from "@/server/media-urls";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -145,7 +145,7 @@ async function Feedback({ slug, board, title }: { slug: string; board?: string; 
   if (!session) {
     return <WidgetFeedback projectSlug={slug} boardSlug={board} defaultTitle={title} />;
   }
-  return <NewPostForm projectSlug={slug} boardSlug={board} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" defaultTitle={title} />;
+  return <NewPostForm projectSlug={slug} boardSlug={board} mediaUrls={await mediaUrls()} linkTarget="_blank" defaultTitle={title} />;
 }
 
 async function WhatsNew({ slug }: { slug: string }) {
@@ -168,11 +168,12 @@ async function WhatsNew({ slug }: { slug: string }) {
   if (entries.length === 0) {
     return <EmptyState title="Nothing new yet" description="Updates from the team show up here." />;
   }
+  const media = await mediaUrls(...entries.map((entry) => entry.doc));
   return (
     <div className="flex flex-col gap-8">
       {seen}
       {entries.map((entry) => (
-        <ChangelogEntryView key={entry.number} entry={entry} mediaBaseUrl={mediaPublicUrl()} linkTarget="_blank" />
+        <ChangelogEntryView key={entry.number} entry={entry} mediaUrls={media} linkTarget="_blank" />
       ))}
     </div>
   );

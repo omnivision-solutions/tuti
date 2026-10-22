@@ -1,5 +1,6 @@
 import { render } from "@react-email/render";
 import type { Doc } from "@tuti/content";
+import type { MediaUrls } from "@tuti/content/media";
 import { createElement } from "react";
 import { describe, expect, test } from "vitest";
 
@@ -18,11 +19,12 @@ const image = (attrs: object = {}) => ({
 });
 const video = { type: "video", attrs: { provider: "youtube", id: "dQw4w9WgXcQ" } };
 const ENTRY = "https://acme.example.com/changelog/dark-mode";
-const MEDIA = "https://media.example.com";
+const SRC = `https://app.example.com/m/${MEDIA_ID}/email.jpg?s=1`;
+const MEDIA = { [`m/${MEDIA_ID}/email.jpg`]: SRC };
 
-const html = (d: Doc, mediaBaseUrl?: string) => render(createElement(EmailRichText, { doc: d, mediaBaseUrl, linkUrl: ENTRY }));
-const plain = (d: Doc, mediaBaseUrl?: string) =>
-  render(createElement(EmailRichText, { doc: d, mediaBaseUrl, linkUrl: ENTRY }), { plainText: true });
+const html = (d: Doc, mediaUrls?: MediaUrls) => render(createElement(EmailRichText, { doc: d, mediaUrls, linkUrl: ENTRY }));
+const plain = (d: Doc, mediaUrls?: MediaUrls) =>
+  render(createElement(EmailRichText, { doc: d, mediaUrls, linkUrl: ENTRY }), { plainText: true });
 
 // Every node and mark the changelog profile (a superset of post and comment) allows.
 const everything = doc(
@@ -74,7 +76,7 @@ describe("EmailRichText", () => {
 
   test("images use the email JPEG, sized to the column and their share of it", async () => {
     const out = await html(doc(image(), image({ width: "50", align: "right", alt: 'Say "hi"' })), MEDIA);
-    expect(out).toContain(`src="${MEDIA}/m/${MEDIA_ID}/email.jpg"`);
+    expect(out).toContain(`src="${SRC}"`);
     expect(out).toMatch(/alt="A chart" width="384" height="192"/);
     expect(out).toMatch(/text-align:right"><img [^>]*alt="Say &quot;hi&quot;" width="192" height="96"/);
     expect(out).toContain("max-width:100%");
@@ -116,14 +118,14 @@ describe("changelogEmail", () => {
       entryTitle: "Dark mode",
       entryUrl: ENTRY,
       doc: doc(p(text("Easier on the eyes.")), image()),
-      mediaBaseUrl: MEDIA,
+      mediaUrls: MEDIA,
       unsubscribeUrl: "https://acme.example.com/unsubscribe?token=t",
     });
     expect(email.subject).toBe("Acme: Dark mode");
     const out = await render(email.body);
     expect(out).toContain("Dark mode</h1>");
     expect(out).toContain("Easier on the eyes.");
-    expect(out).toContain(`${MEDIA}/m/${MEDIA_ID}/email.jpg`);
+    expect(out).toContain(SRC);
     expect(out).toContain(`href="${ENTRY}"`);
     expect(out).toContain('href="https://acme.example.com/unsubscribe?token=t"');
   });

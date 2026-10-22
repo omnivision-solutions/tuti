@@ -77,9 +77,10 @@ describe("toMarkdown", () => {
     );
   });
 
-  test("images from the media host, with their alt text; left out without it", () => {
+  test("images from their signed URLs, with their alt text; left out without one", () => {
     const image = doc({ type: "image", attrs: { mediaId: MEDIA_ID, width: "50", align: "center", alt: "A [chart]", w: 1200, h: 800 } });
-    expect(toMarkdown(image, { mediaBaseUrl: "https://media.example" })).toBe(`![A \\[chart\\]](https://media.example/m/${MEDIA_ID}/960.webp)`);
+    const mediaUrls = { [`m/${MEDIA_ID}/960.webp`]: `https://storage.example/m/${MEDIA_ID}/960.webp?sig=1` };
+    expect(toMarkdown(image, { mediaUrls })).toBe(`![A \\[chart\\]](https://storage.example/m/${MEDIA_ID}/960.webp?sig=1)`);
     expect(toMarkdown(image)).toBe("");
   });
 

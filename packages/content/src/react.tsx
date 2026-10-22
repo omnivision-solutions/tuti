@@ -3,7 +3,7 @@ import { Fragment, type ReactNode } from "react";
 
 import { docHeadings } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
-import { imageKey, imageWidths } from "./media";
+import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
 /** Widest the text column gets (Tailwind max-w-3xl), for picking image sizes. */
@@ -17,17 +17,17 @@ const COLUMN_WIDTH = 768;
 export function RichText({
   doc,
   className,
-  mediaBaseUrl,
+  mediaUrls,
   headingIds = false,
 }: {
   doc: JSONContent;
   className?: string;
-  /** Where uploaded images are served from (MEDIA_PUBLIC_URL); without it, images are left out. */
-  mediaBaseUrl?: string | null;
+  /** Where to load uploaded images from (by storage key); images without one are left out. */
+  mediaUrls?: MediaUrls | null;
   /** Articles: top-level headings get ids from their text (docHeadings), so they can be linked. */
   headingIds?: boolean;
 }) {
-  const media = mediaBaseUrl ?? undefined;
+  const media = mediaUrls ?? undefined;
   if (!headingIds) {
     return <div className={className}>{children(doc, media)}</div>;
   }
@@ -37,11 +37,11 @@ export function RichText({
   return <div className={className}>{content}</div>;
 }
 
-function children(node: JSONContent, media: string | undefined): ReactNode[] {
+function children(node: JSONContent, media: MediaUrls | undefined): ReactNode[] {
   return (node.content ?? []).map((child, i) => renderNode(child, i, media));
 }
 
-function renderNode(node: JSONContent, key: number, media: string | undefined, id?: string): ReactNode {
+function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined, id?: string): ReactNode {
   const inner = () => children(node, media);
   switch (node.type) {
     case "text":
@@ -125,16 +125,20 @@ function renderNode(node: JSONContent, key: number, media: string | undefined, i
     }
     case "image": {
       const { mediaId, width, align, alt, w, h } = node.attrs ?? {};
-      if (!media || !isMediaId(mediaId) || !isPixelSize(w) || !isPixelSize(h)) {
+      if (!isMediaId(mediaId) || !isPixelSize(w) || !isPixelSize(h)) {
         return null;
       }
-      const url = (size: number) => `${media}/${imageKey(mediaId, size)}`;
-      const widths = imageWidths(w);
+      const url = (size: number) => media?.[imageKey(mediaId, size)];
+      const widths = imageWidths(w).filter(url);
+      const src = url(widths.find((size) => size >= 960) ?? w);
+      if (!src) {
+        return null;
+      }
       const share = Number(width) || 100;
       return (
         <figure key={key} className="rich-image" data-width={String(width)} data-align={String(align)}>
           <img
-            src={url(widths.find((size) => size >= 960) ?? w)}
+            src={src}
             srcSet={widths.map((size) => `${url(size)} ${size}w`).join(", ")}
             sizes={`(max-width: ${COLUMN_WIDTH}px) 100vw, ${Math.round((COLUMN_WIDTH * share) / 100)}px`}
             width={w}

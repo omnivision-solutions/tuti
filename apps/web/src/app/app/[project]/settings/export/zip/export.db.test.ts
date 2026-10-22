@@ -2,13 +2,13 @@ import { prisma } from "@tuti/db";
 import { strFromU8, unzipSync } from "fflate";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { lastingMediaUrl } from "@/server/media-urls";
 import { actAs, addMember, createProject, signUp } from "@/test/helpers";
 
 import { GET } from "./route";
 
 /** "Export as Markdown" in settings: a ZIP of the project's articles, changelog and posts. */
 
-const MEDIA = "https://media.example.com";
 const IMAGE_ID = "a".repeat(24);
 
 beforeEach(() => {
@@ -17,7 +17,6 @@ beforeEach(() => {
     MEDIA_S3_BUCKET: "media",
     MEDIA_S3_ACCESS_KEY_ID: "key",
     MEDIA_S3_SECRET_ACCESS_KEY: "secret",
-    MEDIA_PUBLIC_URL: MEDIA,
   })) {
     vi.stubEnv(name, value);
   }
@@ -123,7 +122,7 @@ test("owners download everything as Markdown with front matter, drafts included,
       "",
       "Owners can invite.",
       "",
-      `![Team page](${MEDIA}/m/${IMAGE_ID}/800.webp)`,
+      `![Team page](${lastingMediaUrl(`m/${IMAGE_ID}/800.webp`)})`,
       "",
     ].join("\n"),
   );

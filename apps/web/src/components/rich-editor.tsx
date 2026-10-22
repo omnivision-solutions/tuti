@@ -11,6 +11,7 @@ import {
   MAX_ALT_LENGTH,
   parseVideoUrl,
   type Doc,
+  type MediaUrls,
   type Profile,
 } from "@tuti/content";
 import { cn } from "cn";
@@ -45,7 +46,8 @@ import { uploadImage } from "@/lib/upload-image";
 
 type Prompt = "link" | "video" | "alt";
 /** Where images can be uploaded to; without it, the editor has no images. */
-export type EditorUploads = { projectSlug: string; mediaBaseUrl: string };
+/** `mediaUrls`: signed URLs of the images in `initial` (server/media-urls.ts); new uploads add theirs. */
+export type EditorUploads = { projectSlug: string; mediaUrls: MediaUrls };
 
 /**
  * The rich text editor for one content profile (see @tuti/content). It submits the
@@ -89,6 +91,8 @@ export function RichEditor({
   /** Someone tried to submit while images were uploading. */
   const [held, setHeld] = useState(false);
   const canUpload = profile !== "comment" && !!uploads;
+  // The image node reads these as it draws, so uploads add their URLs here first.
+  const [mediaUrls] = useState(() => new Map(Object.entries(uploads?.mediaUrls ?? {})));
 
   const addImages = async (editor: Editor, files: File[]) => {
     if (!uploads) {
@@ -103,6 +107,7 @@ export function RichEditor({
       if ("error" in result) {
         setUploadError(result.error);
       } else {
+        Object.entries(result.urls).forEach(([key, url]) => mediaUrls.set(key, url));
         editor.chain().focus().setImage(result).run();
       }
     }
@@ -117,7 +122,7 @@ export function RichEditor({
 
   const editor = useEditor({
     extensions: [
-      ...extensions(profile, { mediaBaseUrl: uploads?.mediaBaseUrl }),
+      ...extensions(profile, { mediaUrl: (key) => mediaUrls.get(key) }),
       Placeholder.configure({ placeholder }),
     ],
     content: initial,

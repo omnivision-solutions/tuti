@@ -16,7 +16,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/portal/[
     }
     return new Response("Not found", { status: 404 });
   }
-  return new Response(articleMarkdown(article), {
+  return new Response(await articleMarkdown(article), {
     headers: {
       "content-type": "text/markdown; charset=utf-8",
       // Never from a shared cache: it (or its collection or tab) may become for some readers only at any time, and a
