@@ -170,3 +170,24 @@ export async function currentReader(projectId: string): Promise<Reader> {
 export async function actorReader(actor: Actor, projectId: string): Promise<Reader> {
   return actor.kind === "apiKey" ? null : readerOf(projectId, actor.userId);
 }
+
+/**
+ * The addresses that are `userId`'s own: their account's once it's verified, and the one the project's
+ * SSO gave them (their account's is a placeholder then). None for people signed out.
+ */
+export async function ownAddresses(projectId: string, userId: string | null | undefined): Promise<string[]> {
+  if (!userId) {
+    return [];
+  }
+  const [user, sso] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
+    prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { email: true } }),
+  ]);
+  return [user?.emailVerified ? user.email : null, sso?.email ?? null].filter((email) => email !== null).map((email) => email.toLowerCase());
+}
+
+/** Whoever's reading on this request (see currentReader), with their own addresses (see ownAddresses). */
+export async function currentAsker(projectId: string): Promise<{ reader: Reader; addresses: string[] }> {
+  const [reader, addresses] = await Promise.all([currentReader(projectId), readerId(projectId).then((id) => ownAddresses(projectId, id))]);
+  return { reader, addresses };
+}

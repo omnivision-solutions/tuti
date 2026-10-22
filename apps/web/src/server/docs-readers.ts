@@ -13,7 +13,7 @@ import { answerQuestion, askFields, type DocsAnswer, rateAnswer } from "./operat
 import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
-import { currentReader, readableProject } from "./portal-access";
+import { currentAsker, currentReader, readableProject } from "./portal-access";
 import { getSession } from "./session";
 
 /**
@@ -158,7 +158,8 @@ export async function escalateDocs(
     return { error: "Docs not found" };
   }
   try {
-    await escalateQuestion(project.id, await readerId(String(projectSlug), from === "widget"), input.data, await headers());
+    const asker = { id: await readerId(String(projectSlug), from === "widget"), ...(await currentAsker(project.id)) };
+    await escalateQuestion(project.id, asker, input.data, await headers());
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
