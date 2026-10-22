@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { keepingFields } from "@/lib/forms";
-import { CUSTOMIZE } from "@/lib/portal-base";
+import { CUSTOMIZE, PREVIEW_TOKEN_PARAM } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import type { FormState } from "@/server/form-state";
@@ -180,7 +180,7 @@ export function CustomizeShell({
    * The portal page to show: `origin`, its Tuti address; `path`, the page; `address`, where readers
    * find the portal, for the address bar. Or something of its own to show.
    */
-  preview: { origin: string; path: string; address: string } | { custom: ReactNode };
+  preview: { origin: string; path: string; address: string; token?: string } | { custom: ReactNode };
   children: ReactNode;
 }) {
   const router = useRouter();
@@ -276,7 +276,22 @@ export function CustomizeShell({
 }
 
 /** The portal in a frame: it says which page is open, and takes changes not saved yet and light or dark mode. */
-function PortalPreview({ version, draft, origin, path: firstPath, address }: { version: number; draft: Draft; origin: string; path: string; address: string }) {
+function PortalPreview({
+  version,
+  draft,
+  origin,
+  path: firstPath,
+  address,
+  token,
+}: {
+  version: number;
+  draft: Draft;
+  origin: string;
+  path: string;
+  address: string;
+  /** Reads the portal as the team member looking (the portal keeps it as a cookie). */
+  token?: string;
+}) {
   const [device, setDevice] = useState<Device>("desktop");
   const [theme, setTheme] = useState<Theme | null>(null);
   // The page open in the frame (for the address bar); a new frame (after a save) opens it again.
@@ -328,7 +343,8 @@ function PortalPreview({ version, draft, origin, path: firstPath, address }: { v
   // The page laid out at the device's width, scaled down to fit the frame.
   const { width } = DEVICES[device];
   const scale = size.width ? Math.min(1, size.width / width) : 1;
-  const src = `${origin}${opened.path}${opened.path.includes("?") ? "&" : "?"}${new URLSearchParams({ [CUSTOMIZE.param]: CUSTOMIZE.value })}`;
+  const query = new URLSearchParams({ [CUSTOMIZE.param]: CUSTOMIZE.value, ...(token && { [PREVIEW_TOKEN_PARAM]: token }) });
+  const src = `${origin}${opened.path}${opened.path.includes("?") ? "&" : "?"}${query}`;
   const page = path.replace(/[?#].*$/, "");
 
   return (

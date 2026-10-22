@@ -33,6 +33,12 @@ test("the team makes the portal private: visitors get sign-in, crawlers stay out
   await expect(owner.getByText("Only your team, people your app signs in with single sign-on, and the readers you add below.", { exact: false })).toBeVisible();
   await checkpoint(owner, "settings-portal-private");
 
+  // Customize's preview still shows the portal to the team, not its sign-in page.
+  await owner.goto(`/app/${slug}/customize/branding`);
+  const preview = owner.frameLocator('iframe[title="Portal preview"]');
+  await expect(preview.getByRole("heading", { name: "Feature requests" })).toBeVisible();
+  await expect(preview.getByText("Acme is private. Sign in to see it.")).toHaveCount(0);
+
   // A signed-out visitor gets the sign-in page, and comes back to where they were going afterwards.
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/roadmap");

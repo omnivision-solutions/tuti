@@ -10,6 +10,7 @@ import { GET as robots } from "@/app/portal/[project]/(site)/robots.txt/route";
 import SignUpPage from "@/app/portal/[project]/(site)/sign-up/page";
 import WidgetPage from "@/app/portal/[project]/widget/page";
 import { WidgetLocked } from "@/components/widget-locked";
+import { previewToken } from "@/lib/preview-session";
 import { widgetToken } from "@/lib/widget-session";
 import { proxy } from "@/proxy";
 import { actAs, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -21,7 +22,7 @@ import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
 import * as docsReaders from "./docs-readers";
 import { canActIn } from "./membership";
-import { canReadPortal, WIDGET_READER_COOKIE } from "./portal-access";
+import { canReadPortal, mayRead, PREVIEW_READER_COOKIE, WIDGET_READER_COOKIE } from "./portal-access";
 import * as posts from "./posts";
 import { confirmSignInLink, emailSignInLink } from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
@@ -245,6 +246,51 @@ test("in the widget on a customer's site, the person their app signs in (the rea
   expect(await widgetShows(project.slug)).toBe(false);
   request.cookie = `${WIDGET_READER_COOKIE}=not-a-token`;
   expect(await widgetShows(project.slug)).toBe(false);
+});
+
+test("Customize's preview reads a private portal as the team member looking: its token becomes a cookie, out of the address", async () => {
+  await setAccess(project.id, "PRIVATE");
+  const host = `${project.slug}.localhost:3100`;
+  const open = (path: string, cookie = "") => proxy(new NextRequest(`http://${host}${path}`, { headers: { host, cookie } }));
+
+  // The token (the team member's, for this project) is kept as a partitioned cookie, and the address loses it.
+  const token = previewToken(project.id, owner.id);
+  const first = await open(`/docs?customize=1&preview-token=${token}`);
+  expect(first.status).toBe(307);
+  expect(first.headers.get("location")).toBe(`http://${host}/docs?customize=1`);
+  const cookie = first.headers.get("set-cookie")!;
+  expect(cookie).toContain(`${PREVIEW_READER_COOKIE}=${token}`);
+  expect(cookie).toMatch(/HttpOnly/i);
+  expect(cookie).toMatch(/Secure/i);
+  expect(cookie).toMatch(/SameSite=none/i);
+  expect(cookie).toMatch(/Partitioned/i);
+  expect(first.headers.get("content-security-policy")).toMatch(/^frame-ancestors /);
+
+  // With it, the private portal's pages are served, and its readers' checks let them read it.
+  expect((await open("/docs?customize=1", `${PREVIEW_READER_COOKIE}=${token}`)).headers.get("x-middleware-rewrite")).toBeTruthy();
+  request.cookie = `${PREVIEW_READER_COOKIE}=${token}`;
+  expect(await mayRead(project.id)).toBe(true);
+
+  // Anyone else's token, another project's, a forged one or an expired one gets no cookie and no way in.
+  const stranger = visitors["signed up"]!;
+  const other = await createProject(stranger);
+  for (const bad of [previewToken(project.id, stranger.id), previewToken(other.id, owner.id), `${token}x`, previewToken(project.id, owner.id, Date.now() - 2 * 60 * 60 * 1000)]) {
+    const response = await open(`/docs?customize=1&preview-token=${bad}`);
+    expect(response.status).toBe(307);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect((await open("/docs", `${PREVIEW_READER_COOKIE}=${bad}`)).headers.get("x-middleware-rewrite")).toBeNull();
+    request.cookie = `${PREVIEW_READER_COOKIE}=${bad}`;
+    expect(await mayRead(project.id)).toBe(false);
+  }
+
+  // Off the team, the token stops working.
+  const admin = await signUp("Admin");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  const theirs = previewToken(project.id, admin.id);
+  expect((await open("/docs", `${PREVIEW_READER_COOKIE}=${theirs}`)).headers.get("x-middleware-rewrite")).toBeTruthy();
+  await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: admin.id } });
+  expect((await open("/docs", `${PREVIEW_READER_COOKIE}=${theirs}`)).headers.get("x-middleware-rewrite")).toBeNull();
+  await setAccess(project.id, "PUBLIC");
 });
 
 test("sign-up is off on a private portal, and an account made by a sign-in link can't read it", async () => {
