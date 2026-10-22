@@ -2,6 +2,7 @@
 
 import { ChevronLeftIcon, LockIcon, MonitorIcon, SmartphoneIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -39,8 +40,13 @@ export function CustomizeShell({
   preview: { src: string; address: string } | { custom: ReactNode };
   children: ReactNode;
 }) {
+  const router = useRouter();
   const [version, setVersion] = useState(0);
-  const reload = useCallback(() => setVersion((v) => v + 1), []);
+  // A new frame, and the page's own settings as saved (a preview of its own, like the widget's, shows them).
+  const reload = useCallback(() => {
+    setVersion((v) => v + 1);
+    router.refresh();
+  }, [router]);
 
   return (
     <PreviewContext value={{ reload, version }}>
