@@ -71,7 +71,10 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   // An external script, then one that needs it: they run in that order, as on a page of their own.
   await owner
     .getByLabel("Custom HTML")
-    .fill('<p id="team-html">From the team</p><script src="data:text/javascript,window.teamLib={ready:\'ran\'}"></script><script>document.body.dataset.teamScript = window.teamLib.ready</script>');
+    .fill(
+      // A script that isn't JavaScript (and so never loads) holds nothing up.
+      '<p id="team-html">From the team</p><script type="text/plain" src="data:text/plain,x"></script><script src="data:text/javascript,window.teamLib={ready:\'ran\'}"></script><script>document.body.dataset.teamScript = window.teamLib.ready</script>',
+    );
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Custom code saved")).toBeVisible();
   await visitor.goto("/feedback/feature-requests");

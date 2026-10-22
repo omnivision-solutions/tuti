@@ -38,13 +38,15 @@ export function TeamHtml({ html, origin }: { html: string; origin: string }) {
           continue;
         }
         const script = fresh(node);
-        const waits = script.src && !node.hasAttribute("async") && !node.hasAttribute("defer");
+        const waits = script.src && runs(node) && !node.hasAttribute("async") && !node.hasAttribute("defer");
         // Made by script, external scripts are async unless told otherwise.
         script.async = !waits && script.async;
         const loaded = waits
           ? new Promise<void>((done) => {
               script.addEventListener("load", () => done());
               script.addEventListener("error", () => done());
+              // A script that never answers holds up the rest no longer than this.
+              setTimeout(done, SCRIPT_WAIT_MS);
             })
           : null;
         document.body.append(script);
@@ -58,6 +60,16 @@ export function TeamHtml({ html, origin }: { html: string; origin: string }) {
     };
   }, [html, origin]);
   return null;
+}
+
+/** The longest the rest of the team's HTML waits for one of its scripts. */
+const SCRIPT_WAIT_MS = 10_000;
+
+/** JavaScript's types: a script of another type (or nomodule, in a browser that has modules) isn't run, so isn't waited for. */
+const JS_TYPES = new Set(["", "module", "text/javascript", "application/javascript", "text/ecmascript", "application/ecmascript", "application/x-javascript"]);
+
+function runs(script: HTMLScriptElement): boolean {
+  return !script.hasAttribute("nomodule") && JS_TYPES.has((script.getAttribute("type") ?? "").trim().toLowerCase());
 }
 
 /** A script that runs when it's added, like `script`. */
