@@ -1,6 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 
-import { DocsLayout, docsPageMetadata, DocsSearchResults, DocsTabPage } from "@/components/portal-docs";
+import { DocsLayout, docsPageMetadata, DocsSearchResults, DocsTabPage, withPortalOpenGraph } from "@/components/portal-docs";
 import { portalAddress } from "@/server/custom-domains";
 import { docsHome, docsTree } from "@/server/docs-queries";
 
@@ -10,7 +10,7 @@ const searchQuery = (q: string | string[] | undefined) => (typeof q === "string"
  * One address for search engines: /docs (showing an article or collection, that one's title and
  * description); its search results aren't for them.
  */
-export async function generateMetadata(props: PageProps<"/portal/[project]/docs">): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/portal/[project]/docs">, parent?: ResolvingMetadata): Promise<Metadata> {
   const [{ project }, { q }] = await Promise.all([props.params, props.searchParams]);
   const canonical = { alternates: { canonical: `${await portalAddress(project)}/docs` } };
   if (searchQuery(q)) {
@@ -20,7 +20,7 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs"
   if (tab?.locked) {
     return { title: "Docs", ...canonical, robots: { index: false } };
   }
-  return { ...(landing.kind === "overview" ? { title: "Docs" } : docsPageMetadata(landing)), ...canonical };
+  return withPortalOpenGraph({ ...(landing.kind === "overview" ? { title: "Docs" } : docsPageMetadata(landing)), ...canonical }, parent);
 }
 
 /**

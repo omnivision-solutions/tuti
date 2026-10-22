@@ -51,6 +51,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { THEME_DEFAULT_KEY } from "@/lib/portal-look";
 
 export type ProjectSummary = { slug: string; name: string; role: TeamRole; portalUrl: string };
 
@@ -242,7 +243,14 @@ function NavUser({ user }: { user: { name: string; email: string; image: string 
                 Theme
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={(value) => setTheme(String(value))}>
+                <DropdownMenuRadioGroup
+                  value={theme ?? "system"}
+                  onValueChange={(value) => {
+                    // Their own pick, not a portal's default (see ColorSchemeScript).
+                    localStorage.removeItem(THEME_DEFAULT_KEY);
+                    setTheme(String(value));
+                  }}
+                >
                   <DropdownMenuRadioItem value="light">
                     <SunIcon />
                     Light

@@ -1,7 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 
-import { DocsArticle, DocsCollectionPage, docsPageMetadata, DocsTabPage } from "@/components/portal-docs";
+import { DocsArticle, DocsCollectionPage, docsPageMetadata, DocsTabPage, withPortalOpenGraph } from "@/components/portal-docs";
 import { portalAddress } from "@/server/custom-domains";
 import { docsPage } from "@/server/docs-queries";
 import { portalLinks } from "@/server/portal-base";
@@ -11,7 +11,7 @@ import { portalLinks } from "@/server/portal-base";
  * collection's). A tab showing an article or collection in its place has that one's, with the tab's
  * address as canonical.
  */
-export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">): Promise<Metadata> {
+export async function generateMetadata(props: PageProps<"/portal/[project]/docs/[slug]">, parent?: ResolvingMetadata): Promise<Metadata> {
   const { project, slug } = await props.params;
   const page = await docsPage(project, slug);
   if (!page || page.kind === "redirect") {
@@ -22,9 +22,9 @@ export async function generateMetadata(props: PageProps<"/portal/[project]/docs/
     if (page.tab.locked) {
       return { title: `${page.tab.name} · Docs`, robots: { index: false }, ...canonical };
     }
-    return { ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Docs` } : docsPageMetadata(page.landing)), ...canonical };
+    return withPortalOpenGraph({ ...(page.landing.kind === "overview" ? { title: `${page.tab.name} · Docs` } : docsPageMetadata(page.landing)), ...canonical }, parent);
   }
-  return { ...docsPageMetadata(page), ...canonical };
+  return withPortalOpenGraph({ ...docsPageMetadata(page), ...canonical }, parent);
 }
 
 /** /docs/<slug>: an article, a tab or a collection (one name each), or where one went since. */

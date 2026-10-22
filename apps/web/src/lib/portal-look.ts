@@ -52,6 +52,12 @@ export type PortalLook = {
   contact: ContactButton | null;
 };
 
+/**
+ * Where a portal's default colour scheme (ColorSchemeScript) marks what it put in next-themes'
+ * "theme", so that a pick of the reader's own (which clears it) isn't taken for the default.
+ */
+export const THEME_DEFAULT_KEY = "tuti-theme-default";
+
 /** A portal's look with nothing set (outside a portal's pages, what its parts fall back to). */
 export const DEFAULT_LOOK: PortalLook = {
   color: null,

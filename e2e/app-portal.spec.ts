@@ -16,6 +16,8 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   // Signed in on the app, so signed in on its portal too.
   await owner.goto(`${own}/feedback/feature-requests`);
   await expect(owner.getByRole("heading", { name: "Feature requests" })).toBeVisible();
+  // Light or dark mode here is the app's, its user's pick: no portal default touches it.
+  expect(await owner.content()).not.toContain("tuti-theme-default");
   await owner.getByLabel("Title").fill("Dark mode for the dashboard");
   await owner.getByRole("button", { name: "Submit feedback" }).click();
   await owner.getByRole("link", { name: "Dark mode for the dashboard" }).click();
