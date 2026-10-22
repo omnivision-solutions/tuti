@@ -6,12 +6,27 @@ import { FAKE_GITHUB_WEBHOOK_SECRET } from "@tuti/testkit";
 import { APP_URL } from "./env";
 import type { TestPage } from "./helpers";
 
-/** Connects the project to GitHub from its settings, as `admin`; returns the new installation's id. */
-export async function connectGithub(admin: TestPage, slug: string): Promise<number> {
-  const id = randomInt(1_000_000, 2_000_000_000);
+/**
+ * Connects the project to GitHub from its settings, as `admin`; returns the installation's id. A new
+ * installation on "acme" by default, with one repository, acme/app, whose id is the installation's.
+ */
+export async function connectGithub(
+  admin: TestPage,
+  slug: string,
+  installation: { id?: number; account?: string; repositories?: { id: number; fullName: string }[] } = {},
+): Promise<number> {
+  const id = installation.id ?? randomInt(1_000_000, 2_000_000_000);
+  const repositories = installation.repositories ?? [{ id, fullName: "acme/app" }];
   const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/next-install`, {
     method: "POST",
-    body: JSON.stringify({ forwardedFor: admin.ip, setupUrl: `${APP_URL}/api/github/setup`, id, account: "acme", code: `code-${id}` }),
+    body: JSON.stringify({
+      forwardedFor: admin.ip,
+      setupUrl: `${APP_URL}/api/github/setup`,
+      id,
+      account: installation.account ?? "acme",
+      repositories,
+      code: `code-${id}`,
+    }),
   });
   expect(response.ok).toBe(true);
   await admin.goto(`/app/${slug}/settings/integrations`);
@@ -20,12 +35,12 @@ export async function connectGithub(admin: TestPage, slug: string): Promise<numb
   return id;
 }
 
-/** GitHub telling Tuti about a pull request on acme/app (a signed webhook delivery). */
+/** GitHub telling Tuti about a pull request on acme/app (a signed webhook delivery), as connectGithub set it up. */
 export async function pullRequestEvent(installationId: number, action: string, pr: { number: number; title: string; body?: string }) {
   const body = JSON.stringify({
     action,
     installation: { id: installationId },
-    repository: { full_name: "acme/app" },
+    repository: { id: installationId, full_name: "acme/app" },
     pull_request: { number: pr.number, title: pr.title, body: pr.body ?? "", html_url: `https://github.com/acme/app/pull/${pr.number}` },
   });
   const response = await fetch(`${APP_URL}/api/github/webhook`, {

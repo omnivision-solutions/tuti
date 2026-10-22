@@ -265,6 +265,8 @@ const matrix: Matrix = {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
     setGithubCloseOn: { allowed: "ADMIN", call: (slug) => github.setGithubCloseOn(slug, "MERGE") },
     setGithubPrComments: { allowed: "ADMIN", call: (slug) => github.setGithubPrComments(slug, true) },
+    setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
+    setGithubNewRepositories: { allowed: "ADMIN", call: (slug) => github.setGithubNewRepositories(slug, true) },
   },
   invitations: {
     createInvitation: {
@@ -648,11 +650,20 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const webhook = await prisma.webhook.create({
     data: { projectId, url: receiver.url, secret: "whsec_x", events: ["post.created"], createdById: users.OWNER.id },
   });
+  // A repository it has seen and not included yet.
+  const githubRepoId = ++installations;
   await prisma.githubInstallation.create({
-    data: { projectId, installationId: ++installations, accountLogin: "acme", createdById: users.OWNER.id },
+    data: {
+      projectId,
+      installationId: githubRepoId,
+      accountLogin: "acme",
+      createdById: users.OWNER.id,
+      repositories: [{ id: githubRepoId, fullName: `acme/app-${githubRepoId}` }],
+    },
   });
   return {
     slug: project.slug,
+    githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,
     linkSuggestionId: linkSuggestion.id,

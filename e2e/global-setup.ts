@@ -45,9 +45,7 @@ export default async function globalSetup() {
   process.env.E2E_MODEL_URL = model.url;
   const s3 = await startS3Fake();
   const github = await startGithubFake();
-  // The GitHub journey tells the fake what its install page should do (e2e/github.spec.ts).
-  github.nextInstall(`${APP_URL}/api/github/setup`, { id: 424242, account: "acme-e2e", code: "e2e-install-code" });
-  // Other journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).
+  // Journeys set up their own installs through the fake's /_fake/next-install (e2e/github.ts).
   process.env.E2E_GITHUB_URL = github.url;
   const dns = await startDnsFake();
   // Journeys publish TXT records through the fake's /_fake/txt (e2e/dns.ts).
