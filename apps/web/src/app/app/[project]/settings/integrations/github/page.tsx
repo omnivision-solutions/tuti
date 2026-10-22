@@ -100,8 +100,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Repositories</CardTitle>
           <CardDescription>
-            Pull requests and releases from these repositories link to and complete this project&apos;s posts. A repository belongs to one
-            project; other projects can connect @{installation.accountLogin} for theirs.
+            Pull requests and releases from these repositories update this project&apos;s posts. Each repository belongs to one project.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -133,8 +132,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Pull requests</CardTitle>
           <CardDescription>
-            A pull request that mentions a post (tuti#12, or the post&apos;s link) in its title, description or commits links to it, and
-            opening it moves the post to In progress.
+            Mention tuti#12 in a pull request to link post 12 and move it to In progress.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
