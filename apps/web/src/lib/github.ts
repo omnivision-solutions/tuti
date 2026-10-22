@@ -80,10 +80,11 @@ export async function installationForUser(config: GithubConfig, code: string, re
   if (!token) {
     return null;
   }
-  // Paged, 100 at a time, following GitHub's Link header; capped. Null if GitHub refuses.
+  // Paged, 100 at a time, following GitHub's Link header; up to 10,000 (as the App reads its
+  // repositories elsewhere). Throws if GitHub refuses.
   async function* pages<T>(path: string) {
     let url: string | null = `${config.apiUrl}${path}?per_page=100`;
-    for (let page = 0; url && page < 20; page++) {
+    for (let page = 0; url && page < 100; page++) {
       const response: Response = await fetch(url, {
         headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" },
       });

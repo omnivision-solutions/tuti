@@ -165,6 +165,13 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
+  test("an account with thousands of repositories lists them all", async () => {
+    const many = Array.from({ length: 2_050 }, (_, i) => ({ id: 900_000 + i, fullName: `acme/repo-${i}` }));
+    github.user("code-r9", [{ id: 714, account: "acme", repositories: many }]);
+    await connect(project.slug, 714, "code-r9");
+    expect(await prisma.githubRepository.count({ where: { connection: { projectId: project.id } } })).toBe(2_050);
+  });
+
   test("several projects share an account: each repository feeds the one project that includes it", async () => {
     github.user("code-r2", [{ id: 702, account: "acme", repositories: [web, mobile] }]);
     await connect(project.slug, 702, "code-r2");
