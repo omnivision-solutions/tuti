@@ -493,34 +493,28 @@ enum GithubCloseOn {
 }
 
 /// A project's connection to a GitHub App installation (a GitHub user or organisation). Several
-/// projects may connect the same installation; each takes the repositories it includes
+/// projects may connect the same installation; the team adds each one's repositories
 /// (GithubRepository), and only those repositories' pull requests and releases reach it.
 model GithubInstallation {
-  id                     String        @id @default(cuid())
-  projectId              String        @unique
-  installationId         Int
+  id                    String        @id @default(cuid())
+  projectId             String        @unique
+  installationId        Int
   /// The GitHub user or organisation it's installed on.
-  accountLogin           String
+  accountLogin          String
   /// GitHub's type for that account: "Organization" or "User" (their settings live at different addresses).
-  accountType            String        @default("Organization")
+  accountType           String        @default("Organization")
   /// When linked posts become Completed: when a release ships their pull request
   /// (default: merged isn't shipped), or when it's merged (repos without releases).
-  closeOn                GithubCloseOn @default(RELEASE)
+  closeOn               GithubCloseOn @default(RELEASE)
   /// Comment on pull requests that link posts, listing them with their votes (needs the App's
   /// Pull requests permission set to write).
-  commentOnPullRequests  Boolean       @default(false)
-  /// Repositories Tuti hears of later (added on GitHub, or first seen in a webhook) are
-  /// included here. At most one project per installation has it on.
-  includeNewRepositories Boolean       @default(false)
+  commentOnPullRequests Boolean       @default(false)
   /// The installation's repositories listed in this project's settings ([{ id, fullName }]): the
-  /// ones the person who connected (or refreshed) can access on GitHub, and the ones included.
-  /// Only these can be included.
-  repositories           Json          @default("[]")
-  /// GitHub ids of every repository this project has seen (listed, or heard of in a webhook): one
-  /// that isn't here is new. Never shrinks, so one the team left out stays out.
-  seenRepositoryIds      Int[]         @default([])
-  createdById            String
-  createdAt              DateTime      @default(now())
+  /// ones the person who connected (or refreshed) can access on GitHub, and the project's own.
+  /// Only these can be added.
+  repositories          Json          @default("[]")
+  createdById           String
+  createdAt             DateTime      @default(now())
 
   project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   included GithubRepository[]
@@ -529,7 +523,7 @@ model GithubInstallation {
   @@map("github_installation")
 }
 
-/// A repository a project includes: its pull requests and releases link to and close that
+/// A repository the team added to a project: its pull requests and releases link to and close that
 /// project's posts. One project per repository, so `tuti#12` in it always means one post.
 model GithubRepository {
   id           String   @id @default(cuid())
