@@ -34,7 +34,7 @@ export async function saveConnection(
   installationId: number,
   account: { login: string; repositories: GithubRepo[] },
 ) {
-  const { connectionId, fresh } = await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx) => {
     await lockInstallation(tx, installationId);
     const existing = await tx.githubInstallation.findUnique({
       where: { projectId: project.id },
@@ -70,10 +70,8 @@ export async function saveConnection(
       create: { ...data, projectId: project.id, createdById: project.userId },
       select: { id: true },
     });
-    return {
-      connectionId: connection.id,
-      fresh: includeNew ? account.repositories.filter((repo) => !seen.has(repo.id)) : [],
-    };
+    // In the same transaction as marking them seen: if this fails, a retry still finds them new.
+    const fresh = includeNew ? account.repositories.filter((repo) => !seen.has(repo.id)) : [];
+    await includeRepositories(connection.id, installationId, fresh, tx);
   });
-  await includeRepositories(connectionId, installationId, fresh);
 }

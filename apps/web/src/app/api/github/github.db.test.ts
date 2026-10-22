@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { embedPosts } from "@tuti/jobs";
 import { LINK_MIN_SIMILARITY } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, startOpenAIFake } from "@tuti/testkit";
@@ -148,6 +148,21 @@ describe("repositories", () => {
     expect(await connect(project.slug, 701, "code-r1")).toMatch(/github=connected$/);
     expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
     expect(await connected(project.id)).toMatchObject({ includeNewRepositories: true, repositories: [web, mobile], seenRepositoryIds: [web.id, mobile.id] });
+  });
+
+  test("connecting saves nothing if its repositories can't be included, so trying again takes them", async () => {
+    github.user("code-r7", [{ id: 708, account: "acme", repositories: [web, mobile] }]);
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: Run) =>
+      transaction(async (tx) => {
+        vi.spyOn(tx.githubRepository, "createMany").mockRejectedValueOnce(new Error("database down"));
+        return fn(tx);
+      })) as never);
+    await expect(connect(project.slug, 708, "code-r7")).rejects.toThrow("database down");
+    expect(await connected(project.id)).toBeNull();
+    expect(await connect(project.slug, 708, "code-r7")).toMatch(/github=connected$/);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
   test("several projects share an account: each repository feeds the one project that includes it", async () => {
