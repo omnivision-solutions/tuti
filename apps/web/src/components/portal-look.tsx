@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTheme } from "next-themes";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
@@ -13,6 +12,17 @@ import { type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_F
 import { cn } from "@/lib/utils";
 
 const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
+
+/**
+ * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
+ * (the frame shares the portal's storage with the team member's own visits to it).
+ */
+function showTheme(mode: "light" | "dark") {
+  const html = document.documentElement;
+  html.classList.remove("light", "dark");
+  html.classList.add(mode);
+  html.style.colorScheme = mode;
+}
 
 const LookContext = createContext<PortalLook | null>(null);
 
@@ -29,7 +39,6 @@ export function usePortalLook(): PortalLook {
  */
 export function PortalLookProvider({ saved, appOrigin, children }: { saved: PortalLook; appOrigin: string; children: ReactNode }) {
   const [draft, setDraft] = useState<Partial<PortalLook>>({});
-  const { setTheme } = useTheme();
   const router = useRouter();
   const path = usePortalPath();
 
@@ -44,7 +53,7 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
       if (event.data.type === "tuti:look") {
         setDraft(webOnly(event.data.look));
       } else {
-        setTheme(event.data.theme);
+        showTheme(event.data.theme);
       }
     };
     const onClick = (event: MouseEvent) => {
@@ -68,7 +77,7 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
       window.removeEventListener("message", onMessage);
       document.removeEventListener("click", onClick, true);
     };
-  }, [appOrigin, setTheme, router]);
+  }, [appOrigin, router]);
 
   useEffect(() => {
     if (inPreview()) {
