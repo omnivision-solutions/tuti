@@ -230,6 +230,11 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
     await deliver(github.webhook("installation_repositories", { action: "removed", installation: { id: 704 }, repositories_removed: [api] }));
     expect(await included(project.id)).toEqual(["acme/web"]);
+    // Nor listed, so it can't be switched back on.
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, docs] });
+    expect(await setGithubRepository(project.slug, api.id, true)).toEqual({
+      error: "Refresh the list: that repository isn't one this project can include",
+    });
 
     // A refresh doesn't bring back what was left out, even by someone who can't access it (not listed for them).
     await setGithubRepository(project.slug, web.id, false);

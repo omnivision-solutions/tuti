@@ -31,7 +31,16 @@ export async function POST(request: Request) {
     const { repositories_added: added = [], repositories_removed: removed = [] } = payload as unknown as GithubRepositoriesEvent;
     const installationId = payload.installation.id;
     try {
-      await prisma.githubRepository.deleteMany({ where: { repoId: { in: removed.map((repo) => repo.id) }, connection: { installationId } } });
+      const removedIds = removed.map((repo) => repo.id);
+      await prisma.githubRepository.deleteMany({ where: { repoId: { in: removedIds }, connection: { installationId } } });
+      // Nor listed: they can't be included any more.
+      if (removedIds.length > 0) {
+        await prisma.$executeRaw`
+          UPDATE github_installation SET repositories = COALESCE(
+            (SELECT jsonb_agg(repo) FROM jsonb_array_elements(repositories) repo WHERE (repo->>'id')::int <> ALL(${removedIds}::int[])),
+            '[]'::jsonb)
+          WHERE "installationId" = ${installationId}`;
+      }
       for (const repo of added) {
         await repositoryConnection(installationId, { id: repo.id, fullName: repo.full_name });
       }

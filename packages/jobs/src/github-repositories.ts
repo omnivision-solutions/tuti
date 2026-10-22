@@ -105,10 +105,17 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   return holder?.connectionId === taker.id ? connection : null;
 }
 
-/** Whether GitHub says the repository is in the installation now (its token can read it); false if GitHub can't say. */
+/**
+ * Whether GitHub says the repository is in the installation now: it's among the repositories the
+ * installation can access (reading it by id isn't proof: any token reads a public repository).
+ * False if GitHub can't say.
+ */
 export async function inInstallation(installationId: number, repoId: number): Promise<boolean> {
   try {
-    return (await (await installationApi(installationId)).find(`/repositories/${repoId}`)) !== null;
+    const api = await installationApi(installationId);
+    // Up to 10,000 repositories, 100 a page; only when one would change project.
+    const repositories = await api.list<{ id: number }>("/installation/repositories", (page) => (page as { repositories: { id: number }[] }).repositories, 100);
+    return repositories.some((repo) => repo.id === repoId);
   } catch {
     return false;
   }

@@ -131,16 +131,27 @@ export async function startGithubFake(): Promise<GithubFake> {
           ? send(201, { token: `installation-${installationToken[1]}` })
           : send(401, { message: "A JSON web token could not be decoded" });
       }
-      // A repository by id, as an installation reads it: found only if it's in that installation.
-      const repoById = /^\/repositories\/(\d+)$/.exec(url.pathname);
-      if (req.method === "GET" && repoById) {
-        const installation = Number(/^Bearer installation-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
-        const repo = [...users.values()]
+      const knownRepos = (installation?: number) =>
+        [...users.values()]
           .flat()
-          .filter((i) => i.id === installation)
-          .flatMap((i) => i.repositories ?? [])
-          .find((r) => r.id === Number(repoById[1]));
+          .filter((i) => installation === undefined || i.id === installation)
+          .flatMap((i) => i.repositories ?? []);
+      const tokenInstallation = /^Bearer installation-(\d+)$/.exec(req.headers.authorization ?? "")?.[1];
+      // A repository by id: like a public repository on GitHub, any token can read it, whichever installation it's in.
+      const repoById = /^\/repositories\/(\d+)$/.exec(url.pathname);
+      if (req.method === "GET" && repoById && tokenInstallation) {
+        const repo = knownRepos().find((r) => r.id === Number(repoById[1]));
         return repo ? send(200, { id: repo.id, full_name: repo.fullName }) : send(404, { message: "Not Found" });
+      }
+      // The installation's own repositories, paged like GitHub.
+      if (req.method === "GET" && url.pathname === "/installation/repositories" && tokenInstallation) {
+        const items = [...new Map(knownRepos(Number(tokenInstallation)).map((r) => [r.id, { id: r.id, full_name: r.fullName }])).values()];
+        const perPage = Number(url.searchParams.get("per_page") ?? 30);
+        const page = Number(url.searchParams.get("page") ?? 1);
+        const next = page * perPage < items.length ? `${base}${url.pathname}?per_page=${perPage}&page=${page + 1}` : null;
+        res.writeHead(200, { "content-type": "application/json", ...(next && { link: `<${next}>; rel="next"` }) });
+        res.end(JSON.stringify({ total_count: items.length, repositories: items.slice((page - 1) * perPage, page * perPage) }));
+        return;
       }
       const repoPath = /^\/repos\/([^/]+\/[^/]+)\/(.+)$/.exec(url.pathname);
       if (repoPath && req.method !== "GET") {
