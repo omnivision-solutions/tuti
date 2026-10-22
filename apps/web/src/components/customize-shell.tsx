@@ -295,10 +295,11 @@ function PortalPreview({
   const [device, setDevice] = useState<Device>("desktop");
   const [theme, setTheme] = useState<Theme | null>(null);
   // The page open in the frame (for the address bar); a new frame (after a save) opens it again.
+  // The token is a frame's too: each render of the page signs a new one, and a new address would reload the frame.
   const [path, setPath] = useState(firstPath);
-  const [opened, setOpened] = useState({ version, path: firstPath });
+  const [opened, setOpened] = useState({ version, path: firstPath, token });
   if (opened.version !== version) {
-    setOpened({ version, path });
+    setOpened({ version, path, token });
   }
   const [ready, setReady] = useState(0);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -343,7 +344,7 @@ function PortalPreview({
   // The page laid out at the device's width, scaled down to fit the frame.
   const { width } = DEVICES[device];
   const scale = size.width ? Math.min(1, size.width / width) : 1;
-  const query = new URLSearchParams({ [CUSTOMIZE.param]: CUSTOMIZE.value, ...(token && { [PREVIEW_TOKEN_PARAM]: token }) });
+  const query = new URLSearchParams({ [CUSTOMIZE.param]: CUSTOMIZE.value, ...(opened.token && { [PREVIEW_TOKEN_PARAM]: opened.token }) });
   const src = `${origin}${opened.path}${opened.path.includes("?") ? "&" : "?"}${query}`;
   const page = path.replace(/[?#].*$/, "");
 
