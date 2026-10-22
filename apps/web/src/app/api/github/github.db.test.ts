@@ -263,6 +263,16 @@ describe("repositories", () => {
     const other = await createProject(owner);
     github.user("code-r8c", [{ id: 712, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/web" }] }]);
     await connect(other.slug, 712, "code-r8c");
+    // Taking it over fails halfway: it stays where it was, for a retry.
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: Run) =>
+      transaction(async (tx) => {
+        vi.spyOn(tx.githubRepository, "createMany").mockRejectedValueOnce(new Error("database down"));
+        return fn(tx);
+      })) as never);
+    await expect(setGithubRepository(other.slug, web.id, true)).rejects.toThrow("database down");
+    expect(await included(project.id)).toEqual(["acme/web"]);
     expect(await setGithubRepository(other.slug, web.id, true)).toEqual({});
     expect(await included(other.id)).toEqual(["elsewhere/web"]);
     expect(await included(project.id)).toEqual([]);

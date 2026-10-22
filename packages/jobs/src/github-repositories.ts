@@ -33,16 +33,21 @@ export type RepositoryConnection = Prisma.GithubInstallationGetPayload<{ select:
 /**
  * Includes these repositories of `installationId` in the connection, except those another project
  * includes. A repository included from another installation was moved (transferred to another
- * account): GitHub says it's in this one now, so it starts over here. `db`: a transaction to do it in.
+ * account): GitHub says it's in this one now, so it starts over here. `db`: a transaction to do it in
+ * (otherwise it has one of its own).
  */
 export async function includeRepositories(
   connectionId: string,
   installationId: number,
   repos: GithubRepo[],
-  db: Prisma.TransactionClient = prisma,
+  db?: Prisma.TransactionClient,
 ): Promise<void> {
   if (repos.length === 0) {
     return;
+  }
+  // Both or neither: a moved one deleted and not included would be in no project.
+  if (!db) {
+    return prisma.$transaction((tx) => includeRepositories(connectionId, installationId, repos, tx));
   }
   const ids = repos.map((repo) => repo.id);
   await db.githubRepository.deleteMany({ where: { repoId: { in: ids }, connection: { installationId: { not: installationId } } } });
