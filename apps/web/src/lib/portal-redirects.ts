@@ -24,7 +24,7 @@ export function redirectKey(path: string): string {
 
 /** An old address as pasted ("/hc/en-us/articles/123", or a whole URL of the old site) as a rule's `from`, or what's wrong with it. */
 export function redirectFrom(input: string): { from: string } | { error: string } {
-  const text = input.trim().slice(0, MAX_LENGTH + 1);
+  const text = input.trim();
   let path = text;
   if (/^https?:\/\//i.test(text)) {
     try {
@@ -36,6 +36,8 @@ export function redirectFrom(input: string): { from: string } | { error: string 
   if (!path.startsWith("/") || path.startsWith("//") || /[\s?#]/.test(path)) {
     return { error: "Enter the old address's path, like /hc/en-us/articles/123" };
   }
+  // As requests come in: percent-encoded, dot segments resolved.
+  path = new URL(path, "http://portal.invalid").pathname;
   if (path.length > MAX_LENGTH) {
     return { error: `Keep addresses under ${MAX_LENGTH} characters` };
   }

@@ -10,6 +10,13 @@ test("an old address as pasted becomes a path, lowercase and without a trailing 
   }
   expect(redirectFrom("/")).toMatchObject({ error: expect.stringContaining("Home page") });
   expect(redirectFrom(`/${"a".repeat(600)}`)).toMatchObject({ error: expect.stringContaining("under 500") });
+  // A long whole address is refused too, not cut short.
+  expect(redirectFrom(`https://old.example.com/${"a".repeat(600)}`)).toMatchObject({ error: expect.stringContaining("under 500") });
+  // As requests come in, whether pasted as a path or a whole address: percent-encoded, dot segments resolved.
+  expect(redirectFrom("/hc/ja/articles/123-café")).toEqual({ from: "/hc/ja/articles/123-caf%c3%a9" });
+  expect(redirectFrom("https://old.example.com/hc/ja/articles/123-café")).toEqual({ from: "/hc/ja/articles/123-caf%c3%a9" });
+  expect(redirectFrom("/a/../kb/billing")).toEqual({ from: "/kb/billing" });
+  expect(redirectKey(new URL("http://x/hc/ja/articles/123-Café").pathname)).toBe("/hc/ja/articles/123-caf%c3%a9");
 });
 
 test("the portal's own addresses can't be redirected", () => {

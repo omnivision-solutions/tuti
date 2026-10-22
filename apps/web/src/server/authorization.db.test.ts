@@ -358,10 +358,7 @@ const matrix: Matrix = {
     addPortalReaders: { allowed: "ADMIN", call: (slug) => portalSettings.addPortalReaders(slug, {}, form({ emails: "e2e-matrix-reader@example.com" })) },
     removePortalReader: { allowed: "ADMIN", call: (slug) => portalSettings.removePortalReader(slug, "e2e-reader@example.com") },
     saveRedirect: { allowed: "ADMIN", call: (slug) => portalSettings.saveRedirect(slug, {}, form({ from: "/hc/en-us/articles/1", to: "/docs" })) },
-    removeRedirect: {
-      allowed: "ADMIN",
-      call: async (slug) => portalSettings.removeRedirect(slug, (await prisma.portalRedirect.findFirstOrThrow({ where: { project: { slug }, from: "/old/matrix" } })).id),
-    },
+    removeRedirect: { allowed: "ADMIN", takesIds: true, call: (slug, f) => portalSettings.removeRedirect(slug, f.redirectId) },
     saveCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.saveCustomDomain(slug, {}, form({ hostname: `help.${slug}.example.org` })) },
     verifyCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.verifyCustomDomain(slug) },
     removeCustomDomain: { allowed: "ADMIN", call: (slug) => portalSettings.removeCustomDomain(slug) },
@@ -609,7 +606,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     ],
   });
   await prisma.portalReader.create({ data: { projectId, email: "e2e-reader@example.com" } });
-  await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
+  const redirect = await prisma.portalRedirect.create({ data: { projectId, from: "/old/matrix", to: "/docs" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
   // for its check, which the site answers (for the site actions); else a custom domain waiting for
   // DNS, with its TXT record there to verify it.
@@ -656,6 +653,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   });
   return {
     slug: project.slug,
+    redirectId: redirect.id,
     linkId: link.id,
     linkSuggestionId: linkSuggestion.id,
     webhookId: webhook.id,
