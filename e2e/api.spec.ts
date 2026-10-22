@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
-import { strFromU8, unzipSync } from "fflate";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-test("an admin creates an API key, reads posts with it, revokes it and exports the project", async ({ browser }, testInfo) => {
+test("an admin creates an API key, reads posts with it and revokes it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -44,16 +42,9 @@ test("an admin creates an API key, reads posts with it, revokes it and exports t
   await expect(owner.getByText("No API keys yet")).toBeVisible();
   expect((await posts()).status).toBe(401);
 
-  // Everything can also leave as Markdown files in a ZIP (Settings → Export).
-  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Export" }).click();
-  const exportButton = owner.getByRole("link", { name: "Export as Markdown" });
-  await exportButton.scrollIntoViewIfNeeded();
-  await checkpoint(owner, "settings-export", { fullPage: false });
-  const [download] = await Promise.all([owner.waitForEvent("download"), exportButton.click()]);
-  expect(download.suggestedFilename()).toBe(`${slug}-export-${new Date().toISOString().slice(0, 10)}.zip`);
-  const files = unzipSync(new Uint8Array(await readFile((await download.path())!)));
-  expect(Object.keys(files)).toEqual(expect.arrayContaining(["README.md", "posts/feature-requests/1-dark-mode.md"]));
-  expect(strFromU8(files["posts/feature-requests/1-dark-mode.md"]!)).toContain('author: "Ada"');
+  // The API is how a team takes its data out: there's no separate export.
+  await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Export" })).toHaveCount(0);
+  expect((await owner.request.get(`/app/${slug}/settings/export/zip`)).status()).toBe(404);
 
   // The docs list every endpoint, generated from the same operations.
   await owner.goto("/docs/api");
