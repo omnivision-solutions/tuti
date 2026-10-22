@@ -110,11 +110,21 @@ const installationRepositoryIds = async (installationId: number) =>
 
 /**
  * The connection's list, from GitHub now: every repository the App can see on the account.
- * The project's repositories that GitHub no longer has leave it. Throws if GitHub can't say.
+ * The project's repositories that GitHub no longer has leave it (once two reads agree). Throws if
+ * GitHub can't say.
  */
 export async function syncRepositories(connectionId: string, installationId: number): Promise<GithubRepo[]> {
   const repositories = await installationRepositories(installationId);
   const ids = repositories.map((repo) => repo.id);
+  // The project's repositories the list doesn't have would leave it. GitHub's pages aren't one
+  // snapshot, so one read can skip a repository: they go only if a second read agrees.
+  const missing = await prisma.githubRepository.findMany({ where: { connectionId, repoId: { notIn: ids } }, select: { repoId: true } });
+  if (missing.length > 0) {
+    const again = new Set((await installationRepositories(installationId)).map((repo) => repo.id));
+    if (missing.some((repo) => again.has(repo.repoId))) {
+      throw new Error("Two reads of the installation's repositories disagree");
+    }
+  }
   await prisma.$transaction(async (tx) => {
     // Only if the project is still on that installation: it may have switched while GitHub answered.
     const { count } = await tx.githubInstallation.updateMany({ where: { id: connectionId, installationId }, data: { repositories } });

@@ -349,6 +349,28 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web"]);
   });
 
+  test("a repository missed by one read of the list isn't removed: a second read has to agree", async () => {
+    github.user("code-r16", [{ id: 736, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 736, "code-r16");
+    await add(project.slug, web);
+    // The first read skips acme/web (it moved between pages while others came and went); the second has it.
+    const realFetch = globalThis.fetch;
+    let reads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await realFetch(input, init);
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.includes("/installation/repositories") || reads++ > 0) {
+        return response;
+      }
+      const page = (await response.json()) as { total_count: number; repositories: { id: number }[] };
+      return Response.json({ ...page, repositories: page.repositories.map((repo) => (repo.id === web.id ? { id: 7099, full_name: "acme/new" } : repo)) });
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
+  });
+
   test("a list read for an account the project has since left isn't saved", async () => {
     github.user("code-r14", [{ id: 733, account: "acme", repositories: [web] }]);
     await connect(project.slug, 733, "code-r14");
