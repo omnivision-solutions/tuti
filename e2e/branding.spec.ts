@@ -35,7 +35,10 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("banner")).toBeVisible();
-  const card = owner.locator("form").filter({ has: owner.getByRole("button", { name: "Save branding" }) });
+  // "Save changes" waits for a change.
+  const save = owner.getByRole("button", { name: "Save changes" });
+  await expect(save).toBeDisabled();
+  const card = owner.locator("form");
   // Uploads go through the image pipeline (the S3 fake, processed inline); each shows a preview when ready.
   await card.getByLabel("Logo", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: light });
   await expect(card.getByRole("img", { name: "Logo preview" })).toBeVisible();
@@ -44,8 +47,19 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await card.getByLabel("Favicon").setInputFiles({ name: "favicon.png", mimeType: "image/png", buffer: light });
   await expect(card.getByRole("img", { name: "Favicon preview" })).toBeVisible();
   await card.getByLabel("Accent colour").fill("#2563eb");
-  await card.getByRole("button", { name: "Save branding" }).click();
+  // The preview shows each change before it's saved: the logo, and the colour as the portal's accent.
+  await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
+  const accent = () => preview.locator("html").evaluate((html) => getComputedStyle(html).getPropertyValue("--primary").trim());
+  await expect.poll(accent).toBe("#2563eb");
+  // In dark mode too.
+  await owner.getByRole("button", { name: "Dark mode", exact: true }).click();
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
+  await owner.getByRole("button", { name: "Light mode", exact: true }).click();
+  // Only on the page: nothing kept where the portal remembers a reader's own pick (the frame shares that storage).
+  expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
+  await save.click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
+  await expect(save).toBeDisabled();
   // Saved, the preview shows it.
   await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
   await checkpoint(owner, "branding-settings");
@@ -53,14 +67,22 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // Customize → Navigation: the header's and footer's links.
   await owner.getByRole("link", { name: "Back to Customize" }).click();
   await owner.getByRole("link", { name: /^Navigation/ }).click();
-  const links = owner.locator("form").filter({ has: owner.getByRole("button", { name: "Save navigation" }) });
+  const links = owner.locator("form");
   await links.getByRole("button", { name: "Add header link" }).click();
   await links.getByLabel("Header link 1 label").fill("Docs");
   await links.getByLabel("Header link 1 URL").fill("https://docs.example.com");
   await links.getByRole("button", { name: "Add footer link" }).click();
   await links.getByLabel("Footer link 1 label").fill("Privacy");
   await links.getByLabel("Footer link 1 URL").fill("https://example.com/privacy");
-  await links.getByRole("button", { name: "Save navigation" }).click();
+  await expect(preview.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Docs" })).toBeVisible();
+  // Leaving with changes not saved asks first.
+  await owner.getByRole("link", { name: "Back to Customize" }).click();
+  const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
+  await expect(leave).toBeVisible();
+  await checkpoint(owner, "customize-leave-unsaved", { fullPage: false });
+  await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(leave).toBeHidden();
+  await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Navigation saved")).toBeVisible();
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
@@ -68,7 +90,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
 
   // Customize → Powered by: hiding the badge needs a licence for the project; unticking it asks about one instead.
   await owner.goto(`/app/${slug}/customize/powered-by`);
-  const badge = owner.locator("form").filter({ has: owner.getByRole("button", { name: "Save", exact: true }) });
+  const badge = owner.locator("form");
   const poweredBy = badge.getByLabel('Show "Powered by tuti" in the footer');
   await expect(badge.getByText("Hiding it needs a licence for this project.")).toBeVisible();
   await poweredBy.click();

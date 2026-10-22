@@ -1,20 +1,18 @@
 "use client";
 
 import { PlusIcon, XIcon } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { usePreview } from "@/components/customize-shell";
+import { useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { keepingFields } from "@/lib/forms";
-import type { FormState } from "@/server/form-state";
 import { saveWidgetSettings } from "@/server/widget";
 
 const MAX_LINKS = 5;
 
-/** The launcher on customers' sites: label, colour, corner and quick links (see widget.update). */
+/** Customize → Widget (saved with the panel's "Save changes"): the launcher on customers' sites: label, colour, corner and quick links (see widget.update). */
 export function WidgetSettings({
   projectSlug,
   label,
@@ -32,18 +30,26 @@ export function WidgetSettings({
   links: { label: string; url: string }[];
 }) {
   const [picked, setPicked] = useState(color);
+  const colorField = useRef<HTMLInputElement>(null);
+  useFieldChanged(colorField, picked);
   const preview = usePreview();
-  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveWidgetSettings(projectSlug, prev, formData);
-    if (!result.error) {
+  const { state, form } = useCustomizeForm({
+    save: (prev, formData) => saveWidgetSettings(projectSlug, prev, formData),
+    onSaved: () => {
       toast.success("Widget saved");
       preview.reload();
-    }
-    return result;
-  }, {});
+    },
+    toDraft: (data) => ({
+      widget: {
+        label: String(data.get("label") ?? "") || label,
+        color: String(data.get("color") ?? color),
+        position: data.get("position") === "bottom-left" ? "bottom-left" : "bottom-right",
+      },
+    }),
+  });
 
   return (
-    <form {...keepingFields(action)}>
+    <form {...form}>
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="widget-label">Button label</FieldLabel>
@@ -53,6 +59,7 @@ export function WidgetSettings({
           <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
           <div className="flex items-center gap-3">
             <input
+              ref={colorField}
               id="widget-color"
               name="color"
               type="color"
@@ -91,9 +98,6 @@ export function WidgetSettings({
           links={links}
         />
         {state.error && <FieldError>{state.error}</FieldError>}
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : "Save widget"}
-        </Button>
       </FieldGroup>
     </form>
   );
@@ -117,8 +121,10 @@ export function LinkRows({
   links: { label: string; url: string }[];
 }) {
   const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
+  const fieldset = useRef<HTMLFieldSetElement>(null);
+  useFieldChanged(fieldset, rows);
   return (
-    <fieldset className="flex flex-col gap-2">
+    <fieldset ref={fieldset} className="flex flex-col gap-2">
       <legend className="mb-1 text-sm font-medium">{legend}</legend>
       <p className="text-sm text-muted-foreground">{description}</p>
       {rows.map((row, i) => (

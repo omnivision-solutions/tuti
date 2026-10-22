@@ -1,34 +1,46 @@
 "use client";
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
-import { useActionState, useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { usePreview } from "@/components/customize-shell";
+import { type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { keepingFields } from "@/lib/forms";
+import { linksFrom } from "@/lib/forms";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
 import { checkBrandingLicense, saveBranding } from "@/server/branding";
-import type { FormState } from "@/server/form-state";
 
 type Image = { id: string; url: string } | null;
 
-/** Saves one part of the branding (see branding.update and saveBranding), with a toast, and shows it in Customize's preview. */
-function useBrandingForm(projectSlug: string, saved: string) {
+/**
+ * One part of the branding's form (see branding.update and saveBranding), saved with the panel's
+ * "Save changes" (with a toast, and then the preview shows what's saved), and shown in the preview as
+ * it's changed (`toDraft`).
+ */
+function useBrandingForm(projectSlug: string, message: string, toDraft: (data: FormData) => Draft, busy = false) {
   const preview = usePreview();
-  return useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveBranding(projectSlug, prev, formData);
-    if (!result.error) {
-      toast.success(saved);
+  return useCustomizeForm({
+    save: (prev, formData) => saveBranding(projectSlug, prev, formData),
+    onSaved: () => {
+      toast.success(message);
       preview.reload();
-    }
-    return result;
-  }, {});
+    },
+    toDraft,
+    busy,
+  });
 }
+
+const text = (data: FormData, name: string) => {
+  const value = data.get(name);
+  return typeof value === "string" ? value : "";
+};
+const image = (data: FormData, name: string) => (text(data, `${name}Url`) ? { url: text(data, `${name}Url`) } : null);
+/** Links as the portal would show them: rows with both a label and an address. */
+const shownLinks = (data: FormData, prefix: string) => linksFrom(data, prefix).filter((link) => link.label.trim() && link.url.trim());
 
 /** Customize → Branding: the portal's and its docs' logos, favicon and colour (see branding.update). */
 export function BrandingSettings({
@@ -48,12 +60,23 @@ export function BrandingSettings({
   defaultColor: string;
 }) {
   const [picked, setPicked] = useState(color);
+  const colorField = useRef<HTMLInputElement>(null);
+  useFieldChanged(colorField, picked);
   const [uploading, setUploading] = useState(0);
-  const [state, action, pending] = useBrandingForm(projectSlug, "Branding saved");
+  const { state, form } = useBrandingForm(
+    projectSlug,
+    "Branding saved",
+    (data) => ({
+      color: text(data, "color") === defaultColor ? null : text(data, "color") || null,
+      logo: image(data, "logo"),
+      logoDark: image(data, "logoDark"),
+    }),
+    uploading > 0,
+  );
   const busy = (delta: number) => setUploading((count) => count + delta);
 
   return (
-    <form {...keepingFields(action)}>
+    <form {...form}>
       <input type="hidden" name="part" value="look" />
       <FieldGroup>
         <ImageField
@@ -87,6 +110,7 @@ export function BrandingSettings({
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
           <div className="flex items-center gap-3">
             <input
+              ref={colorField}
               id="brand-color"
               name="color"
               type="color"
@@ -106,9 +130,6 @@ export function BrandingSettings({
           </FieldDescription>
         </Field>
         {state.error && <FieldError>{state.error}</FieldError>}
-        <Button type="submit" disabled={pending || uploading > 0} className="self-end">
-          {pending ? "Saving…" : "Save branding"}
-        </Button>
       </FieldGroup>
     </form>
   );
@@ -124,9 +145,12 @@ export function NavigationSettings({
   headerLinks: { label: string; url: string }[];
   footerLinks: { label: string; url: string }[];
 }) {
-  const [state, action, pending] = useBrandingForm(projectSlug, "Navigation saved");
+  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => ({
+    headerLinks: shownLinks(data, "headerLink"),
+    footerLinks: shownLinks(data, "footerLink"),
+  }));
   return (
-    <form {...keepingFields(action)}>
+    <form {...form}>
       <input type="hidden" name="part" value="links" />
       <FieldGroup>
         <LinkRows
@@ -144,9 +168,6 @@ export function NavigationSettings({
           links={footerLinks}
         />
         {state.error && <FieldError>{state.error}</FieldError>}
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : "Save navigation"}
-        </Button>
       </FieldGroup>
     </form>
   );
@@ -166,16 +187,13 @@ export function PoweredBySettings({
   /** tuti.so/license for this installation and project. */
   buyLicenseUrl: string;
 }) {
-  const [state, action, pending] = useBrandingForm(projectSlug, "Saved");
+  const { state, form } = useBrandingForm(projectSlug, "Saved", (data) => ({ poweredBy: data.get("poweredBy") === "on" }));
   return (
-    <form {...keepingFields(action)}>
+    <form {...form}>
       <input type="hidden" name="part" value="poweredBy" />
       <FieldGroup>
         <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} />
         {state.error && <FieldError>{state.error}</FieldError>}
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : "Save"}
-        </Button>
       </FieldGroup>
     </form>
   );
@@ -202,6 +220,8 @@ function ImageField({
   const id = useId();
   const [image, setImage] = useState(initial);
   const [status, setStatus] = useState<{ uploading: true } | { error: string } | null>(null);
+  const field = useRef<HTMLInputElement>(null);
+  useFieldChanged(field, image);
 
   const upload = async (file: File) => {
     setStatus({ uploading: true });
@@ -219,7 +239,9 @@ function ImageField({
   return (
     <Field>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <input type="hidden" name={name} value={image?.id ?? ""} />
+      <input ref={field} type="hidden" name={name} value={image?.id ?? ""} />
+      {/* For the preview only (saveBranding reads the id). */}
+      <input type="hidden" name={`${name}Url`} value={image?.url ?? ""} />
       <div className="flex flex-wrap items-center gap-3">
         {/* `light` / `dark` give the preview that mode's background (globals.css). */}
         <div className={cn(look, "flex h-14 w-32 items-center justify-center rounded-lg border bg-background p-2")}>
@@ -285,6 +307,8 @@ function PoweredByField({
   buyLicenseUrl: string;
 }) {
   const [shown, setShown] = useState(poweredBy);
+  const box = useRef<HTMLInputElement>(null);
+  useFieldChanged(box, shown);
   const [licensedUntil, setLicensedUntil] = useState(initial);
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -306,7 +330,7 @@ function PoweredByField({
       setLicensedUntil(result.licensedUntil);
       setShown(false);
       setOpen(false);
-      toast.success(`Licensed until ${untilDate(result.licensedUntil)}. Save to hide the badge.`);
+      toast.success(`Licensed until ${untilDate(result.licensedUntil)}. Save your changes to hide the badge.`);
       return;
     }
     setMessage(result.error ?? CHECKED[result.status === "licensed" || !result.status ? "unreachable" : result.status]);
@@ -316,6 +340,7 @@ function PoweredByField({
     <Field>
       <label className="flex items-center gap-2 text-sm">
         <input
+          ref={box}
           type="checkbox"
           name="poweredBy"
           checked={shown}

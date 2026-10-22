@@ -58,9 +58,12 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: the section's settings in a panel on
   the left (back, title; cards inside), the portal it changes on the right in
-  a browser frame, at desktop or phone width. Settings that change how the
-  portal looks go here, not in Settings; call `usePreview().reload()` once
-  they're saved.
+  a browser frame, at desktop or phone width, light or dark. Settings that
+  change how the portal looks go here, not in Settings. A section's form uses
+  `useCustomizeForm`: "Save changes" in the panel's header (enabled once
+  something changed), and `toDraft` shows a change in the frame as it's made
+  (the portal's `PortalLookProvider` takes it); leaving with changes not saved
+  asks first.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
