@@ -226,15 +226,34 @@ describe("repositories", () => {
 
     // Added to the installation on GitHub, then removed.
     const api = { id: 7014, full_name: "acme/api" };
+    const onGithub = (repositories: { id: number; fullName: string }[]) => github.user("code-r4-github", [{ id: 704, account: "acme", repositories }]);
+    onGithub([web, docs, { id: api.id, fullName: api.full_name }]);
     expect(await deliver(github.webhook("installation_repositories", { action: "added", installation: { id: 704 }, repositories_added: [api] }))).toBe(200);
     expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
-    await deliver(github.webhook("installation_repositories", { action: "removed", installation: { id: 704 }, repositories_removed: [api] }));
+    const removal = github.webhook("installation_repositories", { action: "removed", installation: { id: 704 }, repositories_removed: [api] });
+    // A removal arriving late, after it was added back: GitHub still has it there, so it stays.
+    expect(await deliver(removal)).toBe(200);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    // GitHub can't say: not acknowledged, so it can be redelivered.
+    onGithub([web, docs]);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await deliver(removal)).toBe(503);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    expect(await deliver(removal)).toBe(200);
     expect(await included(project.id)).toEqual(["acme/web"]);
     // Nor listed, so it can't be switched back on.
     expect(await connected(project.id)).toMatchObject({ repositories: [web, docs] });
     expect(await setGithubRepository(project.slug, api.id, true)).toEqual({
       error: "Refresh the list: that repository isn't one this project can include",
     });
+    // Added back on GitHub, it's new again: listed and included here.
+    onGithub([web, docs, { id: api.id, fullName: api.full_name }]);
+    await deliver(github.webhook("installation_repositories", { action: "added", installation: { id: 704 }, repositories_added: [api] }));
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, docs, { id: api.id, fullName: api.full_name }] });
+    onGithub([web, docs]);
+    await deliver(removal);
 
     // A refresh doesn't bring back what was left out, even by someone who can't access it (not listed for them).
     await setGithubRepository(project.slug, web.id, false);

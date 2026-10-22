@@ -7,6 +7,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { githubConfig } from "@/lib/github";
+import { repositoryRows } from "@/lib/github-repository-rows";
 import { getAdminProject } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -46,7 +47,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
   const elsewhere = installation
     ? await prisma.githubRepository.findMany({
         where: { repoId: { in: repositories.map((repo) => repo.id) }, connectionId: { not: installation.id } },
-        select: { repoId: true, connection: { select: { project: otherProject } } },
+        select: { repoId: true, connection: { select: { installationId: true, project: otherProject } } },
       })
     : [];
   const newElsewhere =
@@ -107,16 +108,16 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               key={JSON.stringify([repositories, installation.included, installation.includeNewRepositories])}
               projectSlug={project.slug}
               account={installation.accountLogin}
-              repositories={repositories
-                .map((repo) => {
-                  const other = elsewhere.find((row) => row.repoId === repo.id);
-                  return {
-                    ...repo,
-                    included: installation.included.some((row) => row.repoId === repo.id),
-                    elsewhere: other ? projectName(other.connection.project) : null,
-                  };
-                })
-                .sort((a, b) => a.fullName.localeCompare(b.fullName))}
+              repositories={repositoryRows(
+                repositories,
+                installation.included.map((row) => row.repoId),
+                elsewhere.map((row) => ({
+                  repoId: row.repoId,
+                  installationId: row.connection.installationId,
+                  project: projectName(row.connection.project),
+                })),
+                installation.installationId,
+              )}
               includeNew={installation.includeNewRepositories}
               newElsewhere={newElsewhere ? projectName(newElsewhere.project) : null}
             />

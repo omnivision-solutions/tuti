@@ -105,18 +105,48 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   return holder?.connectionId === taker.id ? connection : null;
 }
 
+/** GitHub ids of the repositories the installation can access now (up to 10,000, 100 a page). Throws if GitHub can't say. */
+async function installationRepositoryIds(installationId: number): Promise<Set<number>> {
+  const api = await installationApi(installationId);
+  const repositories = await api.list<{ id: number }>("/installation/repositories", (page) => (page as { repositories: { id: number }[] }).repositories, 100);
+  return new Set(repositories.map((repo) => repo.id));
+}
+
 /**
  * Whether GitHub says the repository is in the installation now: it's among the repositories the
  * installation can access (reading it by id isn't proof: any token reads a public repository).
- * False if GitHub can't say.
+ * False if GitHub can't say. Only asked when a repository would change project.
  */
 export async function inInstallation(installationId: number, repoId: number): Promise<boolean> {
   try {
-    const api = await installationApi(installationId);
-    // Up to 10,000 repositories, 100 a page; only when one would change project.
-    const repositories = await api.list<{ id: number }>("/installation/repositories", (page) => (page as { repositories: { id: number }[] }).repositories, 100);
-    return repositories.some((repo) => repo.id === repoId);
+    return (await installationRepositoryIds(installationId)).has(repoId);
   } catch {
     return false;
   }
+}
+
+/**
+ * Repositories removed from the installation on GitHub: they leave their project and every
+ * project's list, and are forgotten, so added back they're new again. Deliveries can arrive out
+ * of order, so only those GitHub says are gone now; throws if GitHub can't say.
+ */
+export async function forgetRepositories(installationId: number, repoIds: number[]): Promise<void> {
+  if (repoIds.length === 0) {
+    return;
+  }
+  const current = await installationRepositoryIds(installationId);
+  const gone = repoIds.filter((id) => !current.has(id));
+  if (gone.length === 0) {
+    return;
+  }
+  await prisma.$transaction([
+    prisma.githubRepository.deleteMany({ where: { repoId: { in: gone }, connection: { installationId } } }),
+    prisma.$executeRaw`
+      UPDATE github_installation SET
+        repositories = COALESCE(
+          (SELECT jsonb_agg(repo) FROM jsonb_array_elements(repositories) repo WHERE (repo->>'id')::int <> ALL(${gone}::int[])),
+          '[]'::jsonb),
+        "seenRepositoryIds" = ARRAY(SELECT id FROM unnest("seenRepositoryIds") id WHERE id <> ALL(${gone}::int[]))
+      WHERE "installationId" = ${installationId}`,
+  ]);
 }

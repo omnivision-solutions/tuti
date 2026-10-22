@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue, repositoryConnection } from "@tuti/jobs";
+import { enqueue, forgetRepositories, repositoryConnection } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { githubConfig, verifyWebhookSignature } from "@/lib/github";
@@ -26,21 +26,16 @@ export async function POST(request: Request) {
     log.info("GitHub installation removed", { installationId: payload.installation.id, projects: count });
   }
   // Repositories added to or removed from the installation on GitHub: added ones are new (the
-  // project that takes new repositories includes them); removed ones leave their project.
+  // project that takes new repositories includes them); removed ones leave their project, once
+  // GitHub confirms they're gone (if it can't say, the delivery fails, to be redelivered).
   if (event === "installation_repositories" && payload.installation) {
     const { repositories_added: added = [], repositories_removed: removed = [] } = payload as unknown as GithubRepositoriesEvent;
     const installationId = payload.installation.id;
     try {
-      const removedIds = removed.map((repo) => repo.id);
-      await prisma.githubRepository.deleteMany({ where: { repoId: { in: removedIds }, connection: { installationId } } });
-      // Nor listed: they can't be included any more.
-      if (removedIds.length > 0) {
-        await prisma.$executeRaw`
-          UPDATE github_installation SET repositories = COALESCE(
-            (SELECT jsonb_agg(repo) FROM jsonb_array_elements(repositories) repo WHERE (repo->>'id')::int <> ALL(${removedIds}::int[])),
-            '[]'::jsonb)
-          WHERE "installationId" = ${installationId}`;
-      }
+      await forgetRepositories(
+        installationId,
+        removed.map((repo) => repo.id),
+      );
       for (const repo of added) {
         await repositoryConnection(installationId, { id: repo.id, fullName: repo.full_name });
       }
