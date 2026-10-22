@@ -55,6 +55,11 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(preview.getByRole("banner").getByRole("link", { name: /Acme Help/ })).toHaveAttribute("href", "https://acme.example");
   await card.getByText("Dark", { exact: true }).click();
   await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
+  // A font for headings, from the ones built into Tuti.
+  await card.getByLabel("Heading font").selectOption({ label: "Playfair Display" });
+  await expect
+    .poll(() => preview.getByRole("heading", { level: 1 }).first().evaluate((h) => getComputedStyle(h).fontFamily))
+    .toContain("Playfair Display");
   // Back to each reader's device's.
   await card.getByText("System", { exact: true }).click();
   await expect(preview.locator("html")).not.toHaveClass(/\bdark\b/);

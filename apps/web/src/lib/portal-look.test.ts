@@ -58,3 +58,8 @@ test("the rest of a change: a known colour scheme, web or mailto: Contact us, we
     sidebarLinks: [{ label: "Status", url: "https://status.example.com" }],
   });
 });
+
+test("fonts: only the portal fonts, or null", () => {
+  expect(webOnly({ fonts: { heading: "lora", body: null } })).toEqual({ fonts: { heading: "lora", body: null } });
+  expect(webOnly({ fonts: { heading: "url(https://evil.example/x.woff)" as never, body: null } })).toEqual({});
+});
