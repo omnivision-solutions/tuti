@@ -2,13 +2,16 @@
 
 Tuti is free software under the GNU Affero General Public License, version 3 ([LICENSE](LICENSE)),
 with the additional terms below, which Tuti's copyright holders add under section 7 of that
-licence. They apply to all of Tuti as published in this repository, and to any work based on it.
+licence. They apply to all of Tuti in this repository that is under that licence, and to any work
+based on it. Parts published under another licence, such as the MIT embeddable SDKs the README
+mentions, aren't covered.
 
 ## 1. Attribution: "Powered by tuti" (section 7(b))
 
 Each page of a portal that Tuti serves (its feedback board, roadmap, changelog, docs and help
 pages) shows in its footer the author attribution "Powered by tuti", with Tuti's logo, linking to
-https://tuti.so. The attribution is part of the Appropriate Legal Notices that Tuti displays.
+https://tuti.so. The attribution is part of the Appropriate Legal Notices that Tuti displays. The
+widget, the panel Tuti opens inside other websites, has no footer and isn't one of these pages.
 
 If you convey Tuti or a work based on it, or run it, modified or not, so that people use its
 portals over a network, you must keep this attribution on each such page: visible, legible and

@@ -136,7 +136,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.
 ## License
 
 [AGPL-3.0](LICENSE), with [additional terms](ADDITIONAL-TERMS.md) under its section 7: portals keep
-"Powered by tuti" unless the project has a licence. Embeddable SDKs/widgets (when they exist) will be MIT.
+"Powered by tuti" unless the project has a licence. Embeddable SDKs/widgets (when they exist) will be MIT,
+without those terms.
 
 ### "Powered by tuti"
 
