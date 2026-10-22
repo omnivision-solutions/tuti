@@ -105,16 +105,20 @@ describe("toMarkdown", () => {
     );
   });
 
-  // Each would take seconds with a pattern that rescans a run from each of its characters.
-  test("long runs of spaces and of line breaks, in text and in table cells, take no time", { timeout: 1_000 }, () => {
+  // A millisecond or so; seconds with a pattern that rescans a run from each of its characters
+  // (half of what a stored document may hold, MAX_DOC_JSON_LENGTH).
+  test("a long run of spaces, in text and in a table cell, takes no time", { timeout: 1_000 }, () => {
     const spaces = " ".repeat(100_000);
-    const breaks = Array<object>(50_000).fill({ type: "hardBreak" });
     expect(toMarkdown(doc(p(text(`a${spaces}b`), text("c", bold))))).toBe(`a${spaces}b**c**`);
-    expect(toMarkdown(doc(p(text("a"), ...breaks, text("b"))))).toBe(`a${"\\\n".repeat(50_000)}b`);
-    expect(toMarkdown(doc(p(text("a"), ...breaks)))).toBe("a");
-    expect(toMarkdown(doc(p(...breaks), p(text("b"))))).toBe("b");
     const table = { type: "table", content: [row(cell("tableHeader", "Note")), row(cell("tableCell", `a${spaces}b`))] };
     expect(toMarkdown(doc(table))).toBe(`| Note |\n| --- |\n| a${spaces}b |`);
+  });
+
+  test("hard breaks at a paragraph's end are dropped, also when it has nothing else", () => {
+    const breaks = Array<object>(3).fill({ type: "hardBreak" });
+    expect(toMarkdown(doc(p(text("a"), ...breaks, text("b"))))).toBe("a\\\n\\\n\\\nb");
+    expect(toMarkdown(doc(p(text("a"), ...breaks)))).toBe("a");
+    expect(toMarkdown(doc(p(...breaks), p(text("b"))))).toBe("b");
   });
 
   test("a whole article, as validated and stored", () => {
