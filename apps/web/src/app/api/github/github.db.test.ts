@@ -350,6 +350,28 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
+  test("when GitHub can't say where a moved repository is, nothing moves and the event can be retried", async () => {
+    github.user("code-r12", [{ id: 723, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 723, "code-r12");
+    const other = await createProject(owner);
+    github.user("code-r12b", [{ id: 724, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/web" }] }]);
+    github.user("code-r12", [{ id: 723, account: "acme", repositories: [] }]);
+    const moved = await createProject(owner);
+    github.user("code-r12c", [{ id: 724, account: "elsewhere", repositories: [] }]);
+    await connect(other.slug, 724, "code-r12c"); // takes new repositories on that account
+    await connect(moved.slug, 724, "code-r12b"); // lists it
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    // Not acknowledged, so GitHub can redeliver it; and the switch says so.
+    expect(await deliver(pullRequest(724, { id: web.id, fullName: "elsewhere/web" }, 1, ""))).toBe(503);
+    expect(await setGithubRepository(moved.slug, web.id, true)).toEqual({
+      error: "GitHub couldn't say where elsewhere/web is now. Try again in a moment.",
+    });
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await deliver(pullRequest(724, { id: web.id, fullName: "elsewhere/web" }, 1, ""))).toBe(200);
+    expect(await included(other.id)).toEqual(["elsewhere/web"]);
+  });
+
   test("a renamed repository keeps its project; one moved to another account leaves it", async () => {
     github.user("code-r6", [{ id: 706, account: "acme", repositories: [web] }]);
     await connect(project.slug, 706, "code-r6");

@@ -118,14 +118,11 @@ async function installationRepositoryIds(installationId: number): Promise<Set<nu
 /**
  * Whether GitHub says the repository is in the installation now: it's among the repositories the
  * installation can access (reading it by id isn't proof: any token reads a public repository).
- * False if GitHub can't say. Only asked when a repository would change project.
+ * Throws if GitHub can't say, so the event is retried rather than skipped. Only asked when a
+ * repository would change project.
  */
 export async function inInstallation(installationId: number, repoId: number): Promise<boolean> {
-  try {
-    return (await installationRepositoryIds(installationId)).has(repoId);
-  } catch {
-    return false;
-  }
+  return (await installationRepositoryIds(installationId)).has(repoId);
 }
 
 /**

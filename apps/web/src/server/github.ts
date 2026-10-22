@@ -92,8 +92,14 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   if (holder?.connectionId !== connection.id) {
     // Held from another installation: it was there once, and may have moved here since. The list
     // may be older than a move, so only GitHub's word now takes it from that project.
-    const moved =
-      holder && holder.connection.installationId !== connection.installationId && (await inInstallation(connection.installationId, repoId));
+    let moved = false;
+    if (holder && holder.connection.installationId !== connection.installationId) {
+      try {
+        moved = await inInstallation(connection.installationId, repoId);
+      } catch {
+        return { error: `GitHub couldn't say where ${repo.fullName} is now. Try again in a moment.` };
+      }
+    }
     if (!moved) {
       return { error: `${repo.fullName} is in another project` };
     }
