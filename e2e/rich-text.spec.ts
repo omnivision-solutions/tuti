@@ -123,7 +123,8 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await expect(figure).toHaveAttribute("data-width", "50");
   await expect(figure).toHaveAttribute("data-align", "right");
   const image = figure.getByRole("img", { name: "The landing page hero filling the screen" });
-  await expect(image).toHaveAttribute("srcset", /480\.webp 480w/);
+  // Signed URLs: the bucket is private.
+  await expect(image).toHaveAttribute("srcset", /480\.webp\?[^ ]*X-Amz-Signature=[^ ]+ 480w/);
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   await checkpoint(ada, "portal-post-with-image");
 });
