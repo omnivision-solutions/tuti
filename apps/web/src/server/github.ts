@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { includeRepositories, inInstallation, listedRepositories } from "@tuti/jobs";
+import { includeRepositories, inInstallation, listedRepositories, syncRepositories } from "@tuti/jobs";
 import { refresh } from "next/cache";
 
 import { getAdminProject } from "./membership";
@@ -111,4 +111,26 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   }
   refresh();
   return {};
+}
+
+/**
+ * "Refresh list": every repository the Tuti App can see on the account, from GitHub now (with the
+ * App's own access, no trip to GitHub). The project's repositories GitHub no longer has leave it.
+ */
+export async function refreshGithubRepositories(projectSlug: string): Promise<{ error?: string; count?: number }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change the GitHub connection" };
+  }
+  const connection = await prisma.githubInstallation.findUnique({ where: { projectId: project.id }, select: { id: true, installationId: true } });
+  if (!connection) {
+    return { error: "GitHub isn't connected" };
+  }
+  try {
+    const repositories = await syncRepositories(connection.id, connection.installationId);
+    refresh();
+    return { count: repositories.length };
+  } catch {
+    return { error: "GitHub didn't answer. Try again in a moment." };
+  }
 }

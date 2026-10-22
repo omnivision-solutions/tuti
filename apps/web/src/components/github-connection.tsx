@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLinkIcon, InfoIcon, PlusIcon, UnplugIcon, XIcon } from "lucide-react";
+import { ExternalLinkIcon, InfoIcon, PlusIcon, RefreshCwIcon, UnplugIcon, XIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { disconnectGithub, setGithubCloseOn, setGithubPrComments, setGithubRepository } from "@/server/github";
+import { disconnectGithub, refreshGithubRepositories, setGithubCloseOn, setGithubPrComments, setGithubRepository } from "@/server/github";
 
 export function DisconnectGithubButton({ projectSlug, account }: { projectSlug: string; account: string }) {
   const [pending, startTransition] = useTransition();
@@ -260,9 +260,24 @@ export function GithubRepositories({
               Manage access on GitHub
               <ExternalLinkIcon />
             </a>
-            <a href={`/api/github/refresh?${new URLSearchParams({ project: projectSlug })}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await refreshGithubRepositories(projectSlug);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`List refreshed: ${result.count} ${result.count === 1 ? "repository" : "repositories"}`);
+                  }
+                })
+              }
+            >
+              <RefreshCwIcon />
               Refresh list
-            </a>
+            </Button>
           </div>
         </div>
       )}

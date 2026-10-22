@@ -57,10 +57,11 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
   await checkpoint(owner, "settings-github-repositories");
 
-  // Refresh list asks GitHub again and comes back.
-  await owner.getByRole("link", { name: "Refresh list" }).click();
-  await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=refreshed`);
-  await expect(owner.getByText("Repositories refreshed.")).toBeVisible();
+  // Refresh list reads GitHub again, on the page.
+  const url = owner.url();
+  await owner.getByRole("button", { name: "Refresh list" }).click();
+  await expect(owner.getByText("List refreshed: 2 repositories")).toBeVisible();
+  expect(owner.url()).toBe(url);
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
 
   // Integrations lists it as connected, with Manage.

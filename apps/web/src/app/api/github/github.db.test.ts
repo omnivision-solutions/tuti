@@ -10,14 +10,13 @@ import { request } from "@/test/next-headers";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { disconnectGithub, setGithubRepository } from "@/server/github";
+import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
 
 import GithubIntegrationPage from "@/app/app/[project]/settings/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
-import { GET as refreshRoute } from "./refresh/route";
 import { GET as setup } from "./setup/route";
 import { GET as pickAccount } from "./use/route";
 import { POST as webhook } from "./webhook/route";
@@ -205,13 +204,6 @@ describe("repositories", () => {
       select: { id: true },
     });
   const linksOf = async (postId: string) => (await prisma.postLink.findMany({ where: { postId }, select: { url: true } })).map((l) => l.url);
-  /** "Refresh": GitHub's authorize page sends the person straight back with a code. */
-  async function refreshList(projectSlug: string, code: string) {
-    const authorize = location(await refreshRoute(new Request(`${APP}/api/github/refresh?project=${projectSlug}`)));
-    const state = new URL(authorize).searchParams.get("state")!;
-    return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(state)}`)));
-  }
-
   const add = (slug: string, repo: { id: number }) => setGithubRepository(slug, repo.id, true);
 
   test("a project starts with no repositories, and adds the ones that belong to it", async () => {
@@ -259,17 +251,23 @@ describe("repositories", () => {
     expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
-  test("only repositories the person who connected can access can be added", async () => {
+  test("the list is what the app can see on the account; Refresh list reads it again, without a trip to GitHub", async () => {
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web] }]);
     await connect(project.slug, 703, "code-r3");
     expect(await add(project.slug, mobile)).toEqual({
       error: "Refresh the list: that repository isn't one this project can include",
     });
     expect(await setGithubRepository(project.slug, Number.NaN, true)).toEqual({ error: "Unknown repository" });
-    // Refreshed by someone who can access it.
-    github.user("code-r3b", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
-    expect(await refreshList(project.slug, "code-r3b")).toMatch(/github=refreshed$/);
+    // The app gets access to another repository on GitHub.
+    github.user("code-r3", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 2 });
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
     expect(await add(project.slug, mobile)).toEqual({});
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // GitHub not answering changes nothing.
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
   });
 
@@ -315,17 +313,9 @@ describe("repositories", () => {
     await add(project.slug, mobile);
     // Removed on GitHub, and no webhook arrived.
     github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
-    await refreshList(project.slug, "code-r11");
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
     expect(await included(project.id)).toEqual(["acme/web"]);
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
-    // One the person refreshing can't access, but the installation still has, stays.
-    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
-    await refreshList(project.slug, "code-r11");
-    await add(project.slug, mobile);
-    github.user("code-r11c", [{ id: 722, account: "acme", repositories: [mobile] }]);
-    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
-    await refreshList(project.slug, "code-r11");
-    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
   test("a renamed repository keeps its project; one moved to another account is added there once GitHub says it's there", async () => {

@@ -17,7 +17,6 @@ import { getSession } from "@/server/session";
 
 const GITHUB_RESULTS: Record<string, string> = {
   connected: "GitHub is connected. Add the repositories that belong to this project.",
-  refreshed: "Repositories refreshed.",
 };
 
 /**

@@ -8,9 +8,7 @@ import { ACCOUNTS_COOKIE, adminProject, INSTALL_COOKIE, saveConnection } from "@
  * The App's Callback URL (step 3 of 3): GitHub's web authorization flow returns
  * `code` and our `state`. The installation is connected only if the state is ours
  * and fresh, the signed-in account administers the project, and GitHub says the
- * person who authorized can see the installation, so nobody can claim another's. The
- * repositories of it they can access are the ones the project can include. "Refresh"
- * (/api/github/refresh) comes back here too, to update them.
+ * person who authorized can see the installation, so nobody can claim another's.
  */
 export async function GET(request: Request) {
   const config = githubConfig();
@@ -23,9 +21,9 @@ export async function GET(request: Request) {
   if (!project) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
-  // Connected (or refreshed): on to its settings; otherwise back to the integrations, to try again.
+  // Connected: on to its settings; otherwise back to the integrations, to try again.
   const done = (result: string) => {
-    const page = result === "connected" || result === "refreshed" ? "integrations/github" : "integrations";
+    const page = result === "connected" ? "integrations/github" : "integrations";
     const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/${page}?github=${result}`, appUrl()));
     response.cookies.delete({ name: INSTALL_COOKIE, path: "/api/github" });
     response.cookies.delete({ name: ACCOUNTS_COOKIE, path: "/" });
@@ -61,5 +59,5 @@ export async function GET(request: Request) {
     return done("unconfirmed");
   }
   await saveConnection(project, installationId, account);
-  return done(purpose === "refresh" ? "refreshed" : "connected");
+  return done("connected");
 }
