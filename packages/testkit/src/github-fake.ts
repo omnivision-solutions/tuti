@@ -255,8 +255,8 @@ export async function startGithubFake(): Promise<GithubFake> {
     comments: (fullName, number) => commentsOn(fullName, number).map((c) => ({ ...c })),
     comment: (fullName, number, body) => void commentsOn(fullName, number).push({ id: nextCommentId++, body, byApp: false }),
     deleteComments: (fullName, number) => void commentsOn(fullName, number).splice(0),
-    nextInstall(setupUrl, { id, account, repositories, code }) {
-      users.set(code, [{ id, account, repositories }]);
+    nextInstall(setupUrl, { id, account, type, repositories, code }) {
+      users.set(code, [{ id, account, type, repositories }]);
       globalInstall = { setupUrl, id, code };
     },
     webhook(event, payload) {
