@@ -131,6 +131,17 @@ export async function startGithubFake(): Promise<GithubFake> {
           ? send(201, { token: `installation-${installationToken[1]}` })
           : send(401, { message: "A JSON web token could not be decoded" });
       }
+      // A repository by id, as an installation reads it: found only if it's in that installation.
+      const repoById = /^\/repositories\/(\d+)$/.exec(url.pathname);
+      if (req.method === "GET" && repoById) {
+        const installation = Number(/^Bearer installation-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
+        const repo = [...users.values()]
+          .flat()
+          .filter((i) => i.id === installation)
+          .flatMap((i) => i.repositories ?? [])
+          .find((r) => r.id === Number(repoById[1]));
+        return repo ? send(200, { id: repo.id, full_name: repo.fullName }) : send(404, { message: "Not Found" });
+      }
       const repoPath = /^\/repos\/([^/]+\/[^/]+)\/(.+)$/.exec(url.pathname);
       if (repoPath && req.method !== "GET") {
         if (!/^Bearer installation-\d+$/.test(req.headers.authorization ?? "")) {

@@ -1,5 +1,7 @@
 import { type Prisma, prisma } from "@tuti/db";
 
+import { installationApi } from "./github-api";
+
 /**
  * Which project a repository's pull requests and releases go to. A project connects a GitHub
  * App installation (a user or organisation), several projects may connect the same one, and
@@ -90,4 +92,13 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   // Another delivery may have included it first (or elsewhere): whoever holds it now.
   const holder = await prisma.githubRepository.findUnique({ where: { repoId: repo.id }, select: { connectionId: true } });
   return holder?.connectionId === taker.id ? connection : null;
+}
+
+/** Whether GitHub says the repository is in the installation now (its token can read it); false if GitHub can't say. */
+export async function inInstallation(installationId: number, repoId: number): Promise<boolean> {
+  try {
+    return (await (await installationApi(installationId)).find(`/repositories/${repoId}`)) !== null;
+  } catch {
+    return false;
+  }
 }

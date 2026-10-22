@@ -253,6 +253,32 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual([]);
   });
 
+  test("a repository moved to another account can be included there, once GitHub says it's there", async () => {
+    github.user("code-r8", [{ id: 711, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 711, "code-r8");
+    // Moved to another account, where another project takes new repositories, so this one starts with none.
+    const first = await createProject(owner);
+    github.user("code-r8b", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    await connect(first.slug, 712, "code-r8b");
+    const other = await createProject(owner);
+    github.user("code-r8c", [{ id: 712, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/web" }] }]);
+    await connect(other.slug, 712, "code-r8c");
+    expect(await setGithubRepository(other.slug, web.id, true)).toEqual({});
+    expect(await included(other.id)).toEqual(["elsewhere/web"]);
+    expect(await included(project.id)).toEqual([]);
+
+    // GitHub says it isn't in that account (moved on again, or the list is old): the holder keeps it.
+    github.user("code-r8c", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    github.user("code-r8d", [{ id: 713, account: "third", repositories: [mobile] }]);
+    await connect(project.slug, 713, "code-r8d");
+    const another = await createProject(owner);
+    github.user("code-r8e", [{ id: 712, account: "elsewhere", repositories: [mobile] }]);
+    await connect(another.slug, 712, "code-r8e");
+    github.user("code-r8e", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    expect(await setGithubRepository(another.slug, mobile.id, true)).toEqual({ error: "acme/mobile is in another project" });
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+  });
+
   test("a renamed repository keeps its project; one moved to another account leaves it", async () => {
     github.user("code-r6", [{ id: 706, account: "acme", repositories: [web] }]);
     await connect(project.slug, 706, "code-r6");

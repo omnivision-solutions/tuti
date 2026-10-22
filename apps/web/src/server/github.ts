@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { listedRepositories } from "@tuti/jobs";
+import { includeRepositories, inInstallation, listedRepositories } from "@tuti/jobs";
 import { refresh } from "next/cache";
 
 import { lockInstallation } from "./github-connect";
@@ -70,7 +70,7 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   }
   const connection = await prisma.githubInstallation.findUnique({
     where: { projectId: project.id },
-    select: { id: true, repositories: true },
+    select: { id: true, installationId: true, repositories: true },
   });
   if (!connection) {
     return { error: "GitHub isn't connected" };
@@ -84,12 +84,24 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   if (!repo) {
     return { error: "Refresh the list: that repository isn't one this project can include" };
   }
-  // Not taken from another project, even one that included it from another installation: the
-  // list may be older than a transfer, and that project's is what GitHub said last.
   await prisma.githubRepository.createMany({ data: { connectionId: connection.id, repoId, fullName: repo.fullName }, skipDuplicates: true });
-  const holder = await prisma.githubRepository.findUnique({ where: { repoId }, select: { connectionId: true } });
+  const holder = await prisma.githubRepository.findUnique({
+    where: { repoId },
+    select: { connectionId: true, connection: { select: { installationId: true } } },
+  });
   if (holder?.connectionId !== connection.id) {
-    return { error: `${repo.fullName} is in another project` };
+    // Held from another installation: it was there once, and may have moved here since. The list
+    // may be older than a move, so only GitHub's word now takes it from that project.
+    const moved =
+      holder && holder.connection.installationId !== connection.installationId && (await inInstallation(connection.installationId, repoId));
+    if (!moved) {
+      return { error: `${repo.fullName} is in another project` };
+    }
+    await includeRepositories(connection.id, connection.installationId, [repo]);
+    const now = await prisma.githubRepository.findUnique({ where: { repoId }, select: { connectionId: true } });
+    if (now?.connectionId !== connection.id) {
+      return { error: `${repo.fullName} is in another project` };
+    }
   }
   refresh();
   return {};
