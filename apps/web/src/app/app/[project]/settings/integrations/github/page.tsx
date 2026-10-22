@@ -47,7 +47,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
     },
   });
   const integrations = `/app/${project.slug}/settings/integrations`;
-  if (!github || !installation) {
+  if (!installation) {
     redirect(integrations);
   }
   // Another project's name shows only to people on its team.
@@ -82,6 +82,14 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         </div>
         <DisconnectGithubButton projectSlug={project.slug} account={installation.accountLogin} />
       </div>
+      {!github && (
+        <Alert variant="destructive">
+          <AlertDescription>
+            GitHub isn&apos;t set up on this server any more (GITHUB_APP_* in .env.example), so nothing reaches this project from it. Set it up
+            again, or disconnect.
+          </AlertDescription>
+        </Alert>
+      )}
       {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
         <Alert>
           <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
@@ -112,10 +120,11 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
               })),
               installation.installationId,
             )}
-            manageUrl={installationSettingsUrl(github, installation.installationId, {
-              login: installation.accountLogin,
-              type: installation.accountType,
-            })}
+            manageUrl={
+              github
+                ? installationSettingsUrl(github, installation.installationId, { login: installation.accountLogin, type: installation.accountType })
+                : null
+            }
           />
         </CardContent>
       </Card>

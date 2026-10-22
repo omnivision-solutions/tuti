@@ -5,13 +5,15 @@ import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, sta
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { signValue, verifyValue } from "@/lib/github";
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
 import { disconnectGithub, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
+
+import GithubIntegrationPage from "@/app/app/[project]/settings/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
@@ -397,6 +399,15 @@ describe("webhook", () => {
     expect(await deliver(github.webhook("ping", { zen: "Keep it simple." }))).toBe(200);
     expect(await deliver(uninstall)).toBe(200);
     expect(await prisma.githubInstallation.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("GitHub's settings page: only when connected, and still there (to disconnect) once the server's App is gone", async () => {
+    const page = () => GithubIntegrationPage({ params: Promise.resolve({ project: project.slug }), searchParams: Promise.resolve({}) } as never);
+    expect(await redirectTarget(page())).toBe(`/app/${project.slug}/settings/integrations`);
+    await prisma.githubInstallation.create({ data: { projectId: project.id, installationId: 610, accountLogin: "acme", createdById: owner.id } });
+    expect(await page()).toBeTruthy();
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "");
+    expect(await page()).toBeTruthy();
   });
 
   test("without the App fully configured, the endpoints don't exist", async () => {

@@ -158,8 +158,8 @@ export function GithubRepositories({
   projectSlug: string;
   account: string;
   repositories: GithubRepositoryRow[];
-  /** The installation's settings on GitHub, where its repositories are chosen. */
-  manageUrl: string;
+  /** The installation's settings on GitHub, where its repositories are chosen (null when the server has no GitHub App). */
+  manageUrl: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
@@ -250,20 +250,22 @@ export function GithubRepositories({
           </ul>
         </PopoverContent>
       </Popover>
-      <div className="flex flex-col gap-2 border-t pt-4">
-        <span className="text-muted-foreground">
-          Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.
-        </span>
-        <div className="flex flex-wrap gap-2">
-          <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Manage access on GitHub
-            <ExternalLinkIcon />
-          </a>
-          <a href={`/api/github/refresh?${new URLSearchParams({ project: projectSlug })}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Refresh list
-          </a>
+      {manageUrl && (
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <span className="text-muted-foreground">
+            Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Manage access on GitHub
+              <ExternalLinkIcon />
+            </a>
+            <a href={`/api/github/refresh?${new URLSearchParams({ project: projectSlug })}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Refresh list
+            </a>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
