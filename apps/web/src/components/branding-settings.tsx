@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
+import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
@@ -375,13 +376,6 @@ export function ImageField({
   );
 }
 
-const CHECKED: Record<"not_licensed" | "in_use" | "unreachable" | "busy", string> = {
-  not_licensed: "No licence for this project yet. Once you've bought one, check again.",
-  in_use: "This project's licence is in use on another installation of Tuti. Email hello@tuti.so to move it here.",
-  unreachable: "Couldn't reach tuti.so. Try again in a few minutes.",
-  busy: "Checked a moment ago. Try again in a minute.",
-};
-
 const untilDate = (date: Date) => date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 /**
@@ -414,19 +408,20 @@ function PoweredByField({
     try {
       result = await checkBrandingLicense(projectSlug);
     } catch {
-      setMessage(CHECKED.unreachable);
+      setMessage(LICENSE_UNREACHABLE);
       return;
     } finally {
       setChecking(false);
     }
-    if (result.licensedUntil) {
-      setLicensedUntil(result.licensedUntil);
-      setShown(false);
-      setOpen(false);
-      toast.success(`Licensed until ${untilDate(result.licensedUntil)}. Save your changes to hide the badge.`);
+    const outcome = licenseCheckOutcome(result);
+    if ("message" in outcome) {
+      setMessage(outcome.message);
       return;
     }
-    setMessage(result.error ?? CHECKED[result.status === "licensed" || !result.status ? "unreachable" : result.status]);
+    setLicensedUntil(outcome.licensedUntil);
+    setShown(false);
+    setOpen(false);
+    toast.success(`Licensed until ${untilDate(outcome.licensedUntil)}. Save your changes to hide the badge.`);
   };
 
   return (
