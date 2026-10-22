@@ -1,4 +1,4 @@
-import { imageKey, imageWidths } from "@tuti/content/media";
+import { EMAIL_IMAGE_WIDTH, emailImageKey, imageKey, imageWidths } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
@@ -112,6 +112,15 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     storage && media?.status === "READY" && media.width && media.height
       ? { id: media.id, url: storage.publicUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
       : null;
+  // Link cards want a JPEG about 1200 pixels wide: every image has one (made for emails).
+  const shareImage = (media: Parameters<typeof url>[0]): BrandImage | null => {
+    const image = url(media);
+    if (!image || !storage) {
+      return image;
+    }
+    const width = Math.min(image.width, EMAIL_IMAGE_WIDTH);
+    return { ...image, url: storage.publicUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
+  };
   const links = (value: unknown) => {
     const parsed = z.array(httpsLink).safeParse(value);
     return parsed.success ? parsed.data : [];
@@ -140,7 +149,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     sidebarLinks: links(project.sidebarLinks),
     contact: project.contactUrl ? { label: project.contactLabel, url: project.contactUrl } : null,
     seo: { title: project.seoTitle, description: project.seoDescription },
-    seoImage: url(project.seoImage),
+    seoImage: shareImage(project.seoImage),
   };
 }
 

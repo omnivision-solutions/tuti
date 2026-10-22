@@ -1,4 +1,4 @@
-import { imageKey, mediaKeys } from "@tuti/content/media";
+import { emailImageKey, imageKey, mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -123,7 +123,8 @@ test("the colour scheme, the logo's text and link, sidebar links, Contact us and
 test("the share image is an upload like the logos: kept while it's used, released once it's replaced", async () => {
   const first = await uploaded();
   await update({ seoImage: first.id });
-  expect((await get()).seoImage).toMatchObject({ id: first.id });
+  // As link cards want it: the JPEG made for emails, at most 1200 pixels wide.
+  expect((await get()).seoImage).toEqual({ id: first.id, url: `${s3.env.MEDIA_PUBLIC_URL}/${emailImageKey(first.id)}`, width: 600, height: 200 });
   await releaseADayLater();
   expect(await attached(first.id)).not.toBeNull();
   const second = await uploaded();
