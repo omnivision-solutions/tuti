@@ -151,7 +151,7 @@ function inline(node: JSONContent, ctx: Context): string {
   close(0);
   // Hard breaks at the end are dropped: CommonMark shows one there as a backslash.
   let end = out.length;
-  while (out.startsWith("\\\n", end - 2)) {
+  while (end >= 2 && out.startsWith("\\\n", end - 2)) {
     end -= 2;
   }
 

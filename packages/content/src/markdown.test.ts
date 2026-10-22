@@ -112,6 +112,7 @@ describe("toMarkdown", () => {
     expect(toMarkdown(doc(p(text(`a${spaces}b`), text("c", bold))))).toBe(`a${spaces}b**c**`);
     expect(toMarkdown(doc(p(text("a"), ...breaks, text("b"))))).toBe(`a${"\\\n".repeat(50_000)}b`);
     expect(toMarkdown(doc(p(text("a"), ...breaks)))).toBe("a");
+    expect(toMarkdown(doc(p(...breaks), p(text("b"))))).toBe("b");
     const table = { type: "table", content: [row(cell("tableHeader", "Note")), row(cell("tableCell", `a${spaces}b`))] };
     expect(toMarkdown(doc(table))).toBe(`| Note |\n| --- |\n| a${spaces}b |`);
   });
