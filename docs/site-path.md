@@ -104,7 +104,7 @@ A Worker on your site's routes `example.com/portal`, `example.com/portal/*` and 
 export default {
   fetch(request) {
     const url = new URL(request.url);
-    url.hostname = "acme.tuti.so";
+    url.host = "acme.tuti.so";
     return fetch(new Request(url, request));
   },
 };
