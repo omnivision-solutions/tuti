@@ -119,7 +119,22 @@ export function useCustomizeForm({
   useEffect(() => register({ id, dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);
   useEffect(() => () => register(null), [register]);
 
-  return { state, form: { ...keepingFields(action), id, ref } };
+  const { onSubmit, ...submit } = keepingFields(action);
+  return {
+    state,
+    form: {
+      ...submit,
+      id,
+      ref,
+      // Saves trim what's typed: so does the form first, so what it shows (and counts as saved) is what's saved.
+      onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+        for (const field of event.currentTarget.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input:not([type]), input[type="text"], input[type="url"], textarea')) {
+          field.value = field.value.trim();
+        }
+        onSubmit(event);
+      },
+    },
+  };
 }
 
 /** Tells a form (useCustomizeForm) that a field in `element` changed without anyone typing: after each change of `value`. */
