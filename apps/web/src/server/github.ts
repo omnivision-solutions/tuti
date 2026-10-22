@@ -97,7 +97,7 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
     if (!moved) {
       return { error: `${repo.fullName} is in another project` };
     }
-    await includeRepositories(connection.id, connection.installationId, [repo]);
+    await includeRepositories(connection.id, connection.installationId, [repo], { takeOver: true });
     const now = await prisma.githubRepository.findUnique({ where: { repoId }, select: { connectionId: true } });
     if (now?.connectionId !== connection.id) {
       return { error: `${repo.fullName} is in another project` };

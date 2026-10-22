@@ -320,6 +320,36 @@ describe("repositories", () => {
     expect(await included(project.id)).toEqual(["acme/mobile"]);
   });
 
+  test("a repository another account's project took meanwhile isn't taken back without GitHub's word", async () => {
+    github.user("code-r10", [{ id: 720, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 720, "code-r10");
+    const other = await createProject(owner);
+    github.user("code-r10b", [{ id: 721, account: "elsewhere", repositories: [] }]);
+    await connect(other.slug, 721, "code-r10b");
+    // The event is read as new (no holder yet), and the first project's claim lands just after.
+    vi.spyOn(prisma.githubRepository, "findUnique").mockResolvedValueOnce(null);
+    await deliver(pullRequest(721, web, 1, ""));
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await included(other.id)).toEqual([]);
+  });
+
+  test("a refresh drops included repositories GitHub no longer has (a removal it didn't tell us of)", async () => {
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 722, "code-r11");
+    // Removed on GitHub, and no webhook arrived.
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
+    await refreshList(project.slug, "code-r11");
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+    // One the person refreshing can't access, but the installation still has, stays.
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
+    await refreshList(project.slug, "code-r11");
+    github.user("code-r11c", [{ id: 722, account: "acme", repositories: [mobile] }]);
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
+    await refreshList(project.slug, "code-r11");
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
+  });
+
   test("a renamed repository keeps its project; one moved to another account leaves it", async () => {
     github.user("code-r6", [{ id: 706, account: "acme", repositories: [web] }]);
     await connect(project.slug, 706, "code-r6");

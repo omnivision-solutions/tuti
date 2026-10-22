@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
-import { type GithubRepo, includeRepositories } from "@tuti/jobs";
+import { forgetRepositories, type GithubRepo, includeRepositories } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 
 import { getAccountSession } from "./session";
 
@@ -34,7 +35,7 @@ export async function saveConnection(
   installationId: number,
   account: { login: string; repositories: GithubRepo[] },
 ) {
-  await prisma.$transaction(async (tx) => {
+  const unlisted = await prisma.$transaction(async (tx) => {
     await lockInstallation(tx, installationId);
     const existing = await tx.githubInstallation.findUnique({
       where: { projectId: project.id },
@@ -72,6 +73,13 @@ export async function saveConnection(
     });
     // In the same transaction as marking them seen: if this fails, a retry still finds them new.
     const fresh = includeNew ? account.repositories.filter((repo) => !seen.has(repo.id)) : [];
-    await includeRepositories(connection.id, installationId, fresh, tx);
+    // They're in the installation now: GitHub listed them for this person.
+    await includeRepositories(connection.id, installationId, fresh, { db: tx, takeOver: true });
+    return included.filter((repo) => !account.repositories.some((r) => r.id === repo.id)).map((repo) => repo.id);
   });
+  // Included, but not listed for this person: if GitHub says they've left the installation (a
+  // removal whose webhook never came), they go. Best effort: the refresh itself is done.
+  await forgetRepositories(installationId, unlisted).catch((error: unknown) =>
+    log.warn("Couldn't check GitHub for removed repositories", { error, installationId }),
+  );
 }
