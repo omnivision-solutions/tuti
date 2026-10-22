@@ -32,8 +32,11 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
       ...(formData.has("colorScheme") && { colorScheme: text("colorScheme") as ColorScheme }),
       ...(formData.has("logoText") && { logoText: text("logoText") }),
       ...(formData.has("logoLink") && { logoLink: text("logoLink").trim() || null }),
-      ...(formData.has("headingFont") && {
-        fonts: { heading: (text("headingFont") || null) as PortalFont | null, body: (text("bodyFont") || null) as PortalFont | null },
+      ...((formData.has("headingFont") || formData.has("bodyFont")) && {
+        fonts: {
+          ...(formData.has("headingFont") && { heading: (text("headingFont") || null) as PortalFont | null }),
+          ...(formData.has("bodyFont") && { body: (text("bodyFont") || null) as PortalFont | null }),
+        },
       }),
     }),
     links: () => ({
