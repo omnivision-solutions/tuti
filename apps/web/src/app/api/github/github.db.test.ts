@@ -371,6 +371,27 @@ describe("repositories", () => {
     expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
   });
 
+  test("a repository added while a refresh runs stays", async () => {
+    const docs = { id: 7015, fullName: "acme/docs" };
+    github.user("code-r17", [{ id: 737, account: "acme", repositories: [web, mobile, docs] }]);
+    await connect(project.slug, 737, "code-r17");
+    await add(project.slug, web);
+    // GitHub drops acme/web and acme/docs; while the refresh confirms acme/web is gone, someone adds acme/docs (still on the page's old list).
+    github.user("code-r17", [{ id: 737, account: "acme", repositories: [mobile] }]);
+    const realFetch = globalThis.fetch;
+    let reads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("/installation/repositories") && ++reads === 2) {
+        expect(await add(project.slug, docs)).toEqual({});
+      }
+      return realFetch(input, init);
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/docs"]);
+  });
+
   test("a list read for an account the project has since left isn't saved", async () => {
     github.user("code-r14", [{ id: 733, account: "acme", repositories: [web] }]);
     await connect(project.slug, 733, "code-r14");

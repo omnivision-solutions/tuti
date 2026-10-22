@@ -131,7 +131,8 @@ export async function syncRepositories(connectionId: string, installationId: num
     if (count === 0) {
       throw new Error("The project's GitHub connection changed while its repositories were read");
     }
-    await tx.githubRepository.deleteMany({ where: { connectionId, repoId: { notIn: ids } } });
+    // Only those confirmed gone: one added meanwhile is the next refresh's to check.
+    await tx.githubRepository.deleteMany({ where: { connectionId, repoId: { in: missing.map((repo) => repo.repoId) } } });
   });
   return repositories;
 }
