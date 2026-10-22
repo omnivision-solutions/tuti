@@ -5,7 +5,7 @@ import { destinationKey, redirectFrom, redirectKey, redirectLocation, redirectTo
 test("an old address as pasted becomes a path, lowercase and without a trailing slash", () => {
   expect(redirectFrom(" /hc/en-us/Articles/123/ ")).toEqual({ from: "/hc/en-us/articles/123" });
   expect(redirectFrom("https://old.example.com/kb/Billing?x=1")).toEqual({ from: "/kb/billing" });
-  for (const bad of ["kb/billing", "//evil.example", "/kb?x=1", "/kb#top", "/a b"]) {
+  for (const bad of ["kb/billing", "//evil.example", "/kb?x=1", "/kb#top", "/a b", "/\\[", "/\\evil.example"]) {
     expect(redirectFrom(bad)).toMatchObject({ error: expect.stringContaining("path") });
   }
   expect(redirectFrom("/")).toMatchObject({ error: expect.stringContaining("Home page") });
@@ -30,7 +30,7 @@ test("the portal's own addresses can't be redirected", () => {
 test("a rule sends people to a path of the portal or a whole https address", () => {
   expect(redirectTo("/docs/billing")).toEqual({ to: "/docs/billing" });
   expect(redirectTo("https://acme.example/pricing")).toEqual({ to: "https://acme.example/pricing" });
-  for (const bad of ["http://acme.example", "javascript:alert(1)", "//evil.example", "docs/billing", ""]) {
+  for (const bad of ["http://acme.example", "javascript:alert(1)", "//evil.example", "/\\evil.example", "/\\[", "docs/billing", ""]) {
     expect(redirectTo(bad)).toMatchObject({ error: expect.any(String) });
   }
 });
