@@ -64,6 +64,22 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
     await visitor.goto("/feedback/feature-requests");
     await expect(visitor.getByRole("heading", { name: "Feature requests" })).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 20_000 });
+
+  // The team's own HTML (Customize → Custom code) runs on their domain, scripts too, and never on a Tuti address.
+  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await expect(owner.getByText(`It runs on ${domain}`, { exact: false })).toBeVisible();
+  await owner.getByLabel("Custom HTML").fill('<p id="team-html">From the team</p><script>document.body.dataset.teamScript = "ran"</script>');
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Custom code saved")).toBeVisible();
+  await visitor.goto("/feedback/feature-requests");
+  await expect(visitor.locator("#team-html")).toHaveText("From the team");
+  await expect(visitor.locator("body")).toHaveAttribute("data-team-script", "ran");
+  const onTuti = await newPerson(browser, portalUrl(slug));
+  await onTuti.goto("/feedback/feature-requests?customize=1");
+  await expect(onTuti.getByRole("heading", { name: "Feature requests" })).toBeVisible();
+  await expect(onTuti.locator("#team-html")).toHaveCount(0);
+  await expect(onTuti.locator("body")).not.toHaveAttribute("data-team-script", "ran");
+
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${domainUrl}/sign-in?next=%2Ffeedback%2Ffeature-requests`);
   await visitor.getByRole("link", { name: "Create an account" }).click();
@@ -82,6 +98,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await checkpoint(visitor, "portal-on-custom-domain");
 
   // Removed, it stops answering there.
+  await owner.goto(`/app/${slug}/customize/address`);
   await owner.getByRole("button", { name: "Remove domain" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();

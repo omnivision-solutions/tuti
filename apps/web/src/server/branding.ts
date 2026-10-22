@@ -13,7 +13,7 @@ import { asAdmin, call } from "./operations/run";
 /**
  * Saves one part of the branding from Customize (see branding.update), named by the form's `part`: its
  * look (logos, favicon, colour; an empty image field removes that image), its links (empty rows are
- * skipped), "Powered by", content actions, the docs' home, or SEO. The other parts stay as they are.
+ * skipped), "Powered by", content actions, the docs' home, SEO, or custom code. The other parts stay as they are.
  */
 export async function saveBranding(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (name: string) => {
@@ -42,6 +42,7 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
       sidebarLinks: linksFrom(formData, "sidebarLink"),
       ...(formData.has("contactUrl") && { contact: text("contactUrl").trim() ? { label: text("contactLabel"), url: text("contactUrl") } : null }),
     }),
+    code: () => ({ customCss: text("customCss"), customHtml: text("customHtml") }),
     seo: () => ({ seoImage: text("seoImage") || null, seo: { title: text("seoTitle"), description: text("seoDescription") } }),
     poweredBy: () => ({ poweredBy: on("poweredBy") }),
     contentActions: () => ({

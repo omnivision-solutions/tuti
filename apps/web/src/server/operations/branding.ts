@@ -10,6 +10,7 @@ import {
   COLOR_SCHEMES,
   type ColorScheme,
   CONTACT_LABEL_MAX,
+  CUSTOM_CODE_MAX,
   type ContactButton,
   type ContentActions,
   DOCS_SUBTITLE_MAX,
@@ -67,6 +68,10 @@ export type Branding = {
   seoImage: BrandImage | null;
   /** For headings and for text, from the portal fonts; null for the page's own. */
   fonts: { heading: PortalFont | null; body: PortalFont | null };
+  /** The team's CSS, on every portal page. */
+  customCss: string;
+  /** The team's HTML at the end of the page, only where the portal is on their own domain or site (see the portal's layout). */
+  customHtml: string;
 };
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
@@ -105,6 +110,8 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         seoDescription: true,
         headingFont: true,
         bodyFont: true,
+        customCss: true,
+        customHtml: true,
       },
     }),
     thisInstallation(),
@@ -156,6 +163,8 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     seo: { title: project.seoTitle, description: project.seoDescription },
     seoImage: shareImage(project.seoImage),
     fonts: { heading: isPortalFont(project.headingFont) ? project.headingFont : null, body: isPortalFont(project.bodyFont) ? project.bodyFont : null },
+    customCss: project.customCss,
+    customHtml: project.customHtml,
   };
 }
 
@@ -201,7 +210,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own). Fields left out stay as they are`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own), customCss (CSS on every portal page) and customHtml (HTML, scripts too, at the end of each page only where the portal is on your own domain or a path of your site: never on its Tuti address, in the widget or on the app's own domain); each up to ${CUSTOM_CODE_MAX} characters. Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -227,6 +236,8 @@ export const updateBranding = defineOperation({
     seo: seo.optional(),
     seoImage: upload,
     fonts: fonts.optional(),
+    customCss: z.string().max(CUSTOM_CODE_MAX, `Custom CSS is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`).optional(),
+    customHtml: z.string().max(CUSTOM_CODE_MAX, `Custom HTML is up to ${CUSTOM_CODE_MAX.toLocaleString("en")} characters`).optional(),
   }),
   example: {
     color: "#5b21b6",
@@ -287,6 +298,8 @@ export const updateBranding = defineOperation({
             ...(input.seo?.description !== undefined && { seoDescription: input.seo.description }),
             ...(input.fonts?.heading !== undefined && { headingFont: input.fonts.heading ?? "" }),
             ...(input.fonts?.body !== undefined && { bodyFont: input.fonts.body ?? "" }),
+            ...(input.customCss !== undefined && { customCss: input.customCss }),
+            ...(input.customHtml !== undefined && { customHtml: input.customHtml }),
           },
         });
         // Replaced images stay attached: the daily release-media job releases them once nothing in the

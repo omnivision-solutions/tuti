@@ -138,3 +138,25 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 });
+
+test("the team's own CSS shows in the preview as it's typed, and on the portal once saved", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/customize/custom-code`);
+  const preview = owner.frameLocator('iframe[title="Portal preview"]');
+  await expect(preview.locator(".portal-header")).toBeVisible();
+  await owner.getByLabel("Custom CSS").fill(".portal-header { background: rgb(1, 2, 3); }");
+  await expect(preview.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
+  // Its HTML runs only on an address of the team's own, which this portal doesn't have yet.
+  await expect(owner.getByText("Your portal isn't on one yet", { exact: false })).toBeVisible();
+  await checkpoint(owner, "customize-custom-code");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Custom code saved")).toBeVisible();
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/roadmap");
+  await expect(visitor.locator(".portal-header")).toHaveCSS("background-color", "rgb(1, 2, 3)");
+});

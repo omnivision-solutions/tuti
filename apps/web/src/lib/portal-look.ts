@@ -30,6 +30,8 @@ export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 export type ContactButton = { label: string; url: string };
 
 export const DOCS_TITLE_MAX = 80;
+/** The most the team's CSS and HTML can be (Customize → Custom code). */
+export const CUSTOM_CODE_MAX = 50_000;
 export const LOGO_TEXT_MAX = 40;
 export const CONTACT_LABEL_MAX = 30;
 export const DOCS_SUBTITLE_MAX = 200;
@@ -54,6 +56,8 @@ export type PortalLook = {
   contact: ContactButton | null;
   /** For headings and for text; null for the page's own. */
   fonts: { heading: PortalFont | null; body: PortalFont | null };
+  /** The team's own CSS (Customize → Custom code), after everything else. */
+  customCss: string;
 };
 
 /**
@@ -78,6 +82,7 @@ export const DEFAULT_LOOK: PortalLook = {
   sidebarLinks: [],
   contact: null,
   fonts: { heading: null, body: null },
+  customCss: "",
 };
 
 /** The app → the frame: a change not saved yet (`look`, merged over what's saved), or light or dark mode. */
@@ -152,5 +157,11 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
   if (fonts && font(fonts.heading) && font(fonts.body)) {
     checked.fonts = { heading: fonts.heading, body: fonts.body };
   }
+  if (typeof look.customCss === "string") {
+    checked.customCss = look.customCss.slice(0, CUSTOM_CODE_MAX);
+  }
   return checked;
 }
+
+/** CSS for a `<style>` element: as written, except that it can't close the element (and become HTML). */
+export const styleText = (css: string) => css.replace(/<\/(style)/gi, "<\\/$1");

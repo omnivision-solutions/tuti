@@ -12,7 +12,7 @@ import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { brandCss } from "@/lib/colors";
 import { fontVariable } from "@/lib/portal-fonts";
 import { CUSTOMIZE } from "@/lib/portal-base";
-import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, webOnly } from "@/lib/portal-look";
+import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, styleText, webOnly } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
@@ -115,6 +115,8 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
       <div className={cn("contents", PORTAL_FONT_CLASSES)} style={fonts}>
         {children}
       </div>
+      {/* The team's own CSS (Customize → Custom code), after everything else. */}
+      {look.customCss && <style>{styleText(look.customCss)}</style>}
     </LookContext>
   );
 }
@@ -207,7 +209,7 @@ export function PortalFooter() {
     return null;
   }
   return (
-    <footer className="flex flex-col items-center gap-3 px-6 pb-6">
+    <footer className="portal-footer flex flex-col items-center gap-3 px-6 pb-6">
       {footerLinks.length > 0 && (
         <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (
