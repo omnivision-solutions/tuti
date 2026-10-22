@@ -10,6 +10,7 @@ import { issueLicense } from "@/test/license";
 
 import { saveBranding } from "../branding";
 import { installationId } from "../license";
+import { lastingMediaUrl } from "../media-urls";
 import { brandCss, getBranding, updateBranding } from "./branding";
 import { call } from "./run";
 
@@ -145,7 +146,7 @@ test("the share image is an upload like the logos: kept while it's used, release
   const first = await uploaded();
   await update({ seoImage: first.id });
   // As link cards want it: the JPEG made for emails, at most 1200 pixels wide.
-  expect((await get()).seoImage).toEqual({ id: first.id, url: `${s3.env.MEDIA_PUBLIC_URL}/${emailImageKey(first.id)}`, width: 600, height: 200 });
+  expect((await get()).seoImage).toEqual({ id: first.id, url: lastingMediaUrl(emailImageKey(first.id)), width: 600, height: 200 });
   await releaseADayLater();
   expect(await attached(first.id)).not.toBeNull();
   const second = await uploaded();
@@ -209,8 +210,8 @@ test("settings are checked: https links, at most 5 of each, a real colour, and i
 test("images are attached while used; a replaced or removed one is released by the daily job, for the cleanup to delete", async () => {
   const [logo, dark, favicon, newLogo] = [await uploaded(), await uploaded(), await uploaded(), await uploaded()];
   const saved = await update({ logo: logo.id, logoDark: dark.id, favicon: favicon.id });
-  // Pages load the smallest stored size from the media host.
-  expect(saved.logo).toEqual({ id: logo.id, url: `${s3.env.MEDIA_PUBLIC_URL}/${imageKey(logo.id, 480)}`, width: 600, height: 200 });
+  // Pages load the smallest stored size, by a lasting link (link cards and API clients keep it).
+  expect(saved.logo).toEqual({ id: logo.id, url: lastingMediaUrl(imageKey(logo.id, 480)), width: 600, height: 200 });
   expect(saved).toMatchObject({ logoDark: { id: dark.id }, favicon: { id: favicon.id } });
   for (const media of [logo, dark, favicon]) {
     expect(await attached(media.id)).not.toBeNull();

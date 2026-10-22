@@ -1,5 +1,6 @@
 "use client";
 
+import type { MediaUrls } from "@tuti/content";
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -21,7 +22,7 @@ const SUGGEST_DELAY_MS = 300;
 export function NewPostForm({
   projectSlug,
   boardSlug,
-  mediaBaseUrl,
+  mediaUrls,
   linkTarget,
   submit,
   defaultTitle,
@@ -29,7 +30,7 @@ export function NewPostForm({
   projectSlug: string;
   boardSlug: string;
   /** Where uploaded images are served from; null when uploads are off. */
-  mediaBaseUrl: string | null;
+  mediaUrls: MediaUrls | null;
   /** "_blank" in the widget: suggested posts open on the portal, not in the panel. */
   linkTarget?: "_blank";
   /** Posts the form instead of the portal's createPost (the widget posts with its own sign-in). */
@@ -141,7 +142,7 @@ export function NewPostForm({
                 name="content"
                 labelledBy="post-body-label"
                 placeholder="Any more details?"
-                uploads={mediaBaseUrl ? { projectSlug, mediaBaseUrl } : undefined}
+                uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
               />
             </Field>
             <Button type="submit" disabled={pending} className="self-end">

@@ -1,20 +1,20 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
-import { imageKey, imageWidths } from "./media";
+import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
-/** `media`: where images are served from; `flat`: one line (table cells), so hard breaks become spaces. */
-type Context = { media?: string; flat?: boolean };
+/** `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces. */
+type Context = { media?: MediaUrls; flat?: boolean };
 
 /**
  * Markdown (CommonMark, with GFM tables) for AI tools and "Copy as Markdown".
  * Like the renderers, unknown nodes are skipped and unsafe links become text;
- * images need `mediaBaseUrl` (they're left out without it). Text is escaped, so
+ * images need their URL in `mediaUrls` (they're left out without it). Text is escaped, so
  * it reads back as the same text, never as markup.
  */
-export function toMarkdown(doc: JSONContent, { mediaBaseUrl }: { mediaBaseUrl?: string | null } = {}): string {
-  return blocks(doc, { media: mediaBaseUrl ?? undefined });
+export function toMarkdown(doc: JSONContent, { mediaUrls }: { mediaUrls?: MediaUrls | null } = {}): string {
+  return blocks(doc, { media: mediaUrls ?? undefined });
 }
 
 const LISTS = new Set(["bulletList", "orderedList"]);
@@ -83,11 +83,8 @@ function block(node: JSONContent, ctx: Context): string {
     }
     case "image": {
       const { mediaId, alt, w } = node.attrs ?? {};
-      if (!ctx.media || !isMediaId(mediaId) || !isPixelSize(w)) {
-        return "";
-      }
-      const size = imageWidths(w).find((width) => width >= 960) ?? w;
-      return `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${ctx.media}/${imageKey(mediaId, size)})`;
+      const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
+      return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${url})` : "";
     }
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";

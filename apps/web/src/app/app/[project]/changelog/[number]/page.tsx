@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { aiEnabled } from "@tuti/shared";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryActions, ChangelogForm, type TagName } from "@/components/changelog";
@@ -13,6 +12,7 @@ import { formatDate } from "@/lib/format";
 import { completablePosts } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
+import { mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
   const { project: slug, number: param } = await props.params;
@@ -78,7 +78,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           published: entry.publishedAt !== null,
         }}
         posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
-        mediaBaseUrl={mediaPublicUrl()}
+        mediaUrls={await mediaUrls(displayDoc(entry))}
         canEditWithAi={aiEnabled()}
       />
     </>

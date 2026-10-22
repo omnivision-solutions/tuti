@@ -1,13 +1,13 @@
 import type { JSONContent } from "@tiptap/core";
 import { toMarkdown } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { strToU8, Zip, ZipDeflate } from "fflate";
 
 import { ancestry } from "@/lib/collection-tree";
 import { titleSlug } from "@/lib/post-urls";
 
 import { displayDoc } from "./content";
+import { lastingMediaUrls } from "./media-urls";
 
 /**
  * "Export as Markdown": everything a project wrote, as a ZIP of Markdown files with
@@ -64,10 +64,10 @@ async function* batches<T extends { id: string }>(read: (after: string, take: nu
 
 async function* exportFiles(project: { id: string; name: string }, exportedAt: Date): AsyncGenerator<[string, string]> {
   const projectId = project.id;
-  const media = { mediaBaseUrl: mediaPublicUrl() };
+  // Lasting links: an export is kept long after it's made.
   const body = (row: { content: unknown; body: string }, more: JSONContent[] = []) => {
     const doc = displayDoc(row);
-    return `${toMarkdown({ type: "doc", content: [...(doc.content ?? []), ...more] }, media)}\n`;
+    return `${toMarkdown({ type: "doc", content: [...(doc.content ?? []), ...more] }, { mediaUrls: lastingMediaUrls(doc) })}\n`;
   };
   const status = (publishedAt: Date | null) => (publishedAt ? "published" : "draft");
 

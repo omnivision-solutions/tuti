@@ -2,8 +2,9 @@ import { AwsClient } from "aws4fetch";
 
 /**
  * Media storage: any S3-compatible bucket (R2 on tuti.so), set up with `MEDIA_*`
- * env vars. Browsers upload straight to it with presigned URLs; pages load files
- * from MEDIA_PUBLIC_URL, a separate host that never gets Tuti's session cookies.
+ * env vars. The bucket is private: browsers upload to it and load files from it
+ * only with presigned URLs, on the storage's own host, which never gets Tuti's
+ * session cookies.
  */
 export type MediaStorage = {
   /** A URL the browser can PUT exactly this file to (type and size are part of the signature). */
@@ -13,13 +14,21 @@ export type MediaStorage = {
   get(key: string): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
-  publicUrl(key: string): string;
+  /** A URL that reads the file for a while (see SIGNED_WINDOW_SECONDS). */
+  signedUrl(key: string, now?: number): Promise<string>;
 };
 
-const SETTINGS = ["MEDIA_S3_ENDPOINT", "MEDIA_S3_BUCKET", "MEDIA_S3_ACCESS_KEY_ID", "MEDIA_S3_SECRET_ACCESS_KEY", "MEDIA_PUBLIC_URL"] as const;
+const SETTINGS = ["MEDIA_S3_ENDPOINT", "MEDIA_S3_BUCKET", "MEDIA_S3_ACCESS_KEY_ID", "MEDIA_S3_SECRET_ACCESS_KEY"] as const;
 
-/** Files never change once written (new uploads get new keys), so they can be cached for good. */
-const IMMUTABLE = "public, max-age=31536000, immutable";
+/**
+ * Read URLs are signed as of the start of the current window and work for two, so
+ * a page gets the same URL (which browsers can cache) all window long, and every
+ * URL stops working within two windows: that's how long access lasts after someone
+ * loses it (content hidden or deleted, a portal made private, a reader removed).
+ */
+export const SIGNED_WINDOW_SECONDS = 60 * 60;
+/** Only the reader's browser may keep a file, and not past a window: no shared cache serves it after its URL expires. */
+const PRIVATE_CACHE = `private, max-age=${SIGNED_WINDOW_SECONDS}`;
 
 /** The configured storage, or null when uploads aren't set up on this server. */
 export function mediaStorage(): MediaStorage | null {
@@ -69,19 +78,19 @@ export function mediaStorage(): MediaStorage | null {
       await send(key, {
         method: "PUT",
         body: body as RequestInit["body"],
-        headers: { "content-type": contentType, "cache-control": IMMUTABLE },
+        headers: { "content-type": contentType, "cache-control": PRIVATE_CACHE },
       });
     },
     async delete(key) {
       await send(key, { method: "DELETE" }, [200, 204, 404]);
     },
-    publicUrl(key) {
-      return `${env.MEDIA_PUBLIC_URL!.replace(/\/$/, "")}/${key}`;
+    async signedUrl(key, now = Date.now()) {
+      const windowStart = new Date(now - (now % (SIGNED_WINDOW_SECONDS * 1000)));
+      const url = new URL(objectUrl(key));
+      url.searchParams.set("X-Amz-Expires", String(2 * SIGNED_WINDOW_SECONDS));
+      // 20261022T130000Z
+      const datetime = windowStart.toISOString().replace(/[:-]|\.\d{3}/g, "");
+      return (await client.sign(url.href, { method: "GET", aws: { signQuery: true, datetime } })).url;
     },
   };
-}
-
-/** Where pages load media from, or null when uploads aren't set up. */
-export function mediaPublicUrl(): string | null {
-  return mediaStorage() ? process.env.MEDIA_PUBLIC_URL!.replace(/\/$/, "") : null;
 }

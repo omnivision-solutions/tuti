@@ -100,7 +100,7 @@ export function SeoPreview({ address, name, saved }: { address: string; name: st
         <figcaption className="text-sm font-medium text-muted-foreground">Shared as a link</figcaption>
         <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
           {seo.image ? (
-            // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
+            // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
             <img src={seo.image} alt="" className="aspect-[1200/630] w-full object-cover" />
           ) : (
             <div className="flex aspect-[1200/630] w-full items-center justify-center bg-muted text-sm text-muted-foreground">No share image</div>

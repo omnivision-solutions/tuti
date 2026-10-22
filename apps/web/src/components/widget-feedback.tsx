@@ -62,7 +62,7 @@ export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { proje
           projectSlug={projectSlug}
           boardSlug={boardSlug}
           // Image uploads need the portal's sign-in; posts from here are text.
-          mediaBaseUrl={null}
+          mediaUrls={null}
           linkTarget="_blank"
           submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
           defaultTitle={defaultTitle}

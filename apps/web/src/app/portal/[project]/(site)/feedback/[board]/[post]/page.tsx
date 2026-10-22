@@ -14,9 +14,9 @@ import { boardPath, postNumberFromParam, postPath } from "@/lib/post-urls";
 import { getSession } from "@/server/session";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { displayDoc } from "@/server/content";
 import { portalLinks } from "@/server/portal-base";
+import { mediaUrls } from "@/server/media-urls";
 
 export default async function PortalPostPage(props: PageProps<"/portal/[project]/feedback/[board]/[post]">) {
   const at = await portalLinks();
@@ -84,7 +84,7 @@ export default async function PortalPostPage(props: PageProps<"/portal/[project]
             </p>
           )}
           {!isEmptyDoc(displayDoc(post)) && (
-            <RichText doc={displayDoc(post)} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+            <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text break-words" />
           )}
         </div>
       </article>

@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 
 import type { Doc } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -21,6 +20,7 @@ import { fromNoAccess, fromReadAccess } from "@/lib/read-access";
 import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
+import { mediaUrls } from "@/server/media-urls";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
   const { project: slug, slug: articleSlug } = await props.params;
@@ -135,7 +135,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           published: article.publishedAt !== null,
         }}
         collections={collections}
-        mediaBaseUrl={mediaPublicUrl()}
+        mediaUrls={await mediaUrls(displayDoc(edited))}
       />
     </>
   );

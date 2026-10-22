@@ -339,7 +339,7 @@ export function ImageField({
         {/* `light` / `dark` give the preview that mode's background (globals.css). */}
         <div className={cn(look, "flex h-14 w-32 items-center justify-center rounded-lg border bg-background p-2")}>
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
+            // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
             <img src={image.url} alt={`${label} preview`} className="max-h-full max-w-full object-contain" />
           ) : (
             <span className="text-xs text-muted-foreground">None</span>

@@ -1,5 +1,4 @@
 import { RichText } from "@tuti/content/react";
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 
@@ -16,6 +15,7 @@ import { searchForReader } from "@/server/docs-search";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
+import { mediaUrls } from "@/server/media-urls";
 
 /**
  * What a page this reader may not read, but sees with a lock, says in the panel: to sign in (as
@@ -260,7 +260,7 @@ async function WidgetArticle({
         </h1>
       </div>
       {"doc" in article ? (
-        <RichText doc={article.doc} mediaBaseUrl={mediaPublicUrl()} className="rich-text break-words" />
+        <RichText doc={article.doc} mediaUrls={await mediaUrls(article.doc)} className="rich-text break-words" />
       ) : (
         <LockedMessage projectSlug={projectSlug} signedIn={article.signedIn} />
       )}

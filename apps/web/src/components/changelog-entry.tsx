@@ -1,6 +1,6 @@
 import type { ChangelogTag } from "@tuti/db";
 import { RichText } from "@tuti/content/react";
-import type { Doc } from "@tuti/content";
+import type { Doc, MediaUrls } from "@tuti/content";
 import Link from "next/link";
 
 import { ChangelogReactions } from "@/components/changelog-reactions";
@@ -27,14 +27,14 @@ export type PublishedEntry = {
 /** A published changelog entry on the portal: date, tags, title (linking to its page), text and what it completes. */
 export function ChangelogEntryView({
   entry,
-  mediaBaseUrl,
+  mediaUrls,
   heading = "h2",
   linkTarget,
   react,
   base = "",
 }: {
   entry: PublishedEntry;
-  mediaBaseUrl: string | null;
+  mediaUrls: MediaUrls | null;
   heading?: "h1" | "h2";
   /** "_blank" in the widget: links open on the portal, not in the panel. */
   linkTarget?: "_blank";
@@ -64,7 +64,7 @@ export function ChangelogEntryView({
           entry.title
         )}
       </Title>
-      <RichText doc={entry.doc} mediaBaseUrl={mediaBaseUrl} className="rich-text break-words" />
+      <RichText doc={entry.doc} mediaUrls={mediaUrls} className="rich-text break-words" />
       {entry.posts.length > 0 && (
         <p className="text-sm text-muted-foreground">
           Completes{" "}

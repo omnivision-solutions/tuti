@@ -1,4 +1,3 @@
-import { mediaPublicUrl } from "@tuti/shared/storage";
 import { notFound } from "next/navigation";
 
 import { ChangelogForm } from "@/components/changelog";
@@ -6,6 +5,7 @@ import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { completablePosts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
+import { mediaUrls } from "@/server/media-urls";
 
 export default async function NewChangelogEntryPage(props: PageProps<"/app/[project]/changelog/new">) {
   const { project: slug } = await props.params;
@@ -21,7 +21,7 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
         projectSlug={slug}
         entry={null}
         posts={posts.map((p) => ({ ...p, status: STATUS_LABELS[p.status] }))}
-        mediaBaseUrl={mediaPublicUrl()}
+        mediaUrls={await mediaUrls()}
       />
     </>
   );

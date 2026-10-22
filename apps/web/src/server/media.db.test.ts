@@ -68,9 +68,16 @@ describe("processing", () => {
     expect(result).toEqual({ mediaId: expect.any(String) });
     const id = (result as { mediaId: string }).mediaId;
 
-    const status = await uploadStatus(id);
-    expect(status).toEqual({ status: "READY", src: `${s3.env.MEDIA_PUBLIC_URL}/${imageKey(id, 2400)}`, width: 2400, height: 1600 });
     const keys = [480, 960, 1600, 2400].map((w) => imageKey(id, w));
+    const status = await uploadStatus(id);
+    expect(status).toMatchObject({ status: "READY", width: 2400, height: 1600 });
+    const { src, urls } = status as { src: string; urls: Record<string, string> };
+    expect(Object.keys(urls).sort()).toEqual([...keys, emailImageKey(id)].sort());
+    expect(src).toBe(urls[imageKey(id, 2400)]);
+    // The bucket is private: the signed URL reads the file, its bare address doesn't.
+    expect(new URL(src).searchParams.get("X-Amz-Signature")).toBeTruthy();
+    expect((await fetch(src)).status).toBe(200);
+    expect((await fetch(src.split("?")[0]!)).status).toBe(403);
     const stored = [...s3.objects.keys()].filter((key) => key.includes(id));
     expect(stored.sort()).toEqual([...keys, emailImageKey(id)].sort());
 

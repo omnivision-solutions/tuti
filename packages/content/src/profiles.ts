@@ -44,13 +44,13 @@ export const isPixelSize = (value: unknown): value is number => Number.isInteger
  * aligned left, center or right. `w` and `h` are its size in pixels, so pages
  * reserve its space before it loads; the server sets them from the upload.
  */
-export const ImageNode = Node.create<{ mediaBaseUrl?: string }>({
+export const ImageNode = Node.create<{ mediaUrl?: (key: string) => string | undefined }>({
   name: "image",
   group: "block",
   atom: true,
   draggable: true,
   addOptions() {
-    return { mediaBaseUrl: undefined };
+    return { mediaUrl: undefined };
   },
   addAttributes() {
     return {
@@ -77,8 +77,7 @@ export const ImageNode = Node.create<{ mediaBaseUrl?: string }>({
   },
   renderHTML({ node }) {
     const { mediaId, width, align, alt, w, h } = node.attrs as Record<string, unknown>;
-    const base = this.options.mediaBaseUrl;
-    const src = base && isMediaId(mediaId) && typeof w === "number" ? `${base}/${imageKey(mediaId, editorWidth(w))}` : "";
+    const src = (isMediaId(mediaId) && isPixelSize(w) && this.options.mediaUrl?.(imageKey(mediaId, editorWidth(w)))) || "";
     return [
       "figure",
       { "data-image": "", "data-media-id": String(mediaId), "data-width": String(width), "data-align": String(align), class: "rich-image" },
@@ -157,7 +156,8 @@ const textOnly = {
   },
 } as const;
 
-export function extensions(profile: Profile, { mediaBaseUrl }: { mediaBaseUrl?: string } = {}): Extensions {
+/** `mediaUrl`: where the editor loads a stored image file from (signed URLs; see MediaUrls). */
+export function extensions(profile: Profile, { mediaUrl }: { mediaUrl?: (key: string) => string | undefined } = {}): Extensions {
   switch (profile) {
     case "comment":
       return [
@@ -171,14 +171,14 @@ export function extensions(profile: Profile, { mediaBaseUrl }: { mediaBaseUrl?: 
         }),
       ];
     case "post":
-      return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaBaseUrl })];
+      return [StarterKit.configure(textOnly), VideoEmbed, ImageNode.configure({ mediaUrl })];
     case "changelog":
     case "article":
       return [
         // Sections under the entry's own title: h2 and h3 only.
         StarterKit.configure({ ...textOnly, heading: { levels: [2, 3] }, blockquote: {}, horizontalRule: {} }),
         VideoEmbed,
-        ImageNode.configure({ mediaBaseUrl }),
+        ImageNode.configure({ mediaUrl }),
         // Plain tables: no column resizing (widths aren't stored or rendered).
         ...(profile === "article" ? [TableKit.configure({ table: { resizable: false } })] : []),
       ];

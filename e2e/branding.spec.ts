@@ -148,7 +148,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
     expect(lightSrc).not.toBe(darkSrc);
     await expect(logo).toHaveAttribute("src", colorScheme === "light" ? lightSrc! : darkSrc!);
 
-    await expect(visitor.locator('link[rel="icon"]')).toHaveAttribute("href", /\/m\/.+\.webp$/);
+    await expect(visitor.locator('link[rel="icon"]')).toHaveAttribute("href", /\/media\/.+\.webp\?s=/);
     // The accent: the blue reads on both backgrounds, with white text on it.
     await expect(visitor.getByRole("button", { name: "Submit feedback" })).toHaveCSS("background-color", "rgb(37, 99, 235)");
     await expect(visitor.getByRole("button", { name: "Submit feedback" })).toHaveCSS("color", "rgb(255, 255, 255)");
