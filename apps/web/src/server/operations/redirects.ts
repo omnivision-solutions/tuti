@@ -4,6 +4,9 @@ import { z } from "zod";
 
 import { MAX_REDIRECTS, redirectFrom, redirectKey, redirectTo } from "@/lib/portal-redirects";
 
+import { portalUrl } from "@/lib/hosts";
+
+import { portalAddress } from "../custom-domains";
 import { forgetRedirects } from "../portal-redirects";
 import { projectSlug } from "./read";
 import { defineOperation, OperationError } from "./define";
@@ -11,6 +14,22 @@ import { defineOperation, OperationError } from "./define";
 /** Customize → Redirects (lib/portal-redirects.ts): old addresses on the portal sent on to new ones (proxy.ts). */
 
 const view = { id: true, from: true, to: true } as const;
+
+/** `to` as a path of the portal when it's a whole address under one of the portal's `addresses`. */
+function onPortal(to: string, addresses: string[]): string {
+  if (!URL.canParse(to)) {
+    return to;
+  }
+  const target = new URL(to);
+  for (const address of addresses) {
+    const portal = new URL(address);
+    const base = portal.pathname.replace(/\/$/, "");
+    if (target.origin === portal.origin && (target.pathname === base || target.pathname.startsWith(`${base}/`) || !base)) {
+      return `${target.pathname.slice(base.length) || "/"}${target.search}`;
+    }
+  }
+  return to;
+}
 
 export const listRedirects = defineOperation({
   name: "redirects.list",
@@ -37,7 +56,10 @@ export const createRedirect = defineOperation({
     if ("error" in from) {
       throw new OperationError(400, "invalid_input", from.error);
     }
-    const to = redirectTo(input.to);
+    // A whole address on this portal (its Tuti address, or its own) is a path of it: the checks below
+    // then see where it goes, so it can't go round in circles.
+    const slug = await projectSlug(projectId);
+    const to = redirectTo(onPortal(input.to.trim(), [portalUrl(slug), await portalAddress(slug)]));
     if ("error" in to) {
       throw new OperationError(400, "invalid_input", to.error);
     }
@@ -61,7 +83,7 @@ export const createRedirect = defineOperation({
       }
       return tx.portalRedirect.create({ data: { projectId, from: from.from, to: to.to }, select: view });
     });
-    forgetRedirects(await projectSlug(projectId));
+    forgetRedirects(slug);
     return { redirect };
   },
 });
