@@ -3,11 +3,12 @@ import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
 import { mediaPublicUrl } from "@tuti/shared/storage";
 import { ChevronRightIcon, LockIcon, SearchIcon } from "lucide-react";
-import type { Metadata } from "next";
+import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
+import { DocsSidebarLinks } from "@/components/portal-look";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -232,6 +233,18 @@ export function docsPageMetadata(page: Extract<DocsPage, { kind: "article" | "lo
   };
 }
 
+/**
+ * A docs page's metadata, with the portal's own Open Graph (its share image and name, from the
+ * layout) under the page's: Next.js takes a page's `openGraph` in place of the layout's, not on top.
+ */
+export async function withPortalOpenGraph(metadata: Metadata, parent: ResolvingMetadata | undefined): Promise<Metadata> {
+  if (!metadata.openGraph || !parent) {
+    return metadata;
+  }
+  const portal = (await parent).openGraph;
+  return { ...metadata, openGraph: { ...(portal && { siteName: portal.siteName ?? undefined, images: portal.images }), ...metadata.openGraph } };
+}
+
 /** A collection's page: its articles, then the collections in it. */
 export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { kind: "collection" }> }) {
   const at = await portalLinks();
@@ -381,6 +394,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   );
   return (
     <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
+      <DocsSidebarLinks />
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
           {link(collection.slug, named(collection), "flex items-center gap-2 font-heading font-semibold text-foreground")}

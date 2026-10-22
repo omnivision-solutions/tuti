@@ -25,8 +25,11 @@ import type { FormState } from "@/server/form-state";
 /** The widget's launcher as the team is setting it, for Widget's preview. */
 export type WidgetDraft = { label: string; color: string; position: "bottom-right" | "bottom-left" };
 
-/** Changes not saved yet: to the portal's look (sent to the frame), or to the widget's launcher. */
-export type Draft = Partial<PortalLook> & { widget?: WidgetDraft };
+/** The portal's search listing as the team is setting it, for SEO's preview (`image`: its address). */
+export type SeoDraft = { title: string; description: string; image: string | null };
+
+/** Changes not saved yet: to the portal's look (sent to the frame), to the widget's launcher, or to the search listing. */
+export type Draft = Partial<PortalLook> & { widget?: WidgetDraft; seo?: SeoDraft };
 
 /** The section's form that "Save changes" in the panel's header submits (see useCustomizeForm). */
 type SaveForm = { id: string; dirty: boolean; pending: boolean };
@@ -315,6 +318,7 @@ function PortalPreview({ version, draft, origin, path: firstPath, address }: { v
     }
     const look: Partial<PortalLook> = { ...draft };
     delete (look as Draft).widget;
+    delete (look as Draft).seo;
     target.postMessage({ type: "tuti:look", look } satisfies ToPortal, origin);
     if (theme) {
       target.postMessage({ type: "tuti:theme", theme } satisfies ToPortal, origin);
@@ -393,5 +397,21 @@ function Toggle<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/** One part of a Customize section's settings, in a box of its own: a title, a line on what it's for, then its fields. */
+export function CustomizeSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  // Not a labelled region: its title is often its one field's label too ("Favicon").
+  return (
+    <section className="flex flex-col gap-4 rounded-xl border bg-card p-4">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="font-semibold">
+          {title}
+        </h2>
+        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {children}
+    </section>
   );
 }

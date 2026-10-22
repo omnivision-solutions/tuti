@@ -1,11 +1,21 @@
-import { imageKey, imageWidths } from "@tuti/content/media";
+import { EMAIL_IMAGE_WIDTH, emailImageKey, imageKey, imageWidths } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
-import { type ContentActions, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
+import {
+  COLOR_SCHEMES,
+  type ColorScheme,
+  CONTACT_LABEL_MAX,
+  type ContactButton,
+  type ContentActions,
+  DOCS_SUBTITLE_MAX,
+  DOCS_TITLE_MAX,
+  type DocsHome,
+  LOGO_TEXT_MAX,
+} from "@/lib/portal-look";
 
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
@@ -13,13 +23,18 @@ import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, type WidgetLink } from "./wi
 
 /**
  * The portal's and its docs' look (Phase 10, Customize): logos, favicon, accent colour, header and
- * footer links, "Powered by", what readers can do with an article, and the docs' home.
+ * footer links, "Powered by", what readers can do with an article, the docs' home, the default colour
+ * scheme, the logo's text and link, links above the docs' tree, a "Contact us" button, and the
+ * portal's search listing (SEO).
  */
+
+export const SEO_TITLE_MAX = 70;
+export const SEO_DESCRIPTION_MAX = 160;
 
 export const MAX_BRAND_LINKS = 5;
 
 /** Where each image's upload id is stored. */
-const IMAGES = { logo: "brandLogoId", logoDark: "brandLogoDarkId", favicon: "brandFaviconId" } as const;
+const IMAGES = { logo: "brandLogoId", logoDark: "brandLogoDarkId", favicon: "brandFaviconId", seoImage: "seoImageId" } as const;
 type ImageName = keyof typeof IMAGES;
 
 export type BrandImage = { id: string; url: string; width: number; height: number };
@@ -36,6 +51,19 @@ export type Branding = {
   poweredBy: boolean;
   contentActions: ContentActions;
   docsHome: DocsHome;
+  colorScheme: ColorScheme;
+  /** Beside the logo (empty: none; without a logo, the project's name shows). */
+  logoText: string;
+  /** Where the logo goes; null for the portal's home. */
+  logoLink: string | null;
+  /** Above the docs' tree. */
+  sidebarLinks: WidgetLink[];
+  /** The header's "Contact us" button, or null for none. */
+  contact: ContactButton | null;
+  /** How the portal shows in search results and where it's shared: its title (empty: the project's name) and description. */
+  seo: { title: string; description: string };
+  /** The image a link to the portal shows (Open Graph); null for none. */
+  seoImage: BrandImage | null;
 };
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
@@ -50,6 +78,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         brandLogo: image,
         brandLogoDark: image,
         brandFavicon: image,
+        seoImage: image,
         brandColor: true,
         headerLinks: true,
         footerLinks: true,
@@ -63,6 +92,14 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         docsTitle: true,
         docsSubtitle: true,
         docsPopular: true,
+        colorScheme: true,
+        logoText: true,
+        logoLink: true,
+        sidebarLinks: true,
+        contactLabel: true,
+        contactUrl: true,
+        seoTitle: true,
+        seoDescription: true,
       },
     }),
     thisInstallation(),
@@ -75,6 +112,15 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     storage && media?.status === "READY" && media.width && media.height
       ? { id: media.id, url: storage.publicUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
       : null;
+  // Link cards want a JPEG about 1200 pixels wide: every image has one (made for emails).
+  const shareImage = (media: Parameters<typeof url>[0]): BrandImage | null => {
+    const image = url(media);
+    if (!image || !storage) {
+      return image;
+    }
+    const width = Math.min(image.width, EMAIL_IMAGE_WIDTH);
+    return { ...image, url: storage.publicUrl(emailImageKey(image.id)), width, height: Math.round((image.height * width) / image.width) };
+  };
   const links = (value: unknown) => {
     const parsed = z.array(httpsLink).safeParse(value);
     return parsed.success ? parsed.data : [];
@@ -97,6 +143,13 @@ export async function branding(where: { id: string } | { slug: string }): Promis
       updatedDate: project.articleUpdatedDate,
     },
     docsHome: { title: project.docsTitle, subtitle: project.docsSubtitle, popular: project.docsPopular },
+    colorScheme: (COLOR_SCHEMES as readonly string[]).includes(project.colorScheme) ? (project.colorScheme as ColorScheme) : "system",
+    logoText: project.logoText,
+    logoLink: project.logoLink,
+    sidebarLinks: links(project.sidebarLinks),
+    contact: project.contactUrl ? { label: project.contactLabel, url: project.contactUrl } : null,
+    seo: { title: project.seoTitle, description: project.seoDescription },
+    seoImage: shareImage(project.seoImage),
   };
 }
 
@@ -113,6 +166,19 @@ const docsHome = z
     popular: z.boolean(),
   })
   .partial();
+const httpsUrl = z.string().trim().max(500, "Keep links under 500 characters").pipe(z.url({ protocol: /^https$/, error: "Links need a full https:// address" }));
+/** Where "Contact us" goes: a page (https) or an email address (mailto:). */
+const contactUrl = z
+  .string()
+  .trim()
+  .max(500, "Keep links under 500 characters")
+  .pipe(z.url({ protocol: /^(https|mailto)$/, error: "Contact us needs a full https:// address or a mailto: link" }));
+const seo = z
+  .object({
+    title: z.string().trim().max(SEO_TITLE_MAX, `The page title is up to ${SEO_TITLE_MAX} characters`),
+    description: z.string().trim().max(SEO_DESCRIPTION_MAX, `The description is up to ${SEO_DESCRIPTION_MAX} characters`),
+  })
+  .partial();
 
 export const getBranding = defineOperation({
   name: "branding.get",
@@ -127,7 +193,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false) and docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles). Fields left out stay as they are`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}) and seoImage (an uploaded image for links to the portal, null to remove). Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -142,6 +208,16 @@ export const updateBranding = defineOperation({
     poweredBy: z.boolean().optional(),
     contentActions: contentActions.optional(),
     docsHome: docsHome.optional(),
+    colorScheme: z.enum(COLOR_SCHEMES).optional(),
+    logoText: z.string().trim().max(LOGO_TEXT_MAX, `The logo text is up to ${LOGO_TEXT_MAX} characters`).optional(),
+    logoLink: httpsUrl.nullable().optional(),
+    sidebarLinks: links("sidebar"),
+    contact: z
+      .object({ label: z.string().trim().max(CONTACT_LABEL_MAX, `The button's label is up to ${CONTACT_LABEL_MAX} characters`), url: contactUrl })
+      .nullable()
+      .optional(),
+    seo: seo.optional(),
+    seoImage: upload,
   }),
   example: {
     color: "#5b21b6",
@@ -158,7 +234,7 @@ export const updateBranding = defineOperation({
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({
           where: { id: projectId },
-          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, licenseKey: true },
+          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, seoImageId: true, licenseKey: true },
         });
         if (input.poweredBy === false && !licensedUntil(current.licenseKey, { installation: installation.id, project: projectId }, licenseNow(installation))) {
           throw new OperationError(400, "invalid_input", 'Hiding "Powered by tuti" needs a licence for this project');
@@ -193,6 +269,13 @@ export const updateBranding = defineOperation({
             ...(input.docsHome?.title !== undefined && { docsTitle: input.docsHome.title }),
             ...(input.docsHome?.subtitle !== undefined && { docsSubtitle: input.docsHome.subtitle }),
             ...(input.docsHome?.popular !== undefined && { docsPopular: input.docsHome.popular }),
+            ...(input.colorScheme !== undefined && { colorScheme: input.colorScheme }),
+            ...(input.logoText !== undefined && { logoText: input.logoText }),
+            ...(input.logoLink !== undefined && { logoLink: input.logoLink }),
+            ...(input.sidebarLinks !== undefined && { sidebarLinks: input.sidebarLinks }),
+            ...(input.contact !== undefined && { contactLabel: input.contact?.label ?? "", contactUrl: input.contact?.url ?? null }),
+            ...(input.seo?.title !== undefined && { seoTitle: input.seo.title }),
+            ...(input.seo?.description !== undefined && { seoDescription: input.seo.description }),
           },
         });
         // Replaced images stay attached: the daily release-media job releases them once nothing in the

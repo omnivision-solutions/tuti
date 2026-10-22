@@ -205,6 +205,11 @@ describe("readers' pages", () => {
     });
     const plain = await published("Refunds");
     expect(await generateMetadata(params({ slug: plain }) as never)).toMatchObject({ description: "Plans are billed monthly, by card." });
+    // The portal's share image and name (the layout's Open Graph) stay under the article's own.
+    const portal = { openGraph: { siteName: "Acme Help", images: [{ url: new URL("https://media.example.com/share.jpg") }], description: "The portal's" } };
+    expect(await generateMetadata(params({ slug: own }) as never, Promise.resolve(portal) as never)).toMatchObject({
+      openGraph: { siteName: "Acme Help", images: [{ url: new URL("https://media.example.com/share.jpg") }], title: "Billing", description: "How we charge." },
+    });
   });
 
   test("blocking search indexing: noindex, out of the sitemap and llms.txt, still listed in the docs and search", async () => {

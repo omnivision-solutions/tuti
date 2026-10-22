@@ -1,15 +1,18 @@
 "use client";
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
+import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
+import { CustomizeSection, type Draft, useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { LinkRows } from "@/components/widget-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
+import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
 import { checkBrandingLicense, saveBranding } from "@/server/branding";
@@ -42,7 +45,16 @@ const image = (data: FormData, name: string) => (text(data, `${name}Url`) ? { ur
 /** Links as the portal would show them: rows with both a label and an address. */
 const shownLinks = (data: FormData, prefix: string) => linksFrom(data, prefix).filter((link) => link.label.trim() && link.url.trim());
 
-/** Customize → Branding: the portal's and its docs' logos, favicon and colour (see branding.update). */
+const SCHEMES = [
+  ["system", "System", MonitorIcon],
+  ["light", "Light", SunIcon],
+  ["dark", "Dark", MoonIcon],
+] as const;
+
+/**
+ * Customize → Branding (see branding.update): the default colour scheme and the accent colour; the
+ * logos, the text beside them and where they link; the favicon.
+ */
 export function BrandingSettings({
   projectSlug,
   logo,
@@ -50,6 +62,9 @@ export function BrandingSettings({
   favicon,
   color,
   defaultColor,
+  colorScheme,
+  logoText,
+  logoLink,
 }: {
   projectSlug: string;
   logo: Image;
@@ -58,6 +73,9 @@ export function BrandingSettings({
   /** `#rrggbb`, already the default when the project hasn't picked one. */
   color: string;
   defaultColor: string;
+  colorScheme: ColorScheme;
+  logoText: string;
+  logoLink: string | null;
 }) {
   const [picked, setPicked] = useState(color);
   const colorField = useRef<HTMLInputElement>(null);
@@ -70,42 +88,31 @@ export function BrandingSettings({
       color: text(data, "color") === defaultColor ? null : text(data, "color") || null,
       logo: image(data, "logo"),
       logoDark: image(data, "logoDark"),
+      colorScheme: (COLOR_SCHEMES as readonly string[]).includes(text(data, "colorScheme")) ? (text(data, "colorScheme") as ColorScheme) : "system",
+      logoText: text(data, "logoText").trim(),
+      // A link only once it's a whole address, as saving needs.
+      logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
     }),
     uploading > 0,
   );
   const busy = (delta: number) => setUploading((count) => count + delta);
 
   return (
-    <form {...form}>
+    <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="look" />
-      <FieldGroup>
-        <ImageField
-          projectSlug={projectSlug}
-          name="logo"
-          label="Logo"
-          description="Shown instead of the project name in the header. PNG, JPEG, WebP or GIF (not SVG)."
-          image={logo}
-          look="light"
-          onBusy={busy}
-        />
-        <ImageField
-          projectSlug={projectSlug}
-          name="logoDark"
-          label="Logo for dark mode"
-          description="Optional: a version that reads on a dark background. Without it, the logo shows in both."
-          image={logoDark}
-          look="dark"
-          onBusy={busy}
-        />
-        <ImageField
-          projectSlug={projectSlug}
-          name="favicon"
-          label="Favicon"
-          description="The icon in the browser tab. A square image works best."
-          image={favicon}
-          look="light"
-          onBusy={busy}
-        />
+      <CustomizeSection title="Colour scheme" description="For readers who haven't picked light or dark mode themselves.">
+        <div role="radiogroup" aria-label="Colour scheme" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+          {SCHEMES.map(([value, name, Icon]) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1 text-sm text-muted-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm"
+            >
+              <input type="radio" name="colorScheme" value={value} defaultChecked={colorScheme === value} className="sr-only" />
+              <Icon aria-hidden className="size-3.5" />
+              {name}
+            </label>
+          ))}
+        </div>
         <Field>
           <FieldLabel htmlFor="brand-color">Accent colour</FieldLabel>
           <div className="flex items-center gap-3">
@@ -129,46 +136,96 @@ export function BrandingSettings({
             there instead.
           </FieldDescription>
         </Field>
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </FieldGroup>
+      </CustomizeSection>
+      <CustomizeSection title="Logo" description="What's at the top left of your portal and docs.">
+        <FieldGroup>
+          <ImageField
+            projectSlug={projectSlug}
+            name="logo"
+            label="Logo"
+            description="Shown instead of the project name in the header. PNG, JPEG, WebP or GIF (not SVG)."
+            image={logo}
+            look="light"
+            onBusy={busy}
+          />
+          <ImageField
+            projectSlug={projectSlug}
+            name="logoDark"
+            label="Logo for dark mode"
+            description="Optional: a version that reads on a dark background. Without it, the logo shows in both."
+            image={logoDark}
+            look="dark"
+            onBusy={busy}
+          />
+          <Field>
+            <FieldLabel htmlFor="logo-text">Logo text</FieldLabel>
+            <Input id="logo-text" name="logoText" defaultValue={logoText} maxLength={LOGO_TEXT_MAX} autoComplete="off" />
+            <FieldDescription>Beside your logo. Leave it empty to show the logo alone (or, without a logo, your project&apos;s name).</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="logo-link">Logo link</FieldLabel>
+            <Input id="logo-link" name="logoLink" type="url" defaultValue={logoLink ?? ""} placeholder="Leave empty for your portal's home" autoComplete="off" />
+            <FieldDescription>Where the logo goes when it&apos;s clicked, such as your website.</FieldDescription>
+          </Field>
+        </FieldGroup>
+      </CustomizeSection>
+      <CustomizeSection title="Favicon" description="The icon in the browser tab.">
+        <ImageField projectSlug={projectSlug} name="favicon" label="Favicon" description="A square image works best." image={favicon} look="light" onBusy={busy} />
+      </CustomizeSection>
+      {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
 }
 
-/** Customize → Navigation: links in the portal's header and footer (see branding.update). */
+/** Customize → Navigation (see branding.update): links in the header, the footer and above the docs' tree, and a "Contact us" button. */
 export function NavigationSettings({
   projectSlug,
   headerLinks,
   footerLinks,
+  sidebarLinks,
+  contact,
 }: {
   projectSlug: string;
   headerLinks: { label: string; url: string }[];
   footerLinks: { label: string; url: string }[];
+  sidebarLinks: { label: string; url: string }[];
+  contact: { label: string; url: string } | null;
 }) {
-  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => ({
-    headerLinks: shownLinks(data, "headerLink"),
-    footerLinks: shownLinks(data, "footerLink"),
-  }));
+  const { state, form } = useBrandingForm(projectSlug, "Navigation saved", (data) => {
+    const url = text(data, "contactUrl").trim();
+    return {
+      headerLinks: shownLinks(data, "headerLink"),
+      footerLinks: shownLinks(data, "footerLink"),
+      sidebarLinks: shownLinks(data, "sidebarLink"),
+      contact: /^(https:\/\/[^/\s]+\.[^/\s]+|mailto:\S+@\S+)/i.test(url) ? { label: text(data, "contactLabel").trim(), url } : null,
+    };
+  });
   return (
-    <form {...form}>
+    <form {...form} className="flex flex-col gap-6">
       <input type="hidden" name="part" value="links" />
-      <FieldGroup>
-        <LinkRows
-          name="headerLink"
-          item="Header link"
-          legend="Header links"
-          description="Up to 5 links in the header, such as your website or docs."
-          links={headerLinks}
-        />
-        <LinkRows
-          name="footerLink"
-          item="Footer link"
-          legend="Footer links"
-          description="Up to 5 links in the footer, such as your terms and privacy policy."
-          links={footerLinks}
-        />
-        {state.error && <FieldError>{state.error}</FieldError>}
-      </FieldGroup>
+      <CustomizeSection title="Header links" description="Up to 5, such as your website or pricing.">
+        <LinkRows name="headerLink" item="Header link" legend="Header links" links={headerLinks} />
+      </CustomizeSection>
+      <CustomizeSection title="Contact us" description="A button at the right of the header, to a page or an email address.">
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="contact-url">Goes to</FieldLabel>
+            <Input id="contact-url" name="contactUrl" defaultValue={contact?.url ?? ""} placeholder="https://example.com/contact or mailto:help@example.com" autoComplete="off" />
+            <FieldDescription>Leave it empty for no button.</FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="contact-label">Label</FieldLabel>
+            <Input id="contact-label" name="contactLabel" defaultValue={contact?.label ?? ""} maxLength={CONTACT_LABEL_MAX} placeholder="Contact us" autoComplete="off" />
+          </Field>
+        </FieldGroup>
+      </CustomizeSection>
+      <CustomizeSection title="Docs sidebar links" description="Up to 5 above your docs' tree, such as your status page or changelog.">
+        <LinkRows name="sidebarLink" item="Sidebar link" legend="Docs sidebar links" links={sidebarLinks} />
+      </CustomizeSection>
+      <CustomizeSection title="Footer links" description="Up to 5, such as your terms and privacy policy.">
+        <LinkRows name="footerLink" item="Footer link" legend="Footer links" links={footerLinks} />
+      </CustomizeSection>
+      {state.error && <FieldError>{state.error}</FieldError>}
     </form>
   );
 }
@@ -200,7 +257,7 @@ export function PoweredBySettings({
 }
 
 /** An uploaded image: its preview on the background it's for, and its upload id in a hidden field (empty when removed). */
-function ImageField({
+export function ImageField({
   projectSlug,
   name,
   label,

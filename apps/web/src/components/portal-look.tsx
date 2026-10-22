@@ -1,11 +1,13 @@
 "use client";
 
+import { LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@/components/tuti-logo";
+import { buttonVariants } from "@/components/ui/button";
 import { brandCss } from "@/lib/colors";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, webOnly } from "@/lib/portal-look";
@@ -17,7 +19,8 @@ const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== windo
  * Light or dark mode in the preview only: on the page, not where next-themes keeps a reader's pick
  * (the frame shares the portal's storage with the team member's own visits to it).
  */
-function showTheme(mode: "light" | "dark") {
+function showTheme(scheme: PortalLook["colorScheme"]) {
+  const mode = scheme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : scheme;
   const html = document.documentElement;
   html.classList.remove("light", "dark");
   html.classList.add(mode);
@@ -85,6 +88,16 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
     }
   }, [appOrigin, path]);
 
+  // The default colour scheme, being tried in the preview: once per change of it, so the preview's own
+  // light and dark mode still win until it changes again.
+  const tried = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (inPreview() && draft.colorScheme && draft.colorScheme !== tried.current) {
+      tried.current = draft.colorScheme;
+      showTheme(draft.colorScheme);
+    }
+  }, [draft.colorScheme]);
+
   const look = { ...saved, ...draft };
   const css = brandCss(look.color);
   return (
@@ -95,24 +108,67 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
   );
 }
 
-/** The header's logo (one for dark mode too, if there is one), or the project's name; it opens the portal's home. */
+/**
+ * The header's logo (one for dark mode too, if there is one) and its text, or without a logo the
+ * project's name; it opens the portal's home, or the team's own address (Customize → Branding).
+ */
 export function PortalLogo({ name, href }: { name: string; href: string }) {
-  const { logo, logoDark } = usePortalLook();
+  const { logo, logoDark, logoText, logoLink } = usePortalLook();
   const image = (image: LookImage, className?: string) => (
     // eslint-disable-next-line @next/next/no-img-element -- served from the media host, already resized
-    <img src={image.url} alt={name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-48 object-contain object-left", className)} />
+    <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-48 object-contain object-left", className)} />
   );
-  return (
-    <Link href={href} className="font-heading text-lg font-bold tracking-tight">
-      {logo ? (
-        <>
-          {image(logo, logoDark ? "dark:hidden" : undefined)}
-          {logoDark && image(logoDark, "hidden dark:block")}
-        </>
-      ) : (
-        name
-      )}
+  const contents = logo ? (
+    <>
+      {image(logo, logoDark ? "dark:hidden" : undefined)}
+      {logoDark && image(logoDark, "hidden dark:block")}
+      {logoText && <span>{logoText}</span>}
+    </>
+  ) : (
+    logoText || name
+  );
+  const className = "flex items-center gap-2 font-heading text-lg font-bold tracking-tight";
+  return logoLink ? (
+    <a href={logoLink} className={className}>
+      {contents}
+    </a>
+  ) : (
+    <Link href={href} className={className}>
+      {contents}
     </Link>
+  );
+}
+
+/** The header's "Contact us" button (Customize → Navigation), when the team set where it goes. */
+export function PortalContact() {
+  const { contact } = usePortalLook();
+  if (!contact) {
+    return null;
+  }
+  return (
+    <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+      {contact.label || "Contact us"}
+    </a>
+  );
+}
+
+/** The team's links above the docs' tree (Customize → Navigation). */
+export function DocsSidebarLinks() {
+  const { sidebarLinks } = usePortalLook();
+  if (sidebarLinks.length === 0) {
+    return null;
+  }
+  return (
+    <ul aria-label="Links" className="flex flex-col gap-0.5 border-b pb-4">
+      {sidebarLinks.map((link, i) => (
+        <li key={i}>
+          <a href={link.url} className="flex items-center gap-2 rounded-md px-2 py-1 break-words text-muted-foreground transition-colors hover:text-foreground">
+            <LinkIcon aria-hidden className="size-3.5 shrink-0" />
+            {link.label}
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -166,3 +222,4 @@ export function PortalFooter() {
     </footer>
   );
 }
+

@@ -1,4 +1,4 @@
-import { imageKey, mediaKeys } from "@tuti/content/media";
+import { emailImageKey, imageKey, mediaKeys } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { type S3Fake, startS3Fake } from "@tuti/testkit";
@@ -82,7 +82,56 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     poweredBy: true,
     contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
     docsHome: { title: "", subtitle: "", popular: false },
+    colorScheme: "system",
+    logoText: "",
+    logoLink: null,
+    sidebarLinks: [],
+    contact: null,
+    seo: { title: "", description: "" },
+    seoImage: null,
   });
+});
+
+test("the colour scheme, the logo's text and link, sidebar links, Contact us and the search listing", async () => {
+  await update({
+    colorScheme: "dark",
+    logoText: " Acme Help ",
+    logoLink: "https://acme.example",
+    sidebarLinks: [{ label: "Status", url: "https://status.acme.example" }],
+    contact: { label: "", url: "mailto:help@acme.example" },
+    seo: { title: "Acme Help Center", description: "Answers about Acme." },
+  });
+  expect(await get()).toMatchObject({
+    colorScheme: "dark",
+    logoText: "Acme Help",
+    logoLink: "https://acme.example",
+    sidebarLinks: [{ label: "Status", url: "https://status.acme.example" }],
+    contact: { label: "", url: "mailto:help@acme.example" },
+    seo: { title: "Acme Help Center", description: "Answers about Acme." },
+  });
+  // Contact us goes to a page or an email address, nothing else; null takes the button away.
+  for (const url of ["javascript:alert(1)", "http://acme.example/contact", "ftp://acme.example"]) {
+    await expect(update({ contact: { label: "", url } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("Contact us needs") });
+  }
+  await expect(update({ logoLink: "javascript:alert(1)" })).rejects.toMatchObject({ status: 400 });
+  await expect(update({ colorScheme: "sepia" as never })).rejects.toMatchObject({ status: 400 });
+  await expect(update({ seo: { description: "x".repeat(161) } })).rejects.toMatchObject({ message: expect.stringContaining("up to 160 characters") });
+  await update({ contact: null, logoLink: null, seo: { title: "" } });
+  expect(await get()).toMatchObject({ contact: null, logoLink: null, seo: { title: "", description: "Answers about Acme." } });
+});
+
+test("the share image is an upload like the logos: kept while it's used, released once it's replaced", async () => {
+  const first = await uploaded();
+  await update({ seoImage: first.id });
+  // As link cards want it: the JPEG made for emails, at most 1200 pixels wide.
+  expect((await get()).seoImage).toEqual({ id: first.id, url: `${s3.env.MEDIA_PUBLIC_URL}/${emailImageKey(first.id)}`, width: 600, height: 200 });
+  await releaseADayLater();
+  expect(await attached(first.id)).not.toBeNull();
+  const second = await uploaded();
+  await update({ seoImage: second.id });
+  await releaseADayLater();
+  expect(await attached(first.id)).toBeNull();
+  expect(await attached(second.id)).not.toBeNull();
 });
 
 test("admins set the colour, links and Powered by; each change leaves the rest", async () => {
@@ -322,6 +371,10 @@ test("what readers can do with an article, and the docs' home: on by default (no
   };
   expect(await saveBranding(project.slug, {}, form({ part: "contentActions", menu: "on", copyMarkdown: "on" }))).toEqual({});
   expect(await saveBranding(project.slug, {}, form({ part: "docsHome", title: "Help", subtitle: "Answers, fast." }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "seo", seoImage: "", seoTitle: "Acme Help", seoDescription: "Answers." }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "links", contactUrl: "https://acme.example/contact", contactLabel: "Talk to us" }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "look", color: "#5b21b6", colorScheme: "light", logoText: "Acme", logoLink: "" }))).toEqual({});
+  expect(await get()).toMatchObject({ seo: { title: "Acme Help", description: "Answers." }, contact: { label: "Talk to us" }, colorScheme: "light", logoText: "Acme", logoLink: null });
   expect(await get()).toMatchObject({
     contentActions: { menu: true, copyMarkdown: true, chatGpt: false, claude: false, updatedDate: false },
     docsHome: { title: "Help", subtitle: "Answers, fast.", popular: false },
