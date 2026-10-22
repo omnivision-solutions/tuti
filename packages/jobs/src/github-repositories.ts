@@ -79,21 +79,27 @@ export async function repositoryConnection(installationId: number, repo: GithubR
 
 /**
  * The repositories the installation can access now (up to 10,000, 100 a page), as the App reads
- * them. Throws if GitHub can't say, or has more than that: a partial list would look like removals.
+ * them. Throws if GitHub can't say, has more than that, or the list changed while it was read: a
+ * partial list would look like removals.
  */
 export async function installationRepositories(installationId: number): Promise<GithubRepo[]> {
   const api = await installationApi(installationId);
   type Page = { total_count: number; repositories: { id: number; full_name: string }[] };
-  let total = 0;
+  let total: number | undefined;
   const repositories = await api.list<{ id: number; full_name: string }>(
     "/installation/repositories",
     (page) => {
-      total = (page as Page).total_count;
+      // Pages aren't one snapshot: one that changed while being read could be missing a repository.
+      const count = (page as Page).total_count;
+      if (total !== undefined && count !== total) {
+        throw new Error("The installation's repositories changed while GitHub listed them");
+      }
+      total = count;
       return (page as Page).repositories;
     },
     100,
   );
-  if (repositories.length < total) {
+  if (total !== undefined && repositories.length < total) {
     throw new Error(`GitHub listed ${repositories.length} of the installation's ${total} repositories`);
   }
   return repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name }));

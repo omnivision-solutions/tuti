@@ -328,6 +328,27 @@ describe("repositories", () => {
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
   });
 
+  test("a list that changed while GitHub was paging through it changes nothing", async () => {
+    const many = Array.from({ length: 150 }, (_, i) => ({ id: 810_000 + i, fullName: `acme/paged-${i}` }));
+    github.user("code-r15", [{ id: 735, account: "acme", repositories: [web, ...many] }]);
+    await connect(project.slug, 735, "code-r15");
+    await add(project.slug, web);
+    // A repository goes from GitHub between the first and second page: the second says one fewer.
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await realFetch(input, init);
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.includes("/installation/repositories") || !url.includes("page=2")) {
+        return response;
+      }
+      const page = (await response.json()) as { total_count: number };
+      return Response.json({ ...page, total_count: page.total_count - 1 }, { headers: response.headers });
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/web"]);
+  });
+
   test("a list read for an account the project has since left isn't saved", async () => {
     github.user("code-r14", [{ id: 733, account: "acme", repositories: [web] }]);
     await connect(project.slug, 733, "code-r14");
