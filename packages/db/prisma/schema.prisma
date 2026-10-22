@@ -261,6 +261,7 @@ model Project {
   portalReaderEmails   PortalReaderEmail[]
   customDomain         CustomDomain?
   siteMount            SiteMount?
+  portalRedirects      PortalRedirect[]
   docsSearches         DocsSearch[]
   docsQuestions        DocsQuestion[]
   docsGapDismissals    DocsGapDismissal[]
@@ -540,6 +541,21 @@ enum CertificateStatus {
 /// site forwards that path to the portal's Tuti address, path and all, and Tuti adds the path to
 /// every link and redirect there. It's used once verified: the site, fetched through that path,
 /// answers with this project's token, so the forwarding reaches this portal.
+/// An old address on a project's portal sent on to a new one (Customize → Redirects): `from` is a
+/// path of the portal ("/hc/en-us/articles/123"), `to` a path of it or a whole https address.
+model PortalRedirect {
+  id        String   @id @default(cuid())
+  projectId String
+  from      String
+  to        String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, from])
+  @@map("portal_redirect")
+}
+
 model SiteMount {
   id                String    @id @default(cuid())
   projectId         String    @unique

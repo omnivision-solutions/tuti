@@ -115,6 +115,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "site.set": () => ({ url: `${site.origin}/help` }),
   "site.verify": () => ({}),
   "site.remove": () => ({}),
+  "redirects.list": () => ({}),
+  // Like the rest of Customize: admins only in the app.
+  "redirects.create": () => ({ from: "/hc/en-us/articles/1", to: "/docs" }),
+  "redirects.delete": (f) => ({ id: f.redirectId }),
 };
 
 let owner: TestUser;
@@ -251,7 +255,10 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const question = await prisma.docsQuestion.create({
     data: { projectId: project.id, askerId: writeKey.id, question: "Can I pay with crypto?", source: "API", status: "NO_ANSWER" },
   });
-  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id, questionId: question.id };
+  // A redirect, to delete (redirects.create adds another, from its own address).
+  await prisma.portalRedirect.deleteMany({ where: { projectId: project.id } });
+  const redirect = await prisma.portalRedirect.create({ data: { projectId: project.id, from: "/old/matrix", to: "/docs" } });
+  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id, questionId: question.id, redirectId: redirect.id };
 }
 
 /** Calls an operation over REST like a client would. */

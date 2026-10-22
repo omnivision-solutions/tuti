@@ -6,8 +6,10 @@ import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, CUSTOMIZE, PREVIEW } from "@/lib
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
+import { redirectLocation } from "@/lib/portal-redirects";
 import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
 import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor } from "@/server/portal-access";
+import { redirectFor } from "@/server/portal-redirects";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
@@ -158,6 +160,16 @@ function fromSite(request: NextRequest, mount: { origin: string; path: string })
  * `pathname` is the portal's own path; `mount`, where it is on the team's site, when the request came through it.
  */
 async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
+  // The team's redirects (Customize → Redirects) first: an old address goes on, whoever's asking.
+  if (request.method === "GET" || request.method === "HEAD") {
+    const to = await redirectFor(slug, pathname);
+    if (to) {
+      const response = NextResponse.redirect(redirectLocation(to, origin, request.nextUrl.search), 308);
+      // Permanent for search engines, but not kept by browsers: the team can change it.
+      response.headers.set("cache-control", "no-store");
+      return framedByApp(response);
+    }
+  }
   const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value);
   if (visitor === "refused") {
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
