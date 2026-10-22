@@ -18,11 +18,21 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/customize/address`);
-  await owner.getByLabel("Domain", { exact: true }).fill(domain);
-  await owner.getByRole("button", { name: "Add domain" }).click();
+  // Customize → Address: three ways to go live; they pick a domain of their own.
+  await expect(owner.getByRole("radio", { name: /Tuti address/ })).toHaveAttribute("aria-checked", "true");
+  await owner.getByRole("radio", { name: /Custom domain/ }).click();
+  await owner.getByRole("textbox", { name: "Custom domain" }).fill(domain);
+  await owner.getByRole("button", { name: "Connect domain" }).click();
   await expect(owner.getByText("Waiting for DNS")).toBeVisible();
-  const txt = owner.getByRole("definition").filter({ hasText: `_tuti.${domain}` });
-  await expect(owner.getByRole("definition").filter({ hasText: "customers.example.com" })).toBeVisible();
+  // The records to add, each part with Copy.
+  const txt = owner.getByRole("region", { name: "TXT record" });
+  await expect(txt).toContainText(`_tuti.${domain}`);
+  await expect(owner.getByRole("region", { name: "CNAME record" })).toContainText("customers.example.com");
+  await expect(txt.getByRole("button", { name: "Copy TXT value" })).toBeVisible();
+  // While it's connected, switching waits for it to be removed (the others are aria-disabled, and say why when clicked).
+  await owner.getByRole("radio", { name: /Sub-folder/ }).click({ force: true });
+  await expect(owner.getByText(`Remove ${domain} before switching.`)).toBeVisible();
+  await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-checked", "true");
   await checkpoint(owner, "settings-custom-domain-pending");
 
   // Before the record is there, it says what's missing; nobody can reach the portal there yet.
@@ -72,10 +82,11 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await checkpoint(visitor, "portal-on-custom-domain");
 
   // Removed, it stops answering there.
-  await owner.getByRole("button", { name: "Remove" }).click();
+  await owner.getByRole("button", { name: "Remove domain" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${domain} removed`)).toBeVisible();
-  await expect(owner.getByLabel("Domain", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("textbox", { name: "Custom domain" })).toBeVisible();
+  await expect(owner.getByRole("radio", { name: /Sub-folder/ })).toHaveAttribute("aria-disabled", "false");
   await expect(async () => expect((await visitor.request.get("/")).status()).toBe(404)).toPass({ timeout: 20_000 });
   // And the Tuti address is the portal's again.
   await expect(async () => {

@@ -40,3 +40,19 @@ export function normalizeSiteUrl(input: string): { origin: string; path: string 
   }
   return { origin: url.origin.toLowerCase(), path };
 }
+
+/** How much of each of the sub-folder form's fields is read: site.set takes 500 characters in all. */
+export const SITE_FIELD_MAX = 600;
+
+/**
+ * Customize → Address → Sub-folder's two fields as one address for site.set (which adds https:// to
+ * a site typed without it), or an error without a site. Each is cut to SITE_FIELD_MAX first: trimming
+ * slashes backtracks on a long run of them, and anyone can post the form.
+ */
+export function siteFormAddress(site: string, path: string): { url: string } | { error: string } {
+  const [origin, under] = [site, path].map((field) => field.slice(0, SITE_FIELD_MAX).trim());
+  if (!origin) {
+    return { error: "Enter your site's address, like https://example.com" };
+  }
+  return { url: `${origin!.replace(/\/+$/, "")}/${under!.replace(/^\/+/, "")}` };
+}

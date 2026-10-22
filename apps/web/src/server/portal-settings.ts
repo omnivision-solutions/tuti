@@ -1,9 +1,12 @@
 "use server";
 
+import { siteFormAddress } from "@/lib/site-mounts";
+
 import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
 import { removeSite, setSite, verifySite } from "./operations/site";
 import { addPortalReaders as addPortalReadersOperation, type PortalHomePage, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
+import { OperationError } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
 
 const DENIED = "Only project owners and admins can change who sees the portal";
@@ -55,9 +58,19 @@ export async function removeCustomDomain(projectSlug: string): Promise<{ error?:
 
 const SITE_DENIED = "Only project owners and admins can change where the portal is on your site";
 
-/** Customize → Address (see site.set, site.verify and site.remove). */
+/**
+ * Customize → Address → Sub-folder (see site.set, site.verify and site.remove): the address as one
+ * `url`, or the site and the path as two fields (`site`, `path`), put together.
+ */
 export async function saveSite(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
-  return asAdmin(projectSlug, SITE_DENIED, (context) => call(setSite, context, { url: String(formData.get("url") ?? "") }));
+  const field = (name: string) => String(formData.get(name) ?? "");
+  const address = formData.has("url") ? { url: field("url") } : siteFormAddress(field("site"), field("path"));
+  return asAdmin(projectSlug, SITE_DENIED, async (context) => {
+    if ("error" in address) {
+      throw new OperationError(400, "invalid_input", address.error);
+    }
+    return call(setSite, context, { url: address.url });
+  });
 }
 
 export async function verifySiteSetup(projectSlug: string): Promise<{ error?: string }> {

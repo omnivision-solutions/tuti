@@ -15,17 +15,25 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await createProject(owner, "Acme", slug);
 
   await owner.goto(`/app/${slug}/customize/address`);
-  // The portal's own address is a domain of its own or a path of the site: they pick the path.
+  // Customize → Address: the Tuti address, a domain of its own or a sub-folder of the site: they pick the sub-folder.
   await checkpoint(owner, "settings-own-address-choice");
-  await owner.getByRole("radio", { name: /A path of your site/ }).check();
-  await owner.getByLabel("Address").fill(`${siteUrl()}/portal`);
-  await owner.getByRole("button", { name: "Add address" }).click();
+  await owner.getByRole("radio", { name: /Sub-folder/ }).click();
+  await owner.getByRole("textbox", { name: "Your site" }).fill(siteUrl());
+  await owner.getByRole("textbox", { name: "Path" }).fill("/portal");
+  await owner.getByRole("button", { name: "Set up sub-folder" }).click();
   await expect(owner.getByText("Waiting for your site")).toBeVisible();
   // Not both: with the path set, there's no domain to add until it's removed.
-  await expect(owner.getByRole("radio", { name: /A domain of its own/ })).toHaveCount(0);
-  await expect(owner.getByLabel("Domain", { exact: true })).toHaveCount(0);
-  await expect(owner.getByText("To give your portal a domain of its own instead, remove it from your site first.")).toBeVisible();
-  await expect(owner.getByRole("definition").filter({ hasText: `${portalUrl(slug)}/portal/*` })).toBeVisible();
+  await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
+  await expect(owner.getByRole("textbox", { name: "Custom domain" })).toHaveCount(0);
+  await expect(owner.getByText(`To switch, remove ${new URL(siteUrl()).host}/portal first.`)).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Forward /portal/*" })).toContainText(`${portalUrl(slug)}/portal/*`);
+  // A guide per platform, with the team's own rules written out.
+  await owner.getByRole("button", { name: "Vercel" }).click();
+  const guide = owner.getByRole("dialog", { name: "Put your portal under /portal with Vercel" });
+  await expect(guide).toContainText(`"destination": "${portalUrl(slug)}/portal/:path*"`);
+  await checkpoint(owner, "settings-site-guide", { fullPage: false });
+  await owner.keyboard.press("Escape");
+  await expect(guide).toBeHidden();
   // Not forwarded yet.
   await owner.getByRole("button", { name: "Check setup" }).click();
   await expect(owner.getByText("didn't answer with this portal's check", { exact: false })).toBeVisible();
@@ -89,11 +97,11 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(elsewhere).toHaveURL(`${siteUrl()}/portal/roadmap`);
 
   // Removed, the portal is back at its Tuti address.
-  await owner.getByRole("button", { name: "Remove" }).click();
+  await owner.getByRole("button", { name: "Remove sub-folder" }).click();
   await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
   await expect(owner.getByText(`${siteUrl()}/portal removed`)).toBeVisible();
   // And either can be picked again.
-  await expect(owner.getByRole("radio", { name: /A domain of its own/ })).toBeVisible();
+  await expect(owner.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "false");
   await expect(async () => {
     await elsewhere.goto("/roadmap");
     expect(elsewhere.url()).toBe(`${portalUrl(slug)}/roadmap`);
