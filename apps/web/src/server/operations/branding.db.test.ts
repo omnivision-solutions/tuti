@@ -100,9 +100,17 @@ test("fonts for headings and text: one of the portal fonts, or null for the page
   await expect(update({ fonts: { heading: "comic-sans" as never } })).rejects.toMatchObject({ status: 400 });
   await update({ fonts: { heading: null } });
   expect((await get()).fonts).toEqual({ heading: null, body: "inter" });
+  // Customize's form: a font field it doesn't send stays as it is.
+  actAs(owner);
+  const data = new FormData();
+  data.set("part", "look");
+  data.set("color", "#12804a");
+  data.set("headingFont", "lora");
+  expect(await saveBranding(project.slug, {}, data)).toEqual({});
+  expect((await get()).fonts).toEqual({ heading: "lora", body: "inter" });
   // A font no longer offered reads as the page's own.
   await prisma.project.update({ where: { id: project.id }, data: { bodyFont: "gone" } });
-  expect((await get()).fonts).toEqual({ heading: null, body: null });
+  expect((await get()).fonts).toEqual({ heading: "lora", body: null });
 });
 
 test("the colour scheme, the logo's text and link, sidebar links, Contact us and the search listing", async () => {
