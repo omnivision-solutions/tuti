@@ -133,8 +133,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Pull requests</CardTitle>
           <CardDescription>
-            A pull request that mentions a post (tuti#12, or the post&apos;s link) in its title, description or commits links to it, and
-            opening it moves the post to In progress.
+            Mention tuti#12 in a pull request to link post 12 and move it to In progress.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
