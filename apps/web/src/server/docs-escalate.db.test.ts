@@ -335,6 +335,22 @@ describe("the visitor's copy", () => {
     expect(copy.text).not.toContain("Use the export screen.");
   });
 
+  test("an article unpublished, deleted or hidden since leaves the answer out too, even to the asker's own address", async () => {
+    await turnOn();
+    for (const change of [{ publishedAt: null }, { deletedAt: new Date(), publishedAt: null }, { listing: "HIDDEN" as const }]) {
+      const gone = await article(`Gone ${randomUUID().slice(0, 8)}`);
+      const { ada, question } = await signedInAsker([gone, await article(`Billing ${randomUUID().slice(0, 8)}`)]);
+      await prisma.article.update({ where: { id: gone.id }, data: change });
+      model.reply("They want to export.");
+      expect(await escalateDocs(project.slug, question.id, ada.email, "")).toEqual({});
+      const copy = await mailbox.latestTo(ada.email);
+      expect(copy.text).toContain(WITHHELD);
+      expect(copy.text).toContain("Billing");
+      expect(copy.text).not.toContain(gone.title);
+      expect(copy.text).not.toContain("Use the export screen.");
+    }
+  });
+
   test("an address that isn't verified isn't the asker's own", async () => {
     await turnOn();
     const { ada, question } = await signedInAsker([await article("Members", "SIGNED_IN")]);

@@ -179,10 +179,11 @@ export async function escalateQuestion(
     throw new OperationError(502, "email_failed", "Couldn't send it to the team just now. Try again.");
   }
   // The team has it; the visitor's copy is a courtesy, so failing to send it fails nothing. Replying to it reaches the team.
-  // The answer and the summary are written from the articles, so a copy that can't name one of them leaves those out too.
+  // The answer and the summary are written from the articles, so a copy that can't name one of them leaves those out
+  // too: one it may not name, or one that's since been unpublished, deleted or hidden (not in `articles`).
   const named = articles.filter((article) => mayName.has(article.id));
   const copy =
-    named.length < articles.length
+    named.length < new Set(question.articleIds).size
       ? { ...content, sources: named.map(source), answer: null, summary: null, withheld: true, copy: true }
       : { ...content, copy: true };
   await sendEmail({ to: input.email, replyTo: to, ...escalationEmail(copy) }).catch((error: unknown) =>
