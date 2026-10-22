@@ -35,7 +35,7 @@ lives in `/shared`, which the others import.
 | Folder | Holds | Local file (dev) |
 |---|---|---|
 | `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings), `OPENROUTER_API_KEY`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587), `MEDIA_*`; prod also `APP_PORTAL_PROJECT`, `CUSTOM_DOMAIN_TARGET` | — |
-| `/web` ← shared | `BETTER_AUTH_SECRET`; prod also `APP_PORTAL_OWNER`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `TRUSTED_IP_HEADER`, `LICENSE_PRIVATE_KEY` (makes tuti.so the licence server; `scripts/license.mjs` sells licences) | `apps/web/.env` |
+| `/web` ← shared | `BETTER_AUTH_SECRET`, `MEDIA_LINK_SECRET`; prod also `APP_PORTAL_OWNER`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `TRUSTED_IP_HEADER`, `LICENSE_PRIVATE_KEY` (makes tuti.so the licence server; `scripts/license.mjs` sells licences) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 
@@ -51,7 +51,7 @@ The dev databases have pgvector installed by the superuser in an `extensions` sc
 trusted extension, and `prisma migrate dev` wipes the shadow database's `public` schema
 before replaying migrations, so the extension has to live outside it.
 
-`BETTER_AUTH_SECRET` is generated separately per environment. Empty values are
+`BETTER_AUTH_SECRET` and `MEDIA_LINK_SECRET` are generated separately per environment. Never change `MEDIA_LINK_SECRET`: it signs the image links in emails already sent. Empty values are
 placeholders still to be filled in; the apps refuse to start while a required
 variable is empty.
 
