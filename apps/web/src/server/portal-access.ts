@@ -9,6 +9,7 @@ import { readerEntriesFor } from "@/lib/reader-domains";
 import { type Reader, SIGNED_OUT } from "@/lib/read-access";
 
 import type { Actor } from "./operations/define";
+import { previewUser } from "@/lib/preview-session";
 import { widgetUser } from "@/lib/widget-session";
 
 import { getSession } from "./session";
@@ -56,14 +57,42 @@ export async function invitedReader(projectId: string, userId: string): Promise<
   return reader ? (user.emailVerified ? "verified" : "unverified") : null;
 }
 
-/** For proxy.ts: a request to a portal, with its cookies. A public portal (or a missing one) needs no session. */
-export async function portalVisitor(slug: string, headers: Headers): Promise<"public" | "allowed" | "refused"> {
+/**
+ * For proxy.ts: a request to a portal, with its cookies (`preview`: its PREVIEW_READER_COOKIE). A
+ * public portal (or a missing one) needs no session.
+ */
+export async function portalVisitor(slug: string, headers: Headers, preview?: string): Promise<"public" | "allowed" | "refused"> {
   const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true } });
   if (!project || project.portalAccess === "PUBLIC") {
     return "public";
   }
   const session = await auth.api.getSession({ headers });
-  return session && (await isPrivateReader(project.id, session.user.id)) ? "allowed" : "refused";
+  if (session && (await isPrivateReader(project.id, session.user.id))) {
+    return "allowed";
+  }
+  return (await previewReader(project.id, preview)) ? "allowed" : "refused";
+}
+
+/**
+ * Customize's preview of a portal (lib/preview-session.ts): this cookie, partitioned to the app's
+ * site, holds the token of the team member it reads the portal as.
+ */
+export const PREVIEW_READER_COOKIE = "tuti_preview_reader";
+
+/** The team member a preview token reads the portal as: valid for this project, and still on its team. */
+export async function previewReader(projectId: string, token: string | null | undefined): Promise<string | null> {
+  const userId = token ? previewUser(projectId, token) : null;
+  if (!userId) {
+    return null;
+  }
+  const member = await prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } });
+  return member ? userId : null;
+}
+
+/** For proxy.ts: whether a preview token in a portal's address (`slug`'s) is one to keep as its cookie. */
+export async function previewTokenFor(slug: string, token: string): Promise<boolean> {
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true } });
+  return !!project && !!(await previewReader(project.id, token));
 }
 
 /**
@@ -73,14 +102,19 @@ export async function portalVisitor(slug: string, headers: Headers): Promise<"pu
  */
 export const WIDGET_READER_COOKIE = "tuti_widget_reader";
 
-/** Who's reading on this request: the portal's signed-in user, or the person signed in to the widget. */
+/**
+ * Who's reading on this request: the portal's signed-in user, the person signed in to the widget, or
+ * the team member previewing the portal in Customize.
+ */
 async function readerId(projectId: string): Promise<string | null> {
   const session = await getSession();
   if (session) {
     return session.user.id;
   }
-  const token = (await cookies()).get(WIDGET_READER_COOKIE)?.value;
-  return token ? widgetUser(projectId, token) : null;
+  const jar = await cookies();
+  const token = jar.get(WIDGET_READER_COOKIE)?.value;
+  const widget = token ? widgetUser(projectId, token) : null;
+  return widget ?? previewReader(projectId, jar.get(PREVIEW_READER_COOKIE)?.value);
 }
 
 /** Whether whoever's asking may read the project's portal. */

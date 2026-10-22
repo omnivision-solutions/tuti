@@ -6,7 +6,8 @@ import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, CUSTOMIZE, PREVIEW } from "@/lib
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
-import { portalVisitor } from "@/server/portal-access";
+import { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/preview-session";
+import { PREVIEW_READER_COOKIE, portalVisitor, previewTokenFor } from "@/server/portal-access";
 import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
 
 /**
@@ -78,6 +79,26 @@ export async function proxy(request: NextRequest) {
     }
     // On its own domain the portal stays there (help.acme.com/sign-in).
     const origin = target.customDomain ? `${new URL(portalUrl(target.slug)).protocol}//${host}` : portalUrl(target.slug);
+    // Customize's preview, with the token of the team member it reads the portal as: kept as a cookie
+    // (partitioned to the app's site, which frames it), and out of the address.
+    const token = request.nextUrl.searchParams.get(PREVIEW_TOKEN_PARAM);
+    if (token !== null) {
+      const url = new URL(`${pathname}${request.nextUrl.search}`, origin);
+      url.searchParams.delete(PREVIEW_TOKEN_PARAM);
+      const response = NextResponse.redirect(url);
+      response.headers.set("cache-control", "no-store");
+      if (await previewTokenFor(target.slug, token)) {
+        response.cookies.set(PREVIEW_READER_COOKIE, token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+          partitioned: true,
+          path: "/",
+          maxAge: PREVIEW_TTL_SECONDS,
+        });
+      }
+      return framedByApp(response);
+    }
     return servePortal(request, target.slug, origin);
   }
 
@@ -137,7 +158,7 @@ function fromSite(request: NextRequest, mount: { origin: string; path: string })
  * `pathname` is the portal's own path; `mount`, where it is on the team's site, when the request came through it.
  */
 async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
-  const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers);
+  const visitor = OPEN_PORTAL_PATHS.test(pathname) ? "public" : await portalVisitor(slug, request.headers, request.cookies.get(PREVIEW_READER_COOKIE)?.value);
   if (visitor === "refused") {
     const signIn = new URL(`${new URL(origin).pathname.replace(/\/$/, "")}/sign-in`, origin);
     if (pathname !== "/") {
