@@ -61,6 +61,8 @@ test("one rule per old address, none to itself, no chains (so no circles), not t
   await call(createRedirect, as(), { from: "/a", to: "/b" });
   await expect(call(createRedirect, as(), { from: "/A/", to: "/c" })).rejects.toMatchObject({ status: 409, message: expect.stringContaining("already has a redirect") });
   await expect(call(createRedirect, as(), { from: "/self", to: "/Self" })).rejects.toMatchObject({ message: "A redirect can't send an address to itself" });
+  // However it's written.
+  await expect(call(createRedirect, as(), { from: "/café", to: "/x/../caf%C3%A9#top" })).rejects.toMatchObject({ message: "A redirect can't send an address to itself" });
   // b → c would make a → b → c; c → a would make c → a → b.
   await expect(call(createRedirect, as(), { from: "/b", to: "/c" })).rejects.toMatchObject({ message: expect.stringContaining("already part of another redirect") });
   await expect(call(createRedirect, as(), { from: "/c", to: "/a" })).rejects.toMatchObject({ message: expect.stringContaining("already part of another redirect") });
@@ -69,8 +71,8 @@ test("one rule per old address, none to itself, no chains (so no circles), not t
   // A whole address on this portal is a path of it, so the same checks see it.
   await expect(call(createRedirect, as(), { from: "/loop", to: `http://${host()}/loop` })).rejects.toMatchObject({ message: "A redirect can't send an address to itself" });
   await expect(call(createRedirect, as(), { from: "/d", to: `http://${host()}/a` })).rejects.toMatchObject({ message: expect.stringContaining("already part of another redirect") });
-  const { redirect } = await call(createRedirect, as(), { from: "/e", to: `http://${host()}/docs?x=1` });
-  expect(redirect.to).toBe("/docs?x=1");
+  const { redirect } = await call(createRedirect, as(), { from: "/e", to: `http://${host()}/docs?x=1#billing` });
+  expect(redirect.to).toBe("/docs?x=1#billing");
 });
 
 test("up to 200 per project", async () => {

@@ -77,5 +77,12 @@ export function redirectTo(input: string): { to: string } | { error: string } {
  */
 export function redirectLocation(to: string, origin: string, search: string): string {
   const target = to.startsWith("/") ? `${origin.replace(/\/$/, "")}${to}` : to;
-  return search && !target.includes("?") ? `${target}${search}` : target;
+  const hash = target.indexOf("#");
+  const [address, fragment] = hash === -1 ? [target, ""] : [target.slice(0, hash), target.slice(hash)];
+  return search && !address.includes("?") ? `${address}${search}${fragment}` : target;
+}
+
+/** A rule's `to`, when it's a path of the portal, as rules match paths (like `from`); null for a whole address. */
+export function destinationKey(to: string): string | null {
+  return to.startsWith("/") ? redirectKey(new URL(to, "http://portal.invalid").pathname) : null;
 }

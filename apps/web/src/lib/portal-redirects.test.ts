@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { redirectFrom, redirectKey, redirectLocation, redirectTo } from "./portal-redirects";
+import { destinationKey, redirectFrom, redirectKey, redirectLocation, redirectTo } from "./portal-redirects";
 
 test("an old address as pasted becomes a path, lowercase and without a trailing slash", () => {
   expect(redirectFrom(" /hc/en-us/Articles/123/ ")).toEqual({ from: "/hc/en-us/articles/123" });
@@ -39,6 +39,14 @@ test("where a request goes: under the portal's address (and its site's path), wi
   expect(redirectLocation("/docs/billing", "https://acme.tuti.so", "?ref=old")).toBe("https://acme.tuti.so/docs/billing?ref=old");
   expect(redirectLocation("/docs/billing", "https://acme.com/portal", "")).toBe("https://acme.com/portal/docs/billing");
   expect(redirectLocation("https://acme.example/p?plan=pro", "https://acme.tuti.so", "?ref=old")).toBe("https://acme.example/p?plan=pro");
+  // The query goes before a fragment.
+  expect(redirectLocation("/docs#billing", "https://acme.tuti.so", "?ref=old")).toBe("https://acme.tuti.so/docs?ref=old#billing");
+  expect(redirectLocation("/docs?x=1#billing", "https://acme.tuti.so", "?ref=old")).toBe("https://acme.tuti.so/docs?x=1#billing");
+});
+
+test("where a rule goes, as rules match it: like an old address, without its query or fragment", () => {
+  expect(destinationKey("/A/../Kb/Café/?x=1#top")).toBe("/kb/caf%c3%a9");
+  expect(destinationKey("https://acme.example/kb")).toBeNull();
 });
 
 test("matching keys: lowercase, trailing slashes gone, quick on a long run of them", () => {
