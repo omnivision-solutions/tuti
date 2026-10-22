@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   authorize.search = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: new URL("/api/github/callback", appUrl()).href,
-    state: signValue("callback", [project.id, String(installationId)]),
+    state: signValue("callback", [project.id, String(installationId), "install"]),
   }).toString();
   return NextResponse.redirect(authorize);
 }

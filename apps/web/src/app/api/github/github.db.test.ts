@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { embedPosts } from "@tuti/jobs";
 import { LINK_MIN_SIMILARITY } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, startOpenAIFake } from "@tuti/testkit";
@@ -10,9 +10,11 @@ import { request } from "@/test/next-headers";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
+import { disconnectGithub, setGithubNewRepositories, setGithubRepository } from "@/server/github";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
+import { GET as refreshRoute } from "./refresh/route";
 import { GET as setup } from "./setup/route";
 import { POST as webhook } from "./webhook/route";
 
@@ -100,13 +102,6 @@ describe("connecting", () => {
     expect(await connected(project.id)).toBeNull();
   });
 
-  test("an installation connected to one project can't be connected to another", async () => {
-    github.user("code-4", [{ id: 503, account: "acme" }]);
-    await connect(project.slug, 503, "code-4");
-    const other = await createProject(owner);
-    expect(await connect(other.slug, 503, "code-4")).toMatch(/github=taken$/);
-  });
-
   test("signed values are tamper-proof and single-purpose", () => {
     const value = signValue("install", ["project-1"]);
     expect(verifyValue("install", value)).toEqual(["project-1"]);
@@ -116,6 +111,289 @@ describe("connecting", () => {
     // As many characters as a real signature, but more bytes: refused, not a crash.
     const [fields, expires] = [value.split(".")[0], value.split(".")[1]];
     expect(verifyValue("install", `${fields}.${expires}.${"é".repeat(43)}`)).toBeNull();
+  });
+});
+
+describe("repositories", () => {
+  const deliver = async ({ body, headers }: { body: string; headers: Record<string, string> }) =>
+    (await webhook(new Request(`${APP}/api/github/webhook`, { method: "POST", body, headers }))).status;
+  const web = { id: 7011, fullName: "acme/web" };
+  const mobile = { id: 7012, fullName: "acme/mobile" };
+  const included = async (projectId: string) =>
+    (await prisma.githubRepository.findMany({ where: { connection: { projectId } }, orderBy: { repoId: "asc" }, select: { fullName: true } })).map(
+      (repo) => repo.fullName,
+    );
+  const pullRequest = (installation: number, repo: { id: number; fullName: string }, number: number, body: string) =>
+    github.webhook("pull_request", {
+      action: "opened",
+      installation: { id: installation },
+      repository: { id: repo.id, full_name: repo.fullName },
+      pull_request: { number, title: `PR ${number}`, body, html_url: `https://github.com/${repo.fullName}/pull/${number}` },
+    });
+  const firstPost = async (projectId: string, boardId: string) =>
+    prisma.post.create({
+      data: { projectId, boardId, authorId: owner.id, number: 1, title: "Post 1", body: "" },
+      select: { id: true },
+    });
+  const linksOf = async (postId: string) => (await prisma.postLink.findMany({ where: { postId }, select: { url: true } })).map((l) => l.url);
+  /** "Refresh": GitHub's authorize page sends the person straight back with a code. */
+  async function refreshList(projectSlug: string, code: string) {
+    const authorize = location(await refreshRoute(new Request(`${APP}/api/github/refresh?project=${projectSlug}`)));
+    const state = new URL(authorize).searchParams.get("state")!;
+    return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(state)}`)));
+  }
+
+  test("the first project to connect an account takes the repositories the person can access, and new ones later", async () => {
+    github.user("code-r1", [{ id: 701, account: "acme", repositories: [web, mobile] }]);
+    expect(await connect(project.slug, 701, "code-r1")).toMatch(/github=connected$/);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
+    expect(await connected(project.id)).toMatchObject({ includeNewRepositories: true, repositories: [web, mobile], seenRepositoryIds: [web.id, mobile.id] });
+  });
+
+  test("connecting saves nothing if its repositories can't be included, so trying again takes them", async () => {
+    github.user("code-r7", [{ id: 708, account: "acme", repositories: [web, mobile] }]);
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: Run) =>
+      transaction(async (tx) => {
+        vi.spyOn(tx.githubRepository, "createMany").mockRejectedValueOnce(new Error("database down"));
+        return fn(tx);
+      })) as never);
+    await expect(connect(project.slug, 708, "code-r7")).rejects.toThrow("database down");
+    expect(await connected(project.id)).toBeNull();
+    expect(await connect(project.slug, 708, "code-r7")).toMatch(/github=connected$/);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
+  });
+
+  test("an account with thousands of repositories lists them all", async () => {
+    const many = Array.from({ length: 2_050 }, (_, i) => ({ id: 900_000 + i, fullName: `acme/repo-${i}` }));
+    github.user("code-r9", [{ id: 714, account: "acme", repositories: many }]);
+    await connect(project.slug, 714, "code-r9");
+    expect(await prisma.githubRepository.count({ where: { connection: { projectId: project.id } } })).toBe(2_050);
+  });
+
+  test("several projects share an account: each repository feeds the one project that includes it", async () => {
+    github.user("code-r2", [{ id: 702, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 702, "code-r2");
+    const other = await createProject(owner);
+    expect(await connect(other.slug, 702, "code-r2")).toMatch(/github=connected$/);
+    // It starts with none: both are the first project's.
+    expect(await included(other.id)).toEqual([]);
+    expect(await connected(other.id)).toMatchObject({ includeNewRepositories: false });
+    expect(await setGithubRepository(other.slug, mobile.id, true)).toEqual({ error: "acme/mobile is in another project" });
+
+    // The first lets mobile go; the other takes it.
+    expect(await setGithubRepository(project.slug, mobile.id, false)).toEqual({});
+    expect(await setGithubRepository(other.slug, mobile.id, true)).toEqual({});
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await included(other.id)).toEqual(["acme/mobile"]);
+
+    // tuti#1 means each project's own post 1, by the repository it's mentioned in.
+    const ours = await firstPost(project.id, project.boards[0]!.id);
+    const theirs = await firstPost(other.id, other.boards[0]!.id);
+    expect(await deliver(pullRequest(702, web, 5, "Fixes tuti#1"))).toBe(200);
+    expect(await deliver(pullRequest(702, mobile, 6, "Fixes tuti#1"))).toBe(200);
+    expect(await linksOf(ours.id)).toEqual(["https://github.com/acme/web/pull/5"]);
+    expect(await linksOf(theirs.id)).toEqual(["https://github.com/acme/mobile/pull/6"]);
+
+    // Disconnecting lets its repositories go.
+    expect(await disconnectGithub(project.slug)).toEqual({});
+    expect(await setGithubRepository(other.slug, web.id, true)).toEqual({});
+    expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
+  });
+
+  test("only repositories the person who connected can access can be included", async () => {
+    github.user("code-r3", [{ id: 703, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 703, "code-r3");
+    expect(await setGithubRepository(project.slug, mobile.id, true)).toEqual({
+      error: "Refresh the list: that repository isn't one this project can include",
+    });
+    expect(await setGithubRepository(project.slug, Number.NaN, true)).toEqual({ error: "Unknown repository" });
+    // Refreshed by someone who can access it.
+    github.user("code-r3b", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
+    expect(await refreshList(project.slug, "code-r3b")).toMatch(/github=refreshed$/);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
+  });
+
+  test("a new repository goes to the project that takes new ones; one it left out stays out", async () => {
+    github.user("code-r4", [{ id: 704, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 704, "code-r4");
+    const post = await firstPost(project.id, project.boards[0]!.id);
+    const docs = { id: 7013, fullName: "acme/docs" };
+
+    // First heard of in a pull request: included, and the pull request counts.
+    await deliver(pullRequest(704, docs, 1, "tuti#1"));
+    expect(await included(project.id)).toEqual(["acme/web", "acme/docs"]);
+    expect(await linksOf(post.id)).toEqual(["https://github.com/acme/docs/pull/1"]);
+    // Left out, it stays out.
+    await setGithubRepository(project.slug, docs.id, false);
+    await deliver(pullRequest(704, docs, 2, "tuti#1"));
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await linksOf(post.id)).toEqual(["https://github.com/acme/docs/pull/1"]);
+
+    // Added to the installation on GitHub, then removed.
+    const api = { id: 7014, full_name: "acme/api" };
+    const onGithub = (repositories: { id: number; fullName: string }[]) => github.user("code-r4-github", [{ id: 704, account: "acme", repositories }]);
+    onGithub([web, docs, { id: api.id, fullName: api.full_name }]);
+    expect(await deliver(github.webhook("installation_repositories", { action: "added", installation: { id: 704 }, repositories_added: [api] }))).toBe(200);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    const removal = github.webhook("installation_repositories", { action: "removed", installation: { id: 704 }, repositories_removed: [api] });
+    // A removal arriving late, after it was added back: GitHub still has it there, so it stays.
+    expect(await deliver(removal)).toBe(200);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    // GitHub can't say: not acknowledged, so it can be redelivered.
+    onGithub([web, docs]);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await deliver(removal)).toBe(503);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    expect(await deliver(removal)).toBe(200);
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    // Nor listed, so it can't be switched back on.
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, docs] });
+    expect(await setGithubRepository(project.slug, api.id, true)).toEqual({
+      error: "Refresh the list: that repository isn't one this project can include",
+    });
+    // Added back on GitHub, it's new again: listed and included here.
+    onGithub([web, docs, { id: api.id, fullName: api.full_name }]);
+    await deliver(github.webhook("installation_repositories", { action: "added", installation: { id: 704 }, repositories_added: [api] }));
+    expect(await included(project.id)).toEqual(["acme/web", "acme/api"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, docs, { id: api.id, fullName: api.full_name }] });
+    onGithub([web, docs]);
+    await deliver(removal);
+
+    // A refresh doesn't bring back what was left out, even by someone who can't access it (not listed for them).
+    await setGithubRepository(project.slug, web.id, false);
+    github.user("code-r4b", [{ id: 704, account: "acme", repositories: [web] }]);
+    await refreshList(project.slug, "code-r4b");
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+    await deliver(pullRequest(704, docs, 3, "tuti#1"));
+    expect(await included(project.id)).toEqual([]);
+  });
+
+  test("new repositories go to one project at a time", async () => {
+    github.user("code-r5", [{ id: 705, account: "acme", repositories: [] }]);
+    await connect(project.slug, 705, "code-r5");
+    const other = await createProject(owner);
+    await connect(other.slug, 705, "code-r5");
+    expect(await setGithubNewRepositories(other.slug, true)).toEqual({ error: "New repositories from @acme already go to another project" });
+    expect(await setGithubNewRepositories(project.slug, false)).toEqual({});
+    expect(await setGithubNewRepositories(other.slug, true)).toEqual({});
+    await deliver(pullRequest(705, web, 1, ""));
+    expect(await included(other.id)).toEqual(["acme/web"]);
+    expect(await included(project.id)).toEqual([]);
+  });
+
+  test("a repository moved to another account can be included there, once GitHub says it's there", async () => {
+    github.user("code-r8", [{ id: 711, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 711, "code-r8");
+    // Moved to another account, where another project takes new repositories, so this one starts with none.
+    const first = await createProject(owner);
+    github.user("code-r8b", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    await connect(first.slug, 712, "code-r8b");
+    const other = await createProject(owner);
+    github.user("code-r8c", [{ id: 712, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/web" }] }]);
+    await connect(other.slug, 712, "code-r8c");
+    // Taking it over fails halfway: it stays where it was, for a retry.
+    type Run = (tx: Prisma.TransactionClient) => Promise<unknown>;
+    const transaction = prisma.$transaction.bind(prisma) as unknown as (fn: Run) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce(((fn: Run) =>
+      transaction(async (tx) => {
+        vi.spyOn(tx.githubRepository, "createMany").mockRejectedValueOnce(new Error("database down"));
+        return fn(tx);
+      })) as never);
+    await expect(setGithubRepository(other.slug, web.id, true)).rejects.toThrow("database down");
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await setGithubRepository(other.slug, web.id, true)).toEqual({});
+    expect(await included(other.id)).toEqual(["elsewhere/web"]);
+    expect(await included(project.id)).toEqual([]);
+
+    // GitHub says it isn't in that account (moved on again, or the list is old): the holder keeps it.
+    github.user("code-r8c", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    github.user("code-r8d", [{ id: 713, account: "third", repositories: [mobile] }]);
+    await connect(project.slug, 713, "code-r8d");
+    const another = await createProject(owner);
+    github.user("code-r8e", [{ id: 712, account: "elsewhere", repositories: [mobile] }]);
+    await connect(another.slug, 712, "code-r8e");
+    github.user("code-r8e", [{ id: 712, account: "elsewhere", repositories: [] }]);
+    expect(await setGithubRepository(another.slug, mobile.id, true)).toEqual({ error: "acme/mobile is in another project" });
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+  });
+
+  test("a repository another account's project took meanwhile isn't taken back without GitHub's word", async () => {
+    github.user("code-r10", [{ id: 720, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 720, "code-r10");
+    const other = await createProject(owner);
+    github.user("code-r10b", [{ id: 721, account: "elsewhere", repositories: [] }]);
+    await connect(other.slug, 721, "code-r10b");
+    // The event is read as new (no holder yet), and the first project's claim lands just after.
+    vi.spyOn(prisma.githubRepository, "findUnique").mockResolvedValueOnce(null);
+    await deliver(pullRequest(721, web, 1, ""));
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await included(other.id)).toEqual([]);
+  });
+
+  test("a refresh drops included repositories GitHub no longer has (a removal it didn't tell us of)", async () => {
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 722, "code-r11");
+    // Removed on GitHub, and no webhook arrived.
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
+    await refreshList(project.slug, "code-r11");
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+    // One the person refreshing can't access, but the installation still has, stays.
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
+    await refreshList(project.slug, "code-r11");
+    github.user("code-r11c", [{ id: 722, account: "acme", repositories: [mobile] }]);
+    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
+    await refreshList(project.slug, "code-r11");
+    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
+  });
+
+  test("when GitHub can't say where a moved repository is, nothing moves and the event can be retried", async () => {
+    github.user("code-r12", [{ id: 723, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 723, "code-r12");
+    const other = await createProject(owner);
+    github.user("code-r12b", [{ id: 724, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/web" }] }]);
+    github.user("code-r12", [{ id: 723, account: "acme", repositories: [] }]);
+    const moved = await createProject(owner);
+    github.user("code-r12c", [{ id: 724, account: "elsewhere", repositories: [] }]);
+    await connect(other.slug, 724, "code-r12c"); // takes new repositories on that account
+    await connect(moved.slug, 724, "code-r12b"); // lists it
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    // Not acknowledged, so GitHub can redeliver it; and the switch says so.
+    expect(await deliver(pullRequest(724, { id: web.id, fullName: "elsewhere/web" }, 1, ""))).toBe(503);
+    expect(await setGithubRepository(moved.slug, web.id, true)).toEqual({
+      error: "GitHub couldn't say where elsewhere/web is now. Try again in a moment.",
+    });
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await deliver(pullRequest(724, { id: web.id, fullName: "elsewhere/web" }, 1, ""))).toBe(200);
+    expect(await included(other.id)).toEqual(["elsewhere/web"]);
+  });
+
+  test("a renamed repository keeps its project; one moved to another account leaves it", async () => {
+    github.user("code-r6", [{ id: 706, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 706, "code-r6");
+    await deliver(pullRequest(706, { id: web.id, fullName: "acme/website" }, 1, ""));
+    expect(await included(project.id)).toEqual(["acme/website"]);
+
+    // Transferred to another organisation, connected to another project (GitHub has it there now).
+    const other = await createProject(owner);
+    github.user("code-r6b", [{ id: 707, account: "elsewhere", repositories: [] }]);
+    await connect(other.slug, 707, "code-r6b");
+    github.user("code-r6", [{ id: 706, account: "acme", repositories: [] }]);
+    github.user("code-r6c", [{ id: 707, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/website" }] }]);
+    await deliver(pullRequest(707, { id: web.id, fullName: "elsewhere/website" }, 2, ""));
+    expect(await included(project.id)).toEqual([]);
+    expect(await included(other.id)).toEqual(["elsewhere/website"]);
+    // Events from the old account no longer reach anyone, even arriving late to a project that
+    // takes new repositories and hasn't seen it (like a connection from before repositories).
+    const post = await firstPost(project.id, project.boards[0]!.id);
+    await prisma.githubInstallation.update({ where: { projectId: project.id }, data: { seenRepositoryIds: [] } });
+    await deliver(pullRequest(706, web, 3, "tuti#1"));
+    expect(await linksOf(post.id)).toEqual([]);
+    expect(await included(other.id)).toEqual(["elsewhere/website"]);
   });
 });
 
@@ -158,7 +436,7 @@ describe("pull requests", () => {
     github.webhook("pull_request", {
       action,
       installation: { id: installation },
-      repository: { full_name: "acme/app" },
+      repository: { id: installation, full_name: "acme/app" },
       pull_request: { number, title, body, html_url: `https://github.com/acme/app/pull/${number}` },
     });
 
@@ -183,7 +461,13 @@ describe("pull requests", () => {
   beforeEach(async () => {
     installationId = nextInstallationId++;
     await prisma.githubInstallation.create({
-      data: { projectId: project.id, installationId, accountLogin: "acme", createdById: owner.id },
+      data: {
+        projectId: project.id,
+        installationId,
+        accountLogin: "acme",
+        createdById: owner.id,
+        included: { create: { repoId: installationId, fullName: "acme/app" } },
+      },
     });
   });
 
@@ -222,7 +506,7 @@ describe("pull requests", () => {
 
   test("if the pull request can't be handled, GitHub isn't told it was (so it can be redelivered)", async () => {
     await postsWithStatus("OPEN");
-    vi.spyOn(prisma.githubInstallation, "findUnique").mockRejectedValueOnce(new Error("database down"));
+    vi.spyOn(prisma.githubRepository, "findUnique").mockRejectedValueOnce(new Error("database down"));
     expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(503);
     expect(await deliver(pullRequest("opened", 46, "Dark mode", "tuti#1"))).toBe(200); // redelivered
     expect((await linksAndStatuses())[0]).toMatchObject({ status: "IN_PROGRESS" });
@@ -260,7 +544,7 @@ describe("pull requests", () => {
   describe("comments on pull requests", () => {
     const appComments = (number: number) => github.comments("acme/app", number).filter((c) => c.byApp);
     const commentOn = () =>
-      prisma.githubInstallation.update({ where: { installationId }, data: { commentOnPullRequests: true } });
+      prisma.githubInstallation.updateMany({ where: { installationId }, data: { commentOnPullRequests: true } });
 
     test("one comment lists the feedback a pull request completes, most voted first, kept up to date", async () => {
       await postsWithStatus("OPEN", "OPEN");
@@ -496,7 +780,7 @@ describe("shipping", () => {
     github.webhook("release", {
       action: "published",
       installation: { id: installationId },
-      repository: { full_name: repo },
+      repository: { id: installationId, full_name: repo },
       release: { tag_name: tag, name: `Release ${tag}`, html_url: `https://github.com/${repo}/releases/tag/${tag}`, published_at: publishedAt },
     });
 
@@ -504,7 +788,13 @@ describe("shipping", () => {
     installationId++;
     repo = `acme/app-${installationId}`;
     await prisma.githubInstallation.create({
-      data: { projectId: project.id, installationId, accountLogin: "acme", createdById: owner.id },
+      data: {
+        projectId: project.id,
+        installationId,
+        accountLogin: "acme",
+        createdById: owner.id,
+        included: { create: { repoId: installationId, fullName: repo } },
+      },
     });
   });
 
@@ -574,7 +864,7 @@ describe("shipping", () => {
   });
 
   test("projects without releases complete posts when the pull request is merged instead", async () => {
-    await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+    await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
     github.repo(repo, { releases: [{ tag_name: "v9", published_at: "2026-05-01T00:00:00Z" }], pulls: {} });
     await linkedPosts([
       { status: "IN_PROGRESS", pull: 30 },
@@ -584,7 +874,7 @@ describe("shipping", () => {
       github.webhook("pull_request", {
         action: "closed",
         installation: { id: installationId },
-        repository: { full_name: repo },
+        repository: { id: installationId, full_name: repo },
         pull_request: { number, title: "PR", body: "", html_url: `https://github.com/${repo}/pull/${number}`, merged },
       });
     await deliver(closed(30, true));
@@ -596,14 +886,14 @@ describe("shipping", () => {
   });
 
   test("when the portal's address can't be looked up, a merge completes nothing, so the redelivery completes it and tells the webhooks", async () => {
-    await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+    await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
     github.repo(repo, { releases: [], pulls: {} });
     await linkedPosts([{ status: "IN_PROGRESS", pull: 40 }]);
     vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
     const merged = github.webhook("pull_request", {
       action: "closed",
       installation: { id: installationId },
-      repository: { full_name: repo },
+      repository: { id: installationId, full_name: repo },
       pull_request: { number: 40, title: "PR", body: "", html_url: `https://github.com/${repo}/pull/40`, merged: true },
     });
     const spy = vi.spyOn(prisma.customDomain, "findFirst").mockRejectedValue(new Error("database down"));
@@ -622,7 +912,7 @@ describe("shipping", () => {
       github.webhook("pull_request", {
         action: "closed",
         installation: { id: installationId },
-        repository: { full_name: repo },
+        repository: { id: installationId, full_name: repo },
         pull_request: {
           number,
           title,
@@ -642,7 +932,7 @@ describe("shipping", () => {
       ).map((e) => ({ ...e, posts: e.posts.map(({ post }) => post.number) }));
 
     test("merged pull requests gather in one draft, once each; internal work stays out; a release closes it", async () => {
-      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
       github.repo(repo, { releases: [], pulls: {} });
       await linkedPosts([{ status: "IN_PROGRESS", pull: 40 }]);
 
@@ -676,7 +966,7 @@ describe("shipping", () => {
     });
 
     test("merges arriving at once still make one draft with all of them", async () => {
-      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
       github.repo(repo, { releases: [], pulls: {} });
       await Promise.all([60, 61, 62, 63].map((n) => deliver(merged(n, `PR ${n}`))));
       const all = await drafts();
@@ -685,7 +975,7 @@ describe("shipping", () => {
     });
 
     test("merges and releases arriving together: each PR lands once, at most one draft collects, one release names it", async () => {
-      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
       github.repo(repo, { releases: [], pulls: {} });
       await deliver(merged(70, "First"));
       await Promise.all([
@@ -702,7 +992,7 @@ describe("shipping", () => {
     });
 
     test("a draft the team renamed keeps its name; one published by hand stops collecting", async () => {
-      await prisma.githubInstallation.update({ where: { installationId }, data: { closeOn: "MERGE" } });
+      await prisma.githubInstallation.updateMany({ where: { installationId }, data: { closeOn: "MERGE" } });
       github.repo(repo, { releases: [], pulls: {} });
       await deliver(merged(50, "Dark mode"));
       await prisma.changelogEntry.updateMany({ where: { projectId: project.id }, data: { title: "Themes!" } });

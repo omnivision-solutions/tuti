@@ -48,7 +48,7 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
-  /** A pull request on a connected repo was opened, reopened or edited: link and move the posts it mentions. */
+  /** A pull request on an included repo was opened, reopened or edited: link and move the posts it mentions. */
   githubPullRequest: {
     name: "github-pull-request",
     // One at a time per pull request: they may write (or edit) its one comment.
@@ -56,6 +56,8 @@ export const jobs = {
     input: z.object({
       installationId: z.number().int(),
       action: z.string(),
+      /** GitHub's id for the repository (it routes the event to the project that includes it), and its owner/name. */
+      repoId: z.number().int(),
       repo: z.string(),
       number: z.number().int(),
       title: z.string(),
@@ -66,11 +68,12 @@ export const jobs = {
       labels: z.array(z.string()).default([]),
     }),
   },
-  /** A release was published on a connected repo: the posts whose pull requests it ships become Completed. */
+  /** A release was published on an included repo: the posts whose pull requests it ships become Completed. */
   githubRelease: {
     name: "github-release",
     input: z.object({
       installationId: z.number().int(),
+      repoId: z.number().int(),
       repo: z.string(),
       tag: z.string(),
       name: z.string(),

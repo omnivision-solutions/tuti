@@ -4,6 +4,7 @@ import { embed, embeddingsEnabled, LINK_MIN_SIMILARITY, type JobInput, toVectorL
 import { portalOrigin, portalPostUrl, postStatusChanged, postSummary, postSummarySelect } from "./events";
 import { portalAddress } from "./portal-address";
 import { installationApi } from "./github-api";
+import { repositoryConnection } from "./github-repositories";
 import { addToRunningDraft, closeRunningDraft, skipsChangelog } from "./running-draft";
 import type { JobLogger, JobResult } from "./index";
 
@@ -32,7 +33,7 @@ export function referencedPosts(text: string, portals: string[]): number[] {
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 
 /**
- * A pull request on a connected repo: links the posts it mentions (in its title,
+ * A pull request on an included repo: links the posts it mentions (in its title,
  * description or commit messages) to it, and when it's opened (or reopened) moves
  * them to In progress. Edits and new commits add links for new mentions but never
  * remove links or change statuses.
@@ -41,14 +42,12 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   if (input.action === "closed") {
     return completeOnMerge(input, log);
   }
-  const installation = await prisma.githubInstallation.findUnique({
-    where: { installationId: input.installationId },
-    select: { projectId: true, commentOnPullRequests: true, project: { select: { slug: true, name: true } } },
-  });
+  const installation = await repositoryConnection(input.installationId, { id: input.repoId, fullName: input.repo });
   if (!installation) {
     return { skipped: true };
   }
-  const { projectId, project } = installation;
+  const { project } = installation;
+  const projectId = project.id;
   // Commit messages change when it's opened, reopened or pushed to; an edit only changes the title or description.
   const commits = input.action === "edited" ? [] : await commitMessages(input);
   // Before any status changes: if it failed after, a retry wouldn't find the posts to tell the webhooks.
@@ -102,7 +101,7 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   let commented = false;
   if (installation.commentOnPullRequests && posts.length > 0) {
     try {
-      await commentFeedback(input, { id: projectId, ...project });
+      await commentFeedback(input, project);
       commented = true;
     } catch (error) {
       // Linking worked; a missing permission (or GitHub down) only costs the comment.
@@ -269,11 +268,8 @@ const linkedPosts = (projectId: string, repo: string, numbers: number[]) =>
 
 /** For projects that close on merge (no releases): a merged pull request completes its posts. */
 export async function completeOnMerge(input: JobInput<"githubPullRequest">, log: JobLogger): Promise<JobResult> {
-  const installation = await prisma.githubInstallation.findUnique({
-    where: { installationId: input.installationId },
-    select: { closeOn: true, project: { select: { id: true, slug: true } } },
-  });
-  if (!installation || !input.merged) {
+  const installation = input.merged ? await repositoryConnection(input.installationId, { id: input.repoId, fullName: input.repo }) : null;
+  if (!installation) {
     return { skipped: true };
   }
   // Every merged pull request goes into the changelog's running draft, unless it's labelled as internal work.
@@ -301,10 +297,7 @@ type GithubRelease = { tag_name: string; draft: boolean; published_at: string | 
  * each tag tells, however many commits lie between the releases.
  */
 export async function githubRelease(input: JobInput<"githubRelease">, log: JobLogger): Promise<JobResult> {
-  const installation = await prisma.githubInstallation.findUnique({
-    where: { installationId: input.installationId },
-    select: { closeOn: true, project: { select: { id: true, slug: true } } },
-  });
+  const installation = await repositoryConnection(input.installationId, { id: input.repoId, fullName: input.repo });
   if (!installation) {
     return { skipped: true };
   }

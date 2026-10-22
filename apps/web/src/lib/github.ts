@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import type { GithubRepo } from "@tuti/jobs";
+
 import * as signed from "./signed";
 
 /**
@@ -65,7 +67,8 @@ export function verifyWebhookSignature(secret: string, body: string, header: str
  * Proof that a person can see an installation (GitHub's setup redirect only says
  * which installation, and anyone can type one): after GitHub's web authorization
  * flow, we exchange its `code` and look for the installation among that user's
- * installations. Returns the installation's account, or null.
+ * installations. Returns the installation's account and the repositories of it the
+ * person can access (only those can be included in a project), or null.
  */
 export async function installationForUser(config: GithubConfig, code: string, redirectUri: string, installationId: number) {
   const tokenResponse = await fetch(`${config.url}/login/oauth/access_token`, {
@@ -77,21 +80,34 @@ export async function installationForUser(config: GithubConfig, code: string, re
   if (!token) {
     return null;
   }
-  // Page through them (100 at a time, following GitHub's Link header; capped).
-  let url: string | null = `${config.apiUrl}/user/installations?per_page=100`;
-  for (let page = 0; url && page < 20; page++) {
-    const response: Response = await fetch(url, {
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" },
-    });
-    if (!response.ok) {
-      return null;
+  // Paged, 100 at a time, following GitHub's Link header; up to 10,000 (as the App reads its
+  // repositories elsewhere). Throws if GitHub refuses.
+  async function* pages<T>(path: string) {
+    let url: string | null = `${config.apiUrl}${path}?per_page=100`;
+    for (let page = 0; url && page < 100; page++) {
+      const response: Response = await fetch(url, {
+        headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}`, "user-agent": "Tuti" },
+      });
+      if (!response.ok) {
+        throw new Error(`GitHub ${path} answered ${response.status}`);
+      }
+      yield (await response.json()) as T;
+      url = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get("link") ?? "")?.[1] ?? null;
     }
-    const { installations } = (await response.json()) as { installations: { id: number; account: { login: string } }[] };
-    const found = installations.find((i) => i.id === installationId);
-    if (found) {
-      return found.account;
-    }
-    url = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get("link") ?? "")?.[1] ?? null;
   }
-  return null;
+  let account: { login: string } | undefined;
+  for await (const { installations } of pages<{ installations: { id: number; account: { login: string } }[] }>("/user/installations")) {
+    account = installations.find((i) => i.id === installationId)?.account;
+    if (account) {
+      break;
+    }
+  }
+  if (!account) {
+    return null;
+  }
+  const repositories: GithubRepo[] = [];
+  for await (const page of pages<{ repositories: { id: number; full_name: string }[] }>(`/user/installations/${installationId}/repositories`)) {
+    repositories.push(...page.repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name })));
+  }
+  return { login: account.login, repositories };
 }
