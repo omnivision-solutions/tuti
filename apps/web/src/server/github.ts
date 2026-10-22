@@ -4,7 +4,6 @@ import { prisma } from "@tuti/db";
 import { includeRepositories, inInstallation, listedRepositories } from "@tuti/jobs";
 import { refresh } from "next/cache";
 
-import { lockInstallation } from "./github-connect";
 import { getAdminProject } from "./membership";
 
 /** Disconnects GitHub from the project here (the App stays installed on GitHub until removed there). */
@@ -56,8 +55,8 @@ export async function setGithubPrComments(projectSlug: string, on: boolean): Pro
 }
 
 /**
- * Includes a repository in the project (its pull requests and releases link to and complete the
- * project's posts) or leaves it out. Only repositories the project has seen (listed in its
+ * Adds a repository to the project (its pull requests and releases link to and complete the
+ * project's posts) or removes it. Only repositories the project has seen (listed in its
  * settings) can be included, and only one project includes each.
  */
 export async function setGithubRepository(projectSlug: string, repoId: number, included: boolean): Promise<{ error?: string }> {
@@ -111,39 +110,4 @@ export async function setGithubRepository(projectSlug: string, repoId: number, i
   }
   refresh();
   return {};
-}
-
-/**
- * Whether repositories added to the installation later are included in this project. One project
- * per installation can have it, so a new repository goes to one place.
- */
-export async function setGithubNewRepositories(projectSlug: string, on: boolean): Promise<{ error?: string }> {
-  const project = await getAdminProject(projectSlug);
-  if (!project) {
-    return { error: "Only project owners and admins can change the GitHub connection" };
-  }
-  const result = await prisma.$transaction(async (tx) => {
-    const connection = await tx.githubInstallation.findUnique({
-      where: { projectId: project.id },
-      select: { id: true, installationId: true, accountLogin: true },
-    });
-    if (!connection) {
-      return { error: "GitHub isn't connected" };
-    }
-    await lockInstallation(tx, connection.installationId);
-    if (on === true) {
-      const other = await tx.githubInstallation.count({
-        where: { installationId: connection.installationId, includeNewRepositories: true, id: { not: connection.id } },
-      });
-      if (other > 0) {
-        return { error: `New repositories from @${connection.accountLogin} already go to another project` };
-      }
-    }
-    await tx.githubInstallation.update({ where: { id: connection.id }, data: { includeNewRepositories: on === true } });
-    return {};
-  });
-  if (!result.error) {
-    refresh();
-  }
-  return result;
 }

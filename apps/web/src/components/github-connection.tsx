@@ -9,8 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { disconnectGithub, setGithubCloseOn, setGithubNewRepositories, setGithubPrComments, setGithubRepository } from "@/server/github";
+import { disconnectGithub, setGithubCloseOn, setGithubPrComments, setGithubRepository } from "@/server/github";
 
 export function DisconnectGithubButton({ projectSlug }: { projectSlug: string }) {
   const [pending, startTransition] = useTransition();
@@ -125,22 +124,16 @@ export function GithubRepositories({
   projectSlug,
   account,
   repositories,
-  includeNew,
-  newElsewhere,
   manageUrl,
 }: {
   projectSlug: string;
   account: string;
   repositories: GithubRepositoryRow[];
-  includeNew: boolean;
-  /** The project new repositories go to instead, or null. */
-  newElsewhere: string | null;
   /** The installation's settings on GitHub, where its repositories are chosen. */
   manageUrl: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
-  const [newOn, setNewOn] = useState(includeNew);
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
   const change = (repo: GithubRepositoryRow, on: boolean) => {
@@ -228,34 +221,6 @@ export function GithubRepositories({
           </ul>
         </PopoverContent>
       </Popover>
-      <label className="flex items-start justify-between gap-3 border-t pt-4">
-        <span>
-          Add new repositories automatically
-          <span className="block text-muted-foreground">
-            {newElsewhere
-              ? `New repositories from @${account} go to ${newElsewhere}.`
-              : `Repositories Tuti gets access to on @${account} later come to this project.`}
-          </span>
-        </span>
-        <Switch
-          checked={newOn}
-          disabled={pending || (newElsewhere !== null && !newOn)}
-          aria-label="Add new repositories automatically"
-          onChange={(event) => {
-            const wanted = event.currentTarget.checked;
-            setNewOn(wanted);
-            startTransition(async () => {
-              const result = await setGithubNewRepositories(projectSlug, wanted);
-              if (result.error) {
-                setNewOn(!wanted);
-                toast.error(result.error);
-              } else {
-                toast.success("Saved");
-              }
-            });
-          }}
-        />
-      </label>
       <div className="flex flex-col gap-2 border-t pt-4">
         <span className="text-muted-foreground">
           Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.

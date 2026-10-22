@@ -266,7 +266,6 @@ const matrix: Matrix = {
     setGithubCloseOn: { allowed: "ADMIN", call: (slug) => github.setGithubCloseOn(slug, "MERGE") },
     setGithubPrComments: { allowed: "ADMIN", call: (slug) => github.setGithubPrComments(slug, true) },
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
-    setGithubNewRepositories: { allowed: "ADMIN", call: (slug) => github.setGithubNewRepositories(slug, true) },
   },
   invitations: {
     createInvitation: {

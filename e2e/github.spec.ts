@@ -28,10 +28,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.reload();
   await expect(owner.getByRole("checkbox", { name: /Comment on pull requests/ })).toBeChecked();
 
-  // The first project on the account takes its repositories; this one lets the iOS app go.
+  // The first project added both repositories; it lets the iOS app go.
   const ours = owner.getByRole("list", { name: "This project's repositories" });
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app", "acme-e2e/ios"]);
-  await expect(owner.getByRole("switch", { name: "Add new repositories automatically" })).toBeChecked();
   await owner.getByRole("button", { name: "Remove acme-e2e/ios" }).click();
   await expect(owner.getByText("acme-e2e/ios removed")).toBeVisible();
   await expect(ours.getByRole("listitem")).toHaveText(["acme-e2e/app"]);
@@ -43,7 +42,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await checkpoint(owner, "settings-github-connected");
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
-  await connectGithub(owner, mobile, account);
+  await connectGithub(owner, mobile, { ...account, add: [] });
   await expect(owner.getByText("No repository yet", { exact: false })).toBeVisible();
   await owner.getByRole("button", { name: "Add repository" }).click();
   const toAdd = owner.getByRole("list", { name: "Repositories to add" });
@@ -55,8 +54,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await toAdd.getByRole("button", { name: "acme-e2e/ios" }).click();
   await expect(owner.getByText("acme-e2e/ios added")).toBeVisible();
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
-  await expect(owner.getByRole("switch", { name: "Add new repositories automatically" })).toBeDisabled();
-  await expect(owner.getByText("New repositories from @acme-e2e go to Acme.")).toBeVisible();
   await checkpoint(owner, "settings-github-repositories");
 
   // Refresh list asks GitHub again and comes back.

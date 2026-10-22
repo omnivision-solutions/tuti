@@ -42,7 +42,6 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
       accountType: true,
       closeOn: true,
       commentOnPullRequests: true,
-      includeNewRepositories: true,
       repositories: true,
       included: { select: { repoId: true } },
     },
@@ -57,13 +56,6 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
         select: { repoId: true, connection: { select: { installationId: true, project: otherProject } } },
       })
     : [];
-  const newElsewhere =
-    installation && !installation.includeNewRepositories
-      ? await prisma.githubInstallation.findFirst({
-          where: { installationId: installation.installationId, includeNewRepositories: true },
-          select: { project: otherProject },
-        })
-      : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,7 +106,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           <CardContent>
             <GithubRepositories
               // Fresh state after a refresh or another tab's change.
-              key={JSON.stringify([repositories, installation.included, installation.includeNewRepositories])}
+              key={JSON.stringify([repositories, installation.included])}
               projectSlug={project.slug}
               account={installation.accountLogin}
               repositories={repositoryRows(
@@ -127,8 +119,6 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
                 })),
                 installation.installationId,
               )}
-              includeNew={installation.includeNewRepositories}
-              newElsewhere={newElsewhere ? projectName(newElsewhere.project) : null}
               manageUrl={installationSettingsUrl(github, installation.installationId, {
                 login: installation.accountLogin,
                 type: installation.accountType,

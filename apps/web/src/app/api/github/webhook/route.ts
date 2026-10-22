@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue, forgetRepositories, repositoryConnection } from "@tuti/jobs";
+import { enqueue, forgetRepositories } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { githubConfig, verifyWebhookSignature } from "@/lib/github";
@@ -25,20 +25,17 @@ export async function POST(request: Request) {
     const { count } = await prisma.githubInstallation.deleteMany({ where: { installationId: payload.installation.id } });
     log.info("GitHub installation removed", { installationId: payload.installation.id, projects: count });
   }
-  // Repositories added to or removed from the installation on GitHub: added ones are new (the
-  // project that takes new repositories includes them); removed ones leave their project, once
-  // GitHub confirms they're gone (if it can't say, the delivery fails, to be redelivered).
+  // Repositories removed from the installation on GitHub leave their project, once GitHub confirms
+  // they're gone (if it can't say, the delivery fails, to be redelivered). Added ones wait for a
+  // team to add them to a project.
   if (event === "installation_repositories" && payload.installation) {
-    const { repositories_added: added = [], repositories_removed: removed = [] } = payload as unknown as GithubRepositoriesEvent;
+    const { repositories_removed: removed = [] } = payload as unknown as GithubRepositoriesEvent;
     const installationId = payload.installation.id;
     try {
       await forgetRepositories(
         installationId,
         removed.map((repo) => repo.id),
       );
-      for (const repo of added) {
-        await repositoryConnection(installationId, { id: repo.id, fullName: repo.full_name });
-      }
     } catch (error) {
       log.error("Handling GitHub repositories failed", { error, installationId });
       return Response.json({ error: "Couldn't handle the repositories" }, { status: 503 });
@@ -89,7 +86,7 @@ export async function POST(request: Request) {
 
 type GithubRepository = { id: number; full_name: string };
 
-type GithubRepositoriesEvent = { repositories_added?: GithubRepository[]; repositories_removed?: GithubRepository[] };
+type GithubRepositoriesEvent = { repositories_removed?: GithubRepository[] };
 
 type GithubReleaseEvent = {
   release: { tag_name: string; name: string | null; html_url: string; published_at: string | null };

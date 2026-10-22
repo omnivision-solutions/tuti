@@ -7,13 +7,14 @@ import { APP_URL } from "./env";
 import type { TestPage } from "./helpers";
 
 /**
- * Connects the project to GitHub from its settings, as `admin`; returns the installation's id. A new
- * installation on "acme" by default, with one repository, acme/app, whose id is the installation's.
+ * Connects the project to GitHub from its settings, as `admin`, and adds `add` (by default every
+ * listed repository) to it; returns the installation's id. A new installation on "acme" by
+ * default, with one repository, acme/app, whose id is the installation's.
  */
 export async function connectGithub(
   admin: TestPage,
   slug: string,
-  installation: { id?: number; account?: string; repositories?: { id: number; fullName: string }[] } = {},
+  installation: { id?: number; account?: string; repositories?: { id: number; fullName: string }[]; add?: string[] } = {},
 ): Promise<number> {
   const id = installation.id ?? randomInt(1_000_000, 2_000_000_000);
   const repositories = installation.repositories ?? [{ id, fullName: "acme/app" }];
@@ -35,6 +36,11 @@ export async function connectGithub(
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=choose`);
   await admin.getByRole("link", { name: `Connect @${installation.account ?? "acme"}` }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=connected`);
+  for (const name of installation.add ?? repositories.map((repo) => repo.fullName)) {
+    await admin.getByRole("button", { name: "Add repository" }).click();
+    await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name }).click();
+    await expect(admin.getByRole("list", { name: "This project's repositories" }).getByText(name, { exact: true })).toBeVisible();
+  }
   return id;
 }
 
