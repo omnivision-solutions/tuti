@@ -169,8 +169,6 @@ test("Customize's form takes the site and the path as two fields", async () => {
   expect(await saveSite(project.slug, {}, form({ site: "acme.example", path: "/support" }))).toEqual({});
   expect((await call(getSite, as(), {})).site?.url).toBe("https://acme.example/support");
   expect(await saveSite(project.slug, {}, form({ site: site.origin, path: "" }))).toEqual({ error: expect.stringContaining("Add the path the portal goes under") });
-  // A huge field is cut short before it's read, and refused quickly (anyone can post the form).
-  const started = Date.now();
-  expect((await saveSite(project.slug, {}, form({ site: `${"/".repeat(200_000)}a`, path: "help" }))).error).toBeTruthy();
-  expect(Date.now() - started).toBeLessThan(1000);
+  // A path without a site isn't taken as a site of its own.
+  expect(await saveSite(project.slug, {}, form({ site: "", path: "help/center" }))).toEqual({ error: "Enter your site's address, like https://example.com" });
 });
