@@ -77,11 +77,25 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   return connection;
 }
 
-/** The repositories the installation can access now (up to 10,000, 100 a page), as the App reads them. Throws if GitHub can't say. */
+/**
+ * The repositories the installation can access now (up to 10,000, 100 a page), as the App reads
+ * them. Throws if GitHub can't say, or has more than that: a partial list would look like removals.
+ */
 export async function installationRepositories(installationId: number): Promise<GithubRepo[]> {
   const api = await installationApi(installationId);
-  type Page = { repositories: { id: number; full_name: string }[] };
-  const repositories = await api.list<{ id: number; full_name: string }>("/installation/repositories", (page) => (page as Page).repositories, 100);
+  type Page = { total_count: number; repositories: { id: number; full_name: string }[] };
+  let total = 0;
+  const repositories = await api.list<{ id: number; full_name: string }>(
+    "/installation/repositories",
+    (page) => {
+      total = (page as Page).total_count;
+      return (page as Page).repositories;
+    },
+    100,
+  );
+  if (repositories.length < total) {
+    throw new Error(`GitHub listed ${repositories.length} of the installation's ${total} repositories`);
+  }
   return repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name }));
 }
 
@@ -95,10 +109,14 @@ const installationRepositoryIds = async (installationId: number) =>
 export async function syncRepositories(connectionId: string, installationId: number): Promise<GithubRepo[]> {
   const repositories = await installationRepositories(installationId);
   const ids = repositories.map((repo) => repo.id);
-  await prisma.$transaction([
-    prisma.githubRepository.deleteMany({ where: { connectionId, repoId: { notIn: ids } } }),
-    prisma.githubInstallation.update({ where: { id: connectionId }, data: { repositories } }),
-  ]);
+  await prisma.$transaction(async (tx) => {
+    // Only if the project is still on that installation: it may have switched while GitHub answered.
+    const { count } = await tx.githubInstallation.updateMany({ where: { id: connectionId, installationId }, data: { repositories } });
+    if (count === 0) {
+      throw new Error("The project's GitHub connection changed while its repositories were read");
+    }
+    await tx.githubRepository.deleteMany({ where: { connectionId, repoId: { notIn: ids } } });
+  });
   return repositories;
 }
 

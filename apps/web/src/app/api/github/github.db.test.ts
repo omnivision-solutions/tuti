@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { embedPosts, listedRepositories } from "@tuti/jobs";
+import { embedPosts, listedRepositories, syncRepositories } from "@tuti/jobs";
 import { LINK_MIN_SIMILARITY } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -304,6 +304,41 @@ describe("repositories", () => {
     // Nor listed, so it can't be added again until a refresh lists it.
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
     expect(await add(project.slug, api)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+  });
+
+  test("switching to another account clears the list, even if GitHub can't list the new one yet", async () => {
+    github.user("code-r12", [{ id: 730, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 730, "code-r12");
+    github.user("code-r12b", [{ id: 731, account: "elsewhere", repositories: [mobile] }]);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await connect(project.slug, 731, "code-r12b")).toMatch(/github=connected$/);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [] });
+    expect(await add(project.slug, web)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+  });
+
+  test("a list GitHub didn't give in full (over 10,000) changes nothing", async () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => ({ id: 800_000 + i, fullName: `acme/many-${i}` }));
+    github.user("code-r13", [{ id: 732, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 732, "code-r13");
+    await add(project.slug, web);
+    github.user("code-r13", [{ id: 732, account: "acme", repositories: [...many, web] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+  });
+
+  test("a list read for an account the project has since left isn't saved", async () => {
+    github.user("code-r14", [{ id: 733, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 733, "code-r14");
+    const connection = (await connected(project.id))!;
+    github.user("code-r14b", [{ id: 734, account: "elsewhere", repositories: [mobile] }]);
+    await connect(project.slug, 734, "code-r14b");
+    await add(project.slug, mobile);
+    // A refresh that read account 733 lands after the switch.
+    await expect(syncRepositories(connection.id, 733)).rejects.toThrow();
+    expect(await connected(project.id)).toMatchObject({ installationId: 734, repositories: [mobile] });
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
   });
 
   test("a refresh drops repositories GitHub no longer has (a removal it didn't tell us of)", async () => {

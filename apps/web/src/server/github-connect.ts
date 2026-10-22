@@ -72,11 +72,12 @@ export async function adminProject(where: { id: string } | { slug: string }) {
 export async function saveConnection(project: { id: string; userId: string }, installationId: number, account: GithubAccount) {
   const connection = await prisma.$transaction(async (tx) => {
     const existing = await tx.githubInstallation.findUnique({ where: { projectId: project.id }, select: { id: true, installationId: true } });
-    if (existing && existing.installationId !== installationId) {
-      // Connected to another account before: its repositories go.
+    const switched = existing !== null && existing.installationId !== installationId;
+    if (switched) {
+      // Connected to another account before: its repositories go, and so does its list.
       await tx.githubRepository.deleteMany({ where: { connectionId: existing.id } });
     }
-    const data = { installationId, accountLogin: account.login, accountType: account.type };
+    const data = { installationId, accountLogin: account.login, accountType: account.type, ...(switched && { repositories: [] }) };
     return tx.githubInstallation.upsert({
       where: { projectId: project.id },
       update: data,
