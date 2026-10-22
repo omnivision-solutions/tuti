@@ -1,14 +1,12 @@
 import { prisma } from "@tuti/db";
-import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
 
-import { GET as exportZip } from "@/app/app/[project]/settings/export/zip/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createArticle, createCollection, listCollections, updateCollection } from "./operations/docs";
 import { call } from "./operations/run";
 
-/** A collection's Lucide icon, by name: set, changed, removed, listed and exported; unknown names refused. */
+/** A collection's Lucide icon, by name: set, changed, removed, and listed; unknown names refused. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
@@ -65,17 +63,4 @@ test("an icon Lucide dropped since doesn't block saving the collection; a new un
     message: "No icon named “another-unknown”",
   });
   expect(await icons()).toEqual(["the-basics:dropped-icon"]);
-});
-
-test("the export has an article's collection's icon in its front matter", async () => {
-  await call(createCollection, as(), { name: "Billing", icon: "credit-card" });
-  await call(createCollection, as(), { name: "Basics" });
-  await call(createArticle, as(), { title: "Invoices", body: "Where to find them.", collection: "billing" });
-  await call(createArticle, as(), { title: "Start here", body: "Hello.", collection: "basics" });
-
-  actAs(owner);
-  const params = Promise.resolve({ project: project.slug });
-  const files = unzipSync(new Uint8Array(await (await exportZip(new Request("http://x"), { params })).arrayBuffer()));
-  expect(strFromU8(files["docs/billing/invoices.md"]!)).toContain('collectionIcon: "credit-card"');
-  expect(strFromU8(files["docs/basics/start-here.md"]!)).not.toContain("collectionIcon");
 });

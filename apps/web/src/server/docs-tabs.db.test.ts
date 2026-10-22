@@ -1,8 +1,6 @@
 import { prisma } from "@tuti/db";
-import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { GET as exportZip } from "@/app/app/[project]/settings/export/zip/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -333,7 +331,7 @@ describe("readers", () => {
     expect((await publishedArticle(project.slug, "contact-us"))?.tab).toBeNull();
   });
 
-  test("llms.txt has a heading per tab with its collections a level down; the export a folder per tab", async () => {
+  test("llms.txt has a heading per tab with its collections a level down", async () => {
     await withTabs();
     const portal = `http://${project.slug}.localhost:3100`;
     const params = Promise.resolve({ project: project.slug });
@@ -355,17 +353,6 @@ describe("readers", () => {
       ].join("\n\n"),
     );
     expect(text).not.toContain("Empty");
-
-    actAs(owner);
-    const files = unzipSync(new Uint8Array(await (await exportZip(new Request("http://x"), { params })).arrayBuffer()));
-    expect(Object.keys(files).filter((file) => file.startsWith("docs/")).sort()).toEqual([
-      "docs/api/endpoints/listing-posts.md",
-      "docs/contact-us.md",
-      "docs/empty/unread/not-yet.md",
-      "docs/guides/basics/start-here.md",
-      "docs/guides/billing/invoices/downloading-invoices.md",
-    ]);
-    expect(strFromU8(files["docs/api/endpoints/listing-posts.md"]!)).toContain('tab: "API"');
   });
 });
 

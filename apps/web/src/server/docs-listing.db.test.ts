@@ -1,11 +1,9 @@
 import { prisma } from "@tuti/db";
 import { articleChunkText } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
-import { strFromU8, unzipSync } from "fflate";
 import { isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GET as exportRoute } from "@/app/app/[project]/settings/export/zip/route";
 import ArticlePage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
@@ -210,7 +208,7 @@ describe("search and AI answers", () => {
   });
 });
 
-describe("the API, the widget and the export", () => {
+describe("the API and the widget", () => {
   test("articles.list and articles.get: the public sees what the portal shows, the team sees every listing", async () => {
     const listed = async (user: TestUser) => (await call(listArticles, as(user), { status: "published" })).articles.map((a) => a.slug).sort();
     expect(await listed(visitor)).toEqual(expected("listed"));
@@ -242,14 +240,6 @@ describe("the API, the widget and the export", () => {
     await call(updateArticle, as(owner), { slug: slugOf("everywhere"), listing: "unlisted" });
     expect(await tabs()).toBe(false);
     expect(await tabs({ tab: "docs", article: slugOf("unlisted") })).toBe(true);
-  });
-
-  test("the export has every listing, each saying which", async () => {
-    actAs(owner);
-    const zip = unzipSync(new Uint8Array(await (await exportRoute(new Request("http://x"), params() as never)).arrayBuffer()));
-    for (const listing of LISTINGS) {
-      expect(strFromU8(zip[`docs/${slugOf(listing)}.md`]!)).toContain(`\nlisting: "${listing}"\n`);
-    }
   });
 
   test("listing is checked: one of the four, set on create and update, and the editor's settings save it", async () => {

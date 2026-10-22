@@ -2,10 +2,8 @@ import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { unzipSync } from "fflate";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GET as exportZip } from "@/app/app/[project]/settings/export/zip/route";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
@@ -142,7 +140,6 @@ describe("deleting", () => {
 
     const request = new Request("http://x");
     const params = Promise.resolve({ project: project.slug });
-    const zipped = async () => unzipSync(new Uint8Array(await (await exportZip(request, { params })).arrayBuffer()));
     const portal = async () => ({
       page: (await publishedArticle(project.slug, "refunds"))?.title ?? null,
       md: (await markdown(request, { params: Promise.resolve({ project: project.slug, slug: "refunds" }) })).status,
@@ -150,7 +147,6 @@ describe("deleting", () => {
       llms: (await (await llms(request, { params })).text()).includes("refunds"),
       sitemap: (await (await sitemap(request, { params })).text()).includes("/docs/refunds"),
       search: (await searchDocs(project.id, "refunds", 10, SIGNED_OUT)).map((r) => r.slug),
-      export: Object.keys(await zipped()).filter((file) => file.includes("refunds")),
       insights: (await docsInsights(project.id)).articles.map((a) => a.slug),
       published: (await call(listArticles, as(owner), {})).articles.map((a) => a.slug),
       collection: (await call(listCollections, as(owner), {})).collections[0]!.articles,
@@ -162,7 +158,6 @@ describe("deleting", () => {
       llms: true,
       sitemap: true,
       search: ["refunds"],
-      export: ["docs/basics/refunds.md"],
       insights: ["refunds"],
       published: ["kept", "refunds"],
       collection: 1,
@@ -176,7 +171,6 @@ describe("deleting", () => {
       llms: false,
       sitemap: false,
       search: [],
-      export: [],
       insights: [],
       published: ["kept"],
       collection: 0,

@@ -25,7 +25,6 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
           { title: "Single sign-on", href: `${base}/sso` },
           { title: "Integrations", href: `${base}/integrations` },
           { title: "Developers", href: `${base}/developers` },
-          { title: "Export", href: `${base}/export` },
         ]}
       />
       {children}
