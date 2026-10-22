@@ -68,8 +68,16 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ })).toBeVisible();
   await checkpoint(owner, "settings-integrations-connected");
   await owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ }).click();
+  await owner.waitForURL(`**/app/${mobile}/settings/integrations/github`);
+  await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
+  const history = await owner.evaluate(() => window.history.length);
   await owner.getByRole("button", { name: "Disconnect" }).click();
+  const confirm = owner.getByRole("alertdialog", { name: "Disconnect GitHub?" });
+  await checkpoint(owner, "settings-github-disconnect", { fullPage: false });
+  await confirm.getByRole("button", { name: "Disconnect" }).click();
   await expect(owner.getByText("GitHub disconnected")).toBeVisible();
+  // GitHub's page doesn't stay in the history: Back doesn't go to a page that's gone.
+  expect(await owner.evaluate(() => window.history.length)).toBe(history);
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toBeVisible();
   await checkpoint(owner, "settings-integrations");
 });

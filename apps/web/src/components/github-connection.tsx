@@ -6,34 +6,60 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { disconnectGithub, setGithubCloseOn, setGithubPrComments, setGithubRepository } from "@/server/github";
 
-export function DisconnectGithubButton({ projectSlug }: { projectSlug: string }) {
+export function DisconnectGithubButton({ projectSlug, account }: { projectSlug: string; account: string }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
   const router = useRouter();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await disconnectGithub(projectSlug);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            router.push(`/app/${projectSlug}/settings/integrations?github=disconnected`);
-          }
-        })
-      }
-    >
-      <UnplugIcon />
-      Disconnect
-    </Button>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
+        <UnplugIcon />
+        Disconnect
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Disconnect GitHub?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Pull requests and releases from @{account} stop reaching this project, and its repositories are free for other projects.
+            Posts keep the links they have. The Tuti app stays installed on GitHub until you uninstall it there.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await disconnectGithub(projectSlug);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  router.replace(`/app/${projectSlug}/settings/integrations?github=disconnected`);
+                }
+              })
+            }
+          >
+            Disconnect
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -80,7 +80,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             Connected {timeAgo(installation.createdAt)}
           </span>
         </div>
-        <DisconnectGithubButton projectSlug={project.slug} />
+        <DisconnectGithubButton projectSlug={project.slug} account={installation.accountLogin} />
       </div>
       {typeof githubResult === "string" && GITHUB_RESULTS[githubResult] && (
         <Alert>
