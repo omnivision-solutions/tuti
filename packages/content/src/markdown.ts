@@ -4,8 +4,11 @@ import { isSafeLink, isVideo, type Video, videoPageUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
 
-/** `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces. */
-type Context = { media?: MediaUrls; flat?: boolean };
+/**
+ * `media`: where to load images from (by key); `flat`: one line (table cells), so hard breaks become spaces;
+ * `cell`: in a table cell, where a `|` would end the cell.
+ */
+type Context = { media?: MediaUrls; flat?: boolean; cell?: boolean };
 
 /**
  * Markdown (CommonMark, with GFM tables) for AI tools and "Copy as Markdown".
@@ -66,9 +69,9 @@ function block(node: JSONContent, ctx: Context): string {
       // ponytail: GFM tables have no rowspan; a spanned cell shows once and the rows below shift left.
       const rows = (node.content ?? []).map((row) =>
         (row.content ?? []).flatMap((cell) => {
-          const text = blocks(cell, { ...ctx, flat: true }, " ")
-            .replace(/\s+/g, (space) => (space.includes("\n") ? " " : space))
-            .replace(/\|/g, "\\|");
+          const text = blocks(cell, { ...ctx, flat: true, cell: true }, " ").replace(/\s+/g, (space) =>
+            space.includes("\n") ? " " : space,
+          );
           const span = isCellSpan(cell.attrs?.colspan) ? cell.attrs.colspan : 1;
           return [text, ...Array<string>(span - 1).fill("")];
         }),
@@ -123,8 +126,10 @@ function inline(node: JSONContent, ctx: Context): string {
     if (child.type !== "text" || !child.text) {
       continue;
     }
-    const code = child.marks?.some((mark) => mark.type === "code");
-    let text = code ? codeSpan(child.text) : escape(child.text);
+    // In a table cell GFM reads `\|` as a pipe even in code, and has no way to write a backslash before one
+    // there: such code is written as text (the same characters, not in code).
+    const code = child.marks?.some((mark) => mark.type === "code") && !(ctx.cell && child.text.includes("\\|"));
+    let text = code ? codeSpan(ctx.cell ? child.text.replaceAll("|", "\\|") : child.text) : escape(child.text);
     if (!code && child.text.trim() === "") {
       out += text;
       continue;
@@ -164,8 +169,11 @@ function inline(node: JSONContent, ctx: Context): string {
   );
 }
 
-/** Characters that are markup anywhere in a line, and `&` where it would start an entity (`&copy;`). */
-const escape = (text: string) => text.replace(/[\\`*_[\]<]|&(?=#?[a-z0-9]+;)/gi, "\\$&");
+/**
+ * Characters that are markup anywhere in a line (`|` in a table cell or row), and `&` where it would
+ * start an entity (`&copy;`).
+ */
+const escape = (text: string) => text.replace(/[\\`*_[\]<|]|&(?=#?[a-z0-9]+;)/gi, "\\$&");
 
 function codeSpan(text: string): string {
   const ticks = "`".repeat(Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length)) + 1);
@@ -173,5 +181,5 @@ function codeSpan(text: string): string {
   return `${ticks}${pad}${text}${pad}${ticks}`;
 }
 
-/** A link's URL with the characters that would end it early encoded. */
-const linkTarget = (href: string) => href.replace(/[\s()<>]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+/** A link's URL with the characters that would end it (or its table cell) early encoded. */
+const linkTarget = (href: string) => href.replace(/[\s()<>|]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
