@@ -4,6 +4,7 @@ import { siteFormAddress } from "@/lib/site-mounts";
 
 import type { FormState } from "./form-state";
 import { removeDomain, setDomain, verifyDomain } from "./operations/domain";
+import { createRedirect, deleteRedirect } from "./operations/redirects";
 import { removeSite, setSite, verifySite } from "./operations/site";
 import { addPortalReaders as addPortalReadersOperation, type PortalHomePage, removePortalReader as removePortalReaderOperation, updatePortal } from "./operations/portal";
 import { OperationError } from "./operations/define";
@@ -79,4 +80,18 @@ export async function verifySiteSetup(projectSlug: string): Promise<{ error?: st
 
 export async function removeSiteMount(projectSlug: string): Promise<{ error?: string }> {
   return asAdmin(projectSlug, SITE_DENIED, (context) => call(removeSite, context, {}));
+}
+
+const REDIRECTS_DENIED = "Only project owners and admins can change the portal's redirects";
+
+/** Customize → Redirects: adds one (see redirects.create). */
+export async function saveRedirect(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asAdmin(projectSlug, REDIRECTS_DENIED, (context) =>
+    call(createRedirect, context, { from: String(formData.get("from") ?? ""), to: String(formData.get("to") ?? "") }),
+  );
+}
+
+/** Customize → Redirects: deletes one (see redirects.delete). */
+export async function removeRedirect(projectSlug: string, id: string): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, REDIRECTS_DENIED, (context) => call(deleteRedirect, context, { id: String(id) }));
 }

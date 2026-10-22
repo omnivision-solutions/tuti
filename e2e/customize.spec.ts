@@ -98,3 +98,43 @@ test("the team sets the portal's search listing, seeing it as a search result an
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Answers about Acme, from the team that makes it.");
   await expect(visitor.locator('meta[property="og:site_name"]')).toHaveAttribute("content", "Acme Help Center");
 });
+
+test("the team sends its old help center's addresses to the new docs", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/customize/redirects`);
+  await expect(owner.getByText("No redirects yet")).toBeVisible();
+  // Pasted from the old site: its path is what's matched.
+  await owner.getByLabel("Old address").fill("https://help.acme.example/hc/en-us/articles/123-Billing");
+  await owner.getByLabel("New address").fill("/roadmap");
+  await owner.getByRole("button", { name: "Add redirect" }).click();
+  await expect(owner.getByText("Redirect added")).toBeVisible();
+  const list = owner.getByRole("list", { name: "Redirects" });
+  await expect(list).toContainText("/hc/en-us/articles/123-billing");
+  await expect(owner.getByLabel("Old address")).toHaveValue("");
+  // The portal's own addresses stay its own.
+  await owner.getByLabel("Old address").fill("/sign-in");
+  await owner.getByLabel("New address").fill("/docs");
+  await owner.getByRole("button", { name: "Add redirect" }).click();
+  await expect(owner.getByText("/sign-in is one of the portal's own addresses")).toBeVisible();
+  await checkpoint(owner, "customize-redirects");
+
+  // Someone following an old link lands on the new page.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  // Within a few seconds: the proxy keeps a portal's redirects briefly (server/portal-redirects.ts).
+  await expect(async () => {
+    await visitor.goto("/hc/en-us/articles/123-billing");
+    await expect(visitor).toHaveURL(`${portalUrl(slug)}/roadmap`, { timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(visitor.getByRole("heading", { name: "Roadmap" })).toBeVisible();
+
+  // Deleted, the old address is nothing again.
+  await owner.getByRole("button", { name: "Delete the redirect from /hc/en-us/articles/123-billing" }).click();
+  await expect(owner.getByText("Redirect deleted")).toBeVisible();
+  await expect(async () => {
+    expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
+  }).toPass({ timeout: 20_000 });
+});

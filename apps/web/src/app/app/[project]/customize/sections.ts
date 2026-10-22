@@ -1,4 +1,5 @@
 import {
+  ArrowRightLeftIcon,
   BookOpenIcon,
   GlobeIcon,
   HeartIcon,
@@ -36,6 +37,7 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
     sections: [
       { slug: "seo", title: "SEO", description: "How your portal shows in search results and shared links", icon: SearchIcon },
       { slug: "address", title: "Address", description: "Your Tuti address, a domain of your own or a path of your site", icon: GlobeIcon },
+      { slug: "redirects", title: "Redirects", description: "Old addresses sent on to new ones", icon: ArrowRightLeftIcon },
       { slug: "powered-by", title: "Powered by", description: "The “Powered by tuti” badge", icon: HeartIcon },
     ],
   },
