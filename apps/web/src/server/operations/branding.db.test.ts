@@ -256,7 +256,7 @@ test('"Powered by tuti" stays without a licence for the project on this installa
   expect(await get()).toMatchObject({ poweredBy: true });
 });
 
-test("the app's form saves everything: an empty image field removes it, empty link rows are skipped", async () => {
+test("Customize's forms each save their part: an empty image field removes it, empty link rows are skipped", async () => {
   actAs(owner);
   const logo = await uploaded();
   const form = (fields: Record<string, string>, rows: [string, string][] = []) => {
@@ -270,28 +270,37 @@ test("the app's form saves everything: an empty image field removes it, empty li
     }
     return data;
   };
+  expect(await saveBranding(project.slug, {}, form({ part: "look", logo: logo.id, logoDark: "", favicon: "", color: "#5b21b6" }))).toEqual({});
   expect(
-    await saveBranding(project.slug, {}, form({ logo: logo.id, logoDark: "", favicon: "", color: "#5b21b6", poweredBy: "on" }, [
+    await saveBranding(project.slug, {}, form({ part: "links" }, [
       ["Docs", "https://docs.example.com"],
       ["", ""],
     ])),
   ).toEqual({});
+  // Each part leaves the others as they are.
   expect(await get()).toMatchObject({ logo: { id: logo.id }, color: "#5b21b6", headerLinks: [{ label: "Docs" }], footerLinks: [], poweredBy: true });
 
   // An unchecked checkbox isn't sent: Powered by is off (with a licence).
   await license();
-  expect(await saveBranding(project.slug, {}, form({ logo: "", color: "#5b21b6" }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "poweredBy" }))).toEqual({});
+  expect(await get()).toMatchObject({ logo: { id: logo.id }, headerLinks: [{ label: "Docs" }], poweredBy: false });
+  expect(await saveBranding(project.slug, {}, form({ part: "look", logo: "", color: "#5b21b6" }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "links" }))).toEqual({});
   expect(await get()).toMatchObject({ logo: null, headerLinks: [], poweredBy: false });
   await releaseADayLater();
   expect(await attached(logo.id)).toBeNull();
-  expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }, [["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
+  expect(await saveBranding(project.slug, {}, form({ part: "links" }, [["Docs", ""]]))).toEqual({ error: "Links need a full https:// address" });
+  // Without a part, nothing is taken as one (a colour alone would otherwise remove the images).
+  await saveBranding(project.slug, {}, form({ part: "look", logo: logo.id, color: "#5b21b6" }));
+  expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }))).toEqual({ error: "Unknown branding form" });
+  expect(await get()).toMatchObject({ logo: { id: logo.id } });
 });
 
 test("branding is a project setting: members can't change it, admins can", async () => {
   const form = () => {
     const data = new FormData();
+    data.set("part", "look");
     data.set("color", "#5b21b6");
-    data.set("poweredBy", "on");
     return data;
   };
   actAs(await addMember(project.id, "MEMBER"));

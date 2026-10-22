@@ -11,6 +11,7 @@ import {
   MegaphoneIcon,
   MonitorIcon,
   MoonIcon,
+  PaintbrushIcon,
   PlusIcon,
   SettingsIcon,
   SunIcon,
@@ -79,7 +80,7 @@ export function AppSidebar({
                 {projectNav(current).map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
-                      isActive={pathname === item.href}
+                      isActive={pathname === item.href || ("section" in item && pathname.startsWith(`${item.href}/`))}
                       tooltip={item.title}
                       render={<Link href={item.href} />}
                     >
@@ -134,7 +135,10 @@ function projectNav(project: ProjectSummary) {
     { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(project.role === "OWNER" || project.role === "ADMIN"
-      ? [{ title: "Settings", href: `${base}/settings`, icon: SettingsIcon }]
+      ? [
+          { title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true },
+          { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: true },
+        ]
       : []),
   ];
 }

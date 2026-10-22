@@ -32,7 +32,7 @@ type Domain = {
 };
 
 /**
- * Settings → Custom domain (see the domain.* operations): the portal at an address of the team's
+ * Customize → Address (see the domain.* operations): the portal at an address of the team's
  * own. They add it, add the DNS records it shows, and check; once verified the portal answers there.
  */
 export function CustomDomainSettings({ projectSlug, domain, portalAddress, protocol }: { projectSlug: string; domain: Domain | null; portalAddress: string; protocol: string }) {

@@ -14,7 +14,7 @@ const CHOICES = [
 ] as const;
 
 /**
- * Settings → Your own address: the portal at a domain of the team's own or under a path of their
+ * Customize → Address: the portal at a domain of the team's own or under a path of their
  * site, one or the other (domain.set and site.set each refuse while the other is set). Once one is
  * set, only that one shows; to switch, they remove it.
  */

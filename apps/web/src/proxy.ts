@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server";
 
 import { appPortalMount } from "@/lib/app-portal";
-import { portalUrl } from "@/lib/hosts";
-import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, PREVIEW } from "@/lib/portal-base";
+import { appUrl, portalUrl } from "@/lib/hosts";
+import { ASSET_PATH, BASE_HEADER, BASE_PATTERN, CUSTOMIZE, PREVIEW } from "@/lib/portal-base";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { isUsableSlug, SLUG_PATTERN } from "@/lib/project-slugs";
 import { portalAddress, requestTarget, siteMount } from "@/server/custom-domains";
@@ -19,7 +19,8 @@ import { CHECK_PATH, siteCheckToken } from "@/server/operations/site";
  *   segment can't be part dynamic, part ".md").
  * The auth API (/api/*) is served on every host so sessions stay per host.
  * Pages can't be framed by other sites (clickjacking), except a portal's
- * /widget, which customers embed with the widget script.
+ * /widget, which customers embed with the widget script; the app may frame
+ * portal pages (Customize's preview).
  *
  * A private portal (server/portal-access.ts) is enforced here, the one way into every portal
  * page and file: visitors who may not read it go to its sign-in page, with `next` to come back.
@@ -60,8 +61,10 @@ export async function proxy(request: NextRequest) {
       return mounted(request, target.slug, mount, pathname.slice(mount.path.length) || "/");
     }
     // A portal with a live custom domain answers there: its Tuti address sends pages on to it (not
-    // the widget's panel, which customers' sites embed from here, nor forms posted from an open page).
-    if (!target.customDomain && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
+    // the widget's panel, which customers' sites embed from here, nor forms posted from an open page,
+    // nor Customize's preview, which shows the portal here whatever its address).
+    const customizing = request.nextUrl.searchParams.get(CUSTOMIZE.param) === CUSTOMIZE.value;
+    if (!target.customDomain && !customizing && pathname !== "/widget" && (request.method === "GET" || request.method === "HEAD")) {
       const address = await portalAddress(target.slug);
       // Not to localhost (Tuti's own portal on a local app): Next.js turns a redirect to the origin it
       // serves into a bare path, which would send the browser round in circles; it reads it here then.
@@ -142,7 +145,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     }
     const response = NextResponse.redirect(signIn);
     response.headers.set("cache-control", "private, no-store");
-    return noFraming(response);
+    return framedByApp(response);
   }
   const url = request.nextUrl.clone();
   const path = pathname.replace(/^\/docs\/([^/]+)\.md$/, "/docs/$1/md");
@@ -160,7 +163,7 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
     // (Set here, it wins over the routes' own public cache-control.)
     response.headers.set("cache-control", "private, no-store");
   }
-  return pathname === "/widget" ? response : noFraming(response);
+  return pathname === "/widget" ? response : framedByApp(response);
 }
 
 /**
@@ -171,6 +174,12 @@ async function servePortal(request: NextRequest, slug: string, origin: string, p
  */
 const OPEN_PORTAL_PATHS =
   /^\/(sign-in|sign-in\/link|sign-up|forgot-password|reset-password|sso|sso\/error|continue|unsubscribe|unsubscribe\/confirm|robots\.txt|widget)$/;
+
+/** Portal pages: only the app may frame them (Customize's preview of the portal). */
+function framedByApp(response: NextResponse): NextResponse {
+  response.headers.set("Content-Security-Policy", `frame-ancestors ${appUrl().origin}`);
+  return response;
+}
 
 function noFraming(response: NextResponse): NextResponse {
   response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");

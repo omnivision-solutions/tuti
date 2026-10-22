@@ -37,7 +37,7 @@ const domainView = (domain: Domain) => {
 };
 const domainSelect = { hostname: true, verificationToken: true, verifiedAt: true, cloudflareId: true, certificate: true } as const;
 
-/** The project's custom domain (Settings → Custom domain, and domain.get), or null; a certificate on its way is asked about again. */
+/** The project's custom domain (Customize → Address, and domain.get), or null; a certificate on its way is asked about again. */
 export async function customDomain(projectId: string) {
   let domain = await prisma.customDomain.findUnique({ where: { projectId }, select: domainSelect });
   if (domain?.cloudflareId && domain.certificate !== "ACTIVE" && cloudflareConfigured()) {

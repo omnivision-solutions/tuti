@@ -26,7 +26,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     const slug = `e2e-${randomUUID().slice(0, 8)}`;
     const owner = await signUp(browser, APP_URL, "Olive Owner");
     await createProject(owner, "Acme", slug);
-    await owner.goto(`/app/${slug}/settings`);
+    await owner.goto(`/app/${slug}/settings/developers`);
     await expect(owner.getByText("No webhooks yet")).toBeVisible();
 
     await owner.getByRole("textbox", { name: "Endpoint URL" }).fill(url);

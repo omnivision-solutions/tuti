@@ -54,7 +54,7 @@ export async function createProject(page: Page, name: string, slug: string) {
 
 /** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
 export async function apiFor(team: Page, slug: string) {
-  await team.goto(`/app/${slug}/settings`);
+  await team.goto(`/app/${slug}/settings/developers`);
   await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
   await team.getByRole("combobox", { name: "What the key can do" }).click();
   await team.getByRole("option", { name: "Read and write" }).click();

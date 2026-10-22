@@ -14,7 +14,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/customize/address`);
   // The portal's own address is a domain of its own or a path of the site: they pick the path.
   await checkpoint(owner, "settings-own-address-choice");
   await owner.getByRole("radio", { name: /A path of your site/ }).check();

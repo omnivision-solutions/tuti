@@ -65,7 +65,7 @@ export default function ApiDocsPage() {
         </h2>
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
           <li>
-            Create a key in your project&apos;s <strong>Settings → API keys</strong> and send it as{" "}
+            Create a key in your project&apos;s <strong>Settings → Developers</strong> and send it as{" "}
             <code className="font-mono">Authorization: Bearer tuti_…</code>. Keep it on your server. A key works
             for one project.
           </li>
@@ -107,7 +107,7 @@ export default function ApiDocsPage() {
           Webhooks
         </h2>
         <p className="text-sm">
-          Add endpoints in <strong>Settings → Webhooks</strong>. Tuti sends a POST with a JSON body for each event you
+          Add endpoints in <strong>Settings → Developers</strong>. Tuti sends a POST with a JSON body for each event you
           pick: {Object.entries(WEBHOOK_EVENTS).map(([event, label], i) => (
             <span key={event}>
               {i > 0 && ", "}

@@ -5,7 +5,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { isValidElement, type ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GET as exportRoute } from "@/app/app/[project]/settings/export/route";
+import { GET as exportRoute } from "@/app/app/[project]/settings/export/zip/route";
 import ArticlePage, { generateMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";

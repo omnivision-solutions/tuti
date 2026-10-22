@@ -64,7 +64,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await createProject(owner, "Acme", slug);
 
   // The team publishes a changelog entry with an API key.
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget test");
   await owner.getByRole("combobox", { name: "What the key can do" }).click();
   await owner.getByRole("option", { name: "Read and write" }).click();
@@ -171,10 +171,10 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(otherDevice.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: /^Changelog/ })).toHaveText("Changelog");
   await otherDevice.context().close();
 
-  // Other sites may frame the widget, and nothing else.
+  // Other sites may frame the widget; the app, the portal's other pages (Customize's preview).
   const framing = async (path: string) => (await ada.request.get(path)).headers()["content-security-policy"];
   expect(await framing("/widget")).toBeUndefined();
-  expect(await framing("/feedback/feature-requests")).toBe("frame-ancestors 'none'");
+  expect(await framing("/feedback/feature-requests")).toBe(`frame-ancestors ${new URL(APP_URL).origin}`);
 });
 
 test("a customer's site signs its users in to the widget with SSO, and they post from it", async ({ browser }, testInfo) => {
@@ -182,7 +182,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   ssoSecrets.set(slug, secret);
@@ -209,9 +209,10 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
+  await owner.goto(`/app/${slug}/settings`);
   await owner.getByRole("combobox", { name: "Portal access" }).click();
   await owner.getByRole("option", { name: "Private" }).click();
   await expect(owner.getByText("Portal is now private")).toBeVisible();
@@ -240,9 +241,10 @@ test("someone a customer's site signs in sees what's new on one device, and it i
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget seen test");
   await owner.getByRole("combobox", { name: "What the key can do" }).click();
   await owner.getByRole("option", { name: "Read and write" }).click();
@@ -290,7 +292,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget help test");
   await owner.getByRole("combobox", { name: "What the key can do" }).click();
   await owner.getByRole("option", { name: "Read and write" }).click();
@@ -391,10 +393,11 @@ test("a visitor asks the docs' AI in the widget: an answer with its source, aski
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/sso`);
   // SSO, so the customer's site signs its visitor in to the widget's Feedback tab.
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+  await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget answers test");
   await owner.getByRole("combobox", { name: "What the key can do" }).click();
   await owner.getByRole("option", { name: "Read and write" }).click();
@@ -513,7 +516,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/developers`);
   await owner.getByRole("textbox", { name: "Key name" }).fill("Widget launcher test");
   await owner.getByRole("combobox", { name: "What the key can do" }).click();
   await owner.getByRole("option", { name: "Read and write" }).click();
@@ -532,7 +535,9 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const article = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
   await api(`/articles/${article.slug}/publish`, {});
 
-  // The launcher: a label, a colour, the left corner and a quick link (https only).
+  // Customize → Widget: a label, a colour, the left corner and a quick link (https only), beside the widget open on a stand-in for the site.
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
   await owner.getByLabel("Button label").fill("Help & ideas");
   await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByLabel("Bottom left").check();
@@ -544,6 +549,9 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
   await owner.getByRole("button", { name: "Save widget" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
+  await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
+  // Saved, the launcher in the preview is the new one.
+  await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
   await checkpoint(owner, "widget-settings");
   await owner.reload();
   await expect(owner.getByLabel("Button label")).toHaveValue("Help & ideas");

@@ -95,6 +95,8 @@ test("the Tuti address sends pages on to the domain, with their path and query; 
   expect((await visit("/api/auth/get-session")).status).not.toBe(308);
   expect((await visit("/widget")).status).not.toBe(308);
   expect((await visit("/feedback/feature-requests", "POST")).status).not.toBe(308);
+  // Customize's preview shows the portal at its Tuti address.
+  expect((await visit("/docs?customize=1")).status).not.toBe(308);
 });
 
 test("with custom domains off on the server, everything stays at the Tuti address", async () => {

@@ -30,11 +30,12 @@ test("other paths on unknown hosts are still 404", async () => {
   expect((await proxy(request("localhost:3000", "/api/auth/get-session"))).status).toBe(404);
 });
 
-test("other sites may frame a portal's /widget, and no other page", async () => {
+test("other sites may frame a portal's /widget, the app its other pages (Customize's preview), and nobody the app", async () => {
   const framing = async (host: string, path: string) => (await proxy(request(host, path))).headers.get("content-security-policy");
   expect(await framing("acme.tuti.example", "/widget")).toBeNull();
-  expect(await framing("acme.tuti.example", "/feedback/ideas")).toBe("frame-ancestors 'none'");
-  expect(await framing("acme.tuti.example", "/sign-in")).toBe("frame-ancestors 'none'");
+  expect(await framing("acme.tuti.example", "/feedback/ideas")).toBe("frame-ancestors https://tuti.example");
+  expect(await framing("acme.tuti.example", "/sign-in")).toBe("frame-ancestors https://tuti.example");
+  expect((await proxy(request("acme.tuti.example", "/feedback/ideas"))).headers.get("x-frame-options")).toBeNull();
   expect(await framing("tuti.example", "/widget")).toBe("frame-ancestors 'none'");
   expect(await framing("tuti.example", "/app/acme")).toBe("frame-ancestors 'none'");
 });

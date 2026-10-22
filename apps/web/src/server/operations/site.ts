@@ -37,7 +37,7 @@ const siteView = (mount: Mount, slug: string) => ({
   check: { urls: [mount.path, ASSET_PATH].map((path) => `${mount.origin}${path}${CHECK_PATH}`), token: `tuti-site=${mount.verificationToken}` },
 });
 
-/** The project's portal on its site (Settings → Your site, and site.get), or null. */
+/** The project's portal on its site (Customize → Address, and site.get), or null. */
 export async function siteMountView(projectId: string) {
   const mount = await prisma.siteMount.findUnique({ where: { projectId }, select: mountSelect });
   return mount && siteView(mount, await projectSlug(projectId));

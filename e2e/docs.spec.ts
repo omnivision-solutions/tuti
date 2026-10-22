@@ -988,7 +988,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
 
-  // How the AI answers: a tone, short answers, and a topic it doesn't touch.
+  // How the AI answers (Customize → AI answers): a tone, short answers, and a topic it doesn't touch.
+  await team.goto(`/app/${slug}/customize/ai-answers`);
   await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
@@ -1100,7 +1101,7 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   await createProject(team, "Acme", slug);
 
   // The support email takes questions only once it opens the link we email it.
-  await team.goto(`/app/${slug}/settings`);
+  await team.goto(`/app/${slug}/customize/ai-answers`);
   await team.getByLabel("Support email").fill(support);
   await team.getByRole("button", { name: "Save support email" }).click();
   await expect(team.getByText("Support email saved")).toBeVisible();
@@ -1160,7 +1161,7 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/feedback/feature-requests`);
 
-  await team.goto(`/app/${slug}/settings`);
+  await team.goto(`/app/${slug}/customize/home-page`);
   await team.getByRole("combobox", { name: "Home page" }).click();
   await team.getByRole("option", { name: "Docs" }).click();
   await expect(team.getByText("Your portal opens with docs now")).toBeVisible();

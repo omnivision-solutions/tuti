@@ -12,10 +12,10 @@ test("an admin connects the project to GitHub and disconnects it", async ({ brow
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/settings`);
+  await owner.goto(`/app/${slug}/settings/integrations`);
   // The GitHub fake's install page sends the browser straight back, like GitHub after "Install".
   await owner.getByRole("link", { name: "Connect GitHub" }).click();
-  await owner.waitForURL(`**/app/${slug}/settings?github=connected`);
+  await owner.waitForURL(`**/app/${slug}/settings/integrations?github=connected`);
   await expect(owner.getByText("GitHub is connected.")).toBeVisible();
   await expect(owner.getByText("Connected to @acme-e2e.")).toBeVisible();
   await owner.getByRole("combobox", { name: "When linked posts become Completed" }).click();

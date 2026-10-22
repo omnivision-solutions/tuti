@@ -644,8 +644,8 @@ export function DocsWorkspace({
               </a>
               {admin && (
                 <>
-                  <Link href={`/app/${projectSlug}/settings#branding`} className={manageLink}>
-                    Branding
+                  <Link href={`/app/${projectSlug}/customize`} className={manageLink}>
+                    Customize
                   </Link>
                   <Link href={`/app/${projectSlug}/settings#groups`} className={manageLink}>
                     Groups

@@ -7,7 +7,7 @@ import { createProject, redirectTarget, signUp, type TestUser } from "@/test/hel
 import FeedbackHome from "./feedback/page";
 import PortalHome from "./page";
 
-/** The portal's home opens what the team picked (Settings → Home page): the first board unless they did. */
+/** The portal's home opens what the team picked (Customize → Home page): the first board unless they did. */
 
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;

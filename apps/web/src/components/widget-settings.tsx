@@ -4,6 +4,7 @@ import { PlusIcon, XIcon } from "lucide-react";
 import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
+import { usePreview } from "@/components/customize-shell";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -31,10 +32,12 @@ export function WidgetSettings({
   links: { label: string; url: string }[];
 }) {
   const [picked, setPicked] = useState(color);
+  const preview = usePreview();
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveWidgetSettings(projectSlug, prev, formData);
     if (!result.error) {
       toast.success("Widget saved");
+      preview.reload();
     }
     return result;
   }, {});

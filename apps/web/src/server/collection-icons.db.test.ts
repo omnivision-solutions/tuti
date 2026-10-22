@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { strFromU8, unzipSync } from "fflate";
 import { beforeEach, expect, test } from "vitest";
 
-import { GET as exportZip } from "@/app/app/[project]/settings/export/route";
+import { GET as exportZip } from "@/app/app/[project]/settings/export/zip/route";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createArticle, createCollection, listCollections, updateCollection } from "./operations/docs";

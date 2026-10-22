@@ -49,6 +49,8 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
       [`/app/${slug}`, "team-feedback"],
       [`/app/${slug}/p/1`, "team-post"],
       [`/app/${slug}/settings`, "team-settings"],
+      [`/app/${slug}/customize`, "team-customize"],
+      [`/app/${slug}/customize/branding`, "team-customize-branding"],
       [`/app/${slug}/team`, "team-members"],
     ] as const) {
       await teamPage.goto(path);
