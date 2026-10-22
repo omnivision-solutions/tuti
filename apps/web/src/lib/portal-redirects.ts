@@ -33,7 +33,8 @@ export function redirectFrom(input: string): { from: string } | { error: string 
       return { error: "Enter the old address's path, like /hc/en-us/articles/123" };
     }
   }
-  if (!path.startsWith("/") || path.startsWith("//") || /[\s?#]/.test(path)) {
+  // No backslashes: browsers take one for a slash ("/\\evil.example" is another site to them).
+  if (!path.startsWith("/") || path.startsWith("//") || /[\\\s?#]/.test(path)) {
     return { error: "Enter the old address's path, like /hc/en-us/articles/123" };
   }
   // As requests come in: percent-encoded, dot segments resolved.
@@ -57,7 +58,7 @@ export function redirectTo(input: string): { to: string } | { error: string } {
   if (to.length > MAX_LENGTH * 2) {
     return { error: `Keep addresses under ${MAX_LENGTH * 2} characters` };
   }
-  if (to.startsWith("/") && !to.startsWith("//") && !/\s/.test(to)) {
+  if (to.startsWith("/") && !to.startsWith("//") && !/[\\\s]/.test(to)) {
     return { to };
   }
   try {
