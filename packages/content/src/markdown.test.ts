@@ -121,7 +121,7 @@ describe("toMarkdown", () => {
     expect(toMarkdown(doc(p(...breaks), p(text("b"))))).toBe("b");
   });
 
-  test("pipes stay in their table cell: in text, in code, in a link's address, and after a backslash", () => {
+  test("pipes stay in their table cell: in text, in code, in a link's or an image's address, and after a backslash", () => {
     const cellOf = (...content: object[]) => ({ type: "tableCell", attrs: { colspan: 1, rowspan: 1 }, content: [p(...content)] });
     const table = (...content: object[]) => doc({ type: "table", content: [row(cell("tableHeader", "Note")), row(cellOf(...content))] });
     const body = (out: string) => out.split("\n")[2];
@@ -131,6 +131,11 @@ describe("toMarkdown", () => {
     expect(body(toMarkdown(table(text("a\\|b", code))))).toBe("| a\\\\\\|b |");
     expect(body(toMarkdown(table(text("docs", link("https://example.com/a|b")))))).toBe("| [docs](https://example.com/a%7Cb) |");
     // Outside tables too, so a line of text can't start one.
+    const image = { type: "image", attrs: { mediaId: MEDIA_ID, alt: "Chart", w: 1200, h: 800 } };
+    const mediaUrls = { [`m/${MEDIA_ID}/960.webp`]: `https://storage.example/m/${MEDIA_ID}/960.webp?sig=a|b` };
+    const imageCell = { type: "tableCell", attrs: { colspan: 1, rowspan: 1 }, content: [image] };
+    const imageTable = doc({ type: "table", content: [row(cell("tableHeader", "Note")), row(imageCell)] });
+    expect(body(toMarkdown(imageTable, { mediaUrls }))).toBe(`| ![Chart](https://storage.example/m/${MEDIA_ID}/960.webp?sig=a%7Cb) |`);
     expect(toMarkdown(doc(p(text("a | b"))))).toBe("a \\| b");
     expect(toMarkdown(doc(p(text("a|b", code))))).toBe("`a|b`");
   });

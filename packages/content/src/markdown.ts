@@ -87,7 +87,7 @@ function block(node: JSONContent, ctx: Context): string {
     case "image": {
       const { mediaId, alt, w } = node.attrs ?? {};
       const url = isMediaId(mediaId) && isPixelSize(w) && ctx.media?.[imageKey(mediaId, imageWidths(w).find((width) => width >= 960) ?? w)];
-      return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${url})` : "";
+      return url ? `![${escape(typeof alt === "string" ? alt.replace(/\s+/g, " ") : "")}](${linkTarget(url)})` : "";
     }
     case "video":
       return isVideo(node.attrs ?? {}) ? `[Video](${videoPageUrl(node.attrs as Video)})` : "";
