@@ -8,7 +8,7 @@ import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@/components/tuti-logo";
 import { brandCss } from "@/lib/colors";
 import { CUSTOMIZE } from "@/lib/portal-base";
-import { type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, webOnly } from "@/lib/portal-look";
+import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, webOnly } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 
 const inPreview = () => window.name === PREVIEW_FRAME && window.parent !== window;
@@ -28,7 +28,7 @@ const LookContext = createContext<PortalLook | null>(null);
 
 /** How the portal looks on this page: what's saved, or in Customize's preview what the team is trying. */
 export function usePortalLook(): PortalLook {
-  return useContext(LookContext)!;
+  return useContext(LookContext) ?? DEFAULT_LOOK;
 }
 
 /**

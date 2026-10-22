@@ -80,6 +80,8 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     headerLinks: [],
     footerLinks: [],
     poweredBy: true,
+    contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
+    docsHome: { title: "", subtitle: "", popular: false },
   });
 });
 
@@ -127,7 +129,7 @@ test("settings are checked: https links, at most 5 of each, a real colour, and i
   await refused({ favicon: "no-such-upload" }, gone);
 
   // Nothing was saved.
-  expect(await get()).toEqual({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true });
+  expect(await get()).toMatchObject({ logo: null, logoDark: null, favicon: null, color: null, headerLinks: [], footerLinks: [], poweredBy: true });
 
   // An image already in use (a post's, or the logo just replaced) can be the logo: release-media checks every use.
   const inUse = await uploaded({ attachedAt: new Date() });
@@ -294,6 +296,36 @@ test("Customize's forms each save their part: an empty image field removes it, e
   await saveBranding(project.slug, {}, form({ part: "look", logo: logo.id, color: "#5b21b6" }));
   expect(await saveBranding(project.slug, {}, form({ color: "#5b21b6" }))).toEqual({ error: "Unknown branding form" });
   expect(await get()).toMatchObject({ logo: { id: logo.id } });
+});
+
+test("what readers can do with an article, and the docs' home: on by default (no title, no popular articles), each saved on its own", async () => {
+  actAs(owner);
+  expect(await get()).toMatchObject({
+    contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
+    docsHome: { title: "", subtitle: "", popular: false },
+  });
+  await update({ contentActions: { claude: false, updatedDate: false } });
+  await update({ docsHome: { title: " How can we help? ", popular: true } });
+  expect(await get()).toMatchObject({
+    contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: false, updatedDate: false },
+    docsHome: { title: "How can we help?", subtitle: "", popular: true },
+  });
+  await expect(update({ docsHome: { title: "x".repeat(81) } })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("up to 80 characters") });
+
+  // Customize's forms: switches left off aren't sent.
+  const form = (fields: Record<string, string>) => {
+    const data = new FormData();
+    for (const [name, value] of Object.entries(fields)) {
+      data.set(name, value);
+    }
+    return data;
+  };
+  expect(await saveBranding(project.slug, {}, form({ part: "contentActions", menu: "on", copyMarkdown: "on" }))).toEqual({});
+  expect(await saveBranding(project.slug, {}, form({ part: "docsHome", title: "Help", subtitle: "Answers, fast." }))).toEqual({});
+  expect(await get()).toMatchObject({
+    contentActions: { menu: true, copyMarkdown: true, chatGpt: false, claude: false, updatedDate: false },
+    docsHome: { title: "Help", subtitle: "Answers, fast.", popular: false },
+  });
 });
 
 test("branding is a project setting: members can't change it, admins can", async () => {

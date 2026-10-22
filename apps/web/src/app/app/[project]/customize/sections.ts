@@ -1,7 +1,9 @@
 import {
+  BookOpenIcon,
   GlobeIcon,
   HeartIcon,
   HouseIcon,
+  ListIcon,
   type LucideIcon,
   MessageSquareIcon,
   NavigationIcon,
@@ -15,6 +17,7 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
     title: "Appearance",
     sections: [
       { slug: "branding", title: "Branding", description: "Logos, favicon and colour", icon: PaletteIcon },
+      { slug: "docs-home", title: "Docs home", description: "The heading above your docs' search box, and popular articles", icon: BookOpenIcon },
       { slug: "navigation", title: "Navigation", description: "Links in the header and footer", icon: NavigationIcon },
       { slug: "home-page", title: "Home page", description: "What your portal's address opens", icon: HouseIcon },
     ],
@@ -22,6 +25,7 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
   {
     title: "Features",
     sections: [
+      { slug: "content-actions", title: "Content actions", description: "What readers can do with an article: copy it, or ask an AI about it", icon: ListIcon },
       { slug: "ai-answers", title: "AI answers", description: "How the AI answers questions in your docs", icon: SparklesIcon },
       { slug: "widget", title: "Widget", description: "The button on your site that opens feedback and docs", icon: MessageSquareIcon },
     ],

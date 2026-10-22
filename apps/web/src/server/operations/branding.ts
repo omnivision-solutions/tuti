@@ -5,11 +5,16 @@ import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
+import { type ContentActions, DOCS_SUBTITLE_MAX, DOCS_TITLE_MAX, type DocsHome } from "@/lib/portal-look";
+
 import { saving } from "./create";
 import { defineOperation, OperationError } from "./define";
 import { DEFAULT_WIDGET_COLOR, hexColor, httpsLink, type WidgetLink } from "./widget";
 
-/** The portal's and its docs' look (Phase 10): logos, favicon, accent colour, header and footer links, "Powered by". */
+/**
+ * The portal's and its docs' look (Phase 10, Customize): logos, favicon, accent colour, header and
+ * footer links, "Powered by", what readers can do with an article, and the docs' home.
+ */
 
 export const MAX_BRAND_LINKS = 5;
 
@@ -29,6 +34,8 @@ export type Branding = {
   footerLinks: WidgetLink[];
   /** Whether the footer says "Powered by tuti": always, unless the project has a valid licence key. */
   poweredBy: boolean;
+  contentActions: ContentActions;
+  docsHome: DocsHome;
 };
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
@@ -48,6 +55,14 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         footerLinks: true,
         poweredBy: true,
         licenseKey: true,
+        articleActions: true,
+        articleCopyMarkdown: true,
+        articleOpenChatGpt: true,
+        articleOpenClaude: true,
+        articleUpdatedDate: true,
+        docsTitle: true,
+        docsSubtitle: true,
+        docsPopular: true,
       },
     }),
     thisInstallation(),
@@ -74,6 +89,14 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     // Checked here, where the portal reads it, so turning poweredBy off in the database isn't enough.
     poweredBy:
       project.poweredBy || !licensedUntil(project.licenseKey, { installation: installation.id, project: project.id }, licenseNow(installation)),
+    contentActions: {
+      menu: project.articleActions,
+      copyMarkdown: project.articleCopyMarkdown,
+      chatGpt: project.articleOpenChatGpt,
+      claude: project.articleOpenClaude,
+      updatedDate: project.articleUpdatedDate,
+    },
+    docsHome: { title: project.docsTitle, subtitle: project.docsSubtitle, popular: project.docsPopular },
   };
 }
 
@@ -82,6 +105,14 @@ export { brandCss } from "@/lib/colors";
 const links = (where: string) =>
   z.array(httpsLink).max(MAX_BRAND_LINKS, `Add up to ${MAX_BRAND_LINKS} ${where} links`).optional();
 const upload = z.string().trim().min(1).nullable().optional();
+const contentActions = z.object({ menu: z.boolean(), copyMarkdown: z.boolean(), chatGpt: z.boolean(), claude: z.boolean(), updatedDate: z.boolean() }).partial();
+const docsHome = z
+  .object({
+    title: z.string().trim().max(DOCS_TITLE_MAX, `The title is up to ${DOCS_TITLE_MAX} characters`),
+    subtitle: z.string().trim().max(DOCS_SUBTITLE_MAX, `The subtitle is up to ${DOCS_SUBTITLE_MAX} characters`),
+    popular: z.boolean(),
+  })
+  .partial();
 
 export const getBranding = defineOperation({
   name: "branding.get",
@@ -96,7 +127,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), and poweredBy (false needs a licence for the project)`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false) and docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles). Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -109,6 +140,8 @@ export const updateBranding = defineOperation({
     headerLinks: links("header"),
     footerLinks: links("footer"),
     poweredBy: z.boolean().optional(),
+    contentActions: contentActions.optional(),
+    docsHome: docsHome.optional(),
   }),
   example: {
     color: "#5b21b6",
@@ -152,6 +185,14 @@ export const updateBranding = defineOperation({
             ...(input.headerLinks !== undefined && { headerLinks: input.headerLinks }),
             ...(input.footerLinks !== undefined && { footerLinks: input.footerLinks }),
             ...(input.poweredBy !== undefined && { poweredBy: input.poweredBy }),
+            ...(input.contentActions?.menu !== undefined && { articleActions: input.contentActions.menu }),
+            ...(input.contentActions?.copyMarkdown !== undefined && { articleCopyMarkdown: input.contentActions.copyMarkdown }),
+            ...(input.contentActions?.chatGpt !== undefined && { articleOpenChatGpt: input.contentActions.chatGpt }),
+            ...(input.contentActions?.claude !== undefined && { articleOpenClaude: input.contentActions.claude }),
+            ...(input.contentActions?.updatedDate !== undefined && { articleUpdatedDate: input.contentActions.updatedDate }),
+            ...(input.docsHome?.title !== undefined && { docsTitle: input.docsHome.title }),
+            ...(input.docsHome?.subtitle !== undefined && { docsSubtitle: input.docsHome.subtitle }),
+            ...(input.docsHome?.popular !== undefined && { docsPopular: input.docsHome.popular }),
           },
         });
         // Replaced images stay attached: the daily release-media job releases them once nothing in the

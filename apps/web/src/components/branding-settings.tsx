@@ -21,7 +21,7 @@ type Image = { id: string; url: string } | null;
  * "Save changes" (with a toast, and then the preview shows what's saved), and shown in the preview as
  * it's changed (`toDraft`).
  */
-function useBrandingForm(projectSlug: string, message: string, toDraft: (data: FormData) => Draft, busy = false) {
+export function useBrandingForm(projectSlug: string, message: string, toDraft: (data: FormData) => Draft, busy = false) {
   const preview = usePreview();
   return useCustomizeForm({
     save: (prev, formData) => saveBranding(projectSlug, prev, formData),

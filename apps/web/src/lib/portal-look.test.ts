@@ -26,6 +26,12 @@ test("a change from the app keeps web links and images and a #rrggbb colour, and
   // A colour that isn't one is left out, so what's saved stays; null is the brand green.
   expect(webOnly({ color: "red}html{display:none" })).toEqual({});
   expect(webOnly({ color: null, logo: null })).toEqual({ color: null, logo: null });
+  // Only a look's own keys, of their own kinds.
+  expect(webOnly({ contentActions: { menu: true }, docsHome: { title: 1 }, other: "x" } as never)).toEqual({});
+  expect(webOnly({ contentActions: { menu: false, copyMarkdown: true, chatGpt: true, claude: false, updatedDate: true } })).toEqual({
+    contentActions: { menu: false, copyMarkdown: true, chatGpt: true, claude: false, updatedDate: true },
+  });
+  expect(webOnly({ docsHome: { title: "x".repeat(100), subtitle: "Hi", popular: true } }).docsHome).toEqual({ title: "x".repeat(80), subtitle: "Hi", popular: true });
 });
 
 test("only the preview's own messages are taken as such", () => {

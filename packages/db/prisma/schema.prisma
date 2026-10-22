@@ -158,6 +158,19 @@ model Project {
   headerLinks           Json         @default("[]")
   footerLinks           Json         @default("[]")
   poweredBy             Boolean      @default(true)
+  /// What readers can do with an article (Customize → Content actions): the menu at all, and in it
+  /// copying it as Markdown and opening it in ChatGPT or Claude; and whether its page says when it
+  /// was last updated.
+  articleActions        Boolean      @default(true)
+  articleCopyMarkdown   Boolean      @default(true)
+  articleOpenChatGpt    Boolean      @default(true)
+  articleOpenClaude     Boolean      @default(true)
+  articleUpdatedDate    Boolean      @default(true)
+  /// The docs' home (Customize → Docs home): a title and a subtitle above its search box (empty for
+  /// "Docs" and the default line), and whether it lists the most-read articles.
+  docsTitle             String       @default("")
+  docsSubtitle          String       @default("")
+  docsPopular           Boolean      @default(false)
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
   licenseKey            String?

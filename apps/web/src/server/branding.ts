@@ -11,7 +11,7 @@ import { asAdmin, call } from "./operations/run";
 /**
  * Saves one part of the branding from Customize (see branding.update), named by the form's `part`: its
  * look (logos, favicon, colour; an empty image field removes that image), its links (empty rows are
- * skipped) or "Powered by". The other parts stay as they are.
+ * skipped), "Powered by", content actions, or the docs' home. The other parts stay as they are.
  */
 export async function saveBranding(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (name: string) => {
@@ -19,15 +19,20 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
     return typeof field === "string" ? field : "";
   };
   const part = text("part");
-  if (part !== "look" && part !== "links" && part !== "poweredBy") {
+  const on = (name: string) => formData.get(name) === "on";
+  const parts = {
+    look: () => ({ logo: text("logo") || null, logoDark: text("logoDark") || null, favicon: text("favicon") || null, color: text("color") }),
+    links: () => ({ headerLinks: linksFrom(formData, "headerLink"), footerLinks: linksFrom(formData, "footerLink") }),
+    poweredBy: () => ({ poweredBy: on("poweredBy") }),
+    contentActions: () => ({
+      contentActions: { menu: on("menu"), copyMarkdown: on("copyMarkdown"), chatGpt: on("chatGpt"), claude: on("claude"), updatedDate: on("updatedDate") },
+    }),
+    docsHome: () => ({ docsHome: { title: text("title"), subtitle: text("subtitle"), popular: on("popular") } }),
+  };
+  if (!Object.hasOwn(parts, part)) {
     return { error: "Unknown branding form" };
   }
-  const input =
-    part === "links"
-      ? { headerLinks: linksFrom(formData, "headerLink"), footerLinks: linksFrom(formData, "footerLink") }
-      : part === "poweredBy"
-        ? { poweredBy: formData.get("poweredBy") === "on" }
-        : { logo: text("logo") || null, logoDark: text("logoDark") || null, favicon: text("favicon") || null, color: text("color") };
+  const input = parts[part as keyof typeof parts]();
   return asAdmin(projectSlug, "Only project owners and admins can change the branding", (context) =>
     call(updateBranding, context, input),
   );

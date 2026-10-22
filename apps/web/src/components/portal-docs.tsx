@@ -6,7 +6,8 @@ import { ChevronRightIcon, LockIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { ArticleActions } from "@/components/article-actions";
+import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
+import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -34,6 +35,7 @@ import {
   docsTree,
   everyCollection,
   type LockedArticle,
+  popularArticles,
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
@@ -105,19 +107,23 @@ export async function DocsSearchResults({ projectSlug, query }: { projectSlug: s
  * A tab's overview (`tab`; without tabs, all of the docs): its name ("Docs" on /docs), a search box,
  * a card per top-level collection, then (the first tab) the articles in none.
  */
-async function DocsOverview({ docs, tab }: { docs: DocsContents; tab: DocsTabView | null }) {
+async function DocsOverview({ project, docs, tab }: { project: string; docs: DocsContents; tab: DocsTabView | null }) {
   const at = await portalLinks();
   const { collections, uncollected } = tab ?? docs;
+  // The docs' home (the first tab's overview, or all of the docs) has the team's heading and popular articles.
+  const home = !tab || tab.slug === docs.home;
+  const popular = home ? (await popularArticles(project, docs)).map((article) => ({ href: at(`/docs/${article.slug}`), title: article.title })) : [];
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4">
-        <PageHeader title={tab && tab.slug !== docs.home ? tab.name : "Docs"} description="Guides and answers to common questions." />
+        {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
         {/* A plain GET form, like the header's: it works without JavaScript. */}
         <form role="search" action={at("/docs")} className="relative">
           <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" />
           <Input type="search" name="q" maxLength={200} placeholder="Search docs" aria-label="Search the docs" className="h-12 pl-11 text-base" />
         </form>
       </div>
+      <PopularArticles articles={popular} />
       {collections.length === 0 && uncollected.length === 0 && (
         <EmptyState title="Nothing here yet" description="Articles show up here once they're published." />
       )}
@@ -195,7 +201,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
     case "overview":
       return (
         <DocsLayout tree={docsTree(docs, tab?.slug ?? null, null)} current={null}>
-          <DocsOverview docs={docs} tab={tab} />
+          <DocsOverview project={project} docs={docs} tab={tab} />
         </DocsLayout>
       );
   }
@@ -281,29 +287,30 @@ export async function DocsArticle({
           Docs
         </BackLink>
         <div className="flex flex-col gap-1">
-          {article.collection && (
-            <p className="text-sm text-muted-foreground">
-              {collection ? (
-                <Link href={at(`/docs/${collection.slug}`)} className="hover:text-foreground hover:underline">
-                  {collection.name}
-                </Link>
-              ) : (
-                article.collection.name
+          {/* The actions beside the title on wide screens, under it on phones. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-1">
+              {article.collection && (
+                <p className="text-sm text-muted-foreground">
+                  {collection ? (
+                    <Link href={at(`/docs/${collection.slug}`)} className="hover:text-foreground hover:underline">
+                      {collection.name}
+                    </Link>
+                  ) : (
+                    article.collection.name
+                  )}
+                </p>
               )}
-            </p>
-          )}
-          <h1 id={ARTICLE_TITLE_ID} className="font-heading text-2xl font-bold tracking-tight break-words">
-            {article.title}
-          </h1>
-          {readable?.updatedAt && (
-            <p className="text-sm text-muted-foreground">
-              Updated <time dateTime={readable.updatedAt.toISOString()}>{formatDate(readable.updatedAt)}</time>
-            </p>
-          )}
+              <h1 id={ARTICLE_TITLE_ID} className="font-heading text-2xl font-bold tracking-tight break-words">
+                {article.title}
+              </h1>
+            </div>
+            {readable && <ArticleActions markdown={articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />}
+          </div>
+          {readable?.updatedAt && <ArticleUpdated at={readable.updatedAt.toISOString()} label={formatDate(readable.updatedAt)} />}
         </div>
         {readable ? (
           <>
-            <ArticleActions markdown={articleMarkdown(readable)} markdownUrl={`${await portalAddress(project)}/docs/${slug}.md`} />
             <RichText doc={readable.doc} mediaBaseUrl={mediaPublicUrl()} headingIds className="rich-text break-words" />
             <ArticleFeedback projectSlug={project} slug={slug} />
           </>
