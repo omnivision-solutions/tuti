@@ -105,6 +105,22 @@ describe("toMarkdown", () => {
     );
   });
 
+  // A millisecond or so; seconds with a pattern that rescans a run from each of its characters
+  // (half of what a stored document may hold, MAX_DOC_JSON_LENGTH).
+  test("a long run of spaces, in text and in a table cell, takes no time", { timeout: 1_000 }, () => {
+    const spaces = " ".repeat(100_000);
+    expect(toMarkdown(doc(p(text(`a${spaces}b`), text("c", bold))))).toBe(`a${spaces}b**c**`);
+    const table = { type: "table", content: [row(cell("tableHeader", "Note")), row(cell("tableCell", `a${spaces}b`))] };
+    expect(toMarkdown(doc(table))).toBe(`| Note |\n| --- |\n| a${spaces}b |`);
+  });
+
+  test("hard breaks at a paragraph's end are dropped, also when it has nothing else", () => {
+    const breaks = Array<object>(3).fill({ type: "hardBreak" });
+    expect(toMarkdown(doc(p(text("a"), ...breaks, text("b"))))).toBe("a\\\n\\\n\\\nb");
+    expect(toMarkdown(doc(p(text("a"), ...breaks)))).toBe("a");
+    expect(toMarkdown(doc(p(...breaks), p(text("b"))))).toBe("b");
+  });
+
   test("a whole article, as validated and stored", () => {
     const parsed = parseDoc(
       "article",

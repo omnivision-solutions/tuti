@@ -67,7 +67,7 @@ function block(node: JSONContent, ctx: Context): string {
       const rows = (node.content ?? []).map((row) =>
         (row.content ?? []).flatMap((cell) => {
           const text = blocks(cell, { ...ctx, flat: true }, " ")
-            .replace(/\s*\n\s*/g, " ")
+            .replace(/\s+/g, (space) => (space.includes("\n") ? " " : space))
             .replace(/\|/g, "\\|");
           const span = isCellSpan(cell.attrs?.colspan) ? cell.attrs.colspan : 1;
           return [text, ...Array<string>(span - 1).fill("")];
@@ -106,7 +106,7 @@ function inline(node: JSONContent, ctx: Context): string {
   let out = "";
   const open: OpenMark[] = [];
   const close = (keep: number) => {
-    const trailing = /\s*$/.exec(out)![0];
+    const trailing = out.slice(out.trimEnd().length);
     out = out.slice(0, out.length - trailing.length);
     for (const mark of open.splice(keep).reverse()) {
       out += mark.type === "link" ? `](${linkTarget(mark.href!)})` : DELIMITERS[mark.type];
@@ -149,10 +149,15 @@ function inline(node: JSONContent, ctx: Context): string {
     out += text;
   }
   close(0);
+  // Hard breaks at the end are dropped: CommonMark shows one there as a backslash.
+  let end = out.length;
+  while (end >= 2 && out.startsWith("\\\n", end - 2)) {
+    end -= 2;
+  }
 
   return (
     out
-      .replace(/(\\\n)+$/, "")
+      .slice(0, end)
       // What would start a heading, quote, list, divider or code fence at the start of a line.
       .replace(/^([ \t]*)([#>+\-=~])/gm, "$1\\$2")
       .replace(/^([ \t]*\d+)([.)])/gm, "$1\\$2")
