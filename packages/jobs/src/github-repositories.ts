@@ -60,8 +60,9 @@ export async function includeRepositories(
 /**
  * The project a repository's events go to: the one that includes it, if the event comes from
  * the installation it was included from. A repository Tuti hasn't seen is new: the project of
- * that installation which takes new repositories (if one does) includes it now. One a project
- * has seen and left out stays out.
+ * that installation which takes new repositories (if one does) includes it now (taking it from
+ * another installation's project only once GitHub says it's in this one). One a project has seen
+ * and left out stays out.
  */
 export async function repositoryConnection(installationId: number, repo: GithubRepo): Promise<RepositoryConnection | null> {
   const found = await prisma.githubRepository.findUnique({
@@ -84,6 +85,11 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   }
   const { seenRepositoryIds, ...connection } = taker;
   if (seenRepositoryIds.includes(repo.id)) {
+    return null;
+  }
+  // Held from another installation: an event can arrive late, after the repository moved on, so
+  // only GitHub's word now takes it from that project.
+  if (found && !(await inInstallation(installationId, repo.id))) {
     return null;
   }
   await includeRepositories(taker.id, installationId, [repo]);

@@ -295,17 +295,22 @@ describe("repositories", () => {
     await deliver(pullRequest(706, { id: web.id, fullName: "acme/website" }, 1, ""));
     expect(await included(project.id)).toEqual(["acme/website"]);
 
-    // Transferred to another organisation, connected to another project.
+    // Transferred to another organisation, connected to another project (GitHub has it there now).
     const other = await createProject(owner);
     github.user("code-r6b", [{ id: 707, account: "elsewhere", repositories: [] }]);
     await connect(other.slug, 707, "code-r6b");
+    github.user("code-r6", [{ id: 706, account: "acme", repositories: [] }]);
+    github.user("code-r6c", [{ id: 707, account: "elsewhere", repositories: [{ id: web.id, fullName: "elsewhere/website" }] }]);
     await deliver(pullRequest(707, { id: web.id, fullName: "elsewhere/website" }, 2, ""));
     expect(await included(project.id)).toEqual([]);
     expect(await included(other.id)).toEqual(["elsewhere/website"]);
-    // Events from the old account no longer reach anyone.
+    // Events from the old account no longer reach anyone, even arriving late to a project that
+    // takes new repositories and hasn't seen it (like a connection from before repositories).
     const post = await firstPost(project.id, project.boards[0]!.id);
+    await prisma.githubInstallation.update({ where: { projectId: project.id }, data: { seenRepositoryIds: [] } });
     await deliver(pullRequest(706, web, 3, "tuti#1"));
     expect(await linksOf(post.id)).toEqual([]);
+    expect(await included(other.id)).toEqual(["elsewhere/website"]);
   });
 });
 
