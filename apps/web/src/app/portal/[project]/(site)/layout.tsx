@@ -78,7 +78,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const base = await portalBase();
   return (
     <PortalBaseProvider base={base} slug={slug}>
-      <ColorSchemeScript scheme={brand.colorScheme} />
+      {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
+      {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">

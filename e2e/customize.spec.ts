@@ -93,6 +93,8 @@ test("the team sets the portal's search listing, seeing it as a search result an
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.goto("/roadmap");
   await expect(visitor).toHaveTitle("Acme Help Center");
+  // A team's portal brings its default colour scheme (here, its readers' devices').
+  expect(await visitor.content()).toContain("tuti-theme-default");
   await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Answers about Acme, from the team that makes it.");
   await expect(visitor.locator('meta[property="og:site_name"]')).toHaveAttribute("content", "Acme Help Center");
 });
