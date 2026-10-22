@@ -64,6 +64,8 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await owner.getByRole("button", { name: "Dark mode", exact: true }).click();
   await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   await owner.getByRole("button", { name: "Light mode", exact: true }).click();
+  // Only on the page: nothing kept where the portal remembers a reader's own pick (the frame shares that storage).
+  expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
   await save.click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await expect(save).toBeDisabled();
