@@ -90,7 +90,17 @@ test("a project starts with no logos or favicon, the brand green, no links, and 
     seo: { title: "", description: "" },
     seoImage: null,
     fonts: { heading: null, body: null },
+    customCss: "",
+    customHtml: "",
   });
+});
+
+test("custom code: CSS and HTML as written, each up to 50,000 characters", async () => {
+  await update({ customCss: ".portal-header { border: 0 }", customHtml: '<script src="https://analytics.example.com/a.js"></script>' });
+  expect(await get()).toMatchObject({ customCss: ".portal-header { border: 0 }", customHtml: '<script src="https://analytics.example.com/a.js"></script>' });
+  await expect(update({ customHtml: "x".repeat(50_001) })).rejects.toMatchObject({ status: 400, message: expect.stringContaining("50,000") });
+  await update({ customCss: "" });
+  expect(await get()).toMatchObject({ customCss: "", customHtml: '<script src="https://analytics.example.com/a.js"></script>' });
 });
 
 test("fonts for headings and text: one of the portal fonts, or null for the page's own", async () => {

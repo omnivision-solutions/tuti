@@ -182,6 +182,10 @@ model Project {
   colorScheme           String       @default("system")
   /// Fonts for headings and for text (Customize → Branding → Typography), from the portal fonts
   /// (apps/web/src/lib/portal-fonts.ts); empty for the page's own.
+  /// The team's own code (Customize → Custom code): CSS on every portal page, and HTML (scripts,
+  /// say analytics) at the end of the page only where the portal is on their own domain or site.
+  customCss             String       @default("")
+  customHtml            String       @default("")
   headingFont           String       @default("")
   bodyFont              String       @default("")
   logoText              String       @default("")

@@ -65,6 +65,22 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/portal/sign-in?next=%2Fdocs");
   await checkpoint(visitor, "portal-on-site");
 
+  // The team's own HTML (Customize → Custom code) runs on their site, and not when the same path is
+  // opened on the portal's Tuti host (which answers it too: the site forwards there).
+  await owner.goto(`/app/${slug}/customize/custom-code`);
+  await owner.getByLabel("Custom HTML").fill('<p id="team-html">From the team</p><script>document.body.dataset.teamScript = "ran"</script>');
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Custom code saved")).toBeVisible();
+  await visitor.goto("/portal/docs");
+  await expect(visitor.locator("#team-html")).toHaveText("From the team");
+  await expect(visitor.locator("body")).toHaveAttribute("data-team-script", "ran");
+  const direct = await newPerson(browser, portalUrl(slug));
+  await direct.goto("/portal/docs");
+  await expect(direct.getByRole("heading", { name: "Docs" }).first()).toBeVisible();
+  await expect(direct.locator("#team-html")).toHaveCount(0);
+  await expect(direct.locator("body")).not.toHaveAttribute("data-team-script", "ran");
+  await owner.goto(`/app/${slug}/customize/address`);
+
   // Signing up, posting and signing out there, all under the path.
   await visitor.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/sign-in?next=%2Fdocs`);

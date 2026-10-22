@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { isFromPortal, isToPortal, webOnly } from "./portal-look";
+import { CUSTOM_CODE_MAX, isFromPortal, isToPortal, styleText, webOnly } from "./portal-look";
 
 test("a change from the app keeps web links and images and a #rrggbb colour, and drops anything else", () => {
   expect(
@@ -62,4 +62,11 @@ test("the rest of a change: a known colour scheme, web or mailto: Contact us, we
 test("fonts: only the portal fonts, or null", () => {
   expect(webOnly({ fonts: { heading: "lora", body: null } })).toEqual({ fonts: { heading: "lora", body: null } });
   expect(webOnly({ fonts: { heading: "url(https://evil.example/x.woff)" as never, body: null } })).toEqual({});
+});
+
+test("the team's CSS can't close its style element and become HTML; it's capped", () => {
+  expect(styleText("a { color: red } </style><script>alert(1)</script>")).toBe("a { color: red } <\\/style><script>alert(1)</script>");
+  expect(styleText("</STYLE >")).toBe("<\\/STYLE >");
+  expect(styleText(".a > .b { content: '<' }")).toBe(".a > .b { content: '<' }");
+  expect(webOnly({ customCss: "x".repeat(CUSTOM_CODE_MAX + 10) }).customCss).toHaveLength(CUSTOM_CODE_MAX);
 });

@@ -12,13 +12,15 @@ import { DocsSearch, PartRows, PortalMain, PortalParts } from "@/components/port
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
-import { appUrl, resolveHost } from "@/lib/hosts";
+import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
+import { TeamHtml } from "@/components/team-html";
+import { requestTarget, siteMount } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -68,7 +70,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   after(() => renewLicense(project.id, { olderThan: DAY_MS }));
   // Portal sessions are per host: this is the user signed in on this portal.
   const session = await getSession();
-  const onApp = resolveHost((await headers()).get("host")).kind === "app";
+  const requestHeaders = await headers();
+  const onApp = resolveHost(requestHeaders.get("host")).kind === "app";
   // On a private portal, the pages anyone may open (signing in) don't show what's on it.
   // proxy.ts keeps them from the rest; this only hides the parts.
   const canRead = await canReadPortal({ id: project.id }, session?.user.id);
@@ -76,13 +79,25 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
   const base = await portalBase();
+  // The team's own origin, where their HTML may run: their domain, or the site the portal is under (not
+  // Tuti's own portal on the app's domain). Only an expectation: TeamHtml checks the page is there.
+  const target = await requestTarget(requestHeaders.get("host"));
+  const mount = base ? await siteMount(slug) : null;
+  const ownOrigin = onApp
+    ? null
+    : mount
+      ? mount.origin
+      : target.kind === "portal" && target.customDomain
+        ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
+        : null;
   return (
     <PortalBaseProvider base={base} slug={slug}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
       {!onApp && <ColorSchemeScript scheme={brand.colorScheme} />}
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
-        <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
+        {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
+        <header className="portal-header flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           <PortalLogo name={project.name} href={withBase(base, "/")} />
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
@@ -102,6 +117,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
       </PortalLookProvider>
+      {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml
+          checks the page's real origin). Never on a Tuti address (a script there could pass for Tuti) or the app's own domain. */}
+      {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
     </PortalBaseProvider>
   );
 }
