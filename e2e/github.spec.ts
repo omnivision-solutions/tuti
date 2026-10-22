@@ -18,8 +18,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
 
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
-  await expect(owner.getByText("GitHub is connected.")).toBeVisible();
-  await expect(owner.getByText("Connected to @acme-e2e.")).toBeVisible();
+  // Connected, it's on GitHub's own settings page.
+  await expect(owner.getByText("GitHub is connected.", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
   await owner.getByRole("combobox", { name: "When linked posts become Completed" }).click();
   await owner.getByRole("option", { name: "their pull request is merged" }).click();
   await expect(owner.getByText("Saved")).toBeVisible();
@@ -58,11 +59,17 @@ test("an admin connects two projects to one GitHub account, gives each its repos
 
   // Refresh list asks GitHub again and comes back.
   await owner.getByRole("link", { name: "Refresh list" }).click();
-  await owner.waitForURL(`**/app/${mobile}/settings/integrations?github=refreshed`);
+  await owner.waitForURL(`**/app/${mobile}/settings/integrations/github?github=refreshed`);
   await expect(owner.getByText("Repositories refreshed.")).toBeVisible();
   await expect(owner.getByRole("list", { name: "This project's repositories" }).getByRole("listitem")).toHaveText(["acme-e2e/ios"]);
 
+  // Integrations lists it as connected, with Manage.
+  await owner.getByRole("link", { name: "Back to integrations" }).click();
+  await expect(owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ })).toBeVisible();
+  await checkpoint(owner, "settings-integrations-connected");
+  await owner.getByRole("link", { name: /GitHub · acme-e2e.*Manage/ }).click();
   await owner.getByRole("button", { name: "Disconnect" }).click();
   await expect(owner.getByText("GitHub disconnected")).toBeVisible();
   await expect(owner.getByRole("link", { name: "Connect GitHub" })).toBeVisible();
+  await checkpoint(owner, "settings-integrations");
 });

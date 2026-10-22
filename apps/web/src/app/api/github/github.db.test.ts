@@ -130,7 +130,7 @@ describe("connecting", () => {
 
   test("the person who installs can see the installation: the project is connected", async () => {
     github.user("code-1", [{ id: 501, account: "acme" }]);
-    expect(await connect(project.slug, 501, "code-1")).toBe(`${APP}/app/${project.slug}/settings/integrations?github=connected`);
+    expect(await connect(project.slug, 501, "code-1")).toBe(`${APP}/app/${project.slug}/settings/integrations/github?github=connected`);
     expect(await connected(project.id)).toMatchObject({ installationId: 501, accountLogin: "acme" });
   });
 

@@ -35,7 +35,7 @@ export async function connectGithub(
   await admin.getByRole("link", { name: "Connect GitHub" }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=choose`);
   await admin.getByRole("link", { name: `Connect @${installation.account ?? "acme"}` }).click();
-  await admin.waitForURL(`**/app/${slug}/settings/integrations?github=connected`);
+  await admin.waitForURL(`**/app/${slug}/settings/integrations/github?github=connected`);
   for (const name of installation.add ?? repositories.map((repo) => repo.fullName)) {
     await admin.getByRole("button", { name: "Add repository" }).click();
     await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name }).click();
