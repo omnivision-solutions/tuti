@@ -1,7 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const signingKey = (purpose: string) => `tuti:${purpose}:${process.env.BETTER_AUTH_SECRET}`;
-const mac = (purpose: string, payload: string) => createHmac("sha256", signingKey(purpose)).update(payload).digest("base64url");
+const signingKey = (purpose: string, secret = process.env.BETTER_AUTH_SECRET) => `tuti:${purpose}:${secret}`;
+const mac = (purpose: string, payload: string, secret?: string) =>
+  createHmac("sha256", signingKey(purpose, secret)).update(payload).digest("base64url");
 
 /** Compares bytes: a crafted value can have the right number of characters but not of bytes. */
 function same(a: string, b: string): boolean {
@@ -31,8 +32,13 @@ export function verifyValue(purpose: string, value: string, now = Date.now()): s
   return same(signature, mac(purpose, parts.join("."))) && Number(expires) * 1000 > now ? parts.slice(0, -1) : null;
 }
 
-/** A signature of `payload` that never expires, for links that must keep working (images in emails). */
-export const signForever = (purpose: string, payload: string): string => mac(`${purpose}:forever`, payload);
+/**
+ * A signature of `payload` that never expires, for links that must keep working (images in emails).
+ * Keyed with MEDIA_LINK_SECRET when set, so rotating the auth secret (after a leak) doesn't break
+ * every image in emails already sent. Changing MEDIA_LINK_SECRET, or setting it later, does.
+ */
+export const signForever = (purpose: string, payload: string): string =>
+  mac(`${purpose}:forever`, payload, process.env.MEDIA_LINK_SECRET || undefined);
 
 export const verifyForever = (purpose: string, payload: string, signature: string): boolean =>
   same(signature, signForever(purpose, payload));
