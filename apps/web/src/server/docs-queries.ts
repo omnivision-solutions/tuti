@@ -518,3 +518,37 @@ export function articleMarkdown(article: { title: string; doc: Doc }): string {
   const title = { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: article.title }] };
   return `${toMarkdown({ type: "doc", content: [title, ...(article.doc.content ?? [])] }, { mediaBaseUrl: mediaPublicUrl() })}\n`;
 }
+
+/** How many articles the docs' home lists as popular, and over how many days their views count. */
+export const POPULAR_ARTICLES = 5;
+const POPULAR_DAYS = 30;
+
+/**
+ * The docs' home's "Popular articles" (Customize → Docs home): the most-viewed articles of the last
+ * 30 days among those this reader sees in `docs` and may open (locked ones left out), most viewed
+ * first; articles nobody viewed aren't popular.
+ */
+export async function popularArticles(projectSlug: string, docs: DocsContents): Promise<DocsArticleLink[]> {
+  const collections = (list: DocsCollection[]): DocsArticleLink[] => list.flatMap((c) => [...c.articles, ...collections(c.collections)]);
+  const readable = new Map(
+    [...collections(docs.collections), ...docs.uncollected].filter((article) => !article.locked).map((article) => [article.slug, article]),
+  );
+  if (readable.size === 0) {
+    return [];
+  }
+  const since = new Date(Date.now() - POPULAR_DAYS * 24 * 60 * 60 * 1000);
+  const top = await prisma.articleViewDay.groupBy({
+    by: ["articleId"],
+    where: { day: { gte: since }, article: { ...listedArticle, project: { slug: projectSlug }, slug: { in: [...readable.keys()] } } },
+    _sum: { views: true },
+    orderBy: [{ _sum: { views: "desc" } }, { articleId: "asc" }],
+    take: POPULAR_ARTICLES,
+  });
+  const slugs = new Map(
+    (await prisma.article.findMany({ where: { id: { in: top.map((row) => row.articleId) } }, select: { id: true, slug: true } })).map((a) => [a.id, a.slug]),
+  );
+  return top.flatMap((row) => {
+    const article = readable.get(slugs.get(row.articleId) ?? "");
+    return article ? [article] : [];
+  });
+}
