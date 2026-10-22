@@ -44,6 +44,9 @@ function block(node: JSONContent, ctx: Context): string {
       return "---";
     case "codeBlock": {
       const code = (node.content ?? []).map((t) => t.text ?? "").join("");
+      if (ctx.cell) {
+        return cellCode(code);
+      }
       const fence = "`".repeat(Math.max(3, ...[...code.matchAll(/`+/g)].map((m) => m[0].length + 1)));
       const language = node.attrs?.language;
       return `${fence}${typeof language === "string" && /^[\w#+.-]+$/.test(language) ? language : ""}\n${code}\n${fence}`;
@@ -126,10 +129,8 @@ function inline(node: JSONContent, ctx: Context): string {
     if (child.type !== "text" || !child.text) {
       continue;
     }
-    // In a table cell GFM reads `\|` as a pipe even in code, and has no way to write a backslash before one
-    // there: such code is written as text (the same characters, not in code).
-    const code = child.marks?.some((mark) => mark.type === "code") && !(ctx.cell && child.text.includes("\\|"));
-    let text = code ? codeSpan(ctx.cell ? child.text.replaceAll("|", "\\|") : child.text) : escape(child.text);
+    const code = child.marks?.some((mark) => mark.type === "code");
+    let text = code ? (ctx.cell ? cellCode(child.text) : codeSpan(child.text)) : escape(child.text);
     if (!code && child.text.trim() === "") {
       out += text;
       continue;
@@ -174,6 +175,12 @@ function inline(node: JSONContent, ctx: Context): string {
  * start an entity (`&copy;`).
  */
 const escape = (text: string) => text.replace(/[\\`*_[\]<|]|&(?=#?[a-z0-9]+;)/gi, "\\$&");
+
+/**
+ * Code in a table cell, on one line. GFM reads `\|` there as a pipe even in code, and has no way to write a
+ * backslash before one: such code is written as text (the same characters, not in code).
+ */
+const cellCode = (text: string) => (text.includes("\\|") ? escape(text) : codeSpan(text.replaceAll("|", "\\|")));
 
 function codeSpan(text: string): string {
   const ticks = "`".repeat(Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length)) + 1);
