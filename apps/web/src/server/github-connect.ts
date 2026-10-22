@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { forgetRepositories, type GithubRepo } from "@tuti/jobs";
+import { syncRepositories } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { NextResponse } from "next/server";
 
@@ -66,39 +66,27 @@ export async function adminProject(where: { id: string } | { slug: string }) {
 }
 
 /**
- * Connects the project to the installation, or refreshes its list (`repositories`: the ones the
- * person who came back from GitHub can access). A project starts with no repositories: the team
- * adds the ones that belong to it.
+ * Connects the project to the installation. Its list is every repository the App can see on the
+ * account (read with the App's own access); a project starts with none of them, for the team to add.
  */
-export async function saveConnection(
-  project: { id: string; userId: string },
-  installationId: number,
-  account: { login: string; type: string; repositories: GithubRepo[] },
-) {
-  const unlisted = await prisma.$transaction(async (tx) => {
-    const existing = await tx.githubInstallation.findUnique({
-      where: { projectId: project.id },
-      select: { id: true, installationId: true, included: { select: { repoId: true, fullName: true } } },
-    });
-    const same = existing?.installationId === installationId;
-    if (existing && !same) {
-      // Connected to another account before: its repositories go.
+export async function saveConnection(project: { id: string; userId: string }, installationId: number, account: GithubAccount) {
+  const connection = await prisma.$transaction(async (tx) => {
+    const existing = await tx.githubInstallation.findUnique({ where: { projectId: project.id }, select: { id: true, installationId: true } });
+    const switched = existing !== null && existing.installationId !== installationId;
+    if (switched) {
+      // Connected to another account before: its repositories go, and so does its list.
       await tx.githubRepository.deleteMany({ where: { connectionId: existing.id } });
     }
-    // What's listed: what the person can access, and what the project has already.
-    const included = same ? existing.included.map((repo) => ({ id: repo.repoId, fullName: repo.fullName })) : [];
-    const repositories = [...account.repositories, ...included.filter((repo) => !account.repositories.some((r) => r.id === repo.id))];
-    const data = { installationId, accountLogin: account.login, accountType: account.type, repositories };
-    await tx.githubInstallation.upsert({
+    const data = { installationId, accountLogin: account.login, accountType: account.type, ...(switched && { repositories: [] }) };
+    return tx.githubInstallation.upsert({
       where: { projectId: project.id },
       update: data,
       create: { ...data, projectId: project.id, createdById: project.userId },
+      select: { id: true },
     });
-    return included.filter((repo) => !account.repositories.some((r) => r.id === repo.id)).map((repo) => repo.id);
   });
-  // The project's, but not listed for this person: if GitHub says they've left the installation (a
-  // removal whose webhook never came), they go. Best effort: the refresh itself is done.
-  await forgetRepositories(installationId, unlisted).catch((error: unknown) =>
-    log.warn("Couldn't check GitHub for removed repositories", { error, installationId }),
+  // Best effort: connected either way, and Refresh list tries again.
+  await syncRepositories(connection.id, installationId).catch((error: unknown) =>
+    log.warn("Couldn't list a GitHub installation's repositories", { error, installationId }),
   );
 }

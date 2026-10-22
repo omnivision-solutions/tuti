@@ -1,5 +1,5 @@
 import { type Prisma, prisma } from "@tuti/db";
-import { embedPosts, listedRepositories } from "@tuti/jobs";
+import { embedPosts, listedRepositories, syncRepositories } from "@tuti/jobs";
 import { LINK_MIN_SIMILARITY } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type GithubFake, type OpenAIFake, startGithubFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -10,14 +10,13 @@ import { request } from "@/test/next-headers";
 import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions } from "@/server/operations/links";
 import { publishChangelogEntry } from "@/server/operations/changelog";
 import { call } from "@/server/operations/run";
-import { disconnectGithub, setGithubRepository } from "@/server/github";
+import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
 
 import GithubIntegrationPage from "@/app/app/[project]/settings/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";
-import { GET as refreshRoute } from "./refresh/route";
 import { GET as setup } from "./setup/route";
 import { GET as pickAccount } from "./use/route";
 import { POST as webhook } from "./webhook/route";
@@ -205,13 +204,6 @@ describe("repositories", () => {
       select: { id: true },
     });
   const linksOf = async (postId: string) => (await prisma.postLink.findMany({ where: { postId }, select: { url: true } })).map((l) => l.url);
-  /** "Refresh": GitHub's authorize page sends the person straight back with a code. */
-  async function refreshList(projectSlug: string, code: string) {
-    const authorize = location(await refreshRoute(new Request(`${APP}/api/github/refresh?project=${projectSlug}`)));
-    const state = new URL(authorize).searchParams.get("state")!;
-    return location(await callback(new Request(`${APP}/api/github/callback?code=${code}&state=${encodeURIComponent(state)}`)));
-  }
-
   const add = (slug: string, repo: { id: number }) => setGithubRepository(slug, repo.id, true);
 
   test("a project starts with no repositories, and adds the ones that belong to it", async () => {
@@ -259,17 +251,23 @@ describe("repositories", () => {
     expect(await included(other.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
-  test("only repositories the person who connected can access can be added", async () => {
+  test("the list is what the app can see on the account; Refresh list reads it again, without a trip to GitHub", async () => {
     github.user("code-r3", [{ id: 703, account: "acme", repositories: [web] }]);
     await connect(project.slug, 703, "code-r3");
     expect(await add(project.slug, mobile)).toEqual({
       error: "Refresh the list: that repository isn't one this project can include",
     });
     expect(await setGithubRepository(project.slug, Number.NaN, true)).toEqual({ error: "Unknown repository" });
-    // Refreshed by someone who can access it.
-    github.user("code-r3b", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
-    expect(await refreshList(project.slug, "code-r3b")).toMatch(/github=refreshed$/);
+    // The app gets access to another repository on GitHub.
+    github.user("code-r3", [{ id: 703, account: "acme", repositories: [web, mobile] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 2 });
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
     expect(await add(project.slug, mobile)).toEqual({});
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+    // GitHub not answering changes nothing.
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
     expect(await included(project.id)).toEqual(["acme/mobile"]);
   });
 
@@ -308,6 +306,105 @@ describe("repositories", () => {
     expect(await add(project.slug, api)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
   });
 
+  test("switching to another account clears the list, even if GitHub can't list the new one yet", async () => {
+    github.user("code-r12", [{ id: 730, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 730, "code-r12");
+    github.user("code-r12b", [{ id: 731, account: "elsewhere", repositories: [mobile] }]);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "not a key");
+    expect(await connect(project.slug, 731, "code-r12b")).toMatch(/github=connected$/);
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", github.env.GITHUB_APP_PRIVATE_KEY!);
+    expect(await connected(project.id)).toMatchObject({ installationId: 731, repositories: [] });
+    expect(await add(project.slug, web)).toEqual({ error: "Refresh the list: that repository isn't one this project can include" });
+  });
+
+  test("a list GitHub didn't give in full (over 10,000) changes nothing", async () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => ({ id: 800_000 + i, fullName: `acme/many-${i}` }));
+    github.user("code-r13", [{ id: 732, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 732, "code-r13");
+    await add(project.slug, web);
+    github.user("code-r13", [{ id: 732, account: "acme", repositories: [...many, web] }]);
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web] });
+  });
+
+  test("a list that changed while GitHub was paging through it changes nothing", async () => {
+    const many = Array.from({ length: 150 }, (_, i) => ({ id: 810_000 + i, fullName: `acme/paged-${i}` }));
+    github.user("code-r15", [{ id: 735, account: "acme", repositories: [web, ...many] }]);
+    await connect(project.slug, 735, "code-r15");
+    await add(project.slug, web);
+    // A repository goes from GitHub between the first and second page: the second says one fewer.
+    const realFetch = globalThis.fetch;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await realFetch(input, init);
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.includes("/installation/repositories") || !url.includes("page=2")) {
+        return response;
+      }
+      const page = (await response.json()) as { total_count: number };
+      return Response.json({ ...page, total_count: page.total_count - 1 }, { headers: response.headers });
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/web"]);
+  });
+
+  test("a repository missed by one read of the list isn't removed: a second read has to agree", async () => {
+    github.user("code-r16", [{ id: 736, account: "acme", repositories: [web, mobile] }]);
+    await connect(project.slug, 736, "code-r16");
+    await add(project.slug, web);
+    // The first read skips acme/web (it moved between pages while others came and went); the second has it.
+    const realFetch = globalThis.fetch;
+    let reads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await realFetch(input, init);
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.includes("/installation/repositories") || reads++ > 0) {
+        return response;
+      }
+      const page = (await response.json()) as { total_count: number; repositories: { id: number }[] };
+      return Response.json({ ...page, repositories: page.repositories.map((repo) => (repo.id === web.id ? { id: 7099, full_name: "acme/new" } : repo)) });
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ error: "GitHub didn't answer. Try again in a moment." });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/web"]);
+    expect(await connected(project.id)).toMatchObject({ repositories: [web, mobile] });
+  });
+
+  test("a repository added while a refresh runs stays", async () => {
+    const docs = { id: 7015, fullName: "acme/docs" };
+    github.user("code-r17", [{ id: 737, account: "acme", repositories: [web, mobile, docs] }]);
+    await connect(project.slug, 737, "code-r17");
+    await add(project.slug, web);
+    // GitHub drops acme/web and acme/docs; while the refresh confirms acme/web is gone, someone adds acme/docs (still on the page's old list).
+    github.user("code-r17", [{ id: 737, account: "acme", repositories: [mobile] }]);
+    const realFetch = globalThis.fetch;
+    let reads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.includes("/installation/repositories") && ++reads === 2) {
+        expect(await add(project.slug, docs)).toEqual({});
+      }
+      return realFetch(input, init);
+    });
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
+    vi.mocked(globalThis.fetch).mockRestore();
+    expect(await included(project.id)).toEqual(["acme/docs"]);
+  });
+
+  test("a list read for an account the project has since left isn't saved", async () => {
+    github.user("code-r14", [{ id: 733, account: "acme", repositories: [web] }]);
+    await connect(project.slug, 733, "code-r14");
+    const connection = (await connected(project.id))!;
+    github.user("code-r14b", [{ id: 734, account: "elsewhere", repositories: [mobile] }]);
+    await connect(project.slug, 734, "code-r14b");
+    await add(project.slug, mobile);
+    // A refresh that read account 733 lands after the switch.
+    await expect(syncRepositories(connection.id, 733)).rejects.toThrow();
+    expect(await connected(project.id)).toMatchObject({ installationId: 734, repositories: [mobile] });
+    expect(await included(project.id)).toEqual(["acme/mobile"]);
+  });
+
   test("a refresh drops repositories GitHub no longer has (a removal it didn't tell us of)", async () => {
     github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
     await connect(project.slug, 722, "code-r11");
@@ -315,17 +412,9 @@ describe("repositories", () => {
     await add(project.slug, mobile);
     // Removed on GitHub, and no webhook arrived.
     github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
-    await refreshList(project.slug, "code-r11");
+    expect(await refreshGithubRepositories(project.slug)).toEqual({ count: 1 });
     expect(await included(project.id)).toEqual(["acme/web"]);
     expect(await connected(project.id)).toMatchObject({ repositories: [web] });
-    // One the person refreshing can't access, but the installation still has, stays.
-    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web, mobile] }]);
-    await refreshList(project.slug, "code-r11");
-    await add(project.slug, mobile);
-    github.user("code-r11c", [{ id: 722, account: "acme", repositories: [mobile] }]);
-    github.user("code-r11", [{ id: 722, account: "acme", repositories: [web] }]);
-    await refreshList(project.slug, "code-r11");
-    expect(await included(project.id)).toEqual(["acme/web", "acme/mobile"]);
   });
 
   test("a renamed repository keeps its project; one moved to another account is added there once GitHub says it's there", async () => {

@@ -1,7 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import type { GithubRepo } from "@tuti/jobs";
-
 import * as signed from "./signed";
 
 /**
@@ -68,8 +66,8 @@ export type GithubAccount = { login: string; type: string };
 
 /**
  * The person who came back from GitHub's web authorization flow: we exchange its `code` for
- * their token, to ask GitHub (as them) which of the App's installations they can see and which
- * repositories of each they can access. Null if the code isn't good.
+ * their token, to ask GitHub (as them) which of the App's installations they can see. Null if
+ * the code isn't good.
  */
 async function githubUser(config: GithubConfig, code: string, redirectUri: string) {
   const tokenResponse = await fetch(`${config.url}/login/oauth/access_token`, {
@@ -105,21 +103,13 @@ async function githubUser(config: GithubConfig, code: string, redirectUri: strin
         }
       }
     },
-    async repositories(installationId: number) {
-      const repositories: GithubRepo[] = [];
-      for await (const page of pages<{ repositories: { id: number; full_name: string }[] }>(`/user/installations/${installationId}/repositories`)) {
-        repositories.push(...page.repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name })));
-      }
-      return repositories;
-    },
   };
 }
 
 /**
  * Proof that a person can see an installation (GitHub's setup redirect only says
  * which installation, and anyone can type one): we look for it among the installations
- * GitHub says they can see. Returns the installation's account and the repositories of it the
- * person can access (only those can be included in a project), or null.
+ * GitHub says they can see. Returns the installation's account, or null.
  */
 export async function installationForUser(config: GithubConfig, code: string, redirectUri: string, installationId: number) {
   const user = await githubUser(config, code, redirectUri);
@@ -128,7 +118,7 @@ export async function installationForUser(config: GithubConfig, code: string, re
   }
   for await (const installation of user.installations()) {
     if (installation.id === installationId) {
-      return { ...installation.account, repositories: await user.repositories(installationId) };
+      return installation.account;
     }
   }
   return null;

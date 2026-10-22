@@ -77,11 +77,64 @@ export async function repositoryConnection(installationId: number, repo: GithubR
   return connection;
 }
 
-/** GitHub ids of the repositories the installation can access now (up to 10,000, 100 a page). Throws if GitHub can't say. */
-async function installationRepositoryIds(installationId: number): Promise<Set<number>> {
+/**
+ * The repositories the installation can access now (up to 10,000, 100 a page), as the App reads
+ * them. Throws if GitHub can't say, has more than that, or the list changed while it was read: a
+ * partial list would look like removals.
+ */
+export async function installationRepositories(installationId: number): Promise<GithubRepo[]> {
   const api = await installationApi(installationId);
-  const repositories = await api.list<{ id: number }>("/installation/repositories", (page) => (page as { repositories: { id: number }[] }).repositories, 100);
-  return new Set(repositories.map((repo) => repo.id));
+  type Page = { total_count: number; repositories: { id: number; full_name: string }[] };
+  let total: number | undefined;
+  const repositories = await api.list<{ id: number; full_name: string }>(
+    "/installation/repositories",
+    (page) => {
+      // Pages aren't one snapshot: one that changed while being read could be missing a repository.
+      const count = (page as Page).total_count;
+      if (total !== undefined && count !== total) {
+        throw new Error("The installation's repositories changed while GitHub listed them");
+      }
+      total = count;
+      return (page as Page).repositories;
+    },
+    100,
+  );
+  if (total !== undefined && repositories.length < total) {
+    throw new Error(`GitHub listed ${repositories.length} of the installation's ${total} repositories`);
+  }
+  return repositories.map((repo) => ({ id: repo.id, fullName: repo.full_name }));
+}
+
+const installationRepositoryIds = async (installationId: number) =>
+  new Set((await installationRepositories(installationId)).map((repo) => repo.id));
+
+/**
+ * The connection's list, from GitHub now: every repository the App can see on the account.
+ * The project's repositories that GitHub no longer has leave it (once two reads agree). Throws if
+ * GitHub can't say.
+ */
+export async function syncRepositories(connectionId: string, installationId: number): Promise<GithubRepo[]> {
+  const repositories = await installationRepositories(installationId);
+  const ids = repositories.map((repo) => repo.id);
+  // The project's repositories the list doesn't have would leave it. GitHub's pages aren't one
+  // snapshot, so one read can skip a repository: they go only if a second read agrees.
+  const missing = await prisma.githubRepository.findMany({ where: { connectionId, repoId: { notIn: ids } }, select: { repoId: true } });
+  if (missing.length > 0) {
+    const again = new Set((await installationRepositories(installationId)).map((repo) => repo.id));
+    if (missing.some((repo) => again.has(repo.repoId))) {
+      throw new Error("Two reads of the installation's repositories disagree");
+    }
+  }
+  await prisma.$transaction(async (tx) => {
+    // Only if the project is still on that installation: it may have switched while GitHub answered.
+    const { count } = await tx.githubInstallation.updateMany({ where: { id: connectionId, installationId }, data: { repositories } });
+    if (count === 0) {
+      throw new Error("The project's GitHub connection changed while its repositories were read");
+    }
+    // Only those confirmed gone: one added meanwhile is the next refresh's to check.
+    await tx.githubRepository.deleteMany({ where: { connectionId, repoId: { in: missing.map((repo) => repo.repoId) } } });
+  });
+  return repositories;
 }
 
 /**

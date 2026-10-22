@@ -4,6 +4,8 @@ import { type TeamRole, prisma } from "@tuti/db";
 import { SignJWT } from "jose";
 import {
   type DnsFake,
+  type GithubFake,
+  startGithubFake,
   type SiteFake,
   startSiteFake,
   FAKE_OPENAI_KEY,
@@ -265,6 +267,23 @@ const matrix: Matrix = {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
     setGithubCloseOn: { allowed: "ADMIN", call: (slug) => github.setGithubCloseOn(slug, "MERGE") },
     setGithubPrComments: { allowed: "ADMIN", call: (slug) => github.setGithubPrComments(slug, true) },
+    // Reads the installation's repositories from GitHub (the fake), with the App's own access.
+    refreshGithubRepositories: {
+      allowed: "ADMIN",
+      call: async (slug) => {
+        const before = Object.keys(githubFake.env).map((name) => [name, process.env[name] ?? ""] as const);
+        for (const [name, value] of Object.entries(githubFake.env)) {
+          vi.stubEnv(name, value);
+        }
+        try {
+          return await github.refreshGithubRepositories(slug);
+        } finally {
+          for (const [name, value] of before) {
+            vi.stubEnv(name, value);
+          }
+        }
+      },
+    },
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
   },
   invitations: {
@@ -482,6 +501,7 @@ let dns: DnsFake;
 let site: SiteFake;
 let model: ModelFake;
 let openai: OpenAIFake;
+let githubFake: GithubFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
@@ -493,6 +513,7 @@ beforeAll(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   model = await startModelFake();
   openai = await startOpenAIFake();
+  githubFake = await startGithubFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
     vi.stubEnv(name, value);
   }
@@ -514,7 +535,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 
