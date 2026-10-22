@@ -57,13 +57,16 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await owner.getByRole("link", { name: "Back to Customize" }).click();
   await owner.getByRole("link", { name: /^Docs home/ }).click();
   await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
-  await owner.getByLabel("Title", { exact: true }).fill("How can we help?");
+  await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");
   await expect(preview.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
   await expect(preview.getByText("Answers to everything about Acme.")).toBeVisible();
   await checkpoint(owner, "customize-docs-home");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Docs home saved")).toBeVisible();
+  // Saved as trimmed, and the form shows what's saved: nothing left to save.
+  await expect(owner.getByLabel("Title", { exact: true })).toHaveValue("How can we help?");
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
   await visitor.goto("/docs");
   await expect(visitor.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
 });
