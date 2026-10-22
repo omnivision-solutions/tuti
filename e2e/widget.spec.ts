@@ -552,6 +552,8 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
+  // Saved, the launcher in the preview is the new one.
+  await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
   await checkpoint(owner, "widget-settings");
   await owner.reload();
   await expect(owner.getByLabel("Button label")).toHaveValue("Help & ideas");
