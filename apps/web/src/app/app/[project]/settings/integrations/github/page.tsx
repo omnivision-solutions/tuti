@@ -100,8 +100,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Repositories</CardTitle>
           <CardDescription>
-            Pull requests and releases from these repositories link to and complete this project&apos;s posts. A repository belongs to one
-            project; other projects can connect @{installation.accountLogin} for theirs.
+            Pull requests and releases from these repositories update this project&apos;s posts. Each repository belongs to one project.
           </CardDescription>
         </CardHeader>
         <CardContent>
