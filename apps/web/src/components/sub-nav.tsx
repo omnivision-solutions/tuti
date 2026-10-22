@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { activeHref } from "@/lib/active-link";
 import { cn } from "@/lib/utils";
 
 /** A page's sections as links under its header (Settings → Access, Single sign-on, …); they wrap on phones. */
 export function SubNav({ label, items }: { label: string; items: { title: string; href: string }[] }) {
-  const pathname = usePathname();
+  const current = activeHref(usePathname(), items.map((item) => item.href));
   return (
     <nav aria-label={label} className="-mt-2 flex flex-wrap gap-x-1 gap-y-1 border-b">
       {items.map((item) => {
-        const active = pathname === item.href;
+        const active = item.href === current;
         return (
           <Link
             key={item.href}

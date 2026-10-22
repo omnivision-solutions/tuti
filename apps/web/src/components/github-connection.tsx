@@ -1,36 +1,65 @@
 "use client";
 
-import { ExternalLinkIcon, InfoIcon, PlusIcon, XIcon } from "lucide-react";
+import { ExternalLinkIcon, InfoIcon, PlusIcon, UnplugIcon, XIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { disconnectGithub, setGithubCloseOn, setGithubPrComments, setGithubRepository } from "@/server/github";
 
-export function DisconnectGithubButton({ projectSlug }: { projectSlug: string }) {
+export function DisconnectGithubButton({ projectSlug, account }: { projectSlug: string; account: string }) {
   const [pending, startTransition] = useTransition();
+  const [open, setOpen] = useState(false);
+  const router = useRouter();
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      disabled={pending}
-      onClick={() =>
-        startTransition(async () => {
-          const result = await disconnectGithub(projectSlug);
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success("GitHub disconnected");
-          }
-        })
-      }
-    >
-      Disconnect
-    </Button>
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
+        <UnplugIcon />
+        Disconnect
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Disconnect GitHub?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Pull requests and releases from @{account} stop reaching this project, and its repositories are free for other projects.
+            Posts keep the links they have. The Tuti app stays installed on GitHub until you uninstall it there.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await disconnectGithub(projectSlug);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  router.replace(`/app/${projectSlug}/settings/integrations?github=disconnected`);
+                }
+              })
+            }
+          >
+            Disconnect
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -129,8 +158,8 @@ export function GithubRepositories({
   projectSlug: string;
   account: string;
   repositories: GithubRepositoryRow[];
-  /** The installation's settings on GitHub, where its repositories are chosen. */
-  manageUrl: string;
+  /** The installation's settings on GitHub, where its repositories are chosen (null when the server has no GitHub App). */
+  manageUrl: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
@@ -221,20 +250,22 @@ export function GithubRepositories({
           </ul>
         </PopoverContent>
       </Popover>
-      <div className="flex flex-col gap-2 border-t pt-4">
-        <span className="text-muted-foreground">
-          Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.
-        </span>
-        <div className="flex flex-wrap gap-2">
-          <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Manage access on GitHub
-            <ExternalLinkIcon />
-          </a>
-          <a href={`/api/github/refresh?${new URLSearchParams({ project: projectSlug })}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Refresh list
-          </a>
+      {manageUrl && (
+        <div className="flex flex-col gap-2 border-t pt-4">
+          <span className="text-muted-foreground">
+            Missing a repository? Give the Tuti app access to it on GitHub, then refresh the list here.
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <a href={manageUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Manage access on GitHub
+              <ExternalLinkIcon />
+            </a>
+            <a href={`/api/github/refresh?${new URLSearchParams({ project: projectSlug })}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              Refresh list
+            </a>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

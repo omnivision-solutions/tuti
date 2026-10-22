@@ -16,7 +16,8 @@ export async function disconnectGithub(projectSlug: string): Promise<{ error?: s
   if (count === 0) {
     return { error: "GitHub isn't connected" };
   }
-  refresh();
+  // No refresh(): the page it's on (GitHub's settings) would redirect, adding to the history;
+  // the button goes on to Integrations itself.
   return {};
 }
 

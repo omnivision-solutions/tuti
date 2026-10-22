@@ -23,8 +23,10 @@ export async function GET(request: Request) {
   if (!project) {
     return NextResponse.redirect(new URL("/app?github=expired", appUrl()));
   }
+  // Connected (or refreshed): on to its settings; otherwise back to the integrations, to try again.
   const done = (result: string) => {
-    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=${result}`, appUrl()));
+    const page = result === "connected" || result === "refreshed" ? "integrations/github" : "integrations";
+    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/${page}?github=${result}`, appUrl()));
     response.cookies.delete({ name: INSTALL_COOKIE, path: "/api/github" });
     response.cookies.delete({ name: ACCOUNTS_COOKIE, path: "/" });
     return response;
