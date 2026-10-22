@@ -26,32 +26,28 @@ export function TeamHtml({ html, origin }: { html: string; origin: string }) {
         if (gone) {
           return;
         }
-        if (!(node instanceof HTMLScriptElement)) {
-          // Scripts inside other elements run too, when the element is added.
-          if (node instanceof Element) {
-            for (const inner of node.querySelectorAll("script")) {
-              inner.replaceWith(fresh(inner));
-            }
-          }
-          document.body.append(node);
-          added.push(node);
+        if (node instanceof HTMLScriptElement) {
+          const script = await run(node, (made) => document.body.append(made));
+          added.push(script);
           continue;
         }
-        const script = fresh(node);
-        const waits = script.src && runs(node) && !node.hasAttribute("async") && !node.hasAttribute("defer");
-        // Made by script, external scripts are async unless told otherwise.
-        script.async = !waits && script.async;
-        const loaded = waits
-          ? new Promise<void>((done) => {
-              script.addEventListener("load", () => done());
-              script.addEventListener("error", () => done());
-              // A script that never answers holds up the rest no longer than this.
-              setTimeout(done, SCRIPT_WAIT_MS);
-            })
-          : null;
-        document.body.append(script);
-        added.push(script);
-        await loaded;
+        // Scripts inside other elements: each taken out for a placeholder, then put back in order, like the rest.
+        const places =
+          node instanceof Element
+            ? [...node.querySelectorAll("script")].map((inner) => {
+                const place = document.createComment("");
+                inner.replaceWith(place);
+                return { inner, place };
+              })
+            : [];
+        document.body.append(node);
+        added.push(node);
+        for (const { inner, place } of places) {
+          if (gone) {
+            return;
+          }
+          await run(inner, (made) => place.replaceWith(made));
+        }
       }
     })();
     return () => {
@@ -70,6 +66,28 @@ const JS_TYPES = new Set(["", "module", "text/javascript", "application/javascri
 
 function runs(script: HTMLScriptElement): boolean {
   return !script.hasAttribute("nomodule") && JS_TYPES.has((script.getAttribute("type") ?? "").trim().toLowerCase());
+}
+
+/**
+ * Adds a script that runs, made like `script`, with `add`; done once it has run when it's external and
+ * the browser runs it (unless marked async or defer, which don't hold up what follows), or after
+ * SCRIPT_WAIT_MS.
+ */
+async function run(script: HTMLScriptElement, add: (made: HTMLScriptElement) => void): Promise<HTMLScriptElement> {
+  const made = fresh(script);
+  const waits = made.src && runs(script) && !script.hasAttribute("async") && !script.hasAttribute("defer");
+  // Made by script, external scripts are async unless told otherwise.
+  made.async = !waits && made.async;
+  const loaded = waits
+    ? new Promise<void>((done) => {
+        made.addEventListener("load", () => done());
+        made.addEventListener("error", () => done());
+        setTimeout(done, SCRIPT_WAIT_MS);
+      })
+    : null;
+  add(made);
+  await loaded;
+  return made;
 }
 
 /** A script that runs when it's added, like `script`. */
