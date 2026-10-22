@@ -60,7 +60,9 @@ const SITE_DENIED = "Only project owners and admins can change where the portal 
  * `url`, or the site and the path as two fields (`site`, `path`), put together.
  */
 export async function saveSite(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
-  const field = (name: string) => String(formData.get(name) ?? "").trim();
+  // Capped before anything else reads them (site.set takes 500 characters): the slash trimming below
+  // backtracks on a long run of slashes.
+  const field = (name: string) => String(formData.get(name) ?? "").slice(0, 600).trim();
   // site.set adds https:// to a site typed without it.
   const url = formData.has("url") ? field("url") : `${field("site").replace(/\/+$/, "")}/${field("path").replace(/^\/+/, "")}`;
   return asAdmin(projectSlug, SITE_DENIED, (context) => call(setSite, context, { url }));
