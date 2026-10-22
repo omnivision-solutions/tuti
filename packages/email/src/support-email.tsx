@@ -50,10 +50,12 @@ type EscalationProps = {
   summary: string | null;
   /** The visitor's copy, rather than the team's. */
   copy?: boolean;
+  /** The copy leaves out the answer and some articles: they aren't public, and the address may not be the asker's. */
+  withheld?: boolean;
 };
 
 /** A question the AI couldn't help with, passed to the team ("Ask a person"); the visitor gets a copy. All of it is plain text. */
-export function EscalationEmail({ projectName, from, question, note, answer, notHelpful, sources, summary, copy = false }: EscalationProps) {
+export function EscalationEmail({ projectName, from, question, note, answer, notHelpful, sources, summary, copy = false, withheld = false }: EscalationProps) {
   return (
     <Layout preview={copy ? `We've passed your question to the ${projectName} team.` : `${from} asked: ${question}`}>
       <Text style={body}>
@@ -83,8 +85,17 @@ export function EscalationEmail({ projectName, from, question, note, answer, not
           <Text style={value}>{note}</Text>
         </>
       )}
-      <Text style={label}>{answer ? `The AI's answer${notHelpful ? " (marked not helpful)" : ""}` : "The AI's answer"}</Text>
-      <Text style={value}>{answer ?? "None: it couldn't answer."}</Text>
+      {withheld ? (
+        <Text style={{ ...body, marginTop: 16 }}>
+          Some of the articles the AI used aren&apos;t public, so this copy leaves out its answer and those articles. The
+          team has them.
+        </Text>
+      ) : (
+        <>
+          <Text style={label}>{answer ? `The AI's answer${notHelpful ? " (marked not helpful)" : ""}` : "The AI's answer"}</Text>
+          <Text style={value}>{answer ?? "None: it couldn't answer."}</Text>
+        </>
+      )}
       {sources.length > 0 && (
         <>
           <Text style={label}>Articles it cited</Text>

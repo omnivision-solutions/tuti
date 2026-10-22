@@ -170,6 +170,9 @@ describe("asking a person", () => {
     expect(copy.replyTo).toBe(support);
     expect(copy.text).toContain("We've passed your question");
     expect(copy.text).toContain("Can I pay with crypto?");
+    // The article is public, so the copy names it, with the answer.
+    expect(copy.text).toContain("Billing");
+    expect(copy.text).toContain("You can pay by card.");
 
     // The summary is written from the question, the answer and the note, as data.
     const [summary] = model.requests;
@@ -265,6 +268,108 @@ describe("asking a person", () => {
     vi.stubEnv("SMTP_PORT", String(mailbox.port));
     model.reply("They want to pay in crypto.");
     expect(await escalateDocs(project.slug, question.id, newAddress(), "")).toEqual({});
+  });
+});
+
+describe("the visitor's copy", () => {
+  const WITHHELD = "Some of the articles the AI used aren't public";
+
+  /** A published article; `access` restricts who may read it. */
+  const article = (title: string, access: "INHERIT" | "SIGNED_IN" | "GROUPS" = "INHERIT") =>
+    prisma.article.create({
+      data: { projectId: project.id, slug: title.toLowerCase(), title, body: `${title} text.`, publishedAt: new Date(), access },
+    });
+
+  /** A signed-in reader (not on the team) whose own address is verified, and an answered question of theirs citing `articles`. */
+  async function signedInAsker(articles: { id: string }[]) {
+    const ada = await signUp("Ada");
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: true } });
+    actAs(ada);
+    const question = await asked(ada.id, { status: "ANSWERED", answer: "Use the export screen.", articleIds: articles.map((a) => a.id) });
+    return { ada, question };
+  }
+
+  test("to the asker's own address, it names what they may read, with the answer", async () => {
+    await turnOn();
+    const { ada, question } = await signedInAsker([await article("Members", "SIGNED_IN")]);
+    model.reply("They want to export.");
+    expect(await escalateDocs(project.slug, question.id, ada.email, "")).toEqual({});
+    const copy = await mailbox.latestTo(ada.email);
+    for (const text of ["Members", "Use the export screen.", "They want to export."]) {
+      expect(copy.text).toContain(text);
+    }
+    expect(copy.text).not.toContain(WITHHELD);
+  });
+
+  test("to another address, it names only what anyone may read, and leaves out the answer and the summary if that leaves an article out; the team gets everything", async () => {
+    await turnOn();
+    const { question } = await signedInAsker([await article("Members", "SIGNED_IN"), await article("Billing")]);
+    const visitor = newAddress();
+    model.reply("They want to export.");
+    expect(await escalateDocs(project.slug, question.id, visitor, "")).toEqual({});
+
+    const copy = await mailbox.latestTo(visitor);
+    expect(copy.text).toContain(WITHHELD);
+    expect(copy.text).toContain("Billing");
+    expect(copy.html).toContain("/docs/billing");
+    for (const text of ["Members", "Use the export screen.", "They want to export.", "None: it couldn't answer."]) {
+      expect(copy.text).not.toContain(text);
+    }
+    const team = await mailbox.latestTo(support);
+    for (const text of ["Members", "Billing", "Use the export screen.", "They want to export."]) {
+      expect(team.text).toContain(text);
+    }
+  });
+
+  test("an article whose access narrowed since the question was asked is left out, even to the asker's own address", async () => {
+    await turnOn();
+    const members = await article("Members", "SIGNED_IN");
+    const { ada, question } = await signedInAsker([members]);
+    // Now only for a group Ada isn't in (with no groups: only the team).
+    await prisma.article.update({ where: { id: members.id }, data: { access: "GROUPS" } });
+    model.reply("They want to export.");
+    expect(await escalateDocs(project.slug, question.id, ada.email, "")).toEqual({});
+    const copy = await mailbox.latestTo(ada.email);
+    expect(copy.text).toContain(WITHHELD);
+    expect(copy.text).not.toContain("Members");
+    expect(copy.text).not.toContain("Use the export screen.");
+  });
+
+  test("an address that isn't verified isn't the asker's own", async () => {
+    await turnOn();
+    const { ada, question } = await signedInAsker([await article("Members", "SIGNED_IN")]);
+    await prisma.user.update({ where: { id: ada.id }, data: { emailVerified: false } });
+    model.reply("They want to export.");
+    expect(await escalateDocs(project.slug, question.id, ada.email, "")).toEqual({});
+    const copy = await mailbox.latestTo(ada.email);
+    expect(copy.text).toContain(WITHHELD);
+    expect(copy.text).not.toContain("Members");
+  });
+
+  test("on a private portal, a copy to another address names no article", async () => {
+    await turnOn();
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+    const { ada, question } = await signedInAsker([await article("Billing")]);
+    await prisma.portalReader.create({ data: { projectId: project.id, email: ada.email } });
+    const visitor = newAddress();
+    model.reply("They want to export.");
+    expect(await escalateDocs(project.slug, question.id, visitor, "")).toEqual({});
+    const copy = await mailbox.latestTo(visitor);
+    expect(copy.text).toContain(WITHHELD);
+    expect(copy.text).not.toContain("Billing");
+  });
+
+  test("an API key has no address of its own: its copies name only what anyone may read", async () => {
+    await turnOn();
+    const key = { actor: { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
+    const question = await asked("key-1", { status: "ANSWERED", answer: "Use the export screen.", articleIds: [(await article("Members", "SIGNED_IN")).id] });
+    const visitor = newAddress();
+    model.reply("They want to export.");
+    expect(await call(escalateOperation, key, { questionId: question.id, email: visitor })).toEqual({ id: question.id, escalated: true });
+    const copy = await mailbox.latestTo(visitor);
+    expect(copy.text).toContain(WITHHELD);
+    expect(copy.text).not.toContain("Members");
+    expect((await mailbox.latestTo(support)).text).toContain("Members");
   });
 });
 
