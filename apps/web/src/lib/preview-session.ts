@@ -1,3 +1,4 @@
+import { PREVIEW_TTL_SECONDS } from "./portal-base";
 import { signValue, verifyValue } from "./signed";
 
 /**
@@ -11,8 +12,7 @@ import { signValue, verifyValue } from "./signed";
  */
 
 const PURPOSE = "preview";
-export const PREVIEW_TTL_SECONDS = 60 * 60;
-export { PREVIEW_TOKEN_PARAM } from "./portal-base";
+export { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "./portal-base";
 
 export function previewToken(projectId: string, userId: string, now = Date.now()): string {
   return signValue(PURPOSE, [projectId, userId], PREVIEW_TTL_SECONDS, now);

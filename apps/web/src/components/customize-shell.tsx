@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { keepingFields } from "@/lib/forms";
-import { CUSTOMIZE, PREVIEW_TOKEN_PARAM } from "@/lib/portal-base";
+import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
 import type { FormState } from "@/server/form-state";
@@ -296,11 +296,25 @@ function PortalPreview({
   const [theme, setTheme] = useState<Theme | null>(null);
   // The page open in the frame (for the address bar); a new frame (after a save) opens it again.
   // The token is a frame's too: each render of the page signs a new one, and a new address would reload the frame.
+  // It lasts an hour (it's the portal's cookie for the frame): half way, the page is refreshed for a new one, and the
+  // frame reopens with it at its page.
+  const router = useRouter();
   const [path, setPath] = useState(firstPath);
   const [opened, setOpened] = useState({ version, path: firstPath, token });
   if (opened.version !== version) {
     setOpened({ version, path, token });
   }
+  const tokenAt = useRef(0);
+  useEffect(() => {
+    tokenAt.current = Date.now();
+    const renew = setTimeout(() => router.refresh(), (PREVIEW_TTL_SECONDS * 1000) / 2);
+    return () => clearTimeout(renew);
+  }, [opened.token, router]);
+  useEffect(() => {
+    if (token !== opened.token && Date.now() - tokenAt.current >= (PREVIEW_TTL_SECONDS * 1000) / 2) {
+      setOpened((current) => ({ ...current, path, token }));
+    }
+  }, [token, opened.token, path]);
   const [ready, setReady] = useState(0);
   const frame = useRef<HTMLIFrameElement>(null);
   const box = useRef<HTMLDivElement>(null);
