@@ -202,7 +202,11 @@ export function PortalHeaderLinks() {
   );
 }
 
-/** The footer: the team's links, and "Powered by tuti" unless the project has a licence to hide it. */
+/**
+ * The footer: the team's links, and "Powered by tuti" unless the project has a licence to hide it.
+ * The attribution is required by Tuti's additional licence terms (AGPL section 7(b)): see
+ * ADDITIONAL-TERMS.md at the root of the repository.
+ */
 export function PortalFooter() {
   const { footerLinks, poweredBy } = usePortalLook();
   if (footerLinks.length === 0 && !poweredBy) {

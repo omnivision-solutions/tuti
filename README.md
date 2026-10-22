@@ -135,7 +135,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.
 
 ## License
 
-[AGPL-3.0](LICENSE). Embeddable SDKs/widgets (when they exist) will be MIT.
+[AGPL-3.0](LICENSE), with [additional terms](ADDITIONAL-TERMS.md) under its section 7: portals keep
+"Powered by tuti" unless the project has a current licence from Tuti for the installation that
+serves it. Embeddable SDKs/widgets (when they exist) will be MIT,
+without those terms.
 
 ### "Powered by tuti"
 
