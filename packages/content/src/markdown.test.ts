@@ -105,6 +105,17 @@ describe("toMarkdown", () => {
     );
   });
 
+  // Each would take seconds with a pattern that rescans a run from each of its characters.
+  test("long runs of spaces and of line breaks, in text and in table cells, take no time", { timeout: 1_000 }, () => {
+    const spaces = " ".repeat(100_000);
+    const breaks = Array<object>(50_000).fill({ type: "hardBreak" });
+    expect(toMarkdown(doc(p(text(`a${spaces}b`), text("c", bold))))).toBe(`a${spaces}b**c**`);
+    expect(toMarkdown(doc(p(text("a"), ...breaks, text("b"))))).toBe(`a${"\\\n".repeat(50_000)}b`);
+    expect(toMarkdown(doc(p(text("a"), ...breaks)))).toBe("a");
+    const table = { type: "table", content: [row(cell("tableHeader", "Note")), row(cell("tableCell", `a${spaces}b`))] };
+    expect(toMarkdown(doc(table))).toBe(`| Note |\n| --- |\n| a${spaces}b |`);
+  });
+
   test("a whole article, as validated and stored", () => {
     const parsed = parseDoc(
       "article",
