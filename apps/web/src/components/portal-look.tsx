@@ -3,12 +3,14 @@
 import { LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { createContext, type CSSProperties, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 
 import { usePortalPath } from "@/components/portal-base";
 import { TutiMark } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
+import { PORTAL_FONT_CLASSES } from "@/components/portal-fonts";
 import { brandCss } from "@/lib/colors";
+import { fontVariable } from "@/lib/portal-fonts";
 import { CUSTOMIZE } from "@/lib/portal-base";
 import { DEFAULT_LOOK, type FromPortal, isToPortal, type LookImage, type PortalLook, PREVIEW_FRAME, webOnly } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
@@ -100,10 +102,19 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 
   const look = { ...saved, ...draft };
   const css = brandCss(look.color);
+  // The team's fonts (Customize → Branding → Typography) in place of the page's: a wrapper that adds
+  // nothing to the layout (display: contents) but passes them down.
+  const { heading, body } = look.fonts;
+  const fonts = {
+    ...(body && { "--font-sans": `var(${fontVariable(body)})`, fontFamily: `var(${fontVariable(body)})` }),
+    ...(heading && { "--font-heading": `var(${fontVariable(heading)})` }),
+  } as CSSProperties;
   return (
     <LookContext value={look}>
       {css && <style>{css}</style>}
-      {children}
+      <div className={cn("contents", PORTAL_FONT_CLASSES)} style={fonts}>
+        {children}
+      </div>
     </LookContext>
   );
 }

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
+import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,10 @@ const text = (data: FormData, name: string) => {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
 };
+const fontOf = (data: FormData, name: string): PortalFont | null => {
+  const value = text(data, name);
+  return isPortalFont(value) ? value : null;
+};
 const image = (data: FormData, name: string) => (text(data, `${name}Url`) ? { url: text(data, `${name}Url`) } : null);
 /** Links as the portal would show them: rows with both a label and an address. */
 const shownLinks = (data: FormData, prefix: string) => linksFrom(data, prefix).filter((link) => link.label.trim() && link.url.trim());
@@ -65,6 +70,7 @@ export function BrandingSettings({
   colorScheme,
   logoText,
   logoLink,
+  fonts,
 }: {
   projectSlug: string;
   logo: Image;
@@ -76,6 +82,7 @@ export function BrandingSettings({
   colorScheme: ColorScheme;
   logoText: string;
   logoLink: string | null;
+  fonts: { heading: PortalFont | null; body: PortalFont | null };
 }) {
   const [picked, setPicked] = useState(color);
   const colorField = useRef<HTMLInputElement>(null);
@@ -92,6 +99,7 @@ export function BrandingSettings({
       logoText: text(data, "logoText").trim(),
       // A link only once it's a whole address, as saving needs.
       logoLink: /^https:\/\/[^/\s]+\.[^/\s]+/.test(text(data, "logoLink").trim()) ? text(data, "logoLink").trim() : null,
+      fonts: { heading: fontOf(data, "headingFont"), body: fontOf(data, "bodyFont") },
     }),
     uploading > 0,
   );
@@ -169,11 +177,39 @@ export function BrandingSettings({
           </Field>
         </FieldGroup>
       </CustomizeSection>
+      <CustomizeSection title="Typography" description="Fonts for your portal's headings and text. They're served from Tuti, not Google.">
+        <FieldGroup>
+          <FontSelect id="heading-font" name="headingFont" label="Heading font" font={fonts.heading} />
+          <FontSelect id="body-font" name="bodyFont" label="Body font" font={fonts.body} />
+        </FieldGroup>
+      </CustomizeSection>
       <CustomizeSection title="Favicon" description="The icon in the browser tab.">
         <ImageField projectSlug={projectSlug} name="favicon" label="Favicon" description="A square image works best." image={favicon} look="light" onBusy={busy} />
       </CustomizeSection>
       {state.error && <FieldError>{state.error}</FieldError>}
     </form>
+  );
+}
+
+/** A font for the portal, or the page's own: a native select, so the form sends it and its changes bubble. */
+function FontSelect({ id, name, label, font }: { id: string; name: string; label: string; font: PortalFont | null }) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <select
+        id={id}
+        name={name}
+        defaultValue={font ?? ""}
+        className="h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <option value="">Page default</option>
+        {PORTAL_FONTS.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    </Field>
   );
 }
 

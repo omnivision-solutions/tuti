@@ -163,7 +163,10 @@ Settings was one long page of cards. What changes how the portal looks moves to 
 - [x] Branding: the default colour scheme (system, light or dark: a script before the page shows puts it where next-themes keeps a reader's pick, marked as the default, so a reader's own pick stays and a new default replaces the old), logo text, where the logo links
 - [x] Navigation: links above the docs' tree; a "Contact us" button in the header (https or mailto:)
 - [x] The preview on a private portal: a short-lived signed token lets the frame read it as the team does. Done: the app puts a token (one team member, one project, an hour; `lib/preview-session.ts`) in the frame's first address; `proxy.ts` trades it for an HttpOnly cookie partitioned to the app's site and redirects without it; with it the portal reads as that member, while they're still on the team
-- Not now: fonts (Google Fonts would send readers' addresses to Google), custom code (a team's script on the portal's host, where its readers' sessions are, needs a design of its own), redirects, translations
+- [x] Typography: a heading font and a body font from 16 built in with `next/font` (fetched when the app is built and served from Tuti's own hosts, so readers' browsers never ask Google; not preloaded, so a font downloads only where it's used), or the page's own (`branding.update`'s `fonts`)
+- [ ] Redirects: old addresses on the portal sent to new ones (a path, or a whole https address)
+- [ ] Custom code: CSS and a script of the team's own on their portal, with a design of its own (it runs on the portal's host, where its readers' sessions are)
+- Not now: translations (see Later)
 
 ## Licences: hiding "Powered by tuti" (asked 2026-10-21)
 

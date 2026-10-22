@@ -180,6 +180,10 @@ model Project {
   /// ("system": their device's), text beside the logo (empty: none, or the project's name without a
   /// logo), and where the logo goes (null: the portal's home).
   colorScheme           String       @default("system")
+  /// Fonts for headings and for text (Customize → Branding → Typography), from the portal fonts
+  /// (apps/web/src/lib/portal-fonts.ts); empty for the page's own.
+  headingFont           String       @default("")
+  bodyFont              String       @default("")
   logoText              String       @default("")
   logoLink              String?
   /// More links (Customize → Navigation): up to 5 above the docs' tree (`[{ label, url }]`, https

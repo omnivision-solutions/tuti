@@ -11,6 +11,8 @@
  */
 export const PREVIEW_FRAME = "tuti-preview";
 
+import { isPortalFont, type PortalFont } from "./portal-fonts";
+
 export type LookImage = { url: string; width?: number; height?: number };
 export type LookLink = { label: string; url: string };
 
@@ -50,6 +52,8 @@ export type PortalLook = {
   /** Above the docs' tree. */
   sidebarLinks: LookLink[];
   contact: ContactButton | null;
+  /** For headings and for text; null for the page's own. */
+  fonts: { heading: PortalFont | null; body: PortalFont | null };
 };
 
 /**
@@ -73,6 +77,7 @@ export const DEFAULT_LOOK: PortalLook = {
   logoLink: null,
   sidebarLinks: [],
   contact: null,
+  fonts: { heading: null, body: null },
 };
 
 /** The app → the frame: a change not saved yet (`look`, merged over what's saved), or light or dark mode. */
@@ -141,6 +146,11 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
   const contact = look.contact;
   if (contact === null || (contact && typeof contact.label === "string" && (web(contact.url) || /^mailto:/i.test(String(contact.url))))) {
     checked.contact = contact && { label: contact.label.slice(0, CONTACT_LABEL_MAX), url: contact.url };
+  }
+  const fonts = look.fonts;
+  const font = (value: unknown) => value === null || isPortalFont(value);
+  if (fonts && font(fonts.heading) && font(fonts.body)) {
+    checked.fonts = { heading: fonts.heading, body: fonts.body };
   }
   return checked;
 }

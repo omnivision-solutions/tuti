@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
+import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
   COLOR_SCHEMES,
   type ColorScheme,
@@ -64,6 +65,8 @@ export type Branding = {
   seo: { title: string; description: string };
   /** The image a link to the portal shows (Open Graph); null for none. */
   seoImage: BrandImage | null;
+  /** For headings and for text, from the portal fonts; null for the page's own. */
+  fonts: { heading: PortalFont | null; body: PortalFont | null };
 };
 
 const image = { select: { id: true, status: true, width: true, height: true } } as const;
@@ -100,6 +103,8 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         contactUrl: true,
         seoTitle: true,
         seoDescription: true,
+        headingFont: true,
+        bodyFont: true,
       },
     }),
     thisInstallation(),
@@ -150,6 +155,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     contact: project.contactUrl ? { label: project.contactLabel, url: project.contactUrl } : null,
     seo: { title: project.seoTitle, description: project.seoDescription },
     seoImage: shareImage(project.seoImage),
+    fonts: { heading: isPortalFont(project.headingFont) ? project.headingFont : null, body: isPortalFont(project.bodyFont) ? project.bodyFont : null },
   };
 }
 
@@ -173,6 +179,8 @@ const contactUrl = z
   .trim()
   .max(500, "Keep links under 500 characters")
   .pipe(z.url({ protocol: /^(https|mailto)$/, error: "Contact us needs a full https:// address or a mailto: link" }));
+const fontId = z.enum(PORTAL_FONTS.map((font) => font.id) as [PortalFont, ...PortalFont[]]).nullable();
+const fonts = z.object({ heading: fontId, body: fontId }).partial();
 const seo = z
   .object({
     title: z.string().trim().max(SEO_TITLE_MAX, `The page title is up to ${SEO_TITLE_MAX} characters`),
@@ -193,7 +201,7 @@ export const getBranding = defineOperation({
 
 export const updateBranding = defineOperation({
   name: "branding.update",
-  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}) and seoImage (an uploaded image for links to the portal, null to remove). Fields left out stay as they are`,
+  summary: `Set the portal's branding: logo, logoDark and favicon (ids of images uploaded in the app, null to remove), colour (#rrggbb, null for the brand green), up to ${MAX_BRAND_LINKS} https links each for the header and footer (replaces the list), poweredBy (false needs a licence for the project), contentActions (what readers can do with an article: the "Copy page" menu at all, copyMarkdown, chatGpt and claude in it, and the "Updated" date; each true or false), docsHome (the docs' home: a title up to ${DOCS_TITLE_MAX} characters and a subtitle up to ${DOCS_SUBTITLE_MAX} above its search box, empty for the defaults, and popular to list its most-read articles), colorScheme (system, light or dark: for readers who haven't picked one), logoText (up to ${LOGO_TEXT_MAX} characters beside the logo), logoLink (https, null for the portal's home), up to ${MAX_BRAND_LINKS} sidebarLinks above the docs' tree, contact (the header's "Contact us" button: a label, empty for "Contact us", and an https or mailto: url; null for none), seo (the portal's search listing: a title up to ${SEO_TITLE_MAX} characters, empty for the project's name, and a description up to ${SEO_DESCRIPTION_MAX}), seoImage (an uploaded image for links to the portal, null to remove) and fonts (heading and body: one of ${PORTAL_FONTS.map((font) => font.id).join(", ")}, or null for the page's own). Fields left out stay as they are`,
   method: "PATCH",
   path: "/branding",
   scope: "write",
@@ -218,6 +226,7 @@ export const updateBranding = defineOperation({
       .optional(),
     seo: seo.optional(),
     seoImage: upload,
+    fonts: fonts.optional(),
   }),
   example: {
     color: "#5b21b6",
@@ -276,6 +285,8 @@ export const updateBranding = defineOperation({
             ...(input.contact !== undefined && { contactLabel: input.contact?.label ?? "", contactUrl: input.contact?.url ?? null }),
             ...(input.seo?.title !== undefined && { seoTitle: input.seo.title }),
             ...(input.seo?.description !== undefined && { seoDescription: input.seo.description }),
+            ...(input.fonts?.heading !== undefined && { headingFont: input.fonts.heading ?? "" }),
+            ...(input.fonts?.body !== undefined && { bodyFont: input.fonts.body ?? "" }),
           },
         });
         // Replaced images stay attached: the daily release-media job releases them once nothing in the

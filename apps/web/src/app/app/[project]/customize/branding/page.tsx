@@ -29,6 +29,7 @@ export default async function BrandingPage(props: PageProps<"/app/[project]/cust
         colorScheme={brand.colorScheme}
         logoText={brand.logoText}
         logoLink={brand.logoLink}
+        fonts={brand.fonts}
       />
     </CustomizeShell>
   );
