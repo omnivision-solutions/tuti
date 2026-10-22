@@ -12,14 +12,15 @@ import { DocsSearch, PartRows, PortalMain, PortalParts } from "@/components/port
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
-import { appUrl, resolveHost } from "@/lib/hosts";
+import { appUrl, portalUrl, resolveHost } from "@/lib/hosts";
 import { withBase } from "@/lib/portal-base";
 import { DAY_MS, renewLicense } from "@/server/license-renewal";
 import { branding } from "@/server/operations/branding";
 import { hasUnseenAnnouncement } from "@/server/operations/changelog-seen";
 import { canReadPortal } from "@/server/portal-access";
 import { portalBase } from "@/server/portal-base";
-import { requestTarget } from "@/server/custom-domains";
+import { TeamHtml } from "@/components/team-html";
+import { requestTarget, siteMount } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 
 /** Read once per request by both the layout and its metadata. */
@@ -78,9 +79,17 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const newChangelog = canRead && !!session && (await hasUnseenAnnouncement(project.id, session.user.id));
 
   const base = await portalBase();
-  // On the team's own domain, or under a path of their site (not Tuti's own portal on the app's domain).
+  // The team's own origin, where their HTML may run: their domain, or the site the portal is under (not
+  // Tuti's own portal on the app's domain). Only an expectation: TeamHtml checks the page is there.
   const target = await requestTarget(requestHeaders.get("host"));
-  const ownAddress = !onApp && (base !== "" || (target.kind === "portal" && !!target.customDomain));
+  const mount = base ? await siteMount(slug) : null;
+  const ownOrigin = onApp
+    ? null
+    : mount
+      ? mount.origin
+      : target.kind === "portal" && target.customDomain
+        ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
+        : null;
   return (
     <PortalBaseProvider base={base} slug={slug}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
@@ -108,9 +117,9 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
       </PortalLookProvider>
-      {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin. Never on a
-          Tuti address (a script there could pass for Tuti) or the app's own domain. */}
-      {brand.customHtml && ownAddress && <div className="contents" dangerouslySetInnerHTML={{ __html: brand.customHtml }} />}
+      {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml
+          checks the page's real origin). Never on a Tuti address (a script there could pass for Tuti) or the app's own domain. */}
+      {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
     </PortalBaseProvider>
   );
 }
