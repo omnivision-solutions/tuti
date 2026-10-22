@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { z } from "zod";
 
-import { MAX_REDIRECTS, redirectFrom, redirectKey, redirectTo } from "@/lib/portal-redirects";
+import { destinationKey, MAX_REDIRECTS, redirectFrom, redirectTo } from "@/lib/portal-redirects";
 
 import { portalUrl } from "@/lib/hosts";
 
@@ -25,7 +25,7 @@ function onPortal(to: string, addresses: string[]): string {
     const portal = new URL(address);
     const base = portal.pathname.replace(/\/$/, "");
     if (target.origin === portal.origin && (target.pathname === base || target.pathname.startsWith(`${base}/`) || !base)) {
-      return `${target.pathname.slice(base.length) || "/"}${target.search}`;
+      return `${target.pathname.slice(base.length) || "/"}${target.search}${target.hash}`;
     }
   }
   return to;
@@ -63,7 +63,9 @@ export const createRedirect = defineOperation({
     if ("error" in to) {
       throw new OperationError(400, "invalid_input", to.error);
     }
-    if (to.to.startsWith("/") && redirectKey(to.to.split("?")[0]!) === from.from) {
+    // Where `to` goes, as rules match it (percent-encoded, dot segments resolved, no query or fragment).
+    const target = destinationKey(to.to);
+    if (target === from.from) {
       throw new OperationError(400, "invalid_input", "A redirect can't send an address to itself");
     }
     const redirect = await prisma.$transaction(async (tx) => {
@@ -77,8 +79,7 @@ export const createRedirect = defineOperation({
         throw new OperationError(400, "invalid_input", `Up to ${MAX_REDIRECTS} redirects. Delete some you no longer need first`);
       }
       // No chains: they'd be one rule too many at best, and round in circles at worst.
-      const target = to.to.startsWith("/") ? redirectKey(to.to.split("?")[0]!) : null;
-      if ((target && rules.some((rule) => rule.from === target)) || rules.some((rule) => rule.to.startsWith("/") && redirectKey(rule.to.split("?")[0]!) === from.from)) {
+      if ((target && rules.some((rule) => rule.from === target)) || rules.some((rule) => destinationKey(rule.to) === from.from)) {
         throw new OperationError(400, "invalid_input", "That address is already part of another redirect. Point both at where people should end up instead");
       }
       return tx.portalRedirect.create({ data: { projectId, from: from.from, to: to.to }, select: view });
