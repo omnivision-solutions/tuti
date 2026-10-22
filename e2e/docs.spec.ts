@@ -246,15 +246,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   const paragraph = editor.locator("p", { hasText: "Owners and admins send invites" });
   for (const sentence of [" Members can ask them.", " Invites last a week."]) {
-    // The caret goes to the paragraph's end (End only reaches the end of a visual line).
-    await paragraph.click();
-    await paragraph.evaluate((element) => {
+    // The caret goes to the paragraph's end: a click on its last character's right half (End only
+    // reaches the end of a visual line, and a selection set from a script may reach the editor late).
+    const end = await paragraph.evaluate((element) => {
       const range = document.createRange();
       range.selectNodeContents(element);
-      range.collapse(false);
-      getSelection()!.removeAllRanges();
-      getSelection()!.addRange(range);
+      const last = [...range.getClientRects()].at(-1)!;
+      return { x: last.right - 1, y: last.top + last.height / 2 };
     });
+    await team.mouse.click(end.x, end.y);
     await team.keyboard.type(sentence);
     // Done once the save's response is in (a toast from the first save may still be showing at the second).
     const saved = team.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);

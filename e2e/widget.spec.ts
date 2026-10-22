@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -25,6 +25,15 @@ function ssoToken(secret: string, claims: Record<string, unknown>) {
 // `?hide-launcher` adds data-hide-launcher to the script tag, `?display=sidebar` (or inline)
 // data-display, and each `?inline=<tab>` an inline mount at that tab (`?inline=`: the default).
 const ssoSecrets = new Map<string, string>();
+
+/** Escape closes the panel once it's hydrated, which may be a moment after what it shows is visible. */
+async function closeWithEscape(page: Page, panel: Locator) {
+  await expect(async () => {
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden({ timeout: 1_000 });
+  }).toPass();
+}
+
 /** The email the customer's app gives for its signed-in user, per project. */
 const samEmail = (project: string) => `e2e-sam-${project}@example.com`;
 let site: Server;
@@ -117,8 +126,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(widget.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
   // Escape closes it and gives focus back to the button.
-  await ada.keyboard.press("Escape");
-  await expect(ada.locator("#tuti-widget")).toBeHidden();
+  await closeWithEscape(ada, ada.locator("#tuti-widget"));
   await expect(launcher).toBeFocused();
 
   // On the portal's own site (another port of the same host) the session comes along:
@@ -573,8 +581,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(status).toHaveAttribute("href", "https://status.example.com");
   await expect(status).toHaveAttribute("target", "_blank");
   await checkpoint(visitor, "widget-quick-links");
-  await visitor.keyboard.press("Escape");
-  await expect(visitor.locator("#tuti-widget")).toBeHidden();
+  await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
 
   // A contextual help link the page adds later opens its article in the panel, not a new page.
   await visitor.evaluate((article) => {
@@ -651,8 +658,7 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   const viewport = visitor.viewportSize()!;
   expect(await drawer.boundingBox()).toEqual({ x: viewport.width - 400, y: 0, width: 400, height: viewport.height });
   await checkpoint(visitor, "widget-sidebar");
-  await visitor.keyboard.press("Escape");
-  await expect(drawer).toBeHidden();
+  await closeWithEscape(visitor, drawer);
   await expect(launcher).toBeFocused();
 
   // On a narrow screen, over a backdrop that closes it; the close button does too.

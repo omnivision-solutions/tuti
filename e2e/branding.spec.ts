@@ -29,12 +29,16 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   const [light, dark] = [await wordmark(scratch, "#1d4ed8"), await wordmark(scratch, "#bfdbfe")];
   await scratch.close();
 
-  // Customize → Branding: the settings beside a preview of the portal.
+  // Customize → Branding: the settings beside a preview of the portal (on a clock the journey can move on).
+  await owner.clock.install();
   await owner.goto(`/app/${slug}/customize`);
   await owner.getByRole("link", { name: /^Branding/ }).click();
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("banner")).toBeVisible();
+  // Changes go to the open page: the preview stays where it is until a save (uploads refresh the page around it).
+  const frame = owner.locator('iframe[title="Portal preview"]');
+  const opened = (await frame.getAttribute("src"))!;
   // "Save changes" waits for a change.
   const save = owner.getByRole("button", { name: "Save changes" });
   await expect(save).toBeDisabled();
@@ -71,6 +75,11 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await owner.getByRole("button", { name: "Light mode", exact: true }).click();
   // Only on the page: nothing kept where the portal remembers a reader's own pick (the frame shares that storage).
   expect(await owner.frame({ name: "tuti-preview" })!.evaluate(() => localStorage.getItem("theme"))).toBeNull();
+  await expect(frame).toHaveAttribute("src", opened);
+  // Half an hour on (its token lasts an hour), it gets a new token, and the frame reopens with it, changes and all.
+  await owner.clock.fastForward("30:00");
+  await expect(frame).not.toHaveAttribute("src", opened);
+  await expect(preview.getByRole("banner").getByRole("link", { name: /Acme Help/ })).toHaveAttribute("href", "https://acme.example");
   await save.click();
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await expect(save).toBeDisabled();

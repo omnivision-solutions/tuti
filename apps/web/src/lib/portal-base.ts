@@ -23,6 +23,8 @@ export const CUSTOMIZE = { param: "customize", value: "1" } as const;
 
 /** Where Customize's preview puts the token that reads the portal as the team member looking (lib/preview-session.ts). */
 export const PREVIEW_TOKEN_PARAM = "preview-token";
+/** How long a preview token, and the cookie the portal keeps it in, lasts. */
+export const PREVIEW_TTL_SECONDS = 60 * 60;
 
 /** Where pages load Next.js's files from (next.config.ts's assetPrefix): a path of its own on every host, so a team's site forwards it too. */
 export const ASSET_PATH = "/_tuti";
