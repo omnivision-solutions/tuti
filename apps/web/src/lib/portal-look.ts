@@ -20,7 +20,16 @@ export type ContentActions = { menu: boolean; copyMarkdown: boolean; chatGpt: bo
 /** The docs' home: a title and subtitle above its search box (empty: "Docs" and the default line), and its most-read articles. */
 export type DocsHome = { title: string; subtitle: string; popular: boolean };
 
+/** Light or dark mode for readers who haven't picked one; "system" is their device's. */
+export const COLOR_SCHEMES = ["system", "light", "dark"] as const;
+export type ColorScheme = (typeof COLOR_SCHEMES)[number];
+
+/** The header's "Contact us" button: its label (empty for "Contact us") and where it goes. */
+export type ContactButton = { label: string; url: string };
+
 export const DOCS_TITLE_MAX = 80;
+export const LOGO_TEXT_MAX = 40;
+export const CONTACT_LABEL_MAX = 30;
 export const DOCS_SUBTITLE_MAX = 200;
 
 export type PortalLook = {
@@ -33,6 +42,14 @@ export type PortalLook = {
   poweredBy: boolean;
   contentActions: ContentActions;
   docsHome: DocsHome;
+  colorScheme: ColorScheme;
+  /** Beside the logo (empty: none; without a logo, the project's name). */
+  logoText: string;
+  /** Where the logo goes; null for the portal's home. */
+  logoLink: string | null;
+  /** Above the docs' tree. */
+  sidebarLinks: LookLink[];
+  contact: ContactButton | null;
 };
 
 /** A portal's look with nothing set (outside a portal's pages, what its parts fall back to). */
@@ -45,6 +62,11 @@ export const DEFAULT_LOOK: PortalLook = {
   poweredBy: true,
   contentActions: { menu: true, copyMarkdown: true, chatGpt: true, claude: true, updatedDate: true },
   docsHome: { title: "", subtitle: "", popular: false },
+  colorScheme: "system",
+  logoText: "",
+  logoLink: null,
+  sidebarLinks: [],
+  contact: null,
 };
 
 /** The app → the frame: a change not saved yet (`look`, merged over what's saved), or light or dark mode. */
@@ -86,7 +108,7 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
       checked[key] = isImage(look[key]) ? look[key] : null;
     }
   }
-  for (const key of ["headerLinks", "footerLinks"] as const) {
+  for (const key of ["headerLinks", "footerLinks", "sidebarLinks"] as const) {
     if (isLinks(look[key])) {
       checked[key] = look[key].filter((link) => web(link.url));
     }
@@ -100,6 +122,19 @@ export function webOnly(look: Partial<PortalLook>): Partial<PortalLook> {
   const home = look.docsHome;
   if (home && typeof home.title === "string" && typeof home.subtitle === "string" && typeof home.popular === "boolean") {
     checked.docsHome = { title: home.title.slice(0, DOCS_TITLE_MAX), subtitle: home.subtitle.slice(0, DOCS_SUBTITLE_MAX), popular: home.popular };
+  }
+  if (COLOR_SCHEMES.includes(look.colorScheme as ColorScheme)) {
+    checked.colorScheme = look.colorScheme;
+  }
+  if (typeof look.logoText === "string") {
+    checked.logoText = look.logoText.slice(0, LOGO_TEXT_MAX);
+  }
+  if (look.logoLink === null || web(look.logoLink)) {
+    checked.logoLink = look.logoLink;
+  }
+  const contact = look.contact;
+  if (contact === null || (contact && typeof contact.label === "string" && (web(contact.url) || /^mailto:/i.test(String(contact.url))))) {
+    checked.contact = contact && { label: contact.label.slice(0, CONTACT_LABEL_MAX), url: contact.url };
   }
   return checked;
 }

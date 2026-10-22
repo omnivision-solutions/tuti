@@ -67,3 +67,29 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await visitor.goto("/docs");
   await expect(visitor.getByRole("heading", { name: "How can we help?", level: 1 })).toBeVisible();
 });
+
+test("the team sets the portal's search listing, seeing it as a search result and a shared link", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/customize/seo`);
+  const result = owner.getByRole("figure", { name: "Search result preview" });
+  await expect(result).toContainText("Acme");
+  await owner.getByLabel("Page title").fill("Acme Help Center");
+  await owner.getByLabel("Meta description").fill("Answers about Acme, from the team that makes it.");
+  await expect(result).toContainText("Acme Help Center");
+  await expect(owner.getByRole("figure", { name: "Shared link preview" })).toContainText("Answers about Acme, from the team that makes it.");
+  await expect(owner.getByText("48/160")).toBeVisible();
+  await checkpoint(owner, "customize-seo");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("SEO saved")).toBeVisible();
+
+  // Pages without a title of their own have the portal's; every page has its description.
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/roadmap");
+  await expect(visitor).toHaveTitle("Acme Help Center");
+  await expect(visitor.locator('meta[name="description"]')).toHaveAttribute("content", "Answers about Acme, from the team that makes it.");
+  await expect(visitor.locator('meta[property="og:site_name"]')).toHaveAttribute("content", "Acme Help Center");
+});

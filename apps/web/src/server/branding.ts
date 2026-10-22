@@ -1,6 +1,7 @@
 "use server";
 
 import { linksFrom } from "@/lib/forms";
+import type { ColorScheme } from "@/lib/portal-look";
 
 import type { FormState } from "./form-state";
 import type { LicenseCheck } from "./license-renewal";
@@ -11,7 +12,7 @@ import { asAdmin, call } from "./operations/run";
 /**
  * Saves one part of the branding from Customize (see branding.update), named by the form's `part`: its
  * look (logos, favicon, colour; an empty image field removes that image), its links (empty rows are
- * skipped), "Powered by", content actions, or the docs' home. The other parts stay as they are.
+ * skipped), "Powered by", content actions, the docs' home, or SEO. The other parts stay as they are.
  */
 export async function saveBranding(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (name: string) => {
@@ -21,8 +22,23 @@ export async function saveBranding(projectSlug: string, _state: FormState, formD
   const part = text("part");
   const on = (name: string) => formData.get(name) === "on";
   const parts = {
-    look: () => ({ logo: text("logo") || null, logoDark: text("logoDark") || null, favicon: text("favicon") || null, color: text("color") }),
-    links: () => ({ headerLinks: linksFrom(formData, "headerLink"), footerLinks: linksFrom(formData, "footerLink") }),
+    look: () => ({
+      logo: text("logo") || null,
+      logoDark: text("logoDark") || null,
+      favicon: text("favicon") || null,
+      color: text("color"),
+      // Fields an older form doesn't have stay as they are.
+      ...(formData.has("colorScheme") && { colorScheme: text("colorScheme") as ColorScheme }),
+      ...(formData.has("logoText") && { logoText: text("logoText") }),
+      ...(formData.has("logoLink") && { logoLink: text("logoLink").trim() || null }),
+    }),
+    links: () => ({
+      headerLinks: linksFrom(formData, "headerLink"),
+      footerLinks: linksFrom(formData, "footerLink"),
+      sidebarLinks: linksFrom(formData, "sidebarLink"),
+      ...(formData.has("contactUrl") && { contact: text("contactUrl").trim() ? { label: text("contactLabel"), url: text("contactUrl") } : null }),
+    }),
+    seo: () => ({ seoImage: text("seoImage") || null, seo: { title: text("seoTitle"), description: text("seoDescription") } }),
     poweredBy: () => ({ poweredBy: on("poweredBy") }),
     contentActions: () => ({
       contentActions: { menu: on("menu"), copyMarkdown: on("copyMarkdown"), chatGpt: on("chatGpt"), claude: on("claude"), updatedDate: on("updatedDate") },

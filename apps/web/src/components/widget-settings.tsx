@@ -116,8 +116,9 @@ export function LinkRows({
 }: {
   name: string;
   item: string;
+  /** Its title; with no `description`, for screen readers only (the box around it says what they're for). */
   legend: string;
-  description: string;
+  description?: string;
   links: { label: string; url: string }[];
 }) {
   const [rows, setRows] = useState(() => links.map((link, i) => ({ ...link, key: i })));
@@ -125,8 +126,8 @@ export function LinkRows({
   useFieldChanged(fieldset, rows);
   return (
     <fieldset ref={fieldset} className="flex flex-col gap-2">
-      <legend className="mb-1 text-sm font-medium">{legend}</legend>
-      <p className="text-sm text-muted-foreground">{description}</p>
+      <legend className={description ? "mb-1 text-sm font-medium" : "sr-only"}>{legend}</legend>
+      {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {rows.map((row, i) => (
         <div key={row.key} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Input

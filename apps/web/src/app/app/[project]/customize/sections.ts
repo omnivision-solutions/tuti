@@ -8,6 +8,7 @@ import {
   MessageSquareIcon,
   NavigationIcon,
   PaletteIcon,
+  SearchIcon,
   SparklesIcon,
 } from "lucide-react";
 
@@ -16,9 +17,9 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
   {
     title: "Appearance",
     sections: [
-      { slug: "branding", title: "Branding", description: "Logos, favicon and colour", icon: PaletteIcon },
+      { slug: "branding", title: "Branding", description: "Colour scheme, logos and favicon", icon: PaletteIcon },
       { slug: "docs-home", title: "Docs home", description: "The heading above your docs' search box, and popular articles", icon: BookOpenIcon },
-      { slug: "navigation", title: "Navigation", description: "Links in the header and footer", icon: NavigationIcon },
+      { slug: "navigation", title: "Navigation", description: "Links in the header, footer and docs sidebar, and a Contact us button", icon: NavigationIcon },
       { slug: "home-page", title: "Home page", description: "What your portal's address opens", icon: HouseIcon },
     ],
   },
@@ -33,6 +34,7 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
   {
     title: "Advanced",
     sections: [
+      { slug: "seo", title: "SEO", description: "How your portal shows in search results and shared links", icon: SearchIcon },
       { slug: "address", title: "Address", description: "Your Tuti address, a domain of your own or a path of your site", icon: GlobeIcon },
       { slug: "powered-by", title: "Powered by", description: "The “Powered by tuti” badge", icon: HeartIcon },
     ],

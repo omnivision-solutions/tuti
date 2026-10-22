@@ -8,6 +8,7 @@ import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
+import { DocsSidebarLinks } from "@/components/portal-look";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -381,6 +382,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   );
   return (
     <nav aria-label="Docs" className="flex flex-col gap-5 text-sm">
+      <DocsSidebarLinks />
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
           {link(collection.slug, named(collection), "flex items-center gap-2 font-heading font-semibold text-foreground")}

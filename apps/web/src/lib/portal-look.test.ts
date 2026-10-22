@@ -44,3 +44,17 @@ test("only the preview's own messages are taken as such", () => {
   expect(isFromPortal({ type: "tuti:ready", path: "/docs" })).toBe(true);
   expect(isFromPortal({ type: "tuti:ready" })).toBe(false);
 });
+
+test("the rest of a change: a known colour scheme, web or mailto: Contact us, web links for the logo", () => {
+  expect(webOnly({ colorScheme: "dark", logoText: "Acme", logoLink: "https://acme.example", contact: { label: "", url: "mailto:help@acme.example" } })).toEqual({
+    colorScheme: "dark",
+    logoText: "Acme",
+    logoLink: "https://acme.example",
+    contact: { label: "", url: "mailto:help@acme.example" },
+  });
+  expect(webOnly({ colorScheme: "sepia" as never, logoLink: "javascript:alert(1)", contact: { label: "", url: "javascript:alert(1)" } })).toEqual({});
+  expect(webOnly({ contact: null, logoLink: null })).toEqual({ contact: null, logoLink: null });
+  expect(webOnly({ sidebarLinks: [{ label: "Status", url: "https://status.example.com" }, { label: "Bad", url: "javascript:x" }] })).toEqual({
+    sidebarLinks: [{ label: "Status", url: "https://status.example.com" }],
+  });
+});

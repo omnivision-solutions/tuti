@@ -49,6 +49,15 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await card.getByLabel("Accent colour").fill("#2563eb");
   // The preview shows each change before it's saved: the logo, and the colour as the portal's accent.
   await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
+  // Text beside the logo (the logo is then an image beside its name), where it links, and dark mode for readers who haven't picked one.
+  await card.getByLabel("Logo text").fill("Acme Help");
+  await card.getByLabel("Logo link").fill("https://acme.example");
+  await expect(preview.getByRole("banner").getByRole("link", { name: /Acme Help/ })).toHaveAttribute("href", "https://acme.example");
+  await card.getByText("Dark", { exact: true }).click();
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
+  // Back to each reader's device's.
+  await card.getByText("System", { exact: true }).click();
+  await expect(preview.locator("html")).not.toHaveClass(/\bdark\b/);
   const accent = () => preview.locator("html").evaluate((html) => getComputedStyle(html).getPropertyValue("--primary").trim());
   await expect.poll(accent).toBe("#2563eb");
   // In dark mode too.
@@ -59,7 +68,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(owner.getByText("Branding saved")).toBeVisible();
   await expect(save).toBeDisabled();
   // Saved, the preview shows it.
-  await expect(preview.getByRole("banner").getByRole("img", { name: "Acme" }).first()).toBeVisible();
+  await expect(preview.getByRole("banner").getByRole("link", { name: "Acme Help" }).locator("img").first()).toBeVisible();
   await checkpoint(owner, "branding-settings");
 
   // Customize → Navigation: the header's and footer's links.
@@ -73,6 +82,10 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await links.getByLabel("Footer link 1 label").fill("Privacy");
   await links.getByLabel("Footer link 1 URL").fill("https://example.com/privacy");
   await expect(preview.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Docs" })).toBeVisible();
+  // A "Contact us" button in the header, to an email address.
+  await links.getByLabel("Goes to").fill("mailto:help@acme.example");
+  await links.getByLabel("Label", { exact: true }).fill("Talk to us");
+  await expect(preview.getByRole("banner").getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:help@acme.example");
   // Leaving with changes not saved asks first.
   await owner.getByRole("link", { name: "Back to Customize" }).click();
   const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
@@ -116,8 +129,10 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   for (const colorScheme of ["light", "dark"] as const) {
     const visitor = await (await browser.newContext({ colorScheme, storageState, baseURL: portalUrl(slug) })).newPage();
     await visitor.goto("/feedback/feature-requests");
-    // The logo for this mode, named for the project, links home; the other one is hidden.
-    const logo = visitor.getByRole("banner").getByRole("link", { name: "Acme" }).getByRole("img", { name: "Acme" });
+    // The logo for this mode with its text links to the team's site; the other logo is hidden.
+    const home = visitor.getByRole("banner").getByRole("link", { name: "Acme Help" });
+    await expect(home).toHaveAttribute("href", "https://acme.example");
+    const logo = home.locator("img:visible");
     await expect(logo).toBeVisible();
     await expect(logo).toHaveCount(1);
     await expect.poll(() => logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);

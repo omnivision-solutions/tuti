@@ -171,6 +171,23 @@ model Project {
   docsTitle             String       @default("")
   docsSubtitle          String       @default("")
   docsPopular           Boolean      @default(false)
+  /// The portal's own search listing (Customize → SEO): its title (empty: the project's name), its
+  /// description, and the image a link to it shows (an upload, like the logos).
+  seoTitle              String       @default("")
+  seoDescription        String       @default("")
+  seoImageId            String?
+  /// More of the look (Customize → Branding): light or dark mode for readers who haven't picked one
+  /// ("system": their device's), text beside the logo (empty: none, or the project's name without a
+  /// logo), and where the logo goes (null: the portal's home).
+  colorScheme           String       @default("system")
+  logoText              String       @default("")
+  logoLink              String?
+  /// More links (Customize → Navigation): up to 5 above the docs' tree (`[{ label, url }]`, https
+  /// only), and a "Contact us" button in the header (its label, empty for "Contact us"; its address,
+  /// https or mailto:, null for none).
+  sidebarLinks          Json         @default("[]")
+  contactLabel          String       @default("")
+  contactUrl            String?
   /// Tuti's licence key for this project on this installation (see server/license.ts). Without a
   /// valid one the footer says "Powered by tuti" whatever poweredBy says.
   licenseKey            String?
@@ -221,6 +238,7 @@ model Project {
   brandLogo            Media?                @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
   brandLogoDark        Media?                @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
   brandFavicon         Media?                @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
+  seoImage             Media?                @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
   invitations          Invitation[]
   boardRedirects       BoardRedirect[]
   postEmbeddings       PostEmbedding[]
@@ -340,6 +358,7 @@ model Media {
   logoOf     Project[] @relation("brandLogo")
   logoDarkOf Project[] @relation("brandLogoDark")
   faviconOf  Project[] @relation("brandFavicon")
+  seoImageOf Project[] @relation("seoImage")
 
   @@index([projectId])
   @@index([uploaderId, createdAt])

@@ -6,7 +6,8 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
-import { PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { ColorSchemeScript } from "@/components/color-scheme-script";
+import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
@@ -24,13 +25,25 @@ import { getSession } from "@/server/session";
 const portalBranding = cache((slug: string) => branding({ slug }));
 
 export async function generateMetadata({ params }: LayoutProps<"/portal/[project]">): Promise<Metadata> {
-  const favicon = (await portalBranding((await params).project))?.favicon;
-  if (favicon) {
-    return { icons: { icon: [{ url: favicon.url, type: "image/webp" }] } };
+  const slug = (await params).project;
+  const [brand, project] = await Promise.all([portalBranding(slug), prisma.project.findUnique({ where: { slug }, select: { name: true } })]);
+  // The portal's search listing (Customize → SEO), for its pages that don't have their own.
+  const title = brand?.seo.title || project?.name;
+  const seo: Metadata = {
+    ...(title && { title }),
+    ...(brand?.seo.description && { description: brand.seo.description }),
+    openGraph: {
+      ...(title && { siteName: title }),
+      ...(brand?.seo.description && { description: brand.seo.description }),
+      ...(brand?.seoImage && { images: [{ url: brand.seoImage.url, width: brand.seoImage.width, height: brand.seoImage.height }] }),
+    },
+  };
+  if (brand?.favicon) {
+    return { ...seo, icons: { icon: [{ url: brand.favicon.url, type: "image/webp" }] } };
   }
   // Under a path of a team's site, Tuti's own icon is there too (/icon.svg would be the site's).
   const base = await portalBase();
-  return base ? { icons: { icon: [{ url: `${base}/icon.svg`, type: "image/svg+xml" }] } } : {};
+  return base ? { ...seo, icons: { icon: [{ url: `${base}/icon.svg`, type: "image/svg+xml" }] } } : seo;
 }
 
 /**
@@ -65,6 +78,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const base = await portalBase();
   return (
     <PortalBaseProvider base={base} slug={slug}>
+      <ColorSchemeScript scheme={brand.colorScheme} />
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
@@ -73,6 +87,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
           {canRead && <DocsSearch />}
           <PortalHeaderLinks />
+          <PortalContact />
           {session ? (
             // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
             <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />

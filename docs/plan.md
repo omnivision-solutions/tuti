@@ -159,9 +159,9 @@ Settings was one long page of cards. What changes how the portal looks moves to 
 - [x] Address: three cards (Tuti address, the default; Custom domain; Sub-folder), the others locked while one is connected, saying why ("Remove … before switching."). A domain's records each with Copy; a sub-folder's site and path as two fields, its forwarding rules with Copy, and a guide per platform (Cloudflare, Vercel, Next.js, Netlify, Nginx) with the rules written out for this portal (`lib/site-guides.ts`), and `docs/site-path.md` for any other. Decided: the guides are in the app, filled in, rather than articles in our help project
 - [x] Content actions: turn off the page actions menu, Copy as Markdown, Open in ChatGPT, Open in Claude and the "Updated" date on articles (`branding.update`'s `contentActions`; the date also stays per article); on the portal, "Copy page" with a menu (Open in ChatGPT, Open in Claude, View as Markdown) beside the title
 - [x] Docs home: a title and subtitle above the search box; "Popular articles" from the views we count: the 5 most viewed of the last 30 days that this reader may open (`branding.update`'s `docsHome`)
-- [ ] SEO for the portal: page title, meta description and share image, previewed as a search result and a social card
-- [ ] Branding: the default colour scheme (system, light or dark), logo text, where the logo links
-- [ ] Navigation: links in the docs sidebar; a "Contact us" button in the header
+- [x] SEO for the portal: page title, meta description and share image, previewed as a search result and a social card (`branding.update`'s `seo` and `seoImage`; the title is every portal page's that has none of its own, which had Tuti's; the image is kept and released like the logos)
+- [x] Branding: the default colour scheme (system, light or dark: a script before the page shows puts it where next-themes keeps a reader's pick, marked as the default, so a reader's own pick stays and a new default replaces the old), logo text, where the logo links
+- [x] Navigation: links above the docs' tree; a "Contact us" button in the header (https or mailto:)
 - [ ] The preview on a private portal: a short-lived signed token lets the frame read it as the team does
 - Not now: fonts (Google Fonts would send readers' addresses to Google), custom code (a team's script on the portal's host, where its readers' sessions are, needs a design of its own), redirects, translations
 
