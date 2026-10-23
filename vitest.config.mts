@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 
 const sources = ["apps/*/src/**/*.test.ts", "packages/*/src/**/*.test.ts"];
 const dbTests = sources.map((pattern) => pattern.replace(".test.ts", ".db.test.ts"));
+const liveTests = sources.map((pattern) => pattern.replace(".test.ts", ".live.test.ts"));
 
 export default defineConfig({
   resolve: {
@@ -19,7 +20,7 @@ export default defineConfig({
         test: {
           name: "unit",
           include: [...sources, "vitest.setup.test.ts"],
-          exclude: dbTests,
+          exclude: [...dbTests, ...liveTests],
           setupFiles: ["./vitest.setup.ts"],
         },
       },
@@ -31,6 +32,11 @@ export default defineConfig({
           globalSetup: ["./vitest.db-global.ts"],
           setupFiles: ["./vitest.setup.ts", "./vitest.db-setup.ts", "./apps/web/src/test/setup.ts"],
         },
+      },
+      {
+        // Real services (`pnpm test:live`): run by hand with real keys; without them, skipped.
+        extends: true,
+        test: { name: "live", include: liveTests },
       },
     ],
   },

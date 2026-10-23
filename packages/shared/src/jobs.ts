@@ -69,10 +69,14 @@ export const jobs = {
       mergedAt: z.string().optional(),
     }),
   },
-  /** Reads a merged pull request (its code change) and analyses it; one run at a time per code change. `force` analyses one already done again. */
+  /**
+   * Reads a merged pull request (its code change) and analyses it; one run at a time per code change.
+   * `force` analyses one already done again; `pastGate` skips "does it change anything users see?"
+   * ("Analyse anyway"). Both are input, so a retry keeps them.
+   */
   codeChange: {
     name: "code-change",
-    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false) }),
+    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false), pastGate: z.boolean().default(false) }),
     concurrencyKey: "input.codeChangeId",
     retries: 4,
     // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.
