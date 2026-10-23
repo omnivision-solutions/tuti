@@ -51,7 +51,7 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
           {!contentActions.copyMarkdown && "Page actions"}
           <ChevronDownIcon />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="min-w-max">
           {contentActions.chatGpt && open("ChatGPT", `https://chatgpt.com/?q=${prompt}`)}
           {contentActions.claude && open("Claude", `https://claude.ai/new?q=${prompt}`)}
           <DropdownMenuItem render={<a href={markdownUrl} target="_blank" rel="noopener noreferrer" />}>
