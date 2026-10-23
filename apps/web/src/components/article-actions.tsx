@@ -17,13 +17,10 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
     return null;
   }
   const prompt = encodeURIComponent(`Read ${markdownUrl} and answer questions about it.`);
-  const open = (name: string, href: string, description: string) => (
-    <DropdownMenuItem render={<a href={href} target="_blank" rel="noopener noreferrer" />} className="items-start">
-      <ExternalLinkIcon className="mt-0.5" />
-      <span className="flex flex-col">
-        <span>Open in {name}</span>
-        <span className="text-xs text-muted-foreground">{description}</span>
-      </span>
+  const open = (name: string, href: string) => (
+    <DropdownMenuItem render={<a href={href} target="_blank" rel="noopener noreferrer" />}>
+      <ExternalLinkIcon />
+      Open in {name}
     </DropdownMenuItem>
   );
   return (
@@ -54,15 +51,12 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
           {!contentActions.copyMarkdown && "Page actions"}
           <ChevronDownIcon />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
-          {contentActions.chatGpt && open("ChatGPT", `https://chatgpt.com/?q=${prompt}`, "Ask ChatGPT about this page")}
-          {contentActions.claude && open("Claude", `https://claude.ai/new?q=${prompt}`, "Ask Claude about this page")}
-          <DropdownMenuItem render={<a href={markdownUrl} target="_blank" rel="noopener noreferrer" />} className="items-start">
-            <FileTextIcon className="mt-0.5" />
-            <span className="flex flex-col">
-              <span>View as Markdown</span>
-              <span className="text-xs text-muted-foreground">Open it as plain Markdown in a new tab</span>
-            </span>
+        <DropdownMenuContent align="end" className="min-w-max">
+          {contentActions.chatGpt && open("ChatGPT", `https://chatgpt.com/?q=${prompt}`)}
+          {contentActions.claude && open("Claude", `https://claude.ai/new?q=${prompt}`)}
+          <DropdownMenuItem render={<a href={markdownUrl} target="_blank" rel="noopener noreferrer" />}>
+            <FileTextIcon />
+            View as Markdown
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

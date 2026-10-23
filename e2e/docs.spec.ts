@@ -183,9 +183,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // The page's actions: its menu takes it to an AI tool, or to its Markdown.
   const prompt = encodeURIComponent(`Read ${markdownUrl} and answer questions about it.`);
   await visitor.getByRole("button", { name: "More page actions" }).click();
-  await expect(visitor.getByRole("menuitem", { name: /Open in ChatGPT/ })).toHaveAttribute("href", `https://chatgpt.com/?q=${prompt}`);
-  await expect(visitor.getByRole("menuitem", { name: /Open in Claude/ })).toHaveAttribute("href", `https://claude.ai/new?q=${prompt}`);
-  await expect(visitor.getByRole("menuitem", { name: /View as Markdown/ })).toHaveAttribute("href", markdownUrl);
+  // Each a name alone, no line explaining it.
+  await expect(visitor.getByRole("menuitem", { name: "Open in ChatGPT", exact: true })).toHaveAttribute("href", `https://chatgpt.com/?q=${prompt}`);
+  await expect(visitor.getByRole("menuitem", { name: "Open in Claude", exact: true })).toHaveAttribute("href", `https://claude.ai/new?q=${prompt}`);
+  await expect(visitor.getByRole("menuitem", { name: "View as Markdown", exact: true })).toHaveAttribute("href", markdownUrl);
   await checkpoint(visitor, "portal-docs-article-actions", { fullPage: false });
   await visitor.keyboard.press("Escape");
   await visitor.context().grantPermissions(["clipboard-read", "clipboard-write"]);
