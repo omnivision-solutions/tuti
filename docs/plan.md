@@ -382,8 +382,8 @@ another way (email link, password) is the project's user with their address once
 users come in over the API first (CSV import and editing by hand later).
 
 - [x] **1. Properties.** Users' `attributes` become `properties`: strings, numbers, booleans and lists of strings (up to 50). Each change names the ones it sets and removes (`null`) and keeps the rest, so a sign-in no longer clears what the API set; the token's `properties` (and `attributes`, the old name) work that way. Someone signed in another way has the groups of the project's users with their verified address. Emails are kept lowercase.
-- [ ] **2. Users API.** `users.list` (search, by group), `users.get`, `users.upsert` (one, by your app's id) and `users.sync` (up to 1,000 at once): name, email, avatar and properties.
-- [ ] **3. Eight operators.** is, is not, is any of, is none of, contains, excludes, is set, is not set (a condition's `attribute` becomes `property`; `is_one_of` becomes `is_any_of`), matched in SQL too, so counts and lists of who matches work for any number of users.
+- [x] **2. Users API.** `users.list` (by name; search by name, email or id), `users.get` and `users.sync` (one or up to 1,000 at once, by your app's id, all or nothing): name, email, avatar and properties, each user with the groups they're in. `docs/users.md`.
+- [ ] **3. Eight operators.** is, is not, is any of, is none of, contains, excludes, is set, is not set (a condition's `attribute` becomes `property`; `is_one_of` becomes `is_any_of`), matched in SQL too, so counts and lists of who matches work for any number of users; `users.list` by group.
 - [ ] **4. Groups only from conditions.** The `claim` and the token's `groups` go: `groups` in a token becomes a `groups` list property, and each group with a claim gets the condition "groups contains <claim>".
 - [ ] **5. Users in the app.** A Users page: the project's users, searchable, filtered by group, with their properties and groups, and how to sync them.
 - [ ] **6. The group dialog beside who matches.** Conditions on the left (AND between them, property names suggested from the project's users), the users who match on the right as you type.

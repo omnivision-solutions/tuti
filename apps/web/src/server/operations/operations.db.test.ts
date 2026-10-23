@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
 import { createApiKey } from "@/server/api-keys";
+import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { type Operation, type OperationName, operations } from "./index";
@@ -78,6 +79,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "groups.create": () => ({ name: "Enterprise", conditions: [{ attribute: "plan", op: "is_one_of", value: ["enterprise", "custom"] }] }),
   "groups.update": () => ({ group: "beta", name: "Beta testers", claim: null, conditions: [{ attribute: "beta", op: "is", value: "true" }] }),
   "groups.delete": () => ({ group: "beta" }),
+  "users.list": () => ({}),
+  "users.get": () => ({ user: "matrix-user" }),
+  // Like groups.create: admins only in the app.
+  "users.sync": () => ({ users: [{ id: "matrix-user", properties: { plan: "pro" } }, { id: "matrix-new", email: "e2e-matrix-user@example.com" }] }),
   "posts.list": () => ({}),
   "posts.get": () => ({ number: 1 }),
   "comments.list": () => ({ number: 1 }),
@@ -174,6 +179,9 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
   await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", claim: "beta" } });
+  // One of the project's users, and none the sync would add.
+  await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "matrix-new" } });
+  await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
   // for its check, which the site answers (for site.*); else a custom domain waiting for DNS, with
   // its TXT record there to verify it.
@@ -311,6 +319,7 @@ const snapshot = () =>
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),
     prisma.customDomain.findMany({ where: { projectId: project.id } }),
     prisma.siteMount.findMany({ where: { projectId: project.id } }),
+    prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } }),
   ]);
 
 test("every operation is in this matrix", () => {
