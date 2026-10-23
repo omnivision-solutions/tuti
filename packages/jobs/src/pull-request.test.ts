@@ -164,3 +164,14 @@ test("a secret cut by the cap is still masked", async () => {
   expect(read.diff).not.toContain("ghp_");
   expect(read.diff).toContain("[secr");
 });
+
+test("a quoted secret whose closing quote is past the cap is still masked", async () => {
+  github.pullRequest("acme/app", {
+    number: 10,
+    title: "Long secret",
+    files: [{ filename: "src/b.ts", patch: `+const password = "${"A".repeat(20_000)}";` }],
+  });
+  const read = await readPullRequest(await installationApi(42), "acme/app", 10);
+  expect(read.diff).not.toContain("AAAAAAAA");
+  expect(read.diff).toContain('password = "[secret]";');
+});

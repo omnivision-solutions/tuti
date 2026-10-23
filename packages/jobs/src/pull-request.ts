@@ -112,8 +112,8 @@ export function maskSecrets(text: string): string {
   return SECRETS.reduce((masked, [pattern, replacement]) => masked.replace(pattern, replacement), text);
 }
 
-/** At most `length` characters of the text, masked first, so the cut can't leave part of a secret unmasked. */
-const maskedStart = (text: string, length: number) => maskSecrets(text.slice(0, length * 2)).slice(0, length);
+/** At most `length` characters of the text, all of it masked first, so the cut can't leave part of a secret unmasked. */
+const maskedStart = (text: string, length: number) => maskSecrets(text).slice(0, length);
 
 type GithubPull = {
   title: string;
@@ -184,5 +184,5 @@ async function fileStart(api: GithubApi, repo: string, path: string, ref: string
     return undefined;
   }
   const text = Buffer.from(content.content, "base64").toString("utf8");
-  return text.includes("\u0000") ? undefined : text.slice(0, FILE_CAP * 2);
+  return text.includes("\u0000") ? undefined : maskSecrets(text);
 }
