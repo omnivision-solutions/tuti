@@ -257,6 +257,35 @@ describe("docs", () => {
     expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
   });
 
+  test("a teammate's save while this one failed before saving isn't taken for it: still waiting (and now out of date)", async () => {
+    const teammate = await signUp("Tom Teammate");
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+    const asTeammate = { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id };
+    const { article, action } = await articleEdit();
+    // The lookup before saving: meanwhile the teammate saves the article, then the lookup fails.
+    vi.spyOn(prisma.project, "findUniqueOrThrow").mockImplementationOnce((async () => {
+      await call(updateArticle, asTeammate, { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      throw new Error("database blip");
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since");
+
+    // A new article: the teammate writes one with the same title meanwhile.
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const draft = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    vi.spyOn(prisma.project, "findUniqueOrThrow").mockImplementationOnce((async () => {
+      await call(createArticle, asTeammate, { title: "Use the dark theme", body: "Pick Light, Dark or System in Settings." });
+      throw new Error("database blip");
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: draft.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("PENDING");
+  });
+
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
     const change = await prisma.codeChange.create({
       data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 21, url: "https://github.com/acme/app/pull/21", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },

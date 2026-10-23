@@ -379,13 +379,14 @@ async function applyDocs(
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
     // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save it
-    // twice (a second draft, say). Not saved: it's waiting again. A save adds a version to the article;
-    // a draft is an article with this title, new since the claim.
+    // twice (a second draft, say). Not saved: it's waiting again. This attempt's save is a version of
+    // the article (or a new article) by whoever applies it, with the proposal's text, since the claim:
+    // a teammate's save meanwhile isn't it.
+    const ours = { createdAt: { gte: claimedAt }, body: payload.body ?? "" };
     const saved =
       action.kind === "ARTICLE_EDIT"
-        ? (await prisma.articleRevision.findFirst({ where: { articleId: article!.id }, orderBy: { createdAt: "desc" }, select: { id: true } }))?.id !==
-          (payload.basedOn ?? undefined)
-        : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdAt: { gte: claimedAt } } })) > 0;
+        ? (await prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })) > 0
+        : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })) > 0;
     if (!saved) {
       await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
     }
