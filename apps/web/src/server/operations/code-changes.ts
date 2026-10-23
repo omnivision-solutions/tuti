@@ -91,9 +91,17 @@ const changeView = (change: ChangeRow) => ({
 
 export type CodeChangeView = ReturnType<typeof changeView>;
 
-/** The project's code changes: those with proposals waiting first, then newest first. ponytail: the latest 100; page when teams need older ones. */
-export async function codeChangeList(projectId: string): Promise<CodeChangeView[]> {
-  const changes = await prisma.codeChange.findMany({ where: { projectId }, orderBy: { mergedAt: "desc" }, take: 100, select: changeSelect });
+/**
+ * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
+ * those, as Home's Catch up lists). ponytail: the latest 100; page when teams need older ones.
+ */
+export async function codeChangeList(projectId: string, { waiting = false } = {}): Promise<CodeChangeView[]> {
+  const changes = await prisma.codeChange.findMany({
+    where: { projectId, ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }) },
+    orderBy: { mergedAt: "desc" },
+    take: 100,
+    select: changeSelect,
+  });
   return changes.map(changeView).sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
 }
 

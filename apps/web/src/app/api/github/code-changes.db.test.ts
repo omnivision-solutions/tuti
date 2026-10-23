@@ -122,6 +122,9 @@ describe("reading", () => {
     // The gate, not labels, decides what the changelog hears about: users don't see this, so it left the running draft.
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(0);
     expect((await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id } })).body).toBe("");
+    // GitHub delivers it again: it stays out.
+    expect(await merge(1)).toBe(200);
+    expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(0);
   });
 
   test("one code change per pull request, analysed once: a redelivery neither reads nor asks again", async () => {
@@ -376,6 +379,18 @@ describe("deciding", () => {
         },
       },
     });
+
+    // The team dismisses the line; analysed again, nothing is left to wait for: no event.
+    await prisma.codeChangeAction.updateMany({ where: { codeChangeId: id }, data: { status: "DISMISSED" } });
+    model.reply(SUMMARY);
+    for (let i = 0; i < 5; i++) {
+      model.decide(unrelated, '"post"');
+    }
+    model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true });
+    expect(receiver.received).toHaveLength(1);
     await receiver.close();
   });
 

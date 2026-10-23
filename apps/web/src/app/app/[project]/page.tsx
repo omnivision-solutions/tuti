@@ -26,7 +26,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   if (!membership) {
     notFound();
   }
-  const waiting = (await codeChangeList(membership.project.id)).filter((change) => change.waiting > 0);
+  const waiting = await codeChangeList(membership.project.id, { waiting: true });
 
   return (
     <>

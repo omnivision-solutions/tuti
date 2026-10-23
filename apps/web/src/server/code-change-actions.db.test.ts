@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { addToRunningDraft } from "@tuti/jobs";
 
 import { applyLikelyCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -157,6 +157,21 @@ test("the list puts code changes with proposals waiting first, then the newest",
     { number: 1, state: "nothing_to_do", waiting: 0 },
     { number: 3, state: "ready", waiting: 0 },
   ]);
+  // Catch up lists only those waiting, however many newer ones don't.
+  await prisma.codeChange.createMany({
+    data: Array.from({ length: 100 }, (_, i) => ({
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: 100 + i,
+      url: `https://github.com/acme/app/pull/${100 + i}`,
+      title: `Newer ${i}`,
+      author: "octo",
+      mergedAt: at(0),
+      state: "READY" as const,
+    })),
+  });
+  expect((await codeChangeList(project.id, { waiting: true })).map((change) => change.number)).toEqual([2]);
 });
 
 test('"Apply likely" applies the likely feedback proposals and leaves the maybes, and a comment nobody wrote', async () => {
