@@ -102,7 +102,7 @@ test("a collection for one reader group: people the app signs in with that group
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("groups is enterprise · 0 readers · On the Enterprise plan");
+  await expect(groups).toContainText("groups is enterprise · 0 users · On the Enterprise plan");
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
@@ -144,7 +144,7 @@ test("a collection for one reader group: people the app signs in with that group
 
   // The team sees Sam in the group, and can't delete it while the collection is for it.
   await owner.goto(`/app/${slug}/settings#groups`);
-  await expect(groups).toContainText("enterprise · 1 reader");
+  await expect(groups).toContainText("enterprise · 1 user");
   await groups.scrollIntoViewIfNeeded();
   await checkpoint(owner, "team-settings-groups", { fullPage: false });
   await groups.getByRole("button", { name: "Delete Enterprise customers" }).click();
@@ -350,7 +350,9 @@ test("a group from conditions: readers whose properties match read its collectio
   await condition.getByRole("combobox", { name: "Operator" }).click();
   await owner.getByRole("option", { name: "is any of" }).click();
   await condition.getByLabel("Value").fill("pro, enterprise");
-  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  await expect(preview).toHaveText("1 matching user");
+  const matching = dialog.getByRole("list", { name: "Matching users" });
+  await expect(matching.getByRole("listitem")).toHaveText([/Ada from Acme/]);
   await checkpoint(owner, "team-settings-group-conditions-preview", { fullPage: false });
   // On a phone, each condition's row wraps instead of squeezing its fields.
   const desktop = owner.viewportSize()!;
@@ -359,11 +361,12 @@ test("a group from conditions: readers whose properties match read its collectio
   await owner.setViewportSize(desktop);
   // Values match exactly: "Pro" isn't "pro".
   await condition.getByLabel("Value").fill("Pro");
-  await expect(preview).toHaveText("No readers match now.");
+  await expect(preview).toHaveText("No matching users");
   await condition.getByLabel("Value").fill("pro, free");
-  await expect(preview).toHaveText("2 readers match now: Ada from Acme and Bea from Acme.");
+  await expect(preview).toHaveText("2 matching users");
+  await expect(matching.getByRole("listitem")).toHaveText([/Ada from Acme/, /Bea from Acme/]);
   await condition.getByLabel("Value").fill("pro, enterprise");
-  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  await expect(preview).toHaveText("1 matching user");
   // "is not set" takes no value: Bea has no seats, but isn't on Pro.
   await dialog.getByRole("button", { name: "Add condition" }).click();
   const seats = dialog.getByRole("group", { name: "Condition 2" });
@@ -371,12 +374,12 @@ test("a group from conditions: readers whose properties match read its collectio
   await seats.getByRole("combobox", { name: "Operator" }).click();
   await owner.getByRole("option", { name: "is not set" }).click();
   await expect(seats.getByLabel("Value")).toHaveCount(0);
-  await expect(preview).toHaveText("No readers match now.");
+  await expect(preview).toHaveText("No matching users");
   await seats.getByRole("button", { name: "Remove condition" }).click();
-  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  await expect(preview).toHaveText("1 matching user");
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("plan is any of pro, enterprise · 1 reader: Ada from Acme");
+  await expect(groups).toContainText("plan is any of pro, enterprise · 1 user: Ada from Acme");
   await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
 
   // A collection for it, with an article.

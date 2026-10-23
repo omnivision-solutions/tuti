@@ -1,6 +1,6 @@
 "use client";
 
-import { XIcon } from "lucide-react";
+import { UsersIcon, XIcon } from "lucide-react";
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -18,7 +18,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,36 +27,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
 import { type GroupCondition, LIST_OPERATORS, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
-import { deleteGroup, previewGroup, saveGroup } from "@/server/groups";
+import { deleteGroup, type GroupPreview, previewGroup, saveGroup } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
 
 
 const names = (list: string[]) => new Intl.ListFormat("en-GB").format(list);
 
-/** "2 readers: Ada and Bea", "12 readers, including Ada, Bea and Cy". */
-function whoIsIn({ readers, sample }: { readers: number; sample: string[] }) {
-  const count = `${readers} ${readers === 1 ? "reader" : "readers"}`;
-  return sample.length === 0 ? count : readers > sample.length ? `${count}, including ${names(sample)}` : `${count}: ${names(sample)}`;
-}
+const usersCount = (count: number) => `${count} ${count === 1 ? "user" : "users"}`;
 
-/** The dialog's preview: "No readers match now.", "2 readers match now: Ada and Bea.", "12 readers match now, including …". */
-function matchesNow({ readers, sample }: { readers: number; sample: string[] }) {
-  if (readers === 0) {
-    return "No readers match now.";
-  }
-  const count = readers === 1 ? "1 reader matches now" : `${readers} readers match now`;
-  return readers > sample.length ? `${count}, including ${names(sample)}.` : `${count}: ${names(sample)}.`;
+/** "2 users: Ada and Bea", "12 users, including Ada, Bea and Cy". */
+function whoIsIn({ readers, sample }: { readers: number; sample: string[] }) {
+  const count = usersCount(readers);
+  return sample.length === 0 ? count : readers > sample.length ? `${count}, including ${names(sample)}` : `${count}: ${names(sample)}`;
 }
 
 const conditionText = (c: GroupCondition) =>
   [c.property, OPERATORS[c.op], "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : ""].filter(Boolean).join(" ");
 
-/** Settings → Groups: the project's reader groups, with who's in each now. */
-export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; groups: GroupView[] }) {
+/** Settings → Groups: the project's reader groups, with who's in each now. `properties`: the names its users have, suggested in the dialog. */
+export function ReaderGroups({ projectSlug, groups, properties }: { projectSlug: string; groups: GroupView[]; properties: string[] }) {
   return (
     <div className="flex flex-col gap-4">
       {groups.length === 0 ? (
-        <EmptyState title="No groups yet" description="Add one, then pick it on a collection in Docs to make that collection for its readers only." />
+        <EmptyState title="No groups yet" description="Add one, then pick it on a tab, collection or article in Docs to make it for its users only." />
       ) : (
         <ItemList>
           {groups.map((group) => (
@@ -65,7 +59,7 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
               meta={[group.conditions.map(conditionText).join(" and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
               actions={
                 <>
-                  <GroupDialog projectSlug={projectSlug} group={group} />
+                  <GroupDialog projectSlug={projectSlug} properties={properties} group={group} />
                   <DeleteGroupButton projectSlug={projectSlug} group={group} />
                 </>
               }
@@ -74,7 +68,7 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
         </ItemList>
       )}
       <div>
-        <GroupDialog projectSlug={projectSlug} />
+        <GroupDialog projectSlug={projectSlug} properties={properties} />
       </div>
     </div>
   );
@@ -104,11 +98,14 @@ const complete = (row: Row) => row.property.trim() !== "" && (takesNoValue(row.o
 
 const PREVIEW_DELAY_MS = 300;
 
-/** Adds a group, or (with `group`) changes one. */
-function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: GroupView }) {
+/**
+ * Adds a group, or (with `group`) changes one: its name, description and conditions on the left, and
+ * the users who match them now on the right, as they're written.
+ */
+function GroupDialog({ projectSlug, properties, group }: { projectSlug: string; properties: string[]; group?: GroupView }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
-  const [preview, setPreview] = useState<{ readers: number; sample: string[] } | { error: string } | null>(null);
+  const [preview, setPreview] = useState<GroupPreview | { error: string } | null>(null);
   const latest = useRef(0);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveGroup(projectSlug, group?.key ?? null, prev, formData);
@@ -137,14 +134,16 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
   }, [previewable, projectSlug, rows]);
 
   const change = (i: number, patch: Partial<Row>) => setRows((current) => current.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+  const shown = previewable ? preview : null;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        // Each time it opens: the group as saved (or empty, for a new one).
+        // Each time it opens: the group as saved (or one empty condition, for a new one).
         if (next) {
           setRows(rowsOf(group));
+          setPreview(null);
         }
         setOpen(next);
       }}
@@ -154,119 +153,185 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
       >
         {group ? "Edit" : "New group"}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
-        <form {...keepingFields(action)}>
-          <DialogHeader>
-            <DialogTitle>{group ? "Edit group" : "New group"}</DialogTitle>
-          </DialogHeader>
-          <FieldGroup className="my-4">
-            <Field data-invalid={state.error ? true : undefined}>
-              <FieldLabel htmlFor={`group-name-${id}`}>Name</FieldLabel>
-              <Input
-                id={`group-name-${id}`}
-                name="name"
-                defaultValue={group?.name}
-                placeholder="Enterprise"
-                maxLength={50}
-                required
-                aria-invalid={state.error ? true : undefined}
-              />
-              {state.error && <FieldError>{state.error}</FieldError>}
-            </Field>
-            <fieldset className="flex flex-col gap-3">
-              <legend className="mb-1 text-sm font-medium">Conditions</legend>
-              <p className="text-sm text-muted-foreground">
-                Your users whose properties match are in this group. Your app gives them in its sign-in token or the API, such as{" "}
-                <code>plan</code> or <code>role</code> (the token&apos;s <code>groups</code> is the <code>groups</code> property). Values
-                match exactly, capital letters too.{group && " Changing them changes who's in it."}
-              </p>
-              {rows.length > 0 && <p className="text-xs font-medium text-muted-foreground">All must match</p>}
-              {rows.map((row, i) => (
-                <div key={i} role="group" aria-label={`Condition ${i + 1}`} className="flex flex-wrap items-center gap-2">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-4xl md:overflow-hidden">
+        <div className="grid md:h-[min(42rem,calc(100dvh-2rem))] md:grid-cols-2">
+          <form {...keepingFields(action)} className="flex min-h-0 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col gap-5 p-5 md:overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{group ? "Edit group" : "New group"}</DialogTitle>
+                <DialogDescription>
+                  Users whose properties match these conditions are in this group, now and as they change.
+                </DialogDescription>
+              </DialogHeader>
+              <FieldGroup>
+                <Field data-invalid={state.error ? true : undefined}>
+                  <FieldLabel htmlFor={`group-name-${id}`}>Name</FieldLabel>
                   <Input
-                    aria-label="Property"
-                    value={row.property}
-                    onChange={(e) => change(i, { property: e.target.value })}
-                    placeholder="plan"
-                    maxLength={64}
-                    autoComplete="off"
-                    className="min-w-0 flex-1 basis-28"
+                    id={`group-name-${id}`}
+                    name="name"
+                    defaultValue={group?.name}
+                    placeholder="Enterprise"
+                    maxLength={50}
+                    required
+                    aria-invalid={state.error ? true : undefined}
                   />
-                  <Select items={OPERATORS} value={row.op} onValueChange={(op) => change(i, { op: op as Operator })}>
-                    <SelectTrigger className="w-36" aria-label="Operator">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(OPERATORS) as Operator[]).map((op) => (
-                        <SelectItem key={op} value={op}>
-                          {OPERATORS[op]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {!takesNoValue(row.op) && (
-                    <Input
-                      aria-label="Value"
-                      value={row.value}
-                      onChange={(e) => change(i, { value: e.target.value })}
-                      placeholder={LIST_OPERATORS.includes(row.op) ? "pro, enterprise" : "pro"}
-                      autoComplete="off"
-                      className="min-w-0 flex-1 basis-36"
-                    />
-                  )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Remove condition"
-                    onClick={() => setRows((current) => current.filter((_, j) => j !== i))}
-                  >
-                    <XIcon />
-                  </Button>
+                  {state.error && <FieldError>{state.error}</FieldError>}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`group-description-${id}`}>Description (optional)</FieldLabel>
+                  <Textarea
+                    id={`group-description-${id}`}
+                    name="description"
+                    rows={2}
+                    maxLength={300}
+                    defaultValue={group?.description}
+                    placeholder="Paying enterprise plan users"
+                  />
+                </Field>
+                <div role="group" aria-labelledby={`group-conditions-${id}`} className="flex min-w-0 flex-col gap-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span id={`group-conditions-${id}`} className="text-sm font-medium">
+                      Conditions
+                    </span>
+                    <span className="text-xs text-muted-foreground">All must match</span>
+                  </div>
+                  <datalist id={`group-properties-${id}`}>
+                    {properties.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                  {rows.map((row, i) => (
+                    <div key={i} className="flex flex-col gap-3">
+                      {i > 0 && (
+                        <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground" aria-hidden>
+                          AND
+                          <span className="h-px flex-1 bg-border" />
+                        </div>
+                      )}
+                      <div role="group" aria-label={`Condition ${i + 1}`} className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            aria-label="Property"
+                            value={row.property}
+                            onChange={(e) => change(i, { property: e.target.value })}
+                            placeholder="plan"
+                            maxLength={64}
+                            autoComplete="off"
+                            list={`group-properties-${id}`}
+                            className="min-w-0 flex-1 font-mono"
+                          />
+                          <Select items={OPERATORS} value={row.op} onValueChange={(op) => change(i, { op: op as Operator })}>
+                            <SelectTrigger className="w-32 shrink-0" aria-label="Operator">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(OPERATORS) as Operator[]).map((op) => (
+                                <SelectItem key={op} value={op}>
+                                  {OPERATORS[op]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Remove condition"
+                            disabled={rows.length === 1}
+                            onClick={() => setRows((current) => current.filter((_, j) => j !== i))}
+                          >
+                            <XIcon />
+                          </Button>
+                        </div>
+                        {!takesNoValue(row.op) && (
+                          <Input
+                            aria-label="Value"
+                            value={row.value}
+                            onChange={(e) => change(i, { value: e.target.value })}
+                            placeholder={LIST_OPERATORS.includes(row.op) ? "pro, enterprise" : "enterprise"}
+                            autoComplete="off"
+                            className="font-mono"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={rows.length >= MAX_CONDITIONS}
+                      onClick={() => setRows((current) => [...current, EMPTY_ROW])}
+                    >
+                      Add condition
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Values match exactly, capital letters too. Your app gives users their properties in its sign-in token or the API; the
+                    token&apos;s <code>groups</code> is the <code>groups</code> property.
+                  </p>
+                  <input type="hidden" name="conditions" value={JSON.stringify(rows.map(conditionOf))} />
                 </div>
-              ))}
-              <div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={rows.length >= MAX_CONDITIONS}
-                  onClick={() => setRows((current) => [...current, EMPTY_ROW])}
-                >
-                  Add condition
-                </Button>
-              </div>
-              <input type="hidden" name="conditions" value={JSON.stringify(rows.map(conditionOf))} />
-              <div role="status" className="rounded-lg bg-muted px-3 py-2 text-sm break-words">
-                {!previewable || preview === null ? (
-                  <span className="text-muted-foreground">Complete a condition to see who matches.</span>
-                ) : "error" in preview ? (
-                  <span className="text-muted-foreground">{preview.error}</span>
-                ) : (
-                  matchesNow(preview)
-                )}
-              </div>
-            </fieldset>
-            <Field>
-              <FieldLabel htmlFor={`group-description-${id}`}>Description</FieldLabel>
-              <Textarea
-                id={`group-description-${id}`}
-                name="description"
-                rows={2}
-                maxLength={300}
-                defaultValue={group?.description}
-                placeholder="Optional, for your team"
-              />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button type="submit" disabled={pending}>
-              {group ? "Save" : "Add group"}
-            </Button>
-          </DialogFooter>
-        </form>
+              </FieldGroup>
+            </div>
+            <div className="border-t p-4">
+              <Button type="submit" className="w-full" disabled={pending}>
+                {group ? "Save" : "Add group"}
+              </Button>
+            </div>
+          </form>
+          <MatchingUsers preview={shown} />
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The dialog's right side: the users who match the conditions now, or why there's nothing to show. */
+function MatchingUsers({ preview }: { preview: GroupPreview | { error: string } | null }) {
+  const users = preview && "users" in preview ? preview.users : [];
+  const status =
+    preview === null
+      ? "Complete a condition to see who matches."
+      : "error" in preview
+        ? preview.error
+        : preview.readers === 0
+          ? "No matching users"
+          : `${preview.readers} matching ${preview.readers === 1 ? "user" : "users"}`;
+  return (
+    <section aria-label="Who matches" className="flex min-h-48 flex-col border-t bg-muted/40 md:min-h-0 md:border-t-0 md:border-l">
+      <div role="status" className="flex items-center gap-2 border-b px-5 py-3.5 pr-12 text-sm font-medium">
+        <UsersIcon className="size-4 text-muted-foreground" aria-hidden />
+        {status}
+      </div>
+      {users.length > 0 ? (
+        <ul aria-label="Matching users" className="flex min-h-0 flex-1 flex-col divide-y overflow-y-auto px-5">
+          {users.map((user) => (
+            <li key={user.id} className="flex items-center gap-3 py-2.5">
+              <Avatar className="size-7">
+                {user.avatar && <AvatarImage src={user.avatar} alt="" />}
+                <AvatarFallback>{user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col">
+                <span className="text-sm break-words">{user.name}</span>
+                <span className="text-xs break-all text-muted-foreground">{user.email ?? `id ${user.id}`}</span>
+              </div>
+            </li>
+          ))}
+          {preview && "readers" in preview && preview.readers > users.length && (
+            <li className="py-2.5 text-xs text-muted-foreground">and {preview.readers - users.length} more</li>
+          )}
+        </ul>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
+          <span className="flex size-10 items-center justify-center rounded-lg border bg-background">
+            <UsersIcon className="size-5" aria-hidden />
+          </span>
+          {preview && "readers" in preview ? "No users match these conditions yet." : "The users who match will show here."}
+        </div>
+      )}
+    </section>
   );
 }
 

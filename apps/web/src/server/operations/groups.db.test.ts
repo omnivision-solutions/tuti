@@ -10,7 +10,7 @@ import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
 import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
-import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
+import { createGroup, deleteGroup, listGroups, propertyNames, updateGroup } from "./groups";
 import { call } from "./run";
 
 /** Reader groups (groups.*, Settings → Groups); what their readers see is in reader-groups.db.test.ts. */
@@ -196,17 +196,27 @@ test("in the app: owners and admins only", async () => {
   expect(await list()).toEqual([]);
 });
 
-test("the dialog's preview: who a group with these conditions would have now", async () => {
+test("the dialog's preview: who a group with these conditions would have now, the first 50 of them", async () => {
   await ssoReader("Ada", { groups: ["enterprise"], plan: "pro" });
   await ssoReader("Bea", { plan: "pro", seats: 3 });
   await ssoReader("Cy", { plan: "free" });
   await ssoReader("Dee", { plan: "pro" });
   await ssoReader("Eve", { plan: "pro" });
   actAs(owner);
-  expect(await previewGroup(project.slug, plan("pro"))).toEqual({ readers: 4, sample: ["Ada", "Bea", "Dee"] });
-  expect(await previewGroup(project.slug, [...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }])).toEqual({ readers: 1, sample: ["Ada"] });
-  expect(await previewGroup(project.slug, [{ property: "seats", op: "is_not_set" }])).toEqual({ readers: 4, sample: ["Ada", "Cy", "Dee"] });
-  expect(await previewGroup(project.slug, [])).toEqual({ readers: 0, sample: [] });
+  const names = async (conditions: Parameters<typeof previewGroup>[1]) => {
+    const result = await previewGroup(project.slug, conditions);
+    return "error" in result ? result : { readers: result.readers, users: result.users.map((user) => user.name) };
+  };
+  expect(await names(plan("pro"))).toEqual({ readers: 4, users: ["Ada", "Bea", "Dee", "Eve"] });
+  expect(await names([...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }])).toEqual({ readers: 1, users: ["Ada"] });
+  expect(await names([{ property: "seats", op: "is_not_set" }])).toEqual({ readers: 4, users: ["Ada", "Cy", "Dee", "Eve"] });
+  expect(await names([])).toEqual({ readers: 0, users: [] });
+  // At most 50 of them.
+  await syncUsers(project.id, Array.from({ length: 51 }, (_, i) => ({ externalId: `bulk-${i}`, name: `Bulk ${i}`, properties: { plan: "bulk" } })));
+  const bulk = await previewGroup(project.slug, plan("bulk"));
+  expect("users" in bulk && [bulk.readers, bulk.users.length]).toEqual([51, 50]);
+  // Each with their id in the app, email and avatar.
+  expect((await previewGroup(project.slug, plan("free"))) as unknown).toEqual({ readers: 1, users: [{ id: expect.any(String), name: "Cy", email: null, avatar: null }] });
   expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
 });
 
@@ -357,4 +367,11 @@ test("while a deploy overlaps, what instances from before write in the old colum
   expect(await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "old" } })).toMatchObject({ legacyClaim: null, conditions: plan("pro") });
   await prisma.$executeRaw`UPDATE reader_group SET name = 'Renamed' WHERE key = 'old'`;
   expect(await conditions()).toEqual(plan("pro"));
+});
+
+test("the dialog suggests the names of the properties the project's users have", async () => {
+  await ssoReader("Ada", { plan: "pro", seats: 3 });
+  await ssoReader("Bea", { plan: "free", groups: ["beta"] });
+  await ssoReader("Gus", { region: "eu" }, (await createProject(owner)).id);
+  expect(await propertyNames(project.id)).toEqual(["groups", "plan", "seats"]);
 });

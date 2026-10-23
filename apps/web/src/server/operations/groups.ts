@@ -32,14 +32,28 @@ export type GroupView = {
   sample: string[];
 };
 
-/** How many of the project's users a group with these conditions has now, and the first 3's names. */
-export async function whoMatches(projectId: string, conditions: GroupCondition[]) {
+/** How many of the project's users a group with these conditions has now, and the first `limit` of them by name. */
+export async function matchingUsers(projectId: string, conditions: GroupCondition[], limit: number) {
   const where = Prisma.sql`s."projectId" = ${projectId} AND ${inGroupSql(conditions, Prisma.sql`s`)}`;
   // One pass: the count is of every match, before the limit.
-  const sample = await prisma.$queryRaw<{ name: string; count: bigint }[]>`
-    SELECT u.name, count(*) OVER () AS count FROM sso_identity s JOIN "user" u ON u.id = s."userId"
-    WHERE ${where} ORDER BY u.name, s.id LIMIT 3`;
-  return { readers: Number(sample[0]?.count ?? 0), sample: sample.map((user) => user.name) };
+  const rows = await prisma.$queryRaw<{ id: string; name: string; email: string | null; avatar: string | null; count: bigint }[]>`
+    SELECT s."externalId" AS id, u.name, s.email, u.image AS avatar, count(*) OVER () AS count
+    FROM sso_identity s JOIN "user" u ON u.id = s."userId"
+    WHERE ${where} ORDER BY u.name, s.id LIMIT ${limit}`;
+  return { readers: Number(rows[0]?.count ?? 0), users: rows.map((row) => ({ id: row.id, name: row.name, email: row.email, avatar: row.avatar })) };
+}
+
+/** How many of the project's users a group with these conditions has now, and the first 3's names. */
+export async function whoMatches(projectId: string, conditions: GroupCondition[]) {
+  const { readers, users } = await matchingUsers(projectId, conditions, 3);
+  return { readers, sample: users.map((user) => user.name) };
+}
+
+/** The names of the properties the project's users have (up to 200), for suggestions. */
+export async function propertyNames(projectId: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ name: string }[]>`
+    SELECT DISTINCT jsonb_object_keys(attributes) AS name FROM sso_identity WHERE "projectId" = ${projectId} ORDER BY name LIMIT 200`;
+  return rows.map((row) => row.name);
 }
 
 /** The project's groups by name, each with who's in it now (or just group `key`). */

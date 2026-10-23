@@ -6,7 +6,7 @@ import { groupConditions } from "@/lib/group-conditions";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
-import { createGroup, deleteGroup as deleteGroupOperation, updateGroup, whoMatches } from "./operations/groups";
+import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -39,11 +39,13 @@ export async function deleteGroup(projectSlug: string, key: string): Promise<For
   return asAdmin(projectSlug, DENIED, (context) => call(deleteGroupOperation, context, { group: String(key) }));
 }
 
-/** The group dialog's preview: how many of the project's users a group with these conditions would have now, and a few names. */
-export async function previewGroup(
-  projectSlug: string,
-  conditions: z.input<typeof groupConditions>,
-): Promise<{ error: string } | { readers: number; sample: string[] }> {
+/** How many users the group dialog lists beside the conditions. */
+const PREVIEW_USERS = 50;
+
+export type GroupPreview = { readers: number; users: { id: string; name: string; email: string | null; avatar: string | null }[] };
+
+/** The group dialog's preview: how many of the project's users a group with these conditions would have now, and the first 50. */
+export async function previewGroup(projectSlug: string, conditions: z.input<typeof groupConditions>): Promise<{ error: string } | GroupPreview> {
   const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
   if (!session || !project) {
     return { error: DENIED };
@@ -52,5 +54,5 @@ export async function previewGroup(
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  return whoMatches(project.id, input.data);
+  return matchingUsers(project.id, input.data, PREVIEW_USERS);
 }
