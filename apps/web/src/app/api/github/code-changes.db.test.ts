@@ -605,6 +605,13 @@ describe("deciding", () => {
     expect(await changes()).toContainEqual(expect.objectContaining({ number: 18, state: "READY" }));
     vi.restoreAllMocks();
 
+    // Nor does failing to read what to link.
+    vi.spyOn(prisma.codeChangeAction, "findMany").mockRejectedValueOnce(new Error("database blip"));
+    script(19);
+    expect(await merge(19)).toBe(200);
+    expect(await changes()).toContainEqual(expect.objectContaining({ number: 19, state: "READY" }));
+    vi.restoreAllMocks();
+
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Tuti" });
   });
