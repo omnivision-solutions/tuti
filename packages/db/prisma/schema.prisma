@@ -304,7 +304,10 @@ model SsoIdentity {
   /// Email as asserted by the project's app (User.email is a placeholder), lowercase. Someone signed
   /// in to the portal another way with this address, verified, has this user's groups too.
   email      String?
-  /// (Its `groups` column, unused since a token's `groups` is the `groups` property, goes in a later migration.)
+  /// Their `groups` property as it was kept before it was a property (the token's `groups`): written
+  /// alongside it, and copied into it by a trigger when an instance from before writes it, so the two
+  /// agree while a deploy overlaps them. Goes, with the trigger, in a later migration.
+  legacyGroups String[] @default([]) @map("groups")
   /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
   /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
   /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
@@ -1068,8 +1071,11 @@ model ReaderGroup {
   key         String
   name        String
   /// Matched against the project's users' properties, all of them (lib/group-conditions.ts GroupCondition[]).
-  /// (Its `claim` column, unused since groups come only from conditions, goes in a later migration.)
   conditions  Json     @default("[]")
+  /// The name a token's `groups` gave it before groups came only from conditions; cleared when its
+  /// conditions change, and turned into one by a trigger when an instance from before writes it,
+  /// while a deploy overlaps them. Goes, with the trigger, in a later migration.
+  legacyClaim String?  @map("claim")
   description String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

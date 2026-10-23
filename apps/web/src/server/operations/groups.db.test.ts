@@ -8,6 +8,7 @@ import type { Properties } from "@/lib/user-properties";
 import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
+import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
 import { call } from "./run";
@@ -209,10 +210,19 @@ test("the dialog's preview: who a group with these conditions would have now", a
   expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
 });
 
+/** Back to before 20261023160000_groups_from_properties: without the triggers that keep the old columns in step. */
+const undoGroupsFromProperties = () =>
+  prisma.$executeRawUnsafe(`
+    DROP TRIGGER IF EXISTS "sso_identity_groups_to_property" ON "sso_identity";
+    DROP FUNCTION IF EXISTS "sso_identity_groups_to_property"();
+    DROP TRIGGER IF EXISTS "reader_group_claim_to_condition" ON "reader_group";
+    DROP FUNCTION IF EXISTS "reader_group_claim_to_condition"();`);
+
 test("the migration gives today's groups their claim as their key, no conditions, and SSO users no attributes", async () => {
   const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261021130000_group_conditions/migration.sql", import.meta.url), "utf8");
   // Back to before it, with a group and an SSO user as they were then.
   // (This file's database is its own: the other tests' groups can go.)
+  await undoGroupsFromProperties();
   await prisma.$executeRawUnsafe(`
     DELETE FROM "collection_group";
     DELETE FROM "reader_group";
@@ -247,7 +257,8 @@ test("the operators' migration renames conditions' attribute to property and is_
   await prisma.$executeRawUnsafe(sql);
 
   expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, conditions: true }, orderBy: { key: "asc" } })).toEqual([
-    { key: "claimed", conditions: [] },
+    // Since groups from properties, a group named by a claim gets its condition as it's written (see below).
+    { key: "claimed", conditions: inGroupNamed("beta") },
     {
       key: "old",
       conditions: [
@@ -261,6 +272,7 @@ test("the operators' migration renames conditions' attribute to property and is_
 test("groups from properties: a token's groups become the `groups` property, and a group named by them its condition", async () => {
   const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261023160000_groups_from_properties/migration.sql", import.meta.url), "utf8");
   // As before it: groups with a claim (one with conditions too) and users with `groups`.
+  await undoGroupsFromProperties();
   await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "reader_group_projectId_claim_key" ON "reader_group"("projectId", "claim")`);
   await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'beta', 'Beta', 'beta', now())`;
   await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, conditions, "updatedAt")
@@ -289,4 +301,43 @@ test("groups from properties: a token's groups become the `groups` property, and
   // New groups have no claim, so any number of them can be added.
   await create({ name: "One", conditions: plan("x") });
   await create({ name: "Two", conditions: plan("y") });
+});
+
+test("while a deploy overlaps, what instances from before write in the old columns is kept in step with properties and conditions", async () => {
+  await create({ name: "Beta", conditions: inGroupNamed("beta") });
+  const ada = await signUp("Ada");
+  // An instance from before signs someone in with `groups` (an insert, then a change), and takes them away.
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'ada', ${ada.id}, '{beta}', '{"plan": "pro"}', now())`;
+  const properties = async () => (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "ada" } })).properties;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta"] });
+  expect((await list()).map((g) => g.readers)).toEqual([1]);
+  await prisma.$executeRaw`UPDATE sso_identity SET groups = '{beta,gamma}' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta", "gamma"] });
+  await prisma.$executeRaw`UPDATE sso_identity SET groups = '{}' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro" });
+  expect((await list()).map((g) => g.readers)).toEqual([0]);
+  // Other changes there leave the property alone.
+  await syncUsers(project.id, [{ externalId: "ada", properties: { groups: ["beta"] } }]);
+  await prisma.$executeRaw`UPDATE sso_identity SET email = 'e2e-ada@example.com' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta"] });
+  // New instances write the old column too, so instances from before see the same groups.
+  const legacy = async () => (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "ada" } })).legacyGroups;
+  expect(await legacy()).toEqual(["beta"]);
+  await syncUsers(project.id, [{ externalId: "ada", properties: { groups: null } }]);
+  expect([await legacy(), await properties()]).toEqual([[], { plan: "pro" }]);
+  await syncUsers(project.id, [{ externalId: "bea", properties: { groups: ["beta"] } }]);
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual(["beta"]);
+
+  // An instance from before adds a group by claim, or changes its claim: it gets the condition.
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'old', 'Old', 'partner', now())`;
+  const conditions = async () => (await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "old" } })).conditions;
+  expect(await conditions()).toEqual(inGroupNamed("partner"));
+  await prisma.$executeRaw`UPDATE reader_group SET claim = 'partner-2' WHERE key = 'old'`;
+  expect(await conditions()).toEqual(inGroupNamed("partner-2"));
+  // Conditions of its own stay; changed here, the claim goes, so it can't let anyone in after a rollback.
+  await update({ group: "old", conditions: plan("pro") });
+  expect(await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "old" } })).toMatchObject({ legacyClaim: null, conditions: plan("pro") });
+  await prisma.$executeRaw`UPDATE reader_group SET name = 'Renamed' WHERE key = 'old'`;
+  expect(await conditions()).toEqual(plan("pro"));
 });

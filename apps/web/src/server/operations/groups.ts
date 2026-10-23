@@ -121,7 +121,9 @@ export const updateGroup = defineOperation({
   }),
   example: { name: "Enterprise customers", conditions: [{ property: "plan", op: "is", value: "enterprise" }] },
   run: async ({ projectId }, { group, ...input }) => {
-    const { count } = await prisma.readerGroup.updateMany({ where: { projectId, key: group }, data: input });
+    // Its conditions say who's in it now, not a claim from before (see ReaderGroup.legacyClaim).
+    const data = { ...input, ...(input.conditions && { legacyClaim: null }) };
+    const { count } = await prisma.readerGroup.updateMany({ where: { projectId, key: group }, data });
     if (count === 0) {
       throw notFound(group);
     }

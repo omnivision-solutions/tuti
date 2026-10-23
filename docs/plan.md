@@ -387,7 +387,7 @@ users come in over the API first (CSV import and editing by hand later).
 - [x] **4. Groups only from conditions.** The `claim` goes: `groups` in a token is the `groups` list property (set by a token that has it, `[]` removes it), and each group with a claim got the condition "groups is <claim>" (one with conditions as well kept just those). Groups need at least one condition; a new group's dialog starts with one.
 - [ ] **5. Users in the app.** A Users page: the project's users, searchable, filtered by group, with their properties and groups, and how to sync them.
 - [ ] **6. The group dialog beside who matches.** Conditions on the left (AND between them, property names suggested from the project's users), the users who match on the right as you type.
-- [ ] Drop the unused `reader_group.claim` and `sso_identity.groups` columns (kept by item 4 so a deploy's old instances keep working)
+- [ ] Drop the `reader_group.claim` and `sso_identity.groups` columns and the triggers that keep them in step with conditions and the `groups` property (kept by item 4 so a deploy's old instances keep working, and agree with new ones)
 - [ ] Later: CSV import; adding and editing users by hand; properties for feedback (votes by plan).
 
 ## Deciding vs. writing: small models for decisions (cross-cutting, asked 2026-10-20)
