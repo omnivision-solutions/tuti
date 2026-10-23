@@ -17,6 +17,7 @@
     "db:studio": "pnpm --filter @tuti/db db:studio",
     "test": "vitest run --project unit",
     "test:db": "vitest run --project db",
+    "test:live": "vitest run --project live",
     "test:e2e": "turbo run build --filter=@tuti/web && playwright test",
     "env:pull": "sh scripts/env-pull.sh"
   },
