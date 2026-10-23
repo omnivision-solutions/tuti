@@ -17,6 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
+import { codeChangeDetail } from "@/server/operations/code-changes";
 
 import { POST as webhook } from "./webhook/route";
 
@@ -549,6 +550,48 @@ describe("deciding", () => {
         },
       },
     ]);
+  });
+
+  test("opted in, Tuti applies the links it's very sure of by itself; nothing else, and nothing while it isn't opted in", async () => {
+    const script = (number: number) => {
+      github.pullRequest(repo, pullRequest(number));
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide({ effect: { resolves: 0.99, moves_forward: 0, related: 0, unrelated: 0.01 } }, '"title":"Dark mode"');
+      model.decide({ effect: { resolves: 0.02, moves_forward: 0.02, related: 0.95, unrelated: 0.01 } }, "Custom colour themes");
+      model.decide({ effect: { resolves: 0, moves_forward: 0, related: 0.7, unrelated: 0.3 } }, "Reorganise the settings page");
+      model.decide(unrelated, "CSV exports");
+      model.decide(unrelated, "Mobile app");
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    };
+    const actionsOf = async (number: number) =>
+      (
+        await prisma.codeChangeAction.findMany({
+          where: { codeChange: { projectId: project.id, number }, postId: { not: null } },
+          select: { kind: true, status: true, postId: true },
+          orderBy: { probability: "desc" },
+        })
+      ).map(({ kind, status, postId }) => ({ kind, status, post: Object.keys(posts).find((key) => posts[key]!.id === postId) }));
+
+    script(16);
+    await merge(16);
+    expect((await actionsOf(16)).filter((action) => action.status !== "PENDING")).toEqual([]);
+
+    await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: true } });
+    script(17);
+    await merge(17);
+    expect(await actionsOf(17)).toEqual([
+      { kind: "RESOLVES", status: "PENDING", post: "darkMode" },
+      { kind: "LINKS", status: "APPLIED", post: "themes" },
+      { kind: "LINKS", status: "PENDING", post: "settings" },
+    ]);
+    expect(await prisma.postLink.findMany({ where: { postId: posts.themes!.id }, select: { url: true, source: true } })).toEqual([
+      { url: `https://github.com/${repo}/pull/17`, source: "CODE_CHANGE" },
+    ]);
+    const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
+    expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Tuti" });
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {

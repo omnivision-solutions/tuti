@@ -47,6 +47,11 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(analysis).not.toBeChecked();
   await analysis.click();
   await expect(owner.getByText("Code changes on")).toBeVisible();
+  // Applying by itself is opt-in, and only for links.
+  const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
+  await expect(autoLinks).not.toBeChecked();
+  await autoLinks.click();
+  await expect(owner.getByText("Tuti links posts by itself")).toBeVisible();
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, { ...account, add: [] });

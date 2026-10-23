@@ -163,7 +163,7 @@ async function analyse(
       await finish(change.id, { state: "NOTHING_TO_DO", reason: gate.reason, summary: "", why: "", ...versions }, []);
       // The gate decides what the changelog hears about (instead of labels): its bullet leaves the running draft.
       await removeFromRunningDraft(change.projectId, change.pullRequest.url);
-      return { state: "NOTHING_TO_DO" as const, actions: 0 };
+      return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0 };
     }
   }
   const summary = await writeSummary(pr);
@@ -205,11 +205,12 @@ async function analyse(
     ...proposals.filter((_, i) => written[i]),
     { kind: "CHANGELOG_LINE", probability: 1, payload: { line: line || change.pullRequest.title } },
   ];
-  const waiting = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
+  const { waiting, linked } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
     projectId: change.projectId,
+    pullRequest: change.pullRequest,
     data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/code-changes/${change.id}` } }),
   });
-  return { state: "READY" as const, actions: waiting };
+  return { state: "READY" as const, actions: waiting, linked };
 }
 
 /** The app's address (APP_URL), for links to the team's pages. */
@@ -330,17 +331,18 @@ async function articleCandidates(projectId: string, vector: string): Promise<Art
 
 /**
  * Saves the analysis: its proposals replace the ones still waiting from an earlier analysis, except
- * for targets the team already applied or dismissed something for. In one transaction, so a code
- * change is never ready with half its proposals, nor without its `code_change.ready` event when
- * something waits (`ready`; sent once it commits). Returns how many it saved.
+ * for targets the team already applied or dismissed something for, and the links Tuti applies by
+ * itself (see AUTO_LINK). In one transaction, so a code change is never ready with half its proposals
+ * or links, nor without its `code_change.ready` event when something waits (`ready`; sent once it
+ * commits). Returns how many wait for the team, and how many Tuti linked.
  */
 async function finish(
   id: string,
   data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
   proposals: Proposal[],
-  ready?: { projectId: string; data: (waiting: number) => Record<string, unknown> },
-): Promise<number> {
-  const { count, deliveries } = await prisma.$transaction(async (tx) => {
+  ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
+): Promise<{ waiting: number; linked: number }> {
+  const { waiting, linked, deliveries } = await prisma.$transaction(async (tx) => {
     await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
@@ -352,10 +354,45 @@ async function finish(
       );
     const { count } = await tx.codeChangeAction.createMany({ data: proposals.filter((proposal) => !taken(proposal)).map((proposal) => ({ codeChangeId: id, ...proposal })) });
     await tx.codeChange.update({ where: { id }, data });
+    const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // Only when something waits for the team (analysed again, the team may have decided it all already).
-    const deliveries = ready && count > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(count)) : [];
-    return { count, deliveries };
+    const waiting = count - linked;
+    const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
+    return { waiting, linked, deliveries };
   });
   await queueDeliveries(deliveries);
-  return count;
+  return { waiting, linked };
+}
+
+/** How sure a "links" proposal must be for Tuti to apply it by itself. ponytail: one bar for every project; per project once decisions are calibrated on its own. */
+export const AUTO_LINK = 0.95;
+
+/**
+ * Applies the code change's "links" proposals Tuti is this sure of, where the team opted in
+ * (`autoApplyLinks`): a link is only a link (no status, no email). Part of saving the analysis (see
+ * finish), marked as applied by Tuti. Returns how many.
+ */
+async function linkByItself(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  codeChangeId: string,
+  pr: { repo: string; number: number; url: string; title: string },
+): Promise<number> {
+  const project = await tx.project.findUnique({ where: { id: projectId }, select: { autoApplyLinks: true } });
+  if (!project?.autoApplyLinks) {
+    return 0;
+  }
+  const actions = await tx.codeChangeAction.findMany({
+    where: { codeChangeId, kind: "LINKS", status: "PENDING", probability: { gte: AUTO_LINK }, postId: { not: null } },
+    select: { id: true, postId: true },
+  });
+  for (const action of actions) {
+    await tx.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { auto: true } } });
+    await tx.postLink.upsert({
+      where: { postId_url: { postId: action.postId!, url: pr.url } },
+      create: { projectId, postId: action.postId!, kind: "PULL_REQUEST", repo: pr.repo, number: pr.number, url: pr.url, title: pr.title, source: "CODE_CHANGE", codeChangeId },
+      update: {},
+    });
+  }
+  return actions.length;
 }
