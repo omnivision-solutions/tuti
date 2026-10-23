@@ -38,11 +38,11 @@ export type GroupView = {
 /** How many of the project's users a group with these rules has now, and the first 3's names. */
 export async function whoMatches(projectId: string, rules: GroupRules) {
   const where = Prisma.sql`s."projectId" = ${projectId} AND ${inGroupSql(rules, Prisma.sql`s`)}`;
-  const [[{ count }], sample] = await Promise.all([
-    prisma.$queryRaw<[{ count: bigint }]>`SELECT count(*) FROM sso_identity s WHERE ${where}`,
-    prisma.$queryRaw<{ name: string }[]>`SELECT u.name FROM sso_identity s JOIN "user" u ON u.id = s."userId" WHERE ${where} ORDER BY u.name, s.id LIMIT 3`,
-  ]);
-  return { readers: Number(count), sample: sample.map((user) => user.name) };
+  // One pass: the count is of every match, before the limit.
+  const sample = await prisma.$queryRaw<{ name: string; count: bigint }[]>`
+    SELECT u.name, count(*) OVER () AS count FROM sso_identity s JOIN "user" u ON u.id = s."userId"
+    WHERE ${where} ORDER BY u.name, s.id LIMIT 3`;
+  return { readers: Number(sample[0]?.count ?? 0), sample: sample.map((user) => user.name) };
 }
 
 /** The project's groups by name, each with who's in it now (or just group `key`). */
@@ -91,7 +91,7 @@ export const listGroups = defineOperation({
 export const createGroup = defineOperation({
   name: "groups.create",
   summary:
-    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on your users' properties (set by SSO tokens' `properties` and users.sync; up to 10, all must match), each a `property`, an `op` and a `value`: `is`, `is_not`, `contains` or `excludes` a text; `is_any_of` or `is_none_of` a list; `is_set` and `is_not_set` take none. Values compare as text, exactly; a list property matches when one of its items does (or, for the negative ones, none does), and a missing one matches only the negative ones and `is_not_set`, or both (either lets them in). It needs a claim or a condition",
+    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on your users' properties (set by SSO tokens' `properties` and users.sync; up to 10, all must match), each a `property`, an `op` and a `value`: `is`, `is_not`, `contains` or `excludes` a text; `is_any_of` or `is_none_of` a list; `is_set` and `is_not_set` take none. Values compare as text, exactly; a list property matches when one of its items does (or, for the negative ones, none does), and a missing one matches only the negative ones and `is_not_set`. A group can have a claim, conditions or both, and either lets someone in; it needs at least one",
   method: "POST",
   path: "/groups",
   scope: "write",
