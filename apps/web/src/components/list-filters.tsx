@@ -23,6 +23,8 @@ export function ListFilters({ filters }: { filters: Filter[] }) {
 
   const update = (filter: Filter, value: string) => {
     const params = new URLSearchParams(searchParams);
+    // Other filters, other pages: start from the first.
+    params.delete("page");
     if (value === filter.options[0]?.value) {
       params.delete(filter.name);
     } else {

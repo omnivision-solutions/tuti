@@ -60,8 +60,9 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               {
                 name: "group",
                 label: "Group",
-                value: group ?? "all",
-                options: [{ value: "all", label: "All users" }, ...groups.map((g) => ({ value: g.key, label: g.name }))],
+                // "*" can't be a group's key (a group named "All" has "all").
+                value: group ?? "*",
+                options: [{ value: "*", label: "All users" }, ...groups.map((g) => ({ value: g.key, label: g.name }))],
               },
             ]}
           />

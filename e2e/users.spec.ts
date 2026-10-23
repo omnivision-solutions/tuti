@@ -58,10 +58,31 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(2);
   await expect(rows.filter({ hasText: "Bea Byte" })).toHaveCount(0);
 
+  // A group named "All" is a group like any other, not every user.
+  await api("/groups", { name: "All", conditions: [{ property: "plan", op: "is", value: "free" }] });
+  await owner.goto(`/app/${slug}/users`);
+  await owner.getByRole("combobox", { name: "Group" }).click();
+  await owner.getByRole("option", { name: "All", exact: true }).click();
+  await expect(owner).toHaveURL(/\?group=all$/);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Bea Byte");
+
+  // 50 a page; picking a group from a later page starts at its first.
+  await api("/users", { users: Array.from({ length: 50 }, (_, i) => ({ id: `bulk-${i}`, name: `Zed ${String(i).padStart(2, "0")}` })) });
+  await owner.goto(`/app/${slug}/users`);
+  await expect(rows).toHaveCount(50);
+  await owner.getByRole("link", { name: "Next" }).click();
+  await expect(owner).toHaveURL(/\?page=2$/);
+  await expect(rows).toHaveCount(3);
+  await owner.getByRole("combobox", { name: "Group" }).click();
+  await owner.getByRole("option", { name: "Enterprise" }).click();
+  await expect(owner).toHaveURL(/\?group=enterprise$/);
+  await expect(rows).toHaveCount(2);
+
   // On a phone, long values wrap instead of pushing the page sideways.
   await owner.setViewportSize({ width: 390, height: 844 });
-  await owner.goto(`/app/${slug}/users`);
-  await expect(rows).toHaveCount(3);
+  await owner.goto(`/app/${slug}/users?q=cipher`);
+  await expect(rows).toHaveCount(1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "team-users-phone");
 });
