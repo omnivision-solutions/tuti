@@ -4,6 +4,7 @@ import type { TeamRole } from "@tuti/db";
 import {
   ChevronsUpDownIcon,
   BookOpenIcon,
+  ContactRoundIcon,
   ExternalLinkIcon,
   InboxIcon,
   LayoutListIcon,
@@ -134,6 +135,7 @@ function projectNav(project: ProjectSummary) {
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
     { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
+    { title: "Users", href: `${base}/users`, icon: ContactRoundIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(project.role === "OWNER" || project.role === "ADMIN"
       ? [
