@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 import type { BetterAuthPlugin } from "better-auth";
@@ -8,9 +8,10 @@ import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
+import { upsertProjectUser } from "@/server/project-users";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
-import { mergeProperties, type PropertyChanges, propertyChanges, storedProperties } from "./user-properties";
+import { propertyChanges } from "./user-properties";
 import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**
@@ -65,68 +66,8 @@ export function generateSsoSecret(): string {
   return `tsso_${randomBytes(32).toString("base64url")}`;
 }
 
-/** User.email must be unique, so SSO users get a stable placeholder; the asserted email lives on SsoIdentity. */
-function placeholderEmail(projectId: string, externalId: string): string {
-  const hash = createHash("sha256").update(`${projectId}:${externalId}`).digest("hex").slice(0, 32);
-  return `sso-${hash}@users.tuti.invalid`;
-}
-
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
-}
-
-/**
- * The User for someone from a project's app (matched by their id there, never by
- * email), created on first sight. Only the details given are updated; `properties`
- * sets (or, null, removes) the ones it names and keeps the rest, at most 50 (new ones
- * past that are left out). Used by SSO sign-ins and by API calls made on someone's behalf.
- */
-export async function upsertProjectUser(
-  projectId: string,
-  externalId: string,
-  details: { name?: string; image?: string | null; email?: string | null; groups?: string[]; properties?: PropertyChanges },
-): Promise<string> {
-  const { name, image, groups, properties: changes = {} } = details;
-  // Lowercase, so a reader signing in by email finds them (portal-access.ts readerOf).
-  const email = details.email === null ? null : details.email?.toLowerCase();
-  const where = { projectId_externalId: { projectId, externalId } };
-  const existing = await prisma.ssoIdentity.findUnique({ where, select: { id: true, userId: true } });
-  if (existing) {
-    if (name !== undefined || image !== undefined) {
-      await prisma.user.update({ where: { id: existing.userId }, data: { name, image } });
-    }
-    if (email !== undefined || groups !== undefined || Object.keys(changes).length > 0) {
-      await prisma.$transaction(async (tx) => {
-        // Locked, so two changes at once (a sign-in, an API call) both land.
-        const [row] = await tx.$queryRaw<{ properties: unknown }[]>`SELECT attributes AS properties FROM sso_identity WHERE id = ${existing.id} FOR UPDATE`;
-        const { properties } = mergeProperties(storedProperties(row?.properties), changes);
-        await tx.ssoIdentity.update({ where: { id: existing.id }, data: { email, groups, properties } });
-      });
-    }
-    return existing.userId;
-  }
-  try {
-    const user = await prisma.user.create({
-      data: {
-        id: randomUUID(),
-        name: name ?? email?.split("@")[0] ?? "Anonymous",
-        image: image ?? null,
-        email: placeholderEmail(projectId, externalId),
-        ssoIdentity: {
-          create: { projectId, externalId, email: email ?? null, groups: groups ?? [], properties: mergeProperties({}, changes).properties },
-        },
-      },
-      select: { id: true },
-    });
-    return user.id;
-  } catch (error) {
-    // Lost a race with a concurrent first sight of the same person: they exist now, so this sign-in's
-    // details (its groups above all) go on them like any later one's.
-    if (!isUniqueViolation(error)) {
-      throw error;
-    }
-    return upsertProjectUser(projectId, externalId, details);
-  }
 }
 
 /**

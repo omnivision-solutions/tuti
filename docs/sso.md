@@ -182,7 +182,8 @@ is gone the next time they sign in. Properties change only where a token names t
 ### Properties
 
 The token's `properties` is an object of what your app knows about the user, by name, for
-conditions to match:
+conditions to match. You can also send them over the API, for users who haven't signed in yet (see
+[Your users](users.md)).
 
 ```json
 {

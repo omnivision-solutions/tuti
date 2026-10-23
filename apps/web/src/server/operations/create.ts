@@ -3,7 +3,7 @@ import { enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
-import { upsertProjectUser } from "@/lib/sso";
+import { upsertProjectUser } from "@/server/project-users";
 
 import { attachMedia, displayDoc, MediaGoneError, readContent } from "../content";
 import { emitEvent } from "../events";

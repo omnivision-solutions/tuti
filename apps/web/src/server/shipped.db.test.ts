@@ -6,7 +6,7 @@ import { startSmtpFake } from "@tuti/testkit/smtp";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
-import { upsertProjectUser } from "@/lib/sso";
+import { upsertProjectUser } from "@/server/project-users";
 import { createComment, createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
