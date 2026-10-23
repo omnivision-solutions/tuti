@@ -370,7 +370,8 @@ async function applyDocs(
   }
   try {
     if (action.kind === "ARTICLE_EDIT") {
-      await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish });
+      // Saved only if the article is still the version the edit was written against (checked under the project's lock).
+      await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
     }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
@@ -388,7 +389,12 @@ async function applyDocs(
         ? (await prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })) > 0
         : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })) > 0;
     if (!saved) {
-      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
+      // Saved again since the check above: it's out of date now.
+      const changed = error instanceof OperationError && error.code === "changed";
+      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null } });
+      if (changed) {
+        throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
+      }
     }
     throw error;
   }

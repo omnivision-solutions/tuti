@@ -731,6 +731,8 @@ export const updateArticle = defineOperation({
     newSlug: customSlug.nullable().optional(),
     /** On a published article: make the changes live at once instead of keeping them unpublished. Ignored on a draft. */
     publish: z.boolean().optional(),
+    /** Only if the article's newest version (its id from articles.revisions) is still this one: someone may have saved it since. Otherwise it's a 409. */
+    revision: z.string().min(1).optional(),
   }),
   example: { body: "Owners and admins invite from the Team page.", publish: true },
   run: async ({ actor, projectId }, input) => {
@@ -741,6 +743,12 @@ export const updateArticle = defineOperation({
     const updated = await saving(() =>
       prisma.$transaction(async (tx) => {
         await lockProject(tx, projectId);
+        if (input.revision !== undefined) {
+          const newest = await tx.articleRevision.findFirst({ where: { articleId: article.id }, orderBy: newestFirst, select: { id: true } });
+          if (newest?.id !== input.revision) {
+            throw new OperationError(409, "changed", "The article was saved again since. Reload it to see the changes.");
+          }
+        }
         const collection = await collectionId(tx, projectId, input.collection);
         return saveChanges(
           tx,

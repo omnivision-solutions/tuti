@@ -225,6 +225,19 @@ describe("docs", () => {
     await call(dismissCodeChangeAction, team(), { id: action.id });
   });
 
+  test("a save between the out-of-date check and the edit isn't overwritten: the edit is out of date", async () => {
+    const { article, action } = await articleEdit();
+    // Right as the action is claimed, after the check, someone saves the article.
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since this edit was written");
+    expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("STALE");
+  });
+
   test("unpublished changes waiting on the article make the edit out of date too (applying would publish them)", async () => {
     const { article, action } = await articleEdit();
     await call(updateArticle, team(), { slug: article.slug, body: "Half-written" });
