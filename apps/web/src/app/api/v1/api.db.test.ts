@@ -365,32 +365,19 @@ describe("OpenAPI", () => {
 });
 
 describe("GitHub links", () => {
-  test("link a post to a PR (once), see it on the post, remove it", async () => {
+  test("links show on the post and can be removed; nobody adds them by hand", async () => {
     const writeKey = (await createApiKey(project.slug, "Writer", "WRITE")).key!;
     await post("Dark mode");
-    const url = "https://github.com/acme/app/pull/42/files";
+    expect((await send("POST", "/posts/1/links", { url: "https://github.com/acme/app/pull/42" }, writeKey)).status).toBe(404);
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 1 } })).id;
+    const link = await prisma.postLink.create({
+      data: { projectId: project.id, postId, kind: "PULL_REQUEST", repo: "acme/app", number: 42, url: "https://github.com/acme/app/pull/42", source: "REFERENCE" },
+    });
+    expect((await api("/posts/1")).body.links).toEqual([expect.objectContaining({ id: link.id, kind: "pull_request", number: 42 })]);
 
-    expect((await send("POST", "/posts/1/links", { url }, key)).status).toBe(403);
-    const added = await send("POST", "/posts/1/links", { url }, writeKey);
-    expect(added).toMatchObject({
-      status: 200,
-      body: { kind: "pull_request", repo: "acme/app", number: 42, url: "https://github.com/acme/app/pull/42" },
-    });
-    // The same link again doesn't duplicate it.
-    expect((await send("POST", "/posts/1/links", { url: "https://github.com/acme/app/pull/42" }, writeKey)).body.id).toBe(
-      added.body.id,
-    );
-    expect(await send("POST", "/posts/1/links", { url: "https://example.com/pr/1" }, writeKey)).toMatchObject({
-      status: 400,
-      body: { error: { message: "Paste the URL of a GitHub pull request, issue or release" } },
-    });
-    expect((await api("/posts/1")).body.links).toEqual([expect.objectContaining({ id: added.body.id, number: 42 })]);
-
-    expect(await send("DELETE", `/posts/1/links/${added.body.id}`, undefined, writeKey)).toEqual({
-      status: 200,
-      body: { removed: added.body.id },
-    });
-    expect((await send("DELETE", `/posts/1/links/${added.body.id}`, undefined, writeKey)).status).toBe(404);
+    expect((await send("DELETE", `/posts/1/links/${link.id}`, undefined, key)).status).toBe(403);
+    expect(await send("DELETE", `/posts/1/links/${link.id}`, undefined, writeKey)).toEqual({ status: 200, body: { removed: link.id } });
+    expect((await send("DELETE", `/posts/1/links/${link.id}`, undefined, writeKey)).status).toBe(404);
     expect((await api("/posts/1")).body.links).toEqual([]);
   });
 });
