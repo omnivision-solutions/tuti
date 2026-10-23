@@ -49,7 +49,7 @@ const claimsSchema = z.object({
   email: z.email().max(320).optional(),
   name: z.string().trim().min(1).max(100).optional(),
   avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
-  /** Which restricted docs collections they may read (the reader groups with these claims). Each sign-in says them all. */
+  /** Their groups in the app, kept as their `groups` property (a list; empty removes it). */
   groups: z.array(readerGroup).max(MAX_READER_GROUPS).optional(),
   /** Properties to set (or, null, remove) for reader groups' conditions (e.g. { plan: "pro" }). Bad ones are dropped, not refused. */
   properties: z.unknown().optional().transform(propertyChanges),
@@ -121,10 +121,8 @@ export async function verifySsoToken(
     name: name ?? email?.split("@")[0] ?? "Anonymous",
     image: avatar ?? null,
     email: email ?? null,
-    // Without the claim, none: a token says everything they may read, so groups taken away go.
-    groups: [...new Set(groups ?? [])],
-    // Only the ones it names: the API may have set others.
-    properties: { ...attributes, ...properties },
+    // Only the ones it names: the API may have set others. `groups` is a property like the rest.
+    properties: { ...attributes, ...properties, ...(groups && { groups: groups.length > 0 ? [...new Set(groups)] : null }) },
   });
   return { userId };
 }

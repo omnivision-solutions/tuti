@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
 import { createApiKey } from "@/server/api-keys";
 import { upsertProjectUser } from "@/server/project-users";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { type Operation, type OperationName, operations } from "./index";
 
@@ -77,7 +77,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "groups.list": () => ({}),
   // Like portal.update: admins only in the app.
   "groups.create": () => ({ name: "Enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] }),
-  "groups.update": () => ({ group: "beta", name: "Beta testers", claim: null, conditions: [{ property: "beta", op: "is", value: "true" }] }),
+  "groups.update": () => ({ group: "beta", name: "Beta testers", conditions: [{ property: "beta", op: "is", value: "true" }] }),
   "groups.delete": () => ({ group: "beta" }),
   "users.list": () => ({}),
   "users.get": () => ({ user: "matrix-user" }),
@@ -178,7 +178,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.docsTab.deleteMany({ where: { projectId: project.id } });
   // A reader group no collection is for.
   await prisma.readerGroup.deleteMany({ where: { projectId: project.id } });
-  await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", claim: "beta" } });
+  await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", conditions: inGroupNamed("beta") } });
   // One of the project's users, and none the sync would add.
   await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "matrix-new" } });
   await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free" } });
@@ -313,7 +313,7 @@ const snapshot = () =>
     prisma.articleRevision.findMany({ where: { article: { projectId: project.id } }, orderBy: { id: "asc" } }),
     prisma.articleChanges.findMany({ where: { article: { projectId: project.id } }, orderBy: { articleId: "asc" } }),
     prisma.collection.findMany({ where: { projectId: project.id }, orderBy: { slug: "asc" } }),
-    prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: { claim: "asc" } }),
+    prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: { key: "asc" } }),
     prisma.articleFeedback.findMany({ where: { article: { projectId: project.id } } }),
     prisma.docsGapDismissal.findMany({ where: { projectId: project.id } }),
     prisma.changelogSeen.findMany({ where: { projectId: project.id } }),

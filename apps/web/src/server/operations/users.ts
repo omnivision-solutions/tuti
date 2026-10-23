@@ -34,7 +34,6 @@ export type UserView = {
 const userSelect = {
   externalId: true,
   email: true,
-  groups: true,
   properties: true,
   createdAt: true,
   updatedAt: true,
@@ -42,9 +41,9 @@ const userSelect = {
 } as const;
 
 /** The project's users as views, with the groups each is in. */
-async function viewsOf(projectId: string, users: { externalId: string; email: string | null; groups: string[]; properties: unknown; createdAt: Date; updatedAt: Date; user: { name: string; image: string | null } }[]) {
-  const groups = await prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, claim: true, conditions: true }, orderBy: { key: "asc" } });
-  const rules = groups.map((group) => ({ key: group.key, claim: group.claim, conditions: storedConditions(group.conditions) }));
+async function viewsOf(projectId: string, users: { externalId: string; email: string | null; properties: unknown; createdAt: Date; updatedAt: Date; user: { name: string; image: string | null } }[]) {
+  const groups = await prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true }, orderBy: { key: "asc" } });
+  const rules = groups.map((group) => ({ key: group.key, conditions: storedConditions(group.conditions) }));
   return users.map((user): UserView => {
     const properties = storedProperties(user.properties);
     return {
@@ -53,7 +52,7 @@ async function viewsOf(projectId: string, users: { externalId: string; email: st
       email: user.email,
       avatar: user.user.image,
       properties,
-      groups: rules.filter((rule) => inGroup(rule, { groups: user.groups, properties })).map((rule) => rule.key),
+      groups: rules.filter((rule) => inGroup(rule.conditions, properties)).map((rule) => rule.key),
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -82,11 +81,11 @@ export const listUsers = defineOperation({
       filters.push(Prisma.sql`(s."externalId" = ${input.q} OR s.email ILIKE ${like} OR u.name ILIKE ${like})`);
     }
     if (input.group !== undefined) {
-      const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { claim: true, conditions: true } });
+      const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { conditions: true } });
       if (!group) {
         throw new OperationError(404, "not_found", `There's no group “${input.group}”`);
       }
-      filters.push(inGroupSql({ claim: group.claim, conditions: storedConditions(group.conditions) }, Prisma.sql`s`));
+      filters.push(inGroupSql(storedConditions(group.conditions), Prisma.sql`s`));
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
     const page = await prisma.$queryRaw<{ id: string }[]>`

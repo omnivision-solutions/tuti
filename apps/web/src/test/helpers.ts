@@ -61,3 +61,6 @@ export async function redirectTarget(action: Promise<unknown>): Promise<string> 
   }
   return digest.split(";")[2]!;
 }
+
+/** A reader group's conditions for the people whose `groups` property (an SSO token's `groups`) has `name`. */
+export const inGroupNamed = (name: string) => [{ property: "groups", op: "is" as const, value: name }];

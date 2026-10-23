@@ -5,9 +5,10 @@ import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
 import type { Properties } from "@/lib/user-properties";
-import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, addMember, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
+import { syncUsers } from "../project-users";
 import { createCollection, updateCollection } from "./docs";
 import { createGroup, deleteGroup, listGroups, updateGroup } from "./groups";
 import { call } from "./run";
@@ -28,10 +29,10 @@ const create = (input: z.input<typeof createGroup.input>) => call(createGroup, t
 const update = (input: z.input<typeof updateGroup.input>) => call(updateGroup, team(), input);
 const remove = (group: string) => call(deleteGroup, team(), { group });
 
-/** Someone the project's SSO signed in, with `groups` in their latest token, and `properties`. */
-async function ssoReader(name: string, groups: string[], properties: Properties = {}, projectId = project.id) {
+/** One of the project's users, with `properties`. */
+async function ssoReader(name: string, properties: Properties = {}, projectId = project.id) {
   const user = await signUp(name);
-  await prisma.ssoIdentity.create({ data: { projectId, externalId: crypto.randomUUID(), userId: user.id, groups, properties } });
+  await prisma.ssoIdentity.create({ data: { projectId, externalId: crypto.randomUUID(), userId: user.id, properties } });
 }
 
 const form = (fields: Record<string, string>) => {
@@ -42,13 +43,14 @@ const form = (fields: Record<string, string>) => {
   return data;
 };
 
-test("groups have a name, a key from it, a claim, conditions or both, and a description; listed by name", async () => {
-  expect(await create({ name: "  Enterprise customers ", claim: "enterprise", description: " On the Enterprise plan " })).toEqual({
+const plan = (value: string) => [{ property: "plan", op: "is" as const, value }];
+
+test("groups have a name, a key from it, conditions and a description; listed by name", async () => {
+  expect(await create({ name: "  Enterprise customers ", conditions: plan("enterprise"), description: " On the Enterprise plan " })).toEqual({
     key: "enterprise-customers",
     name: "Enterprise customers",
-    claim: "enterprise",
     description: "On the Enterprise plan",
-    conditions: [],
+    conditions: plan("enterprise"),
     readers: 0,
     sample: [],
   });
@@ -56,22 +58,20 @@ test("groups have a name, a key from it, a claim, conditions or both, and a desc
     await create({ name: "Pro", conditions: [{ property: " plan ", op: "is_any_of", value: ["pro", " pro", "Pro"] }, { property: "role", op: "is_not", value: "guest" }] }),
   ).toMatchObject({
     key: "pro",
-    claim: null,
     conditions: [
       { property: "plan", op: "is_any_of", value: ["pro", "Pro"] },
       { property: "role", op: "is_not", value: "guest" },
     ],
   });
-  expect(await create({ name: "Beta", claim: "Plan:Beta" })).toMatchObject({ key: "beta", claim: "plan:beta", description: "" });
+  expect(await create({ name: "Beta", conditions: inGroupNamed("beta") })).toMatchObject({ key: "beta", description: "" });
   expect((await list()).map((g) => g.name)).toEqual(["Beta", "Enterprise customers", "Pro"]);
-  await expect(create({ name: "Bad", claim: "no spaces" })).rejects.toMatchObject({ status: 400 });
-  await expect(create({ name: " ", claim: "blank" })).rejects.toMatchObject({ status: 400, message: "Name is required" });
+  await expect(create({ name: " ", conditions: plan("pro") })).rejects.toMatchObject({ status: 400, message: "Name is required" });
 });
 
-test("a group needs a claim or a condition, and its conditions must make sense", async () => {
-  const nobody = { status: 400, message: "A group needs an SSO group name or a condition" };
-  await expect(create({ name: "Nobody" })).rejects.toMatchObject(nobody);
-  await expect(create({ name: "Nobody", claim: null, conditions: [] })).rejects.toMatchObject(nobody);
+test("a group needs a condition, and its conditions must make sense", async () => {
+  const nobody = { status: 400, message: "A group needs a condition" };
+  await expect(create({ name: "Nobody", conditions: [] })).rejects.toMatchObject(nobody);
+  await expect(create({ name: "Nobody" } as never)).rejects.toMatchObject({ status: 400 });
   for (const conditions of [
     [{ property: "plan", op: "is", value: " " }],
     [{ property: " ", op: "is", value: "pro" }],
@@ -85,89 +85,60 @@ test("a group needs a claim or a condition, and its conditions must make sense",
     await expect(create({ name: "Bad", conditions: conditions as never })).rejects.toMatchObject({ status: 400 });
   }
   expect(await list()).toEqual([]);
-
-  // Changes keep one or the other.
-  await create({ name: "Enterprise", claim: "enterprise" });
-  await expect(update({ group: "enterprise", claim: null })).rejects.toMatchObject(nobody);
-  expect(await update({ group: "enterprise", claim: null, conditions: [{ property: "plan", op: "is", value: "enterprise" }] })).toMatchObject({ claim: null });
+  // Changes keep at least one.
+  await create({ name: "Enterprise", conditions: plan("enterprise") });
   await expect(update({ group: "enterprise", conditions: [] })).rejects.toMatchObject(nobody);
-  // Two changes at once can't take away both.
-  const [claimGone, conditionsGone] = await Promise.allSettled([
-    update({ group: "enterprise", claim: "enterprise", conditions: [] }),
-    update({ group: "enterprise", claim: null }),
-  ]);
-  expect([claimGone.status, conditionsGone.status]).toContain("fulfilled");
-  const [group] = await list();
-  expect(group!.claim !== null || group!.conditions.length > 0).toBe(true);
+  // A claim from before is no longer taken (and changes nothing).
+  expect(await update({ group: "enterprise", claim: "enterprise" } as never)).toMatchObject({ conditions: plan("enterprise") });
 });
 
 test("keys come from the name, the next free one if it's taken, and never change", async () => {
-  expect((await create({ name: "Pro", claim: "pro" })).key).toBe("pro");
-  expect((await create({ name: "Pro!", claim: "pro-plan" })).key).toBe("pro-2");
-  expect((await create({ name: "日本", claim: "japan" })).key).toBe("group");
-  expect((await create({ name: "x".repeat(50), claim: "long" })).key).toBe("x".repeat(45));
-  expect(await update({ group: "pro", name: "Gold", claim: "gold" })).toMatchObject({ key: "pro", name: "Gold", claim: "gold" });
-  // Groups go by their key, never by the claim.
+  expect((await create({ name: "Pro", conditions: plan("pro") })).key).toBe("pro");
+  expect((await create({ name: "Pro!", conditions: plan("pro") })).key).toBe("pro-2");
+  expect((await create({ name: "日本", conditions: plan("japan") })).key).toBe("group");
+  expect((await create({ name: "x".repeat(50), conditions: plan("long") })).key).toBe("x".repeat(45));
+  expect(await update({ group: "pro", name: "Gold", conditions: plan("gold") })).toMatchObject({ key: "pro", name: "Gold", conditions: plan("gold") });
   await expect(update({ group: "gold", name: "Gone" })).rejects.toMatchObject({ status: 404 });
   // Two at once with the same name: one each.
-  const both = await Promise.all([create({ name: "Twin", claim: "twin-a" }), create({ name: "Twin", claim: "twin-b" })]);
+  const both = await Promise.all([create({ name: "Twin", conditions: plan("a") }), create({ name: "Twin", conditions: plan("b") })]);
   expect(both.map((g) => g.key).sort()).toEqual(["twin", "twin-2"]);
-});
-
-test("a claim is unique in the project, not across projects", async () => {
-  await create({ name: "Enterprise", claim: "enterprise" });
-  await expect(create({ name: "Enterprise again", claim: "enterprise" })).rejects.toMatchObject({
-    status: 409,
-    message: "There's already a group “enterprise”",
-  });
-  await create({ name: "Beta", claim: "beta" });
-  await expect(update({ group: "beta", claim: "enterprise" })).rejects.toMatchObject({ status: 409 });
-  // Groups without one don't clash.
-  await create({ name: "Pro", conditions: [{ property: "plan", op: "is", value: "pro" }] });
-  await create({ name: "Team", conditions: [{ property: "plan", op: "is", value: "team" }] });
+  // Another project's are its own.
   const other = await createProject(owner);
-  expect(await call(createGroup, team(other.id), { name: "Enterprise", claim: "enterprise" })).toMatchObject({ claim: "enterprise" });
-  expect((await list()).map((g) => [g.name, g.claim])).toEqual([
-    ["Beta", "beta"],
-    ["Enterprise", "enterprise"],
-    ["Pro", null],
-    ["Team", null],
-  ]);
+  expect(await call(createGroup, team(other.id), { name: "Pro", conditions: plan("pro") })).toMatchObject({ key: "pro" });
 });
 
-test("readers counts the project's SSO users in a group now (by claim or conditions), and names the first 3", async () => {
-  await create({ name: "Enterprise", claim: "enterprise" });
+test("readers counts the project's users in a group now, and names the first 3", async () => {
+  await create({ name: "Enterprise", conditions: inGroupNamed("enterprise") });
   await create({ name: "Pro", conditions: [{ property: "plan", op: "is_any_of", value: ["pro", "enterprise"] }] });
-  await create({ name: "Big pro", claim: "big", conditions: [{ property: "plan", op: "is", value: "pro" }, { property: "seats", op: "is", value: "50" }] });
-  await ssoReader("Ada", ["enterprise"], { plan: "enterprise" });
-  await ssoReader("Bea", [], { plan: "pro", seats: 50 });
-  await ssoReader("Cy", ["big"], { plan: "free" });
-  await ssoReader("Dee", [], { plan: "pro", seats: 5 });
-  await ssoReader("Eve", [], { plan: "Pro" });
-  await ssoReader("Flo", ["enterprise"]);
+  await create({ name: "Big pro", conditions: [{ property: "plan", op: "is", value: "pro" }, { property: "seats", op: "is", value: "50" }] });
+  await ssoReader("Ada", { groups: ["enterprise"], plan: "enterprise" });
+  await ssoReader("Bea", { plan: "pro", seats: 50 });
+  await ssoReader("Cy", { groups: ["big"], plan: "free" });
+  await ssoReader("Dee", { plan: "pro", seats: 5 });
+  await ssoReader("Eve", { plan: "Pro" });
+  await ssoReader("Flo", { groups: ["enterprise"] });
   // Another project's people don't count, nor does the team.
   const other = await createProject(owner);
-  await ssoReader("Gus", ["enterprise"], { plan: "pro" }, other.id);
+  await ssoReader("Gus", { groups: ["enterprise"], plan: "pro" }, other.id);
   await signUp("Stranger");
   expect((await list()).map((g) => [g.key, g.readers, g.sample])).toEqual([
-    ["big-pro", 2, ["Bea", "Cy"]],
+    ["big-pro", 1, ["Bea"]],
     ["enterprise", 2, ["Ada", "Flo"]],
     ["pro", 3, ["Ada", "Bea", "Dee"]],
   ]);
-  expect(await update({ group: "enterprise", name: "Enterprise plan", claim: "plan:enterprise", description: "Paying" })).toEqual({
+  expect(await update({ group: "enterprise", name: "Enterprise plan", conditions: inGroupNamed("plan:enterprise"), description: "Paying" })).toEqual({
     key: "enterprise",
     name: "Enterprise plan",
-    claim: "plan:enterprise",
     description: "Paying",
-    conditions: [],
+    conditions: inGroupNamed("plan:enterprise"),
     readers: 0,
     sample: [],
   });
 });
 
 test("a group a collection is for can't be deleted; once no collection is, it can", async () => {
-  await create({ name: "Enterprise", claim: "enterprise" });
-  await create({ name: "Unused", claim: "unused" });
+  await create({ name: "Enterprise", conditions: plan("enterprise") });
+  await create({ name: "Unused", conditions: plan("unused") });
   await call(createCollection, team(), { name: "Billing", groups: ["enterprise"] });
   await call(createCollection, team(), { name: "Admin", groups: ["enterprise"] });
   await expect(remove("enterprise")).rejects.toMatchObject({ status: 409, message: "Used by Admin and Billing; remove it from them first" });
@@ -182,7 +153,7 @@ test("a group a collection is for can't be deleted; once no collection is, it ca
 
 test("deleting a group while a collection is saved with it: one of them is refused, never a collection open to everyone", async () => {
   for (let i = 0; i < 5; i++) {
-    await create({ name: `Group ${i}`, claim: `group-${i}` });
+    await create({ name: `Group ${i}`, conditions: plan(`group-${i}`) });
     const [deleted, created] = await Promise.allSettled([
       remove(`group-${i}`),
       call(createCollection, team(), { name: `Collection ${i}`, groups: [`group-${i}`] }),
@@ -194,58 +165,64 @@ test("deleting a group while a collection is saved with it: one of them is refus
   }
 });
 
-test("changing a group's claim or conditions keeps the collections that are for it", async () => {
-  await create({ name: "Enterprise", claim: "enterprise" });
+test("changing a group's conditions keeps the collections that are for it", async () => {
+  await create({ name: "Enterprise", conditions: inGroupNamed("enterprise") });
   await call(createCollection, team(), { name: "Billing", groups: ["enterprise"] });
-  await update({ group: "enterprise", claim: null, conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
+  await update({ group: "enterprise", conditions: plan("enterprise") });
   const billing = await prisma.collection.findFirstOrThrow({
     where: { projectId: project.id },
-    select: { groups: { select: { group: { select: { key: true, claim: true } } } } },
+    select: { groups: { select: { group: { select: { key: true, conditions: true } } } } },
   });
-  expect(billing.groups.map((g) => g.group)).toEqual([{ key: "enterprise", claim: null }]);
+  expect(billing.groups.map((g) => g.group)).toEqual([{ key: "enterprise", conditions: plan("enterprise") }]);
 });
 
 test("in the app: owners and admins only", async () => {
   const denied = { error: "Only project owners and admins can change the groups" };
-  const conditions = JSON.stringify([{ property: "plan", op: "is", value: "pro" }]);
+  const conditions = JSON.stringify(plan("pro"));
   actAs(await addMember(project.id, "MEMBER"));
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", claim: "enterprise" }))).toEqual(denied);
-  expect(await previewGroup(project.slug, "enterprise", [])).toEqual(denied);
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", conditions }))).toEqual(denied);
+  expect(await previewGroup(project.slug, plan("pro"))).toEqual(denied);
   actAs(await signUp("Outsider"));
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", claim: "enterprise" }))).toEqual(denied);
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Enterprise", conditions }))).toEqual(denied);
   expect(await list()).toEqual([]);
 
   actAs(await addMember(project.id, "ADMIN"));
-  // Without a claim or a condition: refused; an empty claim is none.
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "", conditions: "[]" }))).toEqual({
-    error: "A group needs an SSO group name or a condition",
-  });
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "", conditions: "not json" }))).toMatchObject({ error: expect.any(String) });
-  // A claim of only spaces is none too, as in the preview.
-  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", claim: "  ", conditions, description: "" }))).toEqual({});
-  expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", claim: "pro", conditions: "[]", description: "Paying" }))).toEqual({});
-  expect(await list()).toEqual([{ key: "pro", name: "Pro plan", claim: "pro", description: "Paying", conditions: [], readers: 0, sample: [] }]);
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions: "[]" }))).toEqual({ error: "A group needs a condition" });
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions: "not json" }))).toMatchObject({ error: expect.any(String) });
+  expect(await saveGroup(project.slug, null, {}, form({ name: "Pro", conditions, description: "" }))).toEqual({});
+  expect(await saveGroup(project.slug, "pro", {}, form({ name: "Pro plan", conditions: JSON.stringify(plan("gold")), description: "Paying" }))).toEqual({});
+  expect(await list()).toEqual([{ key: "pro", name: "Pro plan", description: "Paying", conditions: plan("gold"), readers: 0, sample: [] }]);
   expect(await deleteGroupAction(project.slug, "pro")).toEqual({});
   expect(await list()).toEqual([]);
 });
 
-test("the dialog's preview: who a group with these rules would have now", async () => {
-  await ssoReader("Ada", ["enterprise"], { plan: "pro" });
-  await ssoReader("Bea", [], { plan: "pro", seats: 3 });
-  await ssoReader("Cy", [], { plan: "free" });
-  await ssoReader("Dee", [], { plan: "pro" });
-  await ssoReader("Eve", [], { plan: "pro" });
+test("the dialog's preview: who a group with these conditions would have now", async () => {
+  await ssoReader("Ada", { groups: ["enterprise"], plan: "pro" });
+  await ssoReader("Bea", { plan: "pro", seats: 3 });
+  await ssoReader("Cy", { plan: "free" });
+  await ssoReader("Dee", { plan: "pro" });
+  await ssoReader("Eve", { plan: "pro" });
   actAs(owner);
-  expect(await previewGroup(project.slug, null, [{ property: "plan", op: "is", value: "pro" }])).toEqual({ readers: 4, sample: ["Ada", "Bea", "Dee"] });
-  expect(await previewGroup(project.slug, "enterprise", [{ property: "seats", op: "is", value: "3" }])).toEqual({ readers: 2, sample: ["Ada", "Bea"] });
-  expect(await previewGroup(project.slug, null, [])).toEqual({ readers: 0, sample: [] });
-  expect(await previewGroup(project.slug, null, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
+  expect(await previewGroup(project.slug, plan("pro"))).toEqual({ readers: 4, sample: ["Ada", "Bea", "Dee"] });
+  expect(await previewGroup(project.slug, [...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }])).toEqual({ readers: 1, sample: ["Ada"] });
+  expect(await previewGroup(project.slug, [{ property: "seats", op: "is_not_set" }])).toEqual({ readers: 4, sample: ["Ada", "Cy", "Dee"] });
+  expect(await previewGroup(project.slug, [])).toEqual({ readers: 0, sample: [] });
+  expect(await previewGroup(project.slug, [{ property: "plan", op: "is", value: "" }])).toEqual({ error: "A condition needs a value" });
 });
+
+/** Back to before 20261023160000_groups_from_properties: without the triggers that keep the old columns in step. */
+const undoGroupsFromProperties = () =>
+  prisma.$executeRawUnsafe(`
+    DROP TRIGGER IF EXISTS "sso_identity_groups_in_step" ON "sso_identity";
+    DROP FUNCTION IF EXISTS "sso_identity_groups_in_step"();
+    DROP TRIGGER IF EXISTS "reader_group_claim_to_condition" ON "reader_group";
+    DROP FUNCTION IF EXISTS "reader_group_claim_to_condition"();`);
 
 test("the migration gives today's groups their claim as their key, no conditions, and SSO users no attributes", async () => {
   const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261021130000_group_conditions/migration.sql", import.meta.url), "utf8");
   // Back to before it, with a group and an SSO user as they were then.
   // (This file's database is its own: the other tests' groups can go.)
+  await undoGroupsFromProperties();
   await prisma.$executeRawUnsafe(`
     DELETE FROM "collection_group";
     DELETE FROM "reader_group";
@@ -257,11 +234,15 @@ test("the migration gives today's groups their claim as their key, no conditions
 
   await prisma.$executeRawUnsafe(sql);
 
-  expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, claim: true, conditions: true } })).toEqual([
+  expect(await prisma.$queryRaw`SELECT key, claim, conditions FROM reader_group WHERE "projectId" = ${project.id}`).toEqual([
     { key: "plan:pro", claim: "plan:pro", conditions: [] },
   ]);
   expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { properties: true } })).toEqual([{ properties: {} }]);
-  expect((await list()).map((g) => [g.key, g.readers])).toEqual([["plan:pro", 1]]);
+  // Then groups from properties (20261023160000_groups_from_properties): the claim becomes a condition.
+  await prisma.$executeRawUnsafe(
+    readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261023160000_groups_from_properties/migration.sql", import.meta.url), "utf8"),
+  );
+  expect((await list()).map((g) => [g.key, g.readers, g.conditions])).toEqual([["plan:pro", 1, inGroupNamed("plan:pro")]]);
 });
 
 test("the operators' migration renames conditions' attribute to property and is_one_of to is_any_of, in order", async () => {
@@ -276,7 +257,8 @@ test("the operators' migration renames conditions' attribute to property and is_
   await prisma.$executeRawUnsafe(sql);
 
   expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, conditions: true }, orderBy: { key: "asc" } })).toEqual([
-    { key: "claimed", conditions: [] },
+    // Since groups from properties, a group named by a claim gets its condition as it's written (see below).
+    { key: "claimed", conditions: inGroupNamed("beta") },
     {
       key: "old",
       conditions: [
@@ -285,4 +267,94 @@ test("the operators' migration renames conditions' attribute to property and is_
       ],
     },
   ]);
+});
+
+test("groups from properties: a token's groups become the `groups` property, and a group named by them its condition", async () => {
+  const sql = readFileSync(new URL("../../../../../packages/db/prisma/migrations/20261023160000_groups_from_properties/migration.sql", import.meta.url), "utf8");
+  // As before it: groups with a claim (one with conditions too) and users with `groups`.
+  await undoGroupsFromProperties();
+  await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "reader_group_projectId_claim_key" ON "reader_group"("projectId", "claim")`);
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'beta', 'Beta', 'beta', now())`;
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, conditions, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'both', 'Both', 'both', ${JSON.stringify(plan("pro"))}::jsonb, now())`;
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, conditions, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'pro', 'Pro', ${JSON.stringify(plan("pro"))}::jsonb, now())`;
+  const [ada, bea] = [await signUp("Ada"), await signUp("Bea")];
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'ada', ${ada.id}, '{beta,both}', '{"plan": "pro"}', now()), (${crypto.randomUUID()}, ${project.id}, 'bea', ${bea.id}, '{}', '{"plan": "free"}', now())`;
+  // One with a `groups` property but none in the column.
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'cy', ${(await signUp("Cy")).id}, '{}', '{"groups": ["beta"]}', now())`;
+
+  await prisma.$executeRawUnsafe(sql);
+
+  expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, conditions: true }, orderBy: { key: "asc" } })).toEqual([
+    { key: "beta", conditions: inGroupNamed("beta") },
+    { key: "both", conditions: plan("pro") },
+    { key: "pro", conditions: plan("pro") },
+  ]);
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { externalId: true, properties: true }, orderBy: { externalId: "asc" } })).toEqual([
+    { externalId: "ada", properties: { plan: "pro", groups: ["beta", "both"] } },
+    { externalId: "bea", properties: { plan: "free" } },
+    { externalId: "cy", properties: { groups: ["beta"] } },
+  ]);
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { externalId: true, legacyGroups: true }, orderBy: { externalId: "asc" } })).toEqual([
+    { externalId: "ada", legacyGroups: ["beta", "both"] },
+    { externalId: "bea", legacyGroups: [] },
+    { externalId: "cy", legacyGroups: ["beta"] },
+  ]);
+  expect((await list()).map((g) => [g.key, g.readers])).toEqual([
+    ["beta", 2],
+    ["both", 1],
+    ["pro", 1],
+  ]);
+  // New groups have no claim, so any number of them can be added.
+  await create({ name: "One", conditions: plan("x") });
+  await create({ name: "Two", conditions: plan("y") });
+});
+
+test("while a deploy overlaps, what instances from before write in the old columns is kept in step with properties and conditions", async () => {
+  await create({ name: "Beta", conditions: inGroupNamed("beta") });
+  const ada = await signUp("Ada");
+  // An instance from before signs someone in with `groups` (an insert, then a change), and takes them away.
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'ada', ${ada.id}, '{beta}', '{"plan": "pro"}', now())`;
+  const properties = async () => (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "ada" } })).properties;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta"] });
+  expect((await list()).map((g) => g.readers)).toEqual([1]);
+  await prisma.$executeRaw`UPDATE sso_identity SET groups = '{beta,gamma}' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta", "gamma"] });
+  await prisma.$executeRaw`UPDATE sso_identity SET groups = '{}' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro" });
+  expect((await list()).map((g) => g.readers)).toEqual([0]);
+  // Other changes there leave the property alone.
+  await syncUsers(project.id, [{ externalId: "ada", properties: { groups: ["beta"] } }]);
+  await prisma.$executeRaw`UPDATE sso_identity SET email = 'e2e-ada@example.com' WHERE "externalId" = 'ada'`;
+  expect(await properties()).toEqual({ plan: "pro", groups: ["beta"] });
+  // New instances write the old column too, so instances from before see the same groups.
+  const legacy = async () => (await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "ada" } })).legacyGroups;
+  expect(await legacy()).toEqual(["beta"]);
+  await syncUsers(project.id, [{ externalId: "ada", properties: { groups: null } }]);
+  expect([await legacy(), await properties()]).toEqual([[], { plan: "pro" }]);
+  await syncUsers(project.id, [{ externalId: "bea", properties: { groups: ["beta"] } }]);
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual(["beta"]);
+  // And an instance from before that changes only the property (its users.sync) moves the column with it.
+  await prisma.$executeRaw`UPDATE sso_identity SET attributes = attributes - 'groups' WHERE "externalId" = 'bea'`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual([]);
+  await prisma.$executeRaw`UPDATE sso_identity SET attributes = attributes || '{"groups": "solo"}' WHERE "externalId" = 'bea'`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual(["solo"]);
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'cy', ${(await signUp("Cy")).id}, '{"groups": ["beta"]}', now())`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "cy" } })).legacyGroups).toEqual(["beta"]);
+
+  // An instance from before adds a group by claim, or changes its claim: it gets the condition.
+  await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'old', 'Old', 'partner', now())`;
+  const conditions = async () => (await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "old" } })).conditions;
+  expect(await conditions()).toEqual(inGroupNamed("partner"));
+  await prisma.$executeRaw`UPDATE reader_group SET claim = 'partner-2' WHERE key = 'old'`;
+  expect(await conditions()).toEqual(inGroupNamed("partner-2"));
+  // Conditions of its own stay; changed here, the claim goes, so it can't let anyone in after a rollback.
+  await update({ group: "old", conditions: plan("pro") });
+  expect(await prisma.readerGroup.findFirstOrThrow({ where: { projectId: project.id, key: "old" } })).toMatchObject({ legacyClaim: null, conditions: plan("pro") });
+  await prisma.$executeRaw`UPDATE reader_group SET name = 'Renamed' WHERE key = 'old'`;
+  expect(await conditions()).toEqual(plan("pro"));
 });

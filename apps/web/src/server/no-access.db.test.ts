@@ -10,7 +10,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { WidgetDocs } from "@/components/widget-docs";
 import { SIGNED_OUT } from "@/lib/read-access";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
 import { docsContents, docsHome, docsPage, everyCollection } from "./docs-queries";
@@ -71,7 +71,7 @@ beforeEach(async () => {
   owner = await signUp("Owner");
   project = await createProject(owner);
   actAs(null);
-  await prisma.readerGroup.create({ data: { projectId: project.id, key: "enterprise", name: "Enterprise", claim: "enterprise" } });
+  await prisma.readerGroup.create({ data: { projectId: project.id, key: "enterprise", name: "Enterprise", conditions: inGroupNamed("enterprise") } });
   await call(createTab, as(), { name: "Guides" });
   await call(createTab, as(), { name: "API" });
   await call(createCollection, as(), { name: "Basics", tab: "guides" });
@@ -105,7 +105,7 @@ async function set(kind: "tab" | "collection" | "article", slug: string, access:
 
 async function ssoReader(groups: string[]) {
   const user = await signUp("From the app");
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, groups } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, properties: { groups } } });
   return user;
 }
 

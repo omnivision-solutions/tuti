@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { Prisma, prisma } from "@tuti/db";
 
-import { mergeProperties, type PropertyChanges, storedProperties } from "@/lib/user-properties";
+import { mergeProperties, type PropertyChanges, type PropertyValue, storedProperties } from "@/lib/user-properties";
 
 import { OperationError } from "./operations/define";
 
@@ -19,10 +19,11 @@ export type UserDetails = {
   name?: string;
   image?: string | null;
   email?: string | null;
-  /** Their SSO token's `groups` (each sign-in says them all). */
-  groups?: string[];
   properties?: PropertyChanges;
 };
+
+/** The `groups` property as a list (a list's items, or the one value), none when it's not set. */
+const groupsOf = (value: PropertyValue | undefined): string[] => (value === undefined ? [] : Array.isArray(value) ? value : [String(value)]);
 
 /** User.email must be unique, so a project's users get a stable placeholder; the email it gives them lives on SsoIdentity. */
 function placeholderEmail(projectId: string, externalId: string): string {
@@ -60,13 +61,15 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
           if (strict && dropped.length > 0) {
             throw new OperationError(400, "invalid_input", `“${user.externalId}” would have more than 50 properties`);
           }
+          // Their `groups` property in its old column too, for instances from before it (see SsoIdentity.legacyGroups).
+          const legacyGroups = user.properties && "groups" in user.properties ? groupsOf(properties.groups) : undefined;
           if (row) {
             userIds.set(user.externalId, row.userId);
             if (user.name !== undefined || user.image !== undefined) {
               await tx.user.update({ where: { id: row.userId }, data: { name: user.name, image: user.image } });
             }
-            if (email !== undefined || user.groups !== undefined || user.properties !== undefined) {
-              await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, groups: user.groups, properties } });
+            if (email !== undefined || user.properties !== undefined) {
+              await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, properties, legacyGroups } });
             }
             continue;
           }
@@ -78,7 +81,7 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
             image: user.image ?? null,
             email: placeholderEmail(projectId, user.externalId),
           });
-          created.push({ projectId, externalId: user.externalId, userId, email: email ?? null, groups: user.groups ?? [], properties });
+          created.push({ projectId, externalId: user.externalId, userId, email: email ?? null, properties, legacyGroups });
         }
         await tx.user.createMany({ data: accounts });
         await tx.ssoIdentity.createMany({ data: created });

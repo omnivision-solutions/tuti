@@ -10,7 +10,7 @@ import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/ro
 import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { WidgetDocs } from "@/components/widget-docs";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { docsContents, docsHome, docsPage, everyCollection, movedArticle, publishedArticle } from "./docs-queries";
 import { answerArticle, countArticleView } from "./docs-readers";
@@ -98,10 +98,10 @@ test("the migration makes collections with groups “groups”, keeping them, an
   expect(await prisma.article.findMany({ where: { projectId: project.id }, select: levels })).toEqual([{ access: "INHERIT", groups: [] }]);
 });
 
-/** Someone the project's SSO signed in, in `groups` (by claim), with a session for actAs. */
+/** Someone the project's SSO signed in, in `groups` (their `groups` property), with a session for actAs. */
 async function ssoReader(groups: string[]) {
   const user = await signUp("From the app");
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, groups } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${user.id}`, userId: user.id, properties: { groups } } });
   return user;
 }
 
@@ -128,7 +128,7 @@ const ALL = ["contact", "endpoints", "getting-started"];
  */
 beforeEach(async () => {
   await prisma.readerGroup.createMany({
-    data: ["enterprise", "beta"].map((key) => ({ projectId: project.id, key, name: key[0]!.toUpperCase() + key.slice(1), claim: key })),
+    data: ["enterprise", "beta"].map((key) => ({ projectId: project.id, key, name: key[0]!.toUpperCase() + key.slice(1), conditions: inGroupNamed(key) })),
   });
   await call(createTab, as(), { name: "Guides" });
   await call(createTab, as(), { name: "API" });

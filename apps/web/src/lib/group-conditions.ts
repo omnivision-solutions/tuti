@@ -103,12 +103,5 @@ export function conditionsMatch(conditions: GroupCondition[], properties: Proper
   );
 }
 
-/** A group's rules: its claim, its conditions. */
-export type GroupRules = { claim: string | null; conditions: GroupCondition[] };
-
-/** One of the project's users: the `groups` of their latest SSO sign-in, and their properties. */
-export type SsoReader = { groups: string[]; properties: Properties };
-
-/** Whether they're in the group: their `groups` has its claim, or (with any) its conditions all match. */
-export const inGroup = (group: GroupRules, reader: SsoReader) =>
-  (group.claim !== null && reader.groups.includes(group.claim)) || conditionsMatch(group.conditions, reader.properties);
+/** Whether one of the project's users, with these properties, is in a group with these conditions (at least one, all matching). */
+export const inGroup = (conditions: GroupCondition[], properties: Properties) => conditionsMatch(conditions, properties);

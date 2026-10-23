@@ -11,7 +11,7 @@ import { GET as llms } from "@/app/portal/[project]/(site)/llms.txt/route";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
 import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { upsertProjectUser } from "@/server/project-users";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { docsContents, docsTree, everyCollection, publishedArticle } from "./docs-queries";
 import { answerSections, searchDocs } from "./docs-search";
@@ -48,16 +48,16 @@ beforeEach(async () => {
 
 const as = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
 
-/** Someone the project's SSO signed in, with `groups` (and a session, for actAs). */
+/** Someone the project's SSO signed in, with `groups` (their `groups` property; and a session, for actAs). */
 async function ssoReader(groups: string[], externalId = `user-${randomUUID()}`) {
   const user = await signUp("From the app");
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId, userId: user.id, groups } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId, userId: user.id, properties: groups.length > 0 ? { groups } : {} } });
   return user;
 }
 
-/** The project's reader groups with these claims (named after them). */
-const addGroups = (...claims: string[]) =>
-  prisma.readerGroup.createMany({ data: claims.map((claim) => ({ projectId: project.id, key: claim, name: claim, claim })) });
+/** The project's reader groups for the people whose `groups` has these names (named after them). */
+const addGroups = (...names: string[]) =>
+  prisma.readerGroup.createMany({ data: names.map((name) => ({ projectId: project.id, key: name, name, conditions: inGroupNamed(name) })) });
 
 /** A sign-in token from the project's app with `claims`, verified: the user it signs in. */
 async function signIn(claims: Record<string, unknown>, sub = `user-${randomUUID()}`) {
@@ -248,7 +248,7 @@ describe("who sees what", () => {
   });
 });
 
-test("a group's claim changed: its collections are for whoever the app signs in with the new one", async () => {
+test("a group's conditions changed: its collections are for whoever matches the new ones", async () => {
   await docsWithGroups();
   const before = await ssoReader(["enterprise"]);
   const after = await ssoReader(["plan:enterprise"]);
@@ -257,14 +257,14 @@ test("a group's claim changed: its collections are for whoever the app signs in 
     return (await publishedArticle(project.slug, "saml")) !== null;
   };
   expect([await reads(before), await reads(after)]).toEqual([true, false]);
-  await call(updateGroup, as(), { group: "enterprise", claim: "plan:enterprise" });
+  await call(updateGroup, as(), { group: "enterprise", conditions: inGroupNamed("plan:enterprise") });
   expect([await reads(before), await reads(after)]).toEqual([false, true]);
   const groups = await readerOf(project.id, after.id);
   expect((await searchDocs(project.id, "widget", 10, groups)).map((r) => r.slug)).toContain("saml");
   expect((await searchDocs(project.id, "widget", 10, await readerOf(project.id, before.id))).map((r) => r.slug)).not.toContain("saml");
 });
 
-test("each sign-in says the groups: a later token without one takes it away", async () => {
+test("a token's `groups` is the `groups` property: set by each token that has it, removed by an empty one", async () => {
   await docsWithGroups();
   const sub = "user-42";
   const reader = await ssoReader([], sub);
@@ -272,16 +272,21 @@ test("each sign-in says the groups: a later token without one takes it away", as
   expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
   actAs(reader);
   expect(await publishedArticle(project.slug, "saml")).toMatchObject({ title: "SAML" });
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { userId: reader.id } })).properties).toEqual({ groups: ["enterprise"] });
+  // Left out: kept, like any property.
   await signIn({}, sub);
+  expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
+  // Empty: gone.
+  await signIn({ groups: [] }, sub);
   expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: [] });
   expect(await publishedArticle(project.slug, "saml")).toBeNull();
-  // A new person's first sign-in keeps them too; bad group names are refused like any bad claim.
+  // A new person's first sign-in sets them too; bad group names are refused like any bad claim.
   expect(await readerOf(project.id, await signIn({ groups: ["beta"] }))).toEqual({ signedIn: true, groups: ["beta"] });
   await expect(signIn({ groups: ["no spaces"] })).rejects.toThrow("invalid_claims");
 });
 
 describe("groups from conditions", () => {
-  /** Docs as above, with Enterprise for whoever's on the enterprise plan (or, by claim, in "enterprise"). */
+  /** Docs as above, with Enterprise for whoever's on the enterprise plan. */
   beforeEach(async () => {
     await docsWithGroups();
     await call(updateGroup, as(), { group: "enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] });
@@ -354,17 +359,18 @@ describe("groups from conditions", () => {
     expect(await reads(reader)).toEqual(no);
   });
 
-  test("its claim or its conditions: either lets them in", async () => {
-    expect(await reads(await signedIn({ groups: ["enterprise"], properties: { plan: "free" } }))).toEqual(yes);
+  test("only its conditions: a token's `groups` naming it is just a property", async () => {
     expect(await reads(await signedIn({ properties: { plan: "enterprise" } }))).toEqual(yes);
+    expect(await reads(await signedIn({ groups: ["enterprise"], properties: { plan: "free" } }))).toEqual(no);
     expect(await reads(await signedIn({ groups: ["beta"], properties: { plan: "Enterprise", enterprise: true } }))).toEqual(no);
-    // Without its claim, only the conditions do.
-    await call(updateGroup, as(), { group: "enterprise", claim: null });
+    // Conditions on it, with others: all must match.
+    await call(updateGroup, as(), { group: "enterprise", conditions: [...inGroupNamed("enterprise"), { property: "plan", op: "is_set" }] });
+    expect(await reads(await signedIn({ groups: ["enterprise"], properties: { plan: "free" } }))).toEqual(yes);
     expect(await reads(await signedIn({ groups: ["enterprise"] }))).toEqual(no);
   });
 
   test("only the project's users: not others, even for a group of everyone without a property", async () => {
-    await call(updateGroup, as(), { group: "enterprise", claim: null, conditions: [{ property: "plan", op: "is_not", value: "free" }] });
+    await call(updateGroup, as(), { group: "enterprise", conditions: [{ property: "plan", op: "is_not", value: "free" }] });
     expect(await reads(await signedIn({}))).toEqual(yes);
     expect(await reads(await signedIn({ properties: { plan: "free" } }))).toEqual(no);
     expect(await reads(await signUp("Stranger"))).toEqual(no);
@@ -385,7 +391,7 @@ test("a first sign-in that loses the race to create the person still sets their 
     // An API call on their behalf (no groups) and their first sign-in, at the same time.
     const [, userId] = await Promise.all([
       upsertProjectUser(project.id, externalId, { name: "From the API" }),
-      upsertProjectUser(project.id, externalId, { groups: ["enterprise"] }),
+      upsertProjectUser(project.id, externalId, { properties: { groups: ["enterprise"] } }),
     ]);
     expect(await readerOf(project.id, userId)).toEqual({ signedIn: true, groups: ["enterprise"] });
   }
@@ -411,14 +417,13 @@ test("search engines and AI tools only get what's for everyone; a restricted art
   expect((await md("saml")).status).toBe(404);
 });
 
-test("collections take groups by key, with or without a claim", async () => {
+test("collections take groups by key, not by a value their conditions name", async () => {
   await call(createGroup, as(), { name: "Pro customers", conditions: [{ property: "plan", op: "is", value: "pro" }] });
-  await call(createGroup, as(), { name: "Partners", claim: "partner" });
+  await call(createGroup, as(), { name: "Partners", conditions: inGroupNamed("partner") });
   expect(await call(createCollection, as(), { name: "Pro", groups: ["pro-customers", "partners"] })).toMatchObject({ groups: ["partners", "pro-customers"] });
-  // Claims aren't keys.
   await expect(call(createCollection, as(), { name: "Partner", groups: ["partner"] })).rejects.toMatchObject({ status: 400 });
-  // A group's key stays when its claim changes, and so do its collections.
-  await call(updateGroup, as(), { group: "partners", claim: "partner-2" });
+  // A group's key stays when its conditions change, and so do its collections.
+  await call(updateGroup, as(), { group: "partners", conditions: inGroupNamed("partner-2") });
   expect((await call(listCollections, as(), {})).collections).toMatchObject([{ slug: "pro", groups: ["partners", "pro-customers"] }]);
 });
 
@@ -430,7 +435,7 @@ test("collections take groups by key (lowercase, once each, only the project's) 
   await expect(call(createCollection, as(), { name: "Bad", groups: ["no spaces"] })).rejects.toMatchObject({ status: 400 });
   // A group the project doesn't have (another project's included) is refused, and nothing changes.
   const other = await createProject(owner);
-  await prisma.readerGroup.create({ data: { projectId: other.id, key: "elsewhere", name: "Elsewhere", claim: "elsewhere" } });
+  await prisma.readerGroup.create({ data: { projectId: other.id, key: "elsewhere", name: "Elsewhere", conditions: inGroupNamed("elsewhere") } });
   await expect(call(createCollection, as(), { name: "Elsewhere", groups: ["elsewhere"] })).rejects.toMatchObject({
     status: 400,
     message: "There's no group “elsewhere”: add it in Settings → Groups first",

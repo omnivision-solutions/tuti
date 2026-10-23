@@ -89,18 +89,20 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("link", { name: "Create one" }).click();
   await expect(owner).toHaveURL(/\/settings#groups$/);
 
-  // A group in Settings → Groups: a name, the claim the app's token says and a description.
+  // A group in Settings → Groups: a name, who's in it (the people whose token's `groups` has "enterprise") and a description.
   const groups = owner.getByRole("region", { name: "Groups" });
   await expect(groups).toContainText("No groups yet");
   await groups.getByRole("button", { name: "New group" }).click();
   const groupDialog = owner.getByRole("dialog");
   await groupDialog.getByLabel("Name", { exact: true }).fill("Enterprise customers");
-  await groupDialog.getByLabel("SSO group name (optional)").fill("enterprise");
+  const firstCondition = groupDialog.getByRole("group", { name: "Condition 1" });
+  await firstCondition.getByLabel("Property").fill("groups");
+  await firstCondition.getByLabel("Value").fill("enterprise");
   await groupDialog.getByLabel("Description").fill("On the Enterprise plan");
   await checkpoint(owner, "team-settings-new-group", { fullPage: false });
   await groupDialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("enterprise · 0 readers · On the Enterprise plan");
+  await expect(groups).toContainText("groups is enterprise · 0 readers · On the Enterprise plan");
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
@@ -161,7 +163,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await owner.getByRole("button", { name: "Enable SSO" }).click();
   const secret = await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText();
   const api = await apiFor(owner, slug);
-  await api("/groups", { name: "Enterprise customers", claim: "enterprise" });
+  await api("/groups", { name: "Enterprise customers", conditions: [{ property: "groups", op: "is", value: "enterprise" }] });
   await api("/tabs", { name: "Guides" });
   await api("/tabs", { name: "Enterprise" });
   await api("/collections", { name: "Basics", tab: "guides" });
@@ -246,7 +248,7 @@ test("people without access: an article shown with a lock asks people signed out
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
   const api = await apiFor(owner, slug);
-  await api("/groups", { name: "Enterprise customers", claim: "enterprise" });
+  await api("/groups", { name: "Enterprise customers", conditions: [{ property: "groups", op: "is", value: "enterprise" }] });
   await api("/collections", { name: "Basics" });
   for (const [title, body] of [
     ["Getting started", "Getting started."],
@@ -341,7 +343,7 @@ test("a group from conditions: readers whose properties match read its collectio
   await dialog.getByLabel("Name", { exact: true }).fill("Pro customers");
   const preview = dialog.getByRole("status");
   await expect(preview).toHaveText("Complete a condition to see who matches.");
-  await dialog.getByRole("button", { name: "Add condition" }).click();
+  // A new group starts with one condition to fill in.
   const condition = dialog.getByRole("group", { name: "Condition 1" });
   await condition.getByLabel("Property").fill("plan");
   await expect(preview).toHaveText("Complete a condition to see who matches.");
@@ -361,6 +363,16 @@ test("a group from conditions: readers whose properties match read its collectio
   await condition.getByLabel("Value").fill("pro, free");
   await expect(preview).toHaveText("2 readers match now: Ada from Acme and Bea from Acme.");
   await condition.getByLabel("Value").fill("pro, enterprise");
+  await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
+  // "is not set" takes no value: Bea has no seats, but isn't on Pro.
+  await dialog.getByRole("button", { name: "Add condition" }).click();
+  const seats = dialog.getByRole("group", { name: "Condition 2" });
+  await seats.getByLabel("Property").fill("seats");
+  await seats.getByRole("combobox", { name: "Operator" }).click();
+  await owner.getByRole("option", { name: "is not set" }).click();
+  await expect(seats.getByLabel("Value")).toHaveCount(0);
+  await expect(preview).toHaveText("No readers match now.");
+  await seats.getByRole("button", { name: "Remove condition" }).click();
   await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();

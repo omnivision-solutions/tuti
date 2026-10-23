@@ -3,7 +3,6 @@
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
-import { readerGroup } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
@@ -24,11 +23,10 @@ function conditionsFrom(formData: FormData): unknown {
   }
 }
 
-/** Adds a group (`key` null) or changes group `key`: its name, claim (empty: none), conditions and description. */
+/** Adds a group (`key` null) or changes group `key`: its name, conditions and description. */
 export async function saveGroup(projectSlug: string, key: string | null, _state: FormState, formData: FormData): Promise<FormState> {
   const input = {
     name: String(formData.get("name") ?? ""),
-    claim: String(formData.get("claim") ?? "").trim() || null,
     description: String(formData.get("description") ?? ""),
     conditions: conditionsFrom(formData) as z.input<typeof groupConditions>,
   };
@@ -41,19 +39,16 @@ export async function deleteGroup(projectSlug: string, key: string): Promise<For
   return asAdmin(projectSlug, DENIED, (context) => call(deleteGroupOperation, context, { group: String(key) }));
 }
 
-const previewInput = z.object({ claim: readerGroup.nullable(), conditions: groupConditions });
-
-/** The group dialog's preview: how many of the project's users a group with these rules would have now, and a few names. */
+/** The group dialog's preview: how many of the project's users a group with these conditions would have now, and a few names. */
 export async function previewGroup(
   projectSlug: string,
-  claim: string | null,
   conditions: z.input<typeof groupConditions>,
 ): Promise<{ error: string } | { readers: number; sample: string[] }> {
   const [session, project] = await Promise.all([getSession(), getAdminProject(projectSlug)]);
   if (!session || !project) {
     return { error: DENIED };
   }
-  const input = previewInput.safeParse({ claim, conditions });
+  const input = groupConditions.safeParse(conditions);
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
