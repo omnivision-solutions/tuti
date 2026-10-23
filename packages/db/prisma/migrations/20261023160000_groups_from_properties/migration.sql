@@ -12,20 +12,28 @@ WHERE "claim" IS NOT NULL AND ("conditions" IS NULL OR jsonb_typeof("conditions"
 DROP INDEX IF EXISTS "reader_group_projectId_claim_key";
 
 -- While a deploy overlaps, instances from before still read and write the old columns. Until they go,
--- these keep both in step: a user's `groups` written there (a sign-in on an old instance, taking groups
--- away included) is their `groups` property too, and a group named by a claim there gets its condition.
--- New instances write the column alongside the property (SsoIdentity.legacyGroups).
-CREATE FUNCTION "sso_identity_groups_to_property"() RETURNS trigger LANGUAGE plpgsql AS $$
+-- these keep both in step, whichever side writes: a user's `groups` column and their `groups` property
+-- follow each other (a change to the column wins when both change), taking groups away included, and a
+-- group named by a claim gets its condition.
+CREATE FUNCTION "sso_identity_groups_in_step"() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  property jsonb := NEW."attributes" -> 'groups';
 BEGIN
-  IF TG_OP = 'UPDATE' OR cardinality(NEW."groups") > 0 THEN
+  IF (TG_OP = 'INSERT' AND cardinality(NEW."groups") > 0) OR (TG_OP = 'UPDATE' AND NEW."groups" IS DISTINCT FROM OLD."groups") THEN
     NEW."attributes" := (NEW."attributes" - 'groups')
       || CASE WHEN cardinality(NEW."groups") > 0 THEN jsonb_build_object('groups', to_jsonb(NEW."groups")) ELSE '{}'::jsonb END;
+  ELSIF TG_OP = 'INSERT' OR property IS DISTINCT FROM OLD."attributes" -> 'groups' THEN
+    NEW."groups" := CASE
+      WHEN property IS NULL THEN '{}'::text[]
+      WHEN jsonb_typeof(property) = 'array' THEN ARRAY(SELECT jsonb_array_elements_text(property))
+      ELSE ARRAY[NEW."attributes" ->> 'groups']
+    END;
   END IF;
   RETURN NEW;
 END $$;
 
-CREATE TRIGGER "sso_identity_groups_to_property" BEFORE INSERT OR UPDATE OF "groups" ON "sso_identity"
-FOR EACH ROW EXECUTE FUNCTION "sso_identity_groups_to_property"();
+CREATE TRIGGER "sso_identity_groups_in_step" BEFORE INSERT OR UPDATE ON "sso_identity"
+FOR EACH ROW EXECUTE FUNCTION "sso_identity_groups_in_step"();
 
 CREATE FUNCTION "reader_group_claim_to_condition"() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN

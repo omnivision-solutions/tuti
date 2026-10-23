@@ -213,8 +213,8 @@ test("the dialog's preview: who a group with these conditions would have now", a
 /** Back to before 20261023160000_groups_from_properties: without the triggers that keep the old columns in step. */
 const undoGroupsFromProperties = () =>
   prisma.$executeRawUnsafe(`
-    DROP TRIGGER IF EXISTS "sso_identity_groups_to_property" ON "sso_identity";
-    DROP FUNCTION IF EXISTS "sso_identity_groups_to_property"();
+    DROP TRIGGER IF EXISTS "sso_identity_groups_in_step" ON "sso_identity";
+    DROP FUNCTION IF EXISTS "sso_identity_groups_in_step"();
     DROP TRIGGER IF EXISTS "reader_group_claim_to_condition" ON "reader_group";
     DROP FUNCTION IF EXISTS "reader_group_claim_to_condition"();`);
 
@@ -328,6 +328,14 @@ test("while a deploy overlaps, what instances from before write in the old colum
   expect([await legacy(), await properties()]).toEqual([[], { plan: "pro" }]);
   await syncUsers(project.id, [{ externalId: "bea", properties: { groups: ["beta"] } }]);
   expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual(["beta"]);
+  // And an instance from before that changes only the property (its users.sync) moves the column with it.
+  await prisma.$executeRaw`UPDATE sso_identity SET attributes = attributes - 'groups' WHERE "externalId" = 'bea'`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual([]);
+  await prisma.$executeRaw`UPDATE sso_identity SET attributes = attributes || '{"groups": "solo"}' WHERE "externalId" = 'bea'`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "bea" } })).legacyGroups).toEqual(["solo"]);
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'cy', ${(await signUp("Cy")).id}, '{"groups": ["beta"]}', now())`;
+  expect((await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "cy" } })).legacyGroups).toEqual(["beta"]);
 
   // An instance from before adds a group by claim, or changes its claim: it gets the condition.
   await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", key, name, claim, "updatedAt") VALUES (${crypto.randomUUID()}, ${project.id}, 'old', 'Old', 'partner', now())`;
