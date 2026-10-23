@@ -590,6 +590,21 @@ describe("deciding", () => {
     expect(await prisma.postLink.findMany({ where: { postId: posts.themes!.id }, select: { url: true, source: true } })).toEqual([
       { url: `https://github.com/${repo}/pull/17`, source: "CODE_CHANGE" },
     ]);
+    // One link that can't be written stays waiting for the team; the analysis is done, and the next one is linked.
+    // (The merge adds it to the running draft in one transaction and the analysis saves its proposals in another; the third is the link's.)
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    let transactions = 0;
+    vi.spyOn(prisma, "$transaction").mockImplementation(((...args: unknown[]) =>
+      transactions++ === 2 ? Promise.reject(new Error("database blip")) : transaction(...args)) as never);
+    script(18);
+    expect(await merge(18)).toBe(200);
+    expect((await actionsOf(18)).filter((action) => action.kind === "LINKS")).toEqual([
+      { kind: "LINKS", status: "PENDING", post: "themes" },
+      { kind: "LINKS", status: "PENDING", post: "settings" },
+    ]);
+    expect(await changes()).toContainEqual(expect.objectContaining({ number: 18, state: "READY" }));
+    vi.restoreAllMocks();
+
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Tuti" });
   });
