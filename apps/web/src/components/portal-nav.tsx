@@ -79,8 +79,11 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
     };
     const observer = new ResizeObserver(update);
     observer.observe(element);
+    // Crossing the breakpoint turns sticky on or off, which can leave its size as it was.
+    window.addEventListener("resize", update);
     return () => {
       observer.disconnect();
+      window.removeEventListener("resize", update);
       root.style.removeProperty("--portal-header-height");
     };
   }, []);
