@@ -1,6 +1,6 @@
 import type { PostLinkKind } from "@tuti/db";
 
-/** How links look in the API (own module: read.ts and links.ts both use it). */
+/** How links look in the API. */
 const KINDS: Record<PostLinkKind, string> = { PULL_REQUEST: "pull_request", ISSUE: "issue", RELEASE: "release" };
 
 export const linkView = (link: {

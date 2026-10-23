@@ -85,11 +85,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "comments.create": () => ({ number: 1, body: "From the matrix" }),
   "posts.update": () => ({ number: 1, status: "planned" }),
   "posts.merge": () => ({ number: 2, into: 1 }),
-  "links.add": () => ({ number: 1, url: "https://github.com/acme/app/pull/7" }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
-  "linkSuggestions.list": () => ({}),
-  "linkSuggestions.accept": (f) => ({ id: f.linkSuggestionId }),
-  "linkSuggestions.dismiss": (f) => ({ id: f.linkSuggestionId }),
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
@@ -236,17 +232,6 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId: project.id, postId: second!.id, originalId: first!.id, similarity: 0.9 },
   });
-  const linkSuggestion = await prisma.linkSuggestion.create({
-    data: {
-      projectId: project.id,
-      postId: second!.id,
-      repo: "acme/app",
-      number: 11,
-      url: "https://github.com/acme/app/pull/11",
-      title: "Night mode",
-      similarity: 0.6,
-    },
-  });
   // "Ask a person" is on, and the read and write key just got "I don't know".
   await prisma.project.update({ where: { id: project.id }, data: { supportEmail: "e2e-support@example.com" } });
   const writeKey = await prisma.apiKey.findFirstOrThrow({ where: { projectId: project.id, scope: "WRITE" }, select: { id: true } });
@@ -258,7 +243,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A redirect, to delete (redirects.create adds another, from its own address).
   await prisma.portalRedirect.deleteMany({ where: { projectId: project.id } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId: project.id, from: "/old/matrix", to: "/docs" } });
-  return { marker, linkId: link.id, suggestionId: suggestion.id, linkSuggestionId: linkSuggestion.id, revisionId: revision.id, questionId: question.id, redirectId: redirect.id };
+  return { marker, linkId: link.id, suggestionId: suggestion.id, revisionId: revision.id, questionId: question.id, redirectId: redirect.id };
 }
 
 /** Calls an operation over REST like a client would. */
@@ -293,7 +278,6 @@ const snapshot = () =>
     prisma.postLink.findMany({ where: { projectId: project.id } }),
     prisma.vote.findMany({ where: { projectId: project.id } }),
     prisma.duplicateSuggestion.findMany({ where: { projectId: project.id } }),
-    prisma.linkSuggestion.findMany({ where: { projectId: project.id } }),
     prisma.changelogEntry.findMany({ where: { projectId: project.id }, include: { posts: true, reactions: true } }),
     prisma.project.findUnique({
       where: { id: project.id },

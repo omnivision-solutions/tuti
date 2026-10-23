@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { acceptLinkSuggestion as acceptSuggestion, addLink, dismissLinkSuggestion as dismissSuggestion, removeLink } from "./operations/links";
+import { removeLink } from "./operations/links";
 import { mergePost as mergeOperation, updatePost } from "./operations/manage";
 import { dismissDuplicate as dismissOperation } from "./operations/more";
 import { toApiStatus } from "./operations/read";
@@ -57,29 +57,8 @@ export async function dismissDuplicate(projectSlug: string, suggestionId: string
   );
 }
 
-/** Links a post to a GitHub pull request, issue or release (see the links.add operation). */
-export async function addPostLink(projectSlug: string, postId: string, url: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can link posts", async (context) =>
-    call(addLink, context, { number: await postNumberOf(context.projectId, postId), url: String(url) }),
-  );
-}
-
 export async function removePostLink(projectSlug: string, postId: string, linkId: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can link posts", async (context) =>
     call(removeLink, context, { number: await postNumberOf(context.projectId, postId), id: String(linkId) }),
-  );
-}
-
-/** Links a suggested pull request to its post (see the linkSuggestions.accept operation). */
-export async function acceptLinkSuggestion(projectSlug: string, suggestionId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can link posts", (context) =>
-    call(acceptSuggestion, context, { id: String(suggestionId) }),
-  );
-}
-
-/** "Not related": hides a suggested pull request for good (see the linkSuggestions.dismiss operation). */
-export async function dismissLinkSuggestion(projectSlug: string, suggestionId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can link posts", (context) =>
-    call(dismissSuggestion, context, { id: String(suggestionId) }),
   );
 }

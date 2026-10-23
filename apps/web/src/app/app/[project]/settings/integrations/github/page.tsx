@@ -4,7 +4,7 @@ import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { CloseOnSelect, DisconnectGithubButton, GithubRepositories, PrCommentsCheckbox } from "@/components/github-connection";
+import { DisconnectGithubButton, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,8 +20,7 @@ const GITHUB_RESULTS: Record<string, string> = {
 };
 
 /**
- * Settings → Integrations → GitHub (Manage): the connection's settings, by what they're about:
- * the project's repositories, what pull requests do, and when linked posts ship.
+ * Settings → Integrations → GitHub (Manage): the connection and the project's repositories.
  */
 export default async function GithubIntegrationPage(props: PageProps<"/app/[project]/settings/integrations/github">) {
   const { project: slug } = await props.params;
@@ -38,8 +37,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       installationId: true,
       accountLogin: true,
       accountType: true,
-      closeOn: true,
-      commentOnPullRequests: true,
       repositories: true,
       createdAt: true,
       included: { select: { repoId: true } },
@@ -99,7 +96,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <CardHeader>
           <CardTitle>Repositories</CardTitle>
           <CardDescription>
-            Pull requests and releases from these repositories update this project&apos;s posts. Each repository belongs to one project.
+            Merged pull requests from these repositories gather in the changelog&apos;s Next release draft. Each repository belongs to one project.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -124,27 +121,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
                 : null
             }
           />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Pull requests</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm">
-          <PrCommentsCheckbox projectSlug={project.slug} on={installation.commentOnPullRequests} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Shipping</CardTitle>
-          <CardDescription>
-            Completing a post emails the people who asked for it. Merged pull requests also gather in the changelog&apos;s Next release draft.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm">
-          <CloseOnSelect projectSlug={project.slug} closeOn={installation.closeOn} />
         </CardContent>
       </Card>
     </div>

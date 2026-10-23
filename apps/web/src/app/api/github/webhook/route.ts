@@ -41,9 +41,12 @@ export async function POST(request: Request) {
       return Response.json({ error: "Couldn't handle the repositories" }, { status: 503 });
     }
   }
-  // Pull requests: linking and status changes (and completing on merge) happen in the github-pull-request job.
-  if (event === "pull_request" && PR_ACTIONS.has(payload.action ?? "") && payload.installation) {
+  // Merged pull requests: the github-pull-request job adds them to the changelog's running draft.
+  if (event === "pull_request" && payload.action === "closed" && payload.installation) {
     const { pull_request: pr, repository } = payload as unknown as GithubPullRequestEvent;
+    if (!pr.merged) {
+      return Response.json({ ok: true });
+    }
     try {
       await enqueue("githubPullRequest", {
         installationId: payload.installation.id,
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Couldn't handle the pull request" }, { status: 503 });
     }
   }
-  // Published releases: the github-release job completes the posts they ship.
+  // Published releases: the github-release job closes the changelog's running draft.
   if (event === "release" && payload.action === "published" && payload.installation) {
     const { release, repository } = payload as unknown as GithubReleaseEvent;
     try {
@@ -92,9 +95,6 @@ type GithubReleaseEvent = {
   release: { tag_name: string; name: string | null; html_url: string; published_at: string | null };
   repository: GithubRepository;
 };
-
-/** Opened, reopened, edited, new commits pushed (synchronize), closed. */
-const PR_ACTIONS = new Set(["opened", "reopened", "edited", "synchronize", "closed"]);
 
 type GithubPullRequestEvent = {
   pull_request: {

@@ -54,9 +54,6 @@ export async function addToRunningDraft(projectId: string, pr: PullRequest): Pro
     // The plain text gets the bullet's line, as @tuti/content's toPlainText would write it.
     const body = [current.body, bulletText(pr)].filter(Boolean).join("\n");
     await tx.changelogEntry.update({ where: { id: entry.id }, data: { content: doc as Prisma.InputJsonValue, body } });
-    // The posts it references (linked by the pull request job) are what this entry completes.
-    const posts = await tx.postLink.findMany({ where: { projectId, url: pr.url, post: { duplicateOfId: null } }, select: { postId: true } });
-    await tx.changelogEntryPost.createMany({ data: posts.map(({ postId }) => ({ entryId: entry.id, postId })), skipDuplicates: true });
     return true;
   });
 }

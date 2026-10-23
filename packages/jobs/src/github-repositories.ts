@@ -23,8 +23,6 @@ export function listedRepositories(value: Prisma.JsonValue): GithubRepo[] {
 
 const connectionSelect = {
   id: true,
-  closeOn: true,
-  commentOnPullRequests: true,
   project: { select: { id: true, slug: true, name: true } },
 } as const;
 

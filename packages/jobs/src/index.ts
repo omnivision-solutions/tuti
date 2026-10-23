@@ -14,7 +14,6 @@ export { lockProject, RUNNING_DRAFT_TITLE } from "./running-draft";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { detectDuplicates, embedPosts } from "./duplicates";
-export { referencedPosts } from "./github";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress } from "./portal-address";
 export { fetchSiteCheck } from "./site-check";
@@ -50,8 +49,7 @@ export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>): Pro
   const job = jobs[key];
   const parsed = job.input.parse(input) as JobInput<K>;
   if (process.env.JOBS_DRIVER === "inline") {
-    // ponytail: no `concurrencyKey` here, so overlapping runs of one key can race (e.g. two
-    // deliveries for one pull request may add a 4th suggestion or a 2nd comment); use Hatchet if that matters.
+    // ponytail: no `concurrencyKey` here, so overlapping runs of one key can race; use Hatchet if that matters.
     await handlers[key](parsed, log);
     return;
   }

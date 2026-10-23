@@ -265,8 +265,6 @@ const matrix: Matrix = {
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
-    setGithubCloseOn: { allowed: "ADMIN", call: (slug) => github.setGithubCloseOn(slug, "MERGE") },
-    setGithubPrComments: { allowed: "ADMIN", call: (slug) => github.setGithubPrComments(slug, true) },
     // Reads the installation's repositories from GitHub (the fake), with the App's own access.
     refreshGithubRepositories: {
       allowed: "ADMIN",
@@ -331,22 +329,7 @@ const matrix: Matrix = {
       takesIds: true,
       call: (slug, f) => managePosts.dismissDuplicate(slug, f.suggestionId),
     },
-    addPostLink: {
-      allowed: "MEMBER",
-      takesIds: true,
-      call: (slug, f) => managePosts.addPostLink(slug, f.postId, "https://github.com/acme/app/pull/1"),
-    },
     removePostLink: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.removePostLink(slug, f.postId, f.linkId) },
-    acceptLinkSuggestion: {
-      allowed: "MEMBER",
-      takesIds: true,
-      call: (slug, f) => managePosts.acceptLinkSuggestion(slug, f.linkSuggestionId),
-    },
-    dismissLinkSuggestion: {
-      allowed: "MEMBER",
-      takesIds: true,
-      call: (slug, f) => managePosts.dismissLinkSuggestion(slug, f.linkSuggestionId),
-    },
   },
   media: {
     // Anyone who may post in the project may upload; finishing and status are the uploader's own.
@@ -609,17 +592,6 @@ async function createFixture(own: "domain" | "site" = "domain") {
       source: "MANUAL",
     },
   });
-  const linkSuggestion = await prisma.linkSuggestion.create({
-    data: {
-      projectId,
-      postId: post!.id,
-      repo: "acme/app",
-      number: 11,
-      url: "https://github.com/acme/app/pull/11",
-      title: "Night mode",
-      similarity: 0.6,
-    },
-  });
   await prisma.project.update({ where: { id: projectId }, data: { changelogCount: 2 } });
   await prisma.changelogEntry.createMany({
     data: [
@@ -686,7 +658,6 @@ async function createFixture(own: "domain" | "site" = "domain") {
     githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,
-    linkSuggestionId: linkSuggestion.id,
     webhookId: webhook.id,
     apiKeyId: apiKey.id,
     mediaId: upload.id,

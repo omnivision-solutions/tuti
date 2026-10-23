@@ -21,13 +21,6 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   // Connected, it's on GitHub's own settings page.
   await expect(owner.getByText("GitHub is connected.", { exact: false })).toBeVisible();
   await expect(owner.getByRole("heading", { name: "GitHub · acme-e2e" })).toBeVisible();
-  await owner.getByRole("combobox", { name: "When linked posts become Completed" }).click();
-  await owner.getByRole("option", { name: "their pull request is merged" }).click();
-  await expect(owner.getByText("Saved")).toBeVisible();
-  await owner.getByRole("checkbox", { name: /Comment on pull requests/ }).check();
-  await expect(owner.getByText("Saved")).toHaveCount(2);
-  await owner.reload();
-  await expect(owner.getByRole("checkbox", { name: /Comment on pull requests/ })).toBeChecked();
 
   // The first project added both repositories; it lets the iOS app go.
   const ours = owner.getByRole("list", { name: "This project's repositories" });
