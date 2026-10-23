@@ -19,7 +19,7 @@ vi.mock("./migrations", () => ({
     return waited.promise;
   }),
 }));
-vi.mock("@tuti/shared/hatchet", () => ({ getHatchet }));
+vi.mock("@tuti/shared/hatchet", () => ({ getHatchet, withRunLogs: (fn: unknown) => fn }));
 vi.mock("@tuti/jobs", () => ({ handlers: {} }));
 
 test("a built worker takes no jobs until the database has its migrations", async () => {

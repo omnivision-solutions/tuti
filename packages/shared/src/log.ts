@@ -36,14 +36,14 @@ function toJson(fields: Fields | undefined, meta: { time: string; level: Level; 
 }
 
 function write(level: Level, message: string, fields?: Fields) {
-  if (process.env.NODE_ENV === "production") {
-    // One JSON object per line, for whatever collects the logs (Coolify, Docker, a log shipper).
-    const line = toJson(fields, { time: new Date().toISOString(), level, message });
-    (level === "info" ? process.stdout : process.stderr).write(`${line}\n`);
-    return;
-  }
+  const args =
+    process.env.NODE_ENV === "production"
+      ? // One JSON object per line, for whatever collects the logs (Coolify, Docker, a log shipper).
+        [toJson(fields, { time: new Date().toISOString(), level, message })]
+      : [message, ...(fields ? [fields] : [])];
+  // Through console (info to stdout, warn and error to stderr), so a worker run's lines reach its Hatchet logs too.
   // eslint-disable-next-line no-console -- the one place that writes to the console
-  console[level](message, ...(fields ? [fields] : []));
+  console[level](...args);
 }
 
 /** Server and worker logging. Use this instead of console (a test checks). */
