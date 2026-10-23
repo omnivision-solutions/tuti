@@ -284,7 +284,7 @@ describe("groups from conditions", () => {
   /** Docs as above, with Enterprise for whoever's on the enterprise plan (or, by claim, in "enterprise"). */
   beforeEach(async () => {
     await docsWithGroups();
-    await call(updateGroup, as(), { group: "enterprise", conditions: [{ attribute: "plan", op: "is_one_of", value: ["enterprise", "custom"] }] });
+    await call(updateGroup, as(), { group: "enterprise", conditions: [{ property: "plan", op: "is_any_of", value: ["enterprise", "custom"] }] });
   });
   /** Whether they read the SAML article (in Enterprise): its page, and in search. */
   const reads = async (user: TestUser) => {
@@ -364,7 +364,7 @@ describe("groups from conditions", () => {
   });
 
   test("only the project's users: not others, even for a group of everyone without a property", async () => {
-    await call(updateGroup, as(), { group: "enterprise", claim: null, conditions: [{ attribute: "plan", op: "is_not", value: "free" }] });
+    await call(updateGroup, as(), { group: "enterprise", claim: null, conditions: [{ property: "plan", op: "is_not", value: "free" }] });
     expect(await reads(await signedIn({}))).toEqual(yes);
     expect(await reads(await signedIn({ properties: { plan: "free" } }))).toEqual(no);
     expect(await reads(await signUp("Stranger"))).toEqual(no);
@@ -412,7 +412,7 @@ test("search engines and AI tools only get what's for everyone; a restricted art
 });
 
 test("collections take groups by key, with or without a claim", async () => {
-  await call(createGroup, as(), { name: "Pro customers", conditions: [{ attribute: "plan", op: "is", value: "pro" }] });
+  await call(createGroup, as(), { name: "Pro customers", conditions: [{ property: "plan", op: "is", value: "pro" }] });
   await call(createGroup, as(), { name: "Partners", claim: "partner" });
   expect(await call(createCollection, as(), { name: "Pro", groups: ["pro-customers", "partners"] })).toMatchObject({ groups: ["partners", "pro-customers"] });
   // Claims aren't keys.

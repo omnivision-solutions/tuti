@@ -2,11 +2,11 @@ import { Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { z } from "zod";
 
-import { type GroupCondition, groupConditions, type GroupRules, inGroup, storedConditions } from "@/lib/group-conditions";
+import { type GroupCondition, groupConditions, type GroupRules, storedConditions } from "@/lib/group-conditions";
 import { titleSlug } from "@/lib/post-urls";
 import { readerGroup } from "@/lib/reader-groups";
-import { storedProperties } from "@/lib/user-properties";
 
+import { inGroupSql } from "../group-conditions-sql";
 import { defineOperation, OperationError } from "./define";
 
 /**
@@ -30,44 +30,34 @@ export type GroupView = {
   claim: string | null;
   description: string;
   conditions: GroupCondition[];
-  /** How many of the project's SSO users are in it now, and the names of the first 3. */
+  /** How many of the project's users are in it now, and the names of the first 3. */
   readers: number;
   sample: string[];
 };
 
-/**
- * The project's SSO users as their latest sign-in left them, by name.
- * ponytail: all of a project's SSO users, matched here; at thousands per project, count in SQL (jsonb) instead.
- */
-export async function ssoReaders(projectId: string) {
-  const identities = await prisma.ssoIdentity.findMany({
-    where: { projectId },
-    select: { groups: true, properties: true, user: { select: { name: true } } },
-    orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
-  });
-  return identities.map((identity) => ({ name: identity.user.name, groups: identity.groups, properties: storedProperties(identity.properties) }));
-}
-
-/** How many of `readers` a group with these rules has, and the first 3's names. */
-export function whoMatches(rules: GroupRules, readers: Awaited<ReturnType<typeof ssoReaders>>) {
-  const matching = readers.filter((reader) => inGroup(rules, reader));
-  return { readers: matching.length, sample: matching.slice(0, 3).map((reader) => reader.name) };
+/** How many of the project's users a group with these rules has now, and the first 3's names. */
+export async function whoMatches(projectId: string, rules: GroupRules) {
+  const where = Prisma.sql`s."projectId" = ${projectId} AND ${inGroupSql(rules, Prisma.sql`s`)}`;
+  const [[{ count }], sample] = await Promise.all([
+    prisma.$queryRaw<[{ count: bigint }]>`SELECT count(*) FROM sso_identity s WHERE ${where}`,
+    prisma.$queryRaw<{ name: string }[]>`SELECT u.name FROM sso_identity s JOIN "user" u ON u.id = s."userId" WHERE ${where} ORDER BY u.name, s.id LIMIT 3`,
+  ]);
+  return { readers: Number(count), sample: sample.map((user) => user.name) };
 }
 
 /** The project's groups by name, each with who's in it now (or just group `key`). */
 export async function groupsWithReaders(projectId: string, key?: string): Promise<GroupView[]> {
-  const [groups, readers] = await Promise.all([
-    prisma.readerGroup.findMany({
-      where: { projectId, ...(key !== undefined && { key }) },
-      orderBy: [{ name: "asc" }, { key: "asc" }],
-      select: { key: true, name: true, claim: true, description: true, conditions: true },
-    }),
-    ssoReaders(projectId),
-  ]);
-  return groups.map((group) => {
-    const conditions = storedConditions(group.conditions);
-    return { ...group, conditions, ...whoMatches({ claim: group.claim, conditions }, readers) };
+  const groups = await prisma.readerGroup.findMany({
+    where: { projectId, ...(key !== undefined && { key }) },
+    orderBy: [{ name: "asc" }, { key: "asc" }],
+    select: { key: true, name: true, claim: true, description: true, conditions: true },
   });
+  return Promise.all(
+    groups.map(async (group) => {
+      const conditions = storedConditions(group.conditions);
+      return { ...group, conditions, ...(await whoMatches(projectId, { claim: group.claim, conditions })) };
+    }),
+  );
 }
 
 const viewOf = async (projectId: string, key: string) => (await groupsWithReaders(projectId, key))[0]!;
@@ -101,7 +91,7 @@ export const listGroups = defineOperation({
 export const createGroup = defineOperation({
   name: "groups.create",
   summary:
-    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on your users' properties (from SSO tokens' `properties`; up to 10, all must match: `is`, `is_not` or `is_one_of` a list; values compare as text, exactly, and a list property matches when one of its items does), or both (either lets them in). It needs a claim or a condition",
+    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on your users' properties (set by SSO tokens' `properties` and users.sync; up to 10, all must match), each a `property`, an `op` and a `value`: `is`, `is_not`, `contains` or `excludes` a text; `is_any_of` or `is_none_of` a list; `is_set` and `is_not_set` take none. Values compare as text, exactly; a list property matches when one of its items does (or, for the negative ones, none does), and a missing one matches only the negative ones and `is_not_set`, or both (either lets them in). It needs a claim or a condition",
   method: "POST",
   path: "/groups",
   scope: "write",
@@ -112,7 +102,7 @@ export const createGroup = defineOperation({
     description: groupFields.description.default(""),
     conditions: groupFields.conditions.default([]),
   }),
-  example: { name: "Pro customers", conditions: [{ attribute: "plan", op: "is_one_of", value: ["pro", "enterprise"] }] },
+  example: { name: "Pro customers", conditions: [{ property: "plan", op: "is_any_of", value: ["pro", "enterprise"] }, { property: "support_tier", op: "is_set" }] },
   run: async ({ projectId }, { name, claim, description, conditions }) => {
     needsRules(claim, conditions);
     // Locked, so two groups with the same name get "pro" and "pro-2".
@@ -151,7 +141,7 @@ export const updateGroup = defineOperation({
     description: groupFields.description.optional(),
     conditions: groupFields.conditions.optional(),
   }),
-  example: { name: "Enterprise customers", conditions: [{ attribute: "plan", op: "is", value: "enterprise" }] },
+  example: { name: "Enterprise customers", conditions: [{ property: "plan", op: "is", value: "enterprise" }] },
   run: async ({ projectId }, { group, ...input }) => {
     // Locked, so two changes at once can't leave it with neither a claim nor a condition.
     await prisma

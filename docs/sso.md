@@ -117,21 +117,28 @@ description, and who's in it, by either or both of:
 
 - **SSO group name**: the claim your token names the group by in `groups` (e.g. `enterprise`).
 - **Conditions** on the user's [properties](#properties), all of which must match (up to 10). Each is a
-  property, an operator (**is**, **is not** or **is one of**, with the values comma-separated) and
-  a value, e.g. `plan` is one of `pro, enterprise`.
+  property, an operator and a value, e.g. `plan` is any of `pro, enterprise`:
+
+  | Operator | API | Matches when the property… |
+  |---|---|---|
+  | **is** / **is not** | `is`, `is_not` | is (or isn't) the value |
+  | **is any of** / **is none of** | `is_any_of`, `is_none_of` | is one (or none) of the values, comma-separated in the app |
+  | **contains** / **excludes** | `contains`, `excludes` | has (or doesn't have) the value in its text, e.g. `email` contains `@acme.com` |
+  | **is set** / **is not set** | `is_set`, `is_not_set` | has a value at all (or doesn't); these take no value |
 
 Someone is in the group when their `groups` has its name, or when its conditions (if it has any)
 all match their properties. While you write the conditions, the dialog shows how many of the people
 your app has signed in match them now, with a few of their names; the list shows the same for each
-group. Changing a group's name in `groups` or its conditions changes who's in it.
+group. Changing a group's name in `groups` or its conditions changes who's in it. (In the API, conditions written with `attribute` and `is_one_of`, their names before, still work.)
 
 How conditions compare:
 
 - Values compare as text, exactly: capital letters and spaces count (`Pro` isn't `pro`), and the
   property's name must match exactly too.
 - Numbers and booleans compare as their text: `"seats": 12` is `12`, `"beta": true` is `true`.
-- A list matches **is** (and **is one of**) when one of its items does, and **is not** when none does.
-- **is not** also matches when the user has no such property.
+- A list matches **is**, **is any of** and **contains** when one of its items does, and **is not**,
+  **is none of** and **excludes** when none does. An empty list is no value.
+- A user without the property matches only **is not**, **is none of**, **excludes** and **is not set**.
 - Only your app's users can be in a group: the people it signs in, and people signed in to your
   portal another way whose verified address is one of your users' `email`. Signed-out visitors and
   everyone else are in none, even for a group whose only condition is "is not".

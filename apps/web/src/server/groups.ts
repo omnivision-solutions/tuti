@@ -7,7 +7,7 @@ import { readerGroup } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
-import { createGroup, deleteGroup as deleteGroupOperation, ssoReaders, updateGroup, whoMatches } from "./operations/groups";
+import { createGroup, deleteGroup as deleteGroupOperation, updateGroup, whoMatches } from "./operations/groups";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -43,7 +43,7 @@ export async function deleteGroup(projectSlug: string, key: string): Promise<For
 
 const previewInput = z.object({ claim: readerGroup.nullable(), conditions: groupConditions });
 
-/** The group dialog's preview: how many of the project's SSO users a group with these rules would have now, and a few names. */
+/** The group dialog's preview: how many of the project's users a group with these rules would have now, and a few names. */
 export async function previewGroup(
   projectSlug: string,
   claim: string | null,
@@ -57,5 +57,5 @@ export async function previewGroup(
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
-  return whoMatches(input.data, await ssoReaders(project.id));
+  return whoMatches(project.id, input.data);
 }

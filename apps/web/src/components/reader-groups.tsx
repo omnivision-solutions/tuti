@@ -24,13 +24,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { keepingFields } from "@/lib/forms";
-import { type GroupCondition, MAX_CONDITIONS } from "@/lib/group-conditions";
+import { type GroupCondition, LIST_OPERATORS, MAX_CONDITIONS, type Operator, OPERATORS, PRESENCE_OPERATORS } from "@/lib/group-conditions";
 import type { FormState } from "@/server/form-state";
 import { deleteGroup, previewGroup, saveGroup } from "@/server/groups";
 import type { GroupView } from "@/server/operations/groups";
 
-const OPS = { is: "is", is_not: "is not", is_one_of: "is one of" } as const;
-type Op = keyof typeof OPS;
 
 const names = (list: string[]) => new Intl.ListFormat("en-GB").format(list);
 
@@ -49,7 +47,8 @@ function matchesNow({ readers, sample }: { readers: number; sample: string[] }) 
   return readers > sample.length ? `${count}, including ${names(sample)}.` : `${count}: ${names(sample)}.`;
 }
 
-const conditionText =(c: GroupCondition) => `${c.attribute} ${OPS[c.op]} ${Array.isArray(c.value) ? c.value.join(", ") : c.value}`;
+const conditionText = (c: GroupCondition) =>
+  [c.property, OPERATORS[c.op], "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : ""].filter(Boolean).join(" ");
 
 /** Settings → Groups: the project's reader groups, with who's in each now. */
 export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; groups: GroupView[] }) {
@@ -91,18 +90,22 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
   );
 }
 
-/** A condition as typed: "is one of" takes its values comma-separated. */
-type Row = { attribute: string; op: Op; value: string };
+/** A condition as typed: "is any of" and "is none of" take their values comma-separated; "is set" and "is not set" none. */
+type Row = { property: string; op: Operator; value: string };
+
+const takesNoValue = (op: Operator) => PRESENCE_OPERATORS.includes(op);
 
 const rowsOf = (group?: GroupView): Row[] =>
-  group?.conditions.map((c) => ({ attribute: c.attribute, op: c.op, value: Array.isArray(c.value) ? c.value.join(", ") : c.value })) ?? [];
+  group?.conditions.map((c) => ({ property: c.property, op: c.op, value: "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : "" })) ?? [];
 
 const conditionOf = (row: Row) =>
-  row.op === "is_one_of"
-    ? { attribute: row.attribute, op: row.op, value: row.value.split(",").map((v) => v.trim()).filter(Boolean) }
-    : { attribute: row.attribute, op: row.op, value: row.value };
+  takesNoValue(row.op)
+    ? { property: row.property, op: row.op }
+    : LIST_OPERATORS.includes(row.op)
+      ? { property: row.property, op: row.op, value: row.value.split(",").map((v) => v.trim()).filter(Boolean) }
+      : { property: row.property, op: row.op, value: row.value };
 
-const complete = (row: Row) => row.attribute.trim() !== "" && row.value.split(",").some((v) => v.trim() !== "");
+const complete = (row: Row) => row.property.trim() !== "" && (takesNoValue(row.op) || row.value.split(",").some((v) => v.trim() !== ""));
 
 const PREVIEW_DELAY_MS = 300;
 
@@ -204,34 +207,36 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
               {rows.map((row, i) => (
                 <div key={i} role="group" aria-label={`Condition ${i + 1}`} className="flex flex-wrap items-center gap-2">
                   <Input
-                    aria-label="Attribute"
-                    value={row.attribute}
-                    onChange={(e) => change(i, { attribute: e.target.value })}
+                    aria-label="Property"
+                    value={row.property}
+                    onChange={(e) => change(i, { property: e.target.value })}
                     placeholder="plan"
                     maxLength={64}
                     autoComplete="off"
                     className="min-w-0 flex-1 basis-28"
                   />
-                  <Select items={OPS} value={row.op} onValueChange={(op) => change(i, { op: op as Op })}>
-                    <SelectTrigger className="w-32" aria-label="Operator">
+                  <Select items={OPERATORS} value={row.op} onValueChange={(op) => change(i, { op: op as Operator })}>
+                    <SelectTrigger className="w-36" aria-label="Operator">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {(Object.keys(OPS) as Op[]).map((op) => (
+                      {(Object.keys(OPERATORS) as Operator[]).map((op) => (
                         <SelectItem key={op} value={op}>
-                          {OPS[op]}
+                          {OPERATORS[op]}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Input
-                    aria-label="Value"
-                    value={row.value}
-                    onChange={(e) => change(i, { value: e.target.value })}
-                    placeholder={row.op === "is_one_of" ? "pro, enterprise" : "pro"}
-                    autoComplete="off"
-                    className="min-w-0 flex-1 basis-36"
-                  />
+                  {!takesNoValue(row.op) && (
+                    <Input
+                      aria-label="Value"
+                      value={row.value}
+                      onChange={(e) => change(i, { value: e.target.value })}
+                      placeholder={LIST_OPERATORS.includes(row.op) ? "pro, enterprise" : "pro"}
+                      autoComplete="off"
+                      className="min-w-0 flex-1 basis-36"
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -249,7 +254,7 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
                   variant="outline"
                   size="sm"
                   disabled={rows.length >= MAX_CONDITIONS}
-                  onClick={() => setRows((current) => [...current, { attribute: "", op: "is", value: "" }])}
+                  onClick={() => setRows((current) => [...current, { property: "", op: "is", value: "" }])}
                 >
                   Add condition
                 </Button>

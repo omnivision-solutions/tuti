@@ -343,10 +343,10 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(preview).toHaveText("Complete a condition to see who matches.");
   await dialog.getByRole("button", { name: "Add condition" }).click();
   const condition = dialog.getByRole("group", { name: "Condition 1" });
-  await condition.getByLabel("Attribute").fill("plan");
+  await condition.getByLabel("Property").fill("plan");
   await expect(preview).toHaveText("Complete a condition to see who matches.");
   await condition.getByRole("combobox", { name: "Operator" }).click();
-  await owner.getByRole("option", { name: "is one of" }).click();
+  await owner.getByRole("option", { name: "is any of" }).click();
   await condition.getByLabel("Value").fill("pro, enterprise");
   await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
   await checkpoint(owner, "team-settings-group-conditions-preview", { fullPage: false });
@@ -364,7 +364,7 @@ test("a group from conditions: readers whose properties match read its collectio
   await expect(preview).toHaveText("1 reader matches now: Ada from Acme.");
   await dialog.getByRole("button", { name: "Add group" }).click();
   await expect(owner.getByText("Group added")).toBeVisible();
-  await expect(groups).toContainText("plan is one of pro, enterprise · 1 reader: Ada from Acme");
+  await expect(groups).toContainText("plan is any of pro, enterprise · 1 reader: Ada from Acme");
   await checkpoint(owner, "team-settings-groups-with-conditions", { fullPage: false });
 
   // A collection for it, with an article.
