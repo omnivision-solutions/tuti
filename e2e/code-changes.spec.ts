@@ -1,0 +1,80 @@
+import { randomInt, randomUUID } from "node:crypto";
+
+import { expect, test } from "@playwright/test";
+
+import { checkpoints } from "./checkpoint";
+import { APP_URL } from "./env";
+import { connectGithub, mergePullRequest } from "./github";
+import { apiFor, createProject, signUp } from "./helpers";
+import { nextDecision, nextModelReply } from "./model";
+import { similar } from "./openai";
+
+test("a merged pull request becomes a code change; the team applies what it resolves, and the post is completed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  // Its own pull request numbers: GitHub (the fake) is shared by every journey.
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const title = `Dark mode ${id}`;
+  await api("/posts", { board: "feature-requests", title });
+  const installationId = await connectGithub(owner, slug);
+
+  // The pull request: users see it (the gate), its summary finds the post, which it resolves.
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, title, 0.95);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { resolves: 0.9, moves_forward: 0.05, related: 0.04, unrelated: 0.01 } }, title);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", proposals: { p1: { reason: "It adds the dark theme the post asks for." } } }), title);
+  await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
+
+  // Code changes lists it, waiting for the team.
+  await owner.goto(`/app/${slug}`);
+  await owner.getByRole("link", { name: "Code changes" }).click();
+  await owner.waitForURL(`**/app/${slug}/code-changes`);
+  await expect(owner.getByText("1 to review")).toBeVisible();
+  await checkpoint(owner, "code-changes");
+  await owner.getByRole("link", { name: pr }).click();
+
+  // Its page: what changed for users, why, and the post it resolves.
+  await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
+  await expect(owner.getByText(summary)).toBeVisible();
+  await expect(owner.getByText("It ships the dark theme people asked for.")).toBeVisible();
+  const proposal = owner.getByRole("listitem", { name: `Resolves: ${title}` });
+  await expect(proposal).toContainText("It adds the dark theme the post asks for.");
+  await expect(proposal).toContainText("Likely");
+  await checkpoint(owner, "code-change");
+  await proposal.getByRole("button", { name: "Mark completed" }).click();
+  await expect(owner.getByText("#1 completed")).toBeVisible();
+  await expect(proposal).toContainText("Applied by Olive Owner");
+
+  // The post is completed, linked to the pull request, with the way back to the code change.
+  await proposal.getByRole("link", { name: title }).click();
+  await owner.waitForURL(`**/app/${slug}/p/1`);
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Completed");
+  await expect(owner.getByRole("link", { name: `acme/app#${number} · ${pr}` })).toBeVisible();
+  await owner.getByRole("link", { name: "Code change", exact: true }).click();
+  await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
+
+  // A pull request users don't see: nothing to do, folded away, and "Analyse anyway" looks past the gate.
+  const chore = `Refactor the theme store ${id}`;
+  const choreSummary = `Nothing visible changed (${id}).`;
+  await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, chore);
+  await mergePullRequest(installationId, { number: number + 1, title: chore });
+  await owner.goto(`/app/${slug}/code-changes`);
+  await owner.getByText("Nothing to do (1)").click();
+  const row = owner.getByRole("listitem").filter({ hasText: chore });
+  await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
+  await checkpoint(owner, "code-changes-nothing-to-do");
+  // The post is completed now, so nothing is left to propose.
+  await nextModelReply(choreSummary, chore);
+  await nextDecision({ needed: 0.05 }, `${choreSummary}","existing_articles`);
+  await row.getByRole("button", { name: "Analyse anyway" }).click();
+  await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
+  await expect(row).toContainText("No post or article it changes.");
+});

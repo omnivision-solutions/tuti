@@ -424,6 +424,8 @@ enum PostLinkSource {
   REFERENCE
   /// Suggested by text similarity and confirmed by the team.
   SUGGESTED
+  /// Written by a code change's action the team applied (`codeChangeId`).
+  CODE_CHANGE
 }
 
 /// A post's link to GitHub: the pull request, issue or release that works on or ships it.
@@ -441,12 +443,15 @@ model PostLink {
   url         String
   /// From GitHub once the app is connected (null when added by hand).
   title       String?
-  source      PostLinkSource
-  createdById String?
-  createdAt   DateTime       @default(now())
+  source       PostLinkSource
+  /// The code change whose applied action wrote it (source CODE_CHANGE).
+  codeChangeId String?
+  createdById  String?
+  createdAt    DateTime       @default(now())
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  project    Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post       Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  codeChange CodeChange? @relation(fields: [codeChangeId], references: [id], onDelete: SetNull)
 
   @@unique([postId, url])
   @@index([projectId, repo, number])
@@ -1591,6 +1596,7 @@ model CodeChange {
 
   project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   actions CodeChangeAction[]
+  links   PostLink[]
 
   @@unique([projectId, repoId, number])
   @@index([projectId, createdAt])

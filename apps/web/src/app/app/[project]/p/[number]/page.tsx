@@ -43,7 +43,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         duplicateOf: { select: { number: true, title: true } },
         links: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true },
+          select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
         },
         comments: {
           orderBy: { createdAt: "asc" },

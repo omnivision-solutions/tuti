@@ -15,7 +15,8 @@
     "@tuti/email": "workspace:*",
     "@tuti/shared": "workspace:*",
     "sharp": "^0.35.5",
-    "undici": "^7.30.0"
+    "undici": "^7.30.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tuti/typescript-config": "workspace:*",

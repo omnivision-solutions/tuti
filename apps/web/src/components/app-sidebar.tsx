@@ -5,6 +5,7 @@ import {
   ChevronsUpDownIcon,
   BookOpenIcon,
   ExternalLinkIcon,
+  GitPullRequestIcon,
   InboxIcon,
   LayoutListIcon,
   LogOutIcon,
@@ -132,6 +133,7 @@ function projectNav(project: ProjectSummary) {
   return [
     { title: "Feedback", href: base, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
+    { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true },
     { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
     { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
     { title: "Team", href: `${base}/team`, icon: UsersIcon },

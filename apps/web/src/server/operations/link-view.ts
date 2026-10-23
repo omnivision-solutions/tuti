@@ -11,6 +11,7 @@ export const linkView = (link: {
   tag: string | null;
   url: string;
   title: string | null;
+  codeChangeId: string | null;
 }) => ({
   id: link.id,
   kind: KINDS[link.kind],
@@ -19,6 +20,8 @@ export const linkView = (link: {
   tag: link.tag,
   url: link.url,
   title: link.title,
+  /** The code change whose applied action added it (codeChanges.get), if one did. */
+  codeChange: link.codeChangeId,
 });
 
-export const linkSelect = { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true } as const;
+export const linkSelect = { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true } as const;
