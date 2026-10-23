@@ -8,7 +8,7 @@ import type { TestPage } from "./helpers";
 
 /**
  * Connects the project to GitHub from its settings, as `admin`, and adds `add` (by default every
- * listed repository) to it; returns the installation's id. A new installation on "acme" by
+ * listed repository, by name without the account) to it; returns the installation's id. A new installation on "acme" by
  * default, with one repository, acme/app, whose id is the installation's.
  */
 export async function connectGithub(
@@ -18,30 +18,29 @@ export async function connectGithub(
 ): Promise<number> {
   const id = installation.id ?? randomInt(1_000_000, 2_000_000_000);
   const repositories = installation.repositories ?? [{ id, fullName: "acme/app" }];
-  const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/next-install`, {
-    method: "POST",
-    body: JSON.stringify({
-      forwardedFor: admin.ip,
-      setupUrl: `${APP_URL}/api/github/setup`,
-      id,
-      account: installation.account ?? "acme",
-      repositories,
-      code: `code-${id}`,
-    }),
-  });
-  expect(response.ok).toBe(true);
+  await nextInstall(admin, { id, account: installation.account ?? "acme", repositories });
   await admin.goto(`/app/${slug}/settings/integrations`);
   // GitHub (the fake) says which accounts they have the app on; they pick this one.
   await admin.getByRole("link", { name: "Connect GitHub" }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations?github=choose`);
   await admin.getByRole("link", { name: `Connect @${installation.account ?? "acme"}` }).click();
   await admin.waitForURL(`**/app/${slug}/settings/integrations/github?github=connected`);
-  for (const name of installation.add ?? repositories.map((repo) => repo.fullName)) {
+  // Listed by name: every repository is on the connected account.
+  for (const name of installation.add ?? repositories.map((repo) => repo.fullName.split("/")[1]!)) {
     await admin.getByRole("button", { name: "Add repository" }).click();
-    await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name }).click();
+    await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name, exact: true }).click();
     await expect(admin.getByRole("list", { name: "This project's repositories" }).getByText(name, { exact: true })).toBeVisible();
   }
   return id;
+}
+
+/** The installation GitHub (the fake) offers `admin` next, as the only account they have the app on. */
+export async function nextInstall(admin: TestPage, installation: { id: number; account: string; repositories: { id: number; fullName: string }[] }) {
+  const response = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/next-install`, {
+    method: "POST",
+    body: JSON.stringify({ forwardedFor: admin.ip, setupUrl: `${APP_URL}/api/github/setup`, ...installation, code: `code-${installation.id}` }),
+  });
+  expect(response.ok).toBe(true);
 }
 
 /** GitHub telling Tuti about a pull request on acme/app (a signed webhook delivery), as connectGithub set it up. */

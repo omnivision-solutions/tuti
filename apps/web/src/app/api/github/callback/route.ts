@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { NextResponse } from "next/server";
 
 import { githubConfig, installationForUser, installationsForUser, signValue, verifyValue } from "@/lib/github";
@@ -41,7 +42,10 @@ export async function GET(request: Request) {
     if (installations.length === 0) {
       return NextResponse.redirect(`${config.url}/apps/${config.appSlug}/installations/new`);
     }
-    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/integrations?github=choose`, appUrl()));
+    // Already connected ("Switch account"): the choice is on the GitHub page.
+    const switching = await prisma.githubInstallation.count({ where: { projectId: project.id } });
+    const page = switching ? "integrations/github" : "integrations";
+    const response = NextResponse.redirect(new URL(`/app/${project.slug}/settings/${page}?github=choose`, appUrl()));
     const accounts = installations.slice(0, 50).map((i) => `${i.id}:${i.account.type}:${i.account.login}`);
     response.cookies.set(ACCOUNTS_COOKIE, signValue("accounts", [project.id, ...accounts]), {
       httpOnly: true,
