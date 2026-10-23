@@ -4,6 +4,7 @@ import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
+import { createArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { postSummarySelect, projectPortal, summary, toApiStatus } from "./read";
@@ -34,8 +35,23 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
   return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
 }
 
-/** The kinds applying can do (the rest come with their pages, docs/plan.md). */
-const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD"]);
+/** The kinds applying can do (the changelog line comes with its own, docs/plan.md). */
+const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE"]);
+
+type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string };
+
+/** An article edit is out of date once the article was saved again since it was written, or has unpublished changes (applying would publish them too). */
+const outdated = (payload: DocsPayload, article: { revisions: { id: string }[]; changes: unknown }) =>
+  (article.revisions[0]?.id ?? null) !== (payload.basedOn ?? null) || article.changes !== null;
+
+const articleSelect = {
+  slug: true,
+  title: true,
+  publishedAt: true,
+  collection: { select: { name: true } },
+  changes: { select: { articleId: true } },
+  revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
+} satisfies Prisma.ArticleSelect;
 
 const changeSelect = {
   id: true,
@@ -97,6 +113,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
           dismissReason: true,
           decidedBy: { select: { name: true } },
           post: { select: { ...postSummarySelect, id: true } },
+          article: { select: articleSelect },
         },
       },
     },
@@ -109,11 +126,12 @@ export async function codeChangeDetail(projectId: string, id: string) {
     ...changeView(change),
     why: change.why,
     actions: change.actions.map((action) => {
-      const payload = (action.payload ?? {}) as { comment?: string };
+      const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
+      const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.article !== null && outdated(payload, action.article);
       return {
         id: action.id,
         kind: KINDS[action.kind],
-        status: ACTION_STATUSES[action.status],
+        status: stale ? "stale" : ACTION_STATUSES[action.status],
         probability: action.probability,
         confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
         /** "Apply likely" applies it (see likelyToApply). */
@@ -122,6 +140,11 @@ export async function codeChangeDetail(projectId: string, id: string) {
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
         post: action.post ? summary(action.post, portal) : null,
+        /** The article it edits (or, for a new article once its draft exists, the draft). */
+        article: action.article && { slug: action.article.slug, title: action.article.title, collection: action.article.collection?.name ?? null },
+        /** An article edit's text before and after, and a new article's title and text (plain text). */
+        ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
+        ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
         decidedBy: action.decidedBy?.name ?? null,
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
@@ -200,7 +223,8 @@ const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
-  summary: "Apply a proposed action: link the post, complete it (its people get the shipped email), or post the team's comment on it",
+  summary:
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; publish an article's edit (or, with `publish: false`, keep it unpublished to finish in the editor); or create a new article's draft",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -209,6 +233,8 @@ export const applyCodeChangeAction = defineOperation({
     id,
     /** For a post it moves forward: the comment to post, if the team changed it. */
     comment: z.string().trim().min(1).max(5_000).optional(),
+    /** For an article edit: publish it now (the default), or false to keep it as the article's unpublished changes, to finish in the editor. */
+    publish: z.boolean().optional(),
   }),
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
   run: async (context, input) => {
@@ -222,12 +248,19 @@ export const applyCodeChangeAction = defineOperation({
         payload: true,
         codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true } },
+        article: { select: { ...articleSelect, id: true, deletedAt: true } },
       },
     });
     if (!action) {
       throw new OperationError(404, "not_found", "Action not found");
     }
-    if (!APPLICABLE.has(action.kind) || !action.post) {
+    if (!APPLICABLE.has(action.kind)) {
+      throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
+    }
+    if (action.kind === "ARTICLE_EDIT" || action.kind === "NEW_ARTICLE") {
+      return applyDocs(context, { ...action, article: action.article }, input.publish ?? true);
+    }
+    if (!action.post) {
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");
     }
     const proposed = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
@@ -300,6 +333,54 @@ export const applyCodeChangeAction = defineOperation({
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
 });
+
+/**
+ * An article edit is published as a new version (or kept as unpublished changes to finish in the
+ * editor); a new article becomes a draft. Claimed first, and back to waiting if saving fails.
+ */
+async function applyDocs(
+  context: { actor: Actor; projectId: string },
+  action: {
+    id: string;
+    kind: CodeChangeActionKind;
+    status: CodeChangeActionStatus;
+    payload: Prisma.JsonValue;
+    article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
+  },
+  publish: boolean,
+) {
+  const payload = (action.payload ?? {}) as DocsPayload;
+  const { article } = action;
+  if (action.kind === "ARTICLE_EDIT") {
+    if (!article || article.deletedAt || !article.publishedAt) {
+      throw new OperationError(409, "not_published", "The article isn't published any more");
+    }
+    if (action.status === "PENDING" && outdated(payload, article)) {
+      await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "PENDING" }, data: { status: "STALE" } });
+      throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
+    }
+  }
+  const { count } = await prisma.codeChangeAction.updateMany({
+    where: { id: action.id, status: "PENDING" },
+    data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: new Date() },
+  });
+  if (count === 0) {
+    throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
+  }
+  try {
+    if (action.kind === "ARTICLE_EDIT") {
+      await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish });
+      return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
+    }
+    const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
+    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
+    return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
+  } catch (error) {
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
+    throw error;
+  }
+}
 
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",

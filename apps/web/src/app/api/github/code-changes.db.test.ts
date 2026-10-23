@@ -242,12 +242,20 @@ describe("deciding", () => {
     model.decide({ effect: { resolves: 0.1, moves_forward: 0.1, related: 0.1, unrelated: 0.7 } }, "Keyboard shortcuts");
     model.decide({ effect: { wrong: 0.7, missing: 0.2, unaffected: 0.1 } }, '"article"');
     model.decide({ needed: 0.3 }, "existing_articles");
-    // Then the reasons, and the comment for the post it moves forward, for what passed (most likely first).
+    // Then the reasons, and the comment for the post it moves forward, for what passed (most likely first)…
     model.reply(
       JSON.stringify({
         why: "It ships the dark theme people asked for.",
         proposals: { p2: { reason: "It ships a dark theme." }, p4: { reason: "Themes need a dark one first.", comment: "Dark is out; custom colours are next." } },
       }),
+      undefined,
+      '"proposals"',
+    );
+    // …and the article's edit, written against what's published.
+    model.reply(
+      JSON.stringify({ reason: "It says there's only a light theme.", sections: { "1": "The app has a light theme and a dark one: pick it in **Settings**." } }),
+      undefined,
+      '"problem"',
     );
     expect(await merge(10)).toBe(200);
 
@@ -265,7 +273,34 @@ describe("deciding", () => {
     expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "anthropic/claude-haiku-5.5" });
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
-      { kind: "ARTICLE_EDIT", postId: null, articleId: article.id, probability: expect.closeTo(0.9) as number, payload: { problem: "wrong" }, status: "PENDING", reason: "" },
+      {
+        kind: "ARTICLE_EDIT",
+        postId: null,
+        articleId: article.id,
+        probability: expect.closeTo(0.9) as number,
+        payload: {
+          problem: "wrong",
+          basedOn: null,
+          title: "Change how the app looks",
+          before: "The app has a light theme.",
+          body: "The app has a light theme and a dark one: pick it in Settings.",
+          content: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "The app has a light theme and a dark one: pick it in " },
+                  { type: "text", text: "Settings", marks: [{ type: "bold" }] },
+                  { type: "text", text: "." },
+                ],
+              },
+            ],
+          },
+        },
+        status: "PENDING",
+        reason: "It says there's only a light theme.",
+      },
       { kind: "RESOLVES", postId: posts.darkMode!.id, articleId: null, probability: 0.85, payload: {}, status: "PENDING", reason: "It ships a dark theme." },
       { kind: "LINKS", postId: posts.settings!.id, articleId: null, probability: expect.closeTo(0.7) as number, payload: {}, status: "PENDING", reason: "" },
       {
@@ -279,7 +314,7 @@ describe("deciding", () => {
       },
     ]);
     // The writer got only the posts' proposals, keyed by likelihood.
-    expect(JSON.parse(model.requests.at(-1)!.user).proposals).toEqual({
+    expect(JSON.parse(model.requests.find((request) => request.user.includes('"proposals"'))!.user).proposals).toEqual({
       p2: { kind: "resolves", post: { title: "Dark mode", text: "Dark mode, please" } },
       p3: { kind: "links", post: { title: "Reorganise the settings page", text: "Reorganise the settings page, please" } },
       p4: { kind: "moves_forward", post: { title: "Custom colour themes", text: "Custom colour themes, please" } },
@@ -362,6 +397,56 @@ describe("deciding", () => {
       { postId: posts.darkMode!.id, status: "PENDING", probability: 0.6 },
       { postId: posts.themes!.id, status: "APPLIED", probability: 0.9 },
       { postId: posts.settings!.id, status: "DISMISSED", probability: 0.9 },
+    ]);
+  });
+
+  test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {
+    await prisma.article.update({
+      where: { id: article.id },
+      data: {
+        body: "Pick a theme in Settings.",
+        content: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "Pick a theme in " },
+                { type: "text", text: "Settings", marks: [{ type: "link", attrs: { href: "https://acme.example/settings" } }] },
+                { type: "text", text: "." },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    github.pullRequest(repo, pullRequest(15));
+    model.decide(USERS);
+    model.reply(SUMMARY);
+    for (const title of ["Dark mode", "Custom colour themes", "Reorganise the settings page", "CSV exports", "Mobile app"]) {
+      model.decide(unrelated, `"title":"${title}"`);
+    }
+    model.decide({ effect: { wrong: 0.8, missing: 0.1, unaffected: 0.1 } }, '"article"');
+    model.decide({ needed: 0.9 }, "existing_articles");
+    // The edit loses the link: not proposed.
+    model.reply(JSON.stringify({ reason: "Out of date", sections: { "1": "Pick a theme in Settings, now dark too." } }), undefined, '"problem"');
+    model.reply(
+      JSON.stringify({ title: "Use the dark theme", reason: "Nothing explains themes yet.", notes: "## Turn it on\n\n- Open **Settings**\n- Pick Dark" }),
+      undefined,
+      '"existing_articles"',
+    );
+    await merge(15);
+    const actions = await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id } }, select: { kind: true, reason: true, payload: true } });
+    expect(actions).toEqual([
+      {
+        kind: "NEW_ARTICLE",
+        reason: "Nothing explains themes yet.",
+        payload: {
+          title: "Use the dark theme",
+          body: "Turn it on\nOpen Settings\nPick Dark",
+          content: expect.objectContaining({ type: "doc" }),
+        },
+      },
     ]);
   });
 

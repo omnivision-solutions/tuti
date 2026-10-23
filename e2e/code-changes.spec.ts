@@ -3,13 +3,13 @@ import { randomInt, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
 
-test("a merged pull request becomes a code change; the team applies what it resolves, and the post is completed", async ({ browser }, testInfo) => {
+test("a merged pull request becomes a code change; the team completes the post it resolves and publishes the article edit", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const id = randomUUID().slice(0, 8);
   // Its own pull request numbers: GitHub (the fake) is shared by every journey.
@@ -20,24 +20,32 @@ test("a merged pull request becomes a code change; the team applies what it reso
   const api = await apiFor(owner, slug);
   const title = `Dark mode ${id}`;
   await api("/posts", { board: "feature-requests", title });
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
   const installationId = await connectGithub(owner, slug);
 
   // The pull request: users see it (the gate), its summary finds the post, which it resolves.
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
   await similar(summary, title, 0.95);
+  // The article's one section, as it's embedded: its title, then its text.
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
   await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
   await nextModelReply(summary, pr);
   await nextDecision({ effect: { resolves: 0.9, moves_forward: 0.05, related: 0.04, unrelated: 0.01 } }, title);
+  // (The new-article question lists the article's title too, so this one matches the article itself.)
+  await nextDecision({ effect: { wrong: 0.9, missing: 0.05, unaffected: 0.05 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
-  await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", proposals: { p1: { reason: "It adds the dark theme the post asks for." } } }), title);
+  await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, Dark or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
   // Code changes lists it, waiting for the team.
   await owner.goto(`/app/${slug}`);
   await owner.getByRole("link", { name: "Code changes" }).click();
   await owner.waitForURL(`**/app/${slug}/code-changes`);
-  await expect(owner.getByText("1 to review")).toBeVisible();
+  await expect(owner.getByText("2 to review")).toBeVisible();
   await checkpoint(owner, "code-changes");
   await owner.getByRole("link", { name: pr }).click();
 
@@ -52,6 +60,19 @@ test("a merged pull request becomes a code change; the team applies what it reso
   await proposal.getByRole("button", { name: "Mark completed" }).click();
   await expect(owner.getByText("#1 completed")).toBeVisible();
   await expect(proposal).toContainText("Applied by Olive Owner");
+
+  // The article's edit, as a diff against what's published, goes live as a new version.
+  const edit = owner.getByRole("listitem", { name: `Updated: ${article}` });
+  await expect(edit).toContainText("It says Light is the only theme.");
+  await expect(edit.getByRole("region", { name: `Changes to ${article}` }).or(edit.getByLabel(`Changes to ${article}`))).toContainText("Pick Light, Dark or System in Settings.");
+  await checkpoint(owner, "code-change-docs");
+  await edit.getByRole("button", { name: "Publish edit" }).click();
+  await expect(owner.getByText(`${article} updated`)).toBeVisible();
+  await expect(edit).toContainText("Applied by Olive Owner");
+  const portalArticle = await owner.context().newPage();
+  await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
+  await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
+  await portalArticle.close();
 
   // The post is completed, linked to the pull request, with the way back to the code change.
   await proposal.getByRole("link", { name: title }).click();
@@ -71,8 +92,10 @@ test("a merged pull request becomes a code change; the team applies what it reso
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
   await checkpoint(owner, "code-changes-nothing-to-do");
-  // The post is completed now, so nothing is left to propose.
+  // The post is completed now and the article is unaffected, so nothing is left to propose.
+  await similar(choreSummary, `${article}\n\nPick Light, Dark or System in Settings.`, 0.5);
   await nextModelReply(choreSummary, chore);
+  await nextDecision({ effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.05 }, `${choreSummary}","existing_articles`);
   await row.getByRole("button", { name: "Analyse anyway" }).click();
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();

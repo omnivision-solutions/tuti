@@ -2,7 +2,7 @@ import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
-import { AnalyseCodeChangeButton, ApplyLikelyButton, PostProposal } from "@/components/code-changes";
+import { AnalyseCodeChangeButton, ApplyLikelyButton, DocsProposal, PostProposal } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +20,10 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
   }
   const mergedAt = new Date(change.mergedAt);
   const feedback = change.actions.filter((action) => action.post);
+  // Article edits first, then new articles.
+  const docs = change.actions
+    .filter((action) => action.kind === "article_edit" || action.kind === "new_article")
+    .sort((a, b) => Number(a.kind === "new_article") - Number(b.kind === "new_article"));
   const likely = feedback.filter((action) => action.applyLikely).length;
 
   return (
@@ -66,24 +70,40 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
           </CardContent>
         </Card>
       )}
-      {feedback.length > 0 && (
+      {(feedback.length > 0 || docs.length > 0) && (
         <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <CardTitle>Review changes</CardTitle>
-              <CardDescription>Nothing changes for your users until you apply a proposal.</CardDescription>
-            </div>
-            {likely > 0 && <ApplyLikelyButton projectSlug={slug} codeChangeId={change.id} count={likely} />}
+          <CardHeader>
+            <CardTitle>Review changes</CardTitle>
+            <CardDescription>Nothing changes for your users until you apply a proposal.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <h3 id="feedback-proposals" className="text-sm font-semibold">
-              Feedback
-            </h3>
-            <ul className="flex flex-col divide-y" aria-labelledby="feedback-proposals">
-              {feedback.map((action) => (
-                <PostProposal key={action.id} projectSlug={slug} action={action} />
-              ))}
-            </ul>
+          <CardContent className="flex flex-col gap-6">
+            {feedback.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 id="feedback-proposals" className="text-sm font-semibold">
+                    Feedback
+                  </h3>
+                  {likely > 0 && <ApplyLikelyButton projectSlug={slug} codeChangeId={change.id} count={likely} />}
+                </div>
+                <ul className="flex flex-col divide-y" aria-labelledby="feedback-proposals">
+                  {feedback.map((action) => (
+                    <PostProposal key={action.id} projectSlug={slug} action={action} />
+                  ))}
+                </ul>
+              </section>
+            )}
+            {docs.length > 0 && (
+              <section className="flex flex-col gap-3">
+                <h3 id="docs-proposals" className="text-sm font-semibold">
+                  Docs
+                </h3>
+                <ul className="flex flex-col divide-y" aria-labelledby="docs-proposals">
+                  {docs.map((action) => (
+                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} />
+                  ))}
+                </ul>
+              </section>
+            )}
           </CardContent>
         </Card>
       )}
