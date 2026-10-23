@@ -5,16 +5,19 @@ import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-/** An article's sections beside it, the one being read marked: the one just linked to while it's near the top, else the last heading above the top third of the screen (at the bottom of the page, the last one). */
+/** An article's sections beside it, the one being read marked: the one just linked to while it's near the top (or in view at the bottom of the page), else the last heading above the top third of the screen (at the bottom of the page, the last one). */
 export function OnThisPage({ headings }: { headings: Heading[] }) {
   const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
     const update = () => {
       const elements = headings.map((heading) => document.getElementById(heading.id)).filter((element) => element !== null);
       const inTopThird = (element: HTMLElement) => element.getBoundingClientRect().top < window.innerHeight / 3;
-      // A section linked to (picked here) while it's still at the top, though the page can't scroll it all the way up.
-      const linked = elements.find((element) => `#${element.id}` === window.location.hash && inTopThird(element) && element.getBoundingClientRect().top >= 0);
       const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+      // A section linked to (picked here) while it's near the top, or anywhere in view once the page can't scroll farther.
+      const linked = elements.find((element) => {
+        const { top } = element.getBoundingClientRect();
+        return `#${element.id}` === window.location.hash && top >= 0 && (inTopThird(element) || (atBottom && top < window.innerHeight));
+      });
       setCurrent((linked ?? (atBottom ? elements.at(-1) : elements.filter(inTopThird).at(-1)))?.id ?? null);
     };
     update();

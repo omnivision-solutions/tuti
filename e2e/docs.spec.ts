@@ -156,6 +156,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   expect((await article.getByRole("heading", { name: "Roles", level: 2 }).boundingBox())!.y).toBeGreaterThanOrEqual(headerBottom);
   // The tree's names are on one line, cut short when they're long: in full on hover.
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("title", "Inviting your team");
+  // Picking another section marks that one, wherever the page could scroll it.
+  await onThisPage.getByRole("link", { name: "Who can invite" }).click();
+  await expect(onThisPage.getByRole("link", { name: "Who can invite" })).toHaveAttribute("aria-current", "location");
 
   // On a phone the tree is a menu above the article, and "On this page" is left out.
   await visitor.setViewportSize({ width: 390, height: 844 });
