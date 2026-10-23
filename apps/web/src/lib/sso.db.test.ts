@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { prisma } from "@tuti/db";
 import { SignJWT } from "jose";
@@ -26,7 +27,7 @@ beforeEach(async () => {
   await prisma.project.update({ where: { id: projectId }, data: { ssoSecret: secret } });
 });
 
-type Claims = { sub?: string; jti?: string; iat?: number; exp?: number; email?: string; name?: string; attributes?: unknown };
+type Claims = { sub?: string; jti?: string; iat?: number; exp?: number; email?: string; name?: string; attributes?: unknown; properties?: unknown };
 
 /** A token as the project's app would sign it; `claims` override the defaults. */
 function token(claims: Claims = {}, { key = secret, alg = "HS256" } = {}) {
@@ -76,22 +77,57 @@ test("the same `sub` is the same user, with an updated profile", async () => {
   expect(identities[0]!.user.name).toBe("Ada Lovelace");
 });
 
-test("each sign-in's `attributes` replace the last ones; bad ones are dropped and the sign-in still works", async () => {
-  const attributes = async () => (await ssoUsers()).map((identity) => identity.attributes);
-  const first = await visit(await token({ attributes: { plan: "pro", seats: 12, admin: true, nested: { a: 1 }, tags: ["a"], gone: null } }), {
-    redirect: "/docs",
-  });
+test("each sign-in's `properties` set the ones they name and remove the null ones; bad ones are dropped and the sign-in still works", async () => {
+  const properties = async () => (await ssoUsers()).map((identity) => identity.properties);
+  const first = await visit(
+    await token({ properties: { plan: "pro", seats: 12, admin: true, features: ["sso"], nested: { a: 1 }, mixed: ["a", 1], gone: null } }),
+    { redirect: "/docs" },
+  );
   expect(first.location).toBe("/docs");
-  expect(await attributes()).toEqual([{ plan: "pro", seats: 12, admin: true }]);
-  await visit(await token({ attributes: { plan: "free" } }));
-  expect(await attributes()).toEqual([{ plan: "free" }]);
-  // Not an object: none, and still signed in.
-  expect((await visit(await token({ attributes: "pro" }), { redirect: "/docs" })).location).toBe("/docs");
-  expect(await attributes()).toEqual([{}]);
-  await visit(await token({ attributes: { plan: "pro" } }));
-  // Left out: none either, like `groups`.
+  expect(await properties()).toEqual([{ plan: "pro", seats: 12, admin: true, features: ["sso"] }]);
+  await visit(await token({ properties: { plan: "free", admin: null } }));
+  expect(await properties()).toEqual([{ plan: "free", seats: 12, features: ["sso"] }]);
+  // Not an object: no change, and still signed in.
+  expect((await visit(await token({ properties: "pro" }), { redirect: "/docs" })).location).toBe("/docs");
+  // Left out: no change either (the API may have set them).
   await visit(await token());
-  expect(await attributes()).toEqual([{}]);
+  expect(await properties()).toEqual([{ plan: "free", seats: 12, features: ["sso"] }]);
+});
+
+test("`attributes`, their old name, still work; `properties` wins where both name one", async () => {
+  await visit(await token({ attributes: { plan: "pro", role: "admin" }, properties: { plan: "enterprise" } }));
+  expect((await ssoUsers()).map((identity) => identity.properties)).toEqual([{ plan: "enterprise", role: "admin" }]);
+});
+
+test("a user has at most 50 properties: a sign-in's new ones past that are left out", async () => {
+  await visit(await token({ properties: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i])) }));
+  await visit(await token({ properties: { p0: "changed", extra: true } }));
+  const [identity] = await ssoUsers();
+  expect(Object.keys(identity!.properties as object)).toHaveLength(50);
+  expect(identity!.properties).toMatchObject({ p0: "changed" });
+  expect(identity!.properties).not.toHaveProperty("extra");
+});
+
+test("the asserted email is kept lowercase, and a sign-in without one clears it", async () => {
+  await visit(await token({ email: "Ada@Example.COM" }));
+  expect((await ssoUsers()).map((identity) => identity.email)).toEqual(["ada@example.com"]);
+  await visit(await token());
+  expect((await ssoUsers()).map((identity) => identity.email)).toEqual([null]);
+});
+
+test("the migration lowercases emails", async () => {
+  const sql = readFileSync(new URL("../../../../packages/db/prisma/migrations/20261023120000_user_properties/migration.sql", import.meta.url), "utf8");
+  // Back to before it (this file's database is its own), with a user as they were then.
+  await prisma.$executeRawUnsafe(`DROP INDEX "sso_identity_projectId_email_idx"`);
+  const user = await signUp("Then");
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", email, attributes, "updatedAt")
+    VALUES ('s1', ${projectId}, 'user-1', ${user.id}, 'Ada@Example.COM', '{"plan": "pro"}', now())`;
+
+  await prisma.$executeRawUnsafe(sql);
+
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId }, select: { email: true, properties: true } })).toEqual([
+    { email: "ada@example.com", properties: { plan: "pro" } },
+  ]);
 });
 
 test("the same `sub` in another project is someone else", async () => {

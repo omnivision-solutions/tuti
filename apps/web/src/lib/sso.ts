@@ -8,9 +8,9 @@ import { errors as joseErrors, jwtVerify } from "jose";
 import { z } from "zod";
 
 import { requestTarget } from "@/server/custom-domains";
-import { type Attributes, readerAttributes } from "./group-conditions";
 import { MAX_READER_GROUPS, readerGroup } from "./reader-groups";
 import { safeRedirectPath } from "./redirects";
+import { mergeProperties, type PropertyChanges, propertyChanges, storedProperties } from "./user-properties";
 import { baseFrom, withBase } from "@/lib/portal-base";
 
 /**
@@ -50,8 +50,10 @@ const claimsSchema = z.object({
   avatar: z.url({ protocol: /^https?$/ }).max(2048).optional(),
   /** Which restricted docs collections they may read (the reader groups with these claims). Each sign-in says them all. */
   groups: z.array(readerGroup).max(MAX_READER_GROUPS).optional(),
-  /** What reader groups' conditions match (e.g. { plan: "pro" }). Bad ones are dropped, not refused. */
-  attributes: z.unknown().optional().transform(readerAttributes),
+  /** Properties to set (or, null, remove) for reader groups' conditions (e.g. { plan: "pro" }). Bad ones are dropped, not refused. */
+  properties: z.unknown().optional().transform(propertyChanges),
+  /** `properties` by its old name; `properties` wins where both name one. */
+  attributes: z.unknown().optional().transform(propertyChanges),
 });
 
 const querySchema = z.object({
@@ -75,23 +77,31 @@ function isUniqueViolation(error: unknown): boolean {
 
 /**
  * The User for someone from a project's app (matched by their id there, never by
- * email), created on first sight. Only the details given are updated. Used by
- * SSO sign-ins and by API calls made on someone's behalf.
+ * email), created on first sight. Only the details given are updated; `properties`
+ * sets (or, null, removes) the ones it names and keeps the rest, at most 50 (new ones
+ * past that are left out). Used by SSO sign-ins and by API calls made on someone's behalf.
  */
 export async function upsertProjectUser(
   projectId: string,
   externalId: string,
-  details: { name?: string; image?: string | null; email?: string | null; groups?: string[]; attributes?: Attributes },
+  details: { name?: string; image?: string | null; email?: string | null; groups?: string[]; properties?: PropertyChanges },
 ): Promise<string> {
+  const { name, image, groups, properties: changes = {} } = details;
+  // Lowercase, so a reader signing in by email finds them (portal-access.ts readerOf).
+  const email = details.email === null ? null : details.email?.toLowerCase();
   const where = { projectId_externalId: { projectId, externalId } };
-  const existing = await prisma.ssoIdentity.findUnique({ where, select: { userId: true } });
+  const existing = await prisma.ssoIdentity.findUnique({ where, select: { id: true, userId: true } });
   if (existing) {
-    const { email, groups, attributes, ...profile } = details;
-    if (Object.values(profile).some((value) => value !== undefined)) {
-      await prisma.user.update({ where: { id: existing.userId }, data: profile });
+    if (name !== undefined || image !== undefined) {
+      await prisma.user.update({ where: { id: existing.userId }, data: { name, image } });
     }
-    if (email !== undefined || groups !== undefined || attributes !== undefined) {
-      await prisma.ssoIdentity.update({ where: { userId: existing.userId }, data: { email, groups, attributes } });
+    if (email !== undefined || groups !== undefined || Object.keys(changes).length > 0) {
+      await prisma.$transaction(async (tx) => {
+        // Locked, so two changes at once (a sign-in, an API call) both land.
+        const [row] = await tx.$queryRaw<{ properties: unknown }[]>`SELECT attributes AS properties FROM sso_identity WHERE id = ${existing.id} FOR UPDATE`;
+        const { properties } = mergeProperties(storedProperties(row?.properties), changes);
+        await tx.ssoIdentity.update({ where: { id: existing.id }, data: { email, groups, properties } });
+      });
     }
     return existing.userId;
   }
@@ -99,10 +109,12 @@ export async function upsertProjectUser(
     const user = await prisma.user.create({
       data: {
         id: randomUUID(),
-        name: details.name ?? details.email?.split("@")[0] ?? "Anonymous",
-        image: details.image ?? null,
+        name: name ?? email?.split("@")[0] ?? "Anonymous",
+        image: image ?? null,
         email: placeholderEmail(projectId, externalId),
-        ssoIdentity: { create: { projectId, externalId, email: details.email ?? null, groups: details.groups ?? [], attributes: details.attributes ?? {} } },
+        ssoIdentity: {
+          create: { projectId, externalId, email: email ?? null, groups: groups ?? [], properties: mergeProperties({}, changes).properties },
+        },
       },
       select: { id: true },
     });
@@ -141,7 +153,7 @@ export async function verifySsoToken(
   if (!claims.success) {
     return { error: "invalid_claims" };
   }
-  const { sub, jti, iat, exp, email, name, avatar, groups, attributes } = claims.data;
+  const { sub, jti, iat, exp, email, name, avatar, groups, properties, attributes } = claims.data;
   if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS || iat > Date.now() / 1000 + CLOCK_TOLERANCE_SECONDS) {
     return { error: "token_lifetime_too_long" };
   }
@@ -170,8 +182,8 @@ export async function verifySsoToken(
     email: email ?? null,
     // Without the claim, none: a token says everything they may read, so groups taken away go.
     groups: [...new Set(groups ?? [])],
-    // The same for attributes ({} without the claim).
-    attributes,
+    // Only the ones it names: the API may have set others.
+    properties: { ...attributes, ...properties },
   });
   return { userId };
 }

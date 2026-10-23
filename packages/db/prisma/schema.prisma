@@ -291,7 +291,8 @@ model TeamMember {
 
 // ─── SSO ─────────────────────────────────────────────────────────────────────
 
-/// A user signed in through a project's JWT SSO. Users are matched by the
+/// One of a project's users, as its app tells Tuti about them: signed in through the project's
+/// JWT SSO (or the widget's), or named by the API (`author`, users.*). Users are matched by the
 /// project's own user id (`sub`), never by email, so each (project, sub) gets
 /// its own User and one project can't sign in as another project's users.
 model SsoIdentity {
@@ -300,14 +301,16 @@ model SsoIdentity {
   /// The `sub` claim: the user's id in the project's app.
   externalId String
   userId     String   @unique
-  /// Email as asserted by the project's app (User.email is a placeholder).
+  /// Email as asserted by the project's app (User.email is a placeholder), lowercase. Someone signed
+  /// in to the portal another way with this address, verified, has this user's groups too.
   email      String?
   /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
   /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
   groups     String[] @default([])
-  /// The `attributes` claim of their latest sign-in (strings, numbers and booleans by name, up to 50;
-  /// lib/reader-groups.ts readerAttributes), matched against groups' conditions.
-  attributes Json     @default("{}")
+  /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
+  /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
+  /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
+  properties Json     @default("{}") @map("attributes")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -315,6 +318,7 @@ model SsoIdentity {
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, externalId])
+  @@index([projectId, email])
   @@map("sso_identity")
 }
 

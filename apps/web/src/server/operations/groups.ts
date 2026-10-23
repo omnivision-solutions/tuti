@@ -2,16 +2,17 @@ import { Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { z } from "zod";
 
-import { type GroupCondition, groupConditions, type GroupRules, inGroup, readerAttributes, storedConditions } from "@/lib/group-conditions";
+import { type GroupCondition, groupConditions, type GroupRules, inGroup, storedConditions } from "@/lib/group-conditions";
 import { titleSlug } from "@/lib/post-urls";
 import { readerGroup } from "@/lib/reader-groups";
+import { storedProperties } from "@/lib/user-properties";
 
 import { defineOperation, OperationError } from "./define";
 
 /**
- * Reader groups (Settings → Groups): who's in one is worked out when they read, from their latest
- * SSO sign-in: its `groups` claim naming the group's `claim`, or its `attributes` matching all of the
- * group's conditions (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
+ * Reader groups (Settings → Groups): who's in one is worked out when they read: their latest SSO
+ * sign-in's `groups` claim naming the group's `claim`, or their properties (lib/user-properties.ts)
+ * matching all of the group's conditions (lib/group-conditions.ts). Docs tabs, collections and articles can be for some groups only
  * (tabs.*, collections.*, articles.*, see lib/read-access.ts), named by the group's `key`.
  */
 
@@ -41,10 +42,10 @@ export type GroupView = {
 export async function ssoReaders(projectId: string) {
   const identities = await prisma.ssoIdentity.findMany({
     where: { projectId },
-    select: { groups: true, attributes: true, user: { select: { name: true } } },
+    select: { groups: true, properties: true, user: { select: { name: true } } },
     orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
   });
-  return identities.map((identity) => ({ name: identity.user.name, groups: identity.groups, attributes: readerAttributes(identity.attributes) }));
+  return identities.map((identity) => ({ name: identity.user.name, groups: identity.groups, properties: storedProperties(identity.properties) }));
 }
 
 /** How many of `readers` a group with these rules has, and the first 3's names. */
@@ -88,7 +89,7 @@ const notFound = (key: string) => new OperationError(404, "not_found", `There's 
 export const listGroups = defineOperation({
   name: "groups.list",
   summary:
-    "List the reader groups by name, each with its `key` (how tabs.*, collections.*, articles.* and these paths name it): someone your app's SSO signed in is in one when their latest token's `groups` has its `claim`, or its `attributes` match all of its `conditions`; `readers` counts them now and `sample` names up to 3. Tabs, collections and articles can be for some groups only (`access` groups, with `groups`, on tabs.*, collections.* and articles.*)",
+    "List the reader groups by name, each with its `key` (how tabs.*, collections.*, articles.* and these paths name it): one of your app's users is in one when their latest SSO token's `groups` has its `claim`, or their properties match all of its `conditions`; `readers` counts them now and `sample` names up to 3. Tabs, collections and articles can be for some groups only (`access` groups, with `groups`, on tabs.*, collections.* and articles.*)",
   method: "GET",
   path: "/groups",
   scope: "read",
@@ -100,7 +101,7 @@ export const listGroups = defineOperation({
 export const createGroup = defineOperation({
   name: "groups.create",
   summary:
-    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on the token's `attributes` (up to 10, all must match: `is`, `is_not` or `is_one_of` a list; values compare as text, exactly), or both (either lets them in). It needs a claim or a condition",
+    "Add a reader group: its name (its `key` comes from it and never changes), an optional description and who's in it: the `claim` your app's SSO token names it by in `groups` (lowercase letters, digits and - _ . :), `conditions` on your users' properties (from SSO tokens' `properties`; up to 10, all must match: `is`, `is_not` or `is_one_of` a list; values compare as text, exactly, and a list property matches when one of its items does), or both (either lets them in). It needs a claim or a condition",
   method: "POST",
   path: "/groups",
   scope: "write",

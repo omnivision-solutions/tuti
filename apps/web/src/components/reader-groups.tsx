@@ -197,8 +197,8 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-1 text-sm font-medium">Conditions</legend>
               <p className="text-sm text-muted-foreground">
-                On the <code>attributes</code> in your app&apos;s token, such as <code>plan</code> or <code>role</code>. Values match exactly,
-                capital letters too.
+                On the properties your app gives its users (in its sign-in token or the API), such as <code>plan</code> or <code>role</code>.
+                Values match exactly, capital letters too.
               </p>
               {rows.length > 0 && <p className="text-xs font-medium text-muted-foreground">All must match</p>}
               {rows.map((row, i) => (

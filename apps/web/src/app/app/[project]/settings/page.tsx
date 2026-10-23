@@ -34,8 +34,8 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
         <CardHeader>
           <CardTitle id="groups-title">Groups</CardTitle>
           <CardDescription>
-            Readers your app signs in with single sign-on, grouped by the <code>groups</code> or <code>attributes</code> in its token. A collection in
-            your docs can be for some groups only.
+            Your app&apos;s users, grouped by the <code>groups</code> in its sign-in token or by their properties. A collection in your docs can be
+            for some groups only.
           </CardDescription>
         </CardHeader>
         <CardContent>
