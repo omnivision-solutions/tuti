@@ -14,7 +14,7 @@ afterEach(() => {
 describe("in production", () => {
   test("writes one JSON line per entry, errors with their message and stack", () => {
     vi.stubEnv("NODE_ENV", "production");
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
     log.error("Sending the invite email failed", { error: new Error("SMTP down"), postId: "p1" });
 
     const entry = JSON.parse(String(stderr.mock.calls[0]![0]));
@@ -30,7 +30,7 @@ describe("in production", () => {
 
   test("fields can't overwrite the level or message, and odd values never make logging throw", () => {
     vi.stubEnv("NODE_ENV", "production");
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(console, "error").mockImplementation(() => {});
     const cyclic: Record<string, unknown> = { name: "loop" };
     cyclic.self = cyclic;
     const throwing = Object.defineProperty({}, "boom", {
@@ -55,9 +55,9 @@ describe("in production", () => {
     expect(JSON.parse(String(stderr.mock.calls[2]![0]))).toMatchObject({ message: "Also logged", fieldsError: true });
   });
 
-  test("info goes to stdout", () => {
+  test("info goes to console.info, which writes to stdout", () => {
     vi.stubEnv("NODE_ENV", "production");
-    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stdout = vi.spyOn(console, "info").mockImplementation(() => {});
     log.info("Email not sent", { to: "a@example.com" });
     expect(JSON.parse(String(stdout.mock.calls[0]![0]))).toMatchObject({ level: "info", to: "a@example.com" });
   });

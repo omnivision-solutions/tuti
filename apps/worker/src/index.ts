@@ -1,7 +1,7 @@
 import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
 import { handlers } from "@tuti/jobs";
-import { assertEnv, jobs, type JobKey } from "@tuti/shared";
-import { getHatchet } from "@tuti/shared/hatchet";
+import { assertEnv, jobs, log, type JobKey } from "@tuti/shared";
+import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 
 import { waitForMigration } from "./migrations";
 
@@ -33,7 +33,8 @@ const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
     ...(job.concurrencyKey && {
       concurrency: { expression: job.concurrencyKey, maxRuns: 1, limitStrategy: ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN },
     }),
-    fn: (input, ctx) => handlers[key](input as never, ctx.logger),
+    // `log` rather than ctx.logger: withRunLogs sends it, and any console output, to this run's logs.
+    fn: withRunLogs((input) => handlers[key](input as never, log)),
   });
 });
 
