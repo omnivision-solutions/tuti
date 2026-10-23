@@ -9,22 +9,49 @@ import type { Properties } from "./user-properties";
 
 export const MAX_CONDITIONS = 10;
 
-const attribute = z.string().trim().min(1, "A condition needs an attribute").max(64, "Attributes are up to 64 characters");
+const property = z.string().trim().min(1, "A condition needs a property").max(64, "Properties are up to 64 characters");
 const value = z.string().trim().min(1, "A condition needs a value").max(200, "Values are up to 200 characters");
+const values = z
+  .array(value)
+  .min(1, "A condition needs a value")
+  .max(50, "Up to 50 values")
+  .transform((list) => [...new Set(list)]);
 
-/** One condition on a group: the attribute is (or is not, or is one of) the value(s), compared as text, exactly. */
-export const groupCondition = z.discriminatedUnion("op", [
-  z.object({ attribute, op: z.enum(["is", "is_not"]), value }),
-  z.object({
-    attribute,
-    op: z.literal("is_one_of"),
-    value: z
-      .array(value)
-      .min(1, "A condition needs a value")
-      .max(50, "Up to 50 values")
-      .transform((values) => [...new Set(values)]),
-  }),
-]);
+/** The operators, as the dialog names them. */
+export const OPERATORS = {
+  is: "is",
+  is_not: "is not",
+  is_any_of: "is any of",
+  is_none_of: "is none of",
+  contains: "contains",
+  excludes: "excludes",
+  is_set: "is set",
+  is_not_set: "is not set",
+} as const;
+export type Operator = keyof typeof OPERATORS;
+
+/** Operators that take a list of values, and those that take none. */
+export const LIST_OPERATORS: readonly Operator[] = ["is_any_of", "is_none_of"];
+export const PRESENCE_OPERATORS: readonly Operator[] = ["is_set", "is_not_set"];
+
+/**
+ * One condition on a group: the user's property is (or is not, contains, …) the value(s), compared as
+ * text, exactly. `attribute` and `is_one_of`, their names before, are read as `property` and `is_any_of`.
+ */
+export const groupCondition = z.preprocess(
+  (input) => {
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+      return input;
+    }
+    const { attribute, ...rest } = input as Record<string, unknown>;
+    return { ...(attribute !== undefined && !("property" in rest) && { property: attribute }), ...rest, ...(rest.op === "is_one_of" && { op: "is_any_of" }) };
+  },
+  z.discriminatedUnion("op", [
+    z.object({ property, op: z.enum(["is", "is_not", "contains", "excludes"]), value }),
+    z.object({ property, op: z.enum(["is_any_of", "is_none_of"]), value: values }),
+    z.object({ property, op: z.enum(["is_set", "is_not_set"]) }),
+  ]),
+);
 export type GroupCondition = z.output<typeof groupCondition>;
 
 /** A group's conditions, all of which must match. */
@@ -45,21 +72,32 @@ function valuesOf(properties: Properties, name: string): string[] {
 
 /**
  * Whether `properties` match all of `conditions`, of which there must be at least one. Values compare
- * as text, case and all; a list matches "is" when one of its items does. "is not" matches a missing
- * property too.
+ * as text, case and all; a list property matches when one of its items does ("is", "is any of",
+ * "contains") or none does ("is not", "is none of", "excludes"). A missing property (or an empty
+ * list) matches only the negative ones and "is not set". conditionsSql is the same in SQL.
  */
 export function conditionsMatch(conditions: GroupCondition[], properties: Properties): boolean {
   return (
     conditions.length > 0 &&
     conditions.every((condition) => {
-      const actual = valuesOf(properties, condition.attribute);
+      const actual = valuesOf(properties, condition.property);
       switch (condition.op) {
         case "is":
           return actual.includes(condition.value);
         case "is_not":
           return !actual.includes(condition.value);
-        case "is_one_of":
-          return actual.some((value) => condition.value.includes(value));
+        case "is_any_of":
+          return actual.some((item) => condition.value.includes(item));
+        case "is_none_of":
+          return !actual.some((item) => condition.value.includes(item));
+        case "contains":
+          return actual.some((item) => item.includes(condition.value));
+        case "excludes":
+          return !actual.some((item) => item.includes(condition.value));
+        case "is_set":
+          return actual.length > 0;
+        case "is_not_set":
+          return actual.length === 0;
       }
     })
   );

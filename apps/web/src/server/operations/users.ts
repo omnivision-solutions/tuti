@@ -1,9 +1,11 @@
-import { prisma } from "@tuti/db";
+import { Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { inGroup, storedConditions } from "@/lib/group-conditions";
+import { readerGroup } from "@/lib/reader-groups";
 import { MAX_PROPERTIES, type Properties, propertyChangesInput, storedProperties } from "@/lib/user-properties";
 
+import { inGroupSql } from "../group-conditions-sql";
 import { syncUsers } from "../project-users";
 import { defineOperation, OperationError } from "./define";
 
@@ -61,39 +63,42 @@ async function viewsOf(projectId: string, users: { externalId: string; email: st
 export const listUsers = defineOperation({
   name: "users.list",
   summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties and the reader groups they're in now; `q` finds them by name, email or id",
+    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties and the reader groups they're in now; `q` finds them by name, email or id, and `group` (a key) keeps those in that group",
   method: "GET",
   path: "/users",
   scope: "read",
   access: "team",
   input: z.object({
     q: z.string().trim().max(200).optional(),
+    group: readerGroup.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
-  example: { q: "acme.com", limit: 20 },
+  example: { q: "acme.com", group: "enterprise", limit: 20 },
   run: async ({ projectId }, input) => {
-    const q = input.q || undefined;
+    const filters = [Prisma.sql`s."projectId" = ${projectId}`];
+    if (input.q) {
+      const like = `%${input.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      filters.push(Prisma.sql`(s."externalId" = ${input.q} OR s.email ILIKE ${like} OR u.name ILIKE ${like})`);
+    }
+    if (input.group !== undefined) {
+      const group = await prisma.readerGroup.findUnique({ where: { projectId_key: { projectId, key: input.group } }, select: { claim: true, conditions: true } });
+      if (!group) {
+        throw new OperationError(404, "not_found", `There's no group “${input.group}”`);
+      }
+      filters.push(inGroupSql({ claim: group.claim, conditions: storedConditions(group.conditions) }, Prisma.sql`s`));
+    }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
-    const users = await prisma.ssoIdentity.findMany({
-      where: {
-        projectId,
-        ...(q && {
-          OR: [
-            { externalId: q },
-            { email: { contains: q, mode: "insensitive" as const } },
-            { user: { name: { contains: q, mode: "insensitive" as const } } },
-          ],
-        }),
-      },
-      select: userSelect,
-      orderBy: [{ user: { name: "asc" } }, { externalId: "asc" }],
-      skip: input.cursor,
-      take: input.limit + 1,
-    });
+    const page = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId"
+      WHERE ${Prisma.join(filters, " AND ")}
+      ORDER BY u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+    const ids = page.slice(0, input.limit).map((row) => row.id);
+    const users = await prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } });
+    const byId = new Map(users.map((user) => [user.id, user]));
     return {
-      users: await viewsOf(projectId, users.slice(0, input.limit)),
-      nextCursor: users.length > input.limit ? String(input.cursor + input.limit) : null,
+      users: await viewsOf(projectId, ids.map((id) => byId.get(id)!)),
+      nextCursor: page.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
 });

@@ -115,8 +115,8 @@ test("new users are added in id order, whatever order a sync gives them in, so t
   expect((await get(ids[0]!)).properties).toEqual({ a: 1, b: 2 });
 });
 
-test("listed by name, with the groups they're in; found by name, email or id; a page at a time", async () => {
-  await call(createGroup, team(), { name: "Pro", conditions: [{ attribute: "plan", op: "is", value: "pro" }] });
+test("listed by name, with the groups they're in; found by name, email or id, or by group; a page at a time", async () => {
+  await call(createGroup, team(), { name: "Pro", conditions: [{ property: "plan", op: "is", value: "pro" }] });
   await sync([
     { id: "user-b", name: "Bea", email: "e2e-bea@acme.example", properties: { plan: "pro" } },
     { id: "user-a", name: "Ada", email: "e2e-ada@other.example", properties: { plan: "free" } },
@@ -134,6 +134,16 @@ test("listed by name, with the groups they're in; found by name, email or id; a 
   expect((await list({ q: "user-c" })).users.map((user) => user.id)).toEqual(["user-c"]);
   // Ids match whole: "user" isn't one.
   expect((await list({ q: "user" })).users).toEqual([]);
+  // By group: whoever's in it now, by the same rules as reading.
+  expect((await list({ group: "pro" })).users.map((user) => user.id)).toEqual(["user-b"]);
+  await call(createGroup, team(), { name: "No plan", conditions: [{ property: "plan", op: "is_not_set" }] });
+  await call(createGroup, team(), { name: "Acme", conditions: [{ property: "plan", op: "is_none_of", value: ["pro"] }, { property: "plan", op: "is_set" }] });
+  expect((await list({ group: "no-plan" })).users.map((user) => user.id)).toEqual(["user-c"]);
+  expect((await list({ group: "acme" })).users.map((user) => user.id)).toEqual(["user-a"]);
+  expect((await list({ group: "no-plan", q: "bea" })).users).toEqual([]);
+  await expect(list({ group: "nobody" })).rejects.toMatchObject({ status: 404 });
+  // % and _ in a search are plain text.
+  expect((await list({ q: "%" })).users).toEqual([]);
   const first = await list({ limit: 2 });
   expect([first.users.map((user) => user.id), first.nextCursor]).toEqual([["user-a", "user-b"], "2"]);
   expect((await list({ limit: 2, cursor: 2 })).users.map((user) => user.id)).toEqual(["user-c"]);

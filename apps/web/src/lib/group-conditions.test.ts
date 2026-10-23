@@ -1,62 +1,39 @@
 import { expect, test } from "vitest";
 
-import { conditionsMatch, type GroupCondition, inGroup, storedConditions } from "./group-conditions";
+import { CONDITION_CASES } from "./group-conditions.cases";
+import { conditionsMatch, type GroupCondition, groupConditions, inGroup, storedConditions } from "./group-conditions";
 
-const is = (attribute: string, value: string): GroupCondition => ({ attribute, op: "is", value });
-const isNot = (attribute: string, value: string): GroupCondition => ({ attribute, op: "is_not", value });
-const isOneOf = (attribute: string, value: string[]): GroupCondition => ({ attribute, op: "is_one_of", value });
+const is = (property: string, value: string): GroupCondition => ({ property, op: "is", value });
+const isNot = (property: string, value: string): GroupCondition => ({ property, op: "is_not", value });
 
-test("is: the same text, case and all; numbers and booleans as text", () => {
-  expect(conditionsMatch([is("plan", "pro")], { plan: "pro" })).toBe(true);
-  expect(conditionsMatch([is("plan", "pro")], { plan: "Pro" })).toBe(false);
-  expect(conditionsMatch([is("plan", "pro")], { plan: "pro " })).toBe(false);
-  expect(conditionsMatch([is("plan", "pro")], {})).toBe(false);
-  expect(conditionsMatch([is("seats", "3")], { seats: 3 })).toBe(true);
-  expect(conditionsMatch([is("seats", "3.0")], { seats: 3 })).toBe(false);
-  expect(conditionsMatch([is("ratio", "1.5")], { ratio: 1.5 })).toBe(true);
-  expect(conditionsMatch([is("admin", "true")], { admin: true })).toBe(true);
-  expect(conditionsMatch([is("admin", "false")], { admin: false })).toBe(true);
-  expect(conditionsMatch([is("admin", "True")], { admin: true })).toBe(false);
-  // Names compare exactly too.
-  expect(conditionsMatch([is("Plan", "pro")], { plan: "pro" })).toBe(false);
+test.each(CONDITION_CASES)("$name", ({ conditions, properties, matches }) => {
+  expect(conditionsMatch(conditions, properties)).toBe(matches);
 });
 
-test("is not: a different value, or none", () => {
-  expect(conditionsMatch([isNot("plan", "free")], { plan: "pro" })).toBe(true);
-  expect(conditionsMatch([isNot("plan", "free")], { plan: "free" })).toBe(false);
-  expect(conditionsMatch([isNot("plan", "free")], {})).toBe(true);
-  expect(conditionsMatch([isNot("admin", "true")], { admin: true })).toBe(false);
-});
-
-test("lists: is when one of its items is, is not when none is, is one of when one of its items is", () => {
-  const properties = { features: ["sso", "audit"], none: [] };
-  expect(conditionsMatch([is("features", "sso")], properties)).toBe(true);
-  expect(conditionsMatch([is("features", "billing")], properties)).toBe(false);
-  expect(conditionsMatch([is("features", "sso,audit")], properties)).toBe(false);
-  expect(conditionsMatch([isNot("features", "audit")], properties)).toBe(false);
-  expect(conditionsMatch([isNot("features", "billing")], properties)).toBe(true);
-  expect(conditionsMatch([isOneOf("features", ["billing", "audit"])], properties)).toBe(true);
-  expect(conditionsMatch([isOneOf("features", ["billing"])], properties)).toBe(false);
-  // An empty list is like none.
-  expect(conditionsMatch([is("none", "")], properties)).toBe(false);
-  expect(conditionsMatch([isNot("none", "sso")], properties)).toBe(true);
-});
-
-test("is one of: any of the values", () => {
-  expect(conditionsMatch([isOneOf("plan", ["pro", "enterprise"])], { plan: "enterprise" })).toBe(true);
-  expect(conditionsMatch([isOneOf("plan", ["pro", "enterprise"])], { plan: "free" })).toBe(false);
-  expect(conditionsMatch([isOneOf("plan", ["pro", "enterprise"])], {})).toBe(false);
-  expect(conditionsMatch([isOneOf("seats", ["1", "2"])], { seats: 2 })).toBe(true);
-});
-
-test("all must match, and no conditions match nobody; names on Object.prototype are no properties", () => {
-  const both = [is("plan", "pro"), isNot("role", "guest")];
-  expect(conditionsMatch(both, { plan: "pro", role: "admin" })).toBe(true);
-  expect(conditionsMatch(both, { plan: "pro", role: "guest" })).toBe(false);
-  expect(conditionsMatch(both, { plan: "free" })).toBe(false);
-  expect(conditionsMatch([], { plan: "pro" })).toBe(false);
-  expect(conditionsMatch([isOneOf("toString", ["function toString() { [native code] }"])], {})).toBe(false);
-  expect(conditionsMatch([is("constructor", String(Object))], {})).toBe(false);
+test("conditions as the API takes them: trimmed, any of a list without repeats, none for is set; the old names still read", () => {
+  expect(
+    groupConditions.parse([
+      { property: " plan ", op: "is_any_of", value: ["pro", " pro", "Pro"] },
+      { property: "beta", op: "is_set", value: "ignored" },
+      { attribute: "role", op: "is_one_of", value: ["admin"] },
+      { attribute: "tier", op: "is", value: "gold" },
+    ]),
+  ).toEqual([
+    { property: "plan", op: "is_any_of", value: ["pro", "Pro"] },
+    { property: "beta", op: "is_set" },
+    { property: "role", op: "is_any_of", value: ["admin"] },
+    { property: "tier", op: "is", value: "gold" },
+  ]);
+  for (const bad of [
+    { property: "plan", op: "is" },
+    { property: "plan", op: "contains", value: " " },
+    { property: "plan", op: "is_none_of", value: [] },
+    { property: "plan", op: "is_none_of", value: "pro" },
+    { property: "", op: "is_set" },
+    { property: "plan", op: "matches", value: "p.*" },
+  ]) {
+    expect(groupConditions.safeParse([bad]).success, JSON.stringify(bad)).toBe(false);
+  }
 });
 
 test("in a group: its claim in their groups, or all its conditions (with any) match their properties", () => {
@@ -72,7 +49,9 @@ test("in a group: its claim in their groups, or all its conditions (with any) ma
 
 test("stored conditions that don't read are none, which lets nobody in", () => {
   expect(storedConditions([is("plan", "pro")])).toEqual([is("plan", "pro")]);
-  for (const bad of [null, {}, "plan", [{ attribute: "plan", op: "contains", value: "p" }], [{ attribute: "plan" }]]) {
+  // Stored before the rename: read with today's names.
+  expect(storedConditions([{ attribute: "plan", op: "is_one_of", value: ["pro"] }])).toEqual([{ property: "plan", op: "is_any_of", value: ["pro"] }]);
+  for (const bad of [null, {}, "plan", [{ property: "plan", op: "matches", value: "p" }], [{ property: "plan" }]]) {
     expect(storedConditions(bad)).toEqual([]);
   }
 });
