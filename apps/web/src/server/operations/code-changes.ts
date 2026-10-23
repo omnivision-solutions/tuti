@@ -367,7 +367,11 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
+  // Once the article is being saved, it may be saved even if something after it fails: then the
+  // action stays applied, so trying again can't save it twice (a second draft, say).
+  let saving = false;
   try {
+    saving = true;
     if (action.kind === "ARTICLE_EDIT") {
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
@@ -377,6 +381,10 @@ async function applyDocs(
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
+    // Refused before saving (an OperationError: invalid content, say): not done, so it's waiting again.
+    if (saving && !(error instanceof OperationError)) {
+      throw error;
+    }
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
     throw error;
   }

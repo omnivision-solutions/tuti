@@ -232,6 +232,21 @@ describe("docs", () => {
     expect(await published(article.slug)).toEqual({ body: "Pick Light in Settings.", changes: { body: "Half-written" } });
   });
 
+  test("a failure after the draft is saved leaves the action applied, so a second click can't make a second draft", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    // The draft is saved; looking it up right after fails.
+    vi.spyOn(prisma.article, "findFirstOrThrow").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+  });
+
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
     const change = await prisma.codeChange.create({
       data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 21, url: "https://github.com/acme/app/pull/21", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
