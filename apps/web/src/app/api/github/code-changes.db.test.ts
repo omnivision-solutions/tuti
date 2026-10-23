@@ -125,6 +125,10 @@ describe("reading", () => {
     // GitHub delivers it again: it stays out.
     expect(await merge(1)).toBe(200);
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(0);
+    // With code changes turned off, labels decide again: it has none, so a redelivery puts it in.
+    await setCodeChangeAnalysis(project.slug, false);
+    expect(await merge(1)).toBe(200);
+    expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(1);
   });
 
   test("one code change per pull request, analysed once: a redelivery neither reads nor asks again", async () => {

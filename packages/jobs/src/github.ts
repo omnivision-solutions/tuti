@@ -25,8 +25,8 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
     where: { projectId_repoId_number: { projectId, repoId: input.repoId, number: input.number } },
     select: { state: true },
   });
-  const drafted =
-    gated?.state !== "NOTHING_TO_DO" && ((await analysisOn(projectId)) || !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr));
+  const codeChangesOn = await analysisOn(projectId);
+  const drafted = (codeChangesOn ? gated?.state !== "NOTHING_TO_DO" : !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr));
   const analysed = await startCodeChange(projectId, {
     ...pr,
     repoId: input.repoId,
