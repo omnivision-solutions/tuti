@@ -26,7 +26,7 @@ The token is a JWT signed with **HS256** using the secret.
 | `email` | no | Stored for notifications. Not used to sign anyone in; someone who signs in to your portal another way with this address, once it's verified, gets this user's groups (see [Properties](#properties)). |
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
-| `groups` | no | Reader groups, e.g. `["enterprise"]`: which tabs, collections and articles for some groups in your docs they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
+| `groups` | no | The user's groups in your app, e.g. `["enterprise"]`, kept as their `groups` property for [reader groups](#reader-groups) to match (`groups` is `enterprise`). Lowercase letters, digits and `- _ . :`, up to 20. A token with `groups` replaces them; `[]` removes them. |
 | `properties` | no | What you know about the user, e.g. `{ "plan": "pro", "seats": 12 }`, for groups' conditions to match (see [Properties](#properties)). Strings, numbers, booleans and lists of strings, up to 50. Each sign-in sets the ones it names; `null` removes one. (`attributes`, their old name, still works.) |
 
 Node example with [`jose`](https://github.com/panva/jose):
@@ -113,23 +113,24 @@ email, once their address is verified.
 ## Reader groups
 
 Add your groups in **Settings → Access → Groups** (owners and admins; or `groups.create`): a name, a
-description, and who's in it, by either or both of:
+description, and who's in it: **conditions** on your users' [properties](#properties), all of which
+must match (at least one, up to 10). Each is a property, an operator and a value, e.g. `plan` is any
+of `pro, enterprise`:
 
-- **SSO group name**: the claim your token names the group by in `groups` (e.g. `enterprise`).
-- **Conditions** on the user's [properties](#properties), all of which must match (up to 10). Each is a
-  property, an operator and a value, e.g. `plan` is any of `pro, enterprise`:
+| Operator | API | Matches when the property… |
+|---|---|---|
+| **is** / **is not** | `is`, `is_not` | is (or isn't) the value |
+| **is any of** / **is none of** | `is_any_of`, `is_none_of` | is one (or none) of the values, comma-separated in the app |
+| **contains** / **excludes** | `contains`, `excludes` | has (or doesn't have) the value in its text, e.g. `company` contains `Acme` |
+| **is set** / **is not set** | `is_set`, `is_not_set` | has a value at all (or doesn't); these take no value |
 
-  | Operator | API | Matches when the property… |
-  |---|---|---|
-  | **is** / **is not** | `is`, `is_not` | is (or isn't) the value |
-  | **is any of** / **is none of** | `is_any_of`, `is_none_of` | is one (or none) of the values, comma-separated in the app |
-  | **contains** / **excludes** | `contains`, `excludes` | has (or doesn't have) the value in its text, e.g. `email` contains `@acme.com` |
-  | **is set** / **is not set** | `is_set`, `is_not_set` | has a value at all (or doesn't); these take no value |
-
-Someone is in the group when their `groups` has its name, or when its conditions (if it has any)
-all match their properties. While you write the conditions, the dialog shows how many of the people
-your app has signed in match them now, with a few of their names; the list shows the same for each
-group. Changing a group's name in `groups` or its conditions changes who's in it. (In the API, conditions written with `attribute` and `is_one_of`, their names before, still work.)
+A token's `groups` is the `groups` property, so a group for the people your app puts in its
+"enterprise" group has the condition `groups` is `enterprise`. While you write the conditions, the
+dialog shows how many of your users match them now, with a few of their names; the list shows the
+same for each group. Changing a group's conditions changes who's in it. (In the API, conditions
+written with `attribute` and `is_one_of`, their names before, still work. Groups named by an SSO
+group name before got the condition `groups` is that name; one that had conditions as well kept
+just those.)
 
 How conditions compare:
 
@@ -155,8 +156,7 @@ collection's dialog, the article's editor; `access` on `tabs.*`, `collections.*`
 - **Inherit** (`inherit`, the default): whoever may read what it's in. For a tab, everyone who
   may read your portal.
 - **Signed-in readers** (`signed_in`): anyone signed in on your portal, however they signed in.
-- **Specific groups** (`groups`, with `groups`: their keys): people your app signs in who are in one
-  of them. With none picked, only your team.
+- **Specific groups** (`groups`, with `groups`: their keys): your users who are in one of them. With none picked, only your team.
 
 A page is for whoever every level above it lets in: its tab, each collection it's in, then the
 page itself, so a collection or article can only narrow what's above it (an article in no
@@ -183,8 +183,8 @@ see it (`?preview=signed-out`, which only changes what your team sees).
 A group a tab, collection or article is for can't be deleted until it's removed there, so who can
 read what never changes behind your back.
 
-Groups come from the latest sign-in: send all of a user's groups in every token, and one they lose
-is gone the next time they sign in. Properties change only where a token names them (see below).
+Properties, `groups` included, change only where a token (or `users.sync`) names them: to take one
+away, send it as `null` (or `groups` as `[]`).
 
 ### Properties
 

@@ -36,15 +36,11 @@ test("conditions as the API takes them: trimmed, any of a list without repeats, 
   }
 });
 
-test("in a group: its claim in their groups, or all its conditions (with any) match their properties", () => {
-  const group = { claim: "enterprise", conditions: [is("plan", "pro")] };
-  expect(inGroup(group, { groups: ["enterprise"], properties: {} })).toBe(true);
-  expect(inGroup(group, { groups: [], properties: { plan: "pro" } })).toBe(true);
-  expect(inGroup(group, { groups: ["beta"], properties: { plan: "free" } })).toBe(false);
-  expect(inGroup({ claim: null, conditions: [isNot("plan", "free")] }, { groups: [], properties: {} })).toBe(true);
-  // Neither: nobody.
-  expect(inGroup({ claim: null, conditions: [] }, { groups: [], properties: {} })).toBe(false);
-  expect(inGroup({ claim: "enterprise", conditions: [] }, { groups: [], properties: { enterprise: true } })).toBe(false);
+test("in a group: all its conditions match their properties, and a group without any has nobody", () => {
+  expect(inGroup([is("plan", "pro")], { plan: "pro" })).toBe(true);
+  expect(inGroup([is("plan", "pro")], { plan: "free" })).toBe(false);
+  expect(inGroup([isNot("plan", "free")], {})).toBe(true);
+  expect(inGroup([], { plan: "pro" })).toBe(false);
 });
 
 test("stored conditions that don't read are none, which lets nobody in", () => {

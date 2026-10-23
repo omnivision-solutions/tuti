@@ -304,9 +304,7 @@ model SsoIdentity {
   /// Email as asserted by the project's app (User.email is a placeholder), lowercase. Someone signed
   /// in to the portal another way with this address, verified, has this user's groups too.
   email      String?
-  /// The `groups` claim of their latest sign-in (lowercase), e.g. ["enterprise"]: the reader groups
-  /// they're in (ReaderGroup.claim), so which restricted docs collections they may read.
-  groups     String[] @default([])
+  /// (Its `groups` column, unused since a token's `groups` is the `groups` property, goes in a later migration.)
   /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
   /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
   /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
@@ -1060,9 +1058,8 @@ model Collection {
   @@map("collection")
 }
 
-/// A group of readers (Settings → Groups): the people the project's SSO signs in with `claim` in
-/// their token's `groups` (SsoIdentity.groups), worked out when they read. Collections can be for
-/// some groups only.
+/// A group of readers (Settings → Groups): the project's users whose properties match its conditions,
+/// worked out when they read. Docs tabs, collections and articles can be for some groups only.
 model ReaderGroup {
   id          String   @id @default(cuid())
   projectId   String
@@ -1070,10 +1067,8 @@ model ReaderGroup {
   /// collections name it (`/groups/{key}`, `groups` on collections.*).
   key         String
   name        String
-  /// Matched against the token's `groups` (lowercase), unique in the project when set. Changing it changes who's in it.
-  claim       String?
-  /// Matched against the token's `attributes`, all of them (lib/reader-groups.ts GroupCondition[]).
-  /// A reader is in the group when the claim matches or, with at least one condition, all of them do.
+  /// Matched against the project's users' properties, all of them (lib/group-conditions.ts GroupCondition[]).
+  /// (Its `claim` column, unused since groups come only from conditions, goes in a later migration.)
   conditions  Json     @default("[]")
   description String   @default("")
   createdAt   DateTime @default(now())
@@ -1085,7 +1080,6 @@ model ReaderGroup {
   articles    ArticleGroup[]
 
   @@unique([projectId, key])
-  @@unique([projectId, claim])
   @@map("reader_group")
 }
 

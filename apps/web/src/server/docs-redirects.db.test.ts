@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import ArticlePage from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { GET as markdown } from "@/app/portal/[project]/(site)/docs/[slug]/md/route";
 import { WidgetDocs } from "@/components/widget-docs";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import {
   createArticle,
@@ -187,12 +187,12 @@ describe("readers follow an article's old slugs", () => {
     await call(updateArticle, as(), { slug: "gamma", listing: "unlisted" });
     expect(await read("alpha")).toEqual(moved);
 
-    await prisma.readerGroup.create({ data: { projectId: project.id, key: "enterprise", name: "Enterprise", claim: "enterprise" } });
+    await prisma.readerGroup.create({ data: { projectId: project.id, key: "enterprise", name: "Enterprise", conditions: inGroupNamed("enterprise") } });
     await call(createCollection, as(), { name: "Enterprise", groups: ["enterprise"] });
     await call(updateArticle, as(), { slug: "gamma", collection: "enterprise", publish: true });
     expect(await read("alpha")).toEqual(missing);
     const member = await signUp("From the app");
-    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: member.id, groups: ["enterprise"] } });
+    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "user-1", userId: member.id, properties: { groups: ["enterprise"] } } });
     actAs(member);
     expect(await read("alpha")).toEqual(moved);
     actAs(null);

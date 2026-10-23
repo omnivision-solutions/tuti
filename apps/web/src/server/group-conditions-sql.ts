@@ -1,6 +1,6 @@
 import { Prisma } from "@tuti/db";
 
-import type { GroupCondition, GroupRules } from "@/lib/group-conditions";
+import type { GroupCondition } from "@/lib/group-conditions";
 
 /**
  * conditionsMatch in SQL, on the properties (jsonb) at `column`. Numbers compare as Postgres writes
@@ -41,8 +41,5 @@ export function conditionsSql(conditions: GroupCondition[], column: Prisma.Sql):
   );
 }
 
-/** inGroup in SQL, for the project's user (sso_identity) at `user`: its `groups` has the claim, or its properties (the `attributes` column) match all the conditions. */
-export function inGroupSql(rules: GroupRules, user: Prisma.Sql): Prisma.Sql {
-  const claim = rules.claim === null ? Prisma.sql`FALSE` : Prisma.sql`(${rules.claim}::text = ANY(${user}.groups))`;
-  return Prisma.sql`(${claim} OR ${conditionsSql(rules.conditions, Prisma.sql`${user}.attributes`)})`;
-}
+/** inGroup in SQL, for the project's user (sso_identity) at `user`: its properties (the `attributes` column) match all the conditions. */
+export const inGroupSql = (conditions: GroupCondition[], user: Prisma.Sql): Prisma.Sql => conditionsSql(conditions, Prisma.sql`${user}.attributes`);

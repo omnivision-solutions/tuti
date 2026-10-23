@@ -132,7 +132,7 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
 /**
  * Who's reading, for what of the docs they may read (see lib/read-access.ts): null for the project's
  * team (everything); else whether they're signed in, and the keys of the groups they're in as the
- * project's user (by its `groups` claim or their properties, see lib/group-conditions.ts): the one
+ * project's user (by their properties, see lib/group-conditions.ts): the one
  * its SSO signed them in as, or, signed in another way, the ones with their address once it's
  * verified (any of them puts them in a group). None for everyone else. Once per request: pages ask many times.
  */
@@ -143,7 +143,7 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   const [member, account, groups] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
-    prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, claim: true, conditions: true } }),
+    prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true } }),
   ]);
   if (member) {
     return null;
@@ -151,13 +151,11 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   // SSO accounts' own addresses are placeholders, never verified. Emails are kept lowercase, but an
   // instance from before that (still running while a deploy overlaps it) may write one that isn't.
   const byEmail = account?.emailVerified ? [{ email: { equals: account.email, mode: "insensitive" as const } }] : [];
-  const users = await prisma.ssoIdentity.findMany({ where: { projectId, OR: [{ userId }, ...byEmail] }, select: { groups: true, properties: true } });
-  const readers = users.map((user) => ({ groups: user.groups, properties: storedProperties(user.properties) }));
+  const users = await prisma.ssoIdentity.findMany({ where: { projectId, OR: [{ userId }, ...byEmail] }, select: { properties: true } });
+  const readers = users.map((user) => storedProperties(user.properties));
   return {
     signedIn: true,
-    groups: groups
-      .filter((group) => readers.some((reader) => inGroup({ claim: group.claim, conditions: storedConditions(group.conditions) }, reader)))
-      .map((group) => group.key),
+    groups: groups.filter((group) => readers.some((properties) => inGroup(storedConditions(group.conditions), properties))).map((group) => group.key),
   };
 });
 

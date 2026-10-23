@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,17 +62,7 @@ export function ReaderGroups({ projectSlug, groups }: { projectSlug: string; gro
             <ItemRow
               key={group.key}
               title={group.name}
-              meta={
-                <>
-                  {group.claim && (
-                    <>
-                      <code className="break-all">{group.claim}</code>
-                      {" · "}
-                    </>
-                  )}
-                  {[group.conditions.map(conditionText).join(" and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
-                </>
-              }
+              meta={[group.conditions.map(conditionText).join(" and "), whoIsIn(group), group.description].filter(Boolean).join(" · ")}
               actions={
                 <>
                   <GroupDialog projectSlug={projectSlug} group={group} />
@@ -95,8 +85,13 @@ type Row = { property: string; op: Operator; value: string };
 
 const takesNoValue = (op: Operator) => PRESENCE_OPERATORS.includes(op);
 
+const EMPTY_ROW: Row = { property: "", op: "is", value: "" };
+
+/** A group's conditions as rows; a new group starts with one to fill in (it needs at least one). */
 const rowsOf = (group?: GroupView): Row[] =>
-  group?.conditions.map((c) => ({ property: c.property, op: c.op, value: "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : "" })) ?? [];
+  group?.conditions.map((c) => ({ property: c.property, op: c.op, value: "value" in c ? (Array.isArray(c.value) ? c.value.join(", ") : c.value) : "" })) ?? [
+    EMPTY_ROW,
+  ];
 
 const conditionOf = (row: Row) =>
   takesNoValue(row.op)
@@ -112,7 +107,6 @@ const PREVIEW_DELAY_MS = 300;
 /** Adds a group, or (with `group`) changes one. */
 function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: GroupView }) {
   const [open, setOpen] = useState(false);
-  const [claim, setClaim] = useState(group?.claim ?? "");
   const [rows, setRows] = useState<Row[]>(() => rowsOf(group));
   const [preview, setPreview] = useState<{ readers: number; sample: string[] } | { error: string } | null>(null);
   const latest = useRef(0);
@@ -126,22 +120,21 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
   }, {});
   const id = group?.key ?? "new";
 
-  // Who'd be in it, once typing pauses; replies to older rules are ignored.
-  // With conditions, once they're all complete; without, the claim's.
-  const previewable = open && (rows.length > 0 ? rows.every(complete) : claim.trim() !== "");
+  // Who'd be in it, once typing pauses and every condition is complete; replies to older conditions are ignored.
+  const previewable = open && rows.length > 0 && rows.every(complete);
   useEffect(() => {
     const query = ++latest.current;
     if (!previewable) {
       return;
     }
     const timer = setTimeout(async () => {
-      const result = await previewGroup(projectSlug, claim.trim() || null, rows.map(conditionOf));
+      const result = await previewGroup(projectSlug, rows.map(conditionOf));
       if (query === latest.current) {
         setPreview(result);
       }
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [previewable, projectSlug, claim, rows]);
+  }, [previewable, projectSlug, rows]);
 
   const change = (i: number, patch: Partial<Row>) => setRows((current) => current.map((row, j) => (j === i ? { ...row, ...patch } : row)));
 
@@ -151,7 +144,6 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
       onOpenChange={(next) => {
         // Each time it opens: the group as saved (or empty, for a new one).
         if (next) {
-          setClaim(group?.claim ?? "");
           setRows(rowsOf(group));
         }
         setOpen(next);
@@ -181,27 +173,12 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
               />
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
-            <Field>
-              <FieldLabel htmlFor={`group-claim-${id}`}>SSO group name (optional)</FieldLabel>
-              <Input
-                id={`group-claim-${id}`}
-                name="claim"
-                value={claim}
-                onChange={(e) => setClaim(e.target.value)}
-                placeholder="enterprise"
-                maxLength={50}
-                autoComplete="off"
-              />
-              <FieldDescription>
-                Readers are in this group when your app signs them in with this in the token&apos;s <code>groups</code>, or when they
-                match the conditions below.{group && " Changing either changes who's in it."}
-              </FieldDescription>
-            </Field>
             <fieldset className="flex flex-col gap-3">
               <legend className="mb-1 text-sm font-medium">Conditions</legend>
               <p className="text-sm text-muted-foreground">
-                On the properties your app gives its users (in its sign-in token or the API), such as <code>plan</code> or <code>role</code>.
-                Values match exactly, capital letters too.
+                Your users whose properties match are in this group. Your app gives them in its sign-in token or the API, such as{" "}
+                <code>plan</code> or <code>role</code> (the token&apos;s <code>groups</code> is the <code>groups</code> property). Values
+                match exactly, capital letters too.{group && " Changing them changes who's in it."}
               </p>
               {rows.length > 0 && <p className="text-xs font-medium text-muted-foreground">All must match</p>}
               {rows.map((row, i) => (
@@ -254,7 +231,7 @@ function GroupDialog({ projectSlug, group }: { projectSlug: string; group?: Grou
                   variant="outline"
                   size="sm"
                   disabled={rows.length >= MAX_CONDITIONS}
-                  onClick={() => setRows((current) => [...current, { property: "", op: "is", value: "" }])}
+                  onClick={() => setRows((current) => [...current, EMPTY_ROW])}
                 >
                   Add condition
                 </Button>

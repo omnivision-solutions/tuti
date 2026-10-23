@@ -19,8 +19,6 @@ export type UserDetails = {
   name?: string;
   image?: string | null;
   email?: string | null;
-  /** Their SSO token's `groups` (each sign-in says them all). */
-  groups?: string[];
   properties?: PropertyChanges;
 };
 
@@ -65,8 +63,8 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
             if (user.name !== undefined || user.image !== undefined) {
               await tx.user.update({ where: { id: row.userId }, data: { name: user.name, image: user.image } });
             }
-            if (email !== undefined || user.groups !== undefined || user.properties !== undefined) {
-              await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, groups: user.groups, properties } });
+            if (email !== undefined || user.properties !== undefined) {
+              await tx.ssoIdentity.update({ where: { id: row.id }, data: { email, properties } });
             }
             continue;
           }
@@ -78,7 +76,7 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
             image: user.image ?? null,
             email: placeholderEmail(projectId, user.externalId),
           });
-          created.push({ projectId, externalId: user.externalId, userId, email: email ?? null, groups: user.groups ?? [], properties });
+          created.push({ projectId, externalId: user.externalId, userId, email: email ?? null, properties });
         }
         await tx.user.createMany({ data: accounts });
         await tx.ssoIdentity.createMany({ data: created });

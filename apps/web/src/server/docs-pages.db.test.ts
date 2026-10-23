@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import DocsSlugPage, { generateMetadata as slugMetadata } from "@/app/portal/[project]/(site)/docs/[slug]/page";
 import { generateMetadata as docsMetadata } from "@/app/portal/[project]/(site)/docs/page";
 import { GET as sitemap } from "@/app/portal/[project]/(site)/sitemap.xml/route";
-import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 
 import { docsHome, docsPage } from "./docs-queries";
 import {
@@ -45,7 +45,7 @@ beforeEach(async () => {
   await call(createCollection, as(), { name: "Invoices", parent: "billing" });
   await call(createCollection, as(), { name: "Later" });
   await call(createCollection, as(), { name: "Endpoints", tab: "api" });
-  await prisma.readerGroup.createMany({ data: ["enterprise", "partners"].map((claim) => ({ projectId: project.id, key: claim, name: claim, claim })) });
+  await prisma.readerGroup.createMany({ data: ["enterprise", "partners"].map((key) => ({ projectId: project.id, key, name: key, conditions: inGroupNamed(key) })) });
   await call(createCollection, as(), { name: "Enterprise", tab: "api", groups: ["enterprise"] });
   await call(createCollection, as(), { name: "Agreements", tab: "partners", groups: ["partners"] });
   for (const [title, collection, listing] of [
@@ -96,7 +96,7 @@ async function served(slug: string) {
 
 async function asMemberOf(groups: string[]) {
   const member = await signUp("From the app");
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${groups.join()}`, userId: member.id, groups } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: `user-${groups.join()}`, userId: member.id, properties: { groups } } });
   actAs(member);
 }
 
