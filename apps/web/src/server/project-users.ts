@@ -51,7 +51,8 @@ export async function syncUsers(projectId: string, users: UserDetails[], { stric
         const userIds = new Map<string, string>();
         const created: Prisma.SsoIdentityCreateManyInput[] = [];
         const accounts: Prisma.UserCreateManyInput[] = [];
-        for (const user of users) {
+        // In one order too, so two syncs adding the same new users can't deadlock on their inserts.
+        for (const user of [...users].sort((a, b) => (a.externalId < b.externalId ? -1 : a.externalId > b.externalId ? 1 : 0))) {
           // Lowercase, so a reader signing in by email finds them (portal-access.ts readerOf).
           const email = user.email === null ? null : user.email?.toLowerCase();
           const row = existing.get(user.externalId);

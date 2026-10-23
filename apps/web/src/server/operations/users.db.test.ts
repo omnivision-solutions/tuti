@@ -96,6 +96,16 @@ test("two syncs at once that both add someone: one user, with both syncs' proper
   }
 });
 
+test("new users are added in id order, whatever order a sync gives them in, so two syncs adding the same ones can't deadlock", async () => {
+  await sync(["user-c", "user-a", "user-b"].map((id) => ({ id })));
+  // In the order the rows were written.
+  const written = await prisma.$queryRaw<{ externalId: string }[]>`SELECT "externalId" FROM sso_identity WHERE "projectId" = ${project.id} ORDER BY ctid`;
+  expect(written.map((row) => row.externalId)).toEqual(["user-a", "user-b", "user-c"]);
+  const ids = Array.from({ length: 50 }, (_, j) => `pair-${String(j).padStart(2, "0")}`);
+  await Promise.all([sync(ids.map((id) => ({ id, properties: { a: 1 } }))), sync([...ids].reverse().map((id) => ({ id, properties: { b: 2 } })))]);
+  expect((await get(ids[0]!)).properties).toEqual({ a: 1, b: 2 });
+});
+
 test("listed by name, with the groups they're in; found by name, email or id; a page at a time", async () => {
   await call(createGroup, team(), { name: "Pro", conditions: [{ attribute: "plan", op: "is", value: "pro" }] });
   await sync([
