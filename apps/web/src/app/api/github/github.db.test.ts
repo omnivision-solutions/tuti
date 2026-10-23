@@ -133,6 +133,16 @@ describe("connecting", () => {
     expect(await connected(project.id)).toMatchObject({ installationId: 501, accountLogin: "acme" });
   });
 
+  test("Switch account offers the accounts on the GitHub page, and connects the one picked", async () => {
+    github.user("code-sw", [{ id: 540, account: "acme" }, { id: 541, account: "acme-labs" }]);
+    await connect(project.slug, 540, "code-sw");
+    const started = await install(new Request(`${APP}/api/github/install?project=${project.slug}`));
+    const offered = await callback(new Request(`${APP}/api/github/callback?code=code-sw&state=${encodeURIComponent(stateOf(started))}`));
+    expect(location(offered)).toBe(`${APP}/app/${project.slug}/settings/integrations/github?github=choose`);
+    expect(await connect(project.slug, 541, "code-sw")).toMatch(/github=connected$/);
+    expect(await connected(project.id)).toMatchObject({ installationId: 541, accountLogin: "acme-labs" });
+  });
+
   test("the installation may be on any page of the person's installations", async () => {
     const many = Array.from({ length: 250 }, (_, i) => ({ id: 10_000 + i, account: `org-${i}` }));
     github.user("code-many", many);

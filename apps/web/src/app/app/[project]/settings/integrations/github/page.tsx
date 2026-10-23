@@ -1,17 +1,20 @@
 import { prisma } from "@tuti/db";
 import { listedRepositories } from "@tuti/jobs";
-import { ChevronLeftIcon } from "lucide-react";
+import { ArrowLeftRightIcon, ChevronLeftIcon } from "lucide-react";
+import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { DisconnectGithubButton, GithubRepositories } from "@/components/github-connection";
+import { DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
 import { githubConfig, installationSettingsUrl } from "@/lib/github";
 import { repositoryRows } from "@/lib/github-repository-rows";
+import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
 import { getSession } from "@/server/session";
 
@@ -49,6 +52,13 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
   // Another project's name shows only to people on its team.
   const viewerId = (await getSession())?.user.id ?? "";
   const projectName = (other: { name: string; team: unknown[] }) => (other.team.length > 0 ? other.name : "another project");
+  // Back from "Switch account" with the other accounts the person has the app on.
+  const accounts =
+    githubResult === "choose"
+      ? accountsFromCookie((await cookies()).get(ACCOUNTS_COOKIE)?.value ?? "", project.id).filter(
+          (account) => account.id !== installation.installationId,
+        )
+      : null;
   const repositories = listedRepositories(installation.repositories);
   const elsewhere = await prisma.githubRepository.findMany({
     where: { repoId: { in: repositories.map((repo) => repo.id) }, connectionId: { not: installation.id } },
@@ -76,7 +86,18 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             Connected {timeAgo(installation.createdAt)}
           </span>
         </div>
-        <DisconnectGithubButton projectSlug={project.slug} account={installation.accountLogin} />
+        <div className="flex flex-wrap gap-2">
+          {github && (
+            <a
+              href={`/api/github/install?${new URLSearchParams({ project: project.slug })}`}
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <ArrowLeftRightIcon />
+              Switch account
+            </a>
+          )}
+          <DisconnectGithubButton projectSlug={project.slug} account={installation.accountLogin} />
+        </div>
       </div>
       {!github && (
         <Alert variant="destructive">
@@ -90,6 +111,19 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         <Alert>
           <AlertDescription>{GITHUB_RESULTS[githubResult]}</AlertDescription>
         </Alert>
+      )}
+      {accounts && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Switch account</CardTitle>
+            <CardDescription>
+              This project&apos;s repositories from @{installation.accountLogin} are removed, and you add the new account&apos;s.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <GithubAccountChoice projectSlug={project.slug} accounts={accounts} />
+          </CardContent>
+        </Card>
       )}
 
       <Card>

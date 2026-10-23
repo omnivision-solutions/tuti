@@ -90,6 +90,8 @@ export function GithubRepositories({
   const [included, setIncluded] = useState(() => new Set(repositories.filter((repo) => repo.included).map((repo) => repo.id)));
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
+  // Every repository is on the connected account, so its name is enough.
+  const name = (repo: GithubRepositoryRow) => repo.fullName.slice(repo.fullName.indexOf("/") + 1);
   const change = (repo: GithubRepositoryRow, on: boolean) => {
     const set = (value: boolean) =>
       setIncluded((current) => {
@@ -108,13 +110,13 @@ export function GithubRepositories({
         set(!on);
         toast.error(result.error);
       } else {
-        toast.success(on ? `${repo.fullName} added` : `${repo.fullName} removed`);
+        toast.success(on ? `${name(repo)} added` : `${name(repo)} removed`);
       }
     });
   };
   const ours = repositories.filter((repo) => included.has(repo.id));
   const query = search.trim().toLowerCase();
-  const others = repositories.filter((repo) => !included.has(repo.id) && repo.fullName.toLowerCase().includes(query));
+  const others = repositories.filter((repo) => !included.has(repo.id) && name(repo).toLowerCase().includes(query));
 
   return (
     <div className="flex flex-col gap-4 text-sm">
@@ -127,8 +129,8 @@ export function GithubRepositories({
         <ul className="flex flex-col divide-y rounded-lg border" aria-label="This project's repositories">
           {ours.map((repo) => (
             <li key={repo.id} className="flex items-center justify-between gap-3 px-3 py-2">
-              <span className="min-w-0 truncate font-medium">{repo.fullName}</span>
-              <Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Remove ${repo.fullName}`} onClick={() => change(repo, false)}>
+              <span className="min-w-0 truncate font-medium">{name(repo)}</span>
+              <Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Remove ${name(repo)}`} onClick={() => change(repo, false)}>
                 <XIcon />
               </Button>
             </li>
@@ -166,7 +168,7 @@ export function GithubRepositories({
                       change(repo, true);
                     }}
                   >
-                    <span className="min-w-0 truncate">{repo.fullName}</span>
+                    <span className="min-w-0 truncate">{name(repo)}</span>
                     {repo.elsewhere && <span className="shrink-0 text-xs text-muted-foreground">In {repo.elsewhere}</span>}
                   </button>
                 </li>
@@ -221,19 +223,21 @@ export function GithubAccountChoice({
   return (
     <div className="flex flex-col gap-3">
       <p>Pick the GitHub account with this project&apos;s repositories.</p>
-      <ul className="flex flex-col divide-y rounded-lg border" aria-label="GitHub accounts">
-        {accounts.map(({ id, account }) => (
-          <li key={id} className="flex items-center justify-between gap-3 px-3 py-2">
-            <span>
-              <strong>@{account.login}</strong>{" "}
-              <span className="text-muted-foreground">{account.type === "User" ? "Personal account" : "Organization"}</span>
-            </span>
-            <a href={`/api/github/use?${new URLSearchParams({ project: projectSlug, installation: String(id) })}`} className={buttonVariants({ size: "sm" })}>
-              Connect @{account.login}
-            </a>
-          </li>
-        ))}
-      </ul>
+      {accounts.length > 0 && (
+        <ul className="flex flex-col divide-y rounded-lg border" aria-label="GitHub accounts">
+          {accounts.map(({ id, account }) => (
+            <li key={id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span>
+                <strong>@{account.login}</strong>{" "}
+                <span className="text-muted-foreground">{account.type === "User" ? "Personal account" : "Organization"}</span>
+              </span>
+              <a href={`/api/github/use?${new URLSearchParams({ project: projectSlug, installation: String(id) })}`} className={buttonVariants({ size: "sm" })}>
+                Connect @{account.login}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
       <a href={`/api/github/install?${new URLSearchParams({ project: projectSlug, new: "1" })}`} className={buttonVariants({ variant: "outline", size: "sm", className: "self-start" })}>
         Install on another account
       </a>
