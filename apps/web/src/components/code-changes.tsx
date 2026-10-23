@@ -61,7 +61,7 @@ export function ApplyLikelyButton({ projectSlug, codeChangeId, count }: { projec
         <AlertDialogHeader>
           <AlertDialogTitle>Apply {count === 1 ? "the likely proposal" : `${count} likely proposals`}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Posts it resolves are completed and the people who asked for them get an email. Comments are posted as you.
+            Posts it resolves are completed and the people who asked for them get an email, comments are posted as you, and the changelog line goes into its draft.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -307,5 +307,76 @@ export function DocsProposal({ projectSlug, codeChangeId, action }: { projectSlu
         </span>
       )}
     </li>
+  );
+}
+
+/** The pull request's line in the changelog: the bullet it rewrites, editable before it's written. */
+export function ChangelogProposal({
+  projectSlug,
+  action,
+  entry,
+}: {
+  projectSlug: string;
+  action: Action;
+  entry: { number: number; title: string } | null;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [line, setLine] = useState(action.line ?? "");
+  const waiting = action.status === "pending";
+  const apply = () =>
+    startTransition(async () => {
+      const result = await applyCodeChange(projectSlug, action.id, { line });
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Changelog updated");
+      }
+    });
+  const dismiss = (reason: string) =>
+    new Promise<boolean>((resolve) =>
+      startTransition(async () => {
+        const result = await dismissCodeChange(projectSlug, action.id, reason);
+        if (result.error) {
+          toast.error(result.error);
+        } else {
+          toast.success("Dismissed");
+        }
+        resolve(!result.error);
+      }),
+    );
+  const where = entry ? (
+    <Link href={`/app/${projectSlug}/changelog/${entry.number}`} className="hover:underline">
+      {entry.title}
+    </Link>
+  ) : (
+    "the next release's draft"
+  );
+  return (
+    <div className="flex flex-col gap-2" aria-label="Changelog line">
+      <span className="text-xs text-muted-foreground">
+        {waiting ? "Replaces the pull request's line in " : "In "}
+        {where}
+      </span>
+      {waiting ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Input aria-label="Changelog line" value={line} maxLength={300} onChange={(event) => setLine(event.currentTarget.value)} className="sm:flex-1" />
+          <div className="flex shrink-0 items-center gap-2">
+            <DismissButton disabled={pending} onDismiss={dismiss} />
+            <Button size="sm" disabled={pending || !line.trim()} onClick={apply}>
+              Update changelog
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm">{line}</p>
+          <span className="text-xs text-muted-foreground">
+            {action.status === "applied" ? "Applied" : "Dismissed"}
+            {action.decidedBy && ` by ${action.decidedBy}`}
+            {action.dismissReason && `: ${action.dismissReason}`}
+          </span>
+        </>
+      )}
+    </div>
   );
 }

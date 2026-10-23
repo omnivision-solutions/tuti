@@ -109,11 +109,13 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(bo, "portal-roadmap");
 
   // So does the team's feedback list; the merged duplicate isn't listed.
-  await team.goto(`/app/${slug}?status=planned`);
+  await team.goto(`/app/${slug}/feedback?status=planned`);
   await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
+  // A link from when the list was the project's first page still finds it, filters and all.
   await team.goto(`/app/${slug}?status=open`);
+  await team.waitForURL(`**/app/${slug}/feedback?status=open`);
   await expect(team.getByRole("link", { name: /Dark mode/ })).toHaveCount(0);
-  await team.goto(`/app/${slug}`);
+  await team.goto(`/app/${slug}/feedback`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
   await checkpoint(team, "team-feedback-list");
 });

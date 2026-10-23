@@ -1,3 +1,4 @@
+import { toPlainText } from "@tuti/content";
 import { type Prisma, prisma } from "@tuti/db";
 
 /** A content document (@tuti/content's JSON), kept loose here so the worker needn't load the editor's schema. */
@@ -72,14 +73,14 @@ async function newDraft(tx: Prisma.TransactionClient, projectId: string) {
 
 const bulletText = (pr: PullRequest) => `${pr.title} (${pr.repo}#${pr.number})`;
 
-/** The draft with one more bullet, "<title> (repo#number)" linking to the pull request, in the list at its end. */
-function withPullRequest(doc: Doc, pr: PullRequest): Doc {
+/** The draft with one more bullet, "<title> (repo#number)" (or `text`) linking to the pull request, in the list at its end. */
+function withPullRequest(doc: Doc, pr: PullRequest, text = bulletText(pr)): Doc {
   const item = {
     type: "listItem",
     content: [
       {
         type: "paragraph",
-        content: [{ type: "text", text: bulletText(pr), marks: [{ type: "link", attrs: { href: pr.url } }] }],
+        content: [{ type: "text", text, marks: [{ type: "link", attrs: { href: pr.url } }] }],
       },
     ],
   };
@@ -107,5 +108,84 @@ export async function closeRunningDraft(projectId: string, releaseName: string):
     // Only a title nobody changed (checked as it's written).
     await tx.changelogEntry.updateMany({ where: { id: draft.id, title: RUNNING_DRAFT_TITLE }, data: { title: releaseName.slice(0, 120) } });
     return draft.number;
+  });
+}
+
+type Item = { type: string; content?: unknown[]; marks?: { type: string; attrs?: { href?: unknown } }[] };
+
+const linksTo = (node: Item, url: string): boolean =>
+  (node.marks ?? []).some((mark) => mark.type === "link" && mark.attrs?.href === url) || ((node.content ?? []) as Item[]).some((child) => linksTo(child, url));
+
+/** Whether a list item is the pull request's bullet: its text links to the pull request. */
+const isBullet = (item: Item, url: string) => item.type === "listItem" && linksTo(item, url);
+
+/** The document without the pull request's bullet (and without a list it leaves empty). */
+function withoutBullet(doc: Doc, url: string): Doc {
+  const content = (doc.content ?? [])
+    .map((block) => (block.type === "bulletList" ? { ...block, content: (block.content as Item[] | undefined)?.filter((item) => !isBullet(item, url)) } : block))
+    .filter((block) => block.type !== "bulletList" || (block.content?.length ?? 0) > 0);
+  return { ...doc, content };
+}
+
+/** The document with the pull request's bullet saying `line` (still linking to it); null if it has no such bullet. */
+function withLine(doc: Doc, url: string, line: string): Doc | null {
+  let found = false;
+  const content = (doc.content ?? []).map((block) =>
+    block.type !== "bulletList"
+      ? block
+      : {
+          ...block,
+          content: (block.content as Item[] | undefined)?.map((item) => {
+            if (!isBullet(item, url)) {
+              return item;
+            }
+            found = true;
+            return { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: line, marks: [{ type: "link", attrs: { href: url } }] }] }] };
+          }),
+        },
+  );
+  return found ? { ...doc, content } : null;
+}
+
+/**
+ * A merged pull request users don't see (its code change has nothing to do) leaves the running
+ * draft it's in, while that draft still collects. Returns whether it was there.
+ */
+export async function removeFromRunningDraft(projectId: string, url: string): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    if (!(await lockProject(tx, projectId))) {
+      return false;
+    }
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId, collecting: true } }, select: { entryId: true } });
+    if (!known) {
+      return false;
+    }
+    await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId: known.entryId, url } } });
+    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { content: true } });
+    const doc = withoutBullet((entry.content as Doc | null) ?? { type: "doc", content: [] }, url);
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    return true;
+  });
+}
+
+/**
+ * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
+ * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):
+ * it's added to the running draft with that line. Returns the entry's number.
+ */
+export async function setChangelogLine(projectId: string, pr: PullRequest, line: string): Promise<number> {
+  const found = await prisma.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
+  if (!found) {
+    await addToRunningDraft(projectId, pr);
+  }
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const known = await tx.changelogEntryPullRequest.findFirstOrThrow({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
+    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { number: true, content: true } });
+    const current = (entry.content as Doc | null) ?? { type: "doc", content: [] };
+    // The team may have rewritten the bullet without its link: then the line goes at the end of the draft's list.
+    const doc = withLine(current, pr.url, line) ?? withPullRequest(current, { ...pr, title: line }, line);
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    return entry.number;
   });
 }

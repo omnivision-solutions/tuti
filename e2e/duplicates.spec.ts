@@ -36,7 +36,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await expect(bo.getByRole("link", { name: duplicate })).toBeVisible();
 
   // The team sees it flagged, and can list only possible duplicates.
-  await owner.goto(`/app/${slug}?show=duplicates`);
+  await owner.goto(`/app/${slug}/feedback?show=duplicates`);
   const flagged = owner.getByRole("listitem").filter({ hasText: "Possible duplicate" });
   await expect(flagged).toHaveCount(1);
   await expect(flagged).toContainText(duplicate);
@@ -51,6 +51,6 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await panel.getByRole("button", { name: "Not a duplicate" }).click();
   await expect(owner.getByText("Possible duplicates")).toHaveCount(0);
 
-  await owner.goto(`/app/${slug}?show=duplicates`);
+  await owner.goto(`/app/${slug}/feedback?show=duplicates`);
   await expect(owner.getByRole("listitem").filter({ hasText: "Possible duplicate" })).toHaveCount(0);
 });

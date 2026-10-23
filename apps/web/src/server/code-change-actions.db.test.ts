@@ -1,6 +1,8 @@
 import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { addToRunningDraft } from "@tuti/jobs";
+
 import { applyLikelyCodeChanges } from "@/server/code-changes";
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
@@ -112,12 +114,10 @@ describe("applying", () => {
   });
 
 
-  test("a comment to post is needed; the changelog line can't be applied yet; another project's actions aren't found", async () => {
+  test("a comment to post is needed; another project's actions aren't found", async () => {
     const { action } = await proposal("MOVES_FORWARD");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Write the comment to post first");
     const { change } = await proposal("LINKS");
-    const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1 } });
-    await expect(call(applyCodeChangeAction, team(), { id: line.id })).rejects.toThrow("can't be applied yet");
 
     const outsider = await signUp("Otto Outsider");
     const theirs = await createProject(outsider);
@@ -320,5 +320,43 @@ describe("docs", () => {
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: result.article }, select: { id: true, title: true, publishedAt: true, body: true } });
     expect(draft).toMatchObject({ title: "Use the dark theme", publishedAt: null, body: "Pick Light, Dark or System in Settings." });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).articleId).toBe(draft.id);
+  });
+});
+
+describe("the changelog line", () => {
+  async function line(text: string) {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    return prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: text } } });
+  }
+  const draft = () => prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id, collecting: true }, select: { body: true, content: true } });
+
+  test("rewrites the pull request's bullet in the running draft (as the team edited it), still linking to it", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 29, url: "https://github.com/acme/app/pull/29", title: "Faster search" });
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("Dark theme");
+    expect(await call(applyCodeChangeAction, team(), { id: action.id, line: "A dark theme, in Settings" })).toMatchObject({ status: "applied", changelog: 1 });
+    const { body, content } = await draft();
+    expect(body).toBe("Faster search (acme/app#29)\nA dark theme, in Settings");
+    expect(content).toMatchObject({
+      content: [
+        {
+          type: "bulletList",
+          content: [
+            expect.anything(),
+            { type: "listItem", content: [{ type: "paragraph", content: [{ text: "A dark theme, in Settings", marks: [{ type: "link", attrs: { href: "https://github.com/acme/app/pull/30" } }] }] }] },
+          ],
+        },
+      ],
+    });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({ line: "A dark theme, in Settings" });
+  });
+
+  test("a pull request the draft doesn't have (it had nothing to do, until Analyse anyway) goes into it with its line", async () => {
+    const action = await line("A dark theme");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("A dark theme");
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(1);
   });
 });

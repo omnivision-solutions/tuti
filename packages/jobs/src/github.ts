@@ -1,6 +1,6 @@
 import type { JobInput } from "@tuti/shared";
 
-import { startCodeChange } from "./code-changes";
+import { analysisOn, startCodeChange } from "./code-changes";
 import { repositoryConnection } from "./github-repositories";
 import { addToRunningDraft, closeRunningDraft, skipsChangelog } from "./running-draft";
 import type { JobLogger, JobResult } from "./index";
@@ -18,7 +18,9 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   }
   const projectId = installation.project.id;
   const pr = { repo: input.repo, number: input.number, url: input.url, title: input.title };
-  const drafted = !skipsChangelog(input.labels) && (await addToRunningDraft(projectId, pr));
+  // With code changes on, their gate decides what the changelog hears about (it takes the bullet out
+  // again); without them, labels for internal work keep it out.
+  const drafted = ((await analysisOn(projectId)) || !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr));
   const analysed = await startCodeChange(projectId, {
     ...pr,
     repoId: input.repoId,
