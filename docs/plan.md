@@ -369,6 +369,24 @@ Follow-ups found while building items 1–15 (2026-10-21), one small PR each, mo
 - [ ] The icon picker opens with commonly used icons first (it starts at "A" today)
 - [ ] On phones the overview has its own search box and the header's: keep one
 
+## Users and their properties: groups from what you know about them (asked 2026-10-23)
+
+Reader groups come from the properties a team gives its users (plan, support tier, …), the way
+Ferndesk's user groups do, not from names in the SSO token. A project's users are the people its
+app tells Tuti about (SSO sign-ins, the widget's identify, `author` on API calls, and a sync over
+the API), each with properties; a group is conditions on them, all of which must match, and the
+group dialog shows the users who match as you write it. Decided: someone signed in to the portal
+another way (email link, password) is the project's user with their address once it's verified;
+users come in over the API first (CSV import and editing by hand later).
+
+- [x] **1. Properties.** Users' `attributes` become `properties`: strings, numbers, booleans and lists of strings (up to 50). Each change names the ones it sets and removes (`null`) and keeps the rest, so a sign-in no longer clears what the API set; the token's `properties` (and `attributes`, the old name) work that way. Someone signed in another way has the groups of the project's users with their verified address. Emails are kept lowercase.
+- [ ] **2. Users API.** `users.list` (search, by group), `users.get`, `users.upsert` (one, by your app's id) and `users.sync` (up to 1,000 at once): name, email, avatar and properties.
+- [ ] **3. Eight operators.** is, is not, is any of, is none of, contains, excludes, is set, is not set (a condition's `attribute` becomes `property`; `is_one_of` becomes `is_any_of`), matched in SQL too, so counts and lists of who matches work for any number of users.
+- [ ] **4. Groups only from conditions.** The `claim` and the token's `groups` go: `groups` in a token becomes a `groups` list property, and each group with a claim gets the condition "groups contains <claim>".
+- [ ] **5. Users in the app.** A Users page: the project's users, searchable, filtered by group, with their properties and groups, and how to sync them.
+- [ ] **6. The group dialog beside who matches.** Conditions on the left (AND between them, property names suggested from the project's users), the users who match on the right as you type.
+- [ ] Later: CSV import; adding and editing users by hand; properties for feedback (votes by plan).
+
 ## Deciding vs. writing: small models for decisions (cross-cutting, asked 2026-10-20)
 
 Generative models write; where the output is a decision (yes/no, a score, a ranking), a small model decides instead: cheaper, faster, calibrated, deterministic in tests, and it can learn from what teams already do in Tuti (merges and "not a duplicate", 👍/👎 on answers, "I don't know", dismissed gaps, edits to AI drafts). Small enough for self-hosters: a CPU reranker (ONNX, e.g. bge-reranker-base via onnxruntime-node) or logistic regression in TypeScript/SQL; no GPU, no extra service. Each starts from today's fixed thresholds and calibrates per project as labels accumulate.

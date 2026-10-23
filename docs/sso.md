@@ -23,11 +23,11 @@ The token is a JWT signed with **HS256** using the secret.
 | `jti` | yes | A unique id per token (e.g. a UUID). Each token can be used **once**. |
 | `iat` | yes | Issued-at time. |
 | `exp` | yes | Expiry. At most **10 minutes** after `iat`; a few minutes is plenty. |
-| `email` | no | Stored for notifications. Not used to match accounts. |
+| `email` | no | Stored for notifications. Not used to sign anyone in; someone who signs in to your portal another way with this address, once it's verified, gets this user's groups (see [Properties](#properties)). |
 | `name` | no | Shown on posts and comments. Defaults to the part of the email before `@`. |
 | `avatar` | no | `https` URL of the user's picture. |
 | `groups` | no | Reader groups, e.g. `["enterprise"]`: which tabs, collections and articles for some groups in your docs they may read (see [Reader groups](#reader-groups)). Lowercase letters, digits and `- _ . :`, up to 20. Each sign-in replaces them, so leave one out to take it away. |
-| `attributes` | no | What you know about the user, e.g. `{ "plan": "pro", "seats": 12 }`, for groups' conditions to match (see [Attributes](#attributes)). Strings, numbers and booleans, up to 50. Each sign-in replaces them. |
+| `properties` | no | What you know about the user, e.g. `{ "plan": "pro", "seats": 12 }`, for groups' conditions to match (see [Properties](#properties)). Strings, numbers, booleans and lists of strings, up to 50. Each sign-in sets the ones it names; `null` removes one. (`attributes`, their old name, still works.) |
 
 Node example with [`jose`](https://github.com/panva/jose):
 
@@ -40,7 +40,7 @@ const token = await new SignJWT({
   avatar: user.avatarUrl,
   // Optional: for reader groups (see below).
   groups: user.isBetaTester ? ["beta"] : [],
-  attributes: { plan: user.plan, role: user.role },
+  properties: { plan: user.plan, role: user.role },
 })
   .setProtectedHeader({ alg: "HS256" })
   .setSubject(String(user.id))
@@ -116,23 +116,25 @@ Add your groups in **Settings → Access → Groups** (owners and admins; or `gr
 description, and who's in it, by either or both of:
 
 - **SSO group name**: the claim your token names the group by in `groups` (e.g. `enterprise`).
-- **Conditions** on the token's `attributes`, all of which must match (up to 10). Each is an
-  attribute, an operator (**is**, **is not** or **is one of**, with the values comma-separated) and
+- **Conditions** on the user's [properties](#properties), all of which must match (up to 10). Each is a
+  property, an operator (**is**, **is not** or **is one of**, with the values comma-separated) and
   a value, e.g. `plan` is one of `pro, enterprise`.
 
 Someone is in the group when their `groups` has its name, or when its conditions (if it has any)
-all match their attributes. While you write the conditions, the dialog shows how many of the people
+all match their properties. While you write the conditions, the dialog shows how many of the people
 your app has signed in match them now, with a few of their names; the list shows the same for each
 group. Changing a group's name in `groups` or its conditions changes who's in it.
 
 How conditions compare:
 
 - Values compare as text, exactly: capital letters and spaces count (`Pro` isn't `pro`), and the
-  attribute's name must match exactly too.
+  property's name must match exactly too.
 - Numbers and booleans compare as their text: `"seats": 12` is `12`, `"beta": true` is `true`.
-- **is not** also matches when the token has no such attribute.
-- Only people your app signs in can be in a group: signed-out visitors and people who signed up on
-  the portal are in none, even for a group whose only condition is "is not".
+- A list matches **is** (and **is one of**) when one of its items does, and **is not** when none does.
+- **is not** also matches when the user has no such property.
+- Only your app's users can be in a group: the people it signs in, and people signed in to your
+  portal another way whose verified address is one of your users' `email`. Signed-out visitors and
+  everyone else are in none, even for a group whose only condition is "is not".
 
 Each group has a `key`, made from its name when you add it and never changed: the API's
 `/groups/{key}` and the `groups` on `tabs.*`, `collections.*` and `articles.*` name groups by it
@@ -174,12 +176,12 @@ see it (`?preview=signed-out`, which only changes what your team sees).
 A group a tab, collection or article is for can't be deleted until it's removed there, so who can
 read what never changes behind your back.
 
-Groups and attributes come from the latest sign-in: send all of a user's groups and attributes in
-every token (e.g. from their plan), and one they lose is gone the next time they sign in.
+Groups come from the latest sign-in: send all of a user's groups in every token, and one they lose
+is gone the next time they sign in. Properties change only where a token names them (see below).
 
-### Attributes
+### Properties
 
-The token's `attributes` is an object of what your app knows about the user, by name, for
+The token's `properties` is an object of what your app knows about the user, by name, for
 conditions to match:
 
 ```json
@@ -190,15 +192,18 @@ conditions to match:
   "exp": 1760000300,
   "name": "Sam from Acme",
   "groups": ["beta"],
-  "attributes": { "plan": "enterprise", "role": "admin", "company": "Acme", "seats": 40, "sso": true }
+  "properties": { "plan": "enterprise", "role": "admin", "company": "Acme", "seats": 40, "sso": true, "features": ["audit", "saml"] }
 }
 ```
 
 - Names are up to 64 characters (spaces around them are trimmed); values are strings (up to 200
-  characters), numbers or booleans; up to 50 of them (the first 50 are kept).
-- Anything else (an object or a list as a value, `null`, a name too long) is left out, one by
-  one: a bad attribute never stops the user signing in.
-- Each sign-in replaces them all, and a token without `attributes` clears them.
+  characters), numbers, booleans or lists of up to 50 strings; a user has up to 50 of them (new
+  ones past that are left out).
+- Each sign-in sets the ones it names and keeps the rest; `null` removes one (`"plan": null`).
+  A token without `properties` changes none.
+- Anything else (an object as a value, a list of anything but strings, a name too long) is left
+  out, one by one: a bad property never stops the user signing in.
+- `attributes`, their old name, still works; where both name a property, `properties` wins.
 
 ## Errors
 

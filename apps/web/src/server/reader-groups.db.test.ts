@@ -300,41 +300,72 @@ describe("groups from conditions", () => {
     return reader;
   };
 
-  test("readers whose attributes match read its collections; a later sign-in without them doesn't", async () => {
+  test("readers whose properties match read its collections, until a sign-in changes or removes them", async () => {
     const sub = "user-7";
-    const reader = await signedIn({ attributes: { plan: "custom", seats: 40 } }, sub);
+    const reader = await signedIn({ properties: { plan: "custom", seats: 40 } }, sub);
     expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
     expect(await reads(reader)).toEqual(yes);
-    await signIn({ attributes: { plan: "pro" } }, sub);
+    await signIn({ properties: { plan: "pro" } }, sub);
     expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: [] });
     expect(await reads(reader)).toEqual(no);
-    await signIn({ attributes: { plan: "enterprise" } }, sub);
+    await signIn({ properties: { plan: "enterprise" } }, sub);
     expect(await reads(reader)).toEqual(yes);
-    // Left out of the token: gone too.
+    // Left out of the token: kept (the API may have set it).
     await signIn({}, sub);
+    expect(await reads(reader)).toEqual(yes);
+    // Null: gone.
+    await signIn({ properties: { plan: null } }, sub);
+    expect(await reads(reader)).toEqual(no);
+  });
+
+  test("signed in another way, the project's users with their address, once it's verified", async () => {
+    const reader = await signUp("By email", `e2e-${randomUUID()}@example.com`);
+    await signIn({ email: reader.email.toUpperCase(), properties: { plan: "enterprise" } });
+    // Anyone can sign up with any address: not until it's verified.
+    expect(await reads(reader)).toEqual(no);
+    await prisma.user.update({ where: { id: reader.id }, data: { emailVerified: true } });
+    expect(await readerOf(project.id, reader.id)).toEqual({ signedIn: true, groups: ["enterprise"] });
+    expect(await reads(reader)).toEqual(yes);
+    // Several with it: any of them puts them in.
+    await signIn({ email: reader.email, properties: { plan: "free" } });
+    expect(await reads(reader)).toEqual(yes);
+    // Another project's users with it don't.
+    const other = await createProject(owner);
+    const elsewhere = await signUp("Elsewhere", `e2e-${randomUUID()}@example.com`);
+    await prisma.user.update({ where: { id: elsewhere.id }, data: { emailVerified: true } });
+    await prisma.ssoIdentity.create({
+      data: { projectId: other.id, externalId: "user-1", userId: (await signUp()).id, email: elsewhere.email, properties: { plan: "enterprise" } },
+    });
+    expect(await reads(elsewhere)).toEqual(no);
+  });
+
+  test("someone the project's SSO signed in is only that user, not others with the address it gave", async () => {
+    const email = `e2e-${randomUUID()}@example.com`;
+    await signIn({ email, properties: { plan: "enterprise" } });
+    const reader = await signedIn({ email, properties: { plan: "free" } });
     expect(await reads(reader)).toEqual(no);
   });
 
   test("its claim or its conditions: either lets them in", async () => {
-    expect(await reads(await signedIn({ groups: ["enterprise"], attributes: { plan: "free" } }))).toEqual(yes);
-    expect(await reads(await signedIn({ attributes: { plan: "enterprise" } }))).toEqual(yes);
-    expect(await reads(await signedIn({ groups: ["beta"], attributes: { plan: "Enterprise", enterprise: true } }))).toEqual(no);
+    expect(await reads(await signedIn({ groups: ["enterprise"], properties: { plan: "free" } }))).toEqual(yes);
+    expect(await reads(await signedIn({ properties: { plan: "enterprise" } }))).toEqual(yes);
+    expect(await reads(await signedIn({ groups: ["beta"], properties: { plan: "Enterprise", enterprise: true } }))).toEqual(no);
     // Without its claim, only the conditions do.
     await call(updateGroup, as(), { group: "enterprise", claim: null });
     expect(await reads(await signedIn({ groups: ["enterprise"] }))).toEqual(no);
   });
 
-  test("only people the project's SSO signs in: not others, even for a group of everyone without an attribute", async () => {
+  test("only the project's users: not others, even for a group of everyone without a property", async () => {
     await call(updateGroup, as(), { group: "enterprise", claim: null, conditions: [{ attribute: "plan", op: "is_not", value: "free" }] });
     expect(await reads(await signedIn({}))).toEqual(yes);
-    expect(await reads(await signedIn({ attributes: { plan: "free" } }))).toEqual(no);
+    expect(await reads(await signedIn({ properties: { plan: "free" } }))).toEqual(no);
     expect(await reads(await signUp("Stranger"))).toEqual(no);
     actAs(null);
     expect(await publishedArticle(project.slug, "saml")).toBeNull();
     // Another project's SSO users neither.
     const other = await createProject(owner);
     const elsewhere = await signUp("Elsewhere");
-    await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, attributes: { plan: "pro" } } });
+    await prisma.ssoIdentity.create({ data: { projectId: other.id, externalId: "user-1", userId: elsewhere.id, properties: { plan: "pro" } } });
     expect(await readerOf(project.id, elsewhere.id)).toEqual({ signedIn: true, groups: [] });
   });
 });

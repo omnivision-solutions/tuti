@@ -313,7 +313,7 @@ test("people without access: an article shown with a lock asks people signed out
   await expect(preview.getByText("Sign in to read this.")).toBeVisible();
 });
 
-test("a group from conditions: readers whose token's attributes match read its collection", async ({ browser }, testInfo) => {
+test("a group from conditions: readers whose properties match read its collection", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -324,9 +324,9 @@ test("a group from conditions: readers whose token's attributes match read its c
   const api = await apiFor(owner, slug);
 
   // The app has signed in two people: one on the Pro plan, one on Free.
-  const signIn = async (sub: string, name: string, attributes: Record<string, unknown>) => {
+  const signIn = async (sub: string, name: string, properties: Record<string, unknown>) => {
     const person = await newPerson(browser, portalUrl(slug));
-    await person.goto(`/sso?token=${ssoToken(secret, { sub, name, attributes })}&redirect=${encodeURIComponent("/docs")}`);
+    await person.goto(`/sso?token=${ssoToken(secret, { sub, name, properties })}&redirect=${encodeURIComponent("/docs")}`);
     await expect(person).toHaveURL(/\/docs$/);
     return person;
   };

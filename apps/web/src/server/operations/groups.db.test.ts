@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { beforeEach, expect, test } from "vitest";
 import type { z } from "zod";
 
-import type { Attributes } from "@/lib/group-conditions";
+import type { Properties } from "@/lib/user-properties";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { deleteGroup as deleteGroupAction, previewGroup, saveGroup } from "../groups";
@@ -28,10 +28,10 @@ const create = (input: z.input<typeof createGroup.input>) => call(createGroup, t
 const update = (input: z.input<typeof updateGroup.input>) => call(updateGroup, team(), input);
 const remove = (group: string) => call(deleteGroup, team(), { group });
 
-/** Someone the project's SSO signed in, with `groups` and `attributes` in their latest token. */
-async function ssoReader(name: string, groups: string[], attributes: Attributes = {}, projectId = project.id) {
+/** Someone the project's SSO signed in, with `groups` in their latest token, and `properties`. */
+async function ssoReader(name: string, groups: string[], properties: Properties = {}, projectId = project.id) {
   const user = await signUp(name);
-  await prisma.ssoIdentity.create({ data: { projectId, externalId: crypto.randomUUID(), userId: user.id, groups, attributes } });
+  await prisma.ssoIdentity.create({ data: { projectId, externalId: crypto.randomUUID(), userId: user.id, groups, properties } });
 }
 
 const form = (fields: Record<string, string>) => {
@@ -251,15 +251,17 @@ test("the migration gives today's groups their claim as their key, no conditions
     DELETE FROM "reader_group";
     DROP INDEX "reader_group_projectId_key_key";
     ALTER TABLE "reader_group" DROP COLUMN "key", DROP COLUMN "conditions", ALTER COLUMN "claim" SET NOT NULL;
-    ALTER TABLE "sso_identity" DROP COLUMN "attributes";`);
+    ALTER TABLE "sso_identity" DROP COLUMN "properties";`);
   await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", name, claim, "updatedAt") VALUES ('g1', ${project.id}, 'Pro plan', 'plan:pro', now())`;
   await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, "updatedAt") VALUES ('s1', ${project.id}, 'user-1', ${owner.id}, '{plan:pro}', now())`;
 
   await prisma.$executeRawUnsafe(sql);
+  // And on to today's name for them (20261023120000_user_properties).
+  await prisma.$executeRawUnsafe(`ALTER TABLE "sso_identity" RENAME COLUMN "attributes" TO "properties"`);
 
   expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, claim: true, conditions: true } })).toEqual([
     { key: "plan:pro", claim: "plan:pro", conditions: [] },
   ]);
-  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { attributes: true } })).toEqual([{ attributes: {} }]);
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { properties: true } })).toEqual([{ properties: {} }]);
   expect((await list()).map((g) => [g.key, g.readers])).toEqual([["plan:pro", 1]]);
 });
