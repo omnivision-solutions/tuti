@@ -393,6 +393,7 @@ Docs live in Tuti, not in the customer's repo; opening PRs against a docs repo
 - [ ] A proper parrot illustration (Phase 3.5 leftover)
 - [ ] Support inbox, or hand-off to Intercom / Zendesk / Help Scout first
 - [ ] More sources: GitLab, Linear, Jira; Slack notifications
+- [ ] Links without anyone linking (asked 2026-10-23): every pull request matched against the project's open posts (its text, diff and commits), linked by itself when Tuti is sure, suggested when it's less sure. Until then the settings don't ask people to mention posts (`tuti#12` and post URLs in a pull request still link, and suggestions and "Link PR" stay on the post view)
 - [ ] Turbo cache in CI, once jobs get slow (each takes 1–2 minutes now)
 - [ ] Preview deployments per PR
 - [ ] AI translations of the help center and widget, with a glossary; keep a locale on articles from the start (from the Ferndesk review, 2026-10-19)

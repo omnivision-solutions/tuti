@@ -82,7 +82,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               <div className="flex flex-col gap-1">
                 <h3 className="font-medium">GitHub</h3>
                 <p className="text-sm text-muted-foreground">
-                  Pull requests that mention a post link to it and move it to In progress; shipping them completes it.
+                  Shipping a pull request completes the posts linked to it.
                 </p>
               </div>
               {!github ? (

@@ -130,9 +130,6 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       <Card>
         <CardHeader>
           <CardTitle>Pull requests</CardTitle>
-          <CardDescription>
-            Mention tuti#12 in a pull request to link post 12 and move it to In progress.
-          </CardDescription>
         </CardHeader>
         <CardContent className="text-sm">
           <PrCommentsCheckbox projectSlug={project.slug} on={installation.commentOnPullRequests} />
