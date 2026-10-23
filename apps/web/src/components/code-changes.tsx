@@ -352,7 +352,7 @@ export function ChangelogProposal({
     "the next release's draft"
   );
   return (
-    <div className="flex flex-col gap-2" aria-label="Changelog line">
+    <div className="flex flex-col gap-2" aria-label="Changelog proposal">
       <span className="text-xs text-muted-foreground">
         {waiting ? "Replaces the pull request's line in " : "In "}
         {where}

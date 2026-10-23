@@ -70,7 +70,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await line.fill("A dark theme, in Settings");
   await owner.getByRole("button", { name: "Update changelog" }).click();
   await expect(owner.getByText("Changelog updated")).toBeVisible();
-  await expect(owner.getByLabel("Changelog line")).toContainText("A dark theme, in Settings");
+  await expect(owner.getByLabel("Changelog proposal")).toContainText("Applied by Olive Owner");
+  await expect(owner.getByLabel("Changelog proposal")).toContainText("A dark theme, in Settings");
 
   // The article's edit, as a diff against what's published, goes live as a new version.
   const edit = owner.getByRole("listitem", { name: `Updated: ${article}` });
