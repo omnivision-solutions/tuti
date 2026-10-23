@@ -48,7 +48,7 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
-  /** A pull request on an included repo was merged: it goes into the changelog's running draft. */
+  /** A pull request on an included repo was merged: it goes into the changelog's running draft, and becomes a code change. */
   githubPullRequest: {
     name: "github-pull-request",
     input: z.object({
@@ -64,7 +64,19 @@ export const jobs = {
       merged: z.boolean().default(false),
       /** Label names; some keep a merged pull request out of the changelog's running draft. */
       labels: z.array(z.string()).default([]),
+      /** Its author's GitHub login, and when it merged. */
+      author: z.string().default(""),
+      mergedAt: z.string().optional(),
     }),
+  },
+  /** Reads a merged pull request (its code change) and analyses it; one run at a time per code change. `force` analyses one already done again. */
+  codeChange: {
+    name: "code-change",
+    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false) }),
+    concurrencyKey: "input.codeChangeId",
+    retries: 4,
+    // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.
+    backoff: { factor: 5, maxSeconds: 15 * 60 },
   },
   /** A release was published on an included repo: it closes the changelog's running draft. */
   githubRelease: {

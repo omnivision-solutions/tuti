@@ -283,6 +283,7 @@ const matrix: Matrix = {
       },
     },
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
+    setCodeChangeAnalysis: { allowed: "ADMIN", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
   },
   invitations: {
     createInvitation: {

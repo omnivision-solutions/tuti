@@ -1,11 +1,12 @@
 import { prisma } from "@tuti/db";
+import { aiProvider, codeChangesEnabled } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
 import { ArrowLeftRightIcon, ChevronLeftIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
+import { CodeChangeAnalysisSwitch, DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -43,6 +44,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       repositories: true,
       createdAt: true,
       included: { select: { repoId: true } },
+      project: { select: { analyseCodeChanges: true } },
     },
   });
   const integrations = `/app/${project.slug}/settings/integrations`;
@@ -155,6 +157,25 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
                 : null
             }
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Code changes</CardTitle>
+          <CardDescription>
+            Tuti reads each merged pull request and proposes the feedback it resolves and the docs it changes. Nothing changes for your users
+            until your team applies a proposal.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {codeChangesEnabled() ? (
+            <CodeChangeAnalysisSwitch projectSlug={project.slug} on={installation.project.analyseCodeChanges} provider={aiProvider()} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Code changes need AI on this server (OPENROUTER_API_KEY, DECISION_MODEL and OPENAI_API_KEY in .env.example).
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

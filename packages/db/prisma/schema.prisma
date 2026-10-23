@@ -44,6 +44,7 @@ model User {
   emailOptOuts        EmailOptOut[]
   shippedEmails       ShippedEmail[]
   articleRevisions    ArticleRevision[]
+  codeChangeActions   CodeChangeAction[]
 
   @@unique([email])
   @@map("user")
@@ -226,6 +227,8 @@ model Project {
   supportEmail          String?
   supportEmailPending   String?
   supportEmailTokenHash String?      @unique
+  /// Merged pull requests become code changes (see CodeChange): on unless the team turned it off.
+  analyseCodeChanges    Boolean      @default(true)
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
@@ -268,6 +271,7 @@ model Project {
   docsQuestions        DocsQuestion[]
   docsGapDismissals    DocsGapDismissal[]
   changelogSeen        ChangelogSeen[]
+  codeChanges          CodeChange[]
 
   @@map("project")
 }
@@ -782,7 +786,8 @@ model Post {
   duplicateSuggestions   DuplicateSuggestion[] @relation("SuggestedDuplicate")
   duplicateOfSuggestions DuplicateSuggestion[] @relation("SuggestedOriginal")
 
-  links PostLink[]
+  links             PostLink[]
+  codeChangeActions CodeChangeAction[]
 
   @@unique([projectId, number])
   /// Trigram index for "similar posts" suggestions (pg_trgm).
@@ -1299,6 +1304,7 @@ model Article {
   groups     ArticleGroup[]
   /// Tabs that show it at their path.
   landingOf  DocsTab[]         @relation("DocsTabLanding")
+  codeChangeActions CodeChangeAction[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
   @@index([collectionId])
@@ -1520,6 +1526,108 @@ model ArticleChunk {
   @@unique([articleId, position])
   @@index([projectId])
   @@map("article_chunk")
+}
+
+enum CodeChangeState {
+  /// Waiting for its analysis, or in it.
+  ANALYSING
+  /// Its proposed actions are ready for the team.
+  READY
+  /// Nothing users see changed, so there's nothing to propose (`reason` says why).
+  NOTHING_TO_DO
+  /// The analysis failed (`reason` says where); it's retried, and the team can analyse it again.
+  FAILED
+}
+
+enum CodeChangeActionKind {
+  /// Links the post to the pull request, nothing more: a post it touches without resolving.
+  LINKS
+  /// Links the post and completes it (its people get the shipped emails).
+  RESOLVES
+  /// Posts the team's comment on the post (and In progress, if it was earlier).
+  MOVES_FORWARD
+  /// An edit to a published article, against the revision it was written from.
+  ARTICLE_EDIT
+  /// A new article, as a draft.
+  NEW_ARTICLE
+  /// The pull request's line in the changelog's running draft.
+  CHANGELOG_LINE
+}
+
+enum CodeChangeActionStatus {
+  PENDING
+  APPLIED
+  DISMISSED
+  /// Its article changed since the edit was written: write it again, or dismiss it.
+  STALE
+}
+
+/// A merged pull request, analysed once into actions the team applies, edits or dismisses (docs/plan.md,
+/// Code changes). Nothing customer-facing changes until someone applies an action. Belongs to its
+/// project, and goes with it.
+model CodeChange {
+  id        String          @id @default(cuid())
+  projectId String
+  /// GitHub's id for the repository, and its owner/name when it merged.
+  repoId    Int
+  repo      String
+  number    Int
+  url       String
+  title     String
+  /// The pull request's author on GitHub (login).
+  author    String
+  mergedAt  DateTime
+  state     CodeChangeState @default(ANALYSING)
+  /// Why there's nothing to do, or where the analysis failed. Never diff text.
+  reason    String          @default("")
+  /// What changed for users, and why Tuti proposes its actions (both written by the model).
+  summary   String          @default("")
+  why       String          @default("")
+  /// The writing model and the decision model that analysed it, so a new one re-analyses only on request.
+  model     String?
+  decider   String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actions CodeChangeAction[]
+
+  @@unique([projectId, repoId, number])
+  @@index([projectId, createdAt])
+  @@map("code_change")
+}
+
+/// One thing a code change proposes. Its target is a post or an article (none for a new article until
+/// its draft exists, nor for the changelog line, whose bullet in the running draft is found by the pull
+/// request's URL).
+model CodeChangeAction {
+  id            String                 @id @default(cuid())
+  codeChangeId  String
+  kind          CodeChangeActionKind
+  postId        String?
+  articleId     String?
+  /// The decision model's probability that it's right.
+  probability   Float
+  /// Why Tuti proposes it.
+  reason        String                 @default("")
+  /// What applying it writes, by kind: a comment, an article's content and the revision it's against, a line.
+  payload       Json                   @default("{}")
+  status        CodeChangeActionStatus @default(PENDING)
+  /// Who applied or dismissed it, and when.
+  decidedById   String?
+  decidedAt     DateTime?
+  dismissReason String                 @default("")
+  createdAt     DateTime               @default(now())
+
+  codeChange CodeChange @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
+  post       Post?      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  article    Article?   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  decidedBy  User?      @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([codeChangeId])
+  @@index([postId])
+  @@index([articleId])
+  @@map("code_change_action")
 }
 
 /// Licences Tuti sells (used only where LICENSE_PRIVATE_KEY is set: tuti.so), one per installation and

@@ -4,7 +4,7 @@
  * these set it up themselves (e.g. the database tests start their own Postgres).
  */
 for (const name of Object.keys(process.env)) {
-  if (name === "DATABASE_URL" || name === "OPENAI_API_KEY" || name.startsWith("HATCHET_CLIENT_") || name.startsWith("SMTP_") || name.startsWith("MEDIA_") || name.startsWith("GITHUB_") || name.startsWith("OPENROUTER_") || name === "AI_MODEL") {
+  if (name === "DATABASE_URL" || name === "OPENAI_API_KEY" || name.startsWith("HATCHET_CLIENT_") || name.startsWith("SMTP_") || name.startsWith("MEDIA_") || name.startsWith("GITHUB_") || name.startsWith("OPENROUTER_") || name === "AI_MODEL" || name === "DECISION_MODEL") {
     delete process.env[name];
   }
 }
