@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type Prisma, prisma } from "@tuti/db";
-import { confidence, enqueue } from "@tuti/jobs";
+import { confidence, enqueue, THRESHOLDS } from "@tuti/jobs";
 import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
 
@@ -24,6 +24,15 @@ const KINDS: Record<CodeChangeActionKind, string> = {
   CHANGELOG_LINE: "changelog_line",
 };
 const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale" };
+
+/** A feedback proposal "Apply likely" takes: above its kind's likely threshold, and for a post it moves forward, with a comment to post. */
+export function likelyToApply(action: { kind: CodeChangeActionKind; probability: number; payload: Prisma.JsonValue }): boolean {
+  if (action.kind !== "RESOLVES" && action.kind !== "MOVES_FORWARD" && action.kind !== "LINKS") {
+    return false;
+  }
+  const comment = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
+  return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
+}
 
 /** The kinds applying can do (the rest come with their pages, docs/plan.md). */
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD"]);
@@ -107,6 +116,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         status: ACTION_STATUSES[action.status],
         probability: action.probability,
         confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
+        /** "Apply likely" applies it (see likelyToApply). */
+        applyLikely: action.status === "PENDING" && likelyToApply(action),
         reason: action.reason,
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
@@ -238,6 +249,9 @@ export const applyCodeChangeAction = defineOperation({
       throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
     }
     const { codeChange, post } = action;
+    // Once the comment is being posted, it may be saved even if something after it fails: then the
+    // action stays applied, so trying again can't post it twice.
+    let posting = false;
     try {
       // Each step can run again after a failure: the link once per post, the status only from earlier ones, the comment last.
       await prisma.postLink.upsert({
@@ -268,9 +282,14 @@ export const applyCodeChangeAction = defineOperation({
         if (NOT_STARTED.has(post.status)) {
           await call(updatePost, context, { number: post.number, status: toApiStatus("IN_PROGRESS") });
         }
+        posting = true;
         await call(createComment, context, { number: post.number, body: comment });
       }
     } catch (error) {
+      // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
+      if (posting && !(error instanceof OperationError)) {
+        throw error;
+      }
       // Not done: it's waiting again, for another try.
       await prisma.codeChangeAction.update({
         where: { id: action.id },

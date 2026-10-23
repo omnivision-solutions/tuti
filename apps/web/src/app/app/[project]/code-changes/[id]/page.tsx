@@ -20,7 +20,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
   }
   const mergedAt = new Date(change.mergedAt);
   const feedback = change.actions.filter((action) => action.post);
-  const likely = feedback.filter((action) => action.status === "pending" && action.confidence === "likely").length;
+  const likely = feedback.filter((action) => action.applyLikely).length;
 
   return (
     <>

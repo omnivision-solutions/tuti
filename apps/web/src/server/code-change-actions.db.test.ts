@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { applyLikelyCodeChanges } from "@/server/code-changes";
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
@@ -11,6 +11,8 @@ import { mailbox } from "@/test/mailbox";
 let owner: TestUser;
 let voter: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(async () => {
   owner = await signUp("Olive Owner");
@@ -98,6 +100,16 @@ describe("applying", () => {
     expect(after.comments).toHaveLength(1);
   });
 
+  test("once the comment may be saved, a failure after it leaves the action applied, so it isn't posted twice", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Getting there." });
+    // The comment is saved; the lookup right after it fails.
+    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
+    expect((await postOf(post.id)).comments).toHaveLength(1);
+  });
+
   test("a comment to post is needed; other kinds can't be applied yet; another project's actions aren't found", async () => {
     const { action } = await proposal("MOVES_FORWARD");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Write the comment to post first");
@@ -145,11 +157,15 @@ test("the list puts code changes with proposals waiting first, then the newest",
   ]);
 });
 
-test('"Apply likely" applies the likely feedback proposals and leaves the maybes', async () => {
+test('"Apply likely" applies the likely feedback proposals and leaves the maybes, and a comment nobody wrote', async () => {
+  // Most likely of all, but with no comment to post: it waits for the team, and doesn't stop the rest.
+  const unwritten = await proposal("MOVES_FORWARD", { probability: 0.95 });
   const likely = await proposal("RESOLVES", { probability: 0.9 });
   const maybe = await proposal("LINKS", { probability: 0.7 });
   expect(await applyLikelyCodeChanges(project.slug, likely.change.id)).toEqual({});
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: likely.action.id } })).status).toBe("APPLIED");
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: maybe.action.id } })).status).toBe("PENDING");
+  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: unwritten.action.id } })).status).toBe("PENDING");
+  expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.filter((action) => action.applyLikely)).toEqual([]);
   expect((await postOf(likely.post.id)).status).toBe("COMPLETED");
 });
