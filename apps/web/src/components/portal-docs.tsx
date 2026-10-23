@@ -7,6 +7,7 @@ import Link from "next/link";
 
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
+import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks } from "@/components/portal-look";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
@@ -304,9 +305,9 @@ export async function DocsArticle({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-col gap-1">
               {article.collection && (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm font-medium text-primary">
                   {collection ? (
-                    <Link href={at(`/docs/${collection.slug}`)} className="hover:text-foreground hover:underline">
+                    <Link href={at(`/docs/${collection.slug}`)} className="hover:underline">
                       {collection.name}
                     </Link>
                   ) : (
@@ -314,7 +315,7 @@ export async function DocsArticle({
                   )}
                 </p>
               )}
-              <h1 id={ARTICLE_TITLE_ID} className="font-heading text-2xl font-bold tracking-tight break-words">
+              <h1 id={ARTICLE_TITLE_ID} className="font-heading text-3xl font-bold tracking-tight break-words">
                 {article.title}
               </h1>
             </div>
@@ -324,7 +325,7 @@ export async function DocsArticle({
         </div>
         {readable ? (
           <>
-            <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text break-words" />
+            <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
             <ArticleFeedback projectSlug={project} slug={slug} />
           </>
         ) : (
@@ -440,18 +441,7 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
       </div>
       {headings.length >= 2 && (
         <aside className="hidden w-50 shrink-0 xl:block">
-          <nav aria-label="On this page" className="sticky top-6 flex flex-col gap-2 text-sm">
-            <p className="font-heading font-semibold">On this page</p>
-            <ul className="flex flex-col gap-1.5">
-              {headings.map((heading) => (
-                <li key={heading.id} className={cn(heading.level === 3 && "pl-3")}>
-                  <a href={`#${heading.id}`} className="break-words text-muted-foreground transition-colors hover:text-foreground">
-                    {heading.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <OnThisPage headings={headings} />
         </aside>
       )}
     </div>

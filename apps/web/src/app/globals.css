@@ -242,4 +242,24 @@
   .rich-text :where(p.is-editor-empty:first-child)::before {
     @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
   }
+  /* A docs article, set for reading and skimming: softer text, so headings and bold terms stand
+     out, and room between sections and steps. */
+  .article-text {
+    @apply gap-4 leading-7 text-foreground/80;
+  }
+  .article-text :where(h2) {
+    @apply mt-6 text-2xl text-foreground;
+  }
+  .article-text :where(h3) {
+    @apply mt-3 text-xl text-foreground;
+  }
+  .article-text :where(strong) {
+    @apply font-semibold text-foreground;
+  }
+  .article-text :where(li) {
+    @apply pl-1 marker:text-muted-foreground;
+  }
+  .article-text :where(li + li) {
+    @apply mt-2;
+  }
 }
