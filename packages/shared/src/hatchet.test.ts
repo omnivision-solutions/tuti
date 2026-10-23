@@ -26,7 +26,7 @@ test("each run gets its own console and log lines, in order, while runs overlap"
   const task = withRunLogs(async (name: string) => {
     console.log(`${name} 1`);
     console.log("y".repeat(1500));
-    await sleep(Math.random() * 5);
+    await sleep(2);
     setTimeout(() => console.log(`${name} from a timer`), 1);
     log.info(`${name} 2`);
     await sleep(10);
@@ -36,7 +36,7 @@ test("each run gets its own console and log lines, in order, while runs overlap"
 
   console.log("outside any run");
   expect(await Promise.all([task("a", a.ctx), task("b", b.ctx)])).toEqual(["a", "b"]);
-  await sleep(300);
+  await vi.waitFor(() => expect([a.sent.length, b.sent.length]).toEqual([6, 6]));
 
   // The 1,500-character line goes out in two parts, as Hatchet drops lines over 1,000.
   const lines = (name: string) => [`info ${name} 1`, `info [part 1/2] ${"y".repeat(9)}`, `info [part 2/2] ${"y".repeat(9)}`, `info ${name} 2`, `info ${name} from a timer`, `warn ${name} 3 { n: 3 }`];

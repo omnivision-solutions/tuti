@@ -90,7 +90,11 @@ function routeConsoleToRuns() {
   }
 }
 
-/** Wraps a task so everything it writes to the console (and `log`) lands in its run's logs in Hatchet. */
+/**
+ * Wraps a task so what it writes with console.log, info, debug, warn and error
+ * (and `log`, and console.trace, table and assert, which call those) lands in
+ * its run's logs in Hatchet. console.dir writes past them; nothing here uses it.
+ */
 export function withRunLogs<I, O, C extends Context<any>>(fn: (input: I, ctx: C) => Promise<O>): (input: I, ctx: C) => Promise<O> {
   return (input, ctx) => {
     // On the first run, so processes that only enqueue (web) are never patched.
