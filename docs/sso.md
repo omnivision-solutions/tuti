@@ -126,8 +126,9 @@ of `pro, enterprise`:
 
 A token's `groups` is the `groups` property, so a group for the people your app puts in its
 "enterprise" group has the condition `groups` is `enterprise`. While you write the conditions, the
-dialog shows how many of your users match them now, with a few of their names; the list shows the
-same for each group. Changing a group's conditions changes who's in it. (In the API, conditions
+dialog lists the users who match them now beside them (the first 50, and how many in all), and
+property names your users have are suggested; the list of groups shows how many each has, with a
+few names. Changing a group's conditions changes who's in it. (In the API, conditions
 written with `attribute` and `is_one_of`, their names before, still work. Groups named by an SSO
 group name before got the condition `groups` is that name; one that had conditions as well kept
 just those.)
