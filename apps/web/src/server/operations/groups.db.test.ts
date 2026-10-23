@@ -251,13 +251,11 @@ test("the migration gives today's groups their claim as their key, no conditions
     DELETE FROM "reader_group";
     DROP INDEX "reader_group_projectId_key_key";
     ALTER TABLE "reader_group" DROP COLUMN "key", DROP COLUMN "conditions", ALTER COLUMN "claim" SET NOT NULL;
-    ALTER TABLE "sso_identity" DROP COLUMN "properties";`);
+    ALTER TABLE "sso_identity" DROP COLUMN "attributes";`);
   await prisma.$executeRaw`INSERT INTO reader_group (id, "projectId", name, claim, "updatedAt") VALUES ('g1', ${project.id}, 'Pro plan', 'plan:pro', now())`;
   await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, "updatedAt") VALUES ('s1', ${project.id}, 'user-1', ${owner.id}, '{plan:pro}', now())`;
 
   await prisma.$executeRawUnsafe(sql);
-  // And on to today's name for them (20261023120000_user_properties).
-  await prisma.$executeRawUnsafe(`ALTER TABLE "sso_identity" RENAME COLUMN "attributes" TO "properties"`);
 
   expect(await prisma.readerGroup.findMany({ where: { projectId: project.id }, select: { key: true, claim: true, conditions: true } })).toEqual([
     { key: "plan:pro", claim: "plan:pro", conditions: [] },

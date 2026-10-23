@@ -1,5 +1,4 @@
--- Users' attributes are their properties now: set by SSO sign-ins and the API, a change at a time.
-ALTER TABLE "sso_identity" RENAME COLUMN "attributes" TO "properties";
+-- Users' attributes are their properties now (the column keeps its name: see SsoIdentity.properties).
 
 -- Emails lowercase, so a reader signing in by email finds the user with their address.
 UPDATE "sso_identity" SET "email" = lower("email") WHERE "email" <> lower("email");

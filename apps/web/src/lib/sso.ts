@@ -98,7 +98,7 @@ export async function upsertProjectUser(
     if (email !== undefined || groups !== undefined || Object.keys(changes).length > 0) {
       await prisma.$transaction(async (tx) => {
         // Locked, so two changes at once (a sign-in, an API call) both land.
-        const [row] = await tx.$queryRaw<{ properties: unknown }[]>`SELECT properties FROM sso_identity WHERE id = ${existing.id} FOR UPDATE`;
+        const [row] = await tx.$queryRaw<{ properties: unknown }[]>`SELECT attributes AS properties FROM sso_identity WHERE id = ${existing.id} FOR UPDATE`;
         const { properties } = mergeProperties(storedProperties(row?.properties), changes);
         await tx.ssoIdentity.update({ where: { id: existing.id }, data: { email, groups, properties } });
       });

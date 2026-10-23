@@ -309,7 +309,8 @@ model SsoIdentity {
   groups     String[] @default([])
   /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
   /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
-  properties Json     @default("{}")
+  /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
+  properties Json     @default("{}") @map("attributes")
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
