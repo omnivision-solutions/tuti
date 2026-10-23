@@ -12,6 +12,9 @@ Users come in three ways, all matched by the same id:
 - **The API**, `users.sync`: up to 1,000 users per call, e.g. from a nightly job or your AI agent.
 - **Acting for someone** (`author` on `posts.create` and the like) adds them too.
 
+Your team sees them on the **Users** page in the app: searchable by name, email or id, filtered
+by group, each with their properties and the groups they're in.
+
 Someone who signs in to your portal another way (an email link, a password) is in the groups of
 the users with their address, once it's verified.
 
