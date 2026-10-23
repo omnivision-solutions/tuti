@@ -18,7 +18,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
+import { Switch } from "@/components/ui/switch";
+import { disconnectGithub, refreshGithubRepositories, setCodeChangeAnalysis, setGithubRepository } from "@/server/github";
 
 export function DisconnectGithubButton({ projectSlug, account }: { projectSlug: string; account: string }) {
   const [pending, startTransition] = useTransition();
@@ -241,6 +242,44 @@ export function GithubAccountChoice({
       <a href={`/api/github/install?${new URLSearchParams({ project: projectSlug, new: "1" })}`} className={buttonVariants({ variant: "outline", size: "sm", className: "self-start" })}>
         Install on another account
       </a>
+    </div>
+  );
+}
+
+/** Settings → Integrations → GitHub → Code changes: analysing merged pull requests, on or off (saved at once). */
+export function CodeChangeAnalysisSwitch({ projectSlug, on, provider }: { projectSlug: string; on: boolean; provider: string }) {
+  const [pending, startTransition] = useTransition();
+  const [checked, setChecked] = useState(on);
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-0.5">
+        <label htmlFor="analyse-code-changes" className="text-sm font-medium">
+          Analyse merged pull requests
+        </label>
+        <p className="text-sm text-muted-foreground">
+          Sent to {provider}: each merged pull request&apos;s title, description, commits and diff. Lockfiles, generated files and files that
+          hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
+        </p>
+      </div>
+      <Switch
+        id="analyse-code-changes"
+        className="mt-0.5"
+        checked={checked}
+        disabled={pending}
+        onChange={(event) => {
+          const next = event.currentTarget.checked;
+          setChecked(next);
+          startTransition(async () => {
+            const result = await setCodeChangeAnalysis(projectSlug, next);
+            if (result.error) {
+              setChecked(!next);
+              toast.error(result.error);
+            } else {
+              toast.success(next ? "Code changes on" : "Code changes off");
+            }
+          });
+        }}
+      />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { aiProvider, codeChangesEnabled } from "@tuti/shared";
 import { ChevronRightIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
@@ -83,6 +84,8 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
                 <h3 className="font-medium">GitHub</h3>
                 <p className="text-sm text-muted-foreground">
                   Merged pull requests gather in the changelog&apos;s Next release draft.
+                  {codeChangesEnabled() &&
+                    ` Tuti also sends each one's diff, without secrets, to ${aiProvider()} to propose the feedback it resolves and the docs it changes. You can turn that off once it's connected.`}
                 </p>
               </div>
               {!github ? (

@@ -16,6 +16,9 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const id = randomInt(1_000_000, 2_000_000_000);
   const account = { id, account: "acme-e2e", repositories: [{ id, fullName: "acme-e2e/app" }, { id: id + 1, fullName: "acme-e2e/ios" }] };
 
+  // Before connecting, it says what leaves: merged pull requests' diffs, to the AI provider.
+  await owner.goto(`/app/${web}/settings/integrations`);
+  await expect(owner.getByText("Tuti also sends each one's diff, without secrets, to", { exact: false })).toBeVisible();
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
   // Connected, it's on GitHub's own settings page.
@@ -34,6 +37,16 @@ test("an admin connects two projects to one GitHub account, gives each its repos
     new RegExp(`/organizations/acme-e2e/settings/installations/${id}$`),
   );
   await checkpoint(owner, "settings-github-connected");
+
+  // Code changes are on, and the team can turn them off (and on again).
+  const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
+  await expect(analysis).toBeChecked();
+  await analysis.click();
+  await expect(owner.getByText("Code changes off")).toBeVisible();
+  await owner.reload();
+  await expect(analysis).not.toBeChecked();
+  await analysis.click();
+  await expect(owner.getByText("Code changes on")).toBeVisible();
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, { ...account, add: [] });

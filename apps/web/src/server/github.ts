@@ -100,3 +100,14 @@ export async function refreshGithubRepositories(projectSlug: string): Promise<{ 
     return { error: "GitHub didn't answer. Try again in a moment." };
   }
 }
+
+/** Turns code changes (merged pull requests read and analysed by the AI provider) on or off for the project. */
+export async function setCodeChangeAnalysis(projectSlug: string, on: boolean): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change the GitHub connection" };
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: on === true } });
+  refresh();
+  return {};
+}

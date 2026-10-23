@@ -1,3 +1,5 @@
+import { embeddingsEnabled } from "./embeddings";
+
 /**
  * Text generation through an OpenAI-compatible chat completions API: OpenRouter
  * by default, or any compatible endpoint (OPENROUTER_BASE_URL). Optional: without
@@ -8,6 +10,20 @@ const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 
 export function aiEnabled(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
+}
+
+/** Where AI requests go (the endpoint's host, e.g. openrouter.ai), to tell teams what's sent where. */
+export function aiProvider(): string {
+  return new URL(process.env.OPENROUTER_BASE_URL || DEFAULT_BASE_URL).hostname;
+}
+
+/**
+ * Code changes (merged pull requests analysed into proposed actions) need the AI (its decision model
+ * too) and embeddings (to find the posts and articles a change may touch). Without either, merged pull
+ * requests only feed the changelog's running draft.
+ */
+export function codeChangesEnabled(): boolean {
+  return aiEnabled() && embeddingsEnabled();
 }
 
 /** The model's reply to one system and one user message. Throws on any failure, with the reason. */
