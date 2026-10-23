@@ -71,7 +71,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   row stay at the top (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   with a line beside it, scrolling on its own, each name on one line, cut
-  short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl, and an article's "On this page" on the right on wide screens
+  short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl
+  with the footer under it (not under the tree, which it would push up), and an article's "On this page" on the right on wide screens
   (the section being read marked). Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview has a large search box

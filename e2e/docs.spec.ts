@@ -159,6 +159,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // Picking another section marks that one, wherever the page could scroll it.
   await onThisPage.getByRole("link", { name: "Who can invite" }).click();
   await expect(onThisPage.getByRole("link", { name: "Who can invite" })).toHaveAttribute("aria-current", "location");
+  // The footer is under the page, beside the tree's column: under that column, it would push the tree up as it came into view.
+  const treeColumn = (await visitor.locator("aside", { has: tree }).boundingBox())!;
+  expect((await visitor.getByRole("contentinfo").boundingBox())!.y).toBeLessThan(treeColumn.y + treeColumn.height);
 
   // On a phone the tree is a menu above the article, and "On this page" is left out.
   await visitor.setViewportSize({ width: 390, height: 844 });
