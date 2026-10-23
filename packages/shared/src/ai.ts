@@ -119,17 +119,18 @@ export async function decide(
     throw new Error(`Decision request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
   }
   const answers: Record<string, DecisionAnswer> = {};
+  const probability = (value: unknown) => typeof value === "number" && value >= 0 && value <= 1;
   for (const [name, question] of Object.entries(questions)) {
     const answer = json?.answers?.[name] as { type?: unknown; noul?: unknown; choice?: unknown; probabilities?: Record<string, unknown> } | undefined;
     const probabilities = answer?.probabilities;
-    if (question.type === "noul" && answer?.type === "noul" && typeof answer.noul === "number") {
-      answers[name] = { type: "noul", noul: answer.noul };
+    if (question.type === "noul" && answer?.type === "noul" && probability(answer.noul)) {
+      answers[name] = { type: "noul", noul: answer.noul as number };
     } else if (
       question.type === "choice" &&
       answer?.type === "choice" &&
       typeof answer.choice === "string" &&
       probabilities &&
-      Object.keys(question.criteria).every((option) => typeof probabilities[option] === "number")
+      Object.keys(question.criteria).every((option) => probability(probabilities[option]))
     ) {
       answers[name] = { type: "choice", choice: answer.choice, probabilities: probabilities as Record<string, number> };
     } else {

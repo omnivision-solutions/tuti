@@ -81,4 +81,7 @@ test("the decision model has a default; a question left unanswered is an error",
   await expect(decide({}, question)).rejects.toThrow();
   // The fake noticed the mismatch too.
   expect(() => model.done()).toThrow("a noul question answered with");
+  // A probability outside 0 to 1 isn't one.
+  model.decide({ shipped: 2 });
+  await expect(decide({}, question)).rejects.toThrow("The decision model didn't answer shipped");
 });
