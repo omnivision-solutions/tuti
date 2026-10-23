@@ -82,7 +82,7 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
               <div className="flex flex-col gap-1">
                 <h3 className="font-medium">GitHub</h3>
                 <p className="text-sm text-muted-foreground">
-                  Shipping a pull request completes the posts linked to it.
+                  Merged pull requests gather in the changelog&apos;s Next release draft.
                 </p>
               </div>
               {!github ? (

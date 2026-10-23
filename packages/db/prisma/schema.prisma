@@ -252,8 +252,6 @@ model Project {
   postEmbeddings       PostEmbedding[]
   duplicateSuggestions DuplicateSuggestion[]
   emailOptOuts         EmailOptOut[]
-  githubPrComments     GithubPrComment[]
-  linkSuggestions      LinkSuggestion[]
   changelogEntries     ChangelogEntry[]
   articles             Article[]
   articleChunks        ArticleChunk[]
@@ -487,34 +485,22 @@ model WebhookDelivery {
   @@map("webhook_delivery")
 }
 
-enum GithubCloseOn {
-  RELEASE
-  MERGE
-}
-
 /// A project's connection to a GitHub App installation (a GitHub user or organisation). Several
 /// projects may connect the same installation; the team adds each one's repositories
 /// (GithubRepository), and only those repositories' pull requests and releases reach it.
 model GithubInstallation {
-  id                    String        @id @default(cuid())
-  projectId             String        @unique
-  installationId        Int
+  id             String   @id @default(cuid())
+  projectId      String   @unique
+  installationId Int
   /// The GitHub user or organisation it's installed on.
-  accountLogin          String
+  accountLogin   String
   /// GitHub's type for that account: "Organization" or "User" (their settings live at different addresses).
-  accountType           String        @default("Organization")
-  /// When linked posts become Completed: when a release ships their pull request
-  /// (default: merged isn't shipped), or when it's merged (repos without releases).
-  closeOn               GithubCloseOn @default(RELEASE)
-  /// Comment on pull requests that link posts, listing them with their votes (needs the App's
-  /// Pull requests permission set to write).
-  commentOnPullRequests Boolean       @default(false)
-  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): the
-  /// ones the person who connected (or refreshed) can access on GitHub, and the project's own.
-  /// Only these can be added.
-  repositories          Json          @default("[]")
-  createdById           String
-  createdAt             DateTime      @default(now())
+  accountType    String   @default("Organization")
+  /// The installation's repositories listed in this project's settings ([{ id, fullName }]): every
+  /// one the Tuti app can see on the account, as of the last refresh. Only these can be added.
+  repositories   Json     @default("[]")
+  createdById    String
+  createdAt      DateTime @default(now())
 
   project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   included GithubRepository[]
@@ -785,7 +771,6 @@ model Post {
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
   shippedEmails          ShippedEmail[]
-  linkSuggestions        LinkSuggestion[]
   changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
   comments               Comment[]
@@ -915,52 +900,6 @@ model ShippedEmail {
   @@id([postId, userId])
   @@index([userId])
   @@map("shipped_email")
-}
-
-/// Tuti's comment on a pull request (the feedback it completes), so it's edited rather than written again.
-model GithubPrComment {
-  /// The repository's full name (owner/name) and the pull request's number.
-  repo      String
-  number    Int
-  projectId String
-  commentId BigInt
-  /// What it says now, so an unchanged list isn't written again.
-  body      String
-  updatedAt DateTime @updatedAt
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@id([repo, number])
-  @@index([projectId])
-  @@map("github_pr_comment")
-}
-
-enum LinkSuggestionStatus {
-  PENDING
-  DISMISSED
-}
-
-/// "This pull request may be what that post asks for" (by text similarity), for the
-/// team to link (which makes a SUGGESTED link and removes this) or dismiss.
-model LinkSuggestion {
-  id         String               @id @default(cuid())
-  projectId  String
-  postId     String
-  /// owner/name
-  repo       String
-  number     Int
-  url        String
-  title      String
-  similarity Float
-  status     LinkSuggestionStatus @default(PENDING)
-  createdAt  DateTime             @default(now())
-
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
-
-  @@unique([postId, url])
-  @@index([projectId, status])
-  @@map("link_suggestion")
 }
 
 // ─── Changelog (Phase 8) ─────────────────────────────────────────────────────

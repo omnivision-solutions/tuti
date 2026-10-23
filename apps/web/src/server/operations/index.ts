@@ -2,7 +2,7 @@ import type { Operation } from "./define";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
 import { createComment, createPost } from "./create";
-import { acceptLinkSuggestion, addLink, dismissLinkSuggestion, listLinkSuggestions, removeLink } from "./links";
+import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
 import {
@@ -118,11 +118,7 @@ const all = [
   createComment,
   updatePost,
   mergePost,
-  addLink,
   removeLink,
-  listLinkSuggestions,
-  acceptLinkSuggestion,
-  dismissLinkSuggestion,
   setVote,
   listDuplicates,
   dismissDuplicate,

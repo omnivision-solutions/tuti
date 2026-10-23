@@ -48,11 +48,9 @@ export const jobs = {
     input: z.object({}),
     cron: "*/10 * * * *",
   },
-  /** A pull request on an included repo was opened, reopened or edited: link and move the posts it mentions. */
+  /** A pull request on an included repo was merged: it goes into the changelog's running draft. */
   githubPullRequest: {
     name: "github-pull-request",
-    // One at a time per pull request: they may write (or edit) its one comment.
-    concurrencyKey: "input.repo + '#' + string(input.number)",
     input: z.object({
       installationId: z.number().int(),
       action: z.string(),
@@ -68,7 +66,7 @@ export const jobs = {
       labels: z.array(z.string()).default([]),
     }),
   },
-  /** A release was published on an included repo: the posts whose pull requests it ships become Completed. */
+  /** A release was published on an included repo: it closes the changelog's running draft. */
   githubRelease: {
     name: "github-release",
     input: z.object({
