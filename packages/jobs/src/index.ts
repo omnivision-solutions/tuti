@@ -11,6 +11,7 @@ import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
+export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { lockProject, RUNNING_DRAFT_TITLE } from "./running-draft";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";

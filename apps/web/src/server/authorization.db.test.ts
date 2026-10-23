@@ -34,6 +34,7 @@ import * as boards from "./boards";
 import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
+import * as codeChanges from "./code-changes";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
@@ -65,6 +66,7 @@ import * as widget from "./widget";
 const modules = {
   changelog,
   "changelog-seen": changelogSeen,
+  "code-changes": codeChanges,
   "api-keys": apiKeys,
   assistant,
   boards,
@@ -262,6 +264,17 @@ const matrix: Matrix = {
         }
       },
     },
+  },
+  "code-changes": {
+    // Analysed inline with AI on (its repository isn't the project's, so it stops there, unread).
+    analyseCodeChange: {
+      allowed: "MEMBER",
+      takesIds: true,
+      call: (slug, f) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.analyseCodeChange(slug, f.codeChangeId)),
+    },
+    applyCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyCodeChange(slug, f.linkActionId) },
+    dismissCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.dismissCodeChange(slug, f.dismissActionId, "Not this one") },
+    applyLikelyCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyLikelyCodeChanges(slug, f.codeChangeId) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -480,6 +493,21 @@ const MATRIX_READER = "00000000-0000-4000-8000-00000000000a";
 /** Who's acting: a role on the project's team, or someone from outside it. */
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
+/** Runs `fn` with these env vars, then puts them back. */
+async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+  const before = Object.keys(vars).map((name) => [name, process.env[name] ?? ""] as const);
+  for (const [name, value] of Object.entries(vars)) {
+    vi.stubEnv(name, value);
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of before) {
+      vi.stubEnv(name, value);
+    }
+  }
+}
+
 let s3: S3Fake;
 let dns: DnsFake;
 let site: SiteFake;
@@ -654,8 +682,32 @@ async function createFixture(own: "domain" | "site" = "domain") {
       repositories: [{ id: githubRepoId, fullName: `acme/app-${githubRepoId}` }],
     },
   });
+  // A merged pull request's code change, with a link to apply and a proposal to dismiss.
+  const codeChange = await prisma.codeChange.create({
+    data: {
+      projectId,
+      repoId: githubRepoId,
+      repo: `acme/app-${githubRepoId}`,
+      number: 1,
+      url: `https://github.com/acme/app-${githubRepoId}/pull/1`,
+      title: "Matrix pull request",
+      author: "octo",
+      mergedAt: new Date(),
+      state: "READY",
+      actions: {
+        create: [
+          { kind: "LINKS", postId: post!.id, probability: 0.9 },
+          { kind: "MOVES_FORWARD", postId: duplicate!.id, probability: 0.5, payload: { comment: "Getting there" } },
+        ],
+      },
+    },
+    select: { id: true, actions: { select: { id: true, kind: true } } },
+  });
   return {
     slug: project.slug,
+    codeChangeId: codeChange.id,
+    linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
+    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
     githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,

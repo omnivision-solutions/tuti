@@ -242,20 +242,48 @@ describe("deciding", () => {
     model.decide({ effect: { resolves: 0.1, moves_forward: 0.1, related: 0.1, unrelated: 0.7 } }, "Keyboard shortcuts");
     model.decide({ effect: { wrong: 0.7, missing: 0.2, unaffected: 0.1 } }, '"article"');
     model.decide({ needed: 0.3 }, "existing_articles");
+    // Then the reasons, and the comment for the post it moves forward, for what passed (most likely first).
+    model.reply(
+      JSON.stringify({
+        why: "It ships the dark theme people asked for.",
+        proposals: { p2: { reason: "It ships a dark theme." }, p4: { reason: "Themes need a dark one first.", comment: "Dark is out; custom colours are next." } },
+      }),
+    );
     expect(await merge(10)).toBe(200);
 
     const change = await prisma.codeChange.findFirstOrThrow({
       where: { projectId: project.id },
-      select: { state: true, summary: true, decider: true, model: true, actions: { select: { kind: true, postId: true, articleId: true, probability: true, payload: true, status: true } } },
+      select: {
+        state: true,
+        summary: true,
+        why: true,
+        decider: true,
+        model: true,
+        actions: { select: { kind: true, postId: true, articleId: true, probability: true, payload: true, status: true, reason: true } },
+      },
     });
-    expect(change).toMatchObject({ state: "READY", summary: SUMMARY, decider: "nace-ai/drex-max", model: "anthropic/claude-haiku-5.5" });
+    expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "anthropic/claude-haiku-5.5" });
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
-      { kind: "ARTICLE_EDIT", postId: null, articleId: article.id, probability: expect.closeTo(0.9) as number, payload: { problem: "wrong" }, status: "PENDING" },
-      { kind: "RESOLVES", postId: posts.darkMode!.id, articleId: null, probability: 0.85, payload: {}, status: "PENDING" },
-      { kind: "LINKS", postId: posts.settings!.id, articleId: null, probability: expect.closeTo(0.7) as number, payload: {}, status: "PENDING" },
-      { kind: "MOVES_FORWARD", postId: posts.themes!.id, articleId: null, probability: 0.5, payload: {}, status: "PENDING" },
+      { kind: "ARTICLE_EDIT", postId: null, articleId: article.id, probability: expect.closeTo(0.9) as number, payload: { problem: "wrong" }, status: "PENDING", reason: "" },
+      { kind: "RESOLVES", postId: posts.darkMode!.id, articleId: null, probability: 0.85, payload: {}, status: "PENDING", reason: "It ships a dark theme." },
+      { kind: "LINKS", postId: posts.settings!.id, articleId: null, probability: expect.closeTo(0.7) as number, payload: {}, status: "PENDING", reason: "" },
+      {
+        kind: "MOVES_FORWARD",
+        postId: posts.themes!.id,
+        articleId: null,
+        probability: 0.5,
+        payload: { comment: "Dark is out; custom colours are next." },
+        status: "PENDING",
+        reason: "Themes need a dark one first.",
+      },
     ]);
+    // The writer got only the posts' proposals, keyed by likelihood.
+    expect(JSON.parse(model.requests.at(-1)!.user).proposals).toEqual({
+      p2: { kind: "resolves", post: { title: "Dark mode", text: "Dark mode, please" } },
+      p3: { kind: "links", post: { title: "Reorganise the settings page", text: "Reorganise the settings page, please" } },
+      p4: { kind: "moves_forward", post: { title: "Custom colour themes", text: "Custom colour themes, please" } },
+    });
 
     // The completed post was never asked about; the named one was, marked as named.
     expect(asked()).toHaveLength(7);
@@ -319,6 +347,7 @@ describe("deciding", () => {
       model.decide(unrelated, "Mobile app");
       model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
       model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", proposals: {} }));
     };
     script(0.9);
     await merge(12);

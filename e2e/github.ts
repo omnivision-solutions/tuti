@@ -30,6 +30,8 @@ export async function connectGithub(
     await admin.getByRole("button", { name: "Add repository" }).click();
     await admin.getByRole("list", { name: "Repositories to add" }).getByRole("button", { name, exact: true }).click();
     await expect(admin.getByRole("list", { name: "This project's repositories" }).getByText(name, { exact: true })).toBeVisible();
+    // The list shows it at once; the toast says it's saved (so a merge right after reaches the project).
+    await expect(admin.getByText(`${name} added`)).toBeVisible();
   }
   return id;
 }
@@ -43,13 +45,33 @@ export async function nextInstall(admin: TestPage, installation: { id: number; a
   expect(response.ok).toBe(true);
 }
 
-/** GitHub telling Tuti about a pull request on acme/app (a signed webhook delivery), as connectGithub set it up. */
-export async function pullRequestEvent(installationId: number, action: string, pr: { number: number; title: string; body?: string }) {
+/**
+ * A pull request on acme/app (as connectGithub set it up) merging: GitHub (the fake) has it for the
+ * App to read, and Tuti gets the signed webhook delivery.
+ */
+export async function mergePullRequest(
+  installationId: number,
+  pr: { number: number; title: string; body?: string; files?: { filename: string; patch?: string }[] },
+) {
+  const fake = await fetch(`${process.env.E2E_GITHUB_URL}/_fake/pull-request`, {
+    method: "POST",
+    body: JSON.stringify({ repo: "acme/app", author: "octo", mergedAt: new Date().toISOString(), ...pr }),
+  });
+  expect(fake.ok).toBe(true);
   const body = JSON.stringify({
-    action,
+    action: "closed",
     installation: { id: installationId },
     repository: { id: installationId, full_name: "acme/app" },
-    pull_request: { number: pr.number, title: pr.title, body: pr.body ?? "", html_url: `https://github.com/acme/app/pull/${pr.number}` },
+    pull_request: {
+      number: pr.number,
+      title: pr.title,
+      body: pr.body ?? "",
+      html_url: `https://github.com/acme/app/pull/${pr.number}`,
+      merged: true,
+      merged_at: new Date().toISOString(),
+      user: { login: "octo" },
+      labels: [],
+    },
   });
   const response = await fetch(`${APP_URL}/api/github/webhook`, {
     method: "POST",

@@ -91,6 +91,12 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "posts.update": () => ({ number: 1, status: "planned" }),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
+  "codeChanges.list": () => ({}),
+  "codeChanges.get": (f) => ({ id: f.codeChangeId }),
+  // With AI on (see below); its repository isn't the project's, so it stops there, unread.
+  "codeChanges.analyse": (f) => ({ id: f.codeChangeId }),
+  "codeChangeActions.apply": (f) => ({ id: f.linkActionId }),
+  "codeChangeActions.dismiss": (f) => ({ id: f.dismissActionId, reason: "Not this one" }),
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
@@ -251,7 +257,39 @@ async function createFixture(own: "domain" | "site" = "domain") {
   // A redirect, to delete (redirects.create adds another, from its own address).
   await prisma.portalRedirect.deleteMany({ where: { projectId: project.id } });
   const redirect = await prisma.portalRedirect.create({ data: { projectId: project.id, from: "/old/matrix", to: "/docs" } });
-  return { marker, linkId: link.id, suggestionId: suggestion.id, revisionId: revision.id, questionId: question.id, redirectId: redirect.id };
+  // A merged pull request's code change, with a link to apply and a proposal to dismiss.
+  await prisma.codeChange.deleteMany({ where: { projectId: project.id } });
+  const codeChange = await prisma.codeChange.create({
+    data: {
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: 1,
+      url: "https://github.com/acme/app/pull/1",
+      title: marker,
+      author: "octo",
+      mergedAt: new Date(),
+      state: "READY",
+      actions: {
+        create: [
+          { kind: "LINKS", postId: first!.id, probability: 0.9 },
+          { kind: "MOVES_FORWARD", postId: second!.id, probability: 0.5, payload: { comment: "Getting there" } },
+        ],
+      },
+    },
+    select: { id: true, actions: { select: { id: true, kind: true } } },
+  });
+  return {
+    marker,
+    linkId: link.id,
+    suggestionId: suggestion.id,
+    revisionId: revision.id,
+    questionId: question.id,
+    redirectId: redirect.id,
+    codeChangeId: codeChange.id,
+    linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
+    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
+  };
 }
 
 /** Calls an operation over REST like a client would. */
@@ -320,6 +358,7 @@ const snapshot = () =>
     prisma.customDomain.findMany({ where: { projectId: project.id } }),
     prisma.siteMount.findMany({ where: { projectId: project.id } }),
     prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } }),
+    prisma.codeChange.findMany({ where: { projectId: project.id }, include: { actions: { orderBy: { id: "asc" } } } }),
   ]);
 
 test("every operation is in this matrix", () => {
@@ -331,7 +370,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
   // AI answers need embeddings: on for docs.ask only. Nothing is close to its question, so the model isn't asked.
-  vi.stubEnv("OPENAI_API_KEY", operation.name === "docs.ask" ? FAKE_OPENAI_KEY : "");
+  vi.stubEnv("OPENAI_API_KEY", operation.name === "docs.ask" || operation.name === "codeChanges.analyse" ? FAKE_OPENAI_KEY : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();

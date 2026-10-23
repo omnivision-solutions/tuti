@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleDotIcon, GitPullRequestIcon, type LucideIcon, TagIcon, XIcon } from "lucide-react";
+import Link from "next/link";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
@@ -15,6 +16,8 @@ export type PostLinkView = {
   tag: string | null;
   url: string;
   title: string | null;
+  /** The code change whose applied action added it. */
+  codeChangeId: string | null;
 };
 
 const ICONS: Record<PostLinkView["kind"], LucideIcon> = {
@@ -40,6 +43,11 @@ export function PostLinks({ projectSlug, postId, links }: { projectSlug: string;
                 {label}
                 {link.title && <span className="text-muted-foreground"> · {link.title}</span>}
               </a>
+              {link.codeChangeId && (
+                <Link href={`/app/${projectSlug}/code-changes/${link.codeChangeId}`} className="shrink-0 text-xs text-muted-foreground hover:underline">
+                  Code change
+                </Link>
+              )}
               <Button
                 variant="ghost"
                 size="icon-xs"
