@@ -108,9 +108,11 @@ test("a user has at most 50 properties: a sign-in's new ones past that are left 
   expect(identity!.properties).not.toHaveProperty("extra");
 });
 
-test("the asserted email is kept lowercase", async () => {
+test("the asserted email is kept lowercase, and a sign-in without one clears it", async () => {
   await visit(await token({ email: "Ada@Example.COM" }));
   expect((await ssoUsers()).map((identity) => identity.email)).toEqual(["ada@example.com"]);
+  await visit(await token());
+  expect((await ssoUsers()).map((identity) => identity.email)).toEqual([null]);
 });
 
 test("the migration keeps attributes as properties and lowercases emails", async () => {

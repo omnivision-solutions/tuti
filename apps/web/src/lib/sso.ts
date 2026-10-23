@@ -88,7 +88,7 @@ export async function upsertProjectUser(
 ): Promise<string> {
   const { name, image, groups, properties: changes = {} } = details;
   // Lowercase, so a reader signing in by email finds them (portal-access.ts readerOf).
-  const email = details.email?.toLowerCase();
+  const email = details.email === null ? null : details.email?.toLowerCase();
   const where = { projectId_externalId: { projectId, externalId } };
   const existing = await prisma.ssoIdentity.findUnique({ where, select: { id: true, userId: true } });
   if (existing) {
