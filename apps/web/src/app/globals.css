@@ -145,6 +145,8 @@
   }
   html {
     @apply font-sans;
+    /* A link to a heading scrolls it into view below the portal's header (PortalTop). */
+    scroll-padding-top: var(--portal-header-height, 0px);
   }
   h1,
   h2,

@@ -148,6 +148,14 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(article.getByRole("heading", { name: "Roles", level: 2 })).toBeInViewport();
   // The section being read is marked.
   await expect(onThisPage.getByRole("link", { name: "Roles" })).toHaveAttribute("aria-current", "location");
+  // The header stays at the top, and the heading picked shows below it, not under it.
+  const banner = visitor.getByRole("banner");
+  await expect(banner).toBeInViewport();
+  const { y, height } = (await banner.boundingBox())!;
+  const headerBottom = y + height;
+  expect((await article.getByRole("heading", { name: "Roles", level: 2 }).boundingBox())!.y).toBeGreaterThanOrEqual(headerBottom);
+  // The tree's names are on one line, cut short when they're long: in full on hover.
+  await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("title", "Inviting your team");
 
   // On a phone the tree is a menu above the article, and "On this page" is left out.
   await visitor.setViewportSize({ width: 390, height: 844 });

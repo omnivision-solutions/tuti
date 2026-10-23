@@ -67,9 +67,11 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. Docs pages are wider (max-w-7xl, `DocsLayout`):
-  the tab's tree on the left (a "Browse docs" menu on phones), the page at
-  max-w-3xl, and an article's "On this page" on the right on wide screens
+  "Powered by tuti" footer. From tablet width up, the header and the part's
+  row stay at the top (`PortalTop`; their height is `--portal-header-height`).
+  Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
+  with a line beside it, scrolling on its own, each name on one line, cut
+  short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl, and an article's "On this page" on the right on wide screens
   (the section being read marked). Articles use `article-text` on top of
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview has a large search box

@@ -8,7 +8,7 @@ import { cache } from "react";
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
 import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
-import { DocsSearch, PartRows, PortalMain, PortalParts } from "@/components/portal-nav";
+import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -97,6 +97,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
+        <PortalTop>
         <header className="portal-header flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           <PortalLogo name={project.name} href={withBase(base, "/")} />
@@ -114,6 +115,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           )}
         </header>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
+        </PortalTop>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
       </PortalLookProvider>

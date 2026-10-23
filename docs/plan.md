@@ -369,6 +369,7 @@ Follow-ups found while building items 1–15 (2026-10-21), one small PR each, mo
 - [ ] The icon picker opens with commonly used icons first (it starts at "A" today)
 - [ ] On phones the overview has its own search box and the header's: keep one
 - [x] Articles easier to read and skim (asked 2026-10-23, compared with Ferndesk): a larger title with its collection in green above it, larger section headings with more room above them, softer body text so headings and bold terms stand out, taller lines and space between list items; "On this page" as a rail with the section being read marked
+- [x] Docs that use the screen (asked 2026-10-23, compared with Ferndesk): the header and docs tabs stay at the top from tablet width up, the tree scrolls on its own beside the page, the docs take the whole width (tree at the left edge, "On this page" at the right), and long names in the tree are cut short with "…" (in full on hover)
 
 ## Deciding vs. writing: small models for decisions (cross-cutting, asked 2026-10-20)
 

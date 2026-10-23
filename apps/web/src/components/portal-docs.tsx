@@ -189,7 +189,7 @@ function LockedMessage({ signedIn }: { signedIn: boolean }) {
 export function DocsTabPage({ project, docs, tab, landing }: { project: string; docs: DocsContents; tab: DocsTabView | null; landing: TabLanding }) {
   if (tab?.locked) {
     return (
-      <div className="flex flex-col gap-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
         <PageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
         <LockedMessage signedIn={docs.signedIn} />
       </div>
@@ -350,12 +350,14 @@ export async function DocsTabsRow({ docs, active }: { docs: DocsContents; active
  */
 async function DocsTree({ tree, current }: { tree: DocsTree; current: string | null }) {
   const at = await portalLinks();
-  const link = (slug: string, name: React.ReactNode, className?: string) => (
+  // One line each, a long name cut short (in full on hover).
+  const link = (slug: string, title: string, name: React.ReactNode, className?: string) => (
     <Link
       href={at(`/docs/${slug}`)}
+      title={title}
       aria-current={slug === current ? "page" : undefined}
       className={cn(
-        "block rounded-md px-2 py-1 break-words text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground",
+        "flex items-center rounded-md px-2 py-1 text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground",
         className,
       )}
     >
@@ -366,17 +368,17 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
   const named = (collection: DocsTreeCollection) => (
     <>
       <CollectionIcon name={collection.icon} />
-      <span className="min-w-0">{locked(collection.name, collection.locked)}</span>
+      {locked(collection.name, collection.locked)}
     </>
   );
-  // A page's name, with a lock if it's locked for this reader.
+  // A page's name, with a lock if it's locked for this reader (kept in view when the name is cut short).
   const locked = (name: string, isLocked?: boolean) => (
     <>
-      {name}
+      <span className="min-w-0 truncate">{name}</span>
       {isLocked && <LockedMark />}
     </>
   );
-  const articles = (list: DocsTree["uncollected"]) => list.map((article) => <li key={article.slug}>{link(article.slug, locked(article.title, article.locked))}</li>);
+  const articles = (list: DocsTree["uncollected"]) => list.map((article) => <li key={article.slug}>{link(article.slug, article.title, locked(article.title, article.locked))}</li>);
   const contents = (collection: DocsTreeCollection) => (
     <ul className="flex flex-col gap-0.5">
       {articles(collection.articles)}
@@ -385,7 +387,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
           <details open={child.open}>
             <summary className="flex cursor-pointer list-none items-center rounded-md hover:bg-accent/50 [&::-webkit-details-marker]:hidden">
               <ChevronRightIcon aria-hidden className="ml-1 size-4 shrink-0 text-muted-foreground transition-transform [[open]>summary>&]:rotate-90" />
-              {link(child.slug, named(child), "flex min-w-0 flex-1 items-center gap-2 pl-1")}
+              {link(child.slug, child.name, named(child), "min-w-0 flex-1 gap-2 pl-1")}
             </summary>
             <div className="ml-3 border-l pl-2">{contents(child)}</div>
           </details>
@@ -398,7 +400,7 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
       <DocsSidebarLinks />
       {tree.collections.map((collection) => (
         <div key={collection.slug} className="flex flex-col gap-1">
-          {link(collection.slug, named(collection), "flex items-center gap-2 font-heading font-semibold text-foreground")}
+          {link(collection.slug, collection.name, named(collection), "gap-2 font-heading font-semibold text-foreground")}
           {contents(collection)}
         </div>
       ))}
@@ -421,14 +423,15 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
   const hasTree = tree.collections.length > 0 || tree.uncollected.length > 0;
   return (
     <div className="flex gap-10">
+      {/* From the header to the footer, with a line beside it; the tree scrolls on its own, under the header. */}
       {hasTree && (
-        <aside className="hidden w-60 shrink-0 md:block">
-          <div className="sticky top-6 max-h-[calc(100dvh-3rem)] overflow-y-auto">
+        <aside className="-my-10 hidden w-72 shrink-0 border-r md:block">
+          <div className="sticky top-[var(--portal-header-height,0px)] max-h-[calc(100dvh-var(--portal-header-height,0px))] overflow-y-auto py-10 pr-4 [scrollbar-width:thin]">
             <DocsTree tree={tree} current={current} />
           </div>
         </aside>
       )}
-      <div className="flex min-w-0 max-w-3xl flex-1 flex-col gap-6">
+      <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6">
         {hasTree && (
           <details className="rounded-xl border md:hidden">
             <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
@@ -440,7 +443,7 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
         {children}
       </div>
       {headings.length >= 2 && (
-        <aside className="hidden w-50 shrink-0 xl:block">
+        <aside className="hidden w-64 shrink-0 xl:block">
           <OnThisPage headings={headings} />
         </aside>
       )}

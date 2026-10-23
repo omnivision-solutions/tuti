@@ -3,6 +3,7 @@
 import { LockIcon, SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useEffect, useRef } from "react";
 
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { Input } from "@/components/ui/input";
@@ -62,10 +63,38 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   );
 }
 
-/** The page under the header and its rows: wider on Docs, for its tree and "On this page" beside the page. */
+/**
+ * The header and the part's row, kept at the top on wider screens (on phones they take too much of
+ * it). Their height is `--portal-header-height` (0 on phones), for what sticks under them (the docs
+ * tree) and for links to a heading, which scroll it into view below them.
+ */
+export function PortalTop({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current!;
+    const root = document.documentElement;
+    const update = () => {
+      const height = getComputedStyle(element).position === "sticky" ? element.offsetHeight : 0;
+      root.style.setProperty("--portal-header-height", `${height}px`);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--portal-header-height");
+    };
+  }, []);
+  return (
+    <div ref={ref} className="z-40 bg-background md:sticky md:top-0">
+      {children}
+    </div>
+  );
+}
+
+/** The page under the header and its rows: the whole width on Docs, for its tree and "On this page" beside the page. */
 export function PortalMain({ children }: { children: React.ReactNode }) {
   const path = usePortalPath();
-  return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", within(path, "/docs") ? "max-w-7xl" : "max-w-3xl")}>{children}</main>;
+  return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", !within(path, "/docs") && "max-w-3xl")}>{children}</main>;
 }
 
 /** The header's search box on Docs: a plain GET form to /docs, so it works without JavaScript. */
@@ -86,7 +115,7 @@ export function DocsSearch() {
 
 /**
  * A part's row under the header (`label` names it): only with two or more entries. `wide` lines it
- * up with Docs' wider page. A `locked` entry (a docs tab this reader may not read) has a lock.
+ * up with Docs' page, the whole width. A `locked` entry (a docs tab this reader may not read) has a lock.
  */
 export function PartRow({
   label,
@@ -102,7 +131,7 @@ export function PartRow({
   }
   return (
     <div className="border-b">
-      <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", wide ? "max-w-7xl" : "max-w-3xl")} aria-label={label}>
+      <nav className={cn("mx-auto flex w-full gap-1 overflow-x-auto px-6", !wide && "max-w-3xl")} aria-label={label}>
         {links.map(({ href, name, active, locked }) => (
           <Link
             key={href}
