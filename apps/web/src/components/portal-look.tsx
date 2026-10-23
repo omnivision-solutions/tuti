@@ -207,13 +207,17 @@ export function PortalHeaderLinks() {
  * The attribution is required by Tuti's additional licence terms (AGPL section 7(b)): see
  * ADDITIONAL-TERMS.md at the root of the repository.
  */
-export function PortalFooter() {
+export function PortalFooter({ docs = false }: { docs?: boolean }) {
   const { footerLinks, poweredBy } = usePortalLook();
-  if (footerLinks.length === 0 && !poweredBy) {
+  const path = usePortalPath();
+  // Docs pages have it under the page, beside the tree (DocsLayout): under the tree's column it would push the tree up as it scrolls into view.
+  const onDocs = path === "/docs" || path.startsWith("/docs/");
+  if ((footerLinks.length === 0 && !poweredBy) || onDocs !== docs) {
     return null;
   }
   return (
-    <footer className="portal-footer flex flex-col items-center gap-3 px-6 pb-6">
+    // Inside <main> on Docs, where a footer isn't the page's footer landmark unless it says so.
+    <footer role={docs ? "contentinfo" : undefined} className={cn("portal-footer flex flex-col items-center gap-3", docs ? "mt-auto pt-10" : "px-6 pb-6")}>
       {footerLinks.length > 0 && (
         <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-1">
           {footerLinks.map((link, i) => (

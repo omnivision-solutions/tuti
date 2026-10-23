@@ -8,7 +8,7 @@ import Link from "next/link";
 import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
-import { DocsSidebarLinks } from "@/components/portal-look";
+import { DocsSidebarLinks, PortalFooter } from "@/components/portal-look";
 import { ArticleFeedback } from "@/components/article-feedback";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
@@ -192,6 +192,7 @@ export function DocsTabPage({ project, docs, tab, landing }: { project: string; 
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
         <PageHeader title={tab.slug !== docs.home ? tab.name : "Docs"} />
         <LockedMessage signedIn={docs.signedIn} />
+        <PortalFooter docs />
       </div>
     );
   }
@@ -441,6 +442,7 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
           </details>
         )}
         {children}
+        <PortalFooter docs />
       </div>
       {headings.length >= 2 && (
         <aside className="hidden w-64 shrink-0 xl:block">
