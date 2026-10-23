@@ -28,8 +28,6 @@ export const serverEnv = {
   OPENAI_API_KEY: "",
   // (And OPENROUTER_* at the model fake; AI_MODEL stays the default.)
   AI_MODEL: "",
-  // Code changes on: a decision model on the model fake (whose decisions journeys script).
-  DECISION_MODEL: "test/decider",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",

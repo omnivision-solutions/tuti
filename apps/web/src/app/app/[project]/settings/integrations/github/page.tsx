@@ -173,7 +173,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             <CodeChangeAnalysisSwitch projectSlug={project.slug} on={installation.project.analyseCodeChanges} provider={aiProvider()} />
           ) : (
             <p className="text-sm text-muted-foreground">
-              Code changes need AI on this server (OPENROUTER_API_KEY, DECISION_MODEL and OPENAI_API_KEY in .env.example).
+              Code changes need AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).
             </p>
           )}
         </CardContent>

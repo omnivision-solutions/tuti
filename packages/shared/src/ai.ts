@@ -18,12 +18,12 @@ export function aiProvider(): string {
 }
 
 /**
- * Code changes (merged pull requests analysed into proposed actions) need the AI, a decision model
- * (DECISION_MODEL, on the same endpoint) and embeddings (to find the posts and articles a change may
- * touch). Without any of them, merged pull requests only feed the changelog's running draft.
+ * Code changes (merged pull requests analysed into proposed actions) need the AI (its decision model
+ * too) and embeddings (to find the posts and articles a change may touch). Without either, merged pull
+ * requests only feed the changelog's running draft.
  */
 export function codeChangesEnabled(): boolean {
-  return aiEnabled() && Boolean(process.env.DECISION_MODEL) && embeddingsEnabled();
+  return aiEnabled() && embeddingsEnabled();
 }
 
 /** The model's reply to one system and one user message. Throws on any failure, with the reason. */

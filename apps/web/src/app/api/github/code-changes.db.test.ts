@@ -23,9 +23,8 @@ beforeEach(async () => {
   for (const [name, value] of Object.entries(github.env)) {
     vi.stubEnv(name, value);
   }
-  // AI on this server: the provider, a decision model and embeddings.
+  // AI on this server: the provider and embeddings.
   vi.stubEnv("OPENROUTER_API_KEY", "sk-or-test");
-  vi.stubEnv("DECISION_MODEL", "test/decider");
   vi.stubEnv("OPENAI_API_KEY", "sk-test");
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
@@ -162,7 +161,7 @@ test("turned off while it waited (say, for a retry): the code change goes, unrea
   expect(readsOf(7)).toHaveLength(reads);
 });
 
-test.each(["OPENROUTER_API_KEY", "DECISION_MODEL", "OPENAI_API_KEY"])("off on a server without %s", async (name) => {
+test.each(["OPENROUTER_API_KEY", "OPENAI_API_KEY"])("off on a server without %s", async (name) => {
   vi.stubEnv(name, "");
   github.pullRequest(repo, pullRequest(8));
   await merge(8);
