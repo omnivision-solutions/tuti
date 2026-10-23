@@ -21,7 +21,7 @@ import {
   THRESHOLDS,
 } from "./code-change-decisions";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
-import { emitEvent, portalOrigin } from "./events";
+import { portalOrigin, queueDeliveries, recordEvent } from "./events";
 import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 import { portalAddress } from "./portal-address";
@@ -205,13 +205,10 @@ async function analyse(
     ...proposals.filter((_, i) => written[i]),
     { kind: "CHANGELOG_LINE", probability: 1, payload: { line: line || change.pullRequest.title } },
   ];
-  const waiting = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept);
-  // Only when something waits for the team (analysed again, the team may have decided it all already).
-  if (waiting > 0) {
-    await emitEvent(change.projectId, "code_change.ready", {
-      codeChange: { id: change.id, ...change.pullRequest, summary, waiting, page: `${appOrigin()}/app/${change.slug}/code-changes/${change.id}` },
-    });
-  }
+  const waiting = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
+    projectId: change.projectId,
+    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/code-changes/${change.id}` } }),
+  });
   return { state: "READY" as const, actions: waiting };
 }
 
@@ -334,14 +331,16 @@ async function articleCandidates(projectId: string, vector: string): Promise<Art
 /**
  * Saves the analysis: its proposals replace the ones still waiting from an earlier analysis, except
  * for targets the team already applied or dismissed something for. In one transaction, so a code
- * change is never ready with half its proposals. Returns how many it saved.
+ * change is never ready with half its proposals, nor without its `code_change.ready` event when
+ * something waits (`ready`; sent once it commits). Returns how many it saved.
  */
 async function finish(
   id: string,
   data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
   proposals: Proposal[],
+  ready?: { projectId: string; data: (waiting: number) => Record<string, unknown> },
 ): Promise<number> {
-  return prisma.$transaction(async (tx) => {
+  const { count, deliveries } = await prisma.$transaction(async (tx) => {
     await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
@@ -353,6 +352,10 @@ async function finish(
       );
     const { count } = await tx.codeChangeAction.createMany({ data: proposals.filter((proposal) => !taken(proposal)).map((proposal) => ({ codeChangeId: id, ...proposal })) });
     await tx.codeChange.update({ where: { id }, data });
-    return count;
+    // Only when something waits for the team (analysed again, the team may have decided it all already).
+    const deliveries = ready && count > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(count)) : [];
+    return { count, deliveries };
   });
+  await queueDeliveries(deliveries);
+  return count;
 }

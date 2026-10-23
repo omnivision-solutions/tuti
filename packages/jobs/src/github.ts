@@ -1,4 +1,3 @@
-import { prisma } from "@tuti/db";
 import type { JobInput } from "@tuti/shared";
 
 import { analysisOn, startCodeChange } from "./code-changes";
@@ -20,13 +19,10 @@ export async function githubPullRequest(input: JobInput<"githubPullRequest">, lo
   const projectId = installation.project.id;
   const pr = { repo: input.repo, number: input.number, url: input.url, title: input.title };
   // With code changes on, their gate decides what the changelog hears about (it takes the bullet out
-  // again, so a redelivery after that doesn't put it back); without them, labels for internal work keep it out.
-  const gated = await prisma.codeChange.findUnique({
-    where: { projectId_repoId_number: { projectId, repoId: input.repoId, number: input.number } },
-    select: { state: true },
-  });
+  // again, and a redelivery after that doesn't put it back); without them, labels for internal work keep it out.
   const codeChangesOn = await analysisOn(projectId);
-  const drafted = (codeChangesOn ? gated?.state !== "NOTHING_TO_DO" : !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr));
+  const drafted =
+    (codeChangesOn || !skipsChangelog(input.labels)) && (await addToRunningDraft(projectId, pr, codeChangesOn ? { repoId: input.repoId } : undefined));
   const analysed = await startCodeChange(projectId, {
     ...pr,
     repoId: input.repoId,

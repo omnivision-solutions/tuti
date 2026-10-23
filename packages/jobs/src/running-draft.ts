@@ -30,12 +30,25 @@ export async function lockProject(tx: Prisma.TransactionClient, projectId: strin
   return rows.length === 1;
 }
 
-/** Adds a merged pull request to the running draft (once per project, however often GitHub delivers it). Returns whether it was added. */
-export async function addToRunningDraft(projectId: string, pr: PullRequest): Promise<boolean> {
+/**
+ * Adds a merged pull request to the running draft (once per project, however often GitHub delivers it).
+ * With `gate` (code changes on), not one whose code change has nothing to do: checked under the same
+ * lock the gate takes to remove it, so a redelivery racing the gate can't put it back. Returns whether it was added.
+ */
+export async function addToRunningDraft(projectId: string, pr: PullRequest, gate?: { repoId: number }): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
     // One at a time (see lockProject): the draft found here is still the running one when it's written.
     if (!(await lockProject(tx, projectId))) {
       return false;
+    }
+    if (gate) {
+      const change = await tx.codeChange.findUnique({
+        where: { projectId_repoId_number: { projectId, repoId: gate.repoId, number: pr.number } },
+        select: { state: true },
+      });
+      if (change?.state === "NOTHING_TO_DO") {
+        return false;
+      }
     }
     // Already in an entry (this draft or an earlier, closed one): a redelivery adds it nowhere.
     const known = await tx.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });

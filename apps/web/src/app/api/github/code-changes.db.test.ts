@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { enqueue } from "@tuti/jobs";
+import { addToRunningDraft, enqueue } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -125,6 +125,9 @@ describe("reading", () => {
     // GitHub delivers it again: it stays out.
     expect(await merge(1)).toBe(200);
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(0);
+    // Checked under the draft's lock, the one the gate takes to remove it, so a redelivery racing the gate can't put it back.
+    const pr = { repo, number: 1, url: `https://github.com/${repo}/pull/1`, title: "Dark mode 1" };
+    expect(await addToRunningDraft(project.id, pr, { repoId: installationId })).toBe(false);
     // With code changes turned off, labels decide again: it has none, so a redelivery puts it in.
     await setCodeChangeAnalysis(project.slug, false);
     expect(await merge(1)).toBe(200);
@@ -395,6 +398,49 @@ describe("deciding", () => {
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
     await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true });
     expect(receiver.received).toHaveLength(1);
+    await receiver.close();
+  });
+
+  test("the ready event is saved with the code change: if it can't be, the code change isn't ready, and the next run sends it", async () => {
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    const receiver = await startWebhookReceiver();
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    github.pullRequest(repo, pullRequest(20));
+    const script = () => {
+      model.decide(USERS);
+      model.reply(SUMMARY);
+      model.decide(unrelated, '"post"');
+      for (let i = 0; i < 4; i++) {
+        model.decide(unrelated, '"post"');
+      }
+      model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
+      model.decide({ needed: 0.1 }, "existing_articles");
+      model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    };
+    // Saving the event's deliveries fails, inside the transaction that saves the analysis.
+    const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma, "$transaction").mockImplementation(((fn: unknown, ...rest: unknown[]) =>
+      typeof fn !== "function"
+        ? transaction(fn, ...rest)
+        : transaction(
+            (tx: Record<string | symbol, unknown>) =>
+              (fn as (tx: unknown) => unknown)(
+                new Proxy(tx, {
+                  get: (target, key) =>
+                    key === "webhookDelivery" ? { createManyAndReturn: () => Promise.reject(new Error("database blip")) } : target[key],
+                }),
+              ),
+            ...rest,
+          )) as never);
+    script();
+    expect(await merge(20)).toBe(503);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 20, state: "FAILED" })]);
+    vi.restoreAllMocks();
+    // GitHub delivers it again: analysed, ready, and the event goes out.
+    script();
+    expect(await merge(20)).toBe(200);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 20, state: "READY" })]);
+    expect(receiver.received.map((delivery) => JSON.parse(delivery.body).type)).toEqual(["code_change.ready"]);
     await receiver.close();
   });
 
