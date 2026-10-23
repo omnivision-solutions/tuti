@@ -360,18 +360,15 @@ async function applyDocs(
       throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
     }
   }
+  const claimedAt = new Date();
   const { count } = await prisma.codeChangeAction.updateMany({
     where: { id: action.id, status: "PENDING" },
-    data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: new Date() },
+    data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: claimedAt },
   });
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // Once the article is being saved, it may be saved even if something after it fails: then the
-  // action stays applied, so trying again can't save it twice (a second draft, say).
-  let saving = false;
   try {
-    saving = true;
     if (action.kind === "ARTICLE_EDIT") {
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
@@ -381,11 +378,17 @@ async function applyDocs(
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
-    // Refused before saving (an OperationError: invalid content, say): not done, so it's waiting again.
-    if (saving && !(error instanceof OperationError)) {
-      throw error;
+    // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save it
+    // twice (a second draft, say). Not saved: it's waiting again. A save adds a version to the article;
+    // a draft is an article with this title, new since the claim.
+    const saved =
+      action.kind === "ARTICLE_EDIT"
+        ? (await prisma.articleRevision.findFirst({ where: { articleId: article!.id }, orderBy: { createdAt: "desc" }, select: { id: true } }))?.id !==
+          (payload.basedOn ?? undefined)
+        : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdAt: { gte: claimedAt } } })) > 0;
+    if (!saved) {
+      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
     }
-    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null } });
     throw error;
   }
 }
