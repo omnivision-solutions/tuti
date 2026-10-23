@@ -148,8 +148,9 @@ export const readerOf = cache(async (projectId: string, userId: string | null | 
   if (member) {
     return null;
   }
-  // SSO accounts' own addresses are placeholders, never verified.
-  const byEmail = account?.emailVerified ? [{ email: account.email.toLowerCase() }] : [];
+  // SSO accounts' own addresses are placeholders, never verified. Emails are kept lowercase, but an
+  // instance from before that (still running while a deploy overlaps it) may write one that isn't.
+  const byEmail = account?.emailVerified ? [{ email: { equals: account.email, mode: "insensitive" as const } }] : [];
   const users = await prisma.ssoIdentity.findMany({ where: { projectId, OR: [{ userId }, ...byEmail] }, select: { groups: true, properties: true } });
   const readers = users.map((user) => ({ groups: user.groups, properties: storedProperties(user.properties) }));
   return {

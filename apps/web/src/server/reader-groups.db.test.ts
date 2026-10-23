@@ -329,12 +329,19 @@ describe("groups from conditions", () => {
     // Several with it: any of them puts them in.
     await signIn({ email: reader.email, properties: { plan: "free" } });
     expect(await reads(reader)).toEqual(yes);
+    // One kept in capitals (written by an instance from before emails were lowercased) too.
+    const other = await signUp("Capitals", `e2e-${randomUUID()}@example.com`);
+    await prisma.user.update({ where: { id: other.id }, data: { emailVerified: true } });
+    await prisma.ssoIdentity.create({
+      data: { projectId: project.id, externalId: `user-${randomUUID()}`, userId: (await signUp()).id, email: other.email.toUpperCase(), properties: { plan: "enterprise" } },
+    });
+    expect(await reads(other)).toEqual(yes);
     // Another project's users with it don't.
-    const other = await createProject(owner);
+    const otherProject = await createProject(owner);
     const elsewhere = await signUp("Elsewhere", `e2e-${randomUUID()}@example.com`);
     await prisma.user.update({ where: { id: elsewhere.id }, data: { emailVerified: true } });
     await prisma.ssoIdentity.create({
-      data: { projectId: other.id, externalId: "user-1", userId: (await signUp()).id, email: elsewhere.email, properties: { plan: "enterprise" } },
+      data: { projectId: otherProject.id, externalId: "user-1", userId: (await signUp()).id, email: elsewhere.email, properties: { plan: "enterprise" } },
     });
     expect(await reads(elsewhere)).toEqual(no);
   });
