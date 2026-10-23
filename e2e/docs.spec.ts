@@ -146,6 +146,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await onThisPage.getByRole("link", { name: "Roles" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team#roles$/);
   await expect(article.getByRole("heading", { name: "Roles", level: 2 })).toBeInViewport();
+  // The section being read is marked.
+  await expect(onThisPage.getByRole("link", { name: "Roles" })).toHaveAttribute("aria-current", "location");
 
   // On a phone the tree is a menu above the article, and "On this page" is left out.
   await visitor.setViewportSize({ width: 390, height: 844 });

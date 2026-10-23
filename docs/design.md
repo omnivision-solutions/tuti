@@ -69,7 +69,9 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
   "Powered by tuti" footer. Docs pages are wider (max-w-7xl, `DocsLayout`):
   the tab's tree on the left (a "Browse docs" menu on phones), the page at
-  max-w-3xl, and an article's "On this page" on the right on wide screens;
+  max-w-3xl, and an article's "On this page" on the right on wide screens
+  (the section being read marked). Articles use `article-text` on top of
+  `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview has a large search box
   too, then a card per collection (icon, name, description; three per row
   on wide screens, one on phones).
