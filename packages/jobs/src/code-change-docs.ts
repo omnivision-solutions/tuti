@@ -52,7 +52,7 @@ export async function writeArticleEdit(
 ): Promise<{ reason: string; payload: ArticleEditPayload } | null> {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
-    select: { title: true, body: true, content: true, revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+    select: { title: true, body: true, content: true, revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } } },
   });
   if (!article) {
     return null;

@@ -50,7 +50,8 @@ const articleSelect = {
   publishedAt: true,
   collection: { select: { name: true } },
   changes: { select: { articleId: true } },
-  revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
+  // Newest first, ties by id: the order articles.update checks `revision` in.
+  revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } },
 } satisfies Prisma.ArticleSelect;
 
 const changeSelect = {

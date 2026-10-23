@@ -238,6 +238,16 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("STALE");
   });
 
+  test("two versions saved in the same millisecond: the edit is checked against the one articles.update calls newest", async () => {
+    const { article, action } = await articleEdit();
+    const newest = await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    // Another version at the very same time, sorting before it by id: still not newer.
+    await prisma.articleRevision.create({ data: { id: `0${newest.id.slice(1)}`, articleId: article.id, title: newest.title, body: newest.body, createdAt: newest.createdAt } });
+    expect((await call(getCodeChange, team(), { id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).codeChangeId })).actions[0]!.status).toBe("pending");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
+  });
+
   test("unpublished changes waiting on the article make the edit out of date too (applying would publish them)", async () => {
     const { article, action } = await articleEdit();
     await call(updateArticle, team(), { slug: article.slug, body: "Half-written" });
