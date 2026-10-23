@@ -5,6 +5,14 @@
 UPDATE "sso_identity" SET "attributes" = "attributes" || jsonb_build_object('groups', to_jsonb("groups"))
 WHERE cardinality("groups") > 0;
 
+-- And users with a `groups` property but none in the column get it there too, so instances from before
+-- see the same groups while a deploy overlaps (see below).
+UPDATE "sso_identity" SET "groups" = CASE
+  WHEN jsonb_typeof("attributes" -> 'groups') = 'array' THEN ARRAY(SELECT jsonb_array_elements_text("attributes" -> 'groups'))
+  ELSE ARRAY["attributes" ->> 'groups']
+END
+WHERE cardinality("groups") = 0 AND jsonb_typeof("attributes" -> 'groups') IN ('string', 'number', 'boolean', 'array');
+
 UPDATE "reader_group" SET "conditions" = jsonb_build_array(jsonb_build_object('property', 'groups', 'op', 'is', 'value', "claim"))
 WHERE "claim" IS NOT NULL AND ("conditions" IS NULL OR jsonb_typeof("conditions") <> 'array' OR jsonb_array_length("conditions") = 0);
 

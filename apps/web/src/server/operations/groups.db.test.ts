@@ -281,6 +281,9 @@ test("groups from properties: a token's groups become the `groups` property, and
   const [ada, bea] = [await signUp("Ada"), await signUp("Bea")];
   await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
     VALUES (${crypto.randomUUID()}, ${project.id}, 'ada', ${ada.id}, '{beta,both}', '{"plan": "pro"}', now()), (${crypto.randomUUID()}, ${project.id}, 'bea', ${bea.id}, '{}', '{"plan": "free"}', now())`;
+  // One with a `groups` property but none in the column.
+  await prisma.$executeRaw`INSERT INTO sso_identity (id, "projectId", "externalId", "userId", groups, attributes, "updatedAt")
+    VALUES (${crypto.randomUUID()}, ${project.id}, 'cy', ${(await signUp("Cy")).id}, '{}', '{"groups": ["beta"]}', now())`;
 
   await prisma.$executeRawUnsafe(sql);
 
@@ -292,9 +295,15 @@ test("groups from properties: a token's groups become the `groups` property, and
   expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { externalId: true, properties: true }, orderBy: { externalId: "asc" } })).toEqual([
     { externalId: "ada", properties: { plan: "pro", groups: ["beta", "both"] } },
     { externalId: "bea", properties: { plan: "free" } },
+    { externalId: "cy", properties: { groups: ["beta"] } },
+  ]);
+  expect(await prisma.ssoIdentity.findMany({ where: { projectId: project.id }, select: { externalId: true, legacyGroups: true }, orderBy: { externalId: "asc" } })).toEqual([
+    { externalId: "ada", legacyGroups: ["beta", "both"] },
+    { externalId: "bea", legacyGroups: [] },
+    { externalId: "cy", legacyGroups: ["beta"] },
   ]);
   expect((await list()).map((g) => [g.key, g.readers])).toEqual([
-    ["beta", 1],
+    ["beta", 2],
     ["both", 1],
     ["pro", 1],
   ]);
