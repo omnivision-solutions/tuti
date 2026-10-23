@@ -24,7 +24,7 @@ export function OnThisPage({ headings }: { headings: Heading[] }) {
     };
   }, [headings]);
   return (
-    <nav aria-label="On this page" className="sticky top-6 flex flex-col gap-3 text-sm">
+    <nav aria-label="On this page" className="sticky top-6 flex max-h-[calc(100dvh-3rem)] flex-col gap-3 overflow-y-auto text-sm">
       <p className="font-heading font-semibold">On this page</p>
       <ul className="flex flex-col border-l">
         {headings.map((heading) => (
