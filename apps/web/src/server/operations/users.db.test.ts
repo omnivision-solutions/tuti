@@ -58,11 +58,20 @@ test("a later sync changes only what it gives: properties named are set, null on
 });
 
 test("all or nothing: a user past 50 properties, a bad value or the same id twice refuses the whole sync", async () => {
-  await sync([{ id: "full", properties: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i])) }]);
-  await expect(sync([{ id: "new", properties: { plan: "pro" } }, { id: "full", properties: { extra: 1 } }])).rejects.toMatchObject({
-    status: 400,
-    message: "“full” would have more than 50 properties",
-  });
+  const fortyNine = Object.fromEntries(Array.from({ length: 49 }, (_, i) => [`p${i}`, i]));
+  await sync([
+    { id: "almost", name: "Original", properties: fortyNine },
+    { id: "full", properties: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`p${i}`, i])) },
+  ]);
+  // A change to "almost" and a new user come first; "full" going past 50 undoes both.
+  await expect(
+    sync([
+      { id: "almost", name: "Changed", properties: { extra: 1 } },
+      { id: "new", properties: { plan: "pro" } },
+      { id: "full", properties: { extra: 1 } },
+    ]),
+  ).rejects.toMatchObject({ status: 400, message: "“full” would have more than 50 properties" });
+  expect(await get("almost")).toMatchObject({ name: "Original", properties: fortyNine });
   // Changing or removing the ones there is fine.
   await sync([{ id: "full", properties: { p0: "changed", p1: null } }]);
   for (const bad of [
@@ -77,7 +86,7 @@ test("all or nothing: a user past 50 properties, a bad value or the same id twic
   ]) {
     await expect(sync(bad as never)).rejects.toMatchObject({ status: 400 });
   }
-  expect((await list()).users.map((user) => user.id)).toEqual(["full"]);
+  expect((await list()).users.map((user) => user.id)).toEqual(["full", "almost"]);
 });
 
 test(`up to ${MAX_USERS_PER_SYNC} users at once, new and known together`, async () => {
