@@ -101,6 +101,10 @@ test("every answered request says what it used: tokens and cost, chat and decisi
   await expect(complete({ system: "Be brief", user: "Hi", meter: record })).rejects.toThrow();
   model.decide({ shipped: 0.9 });
   await decide({ pr: "x" }, { shipped: { type: "noul", instructions: "Did it ship?", criteria: { true: "Yes", false: "No" } } }, { meter: record });
+  // Answered but unusable (an empty reply): still paid for, so still recorded.
+  model.reply("  ");
+  await expect(complete({ system: "Be brief", user: "Hi", meter: record })).rejects.toThrow("The AI reply had no text");
+  expect(used.splice(2).map((usage) => usage.kind)).toEqual(["chat"]);
   // The fake's usage: a token per character; chat a millionth of a dollar each, decisions a hundred-millionth.
   expect(used).toEqual([
     { kind: "chat", model: DEFAULT_AI_MODEL, inputTokens: 10, outputTokens: 5, cost: 15 / 1e6 },
