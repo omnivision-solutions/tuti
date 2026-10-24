@@ -28,6 +28,16 @@ export const serverEnv = {
   OPENAI_API_KEY: "",
   // (And OPENROUTER_* at the model fake; AI_MODEL stays the default.)
   AI_MODEL: "",
+  AI_MODEL_ANSWERS: "",
+  AI_MODEL_ESCALATIONS: "",
+  AI_MODEL_CHANGELOG: "",
+  AI_MODEL_CODE_CHANGES: "",
+  // AI credits on, like Tuti's cloud, with plenty for every project (the model fake's requests cost a sliver).
+  AI_CREDITS: "on",
+  AI_CREDITS_FREE: "1000",
+  AI_CREDITS_PER_TOPUP_DOLLAR: "",
+  AI_CREDITS_PER_USAGE_DOLLAR: "",
+  AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",

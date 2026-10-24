@@ -4,3 +4,4 @@ export * from "./ai";
 export * from "./embeddings";
 export * from "./log";
 export * from "./usage";
+export * from "./credits";
