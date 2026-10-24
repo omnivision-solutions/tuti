@@ -230,6 +230,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(marked.filter({ hasText: /^(?!send$|invites?$).*/i })).toHaveCount(0);
   await checkpoint(visitor, "portal-docs-search-as-typed", { fullPage: false });
   await visitor.setViewportSize({ width: 390, height: 844 });
+  // Each result's passage on one line, on a phone too.
+  const passage = asTyped.getByRole("option").nth(1).locator("mark").first().locator("..");
+  await expect(passage).toHaveCSS("-webkit-line-clamp", "1");
   await checkpoint(visitor, "portal-docs-search-as-typed-phone", { fullPage: false });
   await visitor.setViewportSize({ width: 1280, height: 720 });
   // Arrow down and Enter opens it.

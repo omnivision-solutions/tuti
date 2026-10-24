@@ -14,6 +14,12 @@ test("only at the start of a word, in any case, and the text stays whole", () =>
   expect(highlightParts("Design a Signup", "sign").join("")).toBe("Design a Signup");
 });
 
+test("accents written as marks of their own stay with their word", () => {
+  const cafe = "cafe\u0301"; // café as e + a combining acute accent
+  expect(marked(`A ${cafe} nearby`, "caf")).toEqual([cafe]);
+  expect(marked(`re\u0301sign`, "sign")).toEqual([]);
+});
+
 test("nothing to mark without words", () => {
   expect(highlightParts("Some text", "  ?! ")).toEqual(["Some text"]);
 });
