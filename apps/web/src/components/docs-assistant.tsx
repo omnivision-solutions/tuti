@@ -47,12 +47,15 @@ const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answ
  * the last). Answers come with their sources and a thumbs up or down; "I don't know" with posting it
  * as feedback (`feedbackPath`: the first board's) and, when the team takes questions by email, asking a
  * person (`askAPerson`). The trash clears the conversation; the next question starts a new one.
+ * In the widget (`widget`), it takes the panel: questions count as the widget's, sources open in the
+ * panel's Docs tab, and "Post this as feedback" opens its Feedback tab (`feedbackPath` "/widget").
  */
 export function DocsAssistantProvider({
   projectName,
   viewer,
   feedbackPath,
   askAPerson,
+  widget = false,
   children,
 }: {
   projectName: string;
@@ -60,9 +63,11 @@ export function DocsAssistantProvider({
   viewer: string | null;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
+  widget?: boolean;
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
+  const from = widget ? "widget" : "portal";
   const key = storageKey(slug, viewer ?? "anonymous");
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, viewer ?? "anonymous"));
@@ -90,10 +95,10 @@ export function DocsAssistantProvider({
     async (turn: string, question: string, before: Turn[]) => {
       try {
         const followUpTo = lastAsked(before);
-        const result = await askDocs(slug, question, "portal", followUpTo);
+        const result = await askDocs(slug, question, from, followUpTo);
         // The conversation isn't theirs any more (a new reader cookie): asked afresh, as a new one.
         if (followUpTo && "code" in result && result.code === "not_found") {
-          const fresh = await askDocs(slug, question, "portal");
+          const fresh = await askDocs(slug, question, from);
           setTurns([{ key: turn, question, ...("error" in fresh ? { error: fresh.error } : { answer: fresh }) }]);
           return;
         }
@@ -103,7 +108,7 @@ export function DocsAssistantProvider({
         update(turn, { error: "Couldn't reach the assistant. Try again." });
       }
     },
-    [slug, update],
+    [slug, from, update],
   );
 
   const assistant = useMemo<DocsAssistant>(
@@ -144,6 +149,7 @@ export function DocsAssistantProvider({
             turns={turns}
             feedbackPath={feedbackPath}
             askAPerson={askAPerson}
+            widget={widget}
             onAsk={assistant.ask}
             onRetry={retry}
             onRated={(turn, helpful) => update(turn.key, { rated: helpful })}
@@ -161,6 +167,7 @@ function AssistantPanel({
   turns,
   feedbackPath,
   askAPerson,
+  widget,
   onAsk,
   onRetry,
   onRated,
@@ -171,6 +178,7 @@ function AssistantPanel({
   turns: Turn[];
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
+  widget: boolean;
   onAsk: (question: string) => void;
   onRetry: (turn: Turn) => void;
   onRated: (turn: Turn, helpful: boolean) => void;
@@ -222,6 +230,7 @@ function AssistantPanel({
               turn={turn}
               feedbackPath={feedbackPath}
               askAPerson={askAPerson}
+              widget={widget}
               onRetry={() => onRetry(turn)}
               onRated={(helpful) => onRated(turn, helpful)}
               onLeave={onLeave}
@@ -253,6 +262,7 @@ function AssistantReply({
   turn,
   feedbackPath,
   askAPerson,
+  widget,
   onRetry,
   onRated,
   onLeave,
@@ -260,6 +270,7 @@ function AssistantReply({
   turn: Turn;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
+  widget: boolean;
   onRetry: () => void;
   onRated: (helpful: boolean) => void;
   onLeave: () => void;
@@ -287,7 +298,9 @@ function AssistantReply({
       </p>
     );
   }
-  const person = askAPerson && <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} widget={false} />;
+  const person = askAPerson && <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />;
+  // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
+  const sourceHref = widget ? (article: string) => `/widget?${new URLSearchParams({ tab: "docs", article })}` : undefined;
   if (answer.status === "failed") {
     return (
       <div className="flex flex-col items-start gap-2 text-sm">
@@ -295,7 +308,7 @@ function AssistantReply({
         <Button variant="outline" size="sm" onClick={onRetry}>
           Try again
         </Button>
-        {answer.sources.length > 0 && <AnswerSources sources={answer.sources} onOpen={onLeave} />}
+        {answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
       </div>
     );
   }
@@ -349,7 +362,7 @@ function AssistantReply({
         )}
         {turn.rated === false && person}
       </div>
-      <AnswerSources sources={answer.sources} onOpen={onLeave} />
+      <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />
     </div>
   );
 }
@@ -366,5 +379,35 @@ export function AssistantButton() {
       <SparklesIcon />
       <span className="max-md:hidden">Ask AI</span>
     </Button>
+  );
+}
+
+/**
+ * In the widget's Docs tab: "Ask AI", opening the assistant as it was, or with `question` (a search),
+ * "Ask AI: <question>", asking it there. Nothing without an assistant.
+ */
+export function AskAIButton({ question }: { question?: string }) {
+  const assistant = useDocsAssistant();
+  if (!assistant) {
+    return null;
+  }
+  if (!question) {
+    return (
+      <Button type="button" variant="outline" onClick={assistant.open}>
+        <SparklesIcon />
+        Ask AI
+      </Button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => assistant.ask(question)}
+      className="flex w-full items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent"
+    >
+      <SparklesIcon aria-hidden className="size-4 shrink-0" />
+      <span className="shrink-0 font-medium">Ask AI:</span>
+      <span className="truncate text-muted-foreground">{question}</span>
+    </button>
   );
 }

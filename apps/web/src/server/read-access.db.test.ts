@@ -159,7 +159,7 @@ const texts = (node: ReactNode): string[] =>
 
 /** Whether the widget's panel opens article `slug` for whoever actAs set. */
 async function widgetOpens(slug: string) {
-  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug, hasBoard: true })) as ReactElement<object>;
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug })) as ReactElement<object>;
   const view = await (widget.type as (props: object) => Promise<ReactNode>)(widget.props);
   return !texts(view).includes("Article not found");
 }

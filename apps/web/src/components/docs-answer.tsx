@@ -170,8 +170,21 @@ export function AnswerText({ text }: { text: string }) {
   );
 }
 
-/** The articles an answer cites, linked (an AI-only one, which has no page, by name). `newTab` in the widget; `onOpen` when one is opened. */
-export function AnswerSources({ sources, newTab = false, onOpen }: { sources: Answer["sources"]; newTab?: boolean; onOpen?: () => void }) {
+/**
+ * The articles an answer cites, linked (an AI-only one, which has no page, by name): to their pages, or
+ * `href` (the widget's own article view); `newTab` to open them there; `onOpen` when one is opened.
+ */
+export function AnswerSources({
+  sources,
+  newTab = false,
+  href,
+  onOpen,
+}: {
+  sources: Answer["sources"];
+  newTab?: boolean;
+  href?: (slug: string) => string;
+  onOpen?: () => void;
+}) {
   const at = usePortalHref();
   return (
     <div className="flex flex-col gap-1">
@@ -182,7 +195,12 @@ export function AnswerSources({ sources, newTab = false, onOpen }: { sources: An
             {source.url === null ? (
               <span className="break-words">{source.title}</span>
             ) : (
-              <Link href={at(`/docs/${source.slug}`)} target={newTab ? "_blank" : undefined} onClick={onOpen} className="break-words text-primary hover:underline">
+              <Link
+                href={href ? href(source.slug) : at(`/docs/${source.slug}`)}
+                target={newTab ? "_blank" : undefined}
+                onClick={onOpen}
+                className="break-words text-primary hover:underline"
+              >
                 {source.title}
               </Link>
             )}

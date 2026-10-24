@@ -90,7 +90,7 @@ async function readers() {
   const article = await publishedArticle(project.slug, SLUG);
   const { collections } = await docsContents(project.slug);
   // The widget's article view (WidgetDocs hands it to WidgetArticle, rendered here).
-  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG, hasBoard: true })) as ReactElement<object>;
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: SLUG })) as ReactElement<object>;
   const widgetArticle = await (widget.type as (props: object) => Promise<ReactNode>)(widget.props);
   const sections = await answerSections(project.id, QUESTION, 10, SIGNED_OUT, 3000);
   return {

@@ -8,7 +8,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
-import { nextModelReply } from "./model";
+import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
@@ -396,7 +396,8 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(widget.getByRole("list", { name: "Collections" }).getByRole("link", { name: "Getting started" })).toBeVisible();
 });
 
-test("a visitor asks the docs' AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+test("a visitor asks the docs' AI in the widget's assistant: an answer with its source, asking a person after a thumbs-down, a follow-up, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -447,14 +448,16 @@ test("a visitor asks the docs' AI in the widget: an answer with its source, aski
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill(question);
   await search.press("Enter");
-  const ai = widget.getByRole("region", { name: "AI answer" });
+  // Asked from the search, in the assistant, which takes the panel.
   await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
-  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await widget.getByRole("button", { name: `Ask AI: ${question}` }).click();
+  const assistant = widget.getByRole("dialog", { name: "Assistant" });
+  const ai = assistant.getByRole("log", { name: "Conversation" });
   await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
-  // Sources open on the portal in a new tab, so the answer stays in the panel.
+  // Sources open in the panel's Docs tab.
   const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
-  await expect(source).toHaveAttribute("href", `/docs/${article.slug}`);
-  await expect(source).toHaveAttribute("target", "_blank");
+  await expect(source).toHaveAttribute("href", `/widget?tab=docs&article=${article.slug}`);
+  await expect(source).not.toHaveAttribute("target");
   await checkpoint(visitor, "widget-docs-ai-answer");
   await ai.getByRole("button", { name: "Not helpful" }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
@@ -496,18 +499,37 @@ test("a visitor asks the docs' AI in the widget: an answer with its source, aski
   // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
   expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
 
+  // A follow-up, in the panel: the AI gets the conversation so far.
+  const followUp = `Can members do it too ${slug}?`;
+  await similar(`${question}\n${followUp}`, `Inviting your team\n\n${body}`, 0.8);
+  await nextModelReply(JSON.stringify({ answer: "Only owners and admins can send invites.", sources: ["s1"] }), followUp);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(followUp);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  const followed = (await modelRequests()).find((request) => request.user.includes(followUp))!;
+  expect(followed.user).toContain('"earlierInConversation"');
+  await checkpoint(visitor, "widget-docs-ai-follow-up");
+
+  // A source opens the article in the panel; "Ask AI" there opens the conversation again.
+  await source.first().click();
+  await expect(widget.getByRole("heading", { name: "Inviting your team", level: 1 })).toBeVisible();
+  await expect(assistant).toBeHidden();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+
   // Something the docs don't cover: "I don't know", and posting it from the widget's own Feedback tab.
   const unrelated = "Can I pay with crypto?";
-  await search.fill(unrelated);
-  await search.press("Enter");
-  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(unrelated);
+  await assistant.getByRole("button", { name: "Send" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "widget-docs-ai-no-answer");
   // Asking a person here starts with the email the customer's site signed them in with.
-  await ai.getByRole("button", { name: "Ask a person" }).click();
+  await ai.getByRole("button", { name: "Ask a person" }).last().click();
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
   await ai.getByRole("button", { name: "Cancel" }).click();
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
+  await expect(assistant).toBeHidden();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(visitor, "widget-docs-ai-post-as-feedback");

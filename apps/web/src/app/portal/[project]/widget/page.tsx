@@ -5,6 +5,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChangelogEntryView } from "@/components/changelog-entry";
+import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { PortalBaseProvider } from "@/components/portal-base";
 import { ChangelogSeen } from "@/components/changelog-seen";
 import { EmptyState } from "@/components/empty-state";
 import { NewPostForm } from "@/components/new-post-form";
@@ -17,6 +19,8 @@ import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/docs-queries";
 import { brandCss, branding } from "@/server/operations/branding";
 import { MAX_POST_TITLE } from "@/server/operations/create";
+import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
 import { widgetSettings } from "@/server/operations/widget";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
@@ -43,6 +47,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       where: { slug },
       select: {
         id: true,
+        name: true,
         boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
       },
@@ -71,8 +76,21 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   const hasDocs = project.articles.length > 0 || (tabParam === "docs" && typeof article === "string");
   const tabs = TABS.filter(({ tab }) => tab !== "docs" || hasDocs);
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
+  // The docs' assistant, in the panel, when the server has AI answers (asked from the Docs tab).
+  const session = answersEnabled() ? await getSession() : null;
+  const assistant = answersEnabled()
+    ? {
+        projectName: project.name,
+        viewer: session?.user.id ?? null,
+        // "Post this as feedback" opens the Feedback tab, with the question as the title.
+        feedbackPath: project.boards.length > 0 ? "/widget" : null,
+        askAPerson: await askAPerson(slug),
+      }
+    : null;
 
   return (
+    <PortalBaseProvider base="" slug={slug}>
+      <WithAssistant assistant={assistant}>
     <main className="flex flex-col gap-4 p-4">
       {css && <style>{css}</style>}
       <div className="flex items-center justify-between border-b">
@@ -124,13 +142,25 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           article={typeof article === "string" ? article : undefined}
           docsTab={typeof docsTab === "string" ? docsTab : undefined}
           collection={typeof collection === "string" ? collection : undefined}
-          hasBoard={project.boards.length > 0}
         />
       )}
       {tab === "feedback" && (
         <Feedback slug={slug} board={project.boards[0]?.slug} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
       )}
     </main>
+      </WithAssistant>
+    </PortalBaseProvider>
+  );
+}
+
+/** The panel inside the docs' assistant (widget mode), where the server has AI answers. */
+function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children" | "widget"> | null; children: React.ReactNode }) {
+  return assistant ? (
+    <DocsAssistantProvider {...assistant} widget>
+      {children}
+    </DocsAssistantProvider>
+  ) : (
+    children
   );
 }
 
