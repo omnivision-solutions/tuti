@@ -1197,7 +1197,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.waitForURL(/\/feedback\/feature-requests\?title=/);
   await expect(visitor.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(visitor, "portal-docs-ai-post-as-feedback");
-  await visitor.getByRole("button", { name: "Submit feedback" }).click();
+  await visitor.getByRole("button", { name: "Submit post" }).click();
   await expect(visitor.getByText("Feedback posted")).toBeVisible();
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 

@@ -234,7 +234,7 @@ function BoardPreview(draft: { name: string; description: string; postButton: st
       <div className="flex flex-col gap-3 rounded-xl bg-popover p-4 text-popover-foreground shadow-sm ring-1 ring-foreground/10">
         <p className="font-heading text-lg font-bold tracking-tight break-words text-muted-foreground/60">{texts.titlePlaceholder}</p>
         <p className="min-h-12 text-sm break-words text-muted-foreground">{texts.detailsPlaceholder}</p>
-        <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>Submit feedback</span>
+        <span className={cn(buttonVariants({ size: "sm" }), "self-end")}>Submit post</span>
       </div>
     </section>
   );

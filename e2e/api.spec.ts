@@ -15,7 +15,7 @@ test("an admin creates an API key, reads posts with it and revokes it", async ({
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
 
   // The key is shown once, with a command to try it.

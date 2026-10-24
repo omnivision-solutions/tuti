@@ -98,7 +98,7 @@ test("the team puts the portal on its own domain: adds it, verifies it with a TX
   await visitor.goto("/feedback/feature-requests");
   await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByLabel("Title").fill("Dark mode on our own domain");
-  await visitor.getByRole("button", { name: "Submit feedback" }).click();
+  await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our own domain" }).click();
   // Its page is on that domain too.
   await visitor.waitForURL((url) => url.origin === domainUrl && url.pathname.startsWith("/feedback/feature-requests/"));

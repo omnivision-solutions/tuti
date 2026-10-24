@@ -64,7 +64,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await expect(videoDialog).toHaveCount(0);
   await expect(details).toBeFocused();
   await checkpoint(ada, "portal-rich-post-editor");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
 
   // The post page shows it as written; the video plays from the provider's embed URL.
   await ada.getByRole("link", { name: "Dark mode" }).click();
@@ -119,7 +119,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   });
   await ada.locator('input[type="file"]').setInputFiles({ name: "hero.png", mimeType: "image/png", buffer: screenshot });
   await expect(ada.getByText("Uploading image…")).toBeVisible();
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await expect(ada.getByText("Wait for the image to finish uploading, then try again.")).toBeVisible();
 
   // Once processed, the image shows in the editor; selecting it shows its controls.
@@ -143,7 +143,7 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await altDialog.getByLabel("Alt text").fill("The landing page hero filling the screen");
   await altDialog.getByRole("button", { name: "Save" }).click();
   await checkpoint(ada, "portal-post-image-editor");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
 
   await ada.getByRole("link", { name: "Make the hero smaller" }).click();
   const figure = ada.getByRole("main").locator("figure.rich-image");
