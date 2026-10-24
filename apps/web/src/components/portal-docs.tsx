@@ -40,6 +40,7 @@ import {
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { DocsSearchBox } from "@/components/docs-search-box";
+import { PortalMenuPart } from "@/components/portal-menu";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -412,8 +413,8 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
 }
 
 /**
- * Every Docs page's columns: the tab's tree on the left (on phones, "Browse docs" above the page
- * instead), the page, and on an article its `headings` on the right ("On this page", on wide
+ * Every Docs page's columns: the tab's tree on the left (on phones and tablets, in the header's
+ * menu instead), the page, and on an article its `headings` on the right ("On this page", on wide
  * screens, with two or more).
  */
 export function DocsLayout({ tree, current, headings = [], children }: { tree: DocsTree; current: string | null; headings?: Heading[]; children: React.ReactNode }) {
@@ -430,12 +431,20 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
       )}
       <div className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-6">
         {hasTree && (
-          <details className="rounded-xl border md:hidden">
-            <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
-            <div className="border-t p-2">
+          <>
+            {/* On phones and tablets the tree is in the header's menu; without JavaScript (no menu), above the page. */}
+            <PortalMenuPart>
               <DocsTree tree={tree} current={current} />
-            </div>
-          </details>
+            </PortalMenuPart>
+            <noscript>
+              <details className="rounded-xl border md:hidden">
+                <summary className="cursor-pointer px-4 py-2 text-sm font-medium">Browse docs</summary>
+                <div className="border-t p-2">
+                  <DocsTree tree={tree} current={current} />
+                </div>
+              </details>
+            </noscript>
+          </>
         )}
         {children}
         <PortalFooter docs />

@@ -12,6 +12,7 @@ import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/comp
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
 import { boardPath } from "@/lib/post-urls";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
@@ -114,27 +115,33 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
         <WithAssistant assistant={assistantProps}>
+        <PortalMenuProvider>
         <PortalTop>
-        <header className="portal-header flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
+        <header className="portal-header flex flex-wrap items-center gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           <PortalLogo name={project.name} href={withBase(base, "/")} />
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {canRead && <DocsSearch askAI={answersEnabled()} />}
-          <PortalHeaderLinks />
-          <PortalContact />
-          {session ? (
-            // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
-            <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
-          ) : (
-            <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              Sign in
-            </SignInLink>
-          )}
+          {/* On the right; on phones and tablets the links and contact button are in the menu. */}
+          <div className="ml-auto flex items-center gap-1 sm:gap-3">
+            {canRead && <DocsSearch askAI={answersEnabled()} />}
+            <PortalHeaderLinks />
+            <PortalContact />
+            {session ? (
+              // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
+              <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
+            ) : (
+              <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Sign in
+              </SignInLink>
+            )}
+            {canRead && <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={project.boards} />}
+          </div>
         </header>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
         </PortalTop>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
+        </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>
       {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml

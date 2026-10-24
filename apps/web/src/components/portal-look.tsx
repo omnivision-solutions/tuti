@@ -159,7 +159,8 @@ export function PortalContact() {
     return null;
   }
   return (
-    <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+    // On phones and tablets it's in the header's menu (PortalMenu).
+    <a href={contact.url} className={buttonVariants({ size: "sm", className: "max-md:hidden" })}>
       {contact.label || "Contact us"}
     </a>
   );
@@ -192,7 +193,8 @@ export function PortalHeaderLinks() {
     return null;
   }
   return (
-    <nav aria-label="Links" className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 pb-1 sm:order-none sm:ml-auto sm:w-auto sm:pb-0">
+    // On phones and tablets they're in the header's menu (PortalMenu).
+    <nav aria-label="Links" className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
       {headerLinks.map((link, i) => (
         <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}

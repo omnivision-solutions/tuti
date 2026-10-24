@@ -109,8 +109,8 @@ export function DocsSearch({ askAI }: { askAI: boolean }) {
     return null;
   }
   return (
-    <div className="order-last flex w-full items-center gap-2 pb-1 sm:order-none sm:w-auto sm:pb-0">
-      <DocsSearchBox askAI={askAI} shortcut query={query} className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
+    <div className="flex items-center gap-1 sm:gap-2">
+      <DocsSearchBox askAI={askAI} shortcut query={query} compact />
       <AssistantButton />
     </div>
   );
