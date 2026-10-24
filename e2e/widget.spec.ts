@@ -637,15 +637,13 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   let releaseFirst!: () => void;
   const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
   let actions = 0;
-  await visitor.route(
-    (url) => url.pathname === "/widget",
-    async (route) => {
-      if (isAction(route.request()) && ++actions === 1) {
-        await firstReleased;
-      }
-      await route.continue();
-    },
-  );
+  const widgetPage = (url: URL) => url.pathname === "/widget";
+  await visitor.route(widgetPage, async (route) => {
+    if (isAction(route.request()) && ++actions === 1) {
+      await firstReleased;
+    }
+    await route.continue();
+  });
   // Nothing in the docs is about it: "I don't know", without asking the model.
   const guests = "Can I invite guests?";
   const firstAsked = visitor.waitForRequest(isAction);
@@ -669,11 +667,67 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
   await panel.waitForFunction(() => (window as unknown as Counted).identified >= 1);
   releaseFirst();
-  // The question, Kim's sign-in, the question asked afresh.
+  // The question, Kim's sign-in, the question asked afresh; then one of Kim's own, which is answered
+  // after it (a page's server actions go one at a time), so by then Sam's has been and gone.
   await expect.poll(() => answered).toBeGreaterThanOrEqual(3);
+  const kims = "Is there a mobile app?";
+  // Kim's is empty: a first question, not a follow-up.
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(kims);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await expect(ai.getByText(kims)).toBeVisible();
   await expect(ai.getByText("Only owners and admins can send invites.")).toHaveCount(0);
   await expect(ai.getByText(guests)).toHaveCount(0);
-  await expect(ai.getByText("I don't know")).toHaveCount(0);
+
+  // Asked before the site has said who's signed in, a follow-up that comes back as no longer theirs is
+  // asked afresh while the sign-in lands: its answer still comes, in the conversation it moved to.
+  await visitor.unroute(widgetPage);
+  let releaseSignIn!: () => void;
+  const signInReleased = new Promise<void>((resolve) => (releaseSignIn = resolve));
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", async (route) => {
+    await signInReleased;
+    await route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) });
+  });
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  const invoice = "Can I pay by invoice?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(invoice);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+  await visitor.context().clearCookies({ name: "tuti_reader" });
+  let releaseAsk!: () => void;
+  const askReleased = new Promise<void>((resolve) => (releaseAsk = resolve));
+  let asks = 0;
+  await visitor.route(widgetPage, async (route) => {
+    if (isAction(route.request()) && ++asks === 1) {
+      await askReleased;
+    }
+    await route.continue();
+  });
+  const reloaded = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  await reloaded.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  const euros = "What about in euros?";
+  const held = visitor.waitForRequest(isAction);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(euros);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await held;
+  releaseSignIn();
+  await reloaded.waitForFunction(() => (window as unknown as Counted).identified >= 1);
+  releaseAsk();
+  await expect(ai.getByText(euros)).toBeVisible();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await expect(ai.getByText("Thinking…")).toHaveCount(0);
+  await expect(ai.getByText(invoice)).toHaveCount(0);
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
