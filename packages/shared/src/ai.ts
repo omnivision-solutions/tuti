@@ -32,26 +32,36 @@ export function codeChangesEnabled(): boolean {
   return aiEnabled() && embeddingsEnabled();
 }
 
+/** What an AI request is for: each feature has its own default model, and a project can pick another. */
+export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes"] as const;
+export type AiFeature = (typeof AI_FEATURES)[number];
+
+/** A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else Tuti's default. */
+export function defaultModel(feature: AiFeature): string {
+  return process.env[`AI_MODEL_${feature.toUpperCase()}`] || process.env.AI_MODEL || DEFAULT_AI_MODEL;
+}
+
+/** What a piece of a feature's work asks the AI with: the model, and the meter recording each request for its project. */
+export type Ai = { model: string; meter: Meter };
+
 /** The model's reply to one system and one user message. Throws on any failure, with the reason. */
 export async function complete({
   system,
   user,
   maxTokens = 4000,
   timeoutMs = 60_000,
+  model,
   meter,
 }: {
   system: string;
   user: string;
   maxTokens?: number;
   timeoutMs?: number;
-  /** Records what the request used, for the project that caused it. */
-  meter: Meter;
-}): Promise<string> {
+} & Ai): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
   }
-  const model = process.env.AI_MODEL || DEFAULT_AI_MODEL;
   const response = await fetch(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -90,6 +100,32 @@ export async function complete({
     throw new Error("The AI reply had no text");
   }
   return content;
+}
+
+/** A model the endpoint serves (OpenRouter's GET /models), with its price in dollars per token when it says. */
+export type AiModelListing = { id: string; name: string; input: number | null; output: number | null };
+
+/** The endpoint's models. Throws on any failure. */
+export async function listModels(): Promise<AiModelListing[]> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not set");
+  }
+  const response = await fetch(`${baseUrl()}/models`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(10_000) });
+  const json = (await response.json().catch(() => null)) as { data?: { id?: unknown; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } }[] } | null;
+  if (!response.ok || !Array.isArray(json?.data)) {
+    throw new Error(`Listing the AI models failed (${response.status})`);
+  }
+  // OpenRouter's prices are strings of dollars per token.
+  const price = (value: unknown) => dollars(typeof value === "string" ? Number(value) : value);
+  return json.data
+    .filter((model): model is { id: string; name?: unknown; pricing?: { prompt?: unknown; completion?: unknown } } => typeof model.id === "string" && model.id !== "")
+    .map((model) => ({
+      id: model.id,
+      name: typeof model.name === "string" ? model.name : model.id,
+      input: price(model.pricing?.prompt),
+      output: price(model.pricing?.completion),
+    }));
 }
 
 /**

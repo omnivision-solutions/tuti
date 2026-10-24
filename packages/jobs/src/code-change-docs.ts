@@ -1,6 +1,6 @@
 import { blocksToNotes, type Doc, droppedFacts, factsIn, fromPlainText, parseDoc, readNotes, toPlainText } from "@tuti/content";
 import { prisma } from "@tuti/db";
-import { complete, type Meter } from "@tuti/shared";
+import { type Ai, complete } from "@tuti/shared";
 
 import { pullRequestState } from "./code-change-decisions";
 import type { PullRequestRead } from "./pull-request";
@@ -49,7 +49,7 @@ export async function writeArticleEdit(
   summary: string,
   articleId: string,
   problem: "wrong" | "missing",
-  use: Meter,
+  use: Ai,
 ): Promise<{ reason: string; payload: ArticleEditPayload } | null> {
   const article = await prisma.article.findUnique({
     where: { id: articleId },
@@ -66,7 +66,7 @@ export async function writeArticleEdit(
     system: EDIT_SYSTEM,
     user: JSON.stringify({ pull_request: pullRequestState(pr), summary_for_users: summary, problem, article: { title: article.title, sections: notes } }, null, 1),
     maxTokens: 4_000,
-    meter: use,
+    ...use,
   });
   let parsed: { reason?: unknown; sections?: Record<string, unknown>; add?: unknown };
   try {
@@ -110,12 +110,12 @@ Reply with JSON only: {"title": "<the article's title, under 60 characters>", "r
 Use only "## " or "### " headings, "- " list items, paragraphs separated by blank lines and **bold**. No links.`;
 
 /** A new article's draft, or null if the model's reply can't be used. */
-export async function writeNewArticle(pr: PullRequestRead, summary: string, nearby: string[], use: Meter): Promise<{ reason: string; payload: NewArticlePayload } | null> {
+export async function writeNewArticle(pr: PullRequestRead, summary: string, nearby: string[], use: Ai): Promise<{ reason: string; payload: NewArticlePayload } | null> {
   const reply = await complete({
     system: NEW_SYSTEM,
     user: JSON.stringify({ pull_request: pullRequestState(pr), summary_for_users: summary, existing_articles: nearby }, null, 1),
     maxTokens: 3_000,
-    meter: use,
+    ...use,
   });
   const read = readNotes(reply, new Set(), []);
   let reason = "";

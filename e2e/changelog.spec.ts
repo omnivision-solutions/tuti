@@ -156,7 +156,30 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByLabel("Tone")).toHaveValue(tone);
   await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
 
-  // The next AI draft follows it.
+  // The team picks a bigger model for changelog drafts (Settings → AI models).
+  await team.goto(`/app/${slug}/settings/ai-models`);
+  const changelogModel = team.getByLabel("Changelog drafts and edits");
+  await expect(changelogModel).toHaveAttribute("placeholder", /^Default: /);
+  await changelogModel.fill("acme/imaginary");
+  await team.getByRole("button", { name: "Save" }).click();
+  await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();
+  // Another tab, open since before the pick: saving its own change leaves the pick alone.
+  const other = await team.context().newPage();
+  await other.goto(`/app/${slug}/settings/ai-models`);
+  await changelogModel.fill("anthropic/claude-sonnet-5.5");
+  await checkpoint(team, "team-settings-ai-models");
+  await team.getByRole("button", { name: "Save" }).click();
+  await expect(team.getByText("AI models saved")).toBeVisible();
+  await other.getByLabel("AI answers").fill("acme/tiny");
+  await other.getByRole("button", { name: "Save" }).click();
+  await expect(other.getByText("AI models saved")).toBeVisible();
+  await other.reload();
+  await expect(other.getByLabel("Changelog drafts and edits")).toHaveValue("anthropic/claude-sonnet-5.5");
+  await expect(other.getByLabel("AI answers")).toHaveValue("acme/tiny");
+  await other.close();
+
+  // The next AI draft follows the style, written by that model.
+  await team.goto(`/app/${slug}/changelog`);
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Faster search");
   await team.getByRole("textbox", { name: "What changed" }).click();
@@ -175,6 +198,7 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("alertdialog").getByRole("button", { name: "Replace the text" }).click();
   await expect(team.getByText("Drafted with AI")).toBeVisible();
   const asked = (await modelRequests()).find((request) => request.user.includes(tone));
+  expect(asked?.model).toBe("anthropic/claude-sonnet-5.5");
   expect(asked?.user).toContain('"title": "Dark mode is here"');
   expect(asked?.user).toContain("Switch to the dark theme from your profile menu.");
 

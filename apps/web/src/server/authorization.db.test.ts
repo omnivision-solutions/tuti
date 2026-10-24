@@ -28,6 +28,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { request } from "@/test/next-headers";
 
+import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
 import * as assistant from "./assistant";
 import * as boards from "./boards";
@@ -67,6 +68,7 @@ const modules = {
   changelog,
   "changelog-seen": changelogSeen,
   "code-changes": codeChanges,
+  "ai-models": aiModels,
   "api-keys": apiKeys,
   assistant,
   boards,
@@ -127,6 +129,9 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  "ai-models": {
+    saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
   },
   assistant: {
     saveAssistantSettings: {

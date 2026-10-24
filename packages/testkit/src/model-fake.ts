@@ -15,6 +15,14 @@ export type DecisionRequest = { model: string; state: unknown; questions: Record
  */
 export type FakeDecision = Record<string, number | Record<string, number>>;
 
+/** The models the fake lists (GET /models, like OpenRouter's), with prices in dollars per token as strings; any model id is still answered. */
+export const FAKE_MODELS = [
+  { id: "anthropic/claude-haiku-5.5", name: "Anthropic: Claude Haiku 5.5", pricing: { prompt: "0.000001", completion: "0.000005" } },
+  { id: "anthropic/claude-sonnet-5.5", name: "Anthropic: Claude Sonnet 5.5", pricing: { prompt: "0.000003", completion: "0.000015" } },
+  { id: "acme/tiny", name: "Acme: Tiny", pricing: { prompt: "0.0000001", completion: "0.0000004" } },
+  { id: "acme/no-price", name: "Acme: No price" },
+];
+
 /** A scripted answer: a reply (status 200) or an error status. */
 type Step = { status: number; content?: string; during?: () => Promise<unknown>; match?: string };
 
@@ -70,6 +78,9 @@ export async function startModelFake(): Promise<ModelFake> {
         return send(401, { error: { message: "bad API key" } });
       }
       // Lets tests in another process (E2E journeys) check what the app asked.
+      if (req.method === "GET" && req.url === "/models") {
+        return send(200, { data: FAKE_MODELS });
+      }
       if (req.method === "GET" && req.url === "/_fake/requests") {
         return send(200, requests);
       }

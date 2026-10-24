@@ -1,4 +1,12 @@
-/** How Settings → Usage writes amounts. */
+/** How Settings → Usage and AI models write features and amounts. */
+
+/** Each AI feature's name. */
+export const AI_FEATURE_NAMES: Record<string, string> = {
+  answers: "AI answers",
+  escalations: "Ask a person (summaries)",
+  changelog: "Changelog drafts and edits",
+  code_changes: "Code changes",
+};
 
 /** Dollars: cents, or four places below a cent, or "under $0.0001" for a sliver. */
 export const money = (dollars: number) =>

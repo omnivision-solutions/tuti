@@ -107,6 +107,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "license.check": () => ({}),
   // Like license.check: admins only in the app (Settings → Usage).
   "usage.get": () => ({ months: 3 }),
+  // Like usage.get: admins only in the app (Settings → AI models).
+  "aiModels.get": () => ({}),
+  "aiModels.update": () => ({ answers: "acme/tiny", changelog: "" }),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),

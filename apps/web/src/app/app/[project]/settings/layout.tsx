@@ -1,3 +1,4 @@
+import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/page-header";
@@ -6,7 +7,7 @@ import { getAdminProject } from "@/server/membership";
 
 /**
  * Settings that don't change how the portal looks (those are in Customize): who can read it,
- * single sign-on, integrations, the API and webhooks, and exporting. Owners and admins only.
+ * single sign-on, integrations, the API and webhooks, exporting, AI usage and models. Owners and admins only.
  */
 export default async function SettingsLayout({ children, params }: LayoutProps<"/app/[project]/settings">) {
   const { project: slug } = await params;
@@ -26,6 +27,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
           { title: "Integrations", href: `${base}/integrations` },
           { title: "Developers", href: `${base}/developers` },
           { title: "Usage", href: `${base}/usage` },
+          ...(aiEnabled() ? [{ title: "AI models", href: `${base}/ai-models` }] : []),
         ]}
       />
       {children}

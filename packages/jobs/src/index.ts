@@ -12,7 +12,7 @@ import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
-export { type AiFeature, meter } from "./ai-usage";
+export { aiFor, projectModels } from "./ai-usage";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { addToRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine } from "./running-draft";
 

@@ -58,6 +58,7 @@ import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
+import { getAiModels, updateAiModels } from "./ai-models";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -139,6 +140,8 @@ const all = [
   updateBranding,
   checkLicense,
   getUsage,
+  getAiModels,
+  updateAiModels,
   getPortal,
   updatePortal,
   listPortalReaders,

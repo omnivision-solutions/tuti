@@ -1,5 +1,5 @@
-import { type AiFeature } from "@tuti/jobs";
 import { prisma } from "@tuti/db";
+import { type AiFeature } from "@tuti/shared";
 import { z } from "zod";
 
 import { defineOperation } from "./define";
