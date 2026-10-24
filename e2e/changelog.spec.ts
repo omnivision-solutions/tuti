@@ -34,7 +34,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.getByRole("checkbox", { name: "New" }).check();
   const editor = team.getByRole("textbox", { name: "What changed" });
   await editor.click();
-  await team.getByRole("button", { name: "Heading", exact: true }).click();
+  await team.keyboard.type("/");
+  await team.getByRole("option", { name: "Heading", exact: true }).click();
   await team.keyboard.type("Easier on the eyes");
   await team.keyboard.press("Enter");
   await team.keyboard.type("Switch themes from your profile menu.");

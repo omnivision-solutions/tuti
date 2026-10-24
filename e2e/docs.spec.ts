@@ -86,16 +86,38 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("combobox", { name: "Collection" }).click();
   await team.getByRole("option", { name: "Getting started" }).click();
   const editor = team.getByRole("textbox", { name: "Article" });
+  // Set as it's published, with no box around it.
+  await expect(editor).toHaveClass(/article-text/);
   await editor.click();
-  await team.getByRole("button", { name: "Heading", exact: true }).click();
+  // Blocks come from the / menu: picked with the mouse, or narrowed by typing and picked with Enter.
+  const blocks = team.getByRole("listbox", { name: "Blocks" });
+  await team.keyboard.type("/");
+  await blocks.getByRole("option", { name: "Heading", exact: true }).click();
   await team.keyboard.type("Who can invite");
   await team.keyboard.press("Enter");
   await team.keyboard.type("Owners and admins send invites from the Team page.");
   await team.keyboard.press("Enter");
-  await team.getByRole("button", { name: "Heading", exact: true }).click();
+  // The empty line says how.
+  await expect(editor.locator("p.is-empty")).toHaveAttribute("data-placeholder", "Type / for headings, lists, tables and more");
+  await team.keyboard.type("/head");
+  await expect(blocks.getByRole("option")).toHaveText(["Heading", "Subheading"]);
+  await checkpoint(team, "team-docs-article-blocks-menu");
+  await team.keyboard.press("Enter");
   await team.keyboard.type("Roles");
   await team.keyboard.press("Enter");
-  await team.getByRole("button", { name: "Table", exact: true }).click();
+  // Escape closes the menu and leaves what was typed.
+  await team.keyboard.type("/tab");
+  await expect(blocks.getByRole("option")).toHaveText(["Table"]);
+  await team.keyboard.press("Escape");
+  await expect(blocks).toHaveCount(0);
+  await team.keyboard.type("l");
+  await expect(editor.getByText("/tabl", { exact: true })).toBeVisible();
+  await expect(blocks).toHaveCount(0);
+  for (let i = 0; i < "/tabl".length; i++) {
+    await team.keyboard.press("Backspace");
+  }
+  await team.keyboard.type("/tab");
+  await team.keyboard.press("Enter");
   for (const cell of ["Role", "Can invite", "", "Admin", "Yes"]) {
     await team.keyboard.type(cell);
     await team.keyboard.press("Tab");

@@ -6,11 +6,10 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
-import { RichEditor } from "@/components/rich-editor";
+import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
@@ -95,18 +94,20 @@ export function NewPostForm({
           <input type="hidden" name="projectSlug" value={projectSlug} />
           <input type="hidden" name="boardSlug" value={boardSlug} />
           <FieldGroup>
+            {/* No boxes: a title and the details, as they're published. */}
             <Field data-invalid={state.error ? true : undefined}>
-              <FieldLabel htmlFor="post-title">Title</FieldLabel>
-              <Input
+              <input
                 key={submitted}
                 id="post-title"
                 name="title"
+                aria-label="Title"
                 defaultValue={submitted === 0 ? initialTitle : undefined}
                 placeholder="Short, descriptive title"
                 required
                 autoComplete="off"
                 onChange={(e) => suggest(e.target.value)}
                 aria-invalid={state.error ? true : undefined}
+                className={`${BARE_TITLE} text-xl`}
               />
               {state.error && <FieldError>{state.error}</FieldError>}
             </Field>
@@ -134,17 +135,15 @@ export function NewPostForm({
               </div>
             )}
 
-            <Field>
-              <FieldLabel id="post-body-label">Details</FieldLabel>
-              <RichEditor
-                key={submitted}
-                profile="post"
-                name="content"
-                labelledBy="post-body-label"
-                placeholder="Any more details?"
-                uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
-              />
-            </Field>
+            <RichEditor
+              key={submitted}
+              bare
+              profile="post"
+              name="content"
+              label="Details"
+              placeholder="Any more details? Type / for lists, images and more"
+              uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
+            />
             <Button type="submit" disabled={pending} className="self-end">
               {pending ? "Posting…" : "Submit feedback"}
             </Button>

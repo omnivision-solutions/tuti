@@ -105,6 +105,12 @@ Use these instead of hand-rolling layout:
   what to do next; add an `action` when there's an obvious one.
 - **`Card`** with `CardHeader`/`CardTitle`/`CardDescription`: a settings section
   or form. One topic per card.
+- **`RichEditor bare`**: long writing (docs articles, changelog entries, new
+  posts) is written as it's published: no box and no toolbar; the title above
+  it is a borderless `BARE_TITLE` input set like the published heading. Blocks
+  come from a menu that typing / at the start of a line opens (the empty line
+  being written says so), formatting from a bar over selected text (and
+  Ctrl/⌘+K for a link). Comments keep the boxed editor with its toolbar.
 - shadcn/ui primitives (Base UI) in `components/ui/*`. For navigation styled
   as a button use `<Link className={buttonVariants(...)}>`, not
   `<Button render={<Link />}>` (that adds `role="button"`).
