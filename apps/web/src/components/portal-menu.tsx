@@ -35,7 +35,7 @@ const within = (path: string, href: string) => path === href || path.startsWith(
 
 /**
  * The header's menu on phones and tablets (wider screens show it all already): the current part's
- * navigation (the docs' tree, from the page; the boards on Feedback), then the team's header links and
+ * navigation (from the page: the docs' tree, the changelog's entries by date; the boards on Feedback), then the team's header links and
  * contact button (Customize → Navigation), which the header leaves out at those widths. Opening a link
  * closes it. Left out when there's nothing to put in it.
  */
@@ -46,7 +46,8 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
   const { headerLinks, contact } = usePortalLook();
   const page = useContext(PartContext)?.part ?? null;
 
-  const part = within(path, "/docs") ? (
+  // What the page gave it (the docs' tree, the changelog's entries), or the boards on Feedback.
+  const part = page ? (
     page
   ) : within(path, "/feedback") && boards.length > 1 ? (
     <nav aria-label="Boards" className="flex flex-col gap-0.5 text-sm">

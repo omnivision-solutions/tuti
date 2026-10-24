@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/back-link";
 import { ChangelogEntryView } from "@/components/changelog-entry";
+import { ChangelogMenu } from "@/components/changelog-pages";
 import { publishedEntries } from "@/server/changelog-queries";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
@@ -20,6 +21,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/portal/[proj
   }
   return (
     <div className="flex flex-col gap-6">
+      <ChangelogMenu slug={slug} current={entry.number} />
       <BackLink href={(await portalLinks())("/changelog")}>Changelog</BackLink>
       <ChangelogEntryView
         entry={entry}
