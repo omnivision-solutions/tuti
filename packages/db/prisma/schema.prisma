@@ -270,7 +270,8 @@ model Project {
   customDomain         CustomDomain?
   siteMount            SiteMount?
   portalRedirects      PortalRedirect[]
-  docsSearches         DocsSearch[]
+  docsSearchDays       DocsSearchDay[]
+  docsFailedSearchDays DocsFailedSearchDay[]
   docsQuestions        DocsQuestion[]
   docsGapDismissals    DocsGapDismissal[]
   changelogSeen        ChangelogSeen[]
@@ -1399,19 +1400,35 @@ model ArticleViewDay {
   @@map("article_view_day")
 }
 
-/// A docs search: its normalized query and how many articles it found (0 is a
-/// failed search). Nothing about who searched.
-model DocsSearch {
-  id        String   @id @default(cuid())
+/// How many docs searches a project had on a day (UTC), and how many found nothing:
+/// counters, not a row per search. No search's words (see DocsFailedSearchDay) and
+/// nothing about who searched. Kept for the insights' 30 days (the prune-docs-searches job).
+model DocsSearchDay {
   projectId String
-  query     String
-  results   Int
-  createdAt DateTime @default(now())
+  day       DateTime @db.Date
+  searches  Int
+  failed    Int
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
-  @@index([projectId, createdAt])
-  @@map("docs_search")
+  @@id([projectId, day])
+  @@map("docs_search_day")
+}
+
+/// What readers searched for that found nothing, normalized, with how often on a day
+/// (UTC): the only searches whose words are kept, for the insights' failed searches. Up
+/// to 100 different ones per project and day (more still count in DocsSearchDay); kept
+/// for the insights' 30 days (the prune-docs-searches job).
+model DocsFailedSearchDay {
+  projectId String
+  day       DateTime @db.Date
+  query     String
+  count     Int
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, day, query])
+  @@map("docs_failed_search_day")
 }
 
 /// What became of a question asked of the docs' AI.

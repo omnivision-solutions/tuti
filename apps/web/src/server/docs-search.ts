@@ -1,5 +1,5 @@
-import { type ArticleListing, prisma } from "@tuti/db";
-import { meter } from "@tuti/jobs";
+import { type ArticleListing, Prisma, prisma } from "@tuti/db";
+import { FAILED_SEARCHES_PER_DAY, meter } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
 import type { Reader } from "@/lib/read-access";
@@ -81,16 +81,42 @@ export async function searchForReader(
 const normalizeQuery = (query: string) => query.trim().replace(/\s+/g, " ").toLowerCase().slice(0, 200);
 
 /**
- * Records a search for the team's insights (no results is a failed search). Not awaited
- * and never throws, so logging can't slow search down or break it.
+ * Counts a search in the team's insights (no results is a failed search): the day's counters,
+ * and for a failed search its words with how often, up to FAILED_SEARCHES_PER_DAY different ones
+ * a day (more still count, without their words). A search that found something keeps no words.
+ * Not awaited and never throws, so logging can't slow search down or break it.
  */
 export function logSearch(projectId: string, query: string, results: number) {
   const normalized = normalizeQuery(query);
   if (!normalized) {
     return;
   }
-  prisma.docsSearch
-    .create({ data: { projectId, query: normalized, results } })
+  const failed = results === 0;
+  // Both under one now(): the transaction's, so a search near midnight counts on one day.
+  const today = Prisma.sql`(now() AT TIME ZONE 'UTC')::date`;
+  prisma
+    .$transaction([
+      prisma.$executeRaw`
+        INSERT INTO docs_search_day ("projectId", day, searches, failed)
+        VALUES (${projectId}, ${today}, 1, ${failed ? 1 : 0}::int)
+        ON CONFLICT ("projectId", day) DO UPDATE SET searches = docs_search_day.searches + 1, failed = docs_search_day.failed + EXCLUDED.failed`,
+      ...(failed
+        ? [
+            // Counted if it's kept already; else kept while the day has room (a few over under concurrency).
+            prisma.$executeRaw`
+              WITH bumped AS (
+                UPDATE docs_failed_search_day SET count = count + 1
+                WHERE "projectId" = ${projectId} AND day = ${today} AND query = ${normalized}
+                RETURNING 1
+              )
+              INSERT INTO docs_failed_search_day ("projectId", day, query, count)
+              SELECT ${projectId}, ${today}, ${normalized}, 1
+              WHERE NOT EXISTS (SELECT 1 FROM bumped)
+                AND (SELECT count(*) FROM docs_failed_search_day WHERE "projectId" = ${projectId} AND day = ${today}) < ${FAILED_SEARCHES_PER_DAY}
+              ON CONFLICT ("projectId", day, query) DO UPDATE SET count = docs_failed_search_day.count + 1`,
+          ]
+        : []),
+    ])
     .catch((error: unknown) => log.warn("Logging a docs search failed", { projectId, error }));
 }
 

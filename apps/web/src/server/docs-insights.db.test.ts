@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import { type Prisma, prisma } from "@tuti/db";
+import { FAILED_SEARCHES_PER_DAY, handlers } from "@tuti/jobs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { SIGNED_OUT } from "@/lib/read-access";
@@ -31,6 +32,22 @@ async function article(title: string, body: string, { projectId = project.id, pu
   const slug = title.toLowerCase().replaceAll(" ", "-");
   await prisma.article.create({ data: { projectId, slug, title, body, publishedAt: published ? new Date() : null } });
   return slug;
+}
+
+/** What's kept of a project's searches: each day's counts, and the words of failed ones. */
+async function searchesKept(projectId = project.id) {
+  const [days, failed] = await Promise.all([
+    prisma.docsSearchDay.findMany({ where: { projectId }, orderBy: { day: "asc" }, select: { day: true, searches: true, failed: true } }),
+    prisma.docsFailedSearchDay.findMany({ where: { projectId }, orderBy: [{ day: "asc" }, { query: "asc" }], select: { day: true, query: true, count: true } }),
+  ]);
+  return { days, failed };
+}
+
+/** A day (UTC) `ago` days back, as the counters store it. */
+function daysAgo(ago: number) {
+  const day = new Date(new Date().toISOString().slice(0, 10));
+  day.setUTCDate(day.getUTCDate() - ago);
+  return day;
 }
 
 /** Acts as an anonymous reader whose browser has the reader cookie `id`. */
@@ -113,16 +130,54 @@ test("views count per article and day, skipping crawlers", async () => {
   expect(days).toEqual([{ views: 3, day: new Date(new Date().toISOString().slice(0, 10)) }]);
 });
 
-test("searches are logged, normalized, as hits or misses; empty ones aren't", async () => {
+test("searches count per day, normalized; only failed searches keep their words; empty ones don't count", async () => {
   await searchDocs(project.id, "  Send   INVITES ", 10, SIGNED_OUT);
   await searchDocs(project.id, "refunds", 10, SIGNED_OUT);
+  await searchDocs(project.id, " REFUNDS", 10, SIGNED_OUT);
   await searchDocs(project.id, "   ", 10, SIGNED_OUT);
   // Logging isn't awaited by search, so wait for it.
-  await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: project.id } })).toBe(2));
-  expect(await prisma.docsSearch.findMany({ where: { projectId: project.id }, orderBy: { query: "asc" }, select: { projectId: true, query: true, results: true } })).toEqual([
-    { projectId: project.id, query: "refunds", results: 0 },
-    { projectId: project.id, query: "send invites", results: 1 },
-  ]);
+  await expect.poll(() => searchesKept()).toEqual({
+    days: [{ day: daysAgo(0), searches: 3, failed: 2 }],
+    failed: [{ day: daysAgo(0), query: "refunds", count: 2 }],
+  });
+});
+
+test(`failed searches keep their words for up to ${FAILED_SEARCHES_PER_DAY} different ones a day; more still count`, async () => {
+  const today = daysAgo(0);
+  await prisma.docsFailedSearchDay.createMany({
+    data: Array.from({ length: FAILED_SEARCHES_PER_DAY }, (_, i) => ({ projectId: project.id, day: today, query: `miss ${i}`, count: 1 })),
+  });
+  // Yesterday's are another day's.
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(1), query: "yesterday", count: 1 } });
+  await searchDocs(project.id, "one too many", 10, SIGNED_OUT);
+  await searchDocs(project.id, "miss 0", 10, SIGNED_OUT);
+  await expect.poll(async () => (await searchesKept()).days).toEqual([{ day: today, searches: 2, failed: 2 }]);
+  const failed = await prisma.docsFailedSearchDay.findMany({ where: { projectId: project.id, day: today } });
+  expect(failed).toHaveLength(FAILED_SEARCHES_PER_DAY);
+  expect(failed.find((row) => row.query === "miss 0")?.count).toBe(2);
+  // Another project's day has its own room.
+  const other = await createProject(owner);
+  await searchDocs(other.id, "one too many", 10, SIGNED_OUT);
+  await expect.poll(async () => (await searchesKept(other.id)).failed).toEqual([{ day: today, query: "one too many", count: 1 }]);
+});
+
+test("searches older than the insights' 30 days are pruned", async () => {
+  const other = await createProject(owner);
+  for (const [projectId, ago] of [
+    [project.id, 0],
+    [project.id, 29],
+    [project.id, 30],
+    [other.id, 45],
+  ] as const) {
+    await prisma.docsSearchDay.create({ data: { projectId, day: daysAgo(ago), searches: 1, failed: 1 } });
+    await prisma.docsFailedSearchDay.create({ data: { projectId, day: daysAgo(ago), query: "refunds", count: 1 } });
+  }
+  await handlers.pruneDocsSearches({}, { info: () => {}, warn: () => {} });
+  expect(await searchesKept()).toEqual({
+    days: [daysAgo(29), daysAgo(0)].map((day) => ({ day, searches: 1, failed: 1 })),
+    failed: [daysAgo(29), daysAgo(0)].map((day) => ({ day, query: "refunds", count: 1 })),
+  });
+  expect(await searchesKept(other.id)).toEqual({ days: [], failed: [] });
 });
 
 test("the search box: results as readers type, for what they may read, counted once they've searched", async () => {
@@ -134,24 +189,24 @@ test("the search box: results as readers type, for what they may read, counted o
   expect(await searchDocsAsTyped(project.slug, "   ")).toEqual([]);
   // Typing isn't searching: nothing in the insights yet.
   await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(await prisma.docsSearch.count({ where: { projectId: project.id } })).toBe(0);
-  // Once they've searched; a count from the browser is kept within what the box shows.
+  expect(await searchesKept()).toEqual({ days: [], failed: [] });
+  // Once they've searched; a count from the browser below none is a failed search.
   await logDocsSearch(project.slug, "  Billing ", 1);
   await logDocsSearch(project.slug, "refunds", -3);
   await logDocsSearch(project.slug, "anything", 500);
-  await expect
-    .poll(() => prisma.docsSearch.findMany({ where: { projectId: project.id }, select: { query: true, results: true }, orderBy: { query: "asc" } }))
-    .toEqual([
-      { query: "anything", results: 8 },
-      { query: "billing", results: 1 },
-      { query: "refunds", results: 0 },
-    ]);
+  await expect.poll(() => searchesKept()).toEqual({
+    days: [{ day: daysAgo(0), searches: 3, failed: 1 }],
+    failed: [{ day: daysAgo(0), query: "refunds", count: 1 }],
+  });
   // A private portal: nothing for people who may not read it, and nothing counted.
   await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
   expect(await searchDocsAsTyped(project.slug, "bil")).toEqual([]);
   await logDocsSearch(project.slug, "sneaky", 0);
   await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(await prisma.docsSearch.count({ where: { projectId: project.id, query: "sneaky" } })).toBe(0);
+  expect(await searchesKept()).toEqual({
+    days: [{ day: daysAgo(0), searches: 3, failed: 1 }],
+    failed: [{ day: daysAgo(0), query: "refunds", count: 1 }],
+  });
   // A project that isn't there: nothing.
   expect(await searchDocsAsTyped("no-such-project", "bil")).toEqual([]);
 });
@@ -178,13 +233,19 @@ test("insights: views, helpfulness per article, the latest “No” comments and
   const billing = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: "billing" } });
   await prisma.articleViewDay.create({ data: { articleId: billing.id, day: old, views: 100 } });
   await prisma.articleFeedback.create({ data: { articleId: billing.id, readerId: "old", helpful: false, comment: "Old", updatedAt: old } });
-  await prisma.docsSearch.create({ data: { projectId: project.id, query: "ancient", results: 0, createdAt: old } });
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(30), searches: 50, failed: 50 } });
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(30), query: "ancient", count: 50 } });
+  // Earlier days in the 30 count.
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: daysAgo(29), searches: 2, failed: 1 } });
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: daysAgo(29), query: "sso", count: 1 } });
 
   for (const query of ["refunds", "Refunds", "sso", "send invites"]) {
     await searchDocs(project.id, query, 10, SIGNED_OUT);
   }
   await searchDocs(other.id, "other project", 10, SIGNED_OUT);
-  await vi.waitFor(async () => expect(await prisma.docsSearch.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(6));
+  const counted = async () =>
+    (await prisma.docsSearchDay.aggregate({ where: { projectId: { in: [project.id, other.id] }, day: daysAgo(0) }, _sum: { searches: true } }))._sum.searches;
+  await expect.poll(counted).toBe(5);
 
   expect(await insights()).toEqual({
     since: expect.any(String),
@@ -195,11 +256,11 @@ test("insights: views, helpfulness per article, the latest “No” comments and
     ],
     comments: [{ article: { slug: "inviting-your-team", title: "Inviting your team" }, comment: "How do I invite by email?", at: expect.any(String) }],
     searches: {
-      total: 4,
-      failed: 3,
+      total: 6,
+      failed: 4,
       topFailed: [
         { query: "refunds", count: 2 },
-        { query: "sso", count: 1 },
+        { query: "sso", count: 2 },
       ],
     },
     gaps: [],
