@@ -1051,6 +1051,7 @@ test("an article's settings: its own address (the old one redirects), keywords r
 });
 
 test("a visitor asks the docs' AI: an answer with its source, or “I don't know” and posting the question as feedback", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
@@ -1104,6 +1105,13 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   expect(asked[0]!.user).toContain('"tone": "Friendly and plain"');
   expect(asked[0]!.user).toContain('"standingInstructions": "Call the product Acme."');
   expect(asked[0]!.system).toContain("Keep it very short");
+  // A rating that fails (offline) leaves the buttons, to try again.
+  const offline = () =>
+    visitor.route("**/*", (route) => (route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await offline();
+  await conversation.getByRole("button", { name: "Helpful", exact: true }).click();
+  await expect(conversation.getByRole("button", { name: "Helpful", exact: true })).toBeEnabled();
+  await visitor.unroute("**/*");
   await conversation.getByRole("button", { name: "Helpful", exact: true }).click();
   await expect(conversation.getByText("Thanks for letting us know.")).toBeVisible();
 
@@ -1133,14 +1141,23 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
   await expect(conversation).toContainText(followUp);
 
+  // A question that fails to reach the server (offline) says so, with Try again, rather than thinking forever.
+  await offline();
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill("Is there an API?");
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(conversation.getByText("Couldn't reach the assistant. Try again.")).toBeVisible();
+  await visitor.unroute("**/*");
+  await conversation.getByRole("button", { name: "Try again" }).click();
+  await expect(conversation.getByText("I don't know")).toBeVisible();
+
   // Something the docs don't cover: "I don't know", without asking the model, and a way to post it as feedback.
   const unrelated = "Can I pay with crypto?";
   await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(unrelated);
   await assistant.getByRole("textbox", { name: "Ask a follow-up" }).press("Enter");
-  await expect(conversation.getByText("I don't know")).toBeVisible();
+  await expect(conversation.getByText("I don't know")).toHaveCount(2);
   await checkpoint(visitor, "portal-docs-ai-no-answer", { fullPage: false });
   expect((await modelRequests()).filter((request) => request.user.includes(unrelated))).toEqual([]);
-  await conversation.getByRole("link", { name: "Post this as feedback" }).click();
+  await conversation.getByRole("link", { name: "Post this as feedback" }).last().click();
   await visitor.waitForURL(/\/feedback\/feature-requests\?title=/);
   await expect(visitor.getByLabel("Title")).toHaveValue(unrelated);
   await checkpoint(visitor, "portal-docs-ai-post-as-feedback");
@@ -1148,14 +1165,38 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(visitor.getByText("Feedback posted")).toBeVisible();
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 
-  // The trash starts over.
+  // The conversation is the reader's: signed out, the assistant starts afresh (a follow-up only continues their own).
+  await visitor.goto("/docs");
+  await visitor.getByRole("button", { name: "Account" }).click();
+  await visitor.getByRole("menuitem", { name: "Sign out" }).click();
+  await expect(visitor.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await visitor.goto("/docs");
   await visitor.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
-  await assistant.getByRole("button", { name: "Clear the conversation" }).click();
   await expect(conversation).toContainText("Ask anything about Acme.");
   await expect(conversation).not.toContainText(question);
+
+  // The trash starts over.
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(conversation.getByText("I don't know")).toBeVisible();
+  await assistant.getByRole("button", { name: "Clear the conversation" }).click();
+  await expect(conversation).toContainText("Ask anything about Acme.");
+  await expect(conversation).not.toContainText("Is there an API?");
   await assistant.getByRole("button", { name: "Close the assistant" }).click();
   await expect(assistant).toBeHidden();
+
+  // Where the browser won't store anything (storage blocked or full), the assistant still works, and so does the page.
+  const unstored = await newPerson(browser, portalUrl(slug));
+  await unstored.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException("Blocked", "SecurityError");
+    };
+  });
+  await unstored.goto("/docs");
+  await unstored.getByRole("banner").getByRole("button", { name: "Ask AI" }).click();
+  await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
+  await unstored.getByRole("dialog", { name: "Assistant" }).getByRole("button", { name: "Send" }).click();
+  await expect(unstored.getByRole("dialog", { name: "Assistant" }).getByText("I don't know")).toBeVisible();
 
   // Asked on the search page (a link to /docs?q=), the answer can go on in the assistant.
   const ai = visitor.getByRole("region", { name: "AI answer" });

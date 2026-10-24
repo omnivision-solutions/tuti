@@ -218,6 +218,26 @@ describe("follow-ups", () => {
     expect(earlier[3]!.answer).toHaveLength(1500);
   });
 
+  test("an earlier question on an off-limits topic doesn't steer a follow-up: left out of what's searched and what the model gets", async () => {
+    await write("Inviting your team", "Owners invite people.", 0.8);
+    await call(updateAssistantSettings, as(), { offLimits: ["refund"] });
+    const offLimits = "Can I get a refund?";
+    const first = await ask(offLimits);
+    expect(first).toMatchObject({ status: "off_limits" });
+    const next = "How do I invite people?";
+    openai.setVector(next, along(1));
+    model.reply(reply("Owners invite people.", ["s1"]));
+    await answerQuestion(project.id, "reader-1", next, "PORTAL", SIGNED_OUT, { followUpTo: first.id });
+    expect(sent(0)).not.toHaveProperty("earlierInConversation");
+    // (The team's settings name the topic; the question itself goes nowhere.)
+    expect(model.requests[0]!.user).not.toContain(offLimits);
+    expect(openai.inputs.filter((input) => input.includes(offLimits))).toEqual([]);
+    // A follow-up that names it itself still gets the fixed reply.
+    expect(await answerQuestion(project.id, "reader-1", "And a refund for last year?", "PORTAL", SIGNED_OUT, { followUpTo: first.id })).toMatchObject({
+      status: "off_limits",
+    });
+  });
+
   test("only of the asker's own questions in the project: anyone else's is refused, and nothing is logged", async () => {
     await write("Inviting your team", "Owners invite people.", 0.8);
     model.reply(reply("Owners invite people.", ["s1"]));

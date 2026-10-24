@@ -19,15 +19,18 @@ type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string
 /** The longest post title (MAX_POST_TITLE): "Post this as feedback" starts a post with the question as its title. */
 const MAX_TITLE = 120;
 
-/** Kept for the tab's session, so the conversation survives going to an article and back. */
-const storageKey = (slug: string) => `tuti:docs-assistant:${slug}`;
+/**
+ * Kept for the tab's session, so the conversation survives going to an article and back; per viewer
+ * (`viewer`: the signed-in account, or "anonymous"), since a follow-up only continues the asker's own.
+ */
+const storageKey = (slug: string, viewer: string) => `tuti:docs-assistant:${slug}:${viewer}`;
 
-function storedTurns(slug: string): Turn[] {
+function storedTurns(slug: string, viewer: string): Turn[] {
   if (typeof window === "undefined") {
     return [];
   }
   try {
-    const turns = JSON.parse(window.sessionStorage.getItem(storageKey(slug)) ?? "[]") as Turn[];
+    const turns = JSON.parse(window.sessionStorage.getItem(storageKey(slug, viewer)) ?? "[]") as Turn[];
     return Array.isArray(turns) ? turns.filter((turn) => turn.answer || turn.error) : [];
   } catch {
     return [];
@@ -47,32 +50,51 @@ const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answ
  */
 export function DocsAssistantProvider({
   projectName,
+  viewer,
   feedbackPath,
   askAPerson,
   children,
 }: {
   projectName: string;
+  /** Who's reading: their account's id, or null signed out (each has a conversation of their own). */
+  viewer: string | null;
   feedbackPath: string | null;
   askAPerson: { email: string } | null;
   children: React.ReactNode;
 }) {
   const slug = usePortalSlug();
+  const key = storageKey(slug, viewer ?? "anonymous");
   const [open, setOpen] = useState(false);
-  const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug));
+  const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, viewer ?? "anonymous"));
+  // Someone else now (signed in or out without a reload): their own conversation.
+  const [shownFor, setShownFor] = useState(key);
+  if (shownFor !== key) {
+    setShownFor(key);
+    setTurns(storedTurns(slug, viewer ?? "anonymous"));
+  }
   // The turns as they are now, for asking without waiting for a render.
   const turnsRef = useRef(turns);
   useEffect(() => {
     turnsRef.current = turns;
-    window.sessionStorage.setItem(storageKey(slug), JSON.stringify(turns.filter((turn) => turn.answer || turn.error)));
-  }, [slug, turns]);
+    try {
+      window.sessionStorage.setItem(key, JSON.stringify(turns.filter((turn) => turn.answer || turn.error)));
+    } catch {
+      // Storage blocked or full: the conversation just won't outlive the page.
+    }
+  }, [key, turns]);
 
   const update = useCallback((key: string, patch: Partial<Turn>) => setTurns((all) => all.map((turn) => (turn.key === key ? { ...turn, ...patch } : turn))), []);
 
   /** Asks `question` as turn `key` (new, or one to try again), following up on the turns before it. */
   const run = useCallback(
-    async (key: string, question: string, before: Turn[]) => {
-      const result = await askDocs(slug, question, "portal", lastAsked(before));
-      update(key, "error" in result ? { error: result.error } : { answer: result, error: undefined });
+    async (turn: string, question: string, before: Turn[]) => {
+      try {
+        const result = await askDocs(slug, question, "portal", lastAsked(before));
+        update(turn, "error" in result ? { error: result.error } : { answer: result, error: undefined });
+      } catch {
+        // Offline, or the server failed: not "Thinking…" forever.
+        update(turn, { error: "Couldn't reach the assistant. Try again." });
+      }
     },
     [slug, update],
   );
@@ -86,9 +108,9 @@ export function DocsAssistantProvider({
           return;
         }
         const before = turnsRef.current;
-        const key = crypto.randomUUID();
-        setTurns((all) => [...all, { key, question: trimmed }]);
-        void run(key, trimmed, before);
+        const turn = crypto.randomUUID();
+        setTurns((all) => [...all, { key: turn, question: trimmed }]);
+        void run(turn, trimmed, before);
       },
       open: () => setOpen(true),
       continueWith: (question, answer) => {
@@ -291,10 +313,15 @@ function AssistantReply({
   }
   const rate = async (helpful: boolean) => {
     setRating(true);
-    const result = await rateDocsAnswer(slug, answer.id, helpful);
-    setRating(false);
-    if (!result.error) {
-      onRated(helpful);
+    try {
+      const result = await rateDocsAnswer(slug, answer.id, helpful);
+      if (!result.error) {
+        onRated(helpful);
+      }
+    } catch {
+      // Offline, or the server failed: the buttons stay, to try again.
+    } finally {
+      setRating(false);
     }
   };
   return (

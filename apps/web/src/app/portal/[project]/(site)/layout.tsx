@@ -98,7 +98,12 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
   const assistant = canRead && answersEnabled();
   const firstBoard = project.boards[0];
   const assistantProps = assistant
-    ? { projectName: project.name, feedbackPath: firstBoard ? boardPath(firstBoard) : null, askAPerson: await askAPerson(slug) }
+    ? {
+        projectName: project.name,
+        viewer: session?.user.id ?? null,
+        feedbackPath: firstBoard ? boardPath(firstBoard) : null,
+        askAPerson: await askAPerson(slug),
+      }
     : null;
 
   return (

@@ -212,8 +212,10 @@ export async function answerQuestion(
   if (offLimitsTopic(question, settings.offLimits)) {
     return finish("off_limits");
   }
+  // Nor does an earlier turn on one steer a follow-up: it's left out of what's searched and what the model gets.
+  const context = earlier.filter((turn) => !offLimitsTopic(turn.question, settings.offLimits));
   // A follow-up ("and on mobile?") says little alone: the docs are searched with the latest earlier questions too.
-  const searched = [...earlier.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
+  const searched = [...context.slice(-SEARCHED_EARLIER_QUESTIONS).map((turn) => turn.question), question].join("\n");
   const sections = await answerSections(projectId, searched, ANSWER_SECTIONS, reader, EMBED_TIMEOUT_MS);
   if (!sections) {
     return finish("failed");
@@ -224,7 +226,7 @@ export async function answerQuestion(
   }
   let reply: string;
   try {
-    reply = await complete({ ...answerPrompt(question, sections, settings, earlier), timeoutMs });
+    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs });
   } catch (error) {
     log.warn("AI docs answer failed", { projectId, error });
     return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });
