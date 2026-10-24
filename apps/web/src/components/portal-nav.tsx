@@ -1,12 +1,12 @@
 "use client";
 
-import { LockIcon, SearchIcon } from "lucide-react";
+import { LockIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
+import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
-import { Input } from "@/components/ui/input";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
 
@@ -100,20 +100,14 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
   return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", !within(path, "/docs") && "max-w-3xl")}>{children}</main>;
 }
 
-/** The header's search box on Docs: a plain GET form to /docs, so it works without JavaScript. */
-export function DocsSearch() {
+/** The header's search box on Docs (see DocsSearchBox), with ⌘K; it starts from the search on the page, if any. */
+export function DocsSearch({ askAI }: { askAI: boolean }) {
   const path = usePortalPath();
-  const at = usePortalHref();
   const query = useSearchParams().get("q") ?? "";
   if (!within(path, "/docs")) {
     return null;
   }
-  return (
-    <form role="search" action={at("/docs")} className="relative order-last w-full pb-1 sm:order-none sm:w-60 sm:pb-0">
-      <SearchIcon aria-hidden className="pointer-events-none absolute top-2 left-2.5 size-4 text-muted-foreground" />
-      <Input key={query} type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search docs" aria-label="Search the docs" className="pl-8" />
-    </form>
-  );
+  return <DocsSearchBox askAI={askAI} shortcut query={query} className="order-last w-full pb-1 sm:order-none sm:w-60 sm:pb-0" />;
 }
 
 /**

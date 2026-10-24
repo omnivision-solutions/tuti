@@ -13,6 +13,11 @@ export function PortalBaseProvider({ base, slug, children }: { base: string; slu
   return <PortalBase.Provider value={{ base, slug }}>{children}</PortalBase.Provider>;
 }
 
+/** The portal's project, for client components. */
+export function usePortalSlug() {
+  return useContext(PortalBase).slug;
+}
+
 /** Makes root-relative portal paths right for where the portal is (/docs → /portal/docs). */
 export function usePortalHref() {
   const { base } = useContext(PortalBase);

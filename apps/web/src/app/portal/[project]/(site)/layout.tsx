@@ -9,6 +9,7 @@ import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
 import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
+import { answersEnabled } from "@/server/operations/docs-ask";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -102,7 +103,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           <PortalLogo name={project.name} href={withBase(base, "/")} />
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {canRead && <DocsSearch />}
+          {canRead && <DocsSearch askAI={answersEnabled()} />}
           <PortalHeaderLinks />
           <PortalContact />
           {session ? (

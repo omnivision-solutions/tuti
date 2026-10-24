@@ -1,7 +1,7 @@
 import { ARTICLE_TITLE_ID, docHeadings, type Heading } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { prisma } from "@tuti/db";
-import { ChevronRightIcon, LockIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, LockIcon } from "lucide-react";
 import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 
@@ -19,7 +19,6 @@ import { PageHeader } from "@/components/page-header";
 import { PartRow } from "@/components/portal-nav";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/format";
 import { boardPath } from "@/lib/post-urls";
 import { cn } from "@/lib/utils";
@@ -40,6 +39,7 @@ import {
   type TabLanding,
 } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
+import { DocsSearchBox } from "@/components/docs-search-box";
 import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -119,11 +119,7 @@ async function DocsOverview({ project, docs, tab }: { project: string; docs: Doc
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4">
         {home ? <DocsHomeHeader /> : <PageHeader title={tab.name} description={DOCS_HEADING.subtitle} />}
-        {/* A plain GET form, like the header's: it works without JavaScript. */}
-        <form role="search" action={at("/docs")} className="relative">
-          <SearchIcon aria-hidden className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" />
-          <Input type="search" name="q" maxLength={200} placeholder="Search docs" aria-label="Search the docs" className="h-12 pl-11 text-base" />
-        </form>
+        <DocsSearchBox askAI={answersEnabled()} size="lg" />
       </div>
       <PopularArticles articles={popular} />
       {collections.length === 0 && uncollected.length === 0 && (

@@ -230,10 +230,12 @@ const matrix: Matrix = {
     deleteTab: { allowed: "MEMBER", call: (slug) => docs.deleteTab(slug, "docs") },
     dismissDocsGap: { allowed: "MEMBER", call: (slug) => docs.dismissDocsGap(slug, "How do I invite?") },
   },
-  // Anyone may answer under a published article, count its view, ask the AI and rate its answer, signed in or not.
+  // Anyone may answer under a published article, count its view, search, ask the AI and rate its answer, signed in or not.
   "docs-readers": {
     answerArticle: { allowed: "public", call: (slug) => docsReaders.answerArticle(slug, "matrix-article", false, "From the matrix") },
     countArticleView: { allowed: "public", call: (slug) => docsReaders.countArticleView(slug, "matrix-article") },
+    searchDocsAsTyped: { allowed: "public", call: (slug) => docsReaders.searchDocsAsTyped(slug, "matr") },
+    logDocsSearch: { allowed: "public", call: (slug) => docsReaders.logDocsSearch(slug, "matrix", 1) },
     askDocs: {
       allowed: "public",
       // With embeddings on (answers need them). Nothing in the fixture is close to the question, so the model isn't asked.

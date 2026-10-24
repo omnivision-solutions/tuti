@@ -9,6 +9,19 @@ import { modelRequests, nextModelReply } from "./model";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { similar } from "./openai";
 
+/** A Docs page's search box (the header's, or `where`'s): opens its dialog and types `query` in it. */
+async function typeSearch(page: Page, query: string, where = page.getByRole("banner")) {
+  await where.getByRole("button", { name: "Search the docs" }).click();
+  const box = page.getByRole("dialog").getByRole("combobox", { name: "Search the docs" });
+  await box.fill(query);
+  return box;
+}
+
+/** Searches from a Docs page's search box: types `query`, then Enter (Ask AI, or all the results). */
+async function searchFor(page: Page, query: string, where = page.getByRole("banner")) {
+  await (await typeSearch(page, query, where)).press("Enter");
+}
+
 test("the team writes a docs article in a collection, publishes it, and a visitor reads it", async ({ browser }, testInfo) => {
   test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
@@ -195,19 +208,39 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   expect(await visitor.evaluate(() => navigator.clipboard.readText())).toBe(await markdown.text());
   await checkpoint(visitor, "portal-docs-article-copied");
 
-  // Search (in the header, on every Docs page) finds it with the passage that matched; a search with no match says so.
-  const searchBox = visitor.getByRole("banner").getByRole("searchbox", { name: "Search the docs" });
-  await expect(searchBox).toHaveAttribute("placeholder", "Search docs");
-  await searchBox.fill("send invites");
-  await searchBox.press("Enter");
+  // Search (in the header, on every Docs page): results as they type, the words still being typed included,
+  // with the passage that matched and those words marked.
+  const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
+  await expect(searchButton).toHaveText(/Search docs/);
+  const box = await typeSearch(visitor, "send inv");
+  const asTyped = visitor.getByRole("dialog").getByRole("listbox", { name: "Search results" });
+  await expect(asTyped.getByRole("option")).toHaveText([/Ask AI:\s*send inv/, /Inviting your team.*Owners and admins send invites from the Team page/]);
+  const marked = asTyped.getByRole("option").nth(1).locator("mark");
+  await expect(marked.filter({ hasText: /^send$/ })).toHaveCount(1);
+  await expect(marked.filter({ hasText: /^inv$/i }).first()).toBeVisible();
+  await expect(marked.filter({ hasText: /^(?!send$|inv$).*/i })).toHaveCount(0);
+  await checkpoint(visitor, "portal-docs-search-as-typed", { fullPage: false });
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await checkpoint(visitor, "portal-docs-search-as-typed-phone", { fullPage: false });
+  await visitor.setViewportSize({ width: 1280, height: 720 });
+  // Arrow down and Enter opens it.
+  await box.press("ArrowDown");
+  await expect(asTyped.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
+  await box.press("Enter");
+  await visitor.waitForURL(/\/docs\/inviting-your-team$/);
+  // ⌘K opens it too; Enter on the first goes to the AI's answer and all the results for what they typed.
+  await visitor.keyboard.press("ControlOrMeta+k");
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).fill("send invites");
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
   await visitor.waitForURL(/\/docs\?q=send\+invites$/);
-  await expect(searchBox).toHaveValue("send invites");
+  await expect(searchButton).toHaveText(/send invites/);
   const results = visitor.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results).toContainText("Owners and admins send invites from the Team page.");
   await checkpoint(visitor, "portal-docs-search");
-  await searchBox.fill("refunds");
-  await searchBox.press("Enter");
+  await typeSearch(visitor, "refunds");
+  await expect(visitor.getByRole("dialog").getByText("No articles match “refunds”.")).toBeVisible();
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
   await expect(visitor.getByText("No articles match “refunds”")).toBeVisible();
   await checkpoint(visitor, "portal-docs-search-empty");
   await visitor.getByRole("link", { name: "All articles" }).click();
@@ -222,12 +255,13 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await helpful.getByRole("button", { name: "Send" }).click();
   await expect(helpful.getByText("Thanks for letting us know.")).toBeVisible();
 
-  // The team sees it in the docs' insights, with the article's views and the search that found nothing.
+  // The team sees it in the docs' insights, with the article's views and the search that found nothing
+  // (and the one picked from the search box: what they typed counts once they've picked).
   await team.getByRole("link", { name: "Docs", exact: true }).first().click();
   await team.waitForURL(`**/app/${slug}/docs`);
   await team.getByRole("link", { name: "Insights" }).click();
   await team.waitForURL(`**/app/${slug}/docs/insights`);
-  await expect(team.getByText("The last 30 days: 2 article views, 2 searches, 1 failed search.")).toBeVisible();
+  await expect(team.getByText("The last 30 days: 2 article views, 3 searches, 1 failed search.")).toBeVisible();
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
   await expect(team.getByText("refunds", { exact: true })).toBeVisible();
@@ -829,8 +863,7 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(visitor).toHaveURL(/\/docs$/);
   // A search, from the header on any Docs page, covers every tab.
   await visitor.goto("/docs/guides");
-  await visitor.getByRole("banner").getByRole("searchbox", { name: "Search the docs" }).fill("payloads");
-  await visitor.keyboard.press("Enter");
+  await searchFor(visitor, "payloads");
   await expect(visitor).toHaveURL(/\/docs\?q=payloads$/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Signing payloads"]);
 
@@ -887,7 +920,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await visitor.goto("/docs");
   const main = visitor.getByRole("main");
   await expect(main.getByRole("heading", { level: 1 })).toHaveText("Docs");
-  await expect(main.getByRole("search").getByRole("searchbox", { name: "Search the docs" })).toBeVisible();
+  await expect(main.getByRole("search").getByRole("button", { name: "Search the docs" })).toBeVisible();
   const cards = main.getByRole("list", { name: "Collections" }).getByRole("link");
   await expect(cards).toHaveText([/^Getting started/, /^Billing/, /^Teams/]);
   await expect(cards.first()).toContainText("The basics, in five minutes.");
@@ -898,8 +931,7 @@ test("a tab's landing page: the overview's cards, or a page the team picks in th
   await checkpoint(visitor, "portal-docs-overview-phone");
   await visitor.setViewportSize({ width: 1280, height: 720 });
   // The big search box searches every tab.
-  await main.getByRole("searchbox", { name: "Search the docs" }).fill("listing");
-  await main.getByRole("searchbox", { name: "Search the docs" }).press("Enter");
+  await searchFor(visitor, "listing", main);
   await expect(visitor).toHaveURL(/\/docs\?q=listing$/);
   await expect(main.getByRole("list", { name: "Search results" }).getByRole("link")).toHaveText(["Listing posts"]);
 
@@ -1032,9 +1064,13 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // The visitor searches, then asks the AI.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
   await visitor.goto("/docs");
-  const searchBox = visitor.getByRole("banner").getByRole("searchbox", { name: "Search the docs" });
-  await searchBox.fill(question);
-  await searchBox.press("Enter");
+  // In the box, asking the AI comes first.
+  await typeSearch(visitor, question);
+  const first = visitor.getByRole("dialog").getByRole("option").first();
+  await expect(first).toContainText("Ask AI:");
+  await expect(first).toContainText(question);
+  await checkpoint(visitor, "portal-docs-search-ask-ai", { fullPage: false });
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
   const ai = visitor.getByRole("region", { name: "AI answer" });
   await expect(ai.getByRole("button", { name: "Ask AI" })).toBeVisible();
   await checkpoint(visitor, "portal-docs-ask-ai");
@@ -1063,8 +1099,7 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   // Something the docs don't cover: "I don't know", without asking the model.
   await visitor.goto("/docs");
   const unrelated = "Can I pay with crypto?";
-  await visitor.getByRole("banner").getByRole("searchbox", { name: "Search the docs" }).fill(unrelated);
-  await visitor.getByRole("banner").getByRole("searchbox", { name: "Search the docs" }).press("Enter");
+  await searchFor(visitor, unrelated);
   await ai.getByRole("button", { name: "Ask AI" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "portal-docs-ai-no-answer");

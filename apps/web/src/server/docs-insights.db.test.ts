@@ -10,7 +10,7 @@ import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/h
 import { request } from "@/test/next-headers";
 
 import { dismissDocsGap } from "./docs";
-import { answerArticle, countArticleView } from "./docs-readers";
+import { answerArticle, countArticleView, logDocsSearch, searchDocsAsTyped } from "./docs-readers";
 import { searchDocs } from "./docs-search";
 import { answerArticle as answerOperation, getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
@@ -123,6 +123,37 @@ test("searches are logged, normalized, as hits or misses; empty ones aren't", as
     { projectId: project.id, query: "refunds", results: 0 },
     { projectId: project.id, query: "send invites", results: 1 },
   ]);
+});
+
+test("the search box: results as readers type, for what they may read, counted once they've searched", async () => {
+  anonymous();
+  await article("Billing", "Plans are billed monthly.");
+  await article("Draft", "Billing drafts.", { published: false });
+  expect((await searchDocsAsTyped(project.slug, "bil")).map((r) => r.slug)).toEqual(["billing"]);
+  expect((await searchDocsAsTyped(project.slug, "invi")).map((r) => r.title)).toEqual(["Inviting your team"]);
+  expect(await searchDocsAsTyped(project.slug, "   ")).toEqual([]);
+  // Typing isn't searching: nothing in the insights yet.
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(await prisma.docsSearch.count({ where: { projectId: project.id } })).toBe(0);
+  // Once they've searched; a count from the browser is kept within what the box shows.
+  await logDocsSearch(project.slug, "  Billing ", 1);
+  await logDocsSearch(project.slug, "refunds", -3);
+  await logDocsSearch(project.slug, "anything", 500);
+  await expect
+    .poll(() => prisma.docsSearch.findMany({ where: { projectId: project.id }, select: { query: true, results: true }, orderBy: { query: "asc" } }))
+    .toEqual([
+      { query: "anything", results: 8 },
+      { query: "billing", results: 1 },
+      { query: "refunds", results: 0 },
+    ]);
+  // A private portal: nothing for people who may not read it, and nothing counted.
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  expect(await searchDocsAsTyped(project.slug, "bil")).toEqual([]);
+  await logDocsSearch(project.slug, "sneaky", 0);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(await prisma.docsSearch.count({ where: { projectId: project.id, query: "sneaky" } })).toBe(0);
+  // A project that isn't there: nothing.
+  expect(await searchDocsAsTyped("no-such-project", "bil")).toEqual([]);
 });
 
 test("insights: views, helpfulness per article, the latest “No” comments and failed searches, for this project only", async () => {
