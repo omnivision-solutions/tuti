@@ -15,8 +15,14 @@ export type AiUsage = {
 /** Records an answered request's usage. Never throws (a failure is logged): a recorder can't fail the feature. */
 export type Meter = (usage: AiUsage) => Promise<void>;
 
+/** A count from a provider's reply, or null when it gave none. */
+export const reportedTokens = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : null);
+
 /** A count from a provider's reply, or 0. */
-export const tokens = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : 0);
+export const tokens = (value: unknown) => reportedTokens(value) ?? 0;
 
 /** A cost from a provider's reply, or null. */
 export const dollars = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null);
+
+/** The model that answered, as the reply names it (a router's pick, an alias's build), or the one asked for. */
+export const answeredBy = (value: unknown, asked: string) => (typeof value === "string" && value.trim() !== "" ? value.slice(0, 200) : asked);

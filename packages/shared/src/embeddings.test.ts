@@ -77,6 +77,10 @@ describe("embed", () => {
     await embed(["dark mode", "csv"], { meter: async (usage) => void used.push(usage) });
     // The fake counts a token per character.
     expect(used).toEqual([{ kind: "embedding", model: EMBEDDING_MODEL, inputTokens: 12, outputTokens: 0, cost: 12 * EMBEDDING_DOLLARS_PER_TOKEN }]);
+    // An endpoint that doesn't count: no price, rather than free.
+    openai.omitUsageNext();
+    await embed(["csv"], { meter: async (usage) => void used.push(usage) });
+    expect(used[1]).toEqual({ kind: "embedding", model: EMBEDDING_MODEL, inputTokens: 0, outputTokens: 0, cost: null });
   });
 
   test("reports API errors", async () => {

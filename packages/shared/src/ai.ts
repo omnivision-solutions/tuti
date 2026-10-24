@@ -1,5 +1,5 @@
 import { embeddingsEnabled } from "./embeddings";
-import { dollars, type Meter, tokens } from "./usage";
+import { answeredBy, dollars, type Meter, tokens } from "./usage";
 
 /**
  * Text generation through an OpenAI-compatible chat completions API: OpenRouter
@@ -69,6 +69,7 @@ export async function complete({
     signal: AbortSignal.timeout(timeoutMs),
   });
   const json = (await response.json().catch(() => null)) as {
+    model?: unknown;
     choices?: { message?: { content?: unknown } }[];
     usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
     error?: { message?: string };
@@ -77,7 +78,13 @@ export async function complete({
     throw new Error(`AI request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
   }
   // Answered, so paid for, whatever the reply says.
-  await meter({ kind: "chat", model, inputTokens: tokens(json?.usage?.prompt_tokens), outputTokens: tokens(json?.usage?.completion_tokens), cost: dollars(json?.usage?.cost) });
+  await meter({
+    kind: "chat",
+    model: answeredBy(json?.model, model),
+    inputTokens: tokens(json?.usage?.prompt_tokens),
+    outputTokens: tokens(json?.usage?.completion_tokens),
+    cost: dollars(json?.usage?.cost),
+  });
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim() === "") {
     throw new Error("The AI reply had no text");
@@ -125,6 +132,7 @@ export async function decide(
     signal: AbortSignal.timeout(timeoutMs),
   });
   const json = (await response.json().catch(() => null)) as {
+    model?: unknown;
     answers?: Record<string, unknown>;
     usage?: { input_tokens?: unknown; output_tokens?: unknown; cost?: unknown };
     error?: { message?: string };
@@ -134,7 +142,7 @@ export async function decide(
   }
   await meter({
     kind: "decision",
-    model: decisionModel(),
+    model: answeredBy(json?.model, decisionModel()),
     inputTokens: tokens(json?.usage?.input_tokens),
     outputTokens: tokens(json?.usage?.output_tokens),
     cost: dollars(json?.usage?.cost),

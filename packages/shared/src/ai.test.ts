@@ -104,6 +104,7 @@ test("every answered request says what it used: tokens and cost, chat and decisi
   // The fake's usage: a token per character; chat a millionth of a dollar each, decisions a hundred-millionth.
   expect(used).toEqual([
     { kind: "chat", model: DEFAULT_AI_MODEL, inputTokens: 10, outputTokens: 5, cost: 15 / 1e6 },
-    { kind: "decision", model: DEFAULT_DECISION_MODEL, inputTokens: 10, outputTokens: 1, cost: 11 / 1e8 },
+    // The model that answered, as the reply names it.
+    { kind: "decision", model: `${DEFAULT_DECISION_MODEL}-fake-build`, inputTokens: 10, outputTokens: 1, cost: 11 / 1e8 },
   ]);
 });

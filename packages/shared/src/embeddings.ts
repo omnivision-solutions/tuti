@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { type Meter, tokens } from "./usage";
+import { type Meter, reportedTokens } from "./usage";
 
 /**
  * OpenAI text embeddings for duplicate detection. Optional: without
@@ -75,7 +75,8 @@ export async function embed(texts: string[], { meter, signal }: { meter: Meter; 
   if (!response.ok || !json.data) {
     throw new Error(`OpenAI embeddings failed (${response.status}): ${json.error?.message ?? "no data"}`);
   }
-  const inputTokens = tokens(json.usage?.prompt_tokens);
-  await meter({ kind: "embedding", model: EMBEDDING_MODEL, inputTokens, outputTokens: 0, cost: inputTokens * EMBEDDING_DOLLARS_PER_TOKEN });
+  // No count from the endpoint: no price either (a zero it reports is still free).
+  const reported = reportedTokens(json.usage?.prompt_tokens);
+  await meter({ kind: "embedding", model: EMBEDDING_MODEL, inputTokens: reported ?? 0, outputTokens: 0, cost: reported === null ? null : reported * EMBEDDING_DOLLARS_PER_TOKEN });
   return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }

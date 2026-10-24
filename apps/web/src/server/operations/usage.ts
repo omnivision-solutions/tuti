@@ -14,7 +14,8 @@ export async function aiUsageByMonth(projectId: string, months: number): Promise
   const rows = await prisma.$queryRaw<
     { month: string; feature: AiFeature; requests: bigint; inputTokens: bigint; outputTokens: bigint; cost: number | null; unpriced: bigint }[]
   >`
-    SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC'), 'YYYY-MM') AS month, feature,
+    -- createdAt is a UTC timestamp without a zone: truncated as it is, whatever the session's zone.
+    SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month, feature,
       count(*) AS requests, sum("inputTokens") AS "inputTokens", sum("outputTokens") AS "outputTokens",
       sum(cost)::float8 AS cost, count(*) FILTER (WHERE cost IS NULL) AS unpriced
     FROM ai_usage

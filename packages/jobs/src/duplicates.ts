@@ -30,7 +30,12 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
   // A project's posts in their own requests, so each pays for its own.
   const byProject = new Map<string, typeof pending>();
   for (const item of pending) {
-    byProject.set(item.post.projectId, [...(byProject.get(item.post.projectId) ?? []), item]);
+    const bucket = byProject.get(item.post.projectId);
+    if (bucket) {
+      bucket.push(item);
+    } else {
+      byProject.set(item.post.projectId, [item]);
+    }
   }
   const batches = [...byProject.values()].flatMap((items) =>
     Array.from({ length: Math.ceil(items.length / 100) }, (_, i) => items.slice(i * 100, i * 100 + 100)),

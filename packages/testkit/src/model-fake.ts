@@ -137,7 +137,8 @@ export async function startModelFake(): Promise<ModelFake> {
         const used = { input_tokens: state.length, output_tokens: Object.keys(answers).length };
         return send(200, {
           id: `gen-dec-fake-${decisions.length}`,
-          model: request.model,
+          // Like OpenRouter's: the build that answered, under the name asked for.
+          model: `${request.model}-fake-build`,
           provider: "Fake",
           answers,
           usage: { ...used, cost: (used.input_tokens + used.output_tokens) / 1e8 },

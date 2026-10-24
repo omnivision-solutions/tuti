@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { costOf, count, money } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { aiUsageByMonth } from "@/server/operations/usage";
 
@@ -16,10 +17,6 @@ const FEATURES: Record<string, string> = {
   docs_index: "Docs indexing",
 };
 
-/** Dollars: cents, or four places below a cent, or "under $0.0001" for a sliver. */
-const money = (dollars: number) =>
-  dollars > 0 && dollars < 0.0001 ? "under $0.0001" : `$${dollars > 0 && dollars < 0.01 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
-const count = (n: number) => n.toLocaleString("en");
 const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
 
 /** Settings → Usage: what the project's AI use cost each month, by feature. */
@@ -64,7 +61,7 @@ export default async function UsageSettingsPage(props: PageProps<"/app/[project]
                   <td className="py-2">{FEATURES[feature.feature] ?? feature.feature}</td>
                   <td className="py-2 text-right tabular-nums">{count(feature.requests)}</td>
                   <td className="hidden py-2 text-right tabular-nums sm:table-cell">{count(feature.inputTokens + feature.outputTokens)}</td>
-                  <td className="py-2 text-right tabular-nums">{money(feature.cost)}</td>
+                  <td className="py-2 text-right tabular-nums">{costOf(feature)}</td>
                 </tr>
               ))}
             </tbody>
