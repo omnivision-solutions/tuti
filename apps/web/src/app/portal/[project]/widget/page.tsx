@@ -25,6 +25,8 @@ import { widgetSettings } from "@/server/operations/widget";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { mediaUrls } from "@/server/media-urls";
+import { Card, CardContent } from "@/components/ui/card";
+import { boardTexts } from "@/lib/board-texts";
 
 export const metadata: Metadata = { robots: { index: false } };
 
@@ -48,7 +50,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       select: {
         id: true,
         name: true,
-        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true } },
+        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
       },
     }),
@@ -145,7 +147,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         />
       )}
       {tab === "feedback" && (
-        <Feedback slug={slug} board={project.boards[0]?.slug} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
+        <Feedback slug={slug} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
       )}
     </main>
       </WithAssistant>
@@ -165,17 +167,33 @@ function WithAssistant({ assistant, children }: { assistant: Omit<React.Componen
 }
 
 /** The new-post form, starting with `title` (a question from Docs' "Post this as feedback"). */
-async function Feedback({ slug, board, title }: { slug: string; board?: string; title?: string }) {
+async function Feedback({
+  slug,
+  board,
+  title,
+}: {
+  slug: string;
+  board?: { slug: string; titlePlaceholder: string | null; detailsPlaceholder: string | null };
+  title?: string;
+}) {
   if (!board) {
     return <EmptyState title="No boards yet" description="Feedback opens once the team adds a board." />;
   }
   // Portal sessions are per host and their cookies aren't sent to an iframe on another site:
   // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
+  const { titlePlaceholder, detailsPlaceholder } = boardTexts(board);
+  const placeholders = { titlePlaceholder, detailsPlaceholder };
   if (!session) {
-    return <WidgetFeedback projectSlug={slug} boardSlug={board} defaultTitle={title} />;
+    return <WidgetFeedback projectSlug={slug} boardSlug={board.slug} defaultTitle={title} {...placeholders} />;
   }
-  return <NewPostForm projectSlug={slug} boardSlug={board} mediaUrls={await mediaUrls()} linkTarget="_blank" defaultTitle={title} />;
+  return (
+    <Card>
+      <CardContent>
+        <NewPostForm projectSlug={slug} boardSlug={board.slug} mediaUrls={await mediaUrls()} linkTarget="_blank" defaultTitle={title} {...placeholders} />
+      </CardContent>
+    </Card>
+  );
 }
 
 async function WhatsNew({ slug }: { slug: string }) {

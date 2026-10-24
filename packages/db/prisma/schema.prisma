@@ -727,13 +727,17 @@ enum PostStatus {
 }
 
 model Board {
-  id          String   @id @default(cuid())
-  projectId   String
-  slug        String
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  projectId          String
+  slug               String
+  name               String
+  description        String?
+  /// The board's own words for posting (null: the defaults): the button that opens the form, and the form's placeholders.
+  postButton         String?
+  titlePlaceholder   String?
+  detailsPlaceholder String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   posts     Post[]

@@ -81,3 +81,61 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(parts.getByRole("link", { name: "Feedback" })).toHaveAttribute("aria-current", "page");
   await expect(boards).toHaveCount(0);
 });
+
+test("a board's own words for posting: the team sees them in a preview as they type, and the portal's button and form use them", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/boards`);
+  await owner.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" }).click();
+  const dialog = owner.getByRole("dialog", { name: "Edit board" });
+  const preview = dialog.getByRole("region", { name: "Preview" });
+  // Until the team writes its own, the preview shows the defaults.
+  await expect(preview).toContainText("Give feedback");
+  await expect(preview).toContainText("Short, descriptive title");
+  await dialog.getByLabel("Description").fill("What should we build next?");
+  await dialog.getByLabel("Button").fill("Request a feature");
+  await dialog.getByLabel("Title placeholder").fill("What should it do?");
+  await dialog.getByLabel("Details placeholder").fill("How would it help you?");
+  for (const text of ["What should we build next?", "Request a feature", "What should it do?", "How would it help you?"]) {
+    await expect(preview).toContainText(text);
+  }
+  await checkpoint(owner, "team-board-texts-preview", { fullPage: false });
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Board updated")).toBeVisible();
+  // Closed without saving, the dialog opens again with what's saved.
+  const edit = owner.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" });
+  await edit.click();
+  await dialog.getByLabel("Button").fill("Not saved");
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await edit.click();
+  await expect(dialog.getByLabel("Button")).toHaveValue("Request a feature");
+  await expect(preview).not.toContainText("Not saved");
+  await owner.keyboard.press("Escape");
+
+  // On the portal: the description under the name, and the board's button opening its form in a dialog.
+  const ada = await signUp(browser, portalUrl(slug), "Ada");
+  await ada.goto("/feedback/feature-requests");
+  await expect(ada.getByText("What should we build next?")).toBeVisible();
+  await ada.getByRole("button", { name: "Request a feature" }).click();
+  const form = ada.getByRole("dialog", { name: "Request a feature" });
+  await expect(form.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
+  await expect(form.getByRole("textbox", { name: "Details" }).locator("p")).toHaveAttribute("data-placeholder", "How would it help you?");
+  await checkpoint(ada, "portal-board-post-dialog", { fullPage: false });
+  // Closing it keeps what was written.
+  await form.getByLabel("Title").fill("Dark mo");
+  await ada.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
+  await ada.getByRole("button", { name: "Request a feature" }).click();
+  await expect(form.getByLabel("Title")).toHaveValue("Dark mo");
+  await form.getByLabel("Title").fill("Dark mode");
+  await form.getByRole("button", { name: "Submit feedback" }).click();
+  // Posted: the dialog closes and the post is on the board; the next one starts empty.
+  await expect(form).toHaveCount(0);
+  await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await ada.getByRole("button", { name: "Request a feature" }).click();
+  await expect(form.getByLabel("Title")).toHaveValue("");
+});

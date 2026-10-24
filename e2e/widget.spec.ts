@@ -96,6 +96,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
+  await ada.getByRole("button", { name: "Give feedback" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { NewPostForm } from "@/components/new-post-form";
+import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetCreatePost, widgetSignIn } from "@/server/widget";
@@ -75,7 +76,19 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
  * customer's site): posts as the person the customer's page signs in (useWidgetSignIn).
  * Without one, it offers signing in on the portal in a new tab.
  */
-export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { projectSlug: string; boardSlug: string; defaultTitle?: string }) {
+export function WidgetFeedback({
+  projectSlug,
+  boardSlug,
+  defaultTitle,
+  titlePlaceholder,
+  detailsPlaceholder,
+}: {
+  projectSlug: string;
+  boardSlug: string;
+  defaultTitle?: string;
+  titlePlaceholder?: string;
+  detailsPlaceholder?: string;
+}) {
   const { signedIn, error } = useWidgetSignIn(projectSlug);
 
   if (signedIn) {
@@ -83,15 +96,21 @@ export function WidgetFeedback({ projectSlug, boardSlug, defaultTitle }: { proje
     return (
       <div className="flex flex-col gap-3">
         <p className="text-sm text-muted-foreground">Posting as {signedIn.name}</p>
-        <NewPostForm
-          projectSlug={projectSlug}
-          boardSlug={boardSlug}
-          // Image uploads need the portal's sign-in; posts from here are text.
-          mediaUrls={null}
-          linkTarget="_blank"
-          submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
-          defaultTitle={defaultTitle}
-        />
+        <Card>
+          <CardContent>
+            <NewPostForm
+              projectSlug={projectSlug}
+              boardSlug={boardSlug}
+              // Image uploads need the portal's sign-in; posts from here are text.
+              mediaUrls={null}
+              linkTarget="_blank"
+              submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
+              defaultTitle={defaultTitle}
+              titlePlaceholder={titlePlaceholder}
+              detailsPlaceholder={detailsPlaceholder}
+            />
+          </CardContent>
+        </Card>
       </div>
     );
   }

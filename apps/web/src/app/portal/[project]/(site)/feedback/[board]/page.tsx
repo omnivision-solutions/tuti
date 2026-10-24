@@ -5,12 +5,13 @@ import { notFound, permanentRedirect } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
-import { NewPostForm } from "@/components/new-post-form";
+import { NewPostDialog } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent } from "@/components/ui/card";
 import { VoteButton } from "@/components/vote-button";
+import { boardTexts } from "@/lib/board-texts";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
 import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
@@ -61,13 +62,27 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     notFound();
   }
 
+  const { postButton, ...placeholders } = boardTexts(board);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title={board.name} description={board.description} />
+      <PageHeader
+        title={board.name}
+        description={board.description}
+        actions={
+          session && (
+            <NewPostDialog
+              label={postButton}
+              projectSlug={projectSlug}
+              boardSlug={boardSlug}
+              mediaUrls={await mediaUrls()}
+              defaultTitle={title}
+              {...placeholders}
+            />
+          )
+        }
+      />
 
-      {session ? (
-        <NewPostForm projectSlug={projectSlug} boardSlug={boardSlug} mediaUrls={await mediaUrls()} defaultTitle={title} />
-      ) : (
+      {!session && (
         <p className="text-sm text-muted-foreground">
           <SignInLink className="text-foreground underline underline-offset-4">
             Sign in

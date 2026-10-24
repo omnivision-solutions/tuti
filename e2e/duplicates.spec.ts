@@ -21,6 +21,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
+  await ada.getByRole("button", { name: "Give feedback" }).click();
   await ada.getByLabel("Title").fill(original);
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await expect(ada.getByRole("link", { name: original })).toBeVisible();
@@ -28,6 +29,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   // While typing a similar title, the portal suggests voting on the existing post.
   const bo = await signUp(browser, portalUrl(slug), "Bo");
   await bo.goto("/feedback/feature-requests");
+  await bo.getByRole("button", { name: "Give feedback" }).click();
   await bo.getByLabel("Title").fill(duplicate);
   const suggestions = bo.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
   await expect(suggestions.getByRole("link", { name: new RegExp(original) })).toBeVisible();
