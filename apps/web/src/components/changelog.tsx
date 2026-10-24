@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { keepingFields } from "@/lib/forms";
 import { diffLines } from "@/lib/line-diff";
 import { DiffLines } from "@/components/line-diff";
-import { RichEditor } from "@/components/rich-editor";
+import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,49 +79,48 @@ export function ChangelogForm({
     // Typing in the form (dialogs in portals, like the AI helpers' instruction, aren't in it).
     <form {...keepingFields(action)} onInput={(event) => event.currentTarget.contains(event.target as Node) && setDirty(true)}>
       <FieldGroup>
-        <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="entry-title">Title</FieldLabel>
-          <Input
-            id="entry-title"
+        {/* Written as it's published: tags, the title, then the text, no boxes. */}
+        <div className="flex flex-col gap-2">
+          <fieldset className="flex flex-wrap gap-4">
+            <legend className="sr-only">Tags</legend>
+            {(Object.keys(TAG_LABELS) as TagName[]).map((tag) => (
+              <label key={tag} className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input type="checkbox" name="tags" value={tag} defaultChecked={entry?.tags.includes(tag)} className="size-4 accent-primary" />
+                {TAG_LABELS[tag]}
+              </label>
+            ))}
+          </fieldset>
+          <input
             name="title"
+            aria-label="Title"
             defaultValue={entry?.title}
             placeholder="What shipped, in a few words"
             required
             autoComplete="off"
             aria-invalid={state.error ? true : undefined}
             aria-describedby={state.error ? "entry-error" : undefined}
+            className={`${BARE_TITLE} text-2xl`}
           />
           {state.error && <FieldError id="entry-error">{state.error}</FieldError>}
-        </Field>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-sm font-medium">Tags</legend>
-          <div className="flex flex-wrap gap-4">
-            {(Object.keys(TAG_LABELS) as TagName[]).map((tag) => (
-              <label key={tag} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" name="tags" value={tag} defaultChecked={entry?.tags.includes(tag)} className="size-4 accent-primary" />
-                {TAG_LABELS[tag]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <Field>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <FieldLabel id="entry-body-label">What changed</FieldLabel>
-            {entry && canEditWithAi && (
+        </div>
+        <div className="flex flex-col gap-2">
+          {entry && canEditWithAi && (
+            <div className="flex justify-end">
               <AiHelpers projectSlug={projectSlug} number={entry.number} editor={editor} dirty={dirty} />
-            )}
-          </div>
+            </div>
+          )}
           <RichEditor
+            bare
             profile="changelog"
             name="content"
-            labelledBy="entry-body-label"
-            placeholder="What's new for people, and how to use it"
+            label="What changed"
+            placeholder="What's new for people, and how to use it. Type / for headings, lists and more"
             initial={entry?.content}
             uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
             editorRef={editor}
             onChange={() => setDirty(true)}
           />
-        </Field>
+        </div>
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1 text-sm font-medium">Posts it completes</legend>
           {entry?.published ? (

@@ -20,21 +20,40 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await ada.goto("/feedback/feature-requests");
   await ada.getByLabel("Title").fill("Dark mode");
 
-  // Bold, a list and a video, from the toolbar.
+  // Bold from the bar over selected text, a link with its shortcut, and a list and a video from the / menu.
   const details = ada.getByRole("textbox", { name: "Details" });
   await details.click();
-  await ada.getByRole("button", { name: "Bold" }).click();
-  await ada.keyboard.type("Dark mode");
-  await ada.getByRole("button", { name: "Bold" }).click();
-  await ada.keyboard.type(" would help at night.");
+  // The bar shows over selected text, and goes once the selection does.
+  const formatting = ada.getByRole("toolbar", { name: "Formatting" });
+  await ada.keyboard.type("Dark mode would help at night.");
+  await ada.keyboard.press("Shift+Home");
+  await formatting.getByRole("button", { name: "Bold" }).click();
+  await ada.keyboard.press("End");
+  await expect(formatting).toBeHidden();
   await ada.keyboard.press("Enter");
-  await ada.getByRole("button", { name: "Bulleted list" }).click();
+  await ada.keyboard.type("The guide");
+  await ada.keyboard.press("Shift+Home");
+  await expect(formatting).toBeVisible();
+  await checkpoint(ada, "portal-post-selection-bar");
+  await ada.keyboard.press("ControlOrMeta+k");
+  const guideDialog = ada.getByRole("dialog", { name: "Add a link" });
+  await guideDialog.getByLabel("Link").fill("example.com/guide");
+  await guideDialog.getByRole("button", { name: "Add link" }).click();
+  // Writing carries on where it was, the linked text still selected.
+  await expect(details).toBeFocused();
+  await expect(formatting.getByRole("button", { name: "Remove link" })).toBeVisible();
+  await ada.keyboard.press("End");
+  await expect(formatting).toBeHidden();
+  await ada.keyboard.press("Enter");
+  await ada.keyboard.type("/bul");
+  await ada.keyboard.press("Enter");
   await ada.keyboard.type("Less glare");
   await ada.keyboard.press("Enter");
   await ada.keyboard.type("Saves battery");
   await ada.keyboard.press("Enter");
   await ada.keyboard.press("Enter");
-  await ada.getByRole("button", { name: "Video" }).click();
+  await ada.keyboard.type("/");
+  await ada.getByRole("option", { name: "Video" }).click();
   const videoDialog = ada.getByRole("dialog", { name: "Embed a video" });
   await videoDialog.getByLabel("Video link").fill("https://example.com/not-a-video");
   await videoDialog.getByRole("button", { name: "Embed video" }).click();
@@ -42,6 +61,7 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await videoDialog.getByLabel("Video link").fill("https://youtu.be/dQw4w9WgXcQ");
   await videoDialog.getByRole("button", { name: "Embed video" }).click();
   await expect(videoDialog).toHaveCount(0);
+  await expect(details).toBeFocused();
   await checkpoint(ada, "portal-rich-post-editor");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
 
@@ -49,7 +69,8 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   await ada.getByRole("link", { name: "Dark mode" }).click();
   await ada.waitForURL(/\/feedback\/[a-z0-9-]+\/dark-mode-1$/);
   const article = ada.getByRole("main");
-  await expect(article.locator("strong", { hasText: "Dark mode" })).toBeVisible();
+  await expect(article.locator("strong").first()).toHaveText("Dark mode would help at night.");
+  await expect(article.getByRole("link", { name: "The guide" })).toHaveAttribute("href", "https://example.com/guide");
   await expect(article.getByRole("listitem")).toHaveText(["Less glare", "Saves battery"]);
   await expect(article.locator("iframe")).toHaveAttribute("src", "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ");
 
@@ -109,6 +130,10 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await expect(ada.getByRole("link", { name: "Make the hero smaller" })).toHaveCount(0);
   await editorImage.click();
   const controls = ada.getByRole("group", { name: "Image" });
+  // They're next in the tab order, for keyboard users.
+  await expect(controls).toBeVisible();
+  await ada.keyboard.press("Tab");
+  await expect(controls.getByRole("button", { name: "Small" })).toBeFocused();
   await controls.getByRole("button", { name: "Medium" }).click();
   await controls.getByRole("button", { name: "Align right" }).click();
   await controls.getByRole("button", { name: "Alt text" }).click();

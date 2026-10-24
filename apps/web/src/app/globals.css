@@ -245,7 +245,8 @@
   .rich-text :where(.ProseMirror-selectednode) {
     @apply ring-2 ring-ring;
   }
-  .rich-text :where(p.is-editor-empty:first-child)::before {
+  /* An empty editor's placeholder, and (bare editors) the hint on the empty line being written. */
+  .rich-text :where(p.is-editor-empty:first-child, .is-empty)::before {
     @apply pointer-events-none float-left h-0 text-muted-foreground content-[attr(data-placeholder)];
   }
   /* A docs article, set for reading and skimming: softer text, so headings and bold terms stand

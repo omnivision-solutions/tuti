@@ -7,7 +7,7 @@ import { type ReactNode, useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { IconField } from "@/components/icon-field";
-import { RichEditor } from "@/components/rich-editor";
+import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -89,24 +89,10 @@ export function ArticleForm({
   return (
     <form {...keepingFields(action)}>
       <FieldGroup>
-        <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="article-title">Title</FieldLabel>
-          <Input
-            id="article-title"
-            name="title"
-            defaultValue={article?.title ?? defaultTitle}
-            placeholder="What it helps with, e.g. Inviting your team"
-            required
-            autoComplete="off"
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? "article-error" : undefined}
-          />
-          {state.error && <FieldError id="article-error">{state.error}</FieldError>}
-        </Field>
-        <Field>
-          <FieldLabel id="article-collection-label">Collection</FieldLabel>
+        {/* Written as it's published: the collection above the title, then the text, no boxes. */}
+        <div className="flex flex-col gap-1">
           <Select name="collection" items={items} value={collection} onValueChange={(value) => setCollection(value as string | null)}>
-            <SelectTrigger className="w-full sm:w-64" aria-labelledby="article-collection-label">
+            <SelectTrigger size="sm" aria-label="Collection" className="-ml-2.5 border-transparent text-primary hover:bg-muted dark:bg-transparent">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -117,18 +103,28 @@ export function ArticleForm({
               ))}
             </SelectContent>
           </Select>
-        </Field>
-        <Field>
-          <FieldLabel id="article-body-label">Article</FieldLabel>
-          <RichEditor
-            profile="article"
-            name="content"
-            labelledBy="article-body-label"
-            placeholder="Explain it step by step"
-            initial={article?.content}
-            uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
+          <input
+            name="title"
+            aria-label="Title"
+            defaultValue={article?.title ?? defaultTitle}
+            placeholder="What it helps with, e.g. Inviting your team"
+            required
+            autoComplete="off"
+            aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "article-error" : undefined}
+            className={`${BARE_TITLE} text-3xl`}
           />
-        </Field>
+          {state.error && <FieldError id="article-error">{state.error}</FieldError>}
+        </div>
+        <RichEditor
+          bare
+          profile="article"
+          name="content"
+          label="Article"
+          placeholder="Explain it step by step. Type / for headings, lists and more"
+          initial={article?.content}
+          uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
+        />
         <label className="flex items-start gap-2">
           <input
             type="checkbox"
