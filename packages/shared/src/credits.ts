@@ -20,7 +20,7 @@ export const creditsPerUsageDollar = () => positive("AI_CREDITS_PER_USAGE_DOLLAR
 
 /** Whole days a top-up's credits last (AI_CREDITS_TOPUP_EXPIRY_DAYS, default 365); 0 is for good. Anything else is the default. */
 export function topupExpiryDays(): number | null {
-  const raw = process.env.AI_CREDITS_TOPUP_EXPIRY_DAYS;
+  const raw = process.env.AI_CREDITS_TOPUP_EXPIRY_DAYS?.trim();
   const value = Number(raw);
   if (raw && Number.isInteger(value) && value >= 0) {
     return value === 0 ? null : value;
