@@ -10,7 +10,7 @@ export default defineConfig({
     alias: {
       "@/": fileURLToPath(new URL("./apps/web/src/", import.meta.url)),
       // Next.js compiles next/font when the app is built: tests get a stand-in (see the file).
-      "next/font/google": fileURLToPath(new URL("./apps/web/src/test/next-font-google.ts", import.meta.url)),
+      "next/font/local": fileURLToPath(new URL("./apps/web/src/test/next-font-local.ts", import.meta.url)),
     },
   },
   test: {
