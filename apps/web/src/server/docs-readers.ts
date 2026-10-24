@@ -10,6 +10,7 @@ import { visibleArticleSql } from "@/lib/reader-groups";
 
 import type { FormState } from "./form-state";
 import { answerQuestion, askFields, type DocsAnswer, rateAnswer } from "./operations/docs-ask";
+import { type DocsSearchResult, logSearch, searchForReader } from "./docs-search";
 import { escalateFields, escalateQuestion } from "./operations/docs-escalate";
 import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
@@ -95,6 +96,33 @@ export async function countArticleView(projectSlug: string, slug: string): Promi
     WHERE p.slug = ${String(projectSlug)} AND a.slug = ${String(slug)} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL
       AND a.listing IN ('EVERYWHERE', 'UNLISTED') AND ${visibleArticleSql(reader)}
     ON CONFLICT ("articleId", day) DO UPDATE SET views = article_view_day.views + 1`;
+}
+
+/** How many articles the search box shows as the reader types. */
+const AS_TYPED_RESULTS = 8;
+/** Meaning (embeddings) from this many characters on: before that, the words being typed are all there is to go by. */
+const AS_TYPED_MEANING_FROM = 3;
+
+/**
+ * The search box's results as the reader types: what they may read that matches (searchForReader),
+ * up to 8, by meaning once there are a few characters to go by. Not counted in the team's insights:
+ * every keystroke would be (logDocsSearch counts what they searched for).
+ */
+export async function searchDocsAsTyped(projectSlug: string, query: string): Promise<DocsSearchResult[]> {
+  const q = String(query).trim().slice(0, 200);
+  const project = q ? await readableProject(String(projectSlug)) : null;
+  if (!project) {
+    return [];
+  }
+  return searchForReader(project.id, String(projectSlug), q, AS_TYPED_RESULTS, { log: false, meaning: q.length >= AS_TYPED_MEANING_FROM });
+}
+
+/** Counts a search from the search box in the team's insights, once the reader stops typing: picks a result, asks the AI or closes it. */
+export async function logDocsSearch(projectSlug: string, query: string, results: number): Promise<void> {
+  const project = await readableProject(String(projectSlug));
+  if (project) {
+    logSearch(project.id, String(query).slice(0, 200), Math.min(Math.max(Math.trunc(Number(results)) || 0, 0), AS_TYPED_RESULTS));
+  }
 }
 
 /** "Ask AI" on the portal's /docs or in the widget: an answer from the published articles, or "I don't know" (see docs.ask). */

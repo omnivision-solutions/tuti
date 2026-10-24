@@ -644,7 +644,7 @@ export const getArticle = defineOperation({
 
 export const searchArticles = defineOperation({
   name: "articles.search",
-  summary: "Search the published docs articles: best matches first, each with the passage that matched",
+  summary: "Search the published docs articles: best matches first, each with the passage that matched. Each word also matches the words it starts (\"sig\" finds \"signing\"), so it works as someone types",
   method: "GET",
   path: "/search/articles",
   scope: "read",

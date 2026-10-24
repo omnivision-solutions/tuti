@@ -239,7 +239,7 @@ describe("search with embeddings", () => {
     const release = openai.holdNext();
     try {
       const started = Date.now();
-      expect((await searchDocs(project.id, "invites", 10, SIGNED_OUT, 100)).map((r) => r.slug)).toEqual([slug]);
+      expect((await searchDocs(project.id, "invites", 10, SIGNED_OUT, { embedTimeoutMs: 100 })).map((r) => r.slug)).toEqual([slug]);
       expect(Date.now() - started).toBeLessThan(1000);
     } finally {
       release();
@@ -277,6 +277,41 @@ describe("search without an OpenAI key", () => {
     expect(await search("receipt")).toEqual([expect.objectContaining({ snippet: "How we charge, and where to find your receipts." })]);
     // Where the text matches, the passage from it.
     expect(await search("monthly")).toEqual([expect.objectContaining({ snippet: "Plans are billed monthly." })]);
+  });
+
+  test("a word still being typed finds the words it starts, with the passage around them", async () => {
+    const signing = await write("Signing in to the mobile app", `${"The app keeps you signed in. ".repeat(12)}Use the code we email you to sign in.`);
+    const billing = await write("Billing", "Plans are billed monthly.");
+    for (const typed of ["Sig", "signi", "SIGNING I", "mobile ap", "mob"]) {
+      expect((await search(typed)).map((r) => r.slug), typed).toEqual([signing]);
+    }
+    expect((await search("bil")).map((r) => r.slug)).toEqual([billing]);
+    // In the text but not the title: the passage is around the word it starts.
+    expect((await search("emai"))[0]!.snippet).toMatch(/email you to sign in\.$/);
+    // Words that start no word find nothing; neither does a query with no words.
+    expect(await search("sigz")).toEqual([]);
+    expect(await search("&&")).toEqual([]);
+  });
+
+  test("with web search's operators, or past 8 words, words match whole, as the query says", async () => {
+    const both = await write("Beta and gamma", "Both of them.");
+    const beta = await write("Beta alone", "Just the one.");
+    // "-gamma" leaves out what has gamma; a quoted phrase and "or" keep their meaning.
+    expect((await search("beta -gamma")).map((r) => r.slug)).toEqual([beta]);
+    expect((await search('"beta alone"')).map((r) => r.slug)).toEqual([beta]);
+    expect((await search("gamma or alone")).map((r) => r.slug).sort()).toEqual([beta, both].sort());
+    // Nine words: all must be there, the ninth too.
+    expect(await search("beta and gamma both of them just the zebra")).toEqual([]);
+    // Without operators, a word still being typed still matches.
+    expect((await search("gam")).map((r) => r.slug)).toEqual([both]);
+  });
+
+  test("a search can be left out of the team's insights (as readers type)", async () => {
+    await write("Billing", "Plans are billed monthly.");
+    await searchDocs(project.id, "bil", 10, SIGNED_OUT, { log: false });
+    await searchDocs(project.id, "billing", 10, SIGNED_OUT);
+    // Not awaited when the search is: give it a moment.
+    await expect.poll(() => prisma.docsSearch.findMany({ where: { projectId: project.id }, select: { query: true } })).toEqual([{ query: "billing" }]);
   });
 
   test("drafts and other projects' articles never come back", async () => {

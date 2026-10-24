@@ -14,6 +14,9 @@ const SNIPPET_LENGTH = 200;
 /** How long a search waits for its query's embedding before it matches words only. */
 const SEARCH_EMBED_TIMEOUT_MS = 2000;
 
+/** How a search runs: how long it waits for the embedding, whether it's counted in the team's insights, and whether it matches by meaning at all. */
+export type SearchOptions = { embedTimeoutMs?: number; log?: boolean; meaning?: boolean };
+
 /**
  * A project's listed docs articles (published, listed everywhere) that match a query, best first, each with a
  * snippet. With OPENAI_API_KEY set, articles with a section that means the same
@@ -28,15 +31,17 @@ export async function searchDocs(
   query: string,
   limit: number,
   reader: Reader,
-  embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS,
+  { embedTimeoutMs = SEARCH_EMBED_TIMEOUT_MS, log = true, meaning = true }: SearchOptions = {},
 ): Promise<DocsSearchResult[]> {
   const [byMeaning, byWords] = await Promise.all([
-    embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs) : [],
+    meaning && embeddingsEnabled() ? meaningMatches(projectId, query, limit, reader, embedTimeoutMs) : [],
     wordMatches(projectId, query, limit, reader),
   ]);
   const found = new Set(byMeaning.map((result) => result.slug));
   const results = [...byMeaning, ...byWords.filter((result) => !found.has(result.slug))].slice(0, limit);
-  logSearch(projectId, query, results.length);
+  if (log) {
+    logSearch(projectId, query, results.length);
+  }
   return results;
 }
 
@@ -45,8 +50,14 @@ export async function searchDocs(
  * then the articles listed to them with a lock (see docsContents) whose titles match. Those are
  * matched by their title alone and come without a snippet, so nothing of what they say is searched or shown.
  */
-export async function searchForReader(projectId: string, projectSlug: string, query: string, limit: number): Promise<DocsSearchResult[]> {
-  const [results, docs] = await Promise.all([searchDocs(projectId, query, limit, await currentReader(projectId)), docsContents(projectSlug)]);
+export async function searchForReader(
+  projectId: string,
+  projectSlug: string,
+  query: string,
+  limit: number,
+  options: SearchOptions = {},
+): Promise<DocsSearchResult[]> {
+  const [results, docs] = await Promise.all([searchDocs(projectId, query, limit, await currentReader(projectId), options), docsContents(projectSlug)]);
   const locked = [...everyCollection(docs.collections).flatMap((c) => c.articles), ...docs.uncollected].filter((a) => a.locked).map((a) => a.slug);
   if (locked.length === 0 || results.length >= limit) {
     return results;
@@ -55,9 +66,12 @@ export async function searchForReader(projectId: string, projectSlug: string, qu
     SELECT a.slug, a.title
     FROM article a
     CROSS JOIN websearch_to_tsquery('english', ${query}) q
+    CROSS JOIN to_tsquery('simple', ${prefixQuery(query)}::text) pq
     WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE'
-      AND a.slug = ANY(${locked}::text[]) AND to_tsvector('english', a.title) @@ q
-    ORDER BY ts_rank(to_tsvector('english', a.title), q) DESC, a.title
+      AND a.slug = ANY(${locked}::text[])
+      -- Whole words, or the start of each word as typed, like wordMatches.
+      AND (to_tsvector('english', a.title) @@ q OR coalesce(to_tsvector('simple', a.title) @@ pq, false))
+    ORDER BY ts_rank(to_tsvector('english', a.title), q) + coalesce(ts_rank(to_tsvector('simple', a.title), pq), 0) DESC, a.title
     LIMIT ${limit - results.length}`;
   return [...results, ...byTitle.map(({ slug, title }) => ({ slug, title, snippet: "", locked: true as const }))];
 }
@@ -69,7 +83,7 @@ const normalizeQuery = (query: string) => query.trim().replace(/\s+/g, " ").toLo
  * Records a search for the team's insights (no results is a failed search). Not awaited
  * and never throws, so logging can't slow search down or break it.
  */
-function logSearch(projectId: string, query: string, results: number) {
+export function logSearch(projectId: string, query: string, results: number) {
   const normalized = normalizeQuery(query);
   if (!normalized) {
     return;
@@ -141,28 +155,58 @@ export async function answerSections(
     LIMIT ${limit}`;
 }
 
+/** The most words a prefix query takes: a longer query is someone pasting, not typing. */
+const MAX_PREFIX_WORDS = 8;
+
+/**
+ * The query's words as a prefix query for Postgres ("sig in" → `sig:* & in:*`), so a word still
+ * being typed matches the words it starts ("sig" finds "signing"). Null without any words, past 8,
+ * or with web search's operators (a quoted phrase, `-word`, `or`): it would match more than they say,
+ * so those queries match whole words only.
+ */
+export function prefixQuery(query: string): string | null {
+  const lower = query.toLowerCase();
+  if (/"|(^|\s)-\S|(^|\s)or(\s|$)/u.test(lower)) {
+    return null;
+  }
+  const words = lower.match(/[\p{L}\p{N}]+/gu) ?? [];
+  return words.length > 0 && words.length <= MAX_PREFIX_WORDS ? words.map((word) => `${word}:*`).join(" & ") : null;
+}
+
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.
 async function wordMatches(projectId: string, query: string, limit: number, reader: Reader): Promise<DocsSearchResult[]> {
   // The passage is a piece of the text; "…" marks where it was cut. Its title and keywords match too
   // (keywords: words readers use that the text doesn't); when the text doesn't, the team's description stands in for it.
+  // Whole words (stemmed: "invites" finds "invite"), or the start of each word as typed, unstemmed (`prefixQuery`).
   const rows = await prisma.$queryRaw<
     { slug: string; title: string; passage: string; cutStart: boolean; cutEnd: boolean; description: string; inText: boolean }[]
   >`
-    SELECT a.slug, a.title, h.passage, a.description, to_tsvector('english', a.body) @@ q AS "inText",
+    SELECT a.slug, a.title, h.passage, a.description, t."inText",
       left(a.body, length(h.passage)) <> h.passage AS "cutStart",
       right(a.body, length(h.passage)) <> h.passage AS "cutEnd"
     FROM article a
     CROSS JOIN websearch_to_tsquery('english', ${query}) q
+    CROSS JOIN to_tsquery('simple', ${prefixQuery(query)}::text) pq
     CROSS JOIN LATERAL (
       SELECT setweight(to_tsvector('english', a.title), 'A') || setweight(to_tsvector('english', coalesce(array_to_string(a.keywords, ' '), '')), 'B')
-        || to_tsvector('english', a.body) AS words
+        || to_tsvector('english', a.body) AS words,
+        setweight(to_tsvector('simple', a.title), 'A') || setweight(to_tsvector('simple', coalesce(array_to_string(a.keywords, ' '), '')), 'B')
+        || to_tsvector('simple', a.body) AS starts
     ) d
     CROSS JOIN LATERAL (
-      SELECT ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""') AS passage
+      SELECT to_tsvector('english', a.body) @@ q AS "whole", coalesce(to_tsvector('simple', a.body) @@ pq, false) AS "started"
+    ) b
+    CROSS JOIN LATERAL (SELECT b.whole OR b.started AS "inText") t
+    CROSS JOIN LATERAL (
+      SELECT CASE WHEN b.whole OR NOT b.started
+        THEN ts_headline('english', a.body, q, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""')
+        ELSE ts_headline('simple', a.body, pq, 'MaxWords=30, MinWords=15, ShortWord=2, StartSel="", StopSel=""')
+      END AS passage
     ) h
-    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE' AND d.words @@ q
+    WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE'
+      AND (d.words @@ q OR coalesce(d.starts @@ pq, false))
       AND ${visibleArticleSql(reader)}
-    ORDER BY ts_rank(d.words, q) DESC, a.title
+    ORDER BY ts_rank(d.words, q) + coalesce(ts_rank(d.starts, pq), 0) DESC, a.title
     LIMIT ${limit}`;
   return rows.map(({ slug, title, passage, cutStart, cutEnd, description, inText }) => ({
     slug,
