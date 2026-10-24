@@ -230,7 +230,8 @@ export async function answerQuestion(
     ai = await aiFor(projectId, "answers");
   } catch (error) {
     if (error instanceof OutOfCredits) {
-      return finish("unavailable", { fallback: sections });
+      // Read again, like a failed answer's: each with its listing now, and only what the asker may still read.
+      return finish("unavailable", { fallback: await stillUsable(projectId, sections, reader) });
     }
     throw error;
   }

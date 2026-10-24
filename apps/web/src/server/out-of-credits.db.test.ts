@@ -8,7 +8,7 @@ import { SIGNED_OUT } from "@/lib/read-access";
 import { createChangelogEntry, draftChangelogEntry, rewriteChangelogEntry } from "@/server/operations/changelog";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { getDocsInsights } from "@/server/operations/docs-insights";
-import { createArticle, publishArticle } from "@/server/operations/docs";
+import { createArticle, publishArticle, unpublishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -70,6 +70,21 @@ test("AI answers: “unavailable” with the closest articles, without asking th
   await grantCredits(project.id, "TOPUP", 10, { days: 365 });
   model.reply(JSON.stringify({ answer: "From the Team page.", sources: ["s1"] }));
   expect((await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).status).toBe("answered");
+});
+
+test("an article unpublished while the credits are checked isn't offered instead", async () => {
+  openai.setVector(QUESTION, [1, 0]);
+  openai.setVector(articleChunkText(TITLE, { heading: "", text: TEXT }), [1, 0]);
+  const article = await call(createArticle, team(), { title: TITLE, body: TEXT });
+  await call(publishArticle, team(), { slug: article.slug });
+  // The sections are found, then the article is taken down while the balance is read.
+  const findGrants = prisma.aiCreditGrant.findMany.bind(prisma.aiCreditGrant);
+  vi.spyOn(prisma.aiCreditGrant, "findMany").mockImplementationOnce((async (args: Parameters<typeof findGrants>[0]) => {
+    await call(unpublishArticle, team(), { slug: article.slug });
+    return findGrants(args);
+  }) as unknown as typeof prisma.aiCreditGrant.findMany);
+  expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).toMatchObject({ status: "unavailable", sources: [] });
+  vi.restoreAllMocks();
 });
 
 test("Draft with AI and Edit with AI are refused (402) with the reason, without asking the AI", async () => {
