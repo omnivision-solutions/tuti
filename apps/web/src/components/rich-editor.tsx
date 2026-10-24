@@ -128,6 +128,9 @@ export function RichEditor({
   // The / menu's keys (arrows, Enter, Escape) while it's open.
   const menuKeys = useRef<((event: KeyboardEvent) => boolean) | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // The / menu and the selection bar go right after the text, so Tab from the text reaches the bar's buttons.
+  const menus = useRef<HTMLDivElement>(null);
+  const menusHost = useCallback(() => menus.current ?? document.body, []);
 
   const imagesFrom = (list: FileList | undefined | null) =>
     canUpload ? [...(list ?? [])].filter((file) => file.type.startsWith("image/")) : [];
@@ -234,9 +237,11 @@ export function RichEditor({
         <EditorContent editor={editor} />
         {editor && bare && (
           <>
-            <SelectionBar editor={editor} onPrompt={setPrompt} />
+            <div ref={menus} />
+            <SelectionBar editor={editor} onPrompt={setPrompt} host={menusHost} />
             <SlashMenu
               editor={editor}
+              host={menusHost}
               keysRef={menuKeys}
               profile={profile}
               onPrompt={setPrompt}
@@ -337,10 +342,9 @@ function slashQuery(editor: Editor): string | null {
   return /^\/([\p{L} ]{0,20})$/u.exec($from.parent.textContent)?.[1]?.trim().toLowerCase() ?? null;
 }
 
-// Menus go on the page's body, so a card or panel around the editor doesn't cut them off.
-const onBody = () => document.body;
-const SLASH_MENU = { placement: "bottom-start", offset: 6, flip: true, shift: { padding: 8 } } as const;
-const SELECTION_BAR = { placement: "top", offset: 8, flip: true, shift: { padding: 8 } } as const;
+// Fixed, so a card around the editor (overflow hidden) doesn't cut them off.
+const SLASH_MENU = { strategy: "fixed", placement: "bottom-start", offset: 6, flip: true, shift: { padding: 8 } } as const;
+const SELECTION_BAR = { strategy: "fixed", placement: "top", offset: 8, flip: true, shift: { padding: 8 } } as const;
 const showSlashMenu = ({ editor }: { editor: Editor }) => editor.isEditable && slashQuery(editor) !== null;
 // Selected text or an image, or the cursor in a table (for its rows and columns).
 const showSelectionBar = ({ editor }: { editor: Editor }) => editor.isEditable && (!editor.state.selection.empty || editor.isActive("table"));
@@ -348,12 +352,14 @@ const showSelectionBar = ({ editor }: { editor: Editor }) => editor.isEditable &
 /** Typing / at the start of a line lists the blocks; typing more filters them. Arrows and Enter pick one, Escape closes it. */
 function SlashMenu({
   editor,
+  host,
   keysRef,
   profile,
   onPrompt,
   onImage,
 }: {
   editor: Editor;
+  host: () => HTMLElement;
   keysRef: React.RefObject<((event: KeyboardEvent) => boolean) | null>;
   profile: Profile;
   onPrompt: (kind: Prompt) => void;
@@ -402,7 +408,7 @@ function SlashMenu({
   });
 
   return (
-    <BubbleMenu editor={editor} pluginKey="slashMenu" shouldShow={showSlashMenu} appendTo={onBody} options={SLASH_MENU} className="z-50">
+    <BubbleMenu editor={editor} pluginKey="slashMenu" shouldShow={showSlashMenu} appendTo={host} options={SLASH_MENU} className="z-50">
       {matches.length > 0 && (
         <div
           role="listbox"
@@ -431,7 +437,7 @@ function SlashMenu({
 }
 
 /** Formatting over selected text, and an image's or a table's controls while one is picked. */
-function SelectionBar({ editor, onPrompt }: { editor: Editor; onPrompt: (kind: Prompt) => void }) {
+function SelectionBar({ editor, onPrompt, host }: { editor: Editor; onPrompt: (kind: Prompt) => void; host: () => HTMLElement }) {
   // In a table with nothing selected, the bar sits above the table rather than over the line being written.
   const table = useCallback(() => {
     const { selection } = editor.state;
@@ -444,15 +450,23 @@ function SelectionBar({ editor, onPrompt }: { editor: Editor; onPrompt: (kind: P
     }
     return null;
   }, [editor]);
+  // Tab from the text goes straight to the buttons: the plugin makes their wrapper focusable as it starts (before this runs).
+  const bar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (bar.current) {
+      bar.current.tabIndex = -1;
+    }
+  });
   return (
     <BubbleMenu
       editor={editor}
       pluginKey="selectionBar"
       shouldShow={showSelectionBar}
       getReferencedVirtualElement={table}
-      appendTo={onBody}
+      appendTo={host}
       options={SELECTION_BAR}
       className="z-50"
+      ref={bar}
     >
       <Toolbar editor={editor} onPrompt={onPrompt} className="rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10" />
     </BubbleMenu>

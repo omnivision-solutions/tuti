@@ -39,8 +39,9 @@ test("someone writes a formatted post with a video, and a comment with a link", 
   const guideDialog = ada.getByRole("dialog", { name: "Add a link" });
   await guideDialog.getByLabel("Link").fill("example.com/guide");
   await guideDialog.getByRole("button", { name: "Add link" }).click();
-  // Writing carries on where it was.
+  // Writing carries on where it was, the linked text still selected.
   await expect(details).toBeFocused();
+  await expect(formatting.getByRole("button", { name: "Remove link" })).toBeVisible();
   await ada.keyboard.press("End");
   await expect(formatting).toBeHidden();
   await ada.keyboard.press("Enter");
@@ -129,6 +130,10 @@ test("someone adds a screenshot to a post, resized and aligned", async ({ browse
   await expect(ada.getByRole("link", { name: "Make the hero smaller" })).toHaveCount(0);
   await editorImage.click();
   const controls = ada.getByRole("group", { name: "Image" });
+  // They're next in the tab order, for keyboard users.
+  await expect(controls).toBeVisible();
+  await ada.keyboard.press("Tab");
+  await expect(controls.getByRole("button", { name: "Small" })).toBeFocused();
   await controls.getByRole("button", { name: "Medium" }).click();
   await controls.getByRole("button", { name: "Align right" }).click();
   await controls.getByRole("button", { name: "Alt text" }).click();
