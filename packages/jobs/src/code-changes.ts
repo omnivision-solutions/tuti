@@ -170,7 +170,7 @@ async function analyse(
     }
   }
   const summary = await writeSummary(pr, use);
-  const [embedding] = await embed([summary], { meter: use });
+  const [embedding] = await embed([summary]);
   const vector = toVectorLiteral(embedding!);
   const portals = [...new Set([portalOrigin(change.slug), await portalAddress(change.slug)])];
   const named = namedPosts([pr.title, pr.body, ...pr.commits].join("\n"), portals);

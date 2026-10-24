@@ -12,9 +12,6 @@ const FEATURES: Record<string, string> = {
   escalations: "Ask a person (summaries)",
   changelog: "Changelog drafts and edits",
   code_changes: "Code changes",
-  duplicates: "Duplicate detection",
-  search: "Docs search",
-  docs_index: "Docs indexing",
 };
 
 const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });

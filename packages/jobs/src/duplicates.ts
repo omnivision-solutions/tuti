@@ -8,8 +8,6 @@ import {
   toVectorLiteral,
 } from "@tuti/shared";
 
-import { meter } from "./ai-usage";
-
 type PostText = { id: string; projectId: string; title: string; body: string };
 
 /** Stores embeddings for posts whose text changed (or that have none). Returns how many were embedded. */
@@ -27,24 +25,9 @@ export async function embedPosts(posts: PostText[]): Promise<number> {
     .map((item) => ({ ...item, hash: contentHash(item.text) }))
     .filter((item) => hashes.get(item.post.id) !== item.hash);
 
-  // A project's posts in their own requests, so each pays for its own.
-  const byProject = new Map<string, typeof pending>();
-  for (const item of pending) {
-    const bucket = byProject.get(item.post.projectId);
-    if (bucket) {
-      bucket.push(item);
-    } else {
-      byProject.set(item.post.projectId, [item]);
-    }
-  }
-  const batches = [...byProject.values()].flatMap((items) =>
-    Array.from({ length: Math.ceil(items.length / 100) }, (_, i) => items.slice(i * 100, i * 100 + 100)),
-  );
-  for (const batch of batches) {
-    const vectors = await embed(
-      batch.map((item) => item.text),
-      { meter: meter(batch[0]!.post.projectId, "duplicates") },
-    );
+  for (let i = 0; i < pending.length; i += 100) {
+    const batch = pending.slice(i, i + 100);
+    const vectors = await embed(batch.map((item) => item.text));
     for (const [j, item] of batch.entries()) {
       const vector = toVectorLiteral(vectors[j]!);
       await prisma.$executeRaw`

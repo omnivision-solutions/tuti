@@ -1,7 +1,6 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-import { meter } from "@tuti/jobs";
 import { embed, embeddingsEnabled, log, toVectorLiteral, TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 import { z } from "zod";
 
@@ -60,7 +59,7 @@ function trigramMatches(projectId: string, query: string) {
 async function embeddingMatches(projectId: string, query: string): Promise<SimilarPost[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query], { meter: meter(projectId, "duplicates") });
+    const [embedding] = await embed([query]);
     vector = toVectorLiteral(embedding!);
   } catch (error) {
     log.warn("Embedding a typed title failed; using title matches only", { error });

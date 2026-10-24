@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { type AiUsage, log, type Meter } from "@tuti/shared";
 
 /** What an AI request was for, as Settings → Usage groups a project's spend. */
-export type AiFeature = "answers" | "escalations" | "changelog" | "code_changes" | "duplicates" | "search" | "docs_index";
+export type AiFeature = "answers" | "escalations" | "changelog" | "code_changes";
 
 /**
  * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project).

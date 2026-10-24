@@ -1,5 +1,4 @@
 import { type ArticleListing, prisma } from "@tuti/db";
-import { meter } from "@tuti/jobs";
 import { ANSWER_MIN_SIMILARITY, embed, embeddingsEnabled, log, SEARCH_MIN_SIMILARITY, toVectorLiteral } from "@tuti/shared";
 
 import type { Reader } from "@/lib/read-access";
@@ -97,7 +96,7 @@ export function logSearch(projectId: string, query: string, results: number) {
 async function meaningMatches(projectId: string, query: string, limit: number, reader: Reader, timeoutMs: number): Promise<DocsSearchResult[]> {
   let vector: string;
   try {
-    const [embedding] = await embed([query], { meter: meter(projectId, "search"), signal: AbortSignal.timeout(timeoutMs) });
+    const [embedding] = await embed([query], AbortSignal.timeout(timeoutMs));
     vector = toVectorLiteral(embedding!);
   } catch (error) {
     log.warn("Embedding a docs search failed; matching words only", { error });
@@ -138,7 +137,7 @@ export async function answerSections(
 ): Promise<AnswerSection[] | null> {
   let vector: string;
   try {
-    const [embedding] = await embed([question], { meter: meter(projectId, "answers"), signal: AbortSignal.timeout(timeoutMs) });
+    const [embedding] = await embed([question], AbortSignal.timeout(timeoutMs));
     vector = toVectorLiteral(embedding!);
   } catch (error) {
     log.warn("Embedding a docs question failed", { projectId, error });

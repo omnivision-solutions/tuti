@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { articleChunkText, EMBEDDING_DOLLARS_PER_TOKEN, EMBEDDING_MODEL } from "@tuti/shared";
+import { articleChunkText } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -58,14 +58,12 @@ const usage = (projectId = project.id) =>
 test("every answered request is recorded for its project: the feature, the model, tokens and cost", async () => {
   await answerable();
   expect((await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).status).toBe("answered");
+  // Publishing indexed the article and the question was embedded, but embeddings aren't recorded (they cost less than the rows): only the model's answer is.
+  expect(openai.inputs).toContain(QUESTION);
   const rows = await usage();
-  // Publishing indexed the article; the question was embedded, then answered by the model.
-  expect(rows.map(({ feature, kind }) => `${feature} ${kind}`)).toEqual(["docs_index embedding", "answers embedding", "answers chat"]);
-  const embedded = rows[1]!;
-  expect(embedded).toMatchObject({ model: EMBEDDING_MODEL, inputTokens: QUESTION.length, outputTokens: 0 });
-  expect(Number(embedded.cost)).toBeCloseTo(QUESTION.length * EMBEDDING_DOLLARS_PER_TOKEN, 12);
+  expect(rows.map(({ feature, kind }) => `${feature} ${kind}`)).toEqual(["answers chat"]);
   // The model fake's usage: a token per character, a millionth of a dollar each.
-  const chat = rows[2]!;
+  const chat = rows[0]!;
   expect(chat.inputTokens).toBe(model.requests.at(-1)!.system.length + model.requests.at(-1)!.user.length);
   expect(chat.outputTokens).toBe(JSON.stringify({ answer: "From the Team page.", sources: ["s1"] }).length);
   expect(Number(chat.cost)).toBeCloseTo((chat.inputTokens + chat.outputTokens) / 1e6, 12);
