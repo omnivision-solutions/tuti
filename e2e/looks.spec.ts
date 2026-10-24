@@ -93,8 +93,17 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   };
   const article = await api("/articles", { title: "Getting started", content });
   await api(`/articles/${article.slug}/publish`, {});
-  // And a header link, so it's there on every page (the logo's too).
-  await api("/branding", { headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }] }, "PATCH");
+  // And header links and a contact button, so they're there on every page (the logo's too): long
+  // ones, which take several lines where they're in a row of their own (without JavaScript).
+  const long = (word: string) => `${word}: everything you need to know`;
+  await api(
+    "/branding",
+    {
+      headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }, ...["Status", "Security", "Careers", "Community"].map((word) => ({ label: long(word), url: "https://example.com/more" }))],
+      contact: { label: "Talk to our support team", url: "mailto:e2e-support@example.com" },
+    },
+    "PATCH",
+  );
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.setViewportSize({ width: 390, height: 844 });
   await visitor.goto(`/docs/${article.slug}`);
@@ -128,11 +137,12 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   const plain = await noScript.newPage();
   await plain.goto(`/docs/${article.slug}`);
   await expect(plain.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Pricing" })).toBeVisible();
-  // And a link to a heading still lands below the header, which can't measure itself without it.
+  // And a link to a heading still lands below the header, which can't measure itself without it,
+  // however many lines those links take: they're under it and scroll away, not part of it.
   await plain.goto(`/docs/${article.slug}#last-step`);
   const heading = plain.getByRole("heading", { name: "Last step" });
   await expect.poll(() => plain.evaluate(() => window.scrollY)).toBeGreaterThan(500);
-  const [headerBox, headingBox] = [(await plain.getByRole("banner").boundingBox())!, (await heading.boundingBox())!];
+  const [headerBox, headingBox] = [(await plain.locator("[data-portal-top]").boundingBox())!, (await heading.boundingBox())!];
   expect(headingBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
   await noScript.close();
 
