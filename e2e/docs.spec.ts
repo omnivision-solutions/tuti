@@ -1175,13 +1175,21 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(conversation).toContainText("Ask anything about Acme.");
   await expect(conversation).not.toContainText(question);
 
-  // The trash starts over.
   await assistant.getByRole("textbox", { name: "Ask a question" }).fill("Is there an API?");
   await assistant.getByRole("button", { name: "Send" }).click();
   await expect(conversation.getByText("I don't know")).toBeVisible();
+  // A conversation that isn't theirs any more (their reader cookie is gone): the next question starts a new one.
+  await visitor.context().clearCookies({ name: "tuti_reader" });
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill("Do you have an app?");
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(conversation).toContainText("Do you have an app?");
+  await expect(conversation.getByText("I don't know")).toHaveCount(1);
+  await expect(conversation).not.toContainText("Is there an API?");
+
+  // The trash starts over.
   await assistant.getByRole("button", { name: "Clear the conversation" }).click();
   await expect(conversation).toContainText("Ask anything about Acme.");
-  await expect(conversation).not.toContainText("Is there an API?");
+  await expect(conversation).not.toContainText("Do you have an app?");
   await assistant.getByRole("button", { name: "Close the assistant" }).click();
   await expect(assistant).toBeHidden();
 

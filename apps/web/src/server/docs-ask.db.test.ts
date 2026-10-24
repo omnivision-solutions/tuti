@@ -261,7 +261,8 @@ describe("follow-ups", () => {
     expect(await askDocs(project.slug, FOLLOW_UP, "portal", first.id)).toMatchObject({ status: "answered" });
     // Someone else can't continue it.
     actAs(await signUp("Someone else"));
-    expect(await askDocs(project.slug, FOLLOW_UP, "portal", first.id)).toEqual({ error: "There's no such question to follow up on. Ask it again." });
+    // With its code, so the assistant can start a new conversation.
+    expect(await askDocs(project.slug, FOLLOW_UP, "portal", first.id)).toEqual({ error: "There's no such question to follow up on. Ask it again.", code: "not_found" });
     // An API key continues its own.
     const actor = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
     model.reply(reply("Use the Team page.", ["s1"]));
@@ -397,7 +398,7 @@ describe("failures", () => {
       vi.stubEnv(name, "");
       expect(answersEnabled()).toBe(false);
       await expect(ask()).rejects.toMatchObject({ status: 503, message: "AI answers aren't set up on this server" });
-      expect(await askDocs(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server" });
+      expect(await askDocs(project.slug, QUESTION)).toEqual({ error: "AI answers aren't set up on this server", code: "ai_unavailable" });
       vi.stubEnv(name, name === "OPENAI_API_KEY" ? FAKE_OPENAI_KEY : model.env.OPENROUTER_API_KEY!);
     }
     expect(await logged()).toEqual([]);

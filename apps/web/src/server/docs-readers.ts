@@ -134,7 +134,7 @@ export async function askDocs(
   question: string,
   from: "portal" | "widget" = "portal",
   followUpTo?: string,
-): Promise<DocsAnswer | { error: string }> {
+): Promise<DocsAnswer | { error: string; code?: string }> {
   const widget = from === "widget";
   const input = askFields.safeParse({ q: question, followUpTo: followUpTo ?? undefined });
   if (!input.success) {
@@ -155,7 +155,8 @@ export async function askDocs(
     );
   } catch (error) {
     if (error instanceof OperationError) {
-      return { error: error.message };
+      // The code too: "not_found" for a follow-up to a question that isn't theirs (any more).
+      return { error: error.message, code: error.code };
     }
     throw error;
   }

@@ -89,7 +89,14 @@ export function DocsAssistantProvider({
   const run = useCallback(
     async (turn: string, question: string, before: Turn[]) => {
       try {
-        const result = await askDocs(slug, question, "portal", lastAsked(before));
+        const followUpTo = lastAsked(before);
+        const result = await askDocs(slug, question, "portal", followUpTo);
+        // The conversation isn't theirs any more (a new reader cookie): asked afresh, as a new one.
+        if (followUpTo && "code" in result && result.code === "not_found") {
+          const fresh = await askDocs(slug, question, "portal");
+          setTurns([{ key: turn, question, ...("error" in fresh ? { error: fresh.error } : { answer: fresh }) }]);
+          return;
+        }
         update(turn, "error" in result ? { error: result.error } : { answer: result, error: undefined });
       } catch {
         // Offline, or the server failed: not "Thinking…" forever.
