@@ -35,11 +35,17 @@ FROM "docs_search"
 WHERE "createdAt" >= (now() AT TIME ZONE 'UTC')::date - 29
 GROUP BY "projectId", "createdAt"::date;
 
+-- Up to 100 different failed searches per project and day (FAILED_SEARCHES_PER_DAY), the most searched.
 INSERT INTO "docs_failed_search_day" ("projectId", "day", "query", "count")
-SELECT "projectId", "createdAt"::date, "query", count(*)
-FROM "docs_search"
-WHERE "results" = 0 AND "createdAt" >= (now() AT TIME ZONE 'UTC')::date - 29
-GROUP BY "projectId", "createdAt"::date, "query";
+SELECT "projectId", "day", "query", "count"
+FROM (
+    SELECT "projectId", "createdAt"::date AS "day", "query", count(*)::int AS "count",
+        row_number() OVER (PARTITION BY "projectId", "createdAt"::date ORDER BY count(*) DESC, "query") AS "rank"
+    FROM "docs_search"
+    WHERE "results" = 0 AND "createdAt" >= (now() AT TIME ZONE 'UTC')::date - 29
+    GROUP BY "projectId", "createdAt"::date, "query"
+) ranked
+WHERE "rank" <= 100;
 
 -- DropForeignKey
 ALTER TABLE "docs_search" DROP CONSTRAINT "docs_search_projectId_fkey";
