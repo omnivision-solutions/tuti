@@ -155,13 +155,22 @@ export async function answerSections(
     LIMIT ${limit}`;
 }
 
+/** The most words a prefix query takes: a longer query is someone pasting, not typing. */
+const MAX_PREFIX_WORDS = 8;
+
 /**
  * The query's words as a prefix query for Postgres ("sig in" → `sig:* & in:*`), so a word still
- * being typed matches the words it starts ("sig" finds "signing"); null without any words.
+ * being typed matches the words it starts ("sig" finds "signing"). Null without any words, past 8,
+ * or with web search's operators (a quoted phrase, `-word`, `or`): it would match more than they say,
+ * so those queries match whole words only.
  */
 export function prefixQuery(query: string): string | null {
-  const words = query.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.slice(0, 8) ?? [];
-  return words.length > 0 ? words.map((word) => `${word}:*`).join(" & ") : null;
+  const lower = query.toLowerCase();
+  if (/"|(^|\s)-\S|(^|\s)or(\s|$)/u.test(lower)) {
+    return null;
+  }
+  const words = lower.match(/[\p{L}\p{N}]+/gu) ?? [];
+  return words.length > 0 && words.length <= MAX_PREFIX_WORDS ? words.map((word) => `${word}:*`).join(" & ") : null;
 }
 
 // ponytail: computes each article's tsvector per search; add a stored column with a GIN index if docs get big.

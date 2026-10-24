@@ -293,6 +293,19 @@ describe("search without an OpenAI key", () => {
     expect(await search("&&")).toEqual([]);
   });
 
+  test("with web search's operators, or past 8 words, words match whole, as the query says", async () => {
+    const both = await write("Beta and gamma", "Both of them.");
+    const beta = await write("Beta alone", "Just the one.");
+    // "-gamma" leaves out what has gamma; a quoted phrase and "or" keep their meaning.
+    expect((await search("beta -gamma")).map((r) => r.slug)).toEqual([beta]);
+    expect((await search('"beta alone"')).map((r) => r.slug)).toEqual([beta]);
+    expect((await search("gamma or alone")).map((r) => r.slug).sort()).toEqual([beta, both].sort());
+    // Nine words: all must be there, the ninth too.
+    expect(await search("beta and gamma both of them just the zebra")).toEqual([]);
+    // Without operators, a word still being typed still matches.
+    expect((await search("gam")).map((r) => r.slug)).toEqual([both]);
+  });
+
   test("a search can be left out of the team's insights (as readers type)", async () => {
     await write("Billing", "Plans are billed monthly.");
     await searchDocs(project.id, "bil", 10, SIGNED_OUT, { log: false });
