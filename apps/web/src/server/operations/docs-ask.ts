@@ -1,5 +1,5 @@
 import { type DocsNoAnswerCause, type DocsQuestionSource, prisma } from "@tuti/db";
-import { lockProject, meter } from "@tuti/jobs";
+import { aiFor, lockProject } from "@tuti/jobs";
 import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -226,7 +226,7 @@ export async function answerQuestion(
   }
   let reply: string;
   try {
-    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs, meter: meter(projectId, "answers") });
+    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs, ...(await aiFor(projectId, "answers")) });
   } catch (error) {
     log.warn("AI docs answer failed", { projectId, error });
     return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });

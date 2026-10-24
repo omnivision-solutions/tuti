@@ -271,6 +271,8 @@ describe("deciding", () => {
       undefined,
       '"problem"',
     );
+    // The project picked its own model for code changes (Settings → AI models).
+    await prisma.project.update({ where: { id: project.id }, data: { aiModels: { code_changes: "acme/tiny" } } });
     expect(await merge(10)).toBe(200);
 
     const change = await prisma.codeChange.findFirstOrThrow({
@@ -284,7 +286,9 @@ describe("deciding", () => {
         actions: { select: { kind: true, postId: true, articleId: true, probability: true, payload: true, status: true, reason: true } },
       },
     });
-    expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "anthropic/claude-haiku-5.5" });
+    expect(change).toMatchObject({ state: "READY", summary: SUMMARY, why: "It ships the dark theme people asked for.", decider: "nace-ai/drex-max", model: "acme/tiny" });
+    // It wrote everything with it, and the decisions stayed with the decision model.
+    expect(new Set(model.requests.map((request) => request.model))).toEqual(new Set(["acme/tiny"]));
     const byProbability = <T extends { probability: number }>(list: T[]) => list.sort((a, b) => b.probability - a.probability);
     expect(byProbability(change.actions)).toEqual([
       // Users see it, so there's always the changelog line.

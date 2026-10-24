@@ -1,7 +1,7 @@
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL } from "./ai";
+import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels } from "./ai";
 import type { AiUsage } from "./usage";
 
 let model: ModelFake;
@@ -16,6 +16,7 @@ afterEach(() => {
 
 /** Usage goes nowhere, except in the tests about it. */
 const meter = async () => {};
+const ai = { model: "acme/writer", meter };
 
 const useFake = () => {
   for (const [name, value] of Object.entries(model.env)) {
@@ -25,37 +26,60 @@ const useFake = () => {
 
 test("AI is off without an OpenRouter key", async () => {
   expect(aiEnabled()).toBe(false);
-  await expect(complete({ system: "s", user: "u", meter })).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("OPENROUTER_API_KEY is not set");
 });
 
-test("sends the system and user messages to the configured model, with the token cap, and returns the reply", async () => {
+test("sends the system and user messages to the model it's given, with the token cap, and returns the reply", async () => {
   useFake();
   expect(aiEnabled()).toBe(true);
   model.reply("Hello");
-  expect(await complete({ system: "Be brief", user: "Hi", meter })).toBe("Hello");
-  vi.stubEnv("AI_MODEL", "acme/tiny");
+  expect(await complete({ system: "Be brief", user: "Hi", ...ai })).toBe("Hello");
   model.reply("Again");
-  expect(await complete({ system: "Be brief", user: "Hi again", maxTokens: 300, meter })).toBe("Again");
+  expect(await complete({ system: "Be brief", user: "Hi again", maxTokens: 300, model: "acme/tiny", meter })).toBe("Again");
   expect(model.requests).toEqual([
-    { model: DEFAULT_AI_MODEL, system: "Be brief", user: "Hi", maxTokens: 4000 },
+    { model: "acme/writer", system: "Be brief", user: "Hi", maxTokens: 4000 },
     { model: "acme/tiny", system: "Be brief", user: "Hi again", maxTokens: 300 },
   ]);
+});
+
+test("each feature's default model: its own setting, else AI_MODEL, else Tuti's", () => {
+  expect(defaultModel("answers")).toBe(DEFAULT_AI_MODEL);
+  vi.stubEnv("AI_MODEL", "acme/everything");
+  vi.stubEnv("AI_MODEL_CODE_CHANGES", "acme/careful");
+  expect([defaultModel("answers"), defaultModel("escalations"), defaultModel("changelog"), defaultModel("code_changes")]).toEqual([
+    "acme/everything",
+    "acme/everything",
+    "acme/everything",
+    "acme/careful",
+  ]);
+  // Empty is unset.
+  vi.stubEnv("AI_MODEL_CODE_CHANGES", "");
+  expect(defaultModel("code_changes")).toBe("acme/everything");
+});
+
+test("lists the endpoint's models, with their prices per token", async () => {
+  await expect(listModels()).rejects.toThrow("OPENROUTER_API_KEY is not set");
+  useFake();
+  const models = await listModels();
+  expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6 });
+  expect(models.map((listed) => listed.id)).toContain("acme/no-price");
+  expect(models.find((listed) => listed.id === "acme/no-price")).toMatchObject({ input: null, output: null });
 });
 
 test("a failed request or an empty reply throws", async () => {
   useFake();
   model.fail(429);
-  await expect(complete({ system: "s", user: "u", meter })).rejects.toThrow("AI request failed (429): fake failure");
+  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("AI request failed (429): fake failure");
   model.reply("  ");
-  await expect(complete({ system: "s", user: "u", meter })).rejects.toThrow("The AI reply had no text");
+  await expect(complete({ system: "s", user: "u", ...ai })).rejects.toThrow("The AI reply had no text");
 });
 
 test("the model fake keeps a reply with a match for the request that contains it", async () => {
   useFake();
   model.reply("For the question", undefined, "How do I invite?");
   model.reply("For anything");
-  expect(await complete({ system: "s", user: "Draft the notes", meter })).toBe("For anything");
-  expect(await complete({ system: "s", user: "Question: How do I invite?", meter })).toBe("For the question");
+  expect(await complete({ system: "s", user: "Draft the notes", ...ai })).toBe("For anything");
+  expect(await complete({ system: "s", user: "Question: How do I invite?", ...ai })).toBe("For the question");
 });
 
 test("decisions go to the decision model, with the data policy, and come back as probabilities", async () => {
@@ -96,14 +120,14 @@ test("every answered request says what it used: tokens and cost, chat and decisi
   const used: AiUsage[] = [];
   const record = async (usage: AiUsage) => void used.push(usage);
   model.reply("Hello");
-  await complete({ system: "Be brief", user: "Hi", meter: record });
+  await complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record });
   model.fail(500);
-  await expect(complete({ system: "Be brief", user: "Hi", meter: record })).rejects.toThrow();
+  await expect(complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record })).rejects.toThrow();
   model.decide({ shipped: 0.9 });
   await decide({ pr: "x" }, { shipped: { type: "noul", instructions: "Did it ship?", criteria: { true: "Yes", false: "No" } } }, { meter: record });
   // Answered but unusable (an empty reply): still paid for, so still recorded.
   model.reply("  ");
-  await expect(complete({ system: "Be brief", user: "Hi", meter: record })).rejects.toThrow("The AI reply had no text");
+  await expect(complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record })).rejects.toThrow("The AI reply had no text");
   expect(used.splice(2).map((usage) => usage.kind)).toEqual(["chat"]);
   // The fake's usage: a token per character; chat a millionth of a dollar each, decisions a hundred-millionth.
   expect(used).toEqual([

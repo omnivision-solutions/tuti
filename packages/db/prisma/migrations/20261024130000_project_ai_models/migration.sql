@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "aiModels" JSONB NOT NULL DEFAULT '{}';

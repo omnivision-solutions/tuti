@@ -2,17 +2,9 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { costOf, count, money } from "@/lib/usage-format";
+import { AI_FEATURE_NAMES, costOf, count, money } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { aiUsageByMonth } from "@/server/operations/usage";
-
-/** How Settings → Usage names each feature. */
-const FEATURES: Record<string, string> = {
-  answers: "AI answers",
-  escalations: "Ask a person (summaries)",
-  changelog: "Changelog drafts and edits",
-  code_changes: "Code changes",
-};
 
 const monthName = (month: string) => new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
 
@@ -55,7 +47,7 @@ export default async function UsageSettingsPage(props: PageProps<"/app/[project]
             <tbody className="divide-y">
               {month.features.map((feature) => (
                 <tr key={feature.feature}>
-                  <td className="py-2">{FEATURES[feature.feature] ?? feature.feature}</td>
+                  <td className="py-2">{AI_FEATURE_NAMES[feature.feature] ?? feature.feature}</td>
                   <td className="py-2 text-right tabular-nums">{count(feature.requests)}</td>
                   <td className="hidden py-2 text-right tabular-nums sm:table-cell">{count(feature.inputTokens + feature.outputTokens)}</td>
                   <td className="py-2 text-right tabular-nums">{costOf(feature)}</td>
