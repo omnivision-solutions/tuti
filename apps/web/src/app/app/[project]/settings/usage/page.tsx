@@ -36,7 +36,8 @@ export default async function UsageSettingsPage(props: PageProps<"/app/[project]
           </CardTitle>
           <CardDescription>
             {count(month.requests)} AI {month.requests === 1 ? "request" : "requests"}, {count(month.inputTokens + month.outputTokens)} tokens
-            {!inCredits && month.unpriced > 0 && `; ${count(month.unpriced)} without a price from the provider`}
+            {month.unpriced > 0 &&
+              `; ${count(month.unpriced)} without a price from the provider${inCredits ? `, charged no credits` : ""}`}
           </CardDescription>
         </CardHeader>
         <CardContent>

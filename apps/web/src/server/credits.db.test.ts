@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { aiFor, creditBalance, grantCredits } from "@tuti/jobs";
-import type { AiUsage } from "@tuti/shared";
+import { type AiUsage, log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCredits } from "@/server/operations/credits";
@@ -96,6 +96,19 @@ test("a request past the last credit leaves a debt, which the next credits pay f
   await answered(0.01);
   expect(await left()).toEqual(["first 0", "top-up 7"]);
   expect(await balance()).toBe(7);
+});
+
+test("a charge that fails doesn't fail the feature, and the error log has what to charge by hand", async () => {
+  await grantCredits(project.id, "MANUAL", 10, { days: null });
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("database blip"));
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  await expect(answered(0.01)).resolves.toBeUndefined();
+  expect(logged).toHaveBeenCalledWith(
+    "Recording AI usage failed",
+    expect.objectContaining({ projectId: project.id, feature: "answers", model: "acme/writer", inputTokens: 100, outputTokens: 10, cost: 0.01, credits: 1 }),
+  );
+  vi.restoreAllMocks();
+  expect(await balance()).toBe(10);
 });
 
 test("requests charged at once all count", async () => {
