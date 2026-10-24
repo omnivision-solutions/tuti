@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, creditBalance, enqueue, grantCredits } from "@tuti/jobs";
+import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -767,6 +767,21 @@ describe("out of AI credits", () => {
     model.decide(INTERNAL, "Dark mode 53");
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
     expect(Object.fromEntries((await changes()).map((change) => [change.number, change.state]))).toEqual({ 53: "NOTHING_TO_DO", 54: "PAUSED" });
+  });
+
+  test("a resumed run interrupted mid-analysis is taken over by its retry on Hatchet; inline, analysing is another run's", async () => {
+    github.pullRequest(repo, pullRequest(55));
+    expect(await merge(55)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    // The first try claimed it, then the worker stopped.
+    await prisma.codeChange.update({ where: { id }, data: { state: "ANALYSING" } });
+    const retry = () => handlers.codeChange({ codeChangeId: id, force: false, pastGate: false, resume: true }, log);
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    expect(await retry()).toEqual({ skipped: true });
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    model.decide(INTERNAL, "Dark mode 55");
+    expect(await retry()).toMatchObject({ state: "NOTHING_TO_DO" });
   });
 
   test("“Resume all” is refused with the reason when the project turned code changes off", async () => {
