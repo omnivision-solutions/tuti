@@ -1,6 +1,6 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
-import { aiFor, enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
+import { enqueue, lockProject, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -21,6 +21,7 @@ import {
   sectionRange,
 } from "../release-notes";
 import { author, authorId, saving } from "./create";
+import { aiOrRefuse } from "./credits";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { postNumber, projectPortal, projectSlug } from "./read";
 
@@ -351,9 +352,10 @@ export const draftChangelogEntry = defineOperation({
       throw new OperationError(400, "nothing_to_draft", "Pick the posts it completes or write a few notes first");
     }
     const style = await changelogStyle(projectId);
+    const ai = await aiOrRefuse(projectId, "changelog");
     let reply: string;
     try {
-      reply = await complete({ ...releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }), ...(await aiFor(projectId, "changelog")) });
+      reply = await complete({ ...releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }), ...ai });
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -425,6 +427,7 @@ export const rewriteChangelogEntry = defineOperation({
     if (text.trim() === "") {
       throw new OperationError(400, "nothing_to_rewrite", "There's no text to rewrite yet");
     }
+    const ai = await aiOrRefuse(projectId, "changelog");
     await countAiEdit(projectId);
     const { posts } = await entryView(entry, portal);
     let reply: string;
@@ -437,7 +440,7 @@ export const rewriteChangelogEntry = defineOperation({
           instruction: input.instruction || undefined,
           style: await changelogStyle(projectId),
         }),
-        ...(await aiFor(projectId, "changelog")),
+        ...ai,
       });
     } catch (error) {
       log.warn("AI changelog rewrite failed", { projectId, number: input.number, error });

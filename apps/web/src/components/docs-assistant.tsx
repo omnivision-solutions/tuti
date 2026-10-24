@@ -350,10 +350,18 @@ function AssistantReply({
     const feedbackHref = feedbackPath && at(`${feedbackPath}?${new URLSearchParams({ title: turn.question.slice(0, MAX_TITLE) })}`);
     return (
       <div className="flex flex-col gap-2">
-        <p className="font-semibold">{answer.status === "no_answer" ? "I don't know" : "I can't help with that here."}</p>
-        <p className="text-sm text-muted-foreground">
-          {answer.status === "no_answer" ? "Nothing in the docs answers that yet. Post it as feedback so the team sees it." : "Post it as feedback so the team sees it."}
+        <p className="font-semibold">
+          {answer.status === "no_answer" ? "I don't know" : answer.status === "unavailable" ? "AI answers aren't available right now." : "I can't help with that here."}
         </p>
+        <p className="text-sm text-muted-foreground">
+          {answer.status === "no_answer"
+            ? "Nothing in the docs answers that yet. Post it as feedback so the team sees it."
+            : answer.status === "unavailable"
+              ? "These articles may help. Or post it as feedback so the team sees it."
+              : "Post it as feedback so the team sees it."}
+        </p>
+        {/* The project's AI is paused (out of AI credits): the closest articles instead. */}
+        {answer.status === "unavailable" && answer.sources.length > 0 && <AnswerSources sources={answer.sources} href={sourceHref} onOpen={onLeave} />}
         <div className="flex flex-wrap items-center gap-2">
           {feedbackHref && (
             <Link href={feedbackHref} onClick={onLeave} className={buttonVariants({ variant: "outline", size: "sm" })}>

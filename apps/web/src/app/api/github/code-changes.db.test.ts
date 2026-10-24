@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, enqueue } from "@tuti/jobs";
+import { addToRunningDraft, creditBalance, enqueue, grantCredits } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -17,7 +17,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { codeChangeDetail } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail } from "@/server/operations/code-changes";
+import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
 
@@ -634,5 +635,47 @@ describe("deciding", () => {
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED", reason: "The AI provider didn't answer." })]);
     // With code changes on, the gate decides what the changelog hears about, not labels.
     expect(await prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } })).toBe(1);
+  });
+});
+
+describe("out of AI credits", () => {
+  beforeEach(() => {
+    vi.stubEnv("AI_CREDITS", "on");
+  });
+  const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const inRunningDraft = () => prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } });
+
+  test("a merge is paused: nothing read or asked, its running draft bullet kept; resuming waits for credits", async () => {
+    github.pullRequest(repo, pullRequest(40));
+    expect(await merge(40)).toBe(200);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 40, state: "PAUSED", reason: "The project ran out of AI credits." })]);
+    expect(readsOf(40)).toEqual([]);
+    expect(model.decisions).toEqual([]);
+    expect(await inRunningDraft()).toBe(1);
+    // Nothing resumes it by itself, a redelivery included.
+    expect(await merge(40)).toBe(200);
+    expect(readsOf(40)).toEqual([]);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    // Resumed while still out: refused, and the team is told why.
+    await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "no_credits" });
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    model.decide(INTERNAL);
+    expect(await call(analyseCodeChange, team(), { id })).toMatchObject({ state: "nothing_to_do" });
+    expect(readsOf(40)).toHaveLength(3);
+  });
+
+  test("an analysis that started finishes, even past the last credit; the next merge is paused", async () => {
+    await grantCredits(project.id, "MANUAL", 0.000001, { days: null });
+    github.pullRequest(repo, pullRequest(41));
+    model.decide(USERS);
+    model.reply("Pick a dark theme in Settings.", undefined, "Dark mode 41");
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "It ships a dark theme.", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    expect(await merge(41)).toBe(200);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 41, state: "READY" })]);
+    expect((await creditBalance(project.id)).balance).toBeLessThan(0);
+    github.pullRequest(repo, pullRequest(42));
+    expect(await merge(42)).toBe(200);
+    expect((await changes()).find((change) => change.number === 42)).toMatchObject({ state: "PAUSED" });
   });
 });

@@ -47,6 +47,14 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
           <AlertDescription>Tuti is analysing this pull request. Proposals show here when it&apos;s done.</AlertDescription>
         </Alert>
       )}
+      {change.state === "paused" && (
+        <Alert>
+          <AlertDescription className="flex flex-col items-start gap-2">
+            {`Paused: ${change.reason} It's analysed when you resume it.`}
+            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />
+          </AlertDescription>
+        </Alert>
+      )}
       {(change.state === "failed" || change.state === "nothing_to_do") && (
         <Alert variant={change.state === "failed" ? "destructive" : "default"}>
           <AlertDescription className="flex flex-col items-start gap-2">

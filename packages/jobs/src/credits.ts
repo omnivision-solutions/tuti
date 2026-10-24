@@ -1,5 +1,5 @@
 import { type AiCreditSource, Prisma, prisma } from "@tuti/db";
-import { freeCredits, topupExpiryDays } from "@tuti/shared";
+import { creditsEnabled, freeCredits, topupExpiryDays } from "@tuti/shared";
 
 import { lockProject } from "./running-draft";
 
@@ -9,6 +9,14 @@ import { lockProject } from "./running-draft";
  * balance is what's left of unexpired grants, less the debt; the next charge pays the debt first, so a
  * grant is only ever added.
  */
+
+/** The project has no AI credits left (a balance of 0 or below): its AI pauses until it has more. */
+export class OutOfCredits extends Error {
+  constructor(readonly projectId: string) {
+    super("The project is out of AI credits");
+    this.name = "OutOfCredits";
+  }
+}
 
 /** Grants that still count at `now`, in the order they're spent. */
 const spendable = (projectId: string, now: Date) =>
@@ -84,4 +92,9 @@ export async function creditBalance(projectId: string): Promise<{ balance: numbe
     balance: left.minus(project.aiCreditDebt).toNumber(),
     grants: grants.map((grant) => ({ ...grant, credits: grant.credits.toNumber(), remaining: grant.remaining.toNumber() })),
   };
+}
+
+/** Whether the project's AI is paused: AI credits are on and its balance is 0 or below. */
+export async function aiPaused(projectId: string): Promise<boolean> {
+  return creditsEnabled() && (await creditBalance(projectId)).balance <= 0;
 }

@@ -24,7 +24,7 @@ import type { CodeChangeDetail } from "@/server/operations/code-changes";
 import { DiffLines } from "@/components/line-diff";
 import { diffLines } from "@/lib/line-diff";
 
-/** "Analyse anyway" (nothing to do) or "Analyse again" (failed). */
+/** "Analyse anyway" (nothing to do), "Analyse again" (failed) or "Resume" (paused, out of AI credits). */
 export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { projectSlug: string; codeChangeId: string; label: string }) {
   const [pending, startTransition] = useTransition();
   return (

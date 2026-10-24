@@ -57,6 +57,8 @@ export default async function globalSetup() {
   // A team's own website; journeys make it forward a path to their portal through /_fake/forward (e2e/site.ts).
   process.env.E2E_SITE_URL = site.origin;
   const postgres = await startMigratedPostgres("tuti_e2e");
+  // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
+  process.env.E2E_DATABASE_URL = postgres.url;
   const server = spawn("node_modules/.bin/next", ["start"], {
     cwd: "apps/web",
     env: {
