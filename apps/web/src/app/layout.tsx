@@ -1,27 +1,18 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Figtree, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
 
-// Brand type (docs/design.md): Figtree for text, Bricolage Grotesque for headings.
-const figtree = Figtree({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
+// Brand type (docs/design.md): Figtree for text, Bricolage Grotesque for headings. The files are in
+// src/fonts (scripts/fetch-fonts.mjs), so builds don't download them.
+const figtree = localFont({ src: "../fonts/figtree.woff2", weight: "300 900", variable: "--font-sans" });
 
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-heading",
-  subsets: ["latin"],
-  axes: ["opsz"],
-});
+const bricolage = localFont({ src: "../fonts/bricolage-grotesque.woff2", weight: "200 800", variable: "--font-heading" });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geistMono = localFont({ src: "../fonts/geist-mono.woff2", weight: "100 900", variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
   title: "Tuti",

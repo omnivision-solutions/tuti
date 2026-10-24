@@ -12,7 +12,10 @@ cute at the expense of clarity.
 - **Colour:** leafy green primary, a beak-orange highlight, warm paper
   neutrals. Dark mode uses a brighter green with dark text on it.
 - **Type:** Figtree for text, Bricolage Grotesque for headings (`h1`–`h3` and
-  `font-heading` pick it up automatically).
+  `font-heading` pick it up automatically). Every font, these and the portals'
+  16, is a file in `apps/web/src/fonts` (`node scripts/fetch-fonts.mjs` fetches
+  them, with their licences), loaded with `next/font/local`: builds never
+  download fonts.
 - **Mark:** the parrot (`TutiMark`, `TutiLogo` in `components/tuti-logo.tsx`;
   favicon `app/icon.svg`). The current drawing is a placeholder until we have
   a proper illustration.

@@ -1,45 +1,64 @@
-import {
-  DM_Sans,
-  IBM_Plex_Sans,
-  Inter,
-  Lato,
-  Lora,
-  Manrope,
-  Merriweather,
-  Montserrat,
-  Nunito,
-  Open_Sans,
-  Playfair_Display,
-  Poppins,
-  Roboto,
-  Source_Sans_3,
-  Space_Grotesk,
-  Work_Sans,
-} from "next/font/google";
+import localFont from "next/font/local";
 
 import type { PortalFont } from "@/lib/portal-fonts";
 
 /*
- * The portal fonts (lib/portal-fonts.ts), built in by next/font: their files are fetched at build
- * time and served from our own hosts. Not preloaded: a browser downloads one only when a page uses it.
- * Each sets its family in a CSS variable (fontVariable) on the elements with its class.
+ * The portal fonts (lib/portal-fonts.ts), built in by next/font from the files in src/fonts
+ * (scripts/fetch-fonts.mjs) and served from our own hosts. Not preloaded: a browser downloads one
+ * only when a page uses it. Each sets its family in a CSS variable (fontVariable) on the elements
+ * with its class. Serif ones fall back to Times New Roman's metrics, the rest to Arial's, as
+ * next/font/google did. Each family is named after its constant (`playfairDisplay`): next/font/local
+ * names it so, and a family named otherwise wouldn't be the one its class and variable ask for.
  */
-const inter = Inter({ subsets: ["latin"], variable: "--portal-font-inter", preload: false });
-const roboto = Roboto({ subsets: ["latin"], variable: "--portal-font-roboto", preload: false });
-const openSans = Open_Sans({ subsets: ["latin"], variable: "--portal-font-open-sans", preload: false });
-const lato = Lato({ subsets: ["latin"], weight: ["400", "700"], variable: "--portal-font-lato", preload: false });
-const montserrat = Montserrat({ subsets: ["latin"], variable: "--portal-font-montserrat", preload: false });
-const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--portal-font-poppins", preload: false });
-const sourceSans = Source_Sans_3({ subsets: ["latin"], variable: "--portal-font-source-sans-3", preload: false });
-const nunito = Nunito({ subsets: ["latin"], variable: "--portal-font-nunito", preload: false });
-const workSans = Work_Sans({ subsets: ["latin"], variable: "--portal-font-work-sans", preload: false });
-const dmSans = DM_Sans({ subsets: ["latin"], variable: "--portal-font-dm-sans", preload: false });
-const manrope = Manrope({ subsets: ["latin"], variable: "--portal-font-manrope", preload: false });
-const plexSans = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--portal-font-ibm-plex-sans", preload: false });
-const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--portal-font-space-grotesk", preload: false });
-const merriweather = Merriweather({ subsets: ["latin"], weight: ["400", "700"], variable: "--portal-font-merriweather", preload: false });
-const lora = Lora({ subsets: ["latin"], variable: "--portal-font-lora", preload: false });
-const playfair = Playfair_Display({ subsets: ["latin"], variable: "--portal-font-playfair-display", preload: false });
+const inter = localFont({ src: "../fonts/inter.woff2", weight: "100 900", variable: "--portal-font-inter", preload: false });
+const roboto = localFont({ src: "../fonts/roboto.woff2", weight: "100 900", variable: "--portal-font-roboto", preload: false });
+const openSans = localFont({ src: "../fonts/open-sans.woff2", weight: "300 800", variable: "--portal-font-open-sans", preload: false });
+const lato = localFont({
+  src: [
+    { path: "../fonts/lato-400.woff2", weight: "400" },
+    { path: "../fonts/lato-700.woff2", weight: "700" },
+  ],
+  variable: "--portal-font-lato",
+  preload: false,
+});
+const montserrat = localFont({ src: "../fonts/montserrat.woff2", weight: "100 900", variable: "--portal-font-montserrat", preload: false });
+const poppins = localFont({
+  src: [
+    { path: "../fonts/poppins-400.woff2", weight: "400" },
+    { path: "../fonts/poppins-500.woff2", weight: "500" },
+    { path: "../fonts/poppins-600.woff2", weight: "600" },
+    { path: "../fonts/poppins-700.woff2", weight: "700" },
+  ],
+  variable: "--portal-font-poppins",
+  preload: false,
+});
+const sourceSans = localFont({ src: "../fonts/source-sans-3.woff2", weight: "200 900", variable: "--portal-font-source-sans-3", preload: false });
+const nunito = localFont({ src: "../fonts/nunito.woff2", weight: "200 1000", variable: "--portal-font-nunito", preload: false });
+const workSans = localFont({ src: "../fonts/work-sans.woff2", weight: "100 900", variable: "--portal-font-work-sans", preload: false });
+const dmSans = localFont({ src: "../fonts/dm-sans.woff2", weight: "100 1000", variable: "--portal-font-dm-sans", preload: false });
+const manrope = localFont({ src: "../fonts/manrope.woff2", weight: "200 800", variable: "--portal-font-manrope", preload: false });
+const plexSans = localFont({
+  src: [
+    { path: "../fonts/ibm-plex-sans-400.woff2", weight: "400" },
+    { path: "../fonts/ibm-plex-sans-500.woff2", weight: "500" },
+    { path: "../fonts/ibm-plex-sans-600.woff2", weight: "600" },
+    { path: "../fonts/ibm-plex-sans-700.woff2", weight: "700" },
+  ],
+  variable: "--portal-font-ibm-plex-sans",
+  preload: false,
+});
+const spaceGrotesk = localFont({ src: "../fonts/space-grotesk.woff2", weight: "300 700", variable: "--portal-font-space-grotesk", preload: false });
+const merriweather = localFont({
+  src: [
+    { path: "../fonts/merriweather-400.woff2", weight: "400" },
+    { path: "../fonts/merriweather-700.woff2", weight: "700" },
+  ],
+  variable: "--portal-font-merriweather",
+  preload: false,
+  adjustFontFallback: "Times New Roman",
+});
+const lora = localFont({ src: "../fonts/lora.woff2", weight: "400 700", variable: "--portal-font-lora", preload: false, adjustFontFallback: "Times New Roman" });
+const playfairDisplay = localFont({ src: "../fonts/playfair-display.woff2", weight: "400 900", variable: "--portal-font-playfair-display", preload: false, adjustFontFallback: "Times New Roman" });
 
 const FONTS: Record<PortalFont, { variable: string }> = {
   inter,
@@ -57,7 +76,7 @@ const FONTS: Record<PortalFont, { variable: string }> = {
   "space-grotesk": spaceGrotesk,
   merriweather,
   lora,
-  "playfair-display": playfair,
+  "playfair-display": playfairDisplay,
 };
 
 /** The classes that set every portal font's variable (cheap: the files only load when a family is used). */
