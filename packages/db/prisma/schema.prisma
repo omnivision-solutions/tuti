@@ -275,6 +275,7 @@ model Project {
   docsGapDismissals    DocsGapDismissal[]
   changelogSeen        ChangelogSeen[]
   codeChanges          CodeChange[]
+  aiUsage              AiUsage[]
 
   @@map("project")
 }
@@ -1640,6 +1641,28 @@ model CodeChangeAction {
   @@index([postId])
   @@index([articleId])
   @@map("code_change_action")
+}
+
+/// One AI request a project caused (docs/plan.md, AI usage per project): what it was for, the model,
+/// tokens in and out, and its cost in dollars (null when the provider didn't say). Only answered
+/// requests; kept for billing, and deleted with the project.
+model AiUsage {
+  id           String   @id @default(cuid())
+  projectId    String
+  /// What it was for: answers, escalations, changelog, code_changes, duplicates, search, docs_index.
+  feature      String
+  /// chat, decision or embedding.
+  kind         String
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  cost         Decimal? @db.Decimal(16, 10)
+  createdAt    DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@map("ai_usage")
 }
 
 /// Licences Tuti sells (used only where LICENSE_PRIVATE_KEY is set: tuti.so), one per installation and

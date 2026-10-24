@@ -57,6 +57,7 @@ import { getDomain, removeDomain, setDomain, verifyDomain } from "./domain";
 import { getSite, removeSite, setSite, verifySite } from "./site";
 import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
+import { getUsage } from "./usage";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -137,6 +138,7 @@ const all = [
   getBranding,
   updateBranding,
   checkLicense,
+  getUsage,
   getPortal,
   updatePortal,
   listPortalReaders,

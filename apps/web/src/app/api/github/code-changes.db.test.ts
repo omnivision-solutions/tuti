@@ -343,6 +343,13 @@ describe("deciding", () => {
     expect(asked().find((state) => state.includes('"title":"Dark mode"'))).not.toContain("the_pull_request_names_this_post");
     // Every request asked for providers that don't keep or train on it.
     expect(model.decisions.every((request) => JSON.stringify(request.provider) === '{"data_collection":"deny"}')).toBe(true);
+    // Everything it asked is the project's code changes' spend: 9 decisions, the summary and 2 writers, and the summary's embedding.
+    const spent = await prisma.aiUsage.groupBy({ by: ["feature", "kind"], where: { projectId: project.id }, _count: true });
+    expect(spent.map((row) => `${row.feature} ${row.kind} ${row._count}`).sort()).toEqual([
+      "code_changes chat 3",
+      "code_changes decision 9",
+      "code_changes embedding 1",
+    ]);
     // The summary was written from the pull request, and is what found the candidates.
     expect(model.requests[0]!.user).toContain("Dark mode 10");
     expect(openai.inputs.at(-1)).toBe(SUMMARY);

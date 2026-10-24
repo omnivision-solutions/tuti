@@ -1,16 +1,6 @@
 import { type Doc, toMarkdown, toPlainText } from "@tuti/content";
 import { type ChangelogReactionKind, type ChangelogTag, type PostStatus, prisma } from "@tuti/db";
-import {
-  enqueue,
-  lockProject,
-  type PortalAddress,
-  postSummary,
-  postSummarySelect,
-  queueDeliveries,
-  recordEvent,
-  RUNNING_DRAFT_TITLE,
-  toApiStatus,
-} from "@tuti/jobs";
+import { enqueue, lockProject, meter, type PortalAddress, postSummary, postSummarySelect, queueDeliveries, recordEvent, RUNNING_DRAFT_TITLE, toApiStatus } from "@tuti/jobs";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -363,7 +353,7 @@ export const draftChangelogEntry = defineOperation({
     const style = await changelogStyle(projectId);
     let reply: string;
     try {
-      reply = await complete(releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }));
+      reply = await complete({ ...releaseNotesPrompt({ posts, pullRequests: entry.pullRequests, text: entry.body, style }), meter: meter(projectId, "changelog") });
     } catch (error) {
       log.warn("AI changelog draft failed", { projectId, number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't write a draft. Try again in a moment.");
@@ -439,15 +429,16 @@ export const rewriteChangelogEntry = defineOperation({
     const { posts } = await entryView(entry, portal);
     let reply: string;
     try {
-      reply = await complete(
-        rewritePrompt({
+      reply = await complete({
+        ...rewritePrompt({
           mode: input.mode,
           text,
           entry: target.length < blocks.length ? toMarkdown(doc) : undefined,
           instruction: input.instruction || undefined,
           style: await changelogStyle(projectId),
         }),
-      );
+        meter: meter(projectId, "changelog"),
+      });
     } catch (error) {
       log.warn("AI changelog rewrite failed", { projectId, number: input.number, error });
       throw new OperationError(502, "ai_failed", "The AI couldn't edit the text. Try again in a moment.");

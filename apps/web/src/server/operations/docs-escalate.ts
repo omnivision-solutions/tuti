@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { meter } from "@tuti/jobs";
 import { emailConfigured, escalationEmail, sendEmail } from "@tuti/email";
 import { aiEnabled, complete, log } from "@tuti/shared";
 import { z } from "zod";
@@ -76,7 +77,7 @@ async function summarize(
     return null;
   }
   try {
-    const reply = await complete({ system: SUMMARY_SYSTEM, user: JSON.stringify(data, null, 2), maxTokens: 200, timeoutMs });
+    const reply = await complete({ system: SUMMARY_SYSTEM, user: JSON.stringify(data, null, 2), maxTokens: 200, timeoutMs, meter: meter(projectId, "escalations") });
     return reply.replace(/\s+/g, " ").trim().slice(0, MAX_SUMMARY) || null;
   } catch (error) {
     log.warn("Escalation summary failed; sending without it", { projectId, error });

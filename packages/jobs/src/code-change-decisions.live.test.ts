@@ -26,6 +26,9 @@ import { article, CASES, post } from "./code-change-eval";
  */
 const live = Boolean(process.env.OPENROUTER_API_KEY);
 
+/** The evaluation's spend isn't a project's. */
+const meter = async () => {};
+
 const allowed = <T>(expected: T | T[], actual: T) => (Array.isArray(expected) ? expected.includes(actual) : expected === actual);
 
 /** The model's answers as they came, whatever the thresholds made of them: "resolves 0.62, related 0.30" (the likeliest first), or a yes/no's probability. */
@@ -47,19 +50,19 @@ test.skipIf(!live)(`code change decisions with ${decisionModel()}`, { timeout: 3
   const rows: Row[] = [];
   await Promise.all(
     CASES.map(async (c) => {
-      const gateAnswers = await decide(pullRequestState(c.pr), GATE);
+      const gateAnswers = await decide(pullRequestState(c.pr), GATE, { meter });
       const gate = gateResult(gateAnswers);
       rows.push({ kind: "gate", name: c.name, expected: c.users, got: gate.users >= THRESHOLDS.gate, answers: odds(gateAnswers), right: c.users === gate.users >= THRESHOLDS.gate });
       const summary = c.summary ?? "";
       const articles = (c.articles ?? []).map((a) => article(a.article));
       await Promise.all([
         ...(c.posts ?? []).map(async (p) => {
-          const answers = await decide(postState(c.pr, summary, post(p.post, p.named)), POST_QUESTION);
+          const answers = await decide(postState(c.pr, summary, post(p.post, p.named)), POST_QUESTION, { meter });
           const proposal = postProposal(answers);
           rows.push({ kind: "post", name: `${c.name}: ${p.post}`, expected: p.expect, got: proposal?.kind ?? null, answers: odds(answers), right: allowed(p.expect, proposal?.kind ?? null) });
         }),
         ...(c.articles ?? []).map(async (a) => {
-          const answers = await decide(articleState(c.pr, summary, article(a.article)), ARTICLE_QUESTION);
+          const answers = await decide(articleState(c.pr, summary, article(a.article)), ARTICLE_QUESTION, { meter });
           const got = articleProposal(answers) ? "ARTICLE_EDIT" : null;
           rows.push({ kind: "article", name: `${c.name}: ${a.article}`, expected: a.expect, got, answers: odds(answers), right: allowed(a.expect, got) });
         }),
@@ -67,7 +70,7 @@ test.skipIf(!live)(`code change decisions with ${decisionModel()}`, { timeout: 3
           ? []
           : [
               (async () => {
-                const answers = await decide(newArticleState(c.pr, summary, articles), NEW_ARTICLE_QUESTION);
+                const answers = await decide(newArticleState(c.pr, summary, articles), NEW_ARTICLE_QUESTION, { meter });
                 const got = newArticleProposal(answers) !== null;
                 rows.push({ kind: "new article", name: c.name, expected: c.newArticle, got, answers: odds(answers), right: allowed(c.newArticle!, got) });
               })(),
