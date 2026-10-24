@@ -83,7 +83,8 @@ export function DocsAssistantProvider({
   const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, reader));
   // The turns asked on this page (not restored from the tab's storage).
   const [askedHere, setAskedHere] = useState<string[]>([]);
-  const [leftBehind, setLeftBehind] = useState<string | null>(null);
+  // Where they were kept as nobody's, to remove: a new one each time (the same key can come again).
+  const [leftBehind, setLeftBehind] = useState<{ key: string } | null>(null);
   // Someone else now (signed in or out without a reload): their own conversation. Except questions
   // asked on this page before the widget's sign-in came back: they're the person's it names, so
   // they go with them, after what that person asked before in this tab; what an earlier reader
@@ -94,7 +95,7 @@ export function DocsAssistantProvider({
     const carried = turns.filter((turn) => askedHere.includes(turn.key));
     if (carried.length > 0 && shownFor === storageKey(slug, "anonymous") && signedIn) {
       setTurns([...storedTurns(slug, reader), ...carried]);
-      setLeftBehind(shownFor);
+      setLeftBehind({ key: shownFor });
     } else {
       setTurns(storedTurns(slug, reader));
     }
@@ -102,7 +103,7 @@ export function DocsAssistantProvider({
   useEffect(() => {
     if (leftBehind) {
       try {
-        window.sessionStorage.removeItem(leftBehind);
+        window.sessionStorage.removeItem(leftBehind.key);
       } catch {
         // Storage blocked: nothing was kept there.
       }

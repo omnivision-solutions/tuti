@@ -770,6 +770,29 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(ai.getByText(earlier)).toHaveCount(0);
   // Added to Sam's own conversation in this tab, not in place of it.
   await expect(ai.getByText(euros)).toBeVisible();
+
+  // And again on the same page: the site's next token doesn't check out, a question's asked as
+  // nobody, then Sam's signed in again. That question is Sam's, and again nothing's left as nobody's.
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const signedOut = visitor.waitForResponse((response) => isAction(response.request()));
+  await panelNow.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await signedOut;
+  await expect(ai.getByText(later)).toHaveCount(0);
+  const meanwhile = "Is there a free trial?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(meanwhile);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) }),
+  );
+  const samAgain = visitor.waitForResponse((response) => isAction(response.request()));
+  await panelNow.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await samAgain;
+  await expect(ai.getByText(later)).toBeVisible();
+  await expect(ai.getByText(meanwhile)).toBeVisible();
+  await expect.poll(() => panelNow.evaluate((key) => window.sessionStorage.getItem(key), `tuti:docs-assistant:${slug}:anonymous`)).toBeNull();
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
