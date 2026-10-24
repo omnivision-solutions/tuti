@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -440,7 +440,7 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(collections).toBeVisible();
   await expect(results).toBeHidden();
   await search.pressSequentially("billing");
-  await expect(widget.getByText("No articles match “billing”")).toBeVisible();
+  await expect(widget.getByText("No articles match “billing”", { exact: true })).toBeVisible();
   const panelUrl = () => visitor.frames().find((frame) => frame.url().includes("/widget"))?.url();
   // Enter searches at its own address, as without the page's script, and that counts it. Pressed while
   // the search as they typed is still on its way, which comes back before the page does, it isn't
@@ -451,30 +451,29 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   const released = new Promise<void>((resolve) => (releaseSearch = resolve));
   let searchAnswered!: () => void;
   const answered = new Promise<void>((resolve) => (searchAnswered = resolve));
-  await visitor.route(
-    (url) => url.pathname === "/widget",
-    async (route) => {
-      const request = route.request();
-      if (request.method() === "POST" && request.headers()["next-action"] && request.postData()?.includes('"refunds"')) {
-        searchSent();
-        await released;
-        await route.fulfill({ response: await route.fetch() });
-        searchAnswered();
-        return;
-      }
-      if (request.method() === "GET" && new URL(request.url()).searchParams.get("q") === "refunds") {
-        await answered;
-      }
-      await route.continue();
-    },
-  );
+  const panelPages = (url: URL) => url.pathname === "/widget";
+  const holdSearch = async (route: Route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"] && request.postData()?.includes('"refunds"')) {
+      searchSent();
+      await released;
+      await route.fulfill({ response: await route.fetch() });
+      searchAnswered();
+      return;
+    }
+    if (request.method() === "GET" && new URL(request.url()).searchParams.get("q") === "refunds") {
+      await answered;
+    }
+    await route.continue();
+  };
+  await visitor.route(panelPages, holdSearch);
   await search.fill("refunds");
   await sent;
   await search.press("Enter");
   releaseSearch();
   await expect.poll(panelUrl).toContain("q=refunds");
-  await visitor.unroute((url) => url.pathname === "/widget");
-  await expect(widget.getByText("No articles match “refunds”")).toBeVisible();
+  await visitor.unroute(panelPages, holdSearch);
+  await expect(widget.getByText("No articles match “refunds”", { exact: true })).toBeVisible();
   await tabs.getByRole("link", { name: "What's new" }).click();
   await tabs.getByRole("link", { name: "Docs" }).click();
   await expect(collections).toBeVisible();
