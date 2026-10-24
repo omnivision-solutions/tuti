@@ -220,6 +220,51 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await asked;
   await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
   await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
+
+  // Two at once: Sam's token, then one that doesn't check out, Sam's slower to trade. They're traded
+  // in turn (Next.js sends a page's server actions one at a time), so the newest has the last word:
+  // nobody, not Sam.
+  const panel = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  type Counted = { identified: number };
+  await panel.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  let tokens = 0;
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) => {
+    tokens += 1;
+    const body = tokens === 1 ? ssoToken(secret, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) : "not-a-token";
+    return route.fulfill({ contentType: "text/plain", body });
+  });
+  const isExchange = (request: { method(): string; headers(): Record<string, string> }) => request.method() === "POST" && !!request.headers()["next-action"];
+  let releaseSam!: () => void;
+  const samReleased = new Promise<void>((resolve) => (releaseSam = resolve));
+  let exchanges = 0;
+  let answered = 0;
+  visitor.on("response", (response) => isExchange(response.request()) && (answered += 1));
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (isExchange(route.request()) && ++exchanges === 1) {
+        await samReleased;
+      }
+      await route.continue();
+    },
+  );
+  const samAsked = visitor.waitForRequest(isExchange);
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await samAsked;
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await panel.waitForFunction(() => (window as unknown as Counted).identified >= 2);
+  releaseSam();
+  await expect.poll(() => answered).toBeGreaterThanOrEqual(2);
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
 test("a private portal's widget asks visitors to sign in; people the customer's site signs in see it", async ({ browser }, testInfo) => {
