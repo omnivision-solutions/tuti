@@ -4,11 +4,12 @@ import { FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, startModelFake, start
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { SIGNED_OUT } from "@/lib/read-access";
+import { saveAiModels } from "@/server/ai-models";
 import { getAiModels, updateAiModels } from "@/server/operations/ai-models";
 import { answerQuestion } from "@/server/operations/docs-ask";
 import { createArticle, publishArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
 /** Models per feature (docs/plan.md, AI usage per project): the server's default for each feature, or the project's pick. */
 
@@ -86,4 +87,14 @@ test("two people picking models for different features at once both keep theirs"
   await Promise.all([call(updateAiModels, as(), { answers: "acme/tiny" }), call(updateAiModels, as(), { changelog: "anthropic/claude-sonnet-5.5" })]);
   const models = await call(getAiModels, as(), {});
   expect([models.answers.model, models.changelog.model, models.escalations.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5", null]);
+});
+
+test("the settings form saves only what it sends: a feature it leaves out keeps its model", async () => {
+  await call(updateAiModels, as(), { answers: "acme/tiny" });
+  actAs(owner);
+  const form = new FormData();
+  form.set("changelog", "anthropic/claude-sonnet-5.5");
+  expect(await saveAiModels(project.slug, {}, form)).toEqual({});
+  const models = await call(getAiModels, as(), {});
+  expect([models.answers.model, models.changelog.model]).toEqual(["acme/tiny", "anthropic/claude-sonnet-5.5"]);
 });

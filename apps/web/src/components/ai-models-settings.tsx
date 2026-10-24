@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -34,9 +34,21 @@ export function AiModelsSettings({
   /** The endpoint's models, to pick from; empty when the list couldn't be read. */
   listed: { id: string; name: string; input: number | null; output: number | null }[];
 }) {
+  // What this page last saw saved: only fields changed since are sent, so a page opened earlier can't undo another admin's pick.
+  const saved = useRef(Object.fromEntries((Object.keys(WRITES) as (keyof AiModels)[]).map((feature) => [feature, models[feature].model ?? ""])));
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
-    const result = await saveAiModels(projectSlug, prev, formData);
+    const changed = new FormData();
+    for (const [feature, value] of Object.entries(saved.current)) {
+      const field = String(formData.get(feature) ?? "").trim();
+      if (field !== value) {
+        changed.set(feature, field);
+      }
+    }
+    const result = await saveAiModels(projectSlug, prev, changed);
     if (!result.error) {
+      for (const [feature, value] of changed) {
+        saved.current[feature] = String(value);
+      }
       toast.success("AI models saved");
     }
     return result;

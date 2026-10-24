@@ -162,10 +162,20 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await changelogModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();
+  // Another tab, open since before the pick: saving its own change leaves the pick alone.
+  const other = await team.context().newPage();
+  await other.goto(`/app/${slug}/settings/ai-models`);
   await changelogModel.fill("anthropic/claude-sonnet-5.5");
   await checkpoint(team, "team-settings-ai-models");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("AI models saved")).toBeVisible();
+  await other.getByLabel("AI answers").fill("acme/tiny");
+  await other.getByRole("button", { name: "Save" }).click();
+  await expect(other.getByText("AI models saved")).toBeVisible();
+  await other.reload();
+  await expect(other.getByLabel("Changelog drafts and edits")).toHaveValue("anthropic/claude-sonnet-5.5");
+  await expect(other.getByLabel("AI answers")).toHaveValue("acme/tiny");
+  await other.close();
 
   // The next AI draft follows the style, written by that model.
   await team.goto(`/app/${slug}/changelog`);
