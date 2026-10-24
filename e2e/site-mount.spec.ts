@@ -93,7 +93,7 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await expect(visitor).toHaveURL(`${siteUrl()}/portal/docs`);
   await expect(visitor.getByRole("button", { name: "Account" })).toBeVisible();
   await visitor.goto("/portal/feedback/feature-requests");
-  await visitor.getByRole("button", { name: "Give feedback" }).click();
+  await visitor.getByRole("button", { name: "Submit post" }).click();
   await visitor.getByLabel("Title").fill("Dark mode on our site");
   await visitor.getByRole("button", { name: "Submit feedback" }).click();
   await visitor.getByRole("link", { name: "Dark mode on our site" }).click();

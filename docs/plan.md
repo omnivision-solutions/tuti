@@ -80,7 +80,7 @@ for 4 hours).
 - [x] Rename workspaces → **projects** everywhere: UI, code, database (rename in place, keep data), routes, `PORTAL_URL_TEMPLATE` placeholder, docs
 - [x] Rename members → **team** (team members with roles Owner / Admin / Member); people on portals are **users**
 - [x] Multiple boards per project: Boards page in `/app` (create, rename, change URL with redirects, delete empty boards); board tabs on the portal; the default board is an ordinary board
-- [x] A board's own words for posting (asked 2026-10-24): the portal's board shows its description under the name and a button ("Give feedback" unless the board says otherwise, e.g. "Report a bug") that opens the post form in a dialog; each board can set the button's text and the form's title and details placeholders, edited in Boards → Edit beside a preview of the board and its form
+- [x] A board's own words for posting (asked 2026-10-24): the portal's board shows its description under the name and a button ("Submit post" unless the board says otherwise, e.g. "Report a bug") that opens the post form in a dialog; each board can set the button's text and the form's title and details placeholders, edited in Boards → Edit beside a preview of the board and its form
 - [x] Tests; commit + push
 
 ## Phase 2 — Post pages & team actions ✅
