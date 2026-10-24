@@ -41,10 +41,14 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
         <>
           {change.repo}#{change.number} · @{change.author} ·{" "}
           <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
-          {change.state === "nothing_to_do" && change.reason && ` · ${change.reason}`}
+          {(change.state === "nothing_to_do" || change.state === "paused") && change.reason && ` · ${change.reason}`}
         </>
       }
-      actions={change.state === "nothing_to_do" ? <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Analyse anyway" /> : undefined}
+      actions={
+        change.state === "nothing_to_do" || change.state === "paused" ? (
+          <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "paused" ? "Resume" : "Analyse anyway"} />
+        ) : undefined
+      }
     />
   );
 
@@ -105,6 +109,8 @@ function StateBadge({ change }: { change: CodeChangeView }) {
       return <Badge variant="secondary">Analysing</Badge>;
     case "failed":
       return <Badge variant="destructive">Failed</Badge>;
+    case "paused":
+      return <Badge variant="secondary">Paused</Badge>;
     case "ready":
       return change.waiting > 0 ? <Badge variant="highlight">{change.waiting} to review</Badge> : <Badge variant="outline">Reviewed</Badge>;
     default:

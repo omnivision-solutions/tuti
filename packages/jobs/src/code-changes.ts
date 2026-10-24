@@ -21,6 +21,7 @@ import {
   THRESHOLDS,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
+import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
 import { installationApi } from "./github-api";
@@ -52,7 +53,7 @@ export async function startCodeChange(projectId: string, pr: MergedPullRequest):
     select: { id: true, state: true },
   });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
-    await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false });
+    await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: false });
   }
   return true;
 }
@@ -65,8 +66,8 @@ export async function analysisOn(projectId: string): Promise<boolean> {
 
 /**
  * Reads the pull request with the installation's token, then analyses it. Logs keep ids and counts,
- * never its text. `force` analyses it again (a team asked), and `pastGate` past the gate ("Analyse
- * anyway").
+ * never its text. `force` analyses it again (a team asked), `pastGate` past the gate ("Analyse
+ * anyway"), and `resume` one paused for want of AI credits ("Resume all").
  */
 export async function codeChange(input: JobInput<"codeChange">, log: JobLogger): Promise<JobResult> {
   const change = await prisma.codeChange.findUnique({
@@ -90,7 +91,12 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   if (!input.force && (change.state === "READY" || change.state === "NOTHING_TO_DO")) {
     return { skipped: true };
   }
-  const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const] } };
+  // Paused for want of AI credits: only the team resumes it (`force` or `resume`), never a run queued
+  // before it paused (a redelivered merge), even once there are credits again.
+  if (!input.force && !input.resume && change.state === "PAUSED") {
+    return { skipped: true };
+  }
+  const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };
   // Turned off since it merged: nothing is sent, and it isn't kept waiting.
   if (!change.project.analyseCodeChanges) {
     await prisma.codeChange.deleteMany({ where: waiting });
@@ -109,6 +115,18 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
     await prisma.codeChange.update({ where: { id: change.id }, data: { state: "FAILED", reason: "The repository isn't in this project any more." } });
     return { skipped: true };
   }
+  // Out of AI credits: nothing is read or asked, and it waits for the team to resume it (not retried).
+  let ai: Ai;
+  try {
+    ai = await aiFor(change.projectId, "code_changes");
+  } catch (error) {
+    if (error instanceof OutOfCredits) {
+      await prisma.codeChange.update({ where: { id: change.id }, data: { state: "PAUSED", reason: "The project ran out of AI credits." } });
+      log.info(`Code change ${change.id}: paused, out of AI credits`);
+      return { skipped: true, paused: true };
+    }
+    throw error;
+  }
   await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
   let failure = "GitHub didn't let Tuti read the pull request.";
   try {
@@ -124,6 +142,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
       { id: change.id, projectId: change.projectId, slug: change.project.slug, pullRequest: { repo: change.repo, number: change.number, url: change.url, title: pr.title } },
       pr,
       input.pastGate,
+      ai,
     );
     log.info(`Code change ${change.id}: ${outcome.state === "READY" ? `${outcome.actions} proposed` : "nothing to do"}`);
     return { files: pr.files.length, read, ...outcome };
@@ -156,9 +175,9 @@ async function analyse(
   change: { id: string; projectId: string; slug: string; pullRequest: { repo: string; number: number; url: string; title: string } },
   pr: PullRequestRead,
   pastGate: boolean,
+  use: Ai,
 ) {
-  // Everything the analysis asks a model is the project's code changes' spend, written by the project's model for them.
-  const use = await aiFor(change.projectId, "code_changes");
+  // Everything the analysis asks a model is the project's code changes' spend (`use`), written by the project's model for them.
   const versions = { decider: decisionModel(), model: use.model };
   if (!pastGate) {
     const gate = gateResult(await decide(pullRequestState(pr), GATE, { meter: use.meter }));

@@ -1,7 +1,7 @@
 import { Prisma, prisma } from "@tuti/db";
 import { type Ai, type AiFeature, type AiUsage, creditsEnabled, creditsPerUsageDollar, defaultModel, log, type Meter } from "@tuti/shared";
 
-import { chargeCredits, toCredits } from "./credits";
+import { aiPaused, chargeCredits, OutOfCredits, toCredits } from "./credits";
 
 /** A project's own model for each feature it picked one for (Settings → AI models); the others use the default. */
 export function projectModels(value: unknown): Partial<Record<AiFeature, string>> {
@@ -10,8 +10,16 @@ export function projectModels(value: unknown): Partial<Record<AiFeature, string>
     : {};
 }
 
-/** The AI for a piece of `feature`'s work in `projectId`: the project's model for it (or the default), and a meter for its requests. */
+/**
+ * The AI for a piece of `feature`'s work in `projectId`: the project's model for it (or the default),
+ * and a meter for its requests. With AI credits on, it throws OutOfCredits once the balance is 0 or
+ * below: checked here, once per piece of work, so what already started finishes (and a balance can end
+ * a little below 0, which the next credits cover first).
+ */
 export async function aiFor(projectId: string, feature: AiFeature): Promise<Ai> {
+  if (await aiPaused(projectId)) {
+    throw new OutOfCredits(projectId);
+  }
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { aiModels: true } });
   return { model: projectModels(project?.aiModels)[feature] ?? defaultModel(feature), meter: meter(projectId, feature) };
 }

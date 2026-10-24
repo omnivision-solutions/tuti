@@ -54,6 +54,7 @@ export function ChangelogForm({
   posts,
   mediaUrls,
   canEditWithAi = false,
+  aiPaused = false,
 }: {
   projectSlug: string;
   entry: Entry | null;
@@ -62,6 +63,8 @@ export function ChangelogForm({
   mediaUrls: MediaUrls | null;
   /** AI is set up on this server: the editor gets its helpers (for saved entries). */
   canEditWithAi?: boolean;
+  /** The project is out of AI credits: the helpers show, disabled. */
+  aiPaused?: boolean;
 }) {
   const editor = useRef<Editor | null>(null);
   // Changes not saved yet: the AI helpers edit the saved text, and accepting would lose them.
@@ -106,7 +109,7 @@ export function ChangelogForm({
         <div className="flex flex-col gap-2">
           {entry && canEditWithAi && (
             <div className="flex justify-end">
-              <AiHelpers projectSlug={projectSlug} number={entry.number} editor={editor} dirty={dirty} />
+              <AiHelpers projectSlug={projectSlug} number={entry.number} editor={editor} dirty={dirty} paused={aiPaused} />
             </div>
           )}
           <RichEditor
@@ -192,12 +195,15 @@ function AiHelpers({
   number,
   editor,
   dirty,
+  paused,
 }: {
   projectSlug: string;
   number: number;
   editor: RefObject<Editor | null>;
   /** The form has changes that aren't saved. */
   dirty: boolean;
+  /** Out of AI credits. */
+  paused: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [asking, setAsking] = useState<Section | null>(null);
@@ -254,7 +260,7 @@ function AiHelpers({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending} />}>
+        <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending || paused} />}>
           <SparklesIcon />
           {pending && !rewrite ? "Writing…" : "Edit with AI"}
         </DropdownMenuTrigger>
@@ -430,6 +436,7 @@ export function ChangelogEntryActions({
   published,
   postCount,
   canDraftWithAi,
+  aiPaused = false,
 }: {
   projectSlug: string;
   number: number;
@@ -439,6 +446,8 @@ export function ChangelogEntryActions({
   postCount: number;
   /** AI is set up on this server and the entry is a draft. */
   canDraftWithAi: boolean;
+  /** The project is out of AI credits: Draft with AI shows, disabled. */
+  aiPaused?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [drafting, setDrafting] = useState(false);
@@ -475,7 +484,7 @@ export function ChangelogEntryActions({
       {canDraftWithAi && (
         // Open while the model writes (a few seconds), closed once the new text is in.
         <AlertDialog open={drafting} onOpenChange={setDrafting}>
-          <AlertDialogTrigger render={<Button variant="outline" disabled={pending} />}>Draft with AI</AlertDialogTrigger>
+          <AlertDialogTrigger render={<Button variant="outline" disabled={pending || aiPaused} />}>Draft with AI</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Replace the text with an AI draft?</AlertDialogTitle>

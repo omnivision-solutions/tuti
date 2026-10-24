@@ -1,8 +1,23 @@
-import { creditBalance } from "@tuti/jobs";
-import { creditsEnabled } from "@tuti/shared";
+import { aiFor, creditBalance, OutOfCredits } from "@tuti/jobs";
+import { type Ai, type AiFeature, creditsEnabled } from "@tuti/shared";
 import { z } from "zod";
 
-import { defineOperation } from "./define";
+import { defineOperation, OperationError } from "./define";
+
+/** What the team is told when the project's AI is paused for want of credits. */
+export const NO_CREDITS = "This project is out of AI credits. See Settings → Billing.";
+
+/** aiFor, for an operation a team member is waiting on: out of AI credits, it's refused (402) with the reason. */
+export async function aiOrRefuse(projectId: string, feature: AiFeature): Promise<Ai> {
+  try {
+    return await aiFor(projectId, feature);
+  } catch (error) {
+    if (error instanceof OutOfCredits) {
+      throw new OperationError(402, "no_credits", NO_CREDITS);
+    }
+    throw error;
+  }
+}
 
 export const getCredits = defineOperation({
   name: "credits.get",

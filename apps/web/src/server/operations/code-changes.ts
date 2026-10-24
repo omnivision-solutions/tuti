@@ -4,6 +4,7 @@ import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
+import { aiOrRefuse } from "./credits";
 import { createArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
@@ -15,7 +16,7 @@ import { call } from "./run";
  * applies or dismisses. Applying is what changes anything customers see.
  */
 
-const STATES: Record<CodeChangeState, string> = { ANALYSING: "analysing", READY: "ready", NOTHING_TO_DO: "nothing_to_do", FAILED: "failed" };
+const STATES: Record<CodeChangeState, string> = { ANALYSING: "analysing", READY: "ready", NOTHING_TO_DO: "nothing_to_do", FAILED: "failed", PAUSED: "paused" };
 const KINDS: Record<CodeChangeActionKind, string> = {
   LINKS: "links",
   RESOLVES: "resolves",
@@ -224,8 +225,10 @@ export const analyseCodeChange = defineOperation({
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
       throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
     }
+    // Out of AI credits, the team hears so now, rather than finding it paused again.
+    await aiOrRefuse(projectId, "code_changes");
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO" });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did.
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");

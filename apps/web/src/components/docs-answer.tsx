@@ -116,12 +116,19 @@ export function DocsAnswer({
           {followUp}
         </>
       )}
-      {(answer?.status === "no_answer" || answer?.status === "off_limits") && (
+      {(answer?.status === "no_answer" || answer?.status === "off_limits" || answer?.status === "unavailable") && (
         <div className="flex flex-col gap-1">
           {answer.status === "no_answer" ? (
             <>
               <p className="font-semibold">I don&apos;t know</p>
               <p className="text-sm text-muted-foreground">Nothing in the docs answers that yet. Post it as feedback so the team sees it.</p>
+            </>
+          ) : answer.status === "unavailable" ? (
+            // The project's AI is paused (out of AI credits): the AI wasn't asked; the closest articles instead.
+            <>
+              <p className="font-semibold">AI answers aren&apos;t available right now.</p>
+              <p className="text-sm text-muted-foreground">These articles may help. Or post it as feedback so the team sees it.</p>
+              {answer.sources.length > 0 && <AnswerSources sources={answer.sources} newTab={widget} />}
             </>
           ) : (
             // A topic the team put off-limits: a fixed reply, the AI wasn't asked.

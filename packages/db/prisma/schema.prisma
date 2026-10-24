@@ -1464,6 +1464,8 @@ enum DocsNoAnswerCause {
   SOURCE_UNPUBLISHED
   /// The question names one of the project's off-limits topics; the model wasn't asked.
   OFF_LIMITS
+  /// The project was out of AI credits (logged as failed, not "I don't know"); the model wasn't asked.
+  NO_CREDITS
   /// Asked before causes were recorded.
   UNKNOWN
 }
@@ -1579,6 +1581,8 @@ enum CodeChangeState {
   NOTHING_TO_DO
   /// The analysis failed (`reason` says where); it's retried, and the team can analyse it again.
   FAILED
+  /// Not analysed: the project was out of AI credits. Nothing resumes it by itself; the team does (codeChanges.analyse).
+  PAUSED
 }
 
 enum CodeChangeActionKind {

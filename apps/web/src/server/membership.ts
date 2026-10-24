@@ -5,6 +5,9 @@ import { getSession } from "./session";
 
 const ADMIN_ROLES = ["OWNER", "ADMIN"] as const;
 
+/** Owners and admins: the roles Settings is for. */
+export const isAdminRole = (role: string) => (ADMIN_ROLES as readonly string[]).includes(role);
+
 /** The signed-in user's membership in a project, if any. */
 export async function getMembership(slug: string) {
   const session = await getSession();

@@ -76,7 +76,7 @@ export const jobs = {
    */
   codeChange: {
     name: "code-change",
-    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false), pastGate: z.boolean().default(false) }),
+    input: z.object({ codeChangeId: z.string(), force: z.boolean().default(false), pastGate: z.boolean().default(false), resume: z.boolean().default(false) }),
     concurrencyKey: "input.codeChangeId",
     retries: 4,
     // 5s, 25s, 2m, 10m: rides out GitHub's or the AI provider's hiccups.

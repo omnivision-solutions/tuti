@@ -1,6 +1,6 @@
 import { type DocsNoAnswerCause, type DocsQuestionSource, prisma } from "@tuti/db";
-import { aiFor, lockProject } from "@tuti/jobs";
-import { aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
+import { aiFor, lockProject, OutOfCredits } from "@tuti/jobs";
+import { type Ai, aiEnabled, complete, embeddingsEnabled, log } from "@tuti/shared";
 import { z } from "zod";
 
 import { portalAddress } from "@/server/custom-domains";
@@ -54,8 +54,9 @@ export type DocsAnswer = {
   /**
    * "no_answer": nothing in the docs answers it. "off_limits": the question names a topic the team put
    * off-limits, so the AI wasn't asked. "failed": the AI didn't answer in time; `sources` are the closest articles.
+   * "unavailable": the project's AI is paused (out of AI credits), so the AI wasn't asked; `sources` are the closest articles.
    */
-  status: "answered" | "no_answer" | "off_limits" | "failed";
+  status: "answered" | "no_answer" | "off_limits" | "failed" | "unavailable";
   /** Plain text: paragraphs separated by blank lines, "- " list items. */
   answer: string | null;
   /** `url` is null for an AI-only article: it has no page, so the answer names it without a link. */
@@ -199,8 +200,8 @@ export async function answerQuestion(
     await prisma.docsQuestion.updateMany({
       where: { id },
       data: {
-        status: status === "answered" ? "ANSWERED" : status === "failed" ? "FAILED" : "NO_ANSWER",
-        cause: status === "off_limits" ? "OFF_LIMITS" : cause,
+        status: status === "answered" ? "ANSWERED" : status === "failed" || status === "unavailable" ? "FAILED" : "NO_ANSWER",
+        cause: status === "off_limits" ? "OFF_LIMITS" : status === "unavailable" ? "NO_CREDITS" : cause,
         answer: answer?.answer ?? null,
         articleIds: [...new Set(answer?.cited.map((section) => section.articleId))],
       },
@@ -224,9 +225,22 @@ export async function answerQuestion(
   if (sections.length === 0) {
     return finish("no_answer", { cause: "NO_RELEVANT_SECTION" });
   }
+  let ai: Ai;
+  try {
+    ai = await aiFor(projectId, "answers");
+  } catch (error) {
+    // Out of credits: "unavailable". Anything else (the database, say): failed, like the model failing.
+    // Either way the articles are read again first: each with its listing now, only what the asker may still read.
+    const fallback = await stillUsable(projectId, sections, reader);
+    if (error instanceof OutOfCredits) {
+      return finish("unavailable", { fallback });
+    }
+    log.warn("AI docs answer failed", { projectId, error });
+    return finish("failed", { fallback });
+  }
   let reply: string;
   try {
-    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs, ...(await aiFor(projectId, "answers")) });
+    reply = await complete({ ...answerPrompt(question, sections, settings, context), timeoutMs, ...ai });
   } catch (error) {
     log.warn("AI docs answer failed", { projectId, error });
     return finish("failed", { fallback: await stillUsable(projectId, sections, reader) });
@@ -274,7 +288,7 @@ export async function rateAnswer(projectId: string, questionId: string, helpful:
 export const askDocs = defineOperation({
   name: "docs.ask",
   summary:
-    "Ask the docs a question: an AI answer from the published articles with the articles it cites, `no_answer` (“I don't know”) when they don't cover it, or `off_limits` when it names one of the team's off-limits topics (see assistant.update; the AI isn't asked). To ask a follow-up, pass `followUpTo`: the `id` of the answer it follows (one this key asked); the last 4 turns are its context, for finding what to answer from and for the AI, which still answers only from the articles. Off (503) unless the server has AI and embeddings set up; up to 20 questions an hour per key",
+    "Ask the docs a question: an AI answer from the published articles with the articles it cites, `no_answer` (“I don't know”) when they don't cover it, `off_limits` when it names one of the team's off-limits topics (see assistant.update; the AI isn't asked), or `unavailable` with the closest articles when the project is out of AI credits (the AI isn't asked). To ask a follow-up, pass `followUpTo`: the `id` of the answer it follows (one this key asked); the last 4 turns are its context, for finding what to answer from and for the AI, which still answers only from the articles. Off (503) unless the server has AI and embeddings set up; up to 20 questions an hour per key",
   method: "POST",
   path: "/docs/ask",
   scope: "read",
