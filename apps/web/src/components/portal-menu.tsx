@@ -78,7 +78,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
   };
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Menu" className="md:hidden" />}>
+      <SheetTrigger render={<Button variant="ghost" size="icon" aria-label="Menu" className="md:hidden" />}>
         <MenuIcon />
       </SheetTrigger>
       {/* The whole screen wherever it shows (below tablet width), whatever's selected in it closing it if it's a link. */}

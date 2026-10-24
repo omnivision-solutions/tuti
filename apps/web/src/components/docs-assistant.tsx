@@ -361,8 +361,14 @@ export function AssistantButton() {
     return null;
   }
   return (
-    // Just its icon on phones, beside the search icon.
-    <Button variant="outline" size="sm" aria-label="Ask AI" onClick={assistant.open} className="max-md:size-8 max-md:border-transparent max-md:px-0">
+    // Just its icon on phones, a round one beside the search's.
+    <Button
+      variant="outline"
+      size="sm"
+      aria-label="Ask AI"
+      onClick={assistant.open}
+      className="max-md:size-9 max-md:rounded-full max-md:border-transparent max-md:bg-muted/70 max-md:px-0"
+    >
       <SparklesIcon />
       <span className="max-md:hidden">Ask AI</span>
     </Button>

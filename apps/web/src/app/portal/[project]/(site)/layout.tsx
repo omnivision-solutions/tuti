@@ -12,6 +12,7 @@ import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/comp
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { cn } from "@/lib/utils";
 import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
 import { boardPath } from "@/lib/post-urls";
 import { SignInLink } from "@/components/sign-in-link";
@@ -117,7 +118,8 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <WithAssistant assistant={assistantProps}>
         <PortalMenuProvider>
         <PortalTop>
-        <header className="portal-header flex flex-wrap items-center gap-x-6 gap-y-1 border-b px-6 py-2">
+        {/* On phones the parts' tabs sit on its bottom edge, under room for the first line. */}
+        <header className={cn("portal-header flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-6 pt-3 sm:py-2.5", !canRead && "pb-3")}>
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
           {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
           <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
@@ -125,7 +127,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
           </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
           {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
             {canRead && <DocsSearch askAI={answersEnabled()} />}
             <PortalHeaderLinks />
             <PortalContact />

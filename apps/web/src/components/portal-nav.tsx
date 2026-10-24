@@ -27,7 +27,7 @@ type Board = { slug: string; name: string };
 /**
  * The parts in the header: Feedback opens the first board (and is left out without one).
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
- * On phones they get a line of their own, scrolling sideways.
+ * On phones they get a line of their own, as tabs scrolling sideways.
  */
 export function PortalParts({ boards, newChangelog = false }: { boards: Board[]; newChangelog?: boolean }) {
   const path = usePortalPath();
@@ -35,7 +35,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   return (
     <nav
       aria-label="Portal"
-      className="order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1"
+      className="order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1"
     >
       {PORTAL_PARTS.map(({ key, label, href }) => {
         if (key === "feedback" && boards.length === 0) {
@@ -47,9 +47,10 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             key={key}
             href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
             aria-current={active ? "page" : undefined}
+            // On phones a tab of its own row, underlined (on the header's edge) when it's this part; wider, a pill.
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-              active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              "border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
+              active ? "border-primary font-medium text-foreground sm:bg-accent" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {label}
