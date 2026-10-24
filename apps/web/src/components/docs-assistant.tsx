@@ -104,10 +104,12 @@ export function DocsAssistantProvider({
       }
     }
   }, [leftBehind]);
-  // The turns as they are now, for asking without waiting for a render.
+  // The turns as they are now, for asking without waiting for a render, and whose they are.
   const turnsRef = useRef(turns);
+  const keyRef = useRef(key);
   useEffect(() => {
     turnsRef.current = turns;
+    keyRef.current = key;
     try {
       window.sessionStorage.setItem(key, JSON.stringify(turns.filter((turn) => turn.answer || turn.error)));
     } catch {
@@ -120,13 +122,17 @@ export function DocsAssistantProvider({
   /** Asks `question` as turn `key` (new, or one to try again), following up on the turns before it. */
   const run = useCallback(
     async (turn: string, question: string, before: Turn[]) => {
+      // Someone else's conversation by the time it's answered (signed in or out meanwhile): not put in theirs.
+      const askedFor = keyRef.current;
       try {
         const followUpTo = lastAsked(before);
         const result = await askDocs(slug, question, from, followUpTo);
         // The conversation isn't theirs any more (a new reader cookie): asked afresh, as a new one.
         if (followUpTo && "code" in result && result.code === "not_found") {
           const fresh = await askDocs(slug, question, from);
-          setTurns([{ key: turn, question, ...("error" in fresh ? { error: fresh.error } : { answer: fresh }) }]);
+          if (keyRef.current === askedFor) {
+            setTurns([{ key: turn, question, ...("error" in fresh ? { error: fresh.error } : { answer: fresh }) }]);
+          }
           return;
         }
         update(turn, "error" in result ? { error: result.error } : { answer: result, error: undefined });

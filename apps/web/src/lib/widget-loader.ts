@@ -329,14 +329,17 @@ export function widgetLoader(portalTemplate: string): string {
     }
   };
 
-  // Hands a panel a fresh sign-in token, only ever to the portal's origin.
+  // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
+  // for: an older one the app answers later may be for someone signed in before.
   function sendToken(to) {
     if (!getToken) return;
     var target = to.contentWindow;
+    var asked = (to.__tutiAsked = (to.__tutiAsked || 0) + 1);
     Promise.resolve()
       .then(function () { return getToken(); })
       .then(
         function (token) {
+          if (asked !== to.__tutiAsked) return;
           if (typeof token === "string" && token) target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin);
         },
         function (error) { console.error("Tuti widget: identify failed", error); }

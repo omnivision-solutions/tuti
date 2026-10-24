@@ -627,6 +627,53 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await visitor.unroute("**/token/**");
   await openAssistant();
   await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+
+  // Sam's follow-up comes back as no longer theirs (a new reader cookie) and is asked afresh, and
+  // the site signs in Kim meanwhile: Kim's conversation doesn't get Sam's question.
+  await visitor.context().clearCookies({ name: "tuti_reader" });
+  const isAction = (request: { method(): string; headers(): Record<string, string> }) => request.method() === "POST" && !!request.headers()["next-action"];
+  let answered = 0;
+  visitor.on("response", (response) => isAction(response.request()) && (answered += 1));
+  let releaseFirst!: () => void;
+  const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
+  let actions = 0;
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (isAction(route.request()) && ++actions === 1) {
+        await firstReleased;
+      }
+      await route.continue();
+    },
+  );
+  // Nothing in the docs is about it: "I don't know", without asking the model.
+  const guests = "Can I invite guests?";
+  const firstAsked = visitor.waitForRequest(isAction);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(guests);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await firstAsked;
+  const panel = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  type Counted = { identified: number };
+  await panel.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  // The panel's "ready for a token" message (WIDGET_READY_MESSAGE).
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await panel.waitForFunction(() => (window as unknown as Counted).identified >= 1);
+  releaseFirst();
+  // The question, Kim's sign-in, the question asked afresh.
+  await expect.poll(() => answered).toBeGreaterThanOrEqual(3);
+  await expect(ai.getByText("Only owners and admins can send invites.")).toHaveCount(0);
+  await expect(ai.getByText(guests)).toHaveCount(0);
+  await expect(ai.getByText("I don't know")).toHaveCount(0);
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
