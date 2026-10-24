@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { addToRunningDraft, creditBalance, enqueue, grantCredits } from "@tuti/jobs";
+import { addToRunningDraft, creditBalance, enqueue, grantCredits, handlers } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import {
   FAKE_OPENAI_KEY,
@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -579,7 +579,8 @@ describe("deciding", () => {
         await prisma.codeChangeAction.findMany({
           where: { codeChange: { projectId: project.id, number }, postId: { not: null } },
           select: { kind: true, status: true, postId: true },
-          orderBy: { probability: "desc" },
+          // Kind breaks ties: Dark mode's "resolves" and the themes' link are both 0.99 sure.
+          orderBy: [{ probability: "desc" }, { kind: "desc" }],
         })
       ).map(({ kind, status, postId }) => ({ kind, status, post: Object.keys(posts).find((key) => posts[key]!.id === postId) }));
 
@@ -672,6 +673,137 @@ describe("out of AI credits", () => {
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([expect.objectContaining({ number: 39, state: "PAUSED" })]);
     expect(readsOf(39)).toEqual([]);
+  });
+
+  test("“Resume all” resumes every paused code change once there are credits, and only those", async () => {
+    github.pullRequest(repo, pullRequest(43));
+    github.pullRequest(repo, pullRequest(44));
+    expect(await merge(43)).toBe(200);
+    expect(await merge(44)).toBe(200);
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "no_credits" });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED", "PAUSED"]);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    model.decide(INTERNAL, "Dark mode 43");
+    model.decide(INTERNAL, "Dark mode 44");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO", "NOTHING_TO_DO"]);
+    // Nothing paused is left: none resumed, nothing asked.
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 0 });
+  });
+
+  test("“Resume all” that can't queue them leaves them paused, to try again (nothing stuck as analysing)", async () => {
+    github.pullRequest(repo, pullRequest(47));
+    expect(await merge(47)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    // Hatchet, unreachable (no token): queueing fails.
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 503, code: "unavailable" });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    model.decide(INTERNAL, "Dark mode 47");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("while “Resume all” works through them, those not reached yet are still paused (a server stopping meanwhile leaves them resumable)", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(48));
+    github.pullRequest(repo, pullRequest(49));
+    expect(await merge(48)).toBe(200);
+    expect(await merge(49)).toBe(200);
+    // 49 merged later, so it's resumed second.
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 49 }, data: { mergedAt: new Date("2026-10-21T10:00:00Z") } });
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    let second: string | undefined;
+    model.decide(USERS, "Dark mode 48");
+    model.reply("Pick a dark theme in Settings.", async () => {
+      second = (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 49 }, select: { state: true } })).state;
+    }, "Dark mode 48");
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "It ships a dark theme.", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    model.decide(INTERNAL, "Dark mode 49");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
+    expect(second).toBe("PAUSED");
+  });
+
+  test("two “Resume all” at once analyse each paused code change once (jobs inline)", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(50));
+    expect(await merge(50)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    // One gate scripted: a second analysis would ask the fake an unscripted question (and fail afterEach).
+    model.decide(INTERNAL, "Dark mode 50");
+    const results = await Promise.all([call(resumeCodeChanges, team(), {}), call(resumeCodeChanges, team(), {})]);
+    expect(model.decisions.filter((request) => JSON.stringify(request.state).includes("Dark mode 50"))).toHaveLength(1);
+    // Only the one that analysed it counts it.
+    expect(results.reduce((sum, result) => sum + result.resumed, 0)).toBe(1);
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("a resumed run that fails before its analysis leaves the code change paused, for the next try", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(52));
+    expect(await merge(52)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    vi.spyOn(prisma.githubRepository, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 1 });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
+    vi.restoreAllMocks();
+    model.decide(INTERNAL, "Dark mode 52");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("credits running out during “Resume all” (jobs inline): those paused again aren't counted as resumed", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(53));
+    github.pullRequest(repo, pullRequest(54));
+    expect(await merge(53)).toBe(200);
+    expect(await merge(54)).toBe(200);
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 54 }, data: { mergedAt: new Date("2026-10-21T10:00:00Z") } });
+    // Enough for the first one's gate, then none.
+    await grantCredits(project.id, "MANUAL", 0.000001, { days: null });
+    model.decide(INTERNAL, "Dark mode 53");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect(Object.fromEntries((await changes()).map((change) => [change.number, change.state]))).toEqual({ 53: "NOTHING_TO_DO", 54: "PAUSED" });
+  });
+
+  test("a resumed run interrupted mid-analysis is taken over by its retry on Hatchet; inline, analysing is another run's", async () => {
+    github.pullRequest(repo, pullRequest(55));
+    expect(await merge(55)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    // The first try claimed it, then the worker stopped.
+    await prisma.codeChange.update({ where: { id }, data: { state: "ANALYSING" } });
+    const retry = () => handlers.codeChange({ codeChangeId: id, force: false, pastGate: false, resume: true }, log);
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    expect(await retry()).toEqual({ skipped: true });
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    model.decide(INTERNAL, "Dark mode 55");
+    expect(await retry()).toMatchObject({ state: "NOTHING_TO_DO" });
+  });
+
+  test("“Resume all” is refused with the reason when the project turned code changes off", async () => {
+    github.pullRequest(repo, pullRequest(51));
+    expect(await merge(51)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 409, code: "analysis_off" });
+  });
+
+  test("“Resume all” says which analyses stopped (jobs inline), and resumes the rest", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    // GitHub won't give Tuti the second pull request (the fake doesn't have it).
+    github.pullRequest(repo, pullRequest(45));
+    expect(await merge(45)).toBe(200);
+    expect(await merge(46)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    model.decide(INTERNAL, "Dark mode 45");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 1 });
+    const states = Object.fromEntries((await changes()).map((change) => [change.number, change.state]));
+    expect(states).toEqual({ 45: "NOTHING_TO_DO", 46: "FAILED" });
   });
 
   test("an analysis that started finishes, even past the last credit; the next merge is paused", async () => {

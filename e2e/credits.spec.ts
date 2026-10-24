@@ -60,13 +60,26 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await row.getByRole("button", { name: "Resume" }).click();
   await expect(owner.getByText("This project is out of AI credits. See Settings → Billing.")).toBeVisible();
 
-  // The operator gives the project credits; resumed, it's analysed.
+  // Home says so, and lists what's paused.
+  await owner.goto(`/app/${slug}`);
+  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
+    "AI answers, changelog drafts and code changes are paused",
+  );
+  await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText("Paused");
+  await checkpoint(owner, "home-paused");
+
+  // The operator gives the project credits; Resume all on Home analyses it.
   expect(await grantCredits(slug, 50)).toBe(`grant: 50 credits for ${slug}, for good`);
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Given by Tuti/ })).toContainText("Never");
   await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, pr);
+  await owner.goto(`/app/${slug}`);
+  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toHaveCount(0);
+  await owner.getByRole("button", { name: "Resume all" }).click();
+  await expect(owner.getByText("Resumed")).toBeVisible();
+  // Home reads it again by itself: nothing is paused now.
+  await expect(owner.getByText("Merged pull requests not analysed yet")).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Resume all" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/code-changes`);
-  await owner.getByRole("listitem").filter({ hasText: pr }).getByRole("button", { name: "Resume" }).click();
-  await expect(owner.getByText("Analysed")).toBeVisible();
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });

@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { analyseCodeChange, applyCodeChange, applyLikelyCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import { analyseCodeChange, applyCodeChange, applyLikelyCodeChanges, dismissCodeChange, resumeCodeChanges } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 import { DiffLines } from "@/components/line-diff";
 import { diffLines } from "@/lib/line-diff";
@@ -44,6 +44,32 @@ export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { 
       }
     >
       {pending ? "Analysing…" : label}
+    </Button>
+  );
+}
+
+/** "Resume all": every code change paused for want of AI credits (Home). */
+export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await resumeCodeChanges(projectSlug);
+          if (result.error) {
+            toast.error(result.error);
+          } else if (result.failed) {
+            toast.warning(`Resumed; ${result.failed === 1 ? "1 analysis" : `${result.failed} analyses`} stopped. See Code changes.`);
+          } else {
+            toast.success("Resumed");
+          }
+        })
+      }
+    >
+      {pending ? "Resuming…" : "Resume all"}
     </Button>
   );
 }

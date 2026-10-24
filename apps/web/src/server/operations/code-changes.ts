@@ -94,11 +94,16 @@ export type CodeChangeView = ReturnType<typeof changeView>;
 
 /**
  * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
- * those, as Home's Catch up lists). ponytail: the latest 100; page when teams need older ones.
+ * those, as Home's Catch up lists; `paused`: only those paused for want of AI credits). ponytail: the
+ * latest 100; page when teams need older ones.
  */
-export async function codeChangeList(projectId: string, { waiting = false } = {}): Promise<CodeChangeView[]> {
+export async function codeChangeList(projectId: string, { waiting = false, paused = false } = {}): Promise<CodeChangeView[]> {
   const changes = await prisma.codeChange.findMany({
-    where: { projectId, ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }) },
+    where: {
+      projectId,
+      ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }),
+      ...(paused && { state: "PAUSED" as const }),
+    },
     orderBy: { mergedAt: "desc" },
     take: 100,
     select: changeSelect,
@@ -235,6 +240,53 @@ export const analyseCodeChange = defineOperation({
     }
     const after = await prisma.codeChange.findUniqueOrThrow({ where: { id: change.id }, select: changeSelect });
     return changeView(after);
+  },
+});
+
+export const resumeCodeChanges = defineOperation({
+  name: "codeChanges.resume",
+  summary:
+    "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out",
+  method: "POST",
+  path: "/code-changes/resume",
+  scope: "write",
+  access: "team",
+  input: z.object({}),
+  run: async ({ projectId }) => {
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
+    if (!codeChangesEnabled() || !project.analyseCodeChanges) {
+      throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
+    }
+    await aiOrRefuse(projectId, "code_changes");
+    // Nothing is marked before it's queued (the job marks it analysing as it starts, as for one), so
+    // one not queued yet, the server stopping meanwhile, stays paused for the next "Resume all".
+    // Resumed (`resume`): each run claims its code change as it starts, so a second "Resume all" at once
+    // skips the ones already taken.
+    const paused = await prisma.codeChange.findMany({
+      where: { projectId, state: "PAUSED" },
+      orderBy: { mergedAt: "asc" },
+      select: { id: true },
+    });
+    let resumed = 0;
+    let failed = 0;
+    for (const change of paused) {
+      try {
+        // Inline, the analysis runs here and says whether it went ahead; on Hatchet, queued is resumed.
+        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
+        if (!result?.skipped) {
+          resumed++;
+        }
+      } catch {
+        // Inline, the analysis itself failed (the code change says where): counted, and the rest go on.
+        if (process.env.JOBS_DRIVER === "inline") {
+          failed++;
+          continue;
+        }
+        // On Hatchet, queueing failed: those not queued are still paused, for the next try.
+        throw new OperationError(503, "unavailable", "Couldn't resume them all. Try again in a moment.");
+      }
+    }
+    return { resumed, failed };
   },
 });
 
