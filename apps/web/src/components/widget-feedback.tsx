@@ -43,8 +43,10 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
           setError(result.error);
+          setSignedIn(null);
         } else {
           setError(undefined);
           setSignedIn(result.signedIn);

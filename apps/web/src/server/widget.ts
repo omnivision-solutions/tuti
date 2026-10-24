@@ -24,6 +24,12 @@ export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
 ): Promise<{ id: string; token: string; name: string; email: string | null } | { error: string }> {
+  const jar = await cookies();
+  // Lets the panel's pages show a private portal to them (see portal-access.ts). Partitioned: kept
+  // per embedding site, never shared across sites; gone when the browser closes or the token expires.
+  const readerCookie = { httpOnly: true, sameSite: "none", secure: true, partitioned: true, path: "/" } as const;
+  // Whoever the page signed in before isn't who's here now unless this token says so.
+  jar.set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, ssoSecret: true } });
   if (!project?.ssoSecret) {
     return { error: "Single sign-on isn't set up for this project" };
@@ -37,9 +43,7 @@ export async function widgetSignIn(
     select: { name: true, ssoIdentity: { select: { email: true } } },
   });
   const token = widgetToken(project.id, verified.userId);
-  // Lets the panel's pages show a private portal to them (see portal-access.ts). Partitioned: kept
-  // per embedding site, never shared across sites; gone when the browser closes or the token expires.
-  (await cookies()).set(WIDGET_READER_COOKIE, token, { httpOnly: true, sameSite: "none", secure: true, partitioned: true, path: "/" });
+  jar.set(WIDGET_READER_COOKIE, token, readerCookie);
   // Their account's id (whose conversation the docs' assistant shows), and the email the customer's
   // app gave, if any (what "Ask a person" starts with).
   return { id: verified.userId, token, name: user.name, email: user.ssoIdentity?.email ?? null };

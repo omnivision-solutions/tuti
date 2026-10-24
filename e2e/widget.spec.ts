@@ -210,6 +210,16 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
+
+  // Then the site's next token doesn't check out (someone else, an expired one): nobody's posting,
+  // not Sam still. Another part of the panel asks for it, as the docs' assistant does when opened.
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const asked = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  // The panel's "ready for a token" message (WIDGET_READY_MESSAGE).
+  await visitor.frames().find((frame) => frame.url().includes("/widget"))!.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await asked;
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
 test("a private portal's widget asks visitors to sign in; people the customer's site signs in see it", async ({ browser }, testInfo) => {
@@ -242,6 +252,18 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await widget.getByRole("link", { name: "What's new" }).click();
   await expect(widget.getByText("Nothing new yet")).toBeVisible();
   await checkpoint(visitor, "widget-private-signed-in-with-sso");
+
+  // Then the site's next token doesn't check out (someone else, an expired one): nobody's signed in,
+  // not Sam still. Another part of the panel asks for it, as the docs' assistant does when opened.
+  await widget.getByRole("link", { name: "Feedback" }).click();
+  await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const asked = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await visitor.frames().find((frame) => frame.url().includes("/widget"))!.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await asked;
+  // The panel's pages don't show the private portal to them any more.
+  await expect(widget.getByText("Sign in to see this.", { exact: false })).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
 test("someone a customer's site signs in sees what's new on one device, and it isn't new on their others", async ({ browser }, testInfo) => {
