@@ -1,7 +1,5 @@
 import { createHash } from "node:crypto";
 
-import { type Meter, reportedTokens } from "./usage";
-
 /**
  * OpenAI text embeddings for duplicate detection. Optional: without
  * OPENAI_API_KEY, posting works and duplicate detection is skipped.
@@ -48,14 +46,8 @@ export function toVectorLiteral(vector: number[]): string {
   return `[${vector.join(",")}]`;
 }
 
-/** What EMBEDDING_MODEL costs, in dollars per token (OpenAI's list price: $0.02 per million). OpenAI doesn't say per request. */
-export const EMBEDDING_DOLLARS_PER_TOKEN = 0.02 / 1_000_000;
-
-/**
- * `signal` cancels the request, e.g. `AbortSignal.timeout(…)` where someone is waiting for it; `meter`
- * records what it used, for the project that caused it.
- */
-export async function embed(texts: string[], { meter, signal }: { meter: Meter; signal?: AbortSignal }): Promise<number[][]> {
+/** `signal` cancels the request, e.g. `AbortSignal.timeout(…)` where someone is waiting for it. */
+export async function embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
@@ -69,14 +61,10 @@ export async function embed(texts: string[], { meter, signal }: { meter: Meter; 
   });
   const json = (await response.json()) as {
     data?: { index: number; embedding: number[] }[];
-    usage?: { prompt_tokens?: unknown };
     error?: { message?: string };
   };
   if (!response.ok || !json.data) {
     throw new Error(`OpenAI embeddings failed (${response.status}): ${json.error?.message ?? "no data"}`);
   }
-  // No count from the endpoint: no price either (a zero it reports is still free).
-  const reported = reportedTokens(json.usage?.prompt_tokens);
-  await meter({ kind: "embedding", model: EMBEDDING_MODEL, inputTokens: reported ?? 0, outputTokens: 0, cost: reported === null ? null : reported * EMBEDDING_DOLLARS_PER_TOKEN });
   return json.data.sort((a, b) => a.index - b.index).map((d) => d.embedding);
 }

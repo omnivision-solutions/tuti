@@ -1205,7 +1205,6 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.goto(`/app/${slug}/settings/usage`);
   const spent = team.getByRole("table", { name: /^AI use in / });
   await expect(spent.getByRole("row", { name: /AI answers/ })).toBeVisible();
-  await expect(spent.getByRole("row", { name: /Docs indexing/ })).toBeVisible();
   await checkpoint(team, "team-settings-usage");
 
   // The conversation is the reader's: signed out, the assistant starts afresh (a follow-up only continues their own).

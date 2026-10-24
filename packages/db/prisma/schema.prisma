@@ -1666,9 +1666,9 @@ model CodeChangeAction {
 model AiUsage {
   id           String   @id @default(cuid())
   projectId    String
-  /// What it was for: answers, escalations, changelog, code_changes, duplicates, search, docs_index.
+  /// What it was for: answers, escalations, changelog, code_changes.
   feature      String
-  /// chat, decision or embedding.
+  /// chat or decision (embeddings aren't recorded).
   kind         String
   model        String
   inputTokens  Int

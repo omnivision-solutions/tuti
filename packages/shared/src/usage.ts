@@ -1,10 +1,11 @@
 /**
  * What an AI request used, for the project that caused it (docs/plan.md, AI usage per project):
- * tokens in and out, and what it cost in dollars, when the provider says (OpenRouter does) or the
- * price is known (embeddings). Every request to a model takes a Meter, so none goes unrecorded.
+ * tokens in and out, and what it cost in dollars, when the provider says (OpenRouter does). Every
+ * request to a model takes a Meter, so none goes unrecorded. Embeddings aren't recorded: they cost
+ * less than the rows would.
  */
 export type AiUsage = {
-  kind: "chat" | "decision" | "embedding";
+  kind: "chat" | "decision";
   model: string;
   inputTokens: number;
   outputTokens: number;
