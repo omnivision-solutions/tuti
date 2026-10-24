@@ -728,6 +728,46 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(ai.getByText("I don't know")).toHaveCount(1);
   await expect(ai.getByText("Thinking…")).toHaveCount(0);
   await expect(ai.getByText(invoice)).toHaveCount(0);
+
+  // What an earlier reader asked in this tab before anyone was signed in isn't handed to whoever the
+  // site signs in next: only what was asked on the page while it was signing them in.
+  await visitor.unroute(widgetPage);
+  await visitor.unroute("**/token/**");
+  // Nobody signed in on the site (no token).
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "" }));
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  const earlier = "Do you have a status page?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(earlier);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  // Then Sam, the site slow to sign them in.
+  let releaseSam!: () => void;
+  const samReleased = new Promise<void>((resolve) => (releaseSam = resolve));
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", async (route) => {
+    await samReleased;
+    await route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) });
+  });
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await expect(ai.getByText(earlier)).toBeVisible();
+  const later = "Do you have an API?";
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(later);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(2);
+  const signedInSam = visitor.waitForResponse((response) => isAction(response.request()));
+  releaseSam();
+  await signedInSam;
+  // Once it's Sam's, nothing's left as nobody's.
+  const panelNow = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  await expect.poll(() => panelNow.evaluate((key) => window.sessionStorage.getItem(key), `tuti:docs-assistant:${slug}:anonymous`)).toBeNull();
+  await expect(ai.getByText(later)).toBeVisible();
+  await expect(ai.getByText(earlier)).toHaveCount(0);
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };

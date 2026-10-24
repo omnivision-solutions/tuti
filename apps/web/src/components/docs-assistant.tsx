@@ -81,15 +81,18 @@ export function DocsAssistantProvider({
   const reader = viewer ?? (signedIn ? `widget:${signedIn.id}` : "anonymous");
   const key = storageKey(slug, reader);
   const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, reader));
-  const [askedHere, setAskedHere] = useState(false);
+  // The turns asked on this page (not restored from the tab's storage).
+  const [askedHere, setAskedHere] = useState<string[]>([]);
   const [leftBehind, setLeftBehind] = useState<string | null>(null);
   // Someone else now (signed in or out without a reload): their own conversation. Except questions
-  // asked on this page before the widget's sign-in came back: they're the person's it names, and
-  // nobody else's in this tab, so they go with them.
+  // asked on this page before the widget's sign-in came back: they're the person's it names, so
+  // they go with them; what an earlier reader left in this tab doesn't.
   const [shownFor, setShownFor] = useState(key);
   if (shownFor !== key) {
     setShownFor(key);
-    if (askedHere && shownFor === storageKey(slug, "anonymous") && signedIn) {
+    const carried = turns.filter((turn) => askedHere.includes(turn.key));
+    if (carried.length > 0 && shownFor === storageKey(slug, "anonymous") && signedIn) {
+      setTurns(carried);
       setLeftBehind(shownFor);
     } else {
       setTurns(storedTurns(slug, reader));
@@ -149,7 +152,7 @@ export function DocsAssistantProvider({
         }
         const before = turnsRef.current;
         const turn = crypto.randomUUID();
-        setAskedHere(true);
+        setAskedHere((keys) => [...keys, turn]);
         setTurns((all) => [...all, { key: turn, question: trimmed }]);
         void run(turn, trimmed, before);
       },
