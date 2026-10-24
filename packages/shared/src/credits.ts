@@ -18,11 +18,11 @@ export const creditsPerTopupDollar = () => positive("AI_CREDITS_PER_TOPUP_DOLLAR
 /** Credits a dollar of model cost spends (AI_CREDITS_PER_USAGE_DOLLAR, default 100: with the top-up default, no margin). */
 export const creditsPerUsageDollar = () => positive("AI_CREDITS_PER_USAGE_DOLLAR", 100);
 
-/** Days a top-up's credits last (AI_CREDITS_TOPUP_EXPIRY_DAYS, default 365); 0 is for good. */
+/** Whole days a top-up's credits last (AI_CREDITS_TOPUP_EXPIRY_DAYS, default 365); 0 is for good. Anything else is the default. */
 export function topupExpiryDays(): number | null {
   const raw = process.env.AI_CREDITS_TOPUP_EXPIRY_DAYS;
   const value = Number(raw);
-  if (raw && Number.isFinite(value) && value >= 0) {
+  if (raw && Number.isInteger(value) && value >= 0) {
     return value === 0 ? null : value;
   }
   return 365;

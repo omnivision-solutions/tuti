@@ -1,6 +1,6 @@
 import { Prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { log, topupsEnabled } from "@tuti/shared";
+import { log } from "@tuti/shared";
 
 import { stripeSigned } from "@/server/stripe";
 
@@ -21,11 +21,14 @@ type CheckoutSession = {
  * events are read; the rest of Stripe's events are answered and ignored.
  */
 export async function POST(request: Request) {
-  if (!topupsEnabled()) {
+  // Only the signing secret: with buying turned off (no STRIPE_SECRET_KEY, or AI credits off), payments
+  // already made still get their credits.
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) {
     return new Response(null, { status: 404 });
   }
   const body = await request.text();
-  if (!stripeSigned(body, request.headers.get("stripe-signature"), process.env.STRIPE_WEBHOOK_SECRET!)) {
+  if (!stripeSigned(body, request.headers.get("stripe-signature"), secret)) {
     return Response.json({ error: "Bad signature" }, { status: 400 });
   }
   const event = JSON.parse(body) as { type?: unknown; data?: { object?: CheckoutSession } };

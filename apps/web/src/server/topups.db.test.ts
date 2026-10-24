@@ -97,9 +97,27 @@ test("only events Stripe signed, in the last 5 minutes, are read", async () => {
   expect((await send(stripeSignature(`${body} `))).status).toBe(400);
   expect((await send("t=1,v0=abc")).status).toBe(400);
   expect(await topUps()).toEqual([]);
-  // Without top-ups set up, there's no webhook.
-  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  // Without its signing secret, there's no webhook.
+  vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
   expect((await send(stripeSignature(body))).status).toBe(404);
+});
+
+test("buying turned off meanwhile (no Stripe key, or credits off): a payment already made still gets its credits", async () => {
+  await call(topUpCredits, as(), { dollars: 10 });
+  const { id } = stripe.sessions.at(-1)!;
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
+  vi.stubEnv("AI_CREDITS", "");
+  expect((await deliver(stripe.event(id))).status).toBe(200);
+  expect(await topUps()).toHaveLength(1);
+});
+
+test("an expiry that isn't whole days is the default: the paid session's credits still come", async () => {
+  vi.stubEnv("AI_CREDITS_TOPUP_EXPIRY_DAYS", "0.5");
+  await call(topUpCredits, as(), { dollars: 10 });
+  const session = stripe.sessions.at(-1)!;
+  expect(session.metadata.days).toBe("365");
+  expect((await deliver(stripe.event(session.id))).status).toBe(200);
+  expect(await topUps()).toHaveLength(1);
 });
 
 test("a paid top-up for a project deleted meanwhile is answered, and gives nothing", async () => {
