@@ -217,16 +217,17 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(visitor, "portal-docs-article-copied");
 
   // Search (in the header, on every Docs page): results as they type, the words still being typed included,
-  // with the passage that matched and those words marked.
+  // with the passage that matched (one line) and those words marked.
   const searchButton = visitor.getByRole("banner").getByRole("button", { name: "Search the docs" });
   await expect(searchButton).toHaveText(/Search docs/);
   const box = await typeSearch(visitor, "send inv");
   const asTyped = visitor.getByRole("dialog").getByRole("listbox", { name: "Search results" });
   await expect(asTyped.getByRole("option")).toHaveText([/Ask AI:\s*send inv/, /Inviting your team.*Owners and admins send invites from the Team page/]);
+  // Whole words marked ("invites" for "inv"), not just the letters typed.
   const marked = asTyped.getByRole("option").nth(1).locator("mark");
   await expect(marked.filter({ hasText: /^send$/ })).toHaveCount(1);
-  await expect(marked.filter({ hasText: /^inv$/i }).first()).toBeVisible();
-  await expect(marked.filter({ hasText: /^(?!send$|inv$).*/i })).toHaveCount(0);
+  await expect(marked.filter({ hasText: /^invites$/i }).first()).toBeVisible();
+  await expect(marked.filter({ hasText: /^(?!send$|invites?$).*/i })).toHaveCount(0);
   await checkpoint(visitor, "portal-docs-search-as-typed", { fullPage: false });
   await visitor.setViewportSize({ width: 390, height: 844 });
   await checkpoint(visitor, "portal-docs-search-as-typed-phone", { fullPage: false });
