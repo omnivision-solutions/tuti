@@ -24,7 +24,8 @@ export function ArticleActions({ markdown, markdownUrl }: { markdown: string; ma
     </DropdownMenuItem>
   );
   return (
-    <div className="flex shrink-0 items-center rounded-lg border">
+    // Its own width: under the title on phones, it would otherwise stretch across the page.
+    <div className="flex shrink-0 items-center self-start rounded-lg border">
       {contentActions.copyMarkdown && (
         <Button
           variant="ghost"

@@ -182,6 +182,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(onThisPage).toBeHidden();
   await expect(tree).toBeHidden();
+  // The page's actions under the title, only as wide as their buttons.
+  const copyPage = visitor.getByRole("button", { name: "Copy page" });
+  const actionsWidth = await copyPage.locator("..").evaluate((group) => group.getBoundingClientRect().width);
+  expect(actionsWidth).toBeLessThan(200);
   await checkpoint(visitor, "portal-docs-article-phone", { fullPage: false });
   await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
   const menu = visitor.getByRole("dialog", { name: "Menu" });
