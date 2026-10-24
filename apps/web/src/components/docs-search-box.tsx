@@ -1,6 +1,6 @@
 "use client";
 
-import { CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
+import { ArrowRightIcon, CornerDownLeftIcon, LoaderCircleIcon, LockIcon, SearchIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -58,6 +58,7 @@ export function DocsSearchBox({
   size = "default",
   shortcut = false,
   query = "",
+  compact = false,
   className,
 }: {
   askAI: boolean;
@@ -65,6 +66,8 @@ export function DocsSearchBox({
   shortcut?: boolean;
   /** What it starts with: the search on the page. */
   query?: string;
+  /** Just its icon on phones (the header's): the box from tablet width on. */
+  compact?: boolean;
   className?: string;
 }) {
   const at = usePortalHref();
@@ -108,6 +111,8 @@ export function DocsSearchBox({
       </form>
     );
   }
+  // With AI answers on, the box asks as well as searches (its first row is "Ask AI").
+  const label = askAI ? "Ask, search, or explain…" : "Search docs";
   return (
     <div role="search" className={cn("relative", className)}>
       <button
@@ -116,17 +121,26 @@ export function DocsSearchBox({
         aria-label="Search the docs"
         aria-haspopup="dialog"
         className={cn(
-          "flex w-full items-center rounded-lg border border-input bg-transparent text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30",
-          large ? "h-12 pr-4 pl-11 text-base" : "h-8 pr-2 pl-8 text-sm",
+          "flex items-center gap-2 rounded-lg text-left text-muted-foreground transition-colors outline-none hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+          large
+            ? "h-12 w-full border border-input px-4 text-base dark:bg-input/30"
+            : compact
+              ? "size-8 justify-center md:h-8 md:w-60 md:justify-start md:border md:border-input md:px-2.5 md:text-sm md:dark:bg-input/30"
+              : "h-8 w-full border border-input px-2.5 text-sm dark:bg-input/30",
         )}
       >
-        <SearchIcon aria-hidden className={icon} />
-        <span className={cn("flex-1 truncate", query && "text-foreground")}>{query || "Search docs"}</span>
+        {large && askAI ? (
+          <SparklesIcon aria-hidden className="size-5 shrink-0" />
+        ) : (
+          <SearchIcon aria-hidden className={cn("shrink-0", large ? "size-5" : "size-4")} />
+        )}
+        <span className={cn("flex-1 truncate", query && "text-foreground", compact && "max-md:hidden")}>{query || (large ? label : "Search docs")}</span>
         {shortcut && (
-          <kbd aria-hidden className="hidden rounded border bg-muted px-1.5 font-sans text-xs sm:inline">
+          <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">
             ⌘K
           </kbd>
         )}
+        {large && <ArrowRightIcon aria-hidden className="size-5 shrink-0" />}
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         {open && <SearchDialog askAI={askAI} initialQuery={query} onClose={() => setOpen(false)} />}
@@ -227,7 +241,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
           aria-autocomplete="list"
           aria-activedescendant={options.length > 0 ? `${listId}-${current}` : undefined}
           aria-label="Search the docs"
-          placeholder="Search docs"
+          placeholder={askAI ? "Ask, search, or explain…" : "Search docs"}
           maxLength={200}
           value={query}
           onChange={(event) => {

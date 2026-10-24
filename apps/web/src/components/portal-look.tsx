@@ -128,19 +128,21 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 export function PortalLogo({ name, href }: { name: string; href: string }) {
   const { logo, logoDark, logoText, logoLink } = usePortalLook();
   const image = (image: LookImage, className?: string) => (
+    // Narrower on phones, so the header's buttons stay on its first line beside it.
     // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-    <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-48 object-contain object-left", className)} />
+    <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-32 object-contain object-left sm:max-w-48", className)} />
   );
   const contents = logo ? (
     <>
       {image(logo, logoDark ? "dark:hidden" : undefined)}
       {logoDark && image(logoDark, "hidden dark:block")}
-      {logoText && <span>{logoText}</span>}
+      {logoText && <span className="truncate">{logoText}</span>}
     </>
   ) : (
-    logoText || name
+    <span className="truncate">{logoText || name}</span>
   );
-  const className = "flex items-center gap-2 font-heading text-lg font-bold tracking-tight";
+  // It gives way (a long name is cut short with "…") rather than the header's buttons.
+  const className = "flex min-w-0 items-center gap-2 font-heading text-lg font-bold tracking-tight";
   return logoLink ? (
     <a href={logoLink} className={className}>
       {contents}
@@ -159,7 +161,8 @@ export function PortalContact() {
     return null;
   }
   return (
-    <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+    // On phones and tablets it's in the header's menu (PortalMenu).
+    <a href={contact.url} className={buttonVariants({ size: "sm", className: "max-md:hidden" })}>
       {contact.label || "Contact us"}
     </a>
   );
@@ -192,12 +195,35 @@ export function PortalHeaderLinks() {
     return null;
   }
   return (
-    <nav aria-label="Links" className="order-last flex w-full flex-wrap gap-x-4 gap-y-1 pb-1 sm:order-none sm:ml-auto sm:w-auto sm:pb-0">
+    // On phones and tablets they're in the header's menu (PortalMenu).
+    <nav aria-label="Links" className="flex flex-wrap gap-x-4 gap-y-1 max-md:hidden">
       {headerLinks.map((link, i) => (
         <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
           {link.label}
         </a>
       ))}
+    </nav>
+  );
+}
+
+/** Without JavaScript (where the header's menu can't open), on phones and tablets: the team's header links and contact button in a row of their own. */
+export function PortalLinksRow() {
+  const { headerLinks, contact } = usePortalLook();
+  if (headerLinks.length === 0 && !contact) {
+    return null;
+  }
+  return (
+    <nav aria-label="Links" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
+      {headerLinks.map((link, i) => (
+        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+          {link.label}
+        </a>
+      ))}
+      {contact && (
+        <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+          {contact.label || "Contact us"}
+        </a>
+      )}
     </nav>
   );
 }

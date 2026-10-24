@@ -70,7 +70,12 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 - **Portals**: header with the project name and the four parts (Feedback,
   Roadmap, Changelog, Docs; `components/portal-nav.tsx`), under it the current
   part's row (boards, docs tabs) when it has two or more, content max-w-3xl,
-  "Powered by tuti" footer. From tablet width up, the header and the part's
+  "Powered by tuti" footer. Searching never happens in the box itself: the
+  header's search (an icon on phones, a box from tablet width) and the docs'
+  big box all open the same search dialog (`DocsSearchBox`). On phones and
+  tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
+  the current part's navigation (the docs' tree, the boards) and the team's
+  links and contact button, which the header shows only from tablet width. From tablet width up, the header and the part's
   row stay at the top (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   with a line beside it, scrolling on its own, each name on one line, cut

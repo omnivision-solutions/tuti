@@ -7,11 +7,12 @@ import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
-import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { PortalMenu, PortalMenuProvider } from "@/components/portal-menu";
 import { boardPath } from "@/lib/post-urls";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
@@ -114,27 +115,41 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
         <WithAssistant assistant={assistantProps}>
+        <PortalMenuProvider>
         <PortalTop>
-        <header className="portal-header flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
+        <header className="portal-header flex flex-wrap items-center gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
-          <PortalLogo name={project.name} href={withBase(base, "/")} />
+          {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
+          <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
+            <PortalLogo name={project.name} href={withBase(base, "/")} />
+          </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {canRead && <DocsSearch askAI={answersEnabled()} />}
-          <PortalHeaderLinks />
-          <PortalContact />
-          {session ? (
-            // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
-            <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
-          ) : (
-            <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              Sign in
-            </SignInLink>
-          )}
+          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
+            {canRead && <DocsSearch askAI={answersEnabled()} />}
+            <PortalHeaderLinks />
+            <PortalContact />
+            {session ? (
+              // On the app's own domain (Tuti's own portal) the account, with its password, is the app's.
+              <UserMenu name={session.user.name} image={session.user.image ?? null} accountHref={onApp ? `${appUrl().origin}/app/account` : "/account"} />
+            ) : (
+              <SignInLink className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Sign in
+              </SignInLink>
+            )}
+            {/* For everyone: on a private portal's sign-in page it has the team's links and contact button (no parts). */}
+            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} />
+          </div>
         </header>
+        {/* Without JavaScript the menu can't open: on phones and tablets, the team's links and contact button under the header. */}
+        <noscript>
+          <PortalLinksRow />
+        </noscript>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
         </PortalTop>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
+        </PortalMenuProvider>
         </WithAssistant>
       </PortalLookProvider>
       {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml

@@ -178,14 +178,20 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const treeColumn = (await visitor.locator("aside", { has: tree }).boundingBox())!;
   expect((await visitor.getByRole("contentinfo").boundingBox())!.y).toBeLessThan(treeColumn.y + treeColumn.height);
 
-  // On a phone the tree is a menu above the article, and "On this page" is left out.
+  // On a phone the tree is in the header's menu, the search is an icon, and "On this page" is left out.
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(onThisPage).toBeHidden();
   await expect(tree).toBeHidden();
-  await visitor.getByText("Browse docs").click();
-  await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
-  await checkpoint(visitor, "portal-docs-article-phone-menu");
+  await checkpoint(visitor, "portal-docs-article-phone", { fullPage: false });
+  await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const menu = visitor.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-docs-article-phone-menu", { fullPage: false });
+  // Opening a page from it closes it.
+  await menu.getByRole("link", { name: "Inviting your team" }).click();
+  await expect(menu).toBeHidden();
   await visitor.setViewportSize({ width: 1280, height: 720 });
+  await expect(visitor.getByRole("banner").getByRole("button", { name: "Menu" })).toBeHidden();
 
   // AI tools get it as Markdown: at its .md URL, copied, or opened in ChatGPT or Claude with that URL.
   const markdownUrl = `${portalUrl(slug)}/docs/inviting-your-team.md`;

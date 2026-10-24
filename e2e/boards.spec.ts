@@ -59,6 +59,14 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(boards).toBeVisible();
   expect(await visitor.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await checkpoint(visitor, "portal-header-phone");
+  // The header's menu has the boards.
+  await visitor.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const menu = visitor.getByRole("dialog", { name: "Menu" });
+  await expect(menu.getByRole("navigation", { name: "Boards" }).getByRole("link", { name: "Bug reports" })).toHaveAttribute("aria-current", "page");
+  await checkpoint(visitor, "portal-header-phone-menu", { fullPage: false });
+  await menu.getByRole("link", { name: "Feature requests" }).click();
+  await expect(menu).toBeHidden();
+  await expect(visitor).toHaveURL(/\/feedback\/feature-requests$/);
 
   // Delete the empty board: gone from the team's list and from the portal.
   await row("Bug reports").getByRole("button", { name: "Delete" }).click();
