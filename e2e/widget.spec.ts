@@ -8,7 +8,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
-import { nextModelReply } from "./model";
+import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
 
 /** An HS256 SSO token, as a customer's app signs it (see docs/sso.md). */
@@ -210,6 +210,61 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Calendar sync" })).toBeVisible();
   await expect(owner.getByText("Sam from Acme")).toBeVisible();
+
+  // Then the site's next token doesn't check out (someone else, an expired one): nobody's posting,
+  // not Sam still. Another part of the panel asks for it, as the docs' assistant does when opened.
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const asked = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  // The panel's "ready for a token" message (WIDGET_READY_MESSAGE).
+  await visitor.frames().find((frame) => frame.url().includes("/widget"))!.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await asked;
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
+
+  // Two at once: Sam's token, then one that doesn't check out, Sam's slower to trade. They're traded
+  // in turn (Next.js sends a page's server actions one at a time), so the newest has the last word:
+  // nobody, not Sam.
+  const panel = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  type Counted = { identified: number };
+  await panel.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  let tokens = 0;
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) => {
+    tokens += 1;
+    const body = tokens === 1 ? ssoToken(secret, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) : "not-a-token";
+    return route.fulfill({ contentType: "text/plain", body });
+  });
+  const isExchange = (request: { method(): string; headers(): Record<string, string> }) => request.method() === "POST" && !!request.headers()["next-action"];
+  let releaseSam!: () => void;
+  const samReleased = new Promise<void>((resolve) => (releaseSam = resolve));
+  let exchanges = 0;
+  let answered = 0;
+  visitor.on("response", (response) => isExchange(response.request()) && (answered += 1));
+  await visitor.route(
+    (url) => url.pathname === "/widget",
+    async (route) => {
+      if (isExchange(route.request()) && ++exchanges === 1) {
+        await samReleased;
+      }
+      await route.continue();
+    },
+  );
+  const samAsked = visitor.waitForRequest(isExchange);
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await samAsked;
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await panel.waitForFunction(() => (window as unknown as Counted).identified >= 2);
+  releaseSam();
+  await expect.poll(() => answered).toBeGreaterThanOrEqual(2);
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
 test("a private portal's widget asks visitors to sign in; people the customer's site signs in see it", async ({ browser }, testInfo) => {
@@ -242,6 +297,18 @@ test("a private portal's widget asks visitors to sign in; people the customer's 
   await widget.getByRole("link", { name: "What's new" }).click();
   await expect(widget.getByText("Nothing new yet")).toBeVisible();
   await checkpoint(visitor, "widget-private-signed-in-with-sso");
+
+  // Then the site's next token doesn't check out (someone else, an expired one): nobody's signed in,
+  // not Sam still. Another part of the panel asks for it, as the docs' assistant does when opened.
+  await widget.getByRole("link", { name: "Feedback" }).click();
+  await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const asked = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  await visitor.frames().find((frame) => frame.url().includes("/widget"))!.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await asked;
+  // The panel's pages don't show the private portal to them any more.
+  await expect(widget.getByText("Sign in to see this.", { exact: false })).toBeVisible();
+  await expect(widget.getByText("Posting as Sam from Acme")).toHaveCount(0);
 });
 
 test("someone a customer's site signs in sees what's new on one device, and it isn't new on their others", async ({ browser }, testInfo) => {
@@ -396,7 +463,8 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await expect(widget.getByRole("list", { name: "Collections" }).getByRole("link", { name: "Getting started" })).toBeVisible();
 });
 
-test("a visitor asks the docs' AI in the widget: an answer with its source, asking a person after a thumbs-down, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+test("a visitor asks the docs' AI in the widget's assistant: an answer with its source, asking a person after a thumbs-down, a follow-up, or “I don't know” and posting it from the widget", async ({ browser }, testInfo) => {
+  test.setTimeout(90_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
@@ -447,14 +515,16 @@ test("a visitor asks the docs' AI in the widget: an answer with its source, aski
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
   await search.fill(question);
   await search.press("Enter");
-  const ai = widget.getByRole("region", { name: "AI answer" });
+  // Asked from the search, in the assistant, which takes the panel.
   await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
-  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await widget.getByRole("button", { name: `Ask AI: ${question}` }).click();
+  const assistant = widget.getByRole("dialog", { name: "Assistant" });
+  const ai = assistant.getByRole("log", { name: "Conversation" });
   await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
-  // Sources open on the portal in a new tab, so the answer stays in the panel.
+  // Sources open in the panel's Docs tab.
   const source = ai.getByRole("list", { name: "Sources" }).getByRole("link", { name: "Inviting your team" });
-  await expect(source).toHaveAttribute("href", `/docs/${article.slug}`);
-  await expect(source).toHaveAttribute("target", "_blank");
+  await expect(source).toHaveAttribute("href", `/widget?tab=docs&article=${article.slug}`);
+  await expect(source).not.toHaveAttribute("target");
   await checkpoint(visitor, "widget-docs-ai-answer");
   await ai.getByRole("button", { name: "Not helpful" }).click();
   await expect(ai.getByText("Thanks for letting us know.")).toBeVisible();
@@ -496,25 +566,233 @@ test("a visitor asks the docs' AI in the widget: an answer with its source, aski
   // The visitor is known by a cookie the browser keeps for this site's widget (partitioned), as Lax ones aren't kept in a frame.
   expect((await visitor.context().cookies(portalUrl(slug))).map((cookie) => cookie.name)).toContain("tuti_reader");
 
+  // A follow-up, in the panel: the AI gets the conversation so far.
+  const followUp = `Can members do it too ${slug}?`;
+  await similar(`${question}\n${followUp}`, `Inviting your team\n\n${body}`, 0.8);
+  await nextModelReply(JSON.stringify({ answer: "Only owners and admins can send invites.", sources: ["s1"] }), followUp);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(followUp);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+  const followed = (await modelRequests()).find((request) => request.user.includes(followUp))!;
+  expect(followed.user).toContain('"earlierInConversation"');
+  await checkpoint(visitor, "widget-docs-ai-follow-up");
+
+  // A source opens the article in the panel; "Ask AI" there opens the conversation again.
+  await source.first().click();
+  await expect(widget.getByRole("heading", { name: "Inviting your team", level: 1 })).toBeVisible();
+  await expect(assistant).toBeHidden();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+
   // Something the docs don't cover: "I don't know", and posting it from the widget's own Feedback tab.
   const unrelated = "Can I pay with crypto?";
-  await search.fill(unrelated);
-  await search.press("Enter");
-  await ai.getByRole("button", { name: "Ask AI" }).click();
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(unrelated);
+  await assistant.getByRole("button", { name: "Send" }).click();
   await expect(ai.getByText("I don't know")).toBeVisible();
   await checkpoint(visitor, "widget-docs-ai-no-answer");
   // Asking a person here starts with the email the customer's site signed them in with.
-  await ai.getByRole("button", { name: "Ask a person" }).click();
+  await ai.getByRole("button", { name: "Ask a person" }).last().click();
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
   await ai.getByRole("button", { name: "Cancel" }).click();
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
+  await expect(assistant).toBeHidden();
   await checkpoint(visitor, "widget-docs-ai-post-as-feedback");
   await widget.getByRole("button", { name: "Submit feedback" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: unrelated })).toBeVisible();
+
+  // Someone else signs in to the customer's site in the same tab: the assistant is theirs, empty.
+  // The conversation is kept per person the site signs in, not per tab or browser.
+  const openAssistant = async () => {
+    await visitor.reload();
+    await visitor.getByRole("button", { name: "Feedback" }).click();
+    await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+    // Opening it asks the site who's signed in, which the panel trades for a widget token.
+    const signedIn = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+    await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+    await signedIn;
+  };
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  await openAssistant();
+  await expect(assistant).toBeVisible();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toHaveCount(0);
+  await expect(ai.getByText(unrelated)).toHaveCount(0);
+  // Sam again: theirs is still there.
+  await visitor.unroute("**/token/**");
+  await openAssistant();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
+
+  // Sam's follow-up comes back as no longer theirs (a new reader cookie) and is asked afresh, and
+  // the site signs in Kim meanwhile: Kim's conversation doesn't get Sam's question.
+  await visitor.context().clearCookies({ name: "tuti_reader" });
+  const isAction = (request: { method(): string; headers(): Record<string, string> }) => request.method() === "POST" && !!request.headers()["next-action"];
+  let answered = 0;
+  visitor.on("response", (response) => isAction(response.request()) && (answered += 1));
+  let releaseFirst!: () => void;
+  const firstReleased = new Promise<void>((resolve) => (releaseFirst = resolve));
+  let actions = 0;
+  const widgetPage = (url: URL) => url.pathname === "/widget";
+  await visitor.route(widgetPage, async (route) => {
+    if (isAction(route.request()) && ++actions === 1) {
+      await firstReleased;
+    }
+    await route.continue();
+  });
+  // Nothing in the docs is about it: "I don't know", without asking the model.
+  const guests = "Can I invite guests?";
+  const firstAsked = visitor.waitForRequest(isAction);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(guests);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await firstAsked;
+  const panel = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  type Counted = { identified: number };
+  await panel.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  // The panel's "ready for a token" message (WIDGET_READY_MESSAGE).
+  await panel.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await panel.waitForFunction(() => (window as unknown as Counted).identified >= 1);
+  releaseFirst();
+  // The question, Kim's sign-in, the question asked afresh; then one of Kim's own, which is answered
+  // after it (a page's server actions go one at a time), so by then Sam's has been and gone.
+  await expect.poll(() => answered).toBeGreaterThanOrEqual(3);
+  const kims = "Is there a mobile app?";
+  // Kim's is empty: a first question, not a follow-up.
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(kims);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await expect(ai.getByText(kims)).toBeVisible();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toHaveCount(0);
+  await expect(ai.getByText(guests)).toHaveCount(0);
+
+  // Asked before the site has said who's signed in, a follow-up that comes back as no longer theirs is
+  // asked afresh while the sign-in lands: its answer still comes, in the conversation it moved to.
+  await visitor.unroute(widgetPage);
+  let releaseSignIn!: () => void;
+  const signInReleased = new Promise<void>((resolve) => (releaseSignIn = resolve));
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", async (route) => {
+    await signInReleased;
+    await route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) });
+  });
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  const invoice = "Can I pay by invoice?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(invoice);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toBeVisible();
+  await visitor.context().clearCookies({ name: "tuti_reader" });
+  let releaseAsk!: () => void;
+  const askReleased = new Promise<void>((resolve) => (releaseAsk = resolve));
+  let asks = 0;
+  await visitor.route(widgetPage, async (route) => {
+    if (isAction(route.request()) && ++asks === 1) {
+      await askReleased;
+    }
+    await route.continue();
+  });
+  const reloaded = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  await reloaded.evaluate(() => {
+    (window as unknown as Counted).identified = 0;
+    window.addEventListener("message", (event) => {
+      if ((event.data as { type?: unknown } | null)?.type === "tuti:identify") {
+        (window as unknown as Counted).identified += 1;
+      }
+    });
+  });
+  const euros = "What about in euros?";
+  const held = visitor.waitForRequest(isAction);
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(euros);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await held;
+  releaseSignIn();
+  await reloaded.waitForFunction(() => (window as unknown as Counted).identified >= 1);
+  releaseAsk();
+  await expect(ai.getByText(euros)).toBeVisible();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await expect(ai.getByText("Thinking…")).toHaveCount(0);
+  await expect(ai.getByText(invoice)).toHaveCount(0);
+
+  // What an earlier reader asked in this tab before anyone was signed in isn't handed to whoever the
+  // site signs in next: only what was asked on the page while it was signing them in.
+  await visitor.unroute(widgetPage);
+  await visitor.unroute("**/token/**");
+  // Nobody signed in on the site (no token).
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "" }));
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  const earlier = "Do you have a status page?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(earlier);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  // Then Sam, the site slow to sign them in.
+  let releaseSam!: () => void;
+  const samReleased = new Promise<void>((resolve) => (releaseSam = resolve));
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", async (route) => {
+    await samReleased;
+    await route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) });
+  });
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+  await expect(ai.getByText(earlier)).toBeVisible();
+  const later = "Do you have an API?";
+  await assistant.getByRole("textbox", { name: "Ask a follow-up" }).fill(later);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(2);
+  const signedInSam = visitor.waitForResponse((response) => isAction(response.request()));
+  releaseSam();
+  await signedInSam;
+  // Once it's Sam's, nothing's left as nobody's.
+  const panelNow = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  await expect.poll(() => panelNow.evaluate((key) => window.sessionStorage.getItem(key), `tuti:docs-assistant:${slug}:anonymous`)).toBeNull();
+  await expect(ai.getByText(later)).toBeVisible();
+  await expect(ai.getByText(earlier)).toHaveCount(0);
+  // Added to Sam's own conversation in this tab, not in place of it.
+  await expect(ai.getByText(euros)).toBeVisible();
+
+  // And again on the same page: the site's next token doesn't check out, a question's asked as
+  // nobody, then Sam's signed in again. That question is Sam's, and again nothing's left as nobody's.
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) => route.fulfill({ contentType: "text/plain", body: "not-a-token" }));
+  const signedOut = visitor.waitForResponse((response) => isAction(response.request()));
+  await panelNow.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await signedOut;
+  await expect(ai.getByText(later)).toHaveCount(0);
+  const meanwhile = "Is there a free trial?";
+  await assistant.getByRole("textbox", { name: "Ask a question" }).fill(meanwhile);
+  await assistant.getByRole("button", { name: "Send" }).click();
+  await expect(ai.getByText("I don't know")).toHaveCount(1);
+  await visitor.unroute("**/token/**");
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-7", name: "Sam from Acme", email: samEmail(slug) }) }),
+  );
+  const samAgain = visitor.waitForResponse((response) => isAction(response.request()));
+  await panelNow.evaluate(() => window.parent.postMessage({ type: "tuti:ready" }, "*"));
+  await samAgain;
+  await expect(ai.getByText(later)).toBeVisible();
+  await expect(ai.getByText(meanwhile)).toBeVisible();
+  await expect.poll(() => panelNow.evaluate((key) => window.sessionStorage.getItem(key), `tuti:docs-assistant:${slug}:anonymous`)).toBeNull();
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };

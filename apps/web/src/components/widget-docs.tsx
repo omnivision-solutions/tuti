@@ -5,16 +5,13 @@ import Link from "next/link";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
-import { DocsAnswer } from "@/components/docs-answer";
+import { AskAIButton } from "@/components/docs-assistant";
 import { ArticleLinks, DocsTabs, LockedMark } from "@/components/docs-collections";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WidgetLocked } from "@/components/widget-locked";
 import { type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
-import { MAX_POST_TITLE } from "@/server/operations/create";
-import { answersEnabled } from "@/server/operations/docs-ask";
-import { askAPerson } from "@/server/operations/docs-escalate";
 import { mediaUrls } from "@/server/media-urls";
 
 /**
@@ -37,11 +34,10 @@ function docsHref({ q, docsTab, collection, article }: { q?: string; docsTab?: s
 }
 
 /**
- * The widget's Docs tab: the portal's docs at panel size. A search (`q`) with the
- * portal's "Ask AI", the docs a level at a time (the collections and the articles in none, or
+ * The widget's Docs tab: the portal's docs at panel size. A search (`q`), with "Ask AI" for it
+ * in the assistant (components/docs-assistant.tsx, which the page puts around the panel), the docs a level at a time (the collections and the articles in none, or
  * a collection's, `collection`), or one article (`article`), which also opens on the portal in
- * a new tab. Article links keep the search or the collection, so going back returns there. "Post this as feedback" opens the widget's own Feedback tab; "Ask a person"
- * works as on the portal.
+ * a new tab. Article links keep the search or the collection, so going back returns there.
  */
 export async function WidgetDocs({
   projectId,
@@ -50,7 +46,6 @@ export async function WidgetDocs({
   article,
   docsTab,
   collection,
-  hasBoard,
 }: {
   projectId: string;
   projectSlug: string;
@@ -60,8 +55,6 @@ export async function WidgetDocs({
   docsTab?: string;
   /** The collection the list shows, or the article was opened from. */
   collection?: string;
-  /** Whether the Feedback tab can take a post (the project has a board). */
-  hasBoard: boolean;
 }) {
   if (article) {
     return (
@@ -76,22 +69,17 @@ export async function WidgetDocs({
   }
   return (
     <div className="flex flex-col gap-6">
-      {/* A plain GET form: search works without JavaScript. */}
-      <form role="search" action="/widget" className="flex gap-2">
-        <input type="hidden" name="tab" value="docs" />
-        <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
-        <Button type="submit">Search</Button>
-      </form>
-      {query && answersEnabled() && (
-        <DocsAnswer
-          key={query}
-          widget
-          projectSlug={projectSlug}
-          question={query}
-          feedbackHref={hasBoard ? `/widget?${new URLSearchParams({ title: query.slice(0, MAX_POST_TITLE) })}` : null}
-          askAPerson={await askAPerson(projectSlug)}
-        />
-      )}
+      <div className="flex flex-wrap gap-2">
+        {/* A plain GET form: search works without JavaScript. */}
+        <form role="search" action="/widget" className="flex min-w-0 flex-1 basis-60 gap-2">
+          <input type="hidden" name="tab" value="docs" />
+          <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
+          <Button type="submit">Search</Button>
+        </form>
+        {/* The assistant, in the panel (the page has one when AI answers are on). */}
+        <AskAIButton />
+      </div>
+      {query && <AskAIButton question={query} />}
       {query ? (
         <SearchResults projectId={projectId} projectSlug={projectSlug} query={query} />
       ) : (

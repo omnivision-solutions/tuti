@@ -7,7 +7,25 @@ import { buttonVariants } from "@/components/ui/button";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
 import { widgetCreatePost, widgetSignIn } from "@/server/widget";
 
-type SignedIn = { token: string; name: string; email: string | null };
+type SignedIn = { id: string; token: string; name: string; email: string | null };
+
+type SignInResult = { signedIn: SignedIn } | { error: string };
+
+/** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
+const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
+
+async function onIdentify(event: MessageEvent) {
+  // Only from the page that embeds us; the token proves who it's for, whatever site that is.
+  const data = event.data as { type?: unknown; token?: unknown } | null;
+  const projectSlug = subscribers.values().next().value?.projectSlug;
+  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || typeof data.token !== "string" || !projectSlug) {
+    return;
+  }
+  const result = await widgetSignIn(projectSlug, data.token);
+  for (const subscriber of subscribers) {
+    subscriber.tell("error" in result ? { error: result.error } : { signedIn: result });
+  }
+}
 
 /**
  * Who the customer's page signs in to the widget (Tuti.identify): asks the page for a sign-in
@@ -22,24 +40,31 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     if (!enabled) {
       return;
     }
-    const onMessage = async (event: MessageEvent) => {
-      // Only from the page that embeds us; the token proves who it's for, whatever site that is.
-      const data = event.data as { type?: unknown; token?: unknown } | null;
-      if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || typeof data.token !== "string") {
-        return;
-      }
-      const result = await widgetSignIn(projectSlug, data.token);
-      if ("error" in result) {
-        setError(result.error);
-      } else {
-        setError(undefined);
-        setSignedIn(result);
-      }
+    const subscriber = {
+      projectSlug,
+      tell: (result: SignInResult) => {
+        // A token that doesn't check out: nobody's signed in, not whoever was before it.
+        if ("error" in result) {
+          setError(result.error);
+          setSignedIn(null);
+        } else {
+          setError(undefined);
+          setSignedIn(result.signedIn);
+        }
+      },
     };
-    window.addEventListener("message", onMessage);
+    if (subscribers.size === 0) {
+      window.addEventListener("message", onIdentify);
+    }
+    subscribers.add(subscriber);
     // Ready for a token (the page may have one; nothing secret in this message).
     window.parent.postMessage({ type: WIDGET_READY_MESSAGE }, "*");
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      subscribers.delete(subscriber);
+      if (subscribers.size === 0) {
+        window.removeEventListener("message", onIdentify);
+      }
+    };
   }, [projectSlug, enabled]);
 
   return { signedIn, error };

@@ -157,7 +157,7 @@ async function pageText(slug: string) {
 
 /** What the widget shows of article `slug`, as one string. */
 async function widgetText(slug: string) {
-  return json(await rendered(await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug, hasBoard: true })));
+  return json(await rendered(await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug })));
 }
 
 /** Every article in the docs' lists for whoever's reading, with `locked` when it has a lock. */

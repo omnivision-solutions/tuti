@@ -621,6 +621,26 @@ test("inline panels get sign-in tokens and say what's been seen; they can't clos
   expect(frameWindow.postMessage).toHaveBeenCalledTimes(1);
 });
 
+test("asked twice, a panel gets only the newest token: an older one the page's app answers later (someone signed in before) is dropped", async () => {
+  // The page's app answers each request when the test says.
+  const answers: ((token: string) => void)[] = [];
+  const identify = () => new Promise<string>((resolve) => answers.push(resolve));
+  const page = loadWidget({ settings: { identify }, latest: LATEST, before: (page) => void inlineMount(page) });
+  await settled();
+  // The script's own (what's been seen elsewhere), then the panel's two.
+  const frameWindow = page.inlineFrames[0]!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.message(frameWindow, { type: "tuti:ready" });
+  page.message(frameWindow, { type: "tuti:ready" });
+  await settled();
+  expect(answers).toHaveLength(3);
+  answers[0]!("token-for-sam");
+  answers[2]!("token-for-kim");
+  await settled();
+  answers[1]!("token-for-sam");
+  await settled();
+  expect(frameWindow.postMessage.mock.calls).toEqual([[{ type: "tuti:identify", token: "token-for-kim" }, "https://acme.tuti.example"]]);
+});
+
 test("an inline mount the page removes and puts back (tab panels, keep-alive views) keeps its panel, which still gets tokens and says what's been seen", async () => {
   const page = loadWidget({ settings: { identify: token }, latest: LATEST, before: (page) => void inlineMount(page) });
   await settled();

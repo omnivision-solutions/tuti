@@ -148,7 +148,7 @@ async function read(slug: string) {
   const response = await markdown(new Request("http://x"), params);
   const md = response.status === 308 ? `308 ${response.headers.get("location")}` : String(response.status);
   // WidgetDocs hands the article to WidgetArticle, rendered here: the article's title, or "Article not found".
-  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug, hasBoard: true })) as ReactElement<object>;
+  const widget = (await WidgetDocs({ projectId: project.id, projectSlug: project.slug, query: "", article: slug })) as ReactElement<object>;
   const texts = (node: ReactNode): string[] =>
     Array.isArray(node)
       ? node.flatMap(texts)
