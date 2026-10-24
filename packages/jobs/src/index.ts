@@ -3,6 +3,7 @@ import { getHatchet } from "@tuti/shared/hatchet";
 
 import { articleChanged, purgeArticles } from "./articles";
 import { cleanupMedia, releaseMedia } from "./cleanup";
+import { pruneDocsSearches } from "./docs-searches";
 import { codeChange } from "./code-changes";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
@@ -16,6 +17,7 @@ export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { addToRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine } from "./running-draft";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
+export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
 export { liveDomain, portalAddress, type PortalAddress } from "./portal-address";
@@ -35,6 +37,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   cleanupMedia,
   releaseMedia,
   purgeArticles,
+  pruneDocsSearches,
   webhookDelivery,
   resubmitWebhookDeliveries,
   githubPullRequest,

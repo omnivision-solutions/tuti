@@ -127,6 +127,12 @@ export const jobs = {
     input: z.object({}),
     cron: "43 * * * *",
   },
+  /** Removes docs searches' counts and failed searches older than the insights' 30 days. */
+  pruneDocsSearches: {
+    name: "prune-docs-searches",
+    input: z.object({}),
+    cron: "51 4 * * *",
+  },
 } as const satisfies Record<string, JobOptions>;
 
 export type JobKey = keyof typeof jobs;

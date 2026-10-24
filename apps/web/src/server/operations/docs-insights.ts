@@ -1,4 +1,5 @@
 import { type DocsNoAnswerCause, Prisma, prisma } from "@tuti/db";
+import { INSIGHTS_DAYS } from "@tuti/jobs";
 import { z } from "zod";
 
 import type { Reader } from "@/lib/read-access";
@@ -14,7 +15,7 @@ import { defineOperation, OperationError } from "./define";
  * and the docs audit (Phase 12). Stores no IP addresses: see the models in schema.prisma.
  */
 
-export const INSIGHTS_DAYS = 30;
+export { INSIGHTS_DAYS };
 export const MAX_FEEDBACK_COMMENT = 500;
 
 export const answerFields = z.object({
@@ -74,7 +75,7 @@ export async function docsInsights(projectId: string) {
   // Whole days (UTC), today included, so daily view counts and timestamps cover the same span.
   const since = new Date(new Date().toISOString().slice(0, 10));
   since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
-  const [views, articles, comments, searches, failed, topFailed, gaps] = await Promise.all([
+  const [views, articles, comments, searches, topFailed, gaps] = await Promise.all([
     prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null }, day: { gte: since } }, _sum: { views: true } }),
     prisma.$queryRaw<{ slug: string; title: string; views: number; helpful: number; notHelpful: number }[]>`
       SELECT * FROM (
@@ -94,13 +95,12 @@ export async function docsInsights(projectId: string) {
       take: 10,
       select: { comment: true, updatedAt: true, article: { select: { slug: true, title: true } } },
     }),
-    prisma.docsSearch.count({ where: { projectId, createdAt: { gte: since } } }),
-    prisma.docsSearch.count({ where: { projectId, results: 0, createdAt: { gte: since } } }),
-    prisma.docsSearch.groupBy({
+    prisma.docsSearchDay.aggregate({ where: { projectId, day: { gte: since } }, _sum: { searches: true, failed: true } }),
+    prisma.docsFailedSearchDay.groupBy({
       by: ["query"],
-      where: { projectId, results: 0, createdAt: { gte: since } },
-      _count: { _all: true },
-      orderBy: [{ _count: { query: "desc" } }, { query: "asc" }],
+      where: { projectId, day: { gte: since } },
+      _sum: { count: true },
+      orderBy: [{ _sum: { count: "desc" } }, { query: "asc" }],
       take: 10,
     }),
     // Gaps: questions the AI couldn't answer or whose answer got a thumbs-down, grouped by
@@ -134,9 +134,9 @@ export async function docsInsights(projectId: string) {
     articles,
     comments: comments.map(({ comment, updatedAt, article }) => ({ article, comment: comment!, at: updatedAt.toISOString() })),
     searches: {
-      total: searches,
-      failed,
-      topFailed: topFailed.map(({ query, _count }) => ({ query, count: _count._all })),
+      total: searches._sum.searches ?? 0,
+      failed: searches._sum.failed ?? 0,
+      topFailed: topFailed.map(({ query, _sum }) => ({ query, count: _sum.count ?? 0 })),
     },
     gaps: gaps.map((gap) => ({
       ...gap,

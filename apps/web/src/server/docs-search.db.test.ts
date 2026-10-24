@@ -311,7 +311,7 @@ describe("search without an OpenAI key", () => {
     await searchDocs(project.id, "bil", 10, SIGNED_OUT, { log: false });
     await searchDocs(project.id, "billing", 10, SIGNED_OUT);
     // Not awaited when the search is: give it a moment.
-    await expect.poll(() => prisma.docsSearch.findMany({ where: { projectId: project.id }, select: { query: true } })).toEqual([{ query: "billing" }]);
+    await expect.poll(() => prisma.docsSearchDay.findMany({ where: { projectId: project.id }, select: { searches: true, failed: true } })).toEqual([{ searches: 1, failed: 0 }]);
   });
 
   test("drafts and other projects' articles never come back", async () => {
