@@ -75,8 +75,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   big box all open the same search dialog (`DocsSearchBox`). On phones and
   tablets the header's menu button (`PortalMenu`) opens a full-screen menu with
   the current part's navigation (the docs' tree, the boards) and the team's
-  links and contact button, which the header shows only from tablet width. From tablet width up, the header and the part's
-  row stay at the top (`PortalTop`; their height is `--portal-header-height`).
+  links and contact button, which the header shows only from tablet width. The header and the part's row stay at the top as
+  the page scrolls, phones included (`PortalTop`; their height is `--portal-header-height`).
   Docs pages take the whole width (`DocsLayout`): the tab's tree on the left
   with a line beside it, scrolling on its own, each name on one line, cut
   short with "…" (a "Browse docs" menu on phones), the page at max-w-3xl

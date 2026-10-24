@@ -75,13 +75,13 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
   }
 });
 
-test("on a phone, the header's buttons stay on its first line beside a long name; the menu takes the whole screen up to tablet width", async ({ browser }) => {
+test("on a phone, the header stays at the top and its buttons on its first line beside a long name; the menu takes the whole screen up to tablet width", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme Customer Success and Support Help Center", slug);
   // An article, so the menu has the docs' tree.
   const api = await apiFor(owner, slug);
-  const article = await api("/articles", { title: "Getting started", body: "Welcome." });
+  const article = await api("/articles", { title: "Getting started", body: Array.from({ length: 40 }, (_, i) => `Step ${i + 1}: keep reading.`).join("\n\n") });
   await api(`/articles/${article.slug}/publish`, {});
   // And a header link, so it's there on every page (the logo's too).
   await api("/branding", { headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }] }, "PATCH");
@@ -96,6 +96,12 @@ test("on a phone, the header's buttons stay on its first line beside a long name
   expect(Math.abs(nameBox.y + nameBox.height / 2 - (menuBox.y + menuBox.height / 2))).toBeLessThan(8);
   expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(menuBox.x);
   await expectNoSidewaysScroll(visitor);
+  // Scrolled down a long page, the header stays at the top, its buttons too.
+  await visitor.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => visitor.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+  expect((await banner.boundingBox())!.y).toBe(0);
+  await expect(menuButton).toBeInViewport();
+  await visitor.evaluate(() => window.scrollTo(0, 0));
   // Up to tablet width the menu is the whole screen; the logo in it, followed, closes it.
   await visitor.setViewportSize({ width: 700, height: 900 });
   await menuButton.click();

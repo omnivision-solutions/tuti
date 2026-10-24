@@ -65,31 +65,25 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
 }
 
 /**
- * The header and the part's row, kept at the top on wider screens (on phones they take too much of
- * it). Their height is `--portal-header-height` (0 on phones), for what sticks under them (the docs
- * tree) and for links to a heading, which scroll it into view below them.
+ * The header and the part's row, kept at the top as the page scrolls, phones included (the search and
+ * the menu are always there). Their height is `--portal-header-height`, for what sticks under them
+ * (the docs tree) and for links to a heading, which scroll it into view below them.
  */
 export function PortalTop({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = ref.current!;
     const root = document.documentElement;
-    const update = () => {
-      const height = getComputedStyle(element).position === "sticky" ? element.offsetHeight : 0;
-      root.style.setProperty("--portal-header-height", `${height}px`);
-    };
+    const update = () => root.style.setProperty("--portal-header-height", `${element.offsetHeight}px`);
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    // Crossing the breakpoint turns sticky on or off, which can leave its size as it was.
-    window.addEventListener("resize", update);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
       root.style.removeProperty("--portal-header-height");
     };
   }, []);
   return (
-    <div ref={ref} className="z-40 bg-background md:sticky md:top-0">
+    <div ref={ref} className="sticky top-0 z-40 bg-background">
       {children}
     </div>
   );
