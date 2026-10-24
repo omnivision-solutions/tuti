@@ -86,13 +86,14 @@ export function DocsAssistantProvider({
   const [leftBehind, setLeftBehind] = useState<string | null>(null);
   // Someone else now (signed in or out without a reload): their own conversation. Except questions
   // asked on this page before the widget's sign-in came back: they're the person's it names, so
-  // they go with them; what an earlier reader left in this tab doesn't.
+  // they go with them, after what that person asked before in this tab; what an earlier reader
+  // left in it doesn't.
   const [shownFor, setShownFor] = useState(key);
   if (shownFor !== key) {
     setShownFor(key);
     const carried = turns.filter((turn) => askedHere.includes(turn.key));
     if (carried.length > 0 && shownFor === storageKey(slug, "anonymous") && signedIn) {
-      setTurns(carried);
+      setTurns([...storedTurns(slug, reader), ...carried]);
       setLeftBehind(shownFor);
     } else {
       setTurns(storedTurns(slug, reader));

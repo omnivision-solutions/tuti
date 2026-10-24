@@ -768,6 +768,8 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect.poll(() => panelNow.evaluate((key) => window.sessionStorage.getItem(key), `tuti:docs-assistant:${slug}:anonymous`)).toBeNull();
   await expect(ai.getByText(later)).toBeVisible();
   await expect(ai.getByText(earlier)).toHaveCount(0);
+  // Added to Sam's own conversation in this tab, not in place of it.
+  await expect(ai.getByText(euros)).toBeVisible();
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };
