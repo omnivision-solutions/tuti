@@ -579,7 +579,8 @@ describe("deciding", () => {
         await prisma.codeChangeAction.findMany({
           where: { codeChange: { projectId: project.id, number }, postId: { not: null } },
           select: { kind: true, status: true, postId: true },
-          orderBy: { probability: "desc" },
+          // Kind breaks ties: Dark mode's "resolves" and the themes' link are both 0.99 sure.
+          orderBy: [{ probability: "desc" }, { kind: "desc" }],
         })
       ).map(({ kind, status, postId }) => ({ kind, status, post: Object.keys(posts).find((key) => posts[key]!.id === postId) }));
 
