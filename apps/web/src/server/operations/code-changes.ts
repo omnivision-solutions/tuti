@@ -259,7 +259,8 @@ export const resumeCodeChanges = defineOperation({
     await aiOrRefuse(projectId, "code_changes");
     // Nothing is marked before it's queued (the job marks it analysing as it starts, as for one), so
     // one not queued yet, the server stopping meanwhile, stays paused for the next "Resume all".
-    // Not forced: a second "Resume all" at once finds it analysed already, and skips it.
+    // Resumed, not forced: a paused one goes on (`resume`), and a second "Resume all" at once finds it
+    // analysed already, and skips it.
     const paused = await prisma.codeChange.findMany({
       where: { projectId, state: "PAUSED", project: { analyseCodeChanges: true } },
       orderBy: { mergedAt: "asc" },
@@ -268,7 +269,7 @@ export const resumeCodeChanges = defineOperation({
     let failed = 0;
     for (const change of paused) {
       try {
-        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false });
+        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
       } catch {
         // Inline, the analysis itself failed (the code change says where): counted, and the rest go on.
         if (process.env.JOBS_DRIVER === "inline") {
