@@ -96,6 +96,14 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   if (!input.force && !input.resume && change.state === "PAUSED") {
     return { skipped: true };
   }
+  // A resume claims it as it starts (paused → analysing, at once), so two "Resume all" at once analyse
+  // it once, jobs inline too; claimed here rather than when queued, one not started yet stays paused.
+  if (input.resume && !input.force) {
+    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: "PAUSED" }, data: { state: "ANALYSING", reason: "" } });
+    if (count === 0) {
+      return { skipped: true };
+    }
+  }
   const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };
   // Turned off since it merged: nothing is sent, and it isn't kept waiting.
   if (!change.project.analyseCodeChanges) {

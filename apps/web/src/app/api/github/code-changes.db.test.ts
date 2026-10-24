@@ -726,6 +726,26 @@ describe("out of AI credits", () => {
     expect(second).toBe("PAUSED");
   });
 
+  test("two “Resume all” at once analyse each paused code change once (jobs inline)", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(50));
+    expect(await merge(50)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    // One gate scripted: a second analysis would ask the fake an unscripted question (and fail afterEach).
+    model.decide(INTERNAL, "Dark mode 50");
+    await Promise.all([call(resumeCodeChanges, team(), {}), call(resumeCodeChanges, team(), {})]);
+    expect(model.decisions.filter((request) => JSON.stringify(request.state).includes("Dark mode 50"))).toHaveLength(1);
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("“Resume all” is refused with the reason when the project turned code changes off", async () => {
+    github.pullRequest(repo, pullRequest(51));
+    expect(await merge(51)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 409, code: "analysis_off" });
+  });
+
   test("“Resume all” says which analyses stopped (jobs inline), and resumes the rest", async () => {
     vi.stubEnv("JOBS_DRIVER", "inline");
     // GitHub won't give Tuti the second pull request (the fake doesn't have it).

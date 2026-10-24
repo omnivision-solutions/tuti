@@ -253,16 +253,17 @@ export const resumeCodeChanges = defineOperation({
   access: "team",
   input: z.object({}),
   run: async ({ projectId }) => {
-    if (!codeChangesEnabled()) {
+    const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
+    if (!codeChangesEnabled() || !project.analyseCodeChanges) {
       throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
     }
     await aiOrRefuse(projectId, "code_changes");
     // Nothing is marked before it's queued (the job marks it analysing as it starts, as for one), so
     // one not queued yet, the server stopping meanwhile, stays paused for the next "Resume all".
-    // Resumed, not forced: a paused one goes on (`resume`), and a second "Resume all" at once finds it
-    // analysed already, and skips it.
+    // Resumed (`resume`): each run claims its code change as it starts, so a second "Resume all" at once
+    // skips the ones already taken.
     const paused = await prisma.codeChange.findMany({
-      where: { projectId, state: "PAUSED", project: { analyseCodeChanges: true } },
+      where: { projectId, state: "PAUSED" },
       orderBy: { mergedAt: "asc" },
       select: { id: true },
     });
