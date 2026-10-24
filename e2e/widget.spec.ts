@@ -529,14 +529,37 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(ai.getByRole("form", { name: "Ask a person" }).getByLabel("Your email")).toHaveValue(samEmail(slug));
   await ai.getByRole("button", { name: "Cancel" }).click();
   await ai.getByRole("link", { name: "Post this as feedback" }).click();
-  await expect(assistant).toBeHidden();
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
+  await expect(assistant).toBeHidden();
   await checkpoint(visitor, "widget-docs-ai-post-as-feedback");
   await widget.getByRole("button", { name: "Submit feedback" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: unrelated })).toBeVisible();
+
+  // Someone else signs in to the customer's site in the same tab: the assistant is theirs, empty.
+  // The conversation is kept per person the site signs in, not per tab or browser.
+  const openAssistant = async () => {
+    await visitor.reload();
+    await visitor.getByRole("button", { name: "Feedback" }).click();
+    await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+    // Opening it asks the site who's signed in, which the panel trades for a widget token.
+    const signedIn = visitor.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+    await widget.getByRole("button", { name: "Ask AI", exact: true }).click();
+    await signedIn;
+  };
+  await visitor.route("**/token/**", (route) =>
+    route.fulfill({ contentType: "text/plain", body: ssoToken(ssoSecrets.get(slug)!, { sub: "app-user-8", name: "Kim from Acme", email: `e2e-kim-${slug}@example.com` }) }),
+  );
+  await openAssistant();
+  await expect(assistant).toBeVisible();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toHaveCount(0);
+  await expect(ai.getByText(unrelated)).toHaveCount(0);
+  // Sam again: theirs is still there.
+  await visitor.unroute("**/token/**");
+  await openAssistant();
+  await expect(ai.getByText("Only owners and admins can send invites.")).toBeVisible();
 });
 
 type TutiSdk ={ open(options?: object): void; close(): void; on(name: string, callback: (unseen: boolean) => void): void };

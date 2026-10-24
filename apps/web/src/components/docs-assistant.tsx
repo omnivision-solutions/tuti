@@ -10,6 +10,7 @@ import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { useWidgetSignIn } from "@/components/widget-feedback";
 import { askDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer } from "@/server/operations/docs-ask";
 
@@ -20,8 +21,9 @@ type Turn = { key: string; question: string; answer?: DocsAnswer; error?: string
 const MAX_TITLE = 120;
 
 /**
- * Kept for the tab's session, so the conversation survives going to an article and back; per viewer
- * (`viewer`: the signed-in account, or "anonymous"), since a follow-up only continues the asker's own.
+ * Kept for the tab's session, so the conversation survives going to an article and back; per reader
+ * (the signed-in account, the one the customer's site signs in to the widget, or "anonymous"), so
+ * whoever signs in next in the same tab doesn't see it.
  */
 const storageKey = (slug: string, viewer: string) => `tuti:docs-assistant:${slug}:${viewer}`;
 
@@ -68,15 +70,40 @@ export function DocsAssistantProvider({
 }) {
   const slug = usePortalSlug();
   const from = widget ? "widget" : "portal";
-  const key = storageKey(slug, viewer ?? "anonymous");
   const [open, setOpen] = useState(false);
-  const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, viewer ?? "anonymous"));
-  // Someone else now (signed in or out without a reload): their own conversation.
+  // In the widget, without the portal's sign-in: whoever the customer's site signs in (Tuti.identify),
+  // asked once the assistant is first opened, since each asking costs the customer's app a token.
+  const [opened, setOpened] = useState(false);
+  if (open && !opened) {
+    setOpened(true);
+  }
+  const { signedIn } = useWidgetSignIn(slug, widget && !viewer && opened);
+  const reader = viewer ?? (signedIn ? `widget:${signedIn.id}` : "anonymous");
+  const key = storageKey(slug, reader);
+  const [turns, setTurns] = useState<Turn[]>(() => storedTurns(slug, reader));
+  const [askedHere, setAskedHere] = useState(false);
+  const [leftBehind, setLeftBehind] = useState<string | null>(null);
+  // Someone else now (signed in or out without a reload): their own conversation. Except questions
+  // asked on this page before the widget's sign-in came back: they're the person's it names, and
+  // nobody else's in this tab, so they go with them.
   const [shownFor, setShownFor] = useState(key);
   if (shownFor !== key) {
     setShownFor(key);
-    setTurns(storedTurns(slug, viewer ?? "anonymous"));
+    if (askedHere && shownFor === storageKey(slug, "anonymous") && signedIn) {
+      setLeftBehind(shownFor);
+    } else {
+      setTurns(storedTurns(slug, reader));
+    }
   }
+  useEffect(() => {
+    if (leftBehind) {
+      try {
+        window.sessionStorage.removeItem(leftBehind);
+      } catch {
+        // Storage blocked: nothing was kept there.
+      }
+    }
+  }, [leftBehind]);
   // The turns as they are now, for asking without waiting for a render.
   const turnsRef = useRef(turns);
   useEffect(() => {
@@ -121,6 +148,7 @@ export function DocsAssistantProvider({
         }
         const before = turnsRef.current;
         const turn = crypto.randomUUID();
+        setAskedHere(true);
         setTurns((all) => [...all, { key: turn, question: trimmed }]);
         void run(turn, trimmed, before);
       },
