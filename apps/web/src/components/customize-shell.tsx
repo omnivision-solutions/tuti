@@ -3,7 +3,7 @@
 import { ChevronLeftIcon, LockIcon, MonitorIcon, MoonIcon, SmartphoneIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createContext, type ReactNode, useActionState, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, type ReactNode, useActionState, useCallback, useContext, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 
 import {
   AlertDialog,
@@ -305,11 +305,14 @@ function PortalPreview({
     setOpened({ version, path, token });
   }
   const tokenAt = useRef(0);
+  // An Effect Event, so the timer goes by the token alone: the router can be a new object after a refresh,
+  // and restarting then would date the token afresh, and the new one would never be taken.
+  const renew = useEffectEvent(() => router.refresh());
   useEffect(() => {
     tokenAt.current = Date.now();
-    const renew = setTimeout(() => router.refresh(), (PREVIEW_TTL_SECONDS * 1000) / 2);
-    return () => clearTimeout(renew);
-  }, [opened.token, router]);
+    const timer = setTimeout(renew, (PREVIEW_TTL_SECONDS * 1000) / 2);
+    return () => clearTimeout(timer);
+  }, [opened.token]);
   useEffect(() => {
     if (token !== opened.token && Date.now() - tokenAt.current >= (PREVIEW_TTL_SECONDS * 1000) / 2) {
       setOpened((current) => ({ ...current, path, token }));
