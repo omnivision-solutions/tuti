@@ -83,7 +83,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
   return (
     <>
-      <BackLink href={`/app/${slug}`}>Feedback</BackLink>
+      <BackLink href={`/app/${slug}/feedback`}>Feedback</BackLink>
 
       <PageHeader
         title={post.title}

@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type Prisma, prisma } from "@tuti/db";
-import { confidence, enqueue, THRESHOLDS } from "@tuti/jobs";
+import { confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
 import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
 
@@ -28,6 +28,10 @@ const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pend
 
 /** A feedback proposal "Apply likely" takes: above its kind's likely threshold, and for a post it moves forward, with a comment to post. */
 export function likelyToApply(action: { kind: CodeChangeActionKind; probability: number; payload: Prisma.JsonValue }): boolean {
+  // The changelog line only rewrites a bullet in a draft: always likely.
+  if (action.kind === "CHANGELOG_LINE") {
+    return true;
+  }
   if (action.kind !== "RESOLVES" && action.kind !== "MOVES_FORWARD" && action.kind !== "LINKS") {
     return false;
   }
@@ -35,8 +39,7 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
   return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
 }
 
-/** The kinds applying can do (the changelog line comes with its own, docs/plan.md). */
-const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE"]);
+const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
 type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string };
 
@@ -88,9 +91,17 @@ const changeView = (change: ChangeRow) => ({
 
 export type CodeChangeView = ReturnType<typeof changeView>;
 
-/** The project's code changes: those with proposals waiting first, then newest first. ponytail: the latest 100; page when teams need older ones. */
-export async function codeChangeList(projectId: string): Promise<CodeChangeView[]> {
-  const changes = await prisma.codeChange.findMany({ where: { projectId }, orderBy: { mergedAt: "desc" }, take: 100, select: changeSelect });
+/**
+ * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
+ * those, as Home's Catch up lists). ponytail: the latest 100; page when teams need older ones.
+ */
+export async function codeChangeList(projectId: string, { waiting = false } = {}): Promise<CodeChangeView[]> {
+  const changes = await prisma.codeChange.findMany({
+    where: { projectId, ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }) },
+    orderBy: { mergedAt: "desc" },
+    take: 100,
+    select: changeSelect,
+  });
   return changes.map(changeView).sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
 }
 
@@ -122,10 +133,15 @@ export async function codeChangeDetail(projectId: string, id: string) {
   if (!change) {
     return null;
   }
-  const portal = await projectPortal(projectId);
+  const [portal, bullet] = await Promise.all([
+    projectPortal(projectId),
+    prisma.changelogEntryPullRequest.findFirst({ where: { url: change.url, entry: { projectId } }, select: { entry: { select: { number: true, title: true } } } }),
+  ]);
   return {
     ...changeView(change),
     why: change.why,
+    /** The changelog entry with the pull request's bullet, if one has it. */
+    changelog: bullet?.entry ?? null,
     actions: change.actions.map((action) => {
       const payload = (action.payload ?? {}) as { comment?: string } & DocsPayload;
       const stale = action.kind === "ARTICLE_EDIT" && action.status === "PENDING" && action.article !== null && outdated(payload, action.article);
@@ -146,6 +162,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         /** An article edit's text before and after, and a new article's title and text (plain text). */
         ...(action.kind === "ARTICLE_EDIT" && { problem: payload.problem ?? "wrong", before: payload.before ?? "", after: payload.body ?? "" }),
         ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
+        /** The pull request's line in the changelog (as proposed, or as written once applied). */
+        ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
         decidedBy: action.decidedBy?.name ?? null,
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
@@ -225,7 +243,7 @@ const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
-    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; publish an article's edit (or, with `publish: false`, keep it unpublished to finish in the editor); or create a new article's draft",
+    "Apply a proposed action: link the post, complete it (its people get the shipped email) or post the team's comment on it; publish an article's edit (or, with `publish: false`, keep it unpublished to finish in the editor); create a new article's draft; or write the pull request's line in the changelog (its bullet in the entry that has it, else the running draft)",
   method: "POST",
   path: "/code-change-actions/{id}/apply",
   scope: "write",
@@ -236,6 +254,8 @@ export const applyCodeChangeAction = defineOperation({
     comment: z.string().trim().min(1).max(5_000).optional(),
     /** For an article edit: publish it now (the default), or false to keep it as the article's unpublished changes, to finish in the editor. */
     publish: z.boolean().optional(),
+    /** For the changelog line: the line to write, if the team changed it. */
+    line: z.string().trim().min(1).max(300).optional(),
   }),
   example: { comment: "Weekly repeats are out today; monthly ones are next." },
   run: async (context, input) => {
@@ -260,6 +280,23 @@ export const applyCodeChangeAction = defineOperation({
     }
     if (action.kind === "ARTICLE_EDIT" || action.kind === "NEW_ARTICLE") {
       return applyDocs(context, { ...action, article: action.article }, input.publish ?? true);
+    }
+    if (action.kind === "CHANGELOG_LINE") {
+      const line = input.line ?? ((action.payload ?? {}) as { line?: string }).line ?? "";
+      const { count } = await prisma.codeChangeAction.updateMany({
+        where: { id: action.id, status: "PENDING" },
+        data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: new Date(), payload: { line } },
+      });
+      if (count === 0) {
+        throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
+      }
+      try {
+        const entry = await setChangelogLine(projectId, { ...action.codeChange }, line);
+        return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
+      } catch (error) {
+        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue } });
+        throw error;
+      }
     }
     if (!action.post) {
       throw new OperationError(409, "not_applicable", "This kind of action can't be applied yet");

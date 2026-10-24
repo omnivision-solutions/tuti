@@ -37,15 +37,18 @@ test("a merged pull request becomes a code change; the team completes the post i
   // (The new-article question lists the article's title too, so this one matches the article itself.)
   await nextDecision({ effect: { wrong: 0.9, missing: 0.05, unaffected: 0.05 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
-  await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
+  await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, Dark or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
-  // Code changes lists it, waiting for the team.
+  // Home's Catch up has it, and so does Code changes, waiting for the team.
   await owner.goto(`/app/${slug}`);
+  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
+  await expect(catchUp).toContainText("3 to review");
+  await checkpoint(owner, "home-catch-up");
   await owner.getByRole("link", { name: "Code changes" }).click();
   await owner.waitForURL(`**/app/${slug}/code-changes`);
-  await expect(owner.getByText("2 to review")).toBeVisible();
+  await expect(owner.getByText("3 to review")).toBeVisible();
   await checkpoint(owner, "code-changes");
   await owner.getByRole("link", { name: pr }).click();
 
@@ -60,6 +63,15 @@ test("a merged pull request becomes a code change; the team completes the post i
   await proposal.getByRole("button", { name: "Mark completed" }).click();
   await expect(owner.getByText("#1 completed")).toBeVisible();
   await expect(proposal).toContainText("Applied by Olive Owner");
+
+  // The changelog line replaces the pull request's bullet in the Next release draft, as the team words it.
+  const line = owner.getByRole("textbox", { name: "Changelog line" });
+  await expect(line).toHaveValue("Dark theme");
+  await line.fill("A dark theme, in Settings");
+  await owner.getByRole("button", { name: "Update changelog" }).click();
+  await expect(owner.getByText("Changelog updated")).toBeVisible();
+  await expect(owner.getByLabel("Changelog proposal")).toContainText("Applied by Olive Owner");
+  await expect(owner.getByLabel("Changelog proposal")).toContainText("A dark theme, in Settings");
 
   // The article's edit, as a diff against what's published, goes live as a new version.
   const edit = owner.getByRole("listitem", { name: `Updated: ${article}` });
@@ -92,12 +104,19 @@ test("a merged pull request becomes a code change; the team completes the post i
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
   await checkpoint(owner, "code-changes-nothing-to-do");
-  // The post is completed now and the article is unaffected, so nothing is left to propose.
+  // The post is completed now and the article is unaffected: only its changelog line is left to review.
   await similar(choreSummary, `${article}\n\nPick Light, Dark or System in Settings.`, 0.5);
   await nextModelReply(choreSummary, chore);
   await nextDecision({ effect: { wrong: 0.01, missing: 0.01, unaffected: 0.98 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.05 }, `${choreSummary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "A tidier theme store", proposals: {} }), chore);
   await row.getByRole("button", { name: "Analyse anyway" }).click();
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
-  await expect(row).toContainText("No post or article it changes.");
+  await expect(owner.getByText("Nothing to do (1)")).toHaveCount(0);
+  await expect(owner.getByRole("listitem").filter({ hasText: chore })).toContainText("1 to review");
+
+  // The changelog's draft has the line the team wrote, and not the pull request users don't see.
+  await owner.goto(`/app/${slug}/changelog/1`);
+  await expect(owner.getByText("A dark theme, in Settings")).toBeVisible();
+  await expect(owner.getByText(chore)).toHaveCount(0);
 });

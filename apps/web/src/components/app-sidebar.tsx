@@ -7,6 +7,7 @@ import {
   ContactRoundIcon,
   ExternalLinkIcon,
   GitPullRequestIcon,
+  HouseIcon,
   InboxIcon,
   LayoutListIcon,
   LogOutIcon,
@@ -132,7 +133,8 @@ export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: stri
 function projectNav(project: ProjectSummary) {
   const base = `/app/${project.slug}`;
   return [
-    { title: "Feedback", href: base, icon: InboxIcon },
+    { title: "Home", href: base, icon: HouseIcon },
+    { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true },
     { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },

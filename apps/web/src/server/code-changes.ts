@@ -18,15 +18,21 @@ export async function analyseCodeChange(projectSlug: string, codeChangeId: strin
 
 /**
  * Applies a proposed action: `comment` is the team's edit of the comment for a post it moves forward;
- * `publish: false` keeps an article edit unpublished, to finish in the editor.
+ * `publish: false` keeps an article edit unpublished, to finish in the editor; `line` is the team's
+ * edit of the changelog line.
  */
-export async function applyCodeChange(projectSlug: string, actionId: string, options: { comment?: string; publish?: boolean } = {}): Promise<FormState> {
-  const { comment, publish } = options ?? {};
+export async function applyCodeChange(
+  projectSlug: string,
+  actionId: string,
+  options: { comment?: string; publish?: boolean; line?: string } = {},
+): Promise<FormState> {
+  const { comment, publish, line } = options ?? {};
   return asTeam(projectSlug, "Only the project's team can apply code changes", (context) =>
     call(applyCodeChangeAction, context, {
       id: String(actionId),
       ...(typeof comment === "string" && comment.trim() && { comment }),
       ...(typeof publish === "boolean" && { publish }),
+      ...(typeof line === "string" && line.trim() && { line }),
     }),
   );
 }
@@ -49,7 +55,7 @@ export async function applyLikelyCodeChanges(projectSlug: string, codeChangeId: 
       throw new OperationError(404, "not_found", "Code change not found");
     }
     const actions = await prisma.codeChangeAction.findMany({
-      where: { codeChangeId: change.id, status: "PENDING", kind: { in: ["RESOLVES", "MOVES_FORWARD", "LINKS"] } },
+      where: { codeChangeId: change.id, status: "PENDING", kind: { in: ["RESOLVES", "MOVES_FORWARD", "LINKS", "CHANGELOG_LINE"] } },
       orderBy: { probability: "desc" },
       select: { id: true, kind: true, probability: true, payload: true },
     });

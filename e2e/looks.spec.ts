@@ -46,7 +46,8 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
 
     const teamPage = await open(team, APP_URL);
     for (const [path, name] of [
-      [`/app/${slug}`, "team-feedback"],
+      [`/app/${slug}`, "team-home"],
+      [`/app/${slug}/feedback`, "team-feedback"],
       [`/app/${slug}/p/1`, "team-post"],
       [`/app/${slug}/settings`, "team-settings"],
       [`/app/${slug}/customize`, "team-customize"],
