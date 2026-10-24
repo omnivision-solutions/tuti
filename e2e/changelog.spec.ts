@@ -312,4 +312,18 @@ test("older changelog entries are a page further: /changelog/page/2", async ({ b
   await checkpoint(reader, "portal-changelog-page-2");
   await main.getByRole("link", { name: "Newer entries" }).click();
   await expect(reader).toHaveURL(/\/changelog$/);
+
+  // On a phone, the header's menu lists the entries by date (with their titles), the one being read marked.
+  await reader.setViewportSize({ width: 390, height: 844 });
+  await reader.goto("/changelog/21");
+  await reader.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const entries = reader.getByRole("dialog", { name: "Menu" }).getByRole("navigation", { name: "Changelog entries" });
+  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const newest = entries.getByRole("link", { name: new RegExp(`^${today}\\s*Release 21$`) });
+  await expect(newest).toHaveAttribute("aria-current", "page");
+  await expect(entries.getByRole("link", { name: /Release 20$/ })).not.toHaveAttribute("aria-current");
+  await checkpoint(reader, "portal-changelog-phone-menu", { fullPage: false });
+  await entries.getByRole("link", { name: /Release 20$/ }).click();
+  await expect(reader).toHaveURL(/\/changelog\/20$/);
+  await expect(reader.getByRole("dialog", { name: "Menu" })).toBeHidden();
 });

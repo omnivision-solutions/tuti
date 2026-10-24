@@ -10,7 +10,9 @@ import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { portalAddress } from "@/server/custom-domains";
 import { Separator } from "@/components/ui/separator";
-import { publishedEntries } from "@/server/changelog-queries";
+import { PortalMenuPart } from "@/components/portal-menu";
+import { formatDate } from "@/lib/format";
+import { changelogContents, publishedEntries } from "@/server/changelog-queries";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { getSession } from "@/server/session";
 import { portalBase, portalLinks } from "@/server/portal-base";
@@ -20,6 +22,42 @@ const PAGE_SIZE = 20;
 
 /** A changelog page's path: /changelog, then /changelog/page/2 and on. */
 export const changelogPath = (page: number) => (page === 1 ? "/changelog" : `/changelog/page/${page}`);
+
+/**
+ * On a changelog page, the header's menu (on phones and tablets) lists the newest entries by date,
+ * each with its title, `current` (an entry's number, on its page) marked; then all of them.
+ */
+export async function ChangelogMenu({ slug, current }: { slug: string; current?: number }) {
+  const [at, entries] = await Promise.all([portalLinks(), changelogContents(slug)]);
+  if (entries.length === 0) {
+    return null;
+  }
+  return (
+    <PortalMenuPart>
+      <nav aria-label="Changelog entries" className="flex flex-col gap-0.5 text-sm">
+        <Link href={at("/changelog")} className="px-2 py-1 font-heading font-semibold">
+          Changelog
+        </Link>
+        {entries.map((entry) => {
+          const active = entry.number === current;
+          return (
+            <Link
+              key={entry.number}
+              href={at(`/changelog/${entry.number}`)}
+              aria-current={active ? "page" : undefined}
+              className={`flex flex-col rounded-md px-2 py-1.5 ${active ? "bg-accent" : "hover:bg-accent/50"}`}
+            >
+              <time dateTime={entry.publishedAt!.toISOString()} className={active ? "font-medium" : "text-muted-foreground"}>
+                {formatDate(entry.publishedAt!)}
+              </time>
+              <span className="text-xs break-words text-muted-foreground">{entry.title}</span>
+            </Link>
+          );
+        })}
+      </nav>
+    </PortalMenuPart>
+  );
+}
 
 /** Feed readers find the RSS feed from the page: a full URL on the project's portal. */
 export async function changelogMetadata(slug: string): Promise<Metadata> {
@@ -51,6 +89,7 @@ export async function changelogPage(slug: string, page: number) {
   const media = await mediaUrls(...entries.map((entry) => entry.doc));
   return (
     <div className="flex flex-col gap-8">
+      <ChangelogMenu slug={slug} />
       {announced && <ChangelogSeen projectSlug={slug} at={announced.toISOString()} signedIn />}
       <PageHeader
         title="Changelog"
