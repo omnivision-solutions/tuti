@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { applyLikelyCodeChanges } from "@/server/code-changes";
 import { applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
+import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -110,12 +111,13 @@ describe("applying", () => {
     expect((await postOf(post.id)).comments).toHaveLength(1);
   });
 
-  test("a comment to post is needed; other kinds can't be applied yet; another project's actions aren't found", async () => {
+
+  test("a comment to post is needed; the changelog line can't be applied yet; another project's actions aren't found", async () => {
     const { action } = await proposal("MOVES_FORWARD");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Write the comment to post first");
     const { change } = await proposal("LINKS");
-    const article = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9 } });
-    await expect(call(applyCodeChangeAction, team(), { id: article.id })).rejects.toThrow("can't be applied yet");
+    const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1 } });
+    await expect(call(applyCodeChangeAction, team(), { id: line.id })).rejects.toThrow("can't be applied yet");
 
     const outsider = await signUp("Otto Outsider");
     const theirs = await createProject(outsider);
@@ -168,4 +170,155 @@ test('"Apply likely" applies the likely feedback proposals and leaves the maybes
   expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: unwritten.action.id } })).status).toBe("PENDING");
   expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.filter((action) => action.applyLikely)).toEqual([]);
   expect((await postOf(likely.post.id)).status).toBe("COMPLETED");
+});
+
+describe("docs", () => {
+  let number = 20;
+  const EDITED = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Pick Light, Dark or System in Settings." }] }] };
+
+  /** A published article, and a ready code change proposing an edit to it, written against its newest version. */
+  async function articleEdit() {
+    const created = await call(createArticle, team(), { title: "Change the theme", body: "Pick Light in Settings." });
+    await call(publishArticle, team(), { slug: created.slug });
+    const article = await prisma.article.findFirstOrThrow({
+      where: { projectId: project.id, slug: created.slug },
+      select: { id: true, slug: true, revisions: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+    });
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Dark theme", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: {
+        codeChangeId: change.id,
+        kind: "ARTICLE_EDIT",
+        articleId: article.id,
+        probability: 0.9,
+        payload: { problem: "wrong", basedOn: article.revisions[0]!.id, title: "Change the theme", content: EDITED, body: "Pick Light, Dark or System in Settings.", before: "Pick Light in Settings." },
+      },
+    });
+    return { article, change, action };
+  }
+  const published = async (slug: string) =>
+    prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug }, select: { body: true, changes: { select: { body: true } } } });
+
+  test("an article edit: published as a new version, or kept unpublished to finish in the editor", async () => {
+    const { article, change, action } = await articleEdit();
+    expect(await call(getCodeChange, team(), { id: change.id })).toMatchObject({
+      actions: [{ kind: "article_edit", status: "pending", problem: "wrong", before: "Pick Light in Settings.", after: "Pick Light, Dark or System in Settings.", article: { slug: article.slug } }],
+    });
+    expect(await call(applyCodeChangeAction, team(), { id: action.id })).toMatchObject({ status: "applied", article: article.slug, published: true });
+    expect(await published(article.slug)).toEqual({ body: "Pick Light, Dark or System in Settings.", changes: null });
+
+    const later = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: later.action.id, publish: false });
+    expect(await published(later.article.slug)).toEqual({ body: "Pick Light in Settings.", changes: { body: "Pick Light, Dark or System in Settings." } });
+  });
+
+  test("an article saved since the edit was written makes it out of date: shown so, and not applied", async () => {
+    const { article, change, action } = await articleEdit();
+    await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+    expect((await call(getCodeChange, team(), { id: change.id })).actions[0]!.status).toBe("stale");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since this edit was written");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("STALE");
+    expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
+    // Dismissing it still works.
+    await call(dismissCodeChangeAction, team(), { id: action.id });
+  });
+
+  test("a save between the out-of-date check and the edit isn't overwritten: the edit is out of date", async () => {
+    const { article, action } = await articleEdit();
+    // Right as the action is claimed, after the check, someone saves the article.
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since this edit was written");
+    expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("STALE");
+  });
+
+  test("two versions saved in the same millisecond: the edit is checked against the one articles.update calls newest", async () => {
+    const { article, action } = await articleEdit();
+    const newest = await prisma.articleRevision.findFirstOrThrow({ where: { articleId: article.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    // Another version at the very same time, sorting before it by id: still not newer.
+    await prisma.articleRevision.create({ data: { id: `0${newest.id.slice(1)}`, articleId: article.id, title: newest.title, body: newest.body, createdAt: newest.createdAt } });
+    expect((await call(getCodeChange, team(), { id: (await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).codeChangeId })).actions[0]!.status).toBe("pending");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
+  });
+
+  test("unpublished changes waiting on the article make the edit out of date too (applying would publish them)", async () => {
+    const { article, action } = await articleEdit();
+    await call(updateArticle, team(), { slug: article.slug, body: "Half-written" });
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since");
+    expect(await published(article.slug)).toEqual({ body: "Pick Light in Settings.", changes: { body: "Half-written" } });
+  });
+
+  test("a failure after the draft is saved leaves the action applied, so a second click can't make a second draft", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    // The draft is saved; looking it up right after fails.
+    vi.spyOn(prisma.article, "findFirstOrThrow").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+  });
+
+  test("a failure before anything is saved (looking up the portal's address) leaves it waiting, to apply again", async () => {
+    const { article, action } = await articleEdit();
+    // articles.update looks the project up for its portal's address before it saves anything.
+    vi.spyOn(prisma.project, "findUniqueOrThrow").mockRejectedValueOnce(new Error("database blip"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
+  });
+
+  test("a teammate's save while this one failed before saving isn't taken for it: still waiting (and now out of date)", async () => {
+    const teammate = await signUp("Tom Teammate");
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+    const asTeammate = { actor: { kind: "user" as const, userId: teammate.id }, projectId: project.id };
+    const { article, action } = await articleEdit();
+    // The lookup before saving: meanwhile the teammate saves the article, then the lookup fails.
+    vi.spyOn(prisma.project, "findUniqueOrThrow").mockImplementationOnce((async () => {
+      await call(updateArticle, asTeammate, { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      throw new Error("database blip");
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article changed since");
+
+    // A new article: the teammate writes one with the same title meanwhile.
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const draft = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    vi.spyOn(prisma.project, "findUniqueOrThrow").mockImplementationOnce((async () => {
+      await call(createArticle, asTeammate, { title: "Use the dark theme", body: "Pick Light, Dark or System in Settings." });
+      throw new Error("database blip");
+    }) as never);
+    await expect(call(applyCodeChangeAction, team(), { id: draft.id })).rejects.toThrow("database blip");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("PENDING");
+  });
+
+  test("a new article becomes a draft, nothing more, and the action points to it", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 21, url: "https://github.com/acme/app/pull/21", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    const result = (await call(applyCodeChangeAction, team(), { id: action.id })) as { article: string };
+    const draft = await prisma.article.findFirstOrThrow({ where: { projectId: project.id, slug: result.article }, select: { id: true, title: true, publishedAt: true, body: true } });
+    expect(draft).toMatchObject({ title: "Use the dark theme", publishedAt: null, body: "Pick Light, Dark or System in Settings." });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).articleId).toBe(draft.id);
+  });
 });

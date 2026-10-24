@@ -16,10 +16,18 @@ export async function analyseCodeChange(projectSlug: string, codeChangeId: strin
   );
 }
 
-/** Applies a proposed action; `comment` is the team's edit of the comment for a post it moves forward. */
-export async function applyCodeChange(projectSlug: string, actionId: string, comment?: string): Promise<FormState> {
+/**
+ * Applies a proposed action: `comment` is the team's edit of the comment for a post it moves forward;
+ * `publish: false` keeps an article edit unpublished, to finish in the editor.
+ */
+export async function applyCodeChange(projectSlug: string, actionId: string, options: { comment?: string; publish?: boolean } = {}): Promise<FormState> {
+  const { comment, publish } = options ?? {};
   return asTeam(projectSlug, "Only the project's team can apply code changes", (context) =>
-    call(applyCodeChangeAction, context, { id: String(actionId), ...(typeof comment === "string" && comment.trim() && { comment }) }),
+    call(applyCodeChangeAction, context, {
+      id: String(actionId),
+      ...(typeof comment === "string" && comment.trim() && { comment }),
+      ...(typeof publish === "boolean" && { publish }),
+    }),
   );
 }
 

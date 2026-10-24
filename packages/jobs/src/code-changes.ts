@@ -20,6 +20,7 @@ import {
   pullRequestState,
   THRESHOLDS,
 } from "./code-change-decisions";
+import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { portalOrigin } from "./events";
 import { installationApi } from "./github-api";
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -176,12 +177,35 @@ async function analyse(change: { id: string; projectId: string; slug: string }, 
     })(),
   ]);
   proposals.sort((a, b) => b.probability - a.probability);
+  // The docs' edits and drafts are written now; one the model couldn't write usably isn't proposed.
+  const [why, written] = await Promise.all([
+    proposals.some((proposal) => proposal.postId) ? writeProposals(pr, summary, proposals, posts) : "",
+    Promise.all(proposals.map((proposal) => writeDocs(pr, summary, proposal, articles))),
+  ]);
+  const kept = proposals.filter((_, i) => written[i]);
   // Something users see, but nothing in the feedback or the docs it changes.
-  const state = proposals.length > 0 ? "READY" : "NOTHING_TO_DO";
-  const reason = proposals.length > 0 ? "" : "No post or article it changes.";
-  const why = proposals.length > 0 ? await writeProposals(pr, summary, proposals, posts) : "";
-  await finish(change.id, { state, reason, summary, why, ...versions }, proposals);
-  return { state, actions: proposals.length };
+  const state = kept.length > 0 ? "READY" : "NOTHING_TO_DO";
+  const reason = kept.length > 0 ? "" : "No post or article it changes.";
+  await finish(change.id, { state, reason, summary, why: kept.length > 0 ? why : "", ...versions }, kept);
+  return { state, actions: kept.length };
+}
+
+/** Writes a docs proposal's edit or draft (and its reason) into it; false if it couldn't be written usably. Other kinds pass. */
+async function writeDocs(pr: PullRequestRead, summary: string, proposal: Proposal, articles: ArticleCandidate[]): Promise<boolean> {
+  const written =
+    proposal.kind === "ARTICLE_EDIT"
+      ? await writeArticleEdit(pr, summary, proposal.articleId!, (proposal.payload as { problem: "wrong" | "missing" }).problem)
+      : proposal.kind === "NEW_ARTICLE"
+        ? await writeNewArticle(pr, summary, articles.map((article) => article.title))
+        : undefined;
+  if (written === undefined) {
+    return true;
+  }
+  if (written) {
+    proposal.reason = written.reason;
+    proposal.payload = written.payload as unknown as Prisma.InputJsonValue;
+  }
+  return written !== null;
 }
 
 const PROPOSALS_SYSTEM = `You help a software team keep its feedback board in step with what it ships. You get a merged pull request, what changed for users, and what Tuti proposes to do about it on the team's feedback posts, each with a key:
@@ -205,15 +229,15 @@ const replySchema = z.object({
  * set on the proposals. Throws if the model fails or its reply isn't the JSON asked for (retried).
  */
 async function writeProposals(pr: PullRequestRead, summary: string, proposals: Proposal[], posts: PostCandidate[]): Promise<string> {
-  const keyed = proposals.map((proposal, i) => ({ key: `p${i + 1}`, proposal, post: posts.find((post) => post.id === proposal.postId) }));
+  const keyed = proposals
+    .map((proposal, i) => ({ key: `p${i + 1}`, proposal, post: posts.find((post) => post.id === proposal.postId) }))
+    .filter((k) => k.post);
   const user = JSON.stringify(
     {
       pull_request: pullRequestState(pr),
       summary_for_users: summary,
       proposals: Object.fromEntries(
-        keyed
-          .filter((k) => k.post)
-          .map(({ key, proposal, post }) => [key, { kind: proposal.kind.toLowerCase(), post: { title: post!.title, text: post!.body.slice(0, 2_000) } }]),
+        keyed.map(({ key, proposal, post }) => [key, { kind: proposal.kind.toLowerCase(), post: { title: post!.title, text: post!.body.slice(0, 2_000) } }]),
       ),
     },
     null,

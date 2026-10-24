@@ -308,3 +308,14 @@ describe("the migration", () => {
     }
   });
 });
+
+test("a save with `revision` happens only while the article's newest version is still that one", async () => {
+  const article = await call(createArticle, as(owner), { title: "Themes", body: "Light only." });
+  const [newest] = (await call(listRevisions, as(owner), { slug: article.slug })).revisions;
+  await call(updateArticle, as(editor), { slug: article.slug, body: "Light and dark." });
+  await expect(call(updateArticle, as(owner), { slug: article.slug, body: "Light and sepia.", revision: newest!.id })).rejects.toThrow("The article was saved again since");
+  const [latest] = (await call(listRevisions, as(owner), { slug: article.slug })).revisions;
+  expect(latest!.body).toBe("Light and dark.");
+  await call(updateArticle, as(owner), { slug: article.slug, body: "Light, dark and sepia.", revision: latest!.id });
+  expect((await call(listRevisions, as(owner), { slug: article.slug })).revisions[0]!.body).toBe("Light, dark and sepia.");
+});
