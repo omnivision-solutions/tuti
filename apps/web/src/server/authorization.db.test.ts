@@ -279,6 +279,7 @@ const matrix: Matrix = {
       takesIds: true,
       call: (slug, f) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.analyseCodeChange(slug, f.codeChangeId)),
     },
+    resumeCodeChanges: { allowed: "MEMBER", call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => codeChanges.resumeCodeChanges(slug)) },
     applyCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyCodeChange(slug, f.linkActionId) },
     dismissCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.dismissCodeChange(slug, f.dismissActionId, "Not this one") },
     applyLikelyCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyLikelyCodeChanges(slug, f.codeChangeId) },

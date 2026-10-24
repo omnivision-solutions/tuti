@@ -95,6 +95,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "codeChanges.get": (f) => ({ id: f.codeChangeId }),
   // With AI on (see below); its repository isn't the project's, so it stops there, unread.
   "codeChanges.analyse": (f) => ({ id: f.codeChangeId }),
+  // With AI on and nothing paused, it resumes none.
+  "codeChanges.resume": () => ({}),
   "codeChangeActions.apply": (f) => ({ id: f.linkActionId }),
   "codeChangeActions.dismiss": (f) => ({ id: f.dismissActionId, reason: "Not this one" }),
   "widget.get": () => ({}),
@@ -376,8 +378,8 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const input = () => cases[operation.name as OperationName](fixture);
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
-  // AI answers need embeddings: on for docs.ask only. Nothing is close to its question, so the model isn't asked.
-  vi.stubEnv("OPENAI_API_KEY", operation.name === "docs.ask" || operation.name === "codeChanges.analyse" ? FAKE_OPENAI_KEY : "");
+  // AI answers and code changes need embeddings: on for docs.ask (nothing is close to its question, so the model isn't asked) and for analysing and resuming code changes.
+  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();

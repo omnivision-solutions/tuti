@@ -1,7 +1,7 @@
 import type { Operation } from "./define";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
-import { analyseCodeChange, applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "./code-changes";
+import { analyseCodeChange, applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges, resumeCodeChanges } from "./code-changes";
 import { createComment, createPost } from "./create";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
@@ -130,6 +130,7 @@ const all = [
   listCodeChanges,
   getCodeChange,
   analyseCodeChange,
+  resumeCodeChanges,
   applyCodeChangeAction,
   dismissCodeChangeAction,
   setVote,

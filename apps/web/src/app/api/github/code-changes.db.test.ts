@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -672,6 +672,22 @@ describe("out of AI credits", () => {
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([expect.objectContaining({ number: 39, state: "PAUSED" })]);
     expect(readsOf(39)).toEqual([]);
+  });
+
+  test("“Resume all” resumes every paused code change once there are credits, and only those", async () => {
+    github.pullRequest(repo, pullRequest(43));
+    github.pullRequest(repo, pullRequest(44));
+    expect(await merge(43)).toBe(200);
+    expect(await merge(44)).toBe(200);
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "no_credits" });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED", "PAUSED"]);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    model.decide(INTERNAL, "Dark mode 43");
+    model.decide(INTERNAL, "Dark mode 44");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO", "NOTHING_TO_DO"]);
+    // Nothing paused is left: none resumed, nothing asked.
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0 });
   });
 
   test("an analysis that started finishes, even past the last credit; the next merge is paused", async () => {
