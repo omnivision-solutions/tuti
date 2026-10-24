@@ -206,6 +206,28 @@ export function PortalHeaderLinks() {
   );
 }
 
+/** Without JavaScript (where the header's menu can't open), on phones and tablets: the team's header links and contact button in a row of their own. */
+export function PortalLinksRow() {
+  const { headerLinks, contact } = usePortalLook();
+  if (headerLinks.length === 0 && !contact) {
+    return null;
+  }
+  return (
+    <nav aria-label="Links" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-6 py-2 md:hidden">
+      {headerLinks.map((link, i) => (
+        <a key={i} href={link.url} className="text-sm text-muted-foreground hover:text-foreground">
+          {link.label}
+        </a>
+      ))}
+      {contact && (
+        <a href={contact.url} className={buttonVariants({ size: "sm" })}>
+          {contact.label || "Contact us"}
+        </a>
+      )}
+    </nav>
+  );
+}
+
 /**
  * The footer: the team's links, and "Powered by tuti" unless the project has a licence to hide it.
  * The attribution is required by Tuti's additional licence terms (AGPL section 7(b)): see

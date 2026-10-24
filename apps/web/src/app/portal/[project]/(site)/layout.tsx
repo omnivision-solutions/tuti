@@ -7,7 +7,7 @@ import { cache } from "react";
 
 import { PortalBaseProvider } from "@/components/portal-base";
 import { ColorSchemeScript } from "@/components/color-scheme-script";
-import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
+import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLinksRow, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
@@ -137,9 +137,14 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
                 Sign in
               </SignInLink>
             )}
-            {canRead && <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={project.boards} />}
+            {/* For everyone: on a private portal's sign-in page it has the team's links and contact button (no parts). */}
+            <PortalMenu name={project.name} homeHref={withBase(base, "/")} boards={canRead ? project.boards : []} />
           </div>
         </header>
+        {/* Without JavaScript the menu can't open: on phones and tablets, the team's links and contact button under the header. */}
+        <noscript>
+          <PortalLinksRow />
+        </noscript>
         {canRead && <PartRows boards={project.boards} docsTabs={docsTabs} />}
         </PortalTop>
         <PortalMain>{children}</PortalMain>

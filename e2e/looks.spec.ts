@@ -106,4 +106,22 @@ test("on a phone, the header's buttons stay on its first line beside a long name
   await visitor.waitForURL(/\/feedback\//);
   await expect(menu).toBeHidden();
   await expect(menuButton).toBeVisible();
+
+  // Without JavaScript the menu can't open: the team's links are in a row under the header instead.
+  const noScript = await (browser as Browser).newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 }, baseURL: portalUrl(slug) });
+  const plain = await noScript.newPage();
+  await plain.goto(`/docs/${article.slug}`);
+  await expect(plain.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Pricing" })).toBeVisible();
+  await noScript.close();
+
+  // On a private portal's sign-in page, the menu has them too (and no parts).
+  await api("/portal", { access: "private" }, "PATCH");
+  const outsider = await newPerson(browser, portalUrl(slug));
+  await outsider.setViewportSize({ width: 390, height: 844 });
+  await outsider.goto(`/docs/${article.slug}`);
+  await expect(outsider).toHaveURL(/\/sign-in/);
+  await outsider.getByRole("banner").getByRole("button", { name: "Menu" }).click();
+  const outsiderMenu = outsider.getByRole("dialog", { name: "Menu" });
+  await expect(outsiderMenu.getByRole("link", { name: "Pricing" })).toBeVisible();
+  await expect(outsiderMenu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
 });
