@@ -98,7 +98,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
 
   // On another site the portal's cookies aren't sent, so the widget asks to sign in (in a new tab).
@@ -139,7 +139,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
   await expect(suggestions.getByRole("link", { name: /Dark mode/ })).toHaveAttribute("target", "_blank");
   await checkpoint(ada, "widget-similar-while-typing");
   await widget.getByLabel("Title").fill("Export to CSV");
-  await widget.getByRole("button", { name: "Submit feedback" }).click();
+  await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await checkpoint(ada, "widget-posted");
 
@@ -204,7 +204,7 @@ test("a customer's site signs its users in to the widget with SSO, and they post
   await expect(widget.getByText("Posting as Sam from Acme")).toBeVisible();
   await widget.getByLabel("Title").fill("Calendar sync");
   await checkpoint(visitor, "widget-signed-in-with-sso");
-  await widget.getByRole("button", { name: "Submit feedback" }).click();
+  await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
 
   // The post is Sam's, on the portal.
@@ -657,7 +657,7 @@ test("a visitor asks the docs' AI in the widget's assistant: an answer with its 
   await expect(widget.getByLabel("Title")).toHaveValue(unrelated);
   await expect(assistant).toBeHidden();
   await checkpoint(visitor, "widget-docs-ai-post-as-feedback");
-  await widget.getByRole("button", { name: "Submit feedback" }).click();
+  await widget.getByRole("button", { name: "Submit post" }).click();
   await expect(widget.getByText("Feedback posted")).toBeVisible();
   await owner.goto(`${portalUrl(slug)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: unrelated })).toBeVisible();

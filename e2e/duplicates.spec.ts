@@ -23,7 +23,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill(original);
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await expect(ada.getByRole("link", { name: original })).toBeVisible();
 
   // While typing a similar title, the portal suggests voting on the existing post.
@@ -34,7 +34,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   const suggestions = bo.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" });
   await expect(suggestions.getByRole("link", { name: new RegExp(original) })).toBeVisible();
   await checkpoint(bo, "portal-similar-while-typing");
-  await bo.getByRole("button", { name: "Submit feedback" }).click();
+  await bo.getByRole("button", { name: "Submit post" }).click();
   await expect(bo.getByRole("link", { name: duplicate })).toBeVisible();
 
   // The team sees it flagged, and can list only possible duplicates.

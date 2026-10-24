@@ -19,7 +19,7 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill("Dark mode");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
 
   // The team ships it.

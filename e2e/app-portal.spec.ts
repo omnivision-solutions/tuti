@@ -20,7 +20,7 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   expect(await owner.content()).not.toContain("tuti-theme-default");
   await owner.getByRole("button", { name: "Submit post" }).click();
   await owner.getByLabel("Title").fill("Dark mode for the dashboard");
-  await owner.getByRole("button", { name: "Submit feedback" }).click();
+  await owner.getByRole("button", { name: "Submit post" }).click();
   await owner.getByRole("link", { name: "Dark mode for the dashboard" }).click();
   await owner.waitForURL(`${own}/feedback/feature-requests/dark-mode-for-the-dashboard-1`);
   await checkpoint(owner, "app-portal-post");

@@ -30,7 +30,7 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
   await ada.goto("/feedback/feature-requests");
   await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill("Export everything to CSV, including archived boards and supercalifragilistic fields");
-  await ada.getByRole("button", { name: "Submit feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByRole("link", { name: /Export everything/ }).click();
   await ada.getByRole("textbox", { name: "Comment" }).fill("Thanks! https://example.com/a/really/long/link/that/should/wrap/nicely");
   await ada.getByRole("button", { name: "Comment", exact: true }).click();

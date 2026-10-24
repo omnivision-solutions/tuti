@@ -172,7 +172,7 @@ export function NewPostForm({
           uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
         />
         <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Posting…" : "Submit feedback"}
+          {pending ? "Posting…" : "Submit post"}
         </Button>
       </FieldGroup>
     </form>
