@@ -160,8 +160,8 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
 
     await expect(visitor.locator('link[rel="icon"]')).toHaveAttribute("href", /\/media\/.+\.webp\?s=/);
     // The accent: the blue reads on both backgrounds, with white text on it.
-    await expect(visitor.getByRole("button", { name: "Submit feedback" })).toHaveCSS("background-color", "rgb(37, 99, 235)");
-    await expect(visitor.getByRole("button", { name: "Submit feedback" })).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(visitor.getByRole("button", { name: "Give feedback" })).toHaveCSS("background-color", "rgb(37, 99, 235)");
+    await expect(visitor.getByRole("button", { name: "Give feedback" })).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(visitor.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Docs" })).toHaveAttribute(
       "href",
       "https://docs.example.com",
@@ -172,7 +172,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
     );
     await expect(visitor.getByRole("contentinfo").getByText("Powered by")).toBeVisible();
     // Focus rings are drawn in the accent too.
-    await visitor.getByRole("button", { name: "Submit feedback" }).focus();
+    await visitor.getByRole("button", { name: "Give feedback" }).focus();
     await checkpoint(visitor, `branded-portal-${colorScheme}`);
 
     // The docs are the same portal, branded the same way.

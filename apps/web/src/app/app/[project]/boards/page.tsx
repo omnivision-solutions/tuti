@@ -22,7 +22,16 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/boards
   const boards = await prisma.board.findMany({
     where: { projectId: project.id },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, slug: true, description: true, _count: { select: { posts: true } } },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      postButton: true,
+      titlePlaceholder: true,
+      detailsPlaceholder: true,
+      _count: { select: { posts: true } },
+    },
   });
 
   return (

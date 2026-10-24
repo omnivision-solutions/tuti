@@ -118,3 +118,27 @@ test("a board's page, sorted or filtered, points search engines at its plain add
   } as never);
   expect(meta.alternates?.canonical).toBe(`http://${project.slug}.localhost:3100/feedback/feature-requests`);
 });
+
+test("a board keeps its own words for posting; emptied, they're the defaults again", async () => {
+  const texts = () =>
+    prisma.board.findUniqueOrThrow({ where: { id: boardId }, select: { postButton: true, titlePlaceholder: true, detailsPlaceholder: true } });
+  const form = board({ slug: "feature-requests" });
+  form.set("postButton", " Request a feature ");
+  form.set("titlePlaceholder", "What should it do?");
+  form.set("detailsPlaceholder", "How would it help you?");
+  expect(await updateBoard(project.slug, boardId, {}, form)).toEqual({});
+  expect(await texts()).toEqual({
+    postButton: "Request a feature",
+    titlePlaceholder: "What should it do?",
+    detailsPlaceholder: "How would it help you?",
+  });
+
+  form.set("postButton", "x".repeat(31));
+  expect(await updateBoard(project.slug, boardId, {}, form)).toEqual({ error: "Keep it to 30 characters" });
+
+  for (const field of ["postButton", "titlePlaceholder", "detailsPlaceholder"]) {
+    form.set(field, "  ");
+  }
+  expect(await updateBoard(project.slug, boardId, {}, form)).toEqual({});
+  expect(await texts()).toEqual({ postButton: null, titlePlaceholder: null, detailsPlaceholder: null });
+});

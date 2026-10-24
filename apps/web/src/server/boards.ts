@@ -4,6 +4,7 @@ import { Prisma, prisma } from "@tuti/db";
 import { refresh } from "next/cache";
 import { z } from "zod";
 
+import { BOARD_TEXT_LIMITS } from "@/lib/board-texts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 
 import type { FormState } from "./form-state";
@@ -20,13 +21,27 @@ const slugSchema = z
   .min(2)
   .max(40);
 
-const boardSchema = z.object({ name: nameSchema, slug: slugSchema, description: descriptionSchema });
+// Empty: the default words (lib/board-texts.ts).
+const textSchema = (max: number) => z.string().trim().max(max, `Keep it to ${max} characters`).optional().transform((value) => value || null);
+
+const boardSchema = z.object({
+  name: nameSchema,
+  slug: slugSchema,
+  description: descriptionSchema,
+  postButton: textSchema(BOARD_TEXT_LIMITS.postButton),
+  titlePlaceholder: textSchema(BOARD_TEXT_LIMITS.titlePlaceholder),
+  detailsPlaceholder: textSchema(BOARD_TEXT_LIMITS.detailsPlaceholder),
+});
 
 function parseBoard(formData: FormData) {
+  const field = (name: string) => formData.get(name) ?? undefined;
   return boardSchema.safeParse({
     name: formData.get("name"),
     slug: formData.get("slug"),
     description: formData.get("description") || undefined,
+    postButton: field("postButton"),
+    titlePlaceholder: field("titlePlaceholder"),
+    detailsPlaceholder: field("detailsPlaceholder"),
   });
 }
 
@@ -79,7 +94,7 @@ export async function updateBoard(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
   }
-  const { name, slug, description } = parsed.data;
+  const { name, slug, description, ...texts } = parsed.data;
   const board = await prisma.board.findFirst({ where: { id: boardId, projectId: project.id }, select: { slug: true } });
   if (!board) {
     return { error: "Board not found" };
@@ -95,7 +110,7 @@ export async function updateBoard(
           update: { boardId },
         });
       }
-      await tx.board.update({ where: { id: boardId }, data: { name, slug, description: description ?? null } });
+      await tx.board.update({ where: { id: boardId }, data: { name, slug, description: description ?? null, ...texts } });
     });
   } catch (error) {
     if (isUniqueViolation(error)) {
