@@ -182,5 +182,21 @@ test("a link to a heading lands below the header, even when the team's CSS makes
   const top = visitor.locator("[data-portal-top]");
   const heading = visitor.getByRole("heading", { name: "Last step" });
   await expect.poll(async () => (await top.boundingBox())!.height).toBeGreaterThan(200);
+  // Scrolled to it: on screen, just below the header.
+  await expect(heading).toBeInViewport();
   await expect.poll(async () => (await heading.boundingBox())!.y - (await top.boundingBox())!.height).toBeGreaterThanOrEqual(0);
+
+  // A link with a broken fragment doesn't stop the header measuring itself (a page of its own, not
+  // just a new fragment on this one).
+  await visitor.goto("/roadmap");
+  const errors: string[] = [];
+  visitor.on("pageerror", (error) => errors.push(error.message));
+  await visitor.goto(`/docs/${article.slug}#%`);
+  await expect(heading).toBeAttached();
+  await expect.poll(() => visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"))).toMatch(/^\d+(\.\d+)?px$/);
+  // And it keeps measuring it: a wider screen, a shorter header.
+  const before = await visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"));
+  await visitor.setViewportSize({ width: 1280, height: 844 });
+  await expect.poll(() => visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"))).not.toBe(before);
+  expect(errors).toEqual([]);
 });
