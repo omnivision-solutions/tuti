@@ -236,6 +236,8 @@ describe("an article shown with a lock", () => {
   test("search finds it by its title only, with no snippet; its text matches nothing", async () => {
     const search = (q: string) => searchForReader(project.id, project.slug, q, 10);
     expect(await search("endpoints")).toEqual([{ slug: "endpoints", title: "Endpoints", snippet: "", locked: true }]);
+    // A word still being typed finds it too, as it finds the rest.
+    expect(await search("endp")).toEqual([{ slug: "endpoints", title: "Endpoints", snippet: "", locked: true }]);
     // Words only in its text: the articles they may read, never this one.
     expect((await search(SECRET)).map((r) => r.slug).sort()).toEqual(["contact", "getting-started"]);
     expect((await search(QUESTION)).map((r) => r.slug)).not.toContain("endpoints");

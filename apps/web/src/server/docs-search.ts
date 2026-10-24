@@ -66,9 +66,12 @@ export async function searchForReader(
     SELECT a.slug, a.title
     FROM article a
     CROSS JOIN websearch_to_tsquery('english', ${query}) q
+    CROSS JOIN to_tsquery('simple', ${prefixQuery(query)}::text) pq
     WHERE a."projectId" = ${projectId} AND a."publishedAt" IS NOT NULL AND a."deletedAt" IS NULL AND a.listing = 'EVERYWHERE'
-      AND a.slug = ANY(${locked}::text[]) AND to_tsvector('english', a.title) @@ q
-    ORDER BY ts_rank(to_tsvector('english', a.title), q) DESC, a.title
+      AND a.slug = ANY(${locked}::text[])
+      -- Whole words, or the start of each word as typed, like wordMatches.
+      AND (to_tsvector('english', a.title) @@ q OR coalesce(to_tsvector('simple', a.title) @@ pq, false))
+    ORDER BY ts_rank(to_tsvector('english', a.title), q) + coalesce(ts_rank(to_tsvector('simple', a.title), pq), 0) DESC, a.title
     LIMIT ${limit - results.length}`;
   return [...results, ...byTitle.map(({ slug, title }) => ({ slug, title, snippet: "", locked: true as const }))];
 }
