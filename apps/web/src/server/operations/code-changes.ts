@@ -246,7 +246,7 @@ export const analyseCodeChange = defineOperation({
 export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
   summary:
-    "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again (`resumed`; `failed`: those whose analysis failed at once, on a server that runs jobs inline); refused (402) while the project is still out",
+    "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out",
   method: "POST",
   path: "/code-changes/resume",
   scope: "write",
@@ -267,10 +267,15 @@ export const resumeCodeChanges = defineOperation({
       orderBy: { mergedAt: "asc" },
       select: { id: true },
     });
+    let resumed = 0;
     let failed = 0;
     for (const change of paused) {
       try {
-        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
+        // Inline, the analysis runs here and says whether it went ahead; on Hatchet, queued is resumed.
+        const result = await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: true });
+        if (!result?.skipped) {
+          resumed++;
+        }
       } catch {
         // Inline, the analysis itself failed (the code change says where): counted, and the rest go on.
         if (process.env.JOBS_DRIVER === "inline") {
@@ -281,7 +286,7 @@ export const resumeCodeChanges = defineOperation({
         throw new OperationError(503, "unavailable", "Couldn't resume them all. Try again in a moment.");
       }
     }
-    return { resumed: paused.length - failed, failed };
+    return { resumed, failed };
   },
 });
 

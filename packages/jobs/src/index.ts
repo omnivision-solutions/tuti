@@ -51,15 +51,16 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
 /**
  * Start a background job. With `JOBS_DRIVER=inline` the job runs right here,
  * before this returns, with no retries: for tests and small self-hosted
- * installs without Hatchet. Otherwise it's queued on Hatchet for the worker.
+ * installs without Hatchet; it returns the job's result. Otherwise it's queued
+ * on Hatchet for the worker, and there's no result yet (undefined).
  */
-export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>): Promise<void> {
+export async function enqueue<K extends JobKey>(key: K, input: JobInput<K>): Promise<JobResult | undefined> {
   const job = jobs[key];
   const parsed = job.input.parse(input) as JobInput<K>;
   if (process.env.JOBS_DRIVER === "inline") {
     // ponytail: no `concurrencyKey` here, so overlapping runs of one key can race; use Hatchet if that matters.
-    await handlers[key](parsed, log);
-    return;
+    return handlers[key](parsed, log);
   }
   await getHatchet().runNoWait(job.name, parsed);
+  return undefined;
 }

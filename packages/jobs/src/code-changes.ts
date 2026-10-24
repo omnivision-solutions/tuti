@@ -96,14 +96,6 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   if (!input.force && !input.resume && change.state === "PAUSED") {
     return { skipped: true };
   }
-  // A resume claims it as it starts (paused → analysing, at once), so two "Resume all" at once analyse
-  // it once, jobs inline too; claimed here rather than when queued, one not started yet stays paused.
-  if (input.resume && !input.force) {
-    const { count } = await prisma.codeChange.updateMany({ where: { id: change.id, state: "PAUSED" }, data: { state: "ANALYSING", reason: "" } });
-    if (count === 0) {
-      return { skipped: true };
-    }
-  }
   const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };
   // Turned off since it merged: nothing is sent, and it isn't kept waiting.
   if (!change.project.analyseCodeChanges) {
@@ -135,7 +127,20 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
     }
     throw error;
   }
-  await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
+  // A resume claims it here, once every check before the analysis passed (paused, or failed on an earlier
+  // try → analysing, at once): two "Resume all" at once analyse it once, jobs inline too, and anything
+  // failing before this leaves it as it was, for a retry or the next "Resume all".
+  if (input.resume && !input.force) {
+    const { count } = await prisma.codeChange.updateMany({
+      where: { id: change.id, state: { in: ["PAUSED", "FAILED"] } },
+      data: { state: "ANALYSING", reason: "" },
+    });
+    if (count === 0) {
+      return { skipped: true };
+    }
+  } else {
+    await prisma.codeChange.update({ where: { id: change.id }, data: { state: "ANALYSING", reason: "" } });
+  }
   let failure = "GitHub didn't let Tuti read the pull request.";
   try {
     const pr = await readPullRequest(await installationApi(repository.connection.installationId), repository.fullName, change.number);

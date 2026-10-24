@@ -734,9 +734,39 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     // One gate scripted: a second analysis would ask the fake an unscripted question (and fail afterEach).
     model.decide(INTERNAL, "Dark mode 50");
-    await Promise.all([call(resumeCodeChanges, team(), {}), call(resumeCodeChanges, team(), {})]);
+    const results = await Promise.all([call(resumeCodeChanges, team(), {}), call(resumeCodeChanges, team(), {})]);
     expect(model.decisions.filter((request) => JSON.stringify(request.state).includes("Dark mode 50"))).toHaveLength(1);
+    // Only the one that analysed it counts it.
+    expect(results.reduce((sum, result) => sum + result.resumed, 0)).toBe(1);
     expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("a resumed run that fails before its analysis leaves the code change paused, for the next try", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(52));
+    expect(await merge(52)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    vi.spyOn(prisma.githubRepository, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 1 });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
+    vi.restoreAllMocks();
+    model.decide(INTERNAL, "Dark mode 52");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("credits running out during “Resume all” (jobs inline): those paused again aren't counted as resumed", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(53));
+    github.pullRequest(repo, pullRequest(54));
+    expect(await merge(53)).toBe(200);
+    expect(await merge(54)).toBe(200);
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 54 }, data: { mergedAt: new Date("2026-10-21T10:00:00Z") } });
+    // Enough for the first one's gate, then none.
+    await grantCredits(project.id, "MANUAL", 0.000001, { days: null });
+    model.decide(INTERNAL, "Dark mode 53");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect(Object.fromEntries((await changes()).map((change) => [change.number, change.state]))).toEqual({ 53: "NOTHING_TO_DO", 54: "PAUSED" });
   });
 
   test("“Resume all” is refused with the reason when the project turned code changes off", async () => {
