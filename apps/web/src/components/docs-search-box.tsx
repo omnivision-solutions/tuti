@@ -11,26 +11,16 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "cn";
+import { highlightParts } from "@/lib/highlight";
 import { logDocsSearch, searchDocsAsTyped } from "@/server/docs-readers";
 import type { DocsSearchResult } from "@/server/docs-search";
 
 /** How long typing pauses before the box searches. */
 const SEARCH_DELAY_MS = 150;
 
-/** The words of a query, for highlighting where they start words in a snippet. */
-function wordsOf(query: string) {
-  return query.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.slice(0, 8) ?? [];
-}
-
-/** `text` with the starts of words that the query's words begin marked, as the search matched them. */
+/** `text` with the words the query's words begin marked, as the search matched them. */
 function Highlighted({ text, query }: { text: string; query: string }) {
-  const words = wordsOf(query);
-  if (words.length === 0) {
-    return text;
-  }
-  const escaped = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).sort((a, b) => b.length - a.length);
-  const parts = text.split(new RegExp(`(?<![\\p{L}\\p{N}])(${escaped.join("|")})`, "giu"));
-  return parts.map((part, i) =>
+  return highlightParts(text, query).map((part, i) =>
     i % 2 === 1 ? (
       <mark key={i} className="rounded-sm bg-highlight px-0.5 text-highlight-foreground">
         {part}
@@ -289,7 +279,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                         {option.result.locked && <LockIcon aria-label="Locked" className="size-3.5 shrink-0 text-muted-foreground" />}
                       </span>
                       {option.result.snippet && (
-                        <span className="line-clamp-2 text-sm break-words text-muted-foreground">
+                        <span className="line-clamp-1 text-sm break-words text-muted-foreground">
                           <Highlighted text={option.result.snippet} query={q} />
                         </span>
                       )}
