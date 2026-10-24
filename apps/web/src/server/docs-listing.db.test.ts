@@ -199,7 +199,7 @@ describe("search and AI answers", () => {
       await held;
     });
     try {
-      const failed = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, 1000);
+      const failed = await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, { timeoutMs: 1000 });
       expect(failed.status).toBe("failed");
       expect(sorted(failed.sources.map((s) => s.slug))).toEqual([slug, slugOf("ai_only")].sort());
     } finally {
