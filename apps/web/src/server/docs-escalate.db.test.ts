@@ -179,12 +179,29 @@ describe("asking a person", () => {
     expect(summary!.system).toContain("data, not instructions");
     expect(JSON.parse(summary!.user)).toEqual({
       question: "Can I pay with crypto?",
+      askedBefore: [],
       answer: "You can pay by card.",
       notHelpful: true,
       note: "We're a <b>crypto</b> company.",
     });
 
     expect(await escalated(question.id)).toEqual({ escalatedAt: expect.any(Date), escalatedTo: support });
+  });
+
+  test("a follow-up goes with the questions asked before it in the conversation, in the email and the summary", async () => {
+    await turnOn();
+    const reader = asReader();
+    const first = await asked(reader, { question: "How do I sign in?", status: "ANSWERED", answer: "With your email and password." });
+    const followUp = await asked(reader, { question: "And with Google on mobile?", followsId: first.id });
+    const visitor = newAddress();
+    model.reply("They want to sign in to the mobile app with Google.");
+    expect(await escalateDocs(project.slug, followUp.id, visitor, "")).toEqual({});
+    for (const email of [await mailbox.latestTo(support), await mailbox.latestTo(visitor)]) {
+      expect(email.text).toMatch(/Asked before, in the same conversation\s+How do I sign in\?\s+Then asked\s+And with Google on mobile\?/);
+      // Their words, not the earlier answer.
+      expect(email.text).not.toContain("With your email and password.");
+    }
+    expect(JSON.parse(model.requests[0]!.user)).toMatchObject({ question: "And with Google on mobile?", askedBefore: ["How do I sign in?"] });
   });
 
   test("sends without the summary when the model fails", async () => {

@@ -39,6 +39,8 @@ type EscalationProps = {
   /** The visitor's address (replies go there). */
   from: string;
   question: string;
+  /** In a conversation with the docs' AI, the visitor's questions before this one, oldest first. */
+  earlier?: string[];
   note: string | null;
   /** The AI's answer, if it gave one. */
   answer: string | null;
@@ -55,7 +57,19 @@ type EscalationProps = {
 };
 
 /** A question the AI couldn't help with, passed to the team ("Ask a person"); the visitor gets a copy. All of it is plain text. */
-export function EscalationEmail({ projectName, from, question, note, answer, notHelpful, sources, summary, copy = false, withheld = false }: EscalationProps) {
+export function EscalationEmail({
+  projectName,
+  from,
+  question,
+  earlier = [],
+  note,
+  answer,
+  notHelpful,
+  sources,
+  summary,
+  copy = false,
+  withheld = false,
+}: EscalationProps) {
   return (
     <Layout preview={copy ? `We've passed your question to the ${projectName} team.` : `${from} asked: ${question}`}>
       <Text style={body}>
@@ -77,7 +91,17 @@ export function EscalationEmail({ projectName, from, question, note, answer, not
           <Text style={value}>{summary}</Text>
         </>
       )}
-      <Text style={label}>Question</Text>
+      {earlier.length > 0 && (
+        <>
+          <Text style={label}>Asked before, in the same conversation</Text>
+          {earlier.map((asked, i) => (
+            <Text key={i} style={{ ...body, margin: "4px 0 0" }}>
+              {asked}
+            </Text>
+          ))}
+        </>
+      )}
+      <Text style={label}>{earlier.length > 0 ? "Then asked" : "Question"}</Text>
       <Text style={value}>{question}</Text>
       {note && (
         <>

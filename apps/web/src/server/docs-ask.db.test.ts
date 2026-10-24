@@ -65,7 +65,7 @@ async function write(title: string, text: string, similarity: number, { draft = 
   return article.slug;
 }
 
-const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", SIGNED_OUT, timeoutMs);
+const ask = (question = QUESTION, asker = "reader-1", timeoutMs?: number) => answerQuestion(project.id, asker, question, "PORTAL", SIGNED_OUT, { timeoutMs });
 const logged = () =>
   prisma.docsQuestion.findMany({
     where: { projectId: project.id },
@@ -164,6 +164,90 @@ describe("answers", () => {
       prisma.article.updateMany({ where: { projectId: project.id, slug }, data: { publishedAt: null } }),
     );
     expect(await ask()).toMatchObject({ status: "no_answer", answer: null, sources: [] });
+  });
+});
+
+describe("follow-ups", () => {
+  const FOLLOW_UP = "And on mobile?";
+  /** The docs are searched with the earlier question and the follow-up: that text is close to QUESTION's sections; the follow-up alone isn't. */
+  beforeEach(() => {
+    openai.setVector(`${QUESTION}\n${FOLLOW_UP}`, along(1));
+    openai.setVector(FOLLOW_UP, [0, 0, 1]);
+  });
+  const sent = (i: number) => JSON.parse(model.requests[i]!.user.slice(model.requests[i]!.user.indexOf("{"))) as Record<string, unknown>;
+
+  test("get the conversation so far: the docs are searched with the earlier question too, and the model gets the earlier turns", async () => {
+    const mobile = await write("Signing in on mobile", "Use your email and password in the mobile app.", 0.8);
+    model.reply(reply("Use the Team page.", ["s1"]));
+    const first = await ask();
+    // Alone, the follow-up finds nothing: "I don't know", without the model.
+    expect(await ask(FOLLOW_UP)).toMatchObject({ status: "no_answer" });
+    model.reply(reply("Use your email and password in the mobile app.", ["s1"]));
+    const followUp = await answerQuestion(project.id, "reader-1", FOLLOW_UP, "PORTAL", SIGNED_OUT, { followUpTo: first.id });
+    expect(followUp).toMatchObject({ status: "answered", sources: [{ slug: mobile }] });
+    expect(sent(1)).toEqual({
+      question: FOLLOW_UP,
+      earlierInConversation: [{ question: QUESTION, answer: "Use the Team page." }],
+      sections: [expect.objectContaining({ article: "Signing in on mobile" })],
+    });
+    expect(model.requests[1]!.system).toContain("earlier answers are not a source");
+    // Logged as following the first.
+    expect(await prisma.docsQuestion.findUniqueOrThrow({ where: { id: followUp.id }, select: { followsId: true } })).toEqual({ followsId: first.id });
+  });
+
+  test("take the last 4 turns, oldest first, each answer cut to fit", async () => {
+    await write("Inviting your team", "Owners invite people.", 0.8);
+    let last: string | undefined;
+    for (let i = 1; i <= 6; i++) {
+      // Searched with up to 2 earlier questions.
+      openai.setVector(
+        [i - 2, i - 1, i]
+          .filter((n) => n >= 1)
+          .map((n) => `Question ${n}`)
+          .join("\n"),
+        along(1),
+      );
+      model.reply(reply(i === 6 ? "x".repeat(3000) : `Answer ${i}`, ["s1"]));
+      last = (await answerQuestion(project.id, "reader-1", `Question ${i}`, "PORTAL", SIGNED_OUT, { followUpTo: last })).id;
+    }
+    openai.setVector("Question 5\nQuestion 6\nOne more", along(1));
+    model.reply(reply("Owners invite people.", ["s1"]));
+    await answerQuestion(project.id, "reader-1", "One more", "PORTAL", SIGNED_OUT, { followUpTo: last });
+    const earlier = sent(6).earlierInConversation as { question: string; answer: string }[];
+    expect(earlier.map((turn) => turn.question)).toEqual(["Question 3", "Question 4", "Question 5", "Question 6"]);
+    expect(earlier[3]!.answer).toHaveLength(1500);
+  });
+
+  test("only of the asker's own questions in the project: anyone else's is refused, and nothing is logged", async () => {
+    await write("Inviting your team", "Owners invite people.", 0.8);
+    model.reply(reply("Owners invite people.", ["s1"]));
+    const first = await ask();
+    const before = await prisma.docsQuestion.count();
+    const refused = { status: 404, message: "There's no such question to follow up on. Ask it again." };
+    await expect(answerQuestion(project.id, "someone-else", FOLLOW_UP, "PORTAL", SIGNED_OUT, { followUpTo: first.id })).rejects.toMatchObject(refused);
+    const other = await createProject(owner);
+    await expect(answerQuestion(other.id, "reader-1", FOLLOW_UP, "PORTAL", SIGNED_OUT, { followUpTo: first.id })).rejects.toMatchObject(refused);
+    await expect(answerQuestion(project.id, "reader-1", FOLLOW_UP, "PORTAL", SIGNED_OUT, { followUpTo: "no-such-id" })).rejects.toMatchObject(refused);
+    expect(await prisma.docsQuestion.count()).toBe(before);
+  });
+
+  test("through the portal's assistant and docs.ask", async () => {
+    await write("Signing in on mobile", "Use your email and password in the mobile app.", 0.8);
+    const visitor = await signUp("Visitor");
+    actAs(visitor);
+    model.reply(reply("Use the Team page.", ["s1"]));
+    const first = (await askDocs(project.slug, QUESTION)) as { id: string };
+    model.reply(reply("Use your email and password.", ["s1"]));
+    expect(await askDocs(project.slug, FOLLOW_UP, "portal", first.id)).toMatchObject({ status: "answered" });
+    // Someone else can't continue it.
+    actAs(await signUp("Someone else"));
+    expect(await askDocs(project.slug, FOLLOW_UP, "portal", first.id)).toEqual({ error: "There's no such question to follow up on. Ask it again." });
+    // An API key continues its own.
+    const actor = { kind: "apiKey" as const, keyId: "key-1", projectId: project.id, scope: "read" as const, createdById: owner.id };
+    model.reply(reply("Use the Team page.", ["s1"]));
+    const byKey = await call(askOperation, { actor, projectId: project.id }, { q: QUESTION });
+    model.reply(reply("Use your email and password.", ["s1"]));
+    expect(await call(askOperation, { actor, projectId: project.id }, { q: FOLLOW_UP, followUpTo: byKey.id })).toMatchObject({ status: "answered" });
   });
 });
 

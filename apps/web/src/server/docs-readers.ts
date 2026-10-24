@@ -125,10 +125,18 @@ export async function logDocsSearch(projectSlug: string, query: string, results:
   }
 }
 
-/** "Ask AI" on the portal's /docs or in the widget: an answer from the published articles, or "I don't know" (see docs.ask). */
-export async function askDocs(projectSlug: string, question: string, from: "portal" | "widget" = "portal"): Promise<DocsAnswer | { error: string }> {
+/**
+ * "Ask AI" on the portal (its search box's assistant, /docs?q=) or in the widget: an answer from the published
+ * articles, or "I don't know" (see docs.ask). `followUpTo`: the answer it follows up on, in the assistant.
+ */
+export async function askDocs(
+  projectSlug: string,
+  question: string,
+  from: "portal" | "widget" = "portal",
+  followUpTo?: string,
+): Promise<DocsAnswer | { error: string }> {
   const widget = from === "widget";
-  const input = askFields.safeParse({ q: question });
+  const input = askFields.safeParse({ q: question, followUpTo: followUpTo ?? undefined });
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
@@ -143,6 +151,7 @@ export async function askDocs(projectSlug: string, question: string, from: "port
       input.data.q,
       widget ? "WIDGET" : "PORTAL",
       await currentReader(project.id),
+      { followUpTo: input.data.followUpTo },
     );
   } catch (error) {
     if (error instanceof OperationError) {

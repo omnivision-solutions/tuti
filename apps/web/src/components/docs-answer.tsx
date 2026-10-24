@@ -1,6 +1,6 @@
 "use client";
 
-import { SparklesIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import { MessageCircleIcon, SparklesIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import Link from "next/link";
 import { type FormEvent, useId, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { answerBlocks } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
+import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref } from "@/components/portal-base";
 
 /**
@@ -36,7 +37,7 @@ export function DocsAnswer({
   askAPerson: { email: string } | null;
   widget?: boolean;
 }) {
-  const at = usePortalHref();
+  const assistant = useDocsAssistant();
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [rated, setRated] = useState<boolean | null>(null);
   const [pending, startTransition] = useTransition();
@@ -65,6 +66,16 @@ export function DocsAnswer({
     <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />
   );
 
+  // On the portal, the conversation can go on in the assistant (the widget has none).
+  const followUp = !widget && assistant && answer && (
+    <div>
+      <Button variant="outline" size="sm" onClick={() => assistant.continueWith(question, answer)}>
+        <MessageCircleIcon />
+        Ask a follow-up
+      </Button>
+    </div>
+  );
+
   const askButton = (
     <Button variant="outline" disabled={pending} onClick={ask}>
       <SparklesIcon />
@@ -84,38 +95,8 @@ export function DocsAnswer({
       )}
       {answer?.status === "answered" && (
         <>
-          <div className="flex flex-col gap-3 break-words">
-            {answerBlocks(answer.answer ?? "").map((block, i) =>
-              block.type === "paragraph" ? (
-                <p key={i}>{block.text}</p>
-              ) : block.ordered ? (
-                <ol key={i} className="flex list-decimal flex-col gap-1 pl-6">
-                  {block.items.map((item, j) => <li key={j}>{item}</li>)}
-                </ol>
-              ) : (
-                <ul key={i} className="flex list-disc flex-col gap-1 pl-6">
-                  {block.items.map((item, j) => <li key={j}>{item}</li>)}
-                </ul>
-              ),
-            )}
-          </div>
-          <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-semibold">Sources</h2>
-            <ul aria-label="Sources" className="flex flex-col gap-1 text-sm">
-              {answer.sources.map((source) => (
-                <li key={source.slug}>
-                  {/* An AI-only article has no page: named, not linked. */}
-                  {source.url === null ? (
-                    <span className="break-words">{source.title}</span>
-                  ) : (
-                    <Link href={at(`/docs/${source.slug}`)} target={widget ? "_blank" : undefined} className="break-words text-primary hover:underline">
-                      {source.title}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
+          <AnswerText text={answer.answer ?? ""} />
+          <AnswerSources sources={answer.sources} newTab={widget} />
           <div className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm text-muted-foreground">
             {rated !== null ? (
               <p>Thanks for letting us know.</p>
@@ -132,6 +113,7 @@ export function DocsAnswer({
             )}
             {rated === false && person}
           </div>
+          {followUp}
         </>
       )}
       {(answer?.status === "no_answer" || answer?.status === "off_limits") && (
@@ -156,9 +138,58 @@ export function DocsAnswer({
             )}
             {person}
           </div>
+          {followUp}
         </div>
       )}
     </section>
+  );
+}
+
+/** An AI answer's text: paragraphs and lists (lib/answer-text.ts), plain text only. */
+export function AnswerText({ text }: { text: string }) {
+  return (
+    <div className="flex flex-col gap-3 break-words">
+      {answerBlocks(text).map((block, i) =>
+        block.type === "paragraph" ? (
+          <p key={i}>{block.text}</p>
+        ) : block.ordered ? (
+          <ol key={i} className="flex list-decimal flex-col gap-1 pl-6">
+            {block.items.map((item, j) => (
+              <li key={j}>{item}</li>
+            ))}
+          </ol>
+        ) : (
+          <ul key={i} className="flex list-disc flex-col gap-1 pl-6">
+            {block.items.map((item, j) => (
+              <li key={j}>{item}</li>
+            ))}
+          </ul>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** The articles an answer cites, linked (an AI-only one, which has no page, by name). `newTab` in the widget; `onOpen` when one is opened. */
+export function AnswerSources({ sources, newTab = false, onOpen }: { sources: Answer["sources"]; newTab?: boolean; onOpen?: () => void }) {
+  const at = usePortalHref();
+  return (
+    <div className="flex flex-col gap-1">
+      <h2 className="text-sm font-semibold">Sources</h2>
+      <ul aria-label="Sources" className="flex flex-col gap-1 text-sm">
+        {sources.map((source) => (
+          <li key={source.slug}>
+            {source.url === null ? (
+              <span className="break-words">{source.title}</span>
+            ) : (
+              <Link href={at(`/docs/${source.slug}`)} target={newTab ? "_blank" : undefined} onClick={onOpen} className="break-words text-primary hover:underline">
+                {source.title}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -167,7 +198,7 @@ export function DocsAnswer({
  * the email the customer's page signs them in with) and an optional note, then the question goes to
  * the team by email (docs.escalate). Opens in place, taking the row's width.
  */
-function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { projectSlug: string; questionId: string; defaultEmail: string; widget: boolean }) {
+export function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { projectSlug: string; questionId: string; defaultEmail: string; widget: boolean }) {
   const [open, setOpen] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   /** The email as the visitor typed it; null until they type. */

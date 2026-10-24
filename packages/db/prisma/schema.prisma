@@ -1485,6 +1485,9 @@ model DocsQuestion {
   articleIds  String[]           @default([])
   /// The asker's thumbs up (true) or down (false) on an answer.
   helpful     Boolean?
+  /// The question it follows up on, in a conversation with the docs' AI (asked by the same asker): earlier turns
+  /// are its context.
+  followsId   String?
   /// When the asker passed it to the team ("Ask a person", docs.escalate), and the support address it went to.
   escalatedAt DateTime?
   escalatedTo String?

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
+import { useDocsAssistant } from "@/components/docs-assistant-context";
 import { usePortalHref, usePortalSlug } from "@/components/portal-base";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -48,8 +49,9 @@ type Option = { id: string; href: string; result?: DocsSearchResult };
  * dialog, as does ⌘K / Ctrl+K with `shortcut`. In it, results come as the reader types: first
  * "Ask AI" (or, with answers off, all the results) for what they typed, then the articles it finds,
  * each with the passage that matched and the words it matched marked. Arrow keys move between them,
- * Enter opens one. What they searched for is counted in the team's insights once they're done
- * (picking an article, or closing it); asking the AI goes to /docs, which counts it there.
+ * Enter opens one. "Ask AI" asks in the portal's assistant (components/docs-assistant.tsx), where
+ * they can follow up; without one, it goes to /docs?q=. What they searched for is counted in the
+ * team's insights once they're done (picking an article or "Ask AI", or closing it; /docs?q= counts it there).
  */
 export function DocsSearchBox({
   askAI,
@@ -137,6 +139,7 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
   const slug = usePortalSlug();
   const at = usePortalHref();
   const router = useRouter();
+  const assistant = useDocsAssistant();
   const listId = useId();
   const [query, setQuery] = useState(initialQuery);
   /** The latest search that came back; `failed` when it couldn't search (not counted in the insights). */
@@ -191,6 +194,13 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
     [slug],
   );
   const choose = (option: Option) => {
+    // Ask AI: in the assistant, where they can follow up (it doesn't count searches, so this does).
+    if (option.id === "all" && askAI && assistant) {
+      done(true);
+      onClose();
+      assistant.ask(q);
+      return;
+    }
     // /docs?q= counts the search itself.
     done(option.id !== "all");
     onClose();

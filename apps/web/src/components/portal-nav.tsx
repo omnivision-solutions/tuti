@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 
+import { AssistantButton } from "@/components/docs-assistant";
 import { DocsSearchBox } from "@/components/docs-search-box";
 import { usePortalHref, usePortalPath } from "@/components/portal-base";
 import { boardPath } from "@/lib/post-urls";
@@ -100,14 +101,19 @@ export function PortalMain({ children }: { children: React.ReactNode }) {
   return <main className={cn("mx-auto flex w-full flex-1 flex-col gap-6 px-6 py-10", !within(path, "/docs") && "max-w-3xl")}>{children}</main>;
 }
 
-/** The header's search box on Docs (see DocsSearchBox), with ⌘K; it starts from the search on the page, if any. */
+/** The header's search box on Docs (see DocsSearchBox), with ⌘K (it starts from the search on the page, if any), and the assistant's button. */
 export function DocsSearch({ askAI }: { askAI: boolean }) {
   const path = usePortalPath();
   const query = useSearchParams().get("q") ?? "";
   if (!within(path, "/docs")) {
     return null;
   }
-  return <DocsSearchBox askAI={askAI} shortcut query={query} className="order-last w-full pb-1 sm:order-none sm:w-60 sm:pb-0" />;
+  return (
+    <div className="order-last flex w-full items-center gap-2 pb-1 sm:order-none sm:w-auto sm:pb-0">
+      <DocsSearchBox askAI={askAI} shortcut query={query} className="min-w-0 flex-1 sm:w-60 sm:flex-none" />
+      <AssistantButton />
+    </div>
+  );
 }
 
 /**

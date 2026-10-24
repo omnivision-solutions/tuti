@@ -10,6 +10,9 @@ import { ColorSchemeScript } from "@/components/color-scheme-script";
 import { PortalContact, PortalFooter, PortalHeaderLinks, PortalLogo, PortalLookProvider } from "@/components/portal-look";
 import { DocsSearch, PartRows, PortalMain, PortalParts, PortalTop } from "@/components/portal-nav";
 import { answersEnabled } from "@/server/operations/docs-ask";
+import { askAPerson } from "@/server/operations/docs-escalate";
+import { DocsAssistantProvider } from "@/components/docs-assistant";
+import { boardPath } from "@/lib/post-urls";
 import { SignInLink } from "@/components/sign-in-link";
 import { buttonVariants } from "@/components/ui/button";
 import { UserMenu } from "@/components/user-menu";
@@ -91,6 +94,13 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       : target.kind === "portal" && target.customDomain
         ? `${new URL(portalUrl(slug)).protocol}//${requestHeaders.get("host")}`
         : null;
+  // The docs' assistant (AI answers as a conversation), for readers, when the server has AI answers.
+  const assistant = canRead && answersEnabled();
+  const firstBoard = project.boards[0];
+  const assistantProps = assistant
+    ? { projectName: project.name, feedbackPath: firstBoard ? boardPath(firstBoard) : null, askAPerson: await askAPerson(slug) }
+    : null;
+
   return (
     <PortalBaseProvider base={base} slug={slug}>
       {/* Not on the app's own domain (Tuti's own portal): the theme kept there is the app's, its user's pick. */}
@@ -98,6 +108,7 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
       <PortalLookProvider saved={brand} appOrigin={appUrl().origin}>
         {/* Logo · parts · (on Docs) search · links and the account on the right. On phones the parts, search and links get lines of their own. */}
         {/* portal-header, portal-footer: names for teams' own CSS (Customize → Custom code) to go by. */}
+        <WithAssistant assistant={assistantProps}>
         <PortalTop>
         <header className="portal-header flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
@@ -119,10 +130,16 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         </PortalTop>
         <PortalMain>{children}</PortalMain>
         <PortalFooter />
+        </WithAssistant>
       </PortalLookProvider>
       {/* The team's HTML (Customize → Custom code): only on their own domain or site, where it runs on their origin (TeamHtml
           checks the page's real origin). Never on a Tuti address (a script there could pass for Tuti) or the app's own domain. */}
       {brand.customHtml && ownOrigin && <TeamHtml html={brand.customHtml} origin={ownOrigin} />}
     </PortalBaseProvider>
   );
+}
+
+/** The page inside the docs' assistant, where the portal has one. */
+function WithAssistant({ assistant, children }: { assistant: Omit<React.ComponentProps<typeof DocsAssistantProvider>, "children"> | null; children: React.ReactNode }) {
+  return assistant ? <DocsAssistantProvider {...assistant}>{children}</DocsAssistantProvider> : children;
 }
