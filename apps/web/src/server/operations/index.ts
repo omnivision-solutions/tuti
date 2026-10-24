@@ -59,7 +59,7 @@ import { createRedirect, deleteRedirect, listRedirects } from "./redirects";
 import { getPost, getRoadmap, listBoards, listComments, listPosts } from "./read";
 import { getUsage } from "./usage";
 import { getAiModels, updateAiModels } from "./ai-models";
-import { getCredits } from "./credits";
+import { getCredits, topUpCredits } from "./credits";
 import { getWidgetSettings, updateWidgetSettings } from "./widget";
 
 export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./define";
@@ -145,6 +145,7 @@ const all = [
   getAiModels,
   updateAiModels,
   getCredits,
+  topUpCredits,
   getPortal,
   updatePortal,
   listPortalReaders,

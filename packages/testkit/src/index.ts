@@ -6,3 +6,4 @@ export * from "./model-fake";
 export * from "./dns-fake";
 export * from "./cloudflare-fake";
 export * from "./site-fake";
+export * from "./stripe-fake";

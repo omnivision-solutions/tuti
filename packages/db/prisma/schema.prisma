@@ -1724,6 +1724,10 @@ model AiCreditGrant {
   expiresAt DateTime?
   /// For the operator: why it was given (a support case, a plan's period).
   note      String         @default("")
+  /// A top-up's Stripe Checkout Session: one grant per payment, however often Stripe says it's paid.
+  stripeSessionId String?  @unique
+  /// What a top-up paid, in US cents.
+  paidCents Int?
   createdAt DateTime       @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

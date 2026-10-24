@@ -52,12 +52,21 @@ export async function grantCredits(
   projectId: string,
   source: AiCreditSource,
   credits: number,
-  { days, note = "" }: { days: number | null; note?: string },
+  { days, note = "", stripeSessionId, paidCents }: { days: number | null; note?: string; stripeSessionId?: string; paidCents?: number },
   tx: Prisma.TransactionClient = prisma,
 ) {
   const amount = toCredits(credits);
   return tx.aiCreditGrant.create({
-    data: { projectId, source, credits: amount, remaining: amount, expiresAt: days === null ? null : new Date(Date.now() + days * 86_400_000), note },
+    data: {
+      projectId,
+      source,
+      credits: amount,
+      remaining: amount,
+      expiresAt: days === null ? null : new Date(Date.now() + days * 86_400_000),
+      note,
+      stripeSessionId,
+      paidCents,
+    },
   });
 }
 

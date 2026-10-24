@@ -3,7 +3,7 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createConnection } from "node:net";
 import { join } from "node:path";
 
-import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
@@ -56,6 +56,8 @@ export default async function globalSetup() {
   const site = await startSiteFake();
   // A team's own website; journeys make it forward a path to their portal through /_fake/forward (e2e/site.ts).
   process.env.E2E_SITE_URL = site.origin;
+  // Stripe Checkout for buying AI credits: its "Pay" posts the paid event to the app's webhook.
+  const stripe = await startStripeFake({ webhookUrl: `${APP_URL}/api/stripe/webhook` });
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -72,6 +74,7 @@ export default async function globalSetup() {
       ...model.env,
       ...s3.env,
       ...github.env,
+      ...stripe.env,
       DNS_LOOKUP_URL: dns.url,
       ...cloudflare.env,
       NODE_ENV: "production",
@@ -95,7 +98,7 @@ export default async function globalSetup() {
 
   return async () => {
     server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };
