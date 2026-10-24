@@ -427,14 +427,27 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await widget.getByRole("link", { name: "All articles" }).click();
   await expect(collections).toBeVisible();
 
-  // Search, read a result, and go back to the results.
+  // Search: results come as the visitor types, with no button to press. Cleared, the docs are back.
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
-  await search.fill("invite");
-  await widget.getByRole("button", { name: "Search" }).click();
+  await expect(widget.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  await search.pressSequentially("invi");
   const results = widget.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results.getByRole("link", { name: "Exporting your data" })).toHaveCount(0);
+  await expect(collections).toBeHidden();
   await checkpoint(visitor, "widget-docs-search");
+  await search.fill("");
+  await expect(collections).toBeVisible();
+  await expect(results).toBeHidden();
+  await search.pressSequentially("refunds");
+  await expect(widget.getByText("No articles match “refunds”")).toBeVisible();
+  // Enter searches at its own address, as without the page's script. What they type before the
+  // panel gets there stays.
+  await search.press("Enter");
+  await search.fill("invite");
+  await expect.poll(() => visitor.frames().find((frame) => frame.url().includes("/widget"))?.url()).toContain("q=refunds");
+  await expect(search).toHaveValue("invite");
+  // Read a result, and go back to the results.
   await results.getByRole("link", { name: "Inviting your team" }).click();
   const article = widget.getByRole("article", { name: "Inviting your team" });
   await expect(article.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
@@ -447,6 +460,13 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await article.getByRole("link", { name: "Search results" }).click();
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(search).toHaveValue("invite");
+  // The team's insights count what they searched for: "refunds" (Enter), "invite" (typed, then a result
+  // opened) and its results again (going back); not what they typed on the way.
+  await owner.goto(`/app/${slug}/docs/insights`);
+  await expect(async () => {
+    await owner.reload();
+    await expect(owner.getByText(/ 3 searches, 1 failed search\./)).toBeVisible({ timeout: 2_000 });
+  }).toPass();
 
   // The customer's page opens the widget at an article (say, from a contextual help button).
   await visitor.keyboard.press("Escape");

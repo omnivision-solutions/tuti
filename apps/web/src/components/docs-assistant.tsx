@@ -424,9 +424,9 @@ export function AssistantButton() {
 
 /**
  * In the widget's Docs tab: "Ask AI", opening the assistant as it was, or with `question` (a search),
- * "Ask AI: <question>", asking it there. Nothing without an assistant.
+ * "Ask AI: <question>", asking it there (`onAsk` then too). Nothing without an assistant.
  */
-export function AskAIButton({ question }: { question?: string }) {
+export function AskAIButton({ question, onAsk }: { question?: string; onAsk?: () => void }) {
   const assistant = useDocsAssistant();
   if (!assistant) {
     return null;
@@ -442,7 +442,10 @@ export function AskAIButton({ question }: { question?: string }) {
   return (
     <button
       type="button"
-      onClick={() => assistant.ask(question)}
+      onClick={() => {
+        onAsk?.();
+        assistant.ask(question);
+      }}
       className="flex w-full items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent"
     >
       <SparklesIcon aria-hidden className="size-4 shrink-0" />

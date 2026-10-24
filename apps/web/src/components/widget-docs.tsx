@@ -5,11 +5,11 @@ import Link from "next/link";
 import { BackLink } from "@/components/back-link";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
-import { AskAIButton } from "@/components/docs-assistant";
 import { ArticleLinks, DocsTabs, LockedMark } from "@/components/docs-collections";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
+import { WidgetDocsSearch, WidgetNoResults, WidgetSearchResults } from "@/components/widget-docs-search";
 import { WidgetLocked } from "@/components/widget-locked";
+import { docsHref } from "@/lib/widget-docs";
 import { type DocsCollection, docsContents, findCollection, lockedForReader, movedArticle, publishedArticle } from "@/server/docs-queries";
 import { searchForReader } from "@/server/docs-search";
 import { mediaUrls } from "@/server/media-urls";
@@ -22,20 +22,10 @@ function LockedMessage({ projectSlug, signedIn }: { projectSlug: string; signedI
   return signedIn ? <p className="text-sm text-muted-foreground">You don&apos;t have access to this.</p> : <WidgetLocked projectSlug={projectSlug} />;
 }
 
-/** A widget Docs URL: the list (with the search, if any, or in a docs tab, or a collection's) or an article (opened from there). */
-function docsHref({ q, docsTab, collection, article }: { q?: string; docsTab?: string; collection?: string; article?: string }) {
-  const params = new URLSearchParams({ tab: "docs" });
-  for (const [key, value] of Object.entries({ q, docsTab, collection, article })) {
-    if (value) {
-      params.set(key, value);
-    }
-  }
-  return `/widget?${params}`;
-}
-
 /**
- * The widget's Docs tab: the portal's docs at panel size. A search (`q`), with "Ask AI" for it
- * in the assistant (components/docs-assistant.tsx, which the page puts around the panel), the docs a level at a time (the collections and the articles in none, or
+ * The widget's Docs tab: the portal's docs at panel size. A search (`q`, with results as the reader
+ * types: components/widget-docs-search.tsx), with "Ask AI" for it in the assistant
+ * (components/docs-assistant.tsx, which the page puts around the panel), the docs a level at a time (the collections and the articles in none, or
  * a collection's, `collection`), or one article (`article`), which also opens on the portal in
  * a new tab. Article links keep the search or the collection, so going back returns there.
  */
@@ -69,54 +59,20 @@ export async function WidgetDocs({
   }
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap gap-2">
-        {/* A plain GET form: search works without JavaScript. */}
-        <form role="search" action="/widget" className="flex min-w-0 flex-1 basis-60 gap-2">
-          <input type="hidden" name="tab" value="docs" />
-          <Input type="search" name="q" defaultValue={query} maxLength={200} placeholder="Search articles" aria-label="Search the docs" />
-          <Button type="submit">Search</Button>
-        </form>
-        {/* The assistant, in the panel (the page has one when AI answers are on). */}
-        <AskAIButton />
-      </div>
-      {query && <AskAIButton question={query} />}
-      {query ? (
-        <SearchResults projectId={projectId} projectSlug={projectSlug} query={query} />
-      ) : (
-        <Collections projectSlug={projectSlug} docsTab={docsTab} collection={collection} />
-      )}
+      <WidgetDocsSearch query={query}>
+        {query ? (
+          <SearchResults projectId={projectId} projectSlug={projectSlug} query={query} />
+        ) : (
+          <Collections projectSlug={projectSlug} docsTab={docsTab} collection={collection} />
+        )}
+      </WidgetDocsSearch>
     </div>
   );
 }
 
 async function SearchResults({ projectId, projectSlug, query }: { projectId: string; projectSlug: string; query: string }) {
   const results = await searchForReader(projectId, projectSlug, query, 10);
-  if (results.length === 0) {
-    return (
-      <EmptyState
-        title={`No articles match “${query}”`}
-        description="Try other words, or browse all articles."
-        action={
-          <Link href={docsHref({})} className={buttonVariants({ variant: "outline" })}>
-            All articles
-          </Link>
-        }
-      />
-    );
-  }
-  return (
-    <ul aria-label="Search results" className="flex flex-col gap-4">
-      {results.map((result) => (
-        <li key={result.slug} className="flex flex-col gap-0.5">
-          <Link href={docsHref({ q: query, article: result.slug })} className="break-words text-primary hover:underline">
-            {result.title}
-            {result.locked && <LockedMark />}
-          </Link>
-          {result.snippet && <p className="text-sm break-words text-muted-foreground">{result.snippet}</p>}
-        </li>
-      ))}
-    </ul>
-  );
+  return results.length === 0 ? <WidgetNoResults query={query} /> : <WidgetSearchResults query={query} results={results} />;
 }
 
 /** Collections as links that open them, each with its description. */
