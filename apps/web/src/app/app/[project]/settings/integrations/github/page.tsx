@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { CodeChangeAnalysisSwitch, DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
+import { CodeChangeSwitch, DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -44,7 +44,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       repositories: true,
       createdAt: true,
       included: { select: { repoId: true } },
-      project: { select: { analyseCodeChanges: true } },
+      project: { select: { analyseCodeChanges: true, autoApplyLinks: true } },
     },
   });
   const integrations = `/app/${project.slug}/settings/integrations`;
@@ -168,9 +168,14 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             until your team applies a proposal.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
           {codeChangesEnabled() ? (
-            <CodeChangeAnalysisSwitch projectSlug={project.slug} on={installation.project.analyseCodeChanges} provider={aiProvider()} />
+            <>
+              <CodeChangeSwitch projectSlug={project.slug} setting="analysis" on={installation.project.analyseCodeChanges} provider={aiProvider()} />
+              {installation.project.analyseCodeChanges && (
+                <CodeChangeSwitch projectSlug={project.slug} setting="autoLinks" on={installation.project.autoApplyLinks} provider={aiProvider()} />
+              )}
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">
               Code changes need AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).

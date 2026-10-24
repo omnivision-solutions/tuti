@@ -229,6 +229,9 @@ model Project {
   supportEmailTokenHash String?      @unique
   /// Merged pull requests become code changes (see CodeChange): on unless the team turned it off.
   analyseCodeChanges    Boolean      @default(true)
+  /// Tuti applies a code change's "links" proposals by itself when it's this sure (AUTO_LINK), if the
+  /// team opted in. Only links: completing posts, comments and docs always wait for someone.
+  autoApplyLinks        Boolean      @default(false)
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 

@@ -111,3 +111,14 @@ export async function setCodeChangeAnalysis(projectSlug: string, on: boolean): P
   refresh();
   return {};
 }
+
+/** Lets Tuti apply a code change's "links" proposals by itself when it's very sure (only links: nothing users see). */
+export async function setAutoApplyLinks(projectSlug: string, on: boolean): Promise<{ error?: string }> {
+  const project = await getAdminProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners and admins can change the GitHub connection" };
+  }
+  await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: on === true } });
+  refresh();
+  return {};
+}

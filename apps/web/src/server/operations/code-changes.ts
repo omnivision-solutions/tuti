@@ -164,7 +164,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
         /** The pull request's line in the changelog (as proposed, or as written once applied). */
         ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
-        decidedBy: action.decidedBy?.name ?? null,
+        /** Who applied or dismissed it: "Tuti" for a link it applied by itself (see AUTO_LINK). */
+        decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Tuti" : null),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
       };
