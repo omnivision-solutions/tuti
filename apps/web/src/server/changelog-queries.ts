@@ -47,6 +47,16 @@ export async function completablePosts(projectId: string, listed: number[] = [])
   return [...alreadyListed.filter((p) => !shown.has(p.number)), ...recent];
 }
 
+/** The newest published changelog entries, by date (the header's menu on phones lists them): just enough to name and link them. */
+export function changelogContents(projectSlug: string, take = 30) {
+  return prisma.changelogEntry.findMany({
+    where: { project: { slug: projectSlug }, publishedAt: { not: null } },
+    orderBy: [{ publishedAt: "desc" }, { number: "desc" }],
+    take,
+    select: { number: true, title: true, publishedAt: true },
+  });
+}
+
 /**
  * A project's published changelog entries, newest first (or one of them, with `number`), `take` from `skip`,
  * with their reactions (and which ones `userId` left).
