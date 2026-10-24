@@ -105,6 +105,16 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await checkpoint(owner, "team-board-texts-preview", { fullPage: false });
   await dialog.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Board updated")).toBeVisible();
+  // Closed without saving, the dialog opens again with what's saved.
+  const edit = owner.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" });
+  await edit.click();
+  await dialog.getByLabel("Button").fill("Not saved");
+  await owner.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await edit.click();
+  await expect(dialog.getByLabel("Button")).toHaveValue("Request a feature");
+  await expect(preview).not.toContainText("Not saved");
+  await owner.keyboard.press("Escape");
 
   // On the portal: the description under the name, and the board's button opening its form in a dialog.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
@@ -115,9 +125,17 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(form.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
   await expect(form.getByRole("textbox", { name: "Details" }).locator("p")).toHaveAttribute("data-placeholder", "How would it help you?");
   await checkpoint(ada, "portal-board-post-dialog", { fullPage: false });
+  // Closing it keeps what was written.
+  await form.getByLabel("Title").fill("Dark mo");
+  await ada.keyboard.press("Escape");
+  await expect(form).toHaveCount(0);
+  await ada.getByRole("button", { name: "Request a feature" }).click();
+  await expect(form.getByLabel("Title")).toHaveValue("Dark mo");
   await form.getByLabel("Title").fill("Dark mode");
   await form.getByRole("button", { name: "Submit feedback" }).click();
-  // Posted: the dialog closes and the post is on the board.
+  // Posted: the dialog closes and the post is on the board; the next one starts empty.
   await expect(form).toHaveCount(0);
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await ada.getByRole("button", { name: "Request a feature" }).click();
+  await expect(form.getByLabel("Title")).toHaveValue("");
 });

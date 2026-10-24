@@ -30,8 +30,9 @@ export function NewPostDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>{label}</DialogTrigger>
-      {/* Room to write, and it scrolls when the text is longer than the screen. */}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:max-w-2xl">
+      {/* Room to write, and it scrolls when the text is longer than the screen. Closed, it keeps what was
+          written (posting clears it), and the starting title is only the first post's. */}
+      <DialogContent keepMounted className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:max-w-2xl">
         <DialogTitle className="sr-only">{label}</DialogTitle>
         <NewPostForm {...form} onPosted={() => setOpen(false)} />
       </DialogContent>

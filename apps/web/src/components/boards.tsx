@@ -111,14 +111,15 @@ type BoardFields = {
 /** A board's settings: its name, address and description, and its words for posting, with a preview of them on the portal. */
 export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; board: BoardFields }) {
   const [open, setOpen] = useState(false);
-  // What the preview shows, as it's typed.
-  const [draft, setDraft] = useState({
+  // What the preview shows, as it's typed; opening the dialog starts again from what's saved.
+  const saved = () => ({
     name: board.name,
     description: board.description ?? "",
     postButton: board.postButton ?? "",
     titlePlaceholder: board.titlePlaceholder ?? "",
     detailsPlaceholder: board.detailsPlaceholder ?? "",
   });
+  const [draft, setDraft] = useState(saved);
   const typed = (field: keyof typeof draft) => ({
     name: field,
     value: draft[field],
@@ -138,7 +139,15 @@ export function EditBoardDialog({ projectSlug, board }: { projectSlug: string; b
   const id = (field: string) => `${field}-${board.id}`;
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          setDraft(saved());
+        }
+        setOpen(next);
+      }}
+    >
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>Edit</DialogTrigger>
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-4xl">
         <form {...keepingFields(action)}>
