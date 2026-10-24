@@ -228,7 +228,7 @@ export const analyseCodeChange = defineOperation({
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
     try {
-      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO" });
+      await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: change.state === "NOTHING_TO_DO", resume: false });
     } catch {
       // Inline, the analysis itself failed (the code change says where); on Hatchet, queueing did.
       throw new OperationError(503, "unavailable", "Couldn't analyse it. Try again in a moment.");

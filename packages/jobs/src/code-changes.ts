@@ -53,7 +53,7 @@ export async function startCodeChange(projectId: string, pr: MergedPullRequest):
     select: { id: true, state: true },
   });
   if (change.state === "ANALYSING" || change.state === "FAILED") {
-    await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false });
+    await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false, resume: false });
   }
   return true;
 }
@@ -66,8 +66,8 @@ export async function analysisOn(projectId: string): Promise<boolean> {
 
 /**
  * Reads the pull request with the installation's token, then analyses it. Logs keep ids and counts,
- * never its text. `force` analyses it again (a team asked), and `pastGate` past the gate ("Analyse
- * anyway").
+ * never its text. `force` analyses it again (a team asked), `pastGate` past the gate ("Analyse
+ * anyway"), and `resume` one paused for want of AI credits ("Resume all").
  */
 export async function codeChange(input: JobInput<"codeChange">, log: JobLogger): Promise<JobResult> {
   const change = await prisma.codeChange.findUnique({
@@ -89,6 +89,11 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   }
   // Analysed once: a redelivery or a second run finds it done.
   if (!input.force && (change.state === "READY" || change.state === "NOTHING_TO_DO")) {
+    return { skipped: true };
+  }
+  // Paused for want of AI credits: only the team resumes it (`force` or `resume`), never a run queued
+  // before it paused (a redelivered merge), even once there are credits again.
+  if (!input.force && !input.resume && change.state === "PAUSED") {
     return { skipped: true };
   }
   const waiting = { id: change.id, state: { in: ["ANALYSING" as const, "FAILED" as const, "PAUSED" as const] } };

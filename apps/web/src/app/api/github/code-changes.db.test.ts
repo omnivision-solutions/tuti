@@ -191,7 +191,7 @@ describe("reading", () => {
     await setCodeChangeAnalysis(project.slug, false);
     github.pullRequest(repo, pullRequest(7));
     const reads = readsOf(7).length;
-    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false });
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([]);
     expect(readsOf(7)).toHaveLength(reads);
   });
@@ -374,7 +374,7 @@ describe("deciding", () => {
     model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
     model.decide({ needed: 0.1 }, "existing_articles");
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY", reason: "" })]);
     expect(await prisma.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, payload: true } })).toEqual([
@@ -405,7 +405,7 @@ describe("deciding", () => {
     model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
     model.decide({ needed: 0.1 }, "existing_articles");
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(receiver.received).toHaveLength(1);
     await receiver.close();
   });
@@ -460,7 +460,7 @@ describe("deciding", () => {
     const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id } });
     // The summary fails: the code change is failed now, and Hatchet runs the job again.
     model.fail(503);
-    await expect(enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true })).rejects.toThrow();
+    await expect(enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false })).rejects.toThrow();
     expect(await changes()).toEqual([expect.objectContaining({ state: "FAILED" })]);
     model.reply(SUMMARY);
     for (let i = 0; i < 5; i++) {
@@ -469,7 +469,7 @@ describe("deciding", () => {
     model.decide({ effect: { wrong: 0, missing: 0, unaffected: 1 } }, '"article"');
     model.decide({ needed: 0.1 }, "existing_articles");
     model.reply(JSON.stringify({ why: "", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
-    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true });
+    await enqueue("codeChange", { codeChangeId: id, force: true, pastGate: true, resume: false });
     expect(model.decisions.filter((request) => "audience" in request.questions)).toHaveLength(1);
     expect(await changes()).toEqual([expect.objectContaining({ state: "READY" })]);
   });
@@ -495,7 +495,7 @@ describe("deciding", () => {
     await prisma.codeChangeAction.updateMany({ where: { codeChangeId: change.id, postId: posts.settings!.id }, data: { status: "DISMISSED" } });
 
     script(0.6);
-    await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false });
+    await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false, resume: false });
     const actions = await prisma.codeChangeAction.findMany({ where: { codeChangeId: change.id }, select: { postId: true, status: true, probability: true } });
     expect(actions.sort((a, b) => a.probability - b.probability || a.status.localeCompare(b.status))).toEqual([
       { postId: posts.darkMode!.id, status: "PENDING", probability: 0.6 },
@@ -662,6 +662,16 @@ describe("out of AI credits", () => {
     model.decide(INTERNAL);
     expect(await call(analyseCodeChange, team(), { id })).toMatchObject({ state: "nothing_to_do" });
     expect(readsOf(40)).toHaveLength(3);
+  });
+
+  test("a run queued before it paused (a redelivered merge) doesn't resume it, even with credits again", async () => {
+    github.pullRequest(repo, pullRequest(39));
+    expect(await merge(39)).toBe(200);
+    const { id } = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
+    expect(await changes()).toEqual([expect.objectContaining({ number: 39, state: "PAUSED" })]);
+    expect(readsOf(39)).toEqual([]);
   });
 
   test("an analysis that started finishes, even past the last credit; the next merge is paused", async () => {

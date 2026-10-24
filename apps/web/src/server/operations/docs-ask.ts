@@ -229,11 +229,14 @@ export async function answerQuestion(
   try {
     ai = await aiFor(projectId, "answers");
   } catch (error) {
+    // Out of credits: "unavailable". Anything else (the database, say): failed, like the model failing.
+    // Either way the articles are read again first: each with its listing now, only what the asker may still read.
+    const fallback = await stillUsable(projectId, sections, reader);
     if (error instanceof OutOfCredits) {
-      // Read again, like a failed answer's: each with its listing now, and only what the asker may still read.
-      return finish("unavailable", { fallback: await stillUsable(projectId, sections, reader) });
+      return finish("unavailable", { fallback });
     }
-    throw error;
+    log.warn("AI docs answer failed", { projectId, error });
+    return finish("failed", { fallback });
   }
   let reply: string;
   try {

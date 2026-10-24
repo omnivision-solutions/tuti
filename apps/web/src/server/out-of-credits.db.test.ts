@@ -87,6 +87,20 @@ test("an article unpublished while the credits are checked isn't offered instead
   vi.restoreAllMocks();
 });
 
+test("a credit check that fails otherwise (the database) is a failed answer, with the closest articles", async () => {
+  openai.setVector(QUESTION, [1, 0]);
+  openai.setVector(articleChunkText(TITLE, { heading: "", text: TEXT }), [1, 0]);
+  const article = await call(createArticle, team(), { title: TITLE, body: TEXT });
+  await call(publishArticle, team(), { slug: article.slug });
+  vi.spyOn(prisma.aiCreditGrant, "findMany").mockRejectedValueOnce(new Error("database blip"));
+  expect(await answerQuestion(project.id, "reader-1", QUESTION, "PORTAL", SIGNED_OUT, {})).toMatchObject({
+    status: "failed",
+    sources: [expect.objectContaining({ title: TITLE })],
+  });
+  vi.restoreAllMocks();
+  expect(model.requests).toEqual([]);
+});
+
 test("Draft with AI and Edit with AI are refused (402) with the reason, without asking the AI", async () => {
   const entry = await call(createChangelogEntry, team(), { title: "Next release", body: "Dark mode is here." });
   const refused = { status: 402, code: "no_credits", message: "This project is out of AI credits. See Settings → Billing." };
