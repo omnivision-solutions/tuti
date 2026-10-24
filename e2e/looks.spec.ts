@@ -81,7 +81,17 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   await createProject(owner, "Acme Customer Success and Support Help Center", slug);
   // An article, so the menu has the docs' tree.
   const api = await apiFor(owner, slug);
-  const article = await api("/articles", { title: "Getting started", body: Array.from({ length: 40 }, (_, i) => `Step ${i + 1}: keep reading.`).join("\n\n") });
+  // A long one, with a heading halfway down to link to.
+  const paragraph = (value: string) => ({ type: "paragraph", content: [{ type: "text", text: value }] });
+  const content = {
+    type: "doc",
+    content: [
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 1}: keep reading.`)),
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Last step" }] },
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 41}: nearly there.`)),
+    ],
+  };
+  const article = await api("/articles", { title: "Getting started", content });
   await api(`/articles/${article.slug}/publish`, {});
   // And a header link, so it's there on every page (the logo's too).
   await api("/branding", { headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }] }, "PATCH");
@@ -118,6 +128,12 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   const plain = await noScript.newPage();
   await plain.goto(`/docs/${article.slug}`);
   await expect(plain.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Pricing" })).toBeVisible();
+  // And a link to a heading still lands below the header, which can't measure itself without it.
+  await plain.goto(`/docs/${article.slug}#last-step`);
+  const heading = plain.getByRole("heading", { name: "Last step" });
+  await expect.poll(() => plain.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+  const [headerBox, headingBox] = [(await plain.getByRole("banner").boundingBox())!, (await heading.boundingBox())!];
+  expect(headingBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
   await noScript.close();
 
   // On a private portal's sign-in page, the menu has them too (and no parts).

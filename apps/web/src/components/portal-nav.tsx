@@ -84,7 +84,7 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
     };
   }, []);
   return (
-    <div ref={ref} className="sticky top-0 z-40 bg-background">
+    <div ref={ref} data-portal-top className="sticky top-0 z-40 bg-background">
       {children}
     </div>
   );
