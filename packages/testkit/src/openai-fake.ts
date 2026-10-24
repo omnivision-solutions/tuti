@@ -82,7 +82,9 @@ export async function startOpenAIFake(): Promise<OpenAIFake> {
       const data = body.input.map((text, index) => ({ index, embedding: vectorFor(text) })).reverse();
       const held = hold;
       hold = undefined;
-      void (held ?? Promise.resolve()).then(() => send(200, { data }));
+      // Usage like OpenAI's: a token per character of the inputs.
+      const usage = { prompt_tokens: body.input.reduce((sum, text) => sum + String(text).length, 0) };
+      void (held ?? Promise.resolve()).then(() => send(200, { data, usage }));
     });
   });
 

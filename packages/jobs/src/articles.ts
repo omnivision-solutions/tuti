@@ -2,6 +2,7 @@ import { type Doc, fromPlainText, toChunks } from "@tuti/content";
 import { prisma } from "@tuti/db";
 import { articleChunkText, contentHash, embed, EMBEDDING_MODEL, embeddingsEnabled, type JobInput, toVectorLiteral } from "@tuti/shared";
 
+import { meter } from "./ai-usage";
 import type { JobLogger, JobResult } from "./index";
 
 const articleSelect = { projectId: true, title: true, body: true, content: true, keywords: true, publishedAt: true } as const;
@@ -37,7 +38,7 @@ export async function articleChanged({ articleId }: JobInput<"articleChanged">, 
       return { skipped: false, embedded: 0 };
     }
   }
-  const vectors = next ? await embed(next.chunks.map((c) => c.embedText)) : [];
+  const vectors = next ? await embed(next.chunks.map((c) => c.embedText), { meter: meter(next.projectId, "docs_index") }) : [];
 
   const written = await prisma.$transaction(async (tx) => {
     // Locked, so a save, unpublish or delete can't slip in between this check and the write.

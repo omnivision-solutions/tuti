@@ -133,7 +133,15 @@ export async function startModelFake(): Promise<ModelFake> {
             return send(500, { error: { message: `wrong answer type scripted for ${name}` } });
           }
         }
-        return send(200, { id: `gen-dec-fake-${decisions.length}`, model: request.model, provider: "Fake", answers, usage: { input_tokens: 1, output_tokens: 1, cost: 0 } });
+        // Usage like OpenRouter's: a token per character of the state, one per answer, a hundred-millionth of a dollar each.
+        const used = { input_tokens: state.length, output_tokens: Object.keys(answers).length };
+        return send(200, {
+          id: `gen-dec-fake-${decisions.length}`,
+          model: request.model,
+          provider: "Fake",
+          answers,
+          usage: { ...used, cost: (used.input_tokens + used.output_tokens) / 1e8 },
+        });
       }
       if (req.method !== "POST" || req.url !== "/chat/completions") {
         unexpected.push(`${req.method} ${req.url}`);
@@ -159,11 +167,14 @@ export async function startModelFake(): Promise<ModelFake> {
       if (step.status !== 200) {
         return send(step.status, { error: { message: "fake failure" } });
       }
+      // Usage like OpenRouter's: a token per character, a millionth of a dollar each.
+      const [prompt, completion] = [system.length + user.length, step.content?.length ?? 0];
       send(200, {
         id: `fake-${requests.length}`,
         object: "chat.completion",
         model: body.model,
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: step.content } }],
+        usage: { prompt_tokens: prompt, completion_tokens: completion, cost: (prompt + completion) / 1e6 },
       });
     });
   });

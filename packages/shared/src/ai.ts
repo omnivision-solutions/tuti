@@ -1,4 +1,5 @@
 import { embeddingsEnabled } from "./embeddings";
+import { dollars, type Meter, tokens } from "./usage";
 
 /**
  * Text generation through an OpenAI-compatible chat completions API: OpenRouter
@@ -37,37 +38,46 @@ export async function complete({
   user,
   maxTokens = 4000,
   timeoutMs = 60_000,
+  meter,
 }: {
   system: string;
   user: string;
   maxTokens?: number;
   timeoutMs?: number;
+  /** Records what the request used, for the project that caused it. */
+  meter: Meter;
 }): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not set");
   }
+  const model = process.env.AI_MODEL || DEFAULT_AI_MODEL;
   const response = await fetch(`${baseUrl()}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: process.env.AI_MODEL || DEFAULT_AI_MODEL,
+      model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
       ],
       max_tokens: maxTokens,
       provider: PROVIDER,
+      // OpenRouter says what the request cost (other endpoints ignore it).
+      usage: { include: true },
     }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const json = (await response.json().catch(() => null)) as {
     choices?: { message?: { content?: unknown } }[];
+    usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
     error?: { message?: string };
   } | null;
   if (!response.ok) {
     throw new Error(`AI request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
   }
+  // Answered, so paid for, whatever the reply says.
+  await meter({ kind: "chat", model, inputTokens: tokens(json?.usage?.prompt_tokens), outputTokens: tokens(json?.usage?.completion_tokens), cost: dollars(json?.usage?.cost) });
   const content = json?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || content.trim() === "") {
     throw new Error("The AI reply had no text");
@@ -102,7 +112,7 @@ export type DecisionAnswer = { type: "noul"; noul: number } | { type: "choice"; 
 export async function decide(
   state: unknown,
   questions: Record<string, DecisionQuestion>,
-  { timeoutMs = 30_000 }: { timeoutMs?: number } = {},
+  { timeoutMs = 30_000, meter }: { timeoutMs?: number; meter: Meter },
 ): Promise<Record<string, DecisionAnswer>> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -114,10 +124,21 @@ export async function decide(
     body: JSON.stringify({ model: decisionModel(), state, questions, provider: PROVIDER }),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  const json = (await response.json().catch(() => null)) as { answers?: Record<string, unknown>; error?: { message?: string } } | null;
+  const json = (await response.json().catch(() => null)) as {
+    answers?: Record<string, unknown>;
+    usage?: { input_tokens?: unknown; output_tokens?: unknown; cost?: unknown };
+    error?: { message?: string };
+  } | null;
   if (!response.ok) {
     throw new Error(`Decision request failed (${response.status}): ${json?.error?.message ?? "no details"}`);
   }
+  await meter({
+    kind: "decision",
+    model: decisionModel(),
+    inputTokens: tokens(json?.usage?.input_tokens),
+    outputTokens: tokens(json?.usage?.output_tokens),
+    cost: dollars(json?.usage?.cost),
+  });
   const answers: Record<string, DecisionAnswer> = {};
   const probability = (value: unknown) => typeof value === "number" && value >= 0 && value <= 1;
   for (const [name, question] of Object.entries(questions)) {
