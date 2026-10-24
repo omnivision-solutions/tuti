@@ -125,7 +125,7 @@ export function DocsSearchBox({
           large
             ? "h-12 w-full border border-input px-4 text-base dark:bg-input/30"
             : compact
-              ? "size-8 justify-center md:h-8 md:w-60 md:justify-start md:border md:border-input md:px-2.5 md:text-sm md:dark:bg-input/30"
+              ? "size-9 justify-center rounded-full bg-muted/70 text-foreground md:h-8 md:w-60 md:justify-start md:rounded-lg md:border md:border-input md:bg-transparent md:px-2.5 md:text-sm md:text-muted-foreground md:dark:bg-input/30"
               : "h-8 w-full border border-input px-2.5 text-sm dark:bg-input/30",
         )}
       >

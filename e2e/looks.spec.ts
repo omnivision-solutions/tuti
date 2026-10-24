@@ -75,16 +75,35 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
   }
 });
 
-test("on a phone, the header's buttons stay on its first line beside a long name; the menu takes the whole screen up to tablet width", async ({ browser }) => {
+test("on a phone, the header stays at the top and its buttons on its first line beside a long name; the menu takes the whole screen up to tablet width", async ({ browser }) => {
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme Customer Success and Support Help Center", slug);
   // An article, so the menu has the docs' tree.
   const api = await apiFor(owner, slug);
-  const article = await api("/articles", { title: "Getting started", body: "Welcome." });
+  // A long one, with a heading halfway down to link to.
+  const paragraph = (value: string) => ({ type: "paragraph", content: [{ type: "text", text: value }] });
+  const content = {
+    type: "doc",
+    content: [
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 1}: keep reading.`)),
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Last step" }] },
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 41}: nearly there.`)),
+    ],
+  };
+  const article = await api("/articles", { title: "Getting started", content });
   await api(`/articles/${article.slug}/publish`, {});
-  // And a header link, so it's there on every page (the logo's too).
-  await api("/branding", { headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }] }, "PATCH");
+  // And header links and a contact button, so they're there on every page (the logo's too): long
+  // ones, which take several lines where they're in a row of their own (without JavaScript).
+  const long = (word: string) => `${word}: everything you need to know`;
+  await api(
+    "/branding",
+    {
+      headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }, ...["Status", "Security", "Careers", "Community"].map((word) => ({ label: long(word), url: "https://example.com/more" }))],
+      contact: { label: "Talk to our support team", url: "mailto:e2e-support@example.com" },
+    },
+    "PATCH",
+  );
   const visitor = await newPerson(browser, portalUrl(slug));
   await visitor.setViewportSize({ width: 390, height: 844 });
   await visitor.goto(`/docs/${article.slug}`);
@@ -96,6 +115,12 @@ test("on a phone, the header's buttons stay on its first line beside a long name
   expect(Math.abs(nameBox.y + nameBox.height / 2 - (menuBox.y + menuBox.height / 2))).toBeLessThan(8);
   expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(menuBox.x);
   await expectNoSidewaysScroll(visitor);
+  // Scrolled down a long page, the header stays at the top, its buttons too.
+  await visitor.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect.poll(() => visitor.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+  expect((await banner.boundingBox())!.y).toBe(0);
+  await expect(menuButton).toBeInViewport();
+  await visitor.evaluate(() => window.scrollTo(0, 0));
   // Up to tablet width the menu is the whole screen; the logo in it, followed, closes it.
   await visitor.setViewportSize({ width: 700, height: 900 });
   await menuButton.click();
@@ -112,6 +137,13 @@ test("on a phone, the header's buttons stay on its first line beside a long name
   const plain = await noScript.newPage();
   await plain.goto(`/docs/${article.slug}`);
   await expect(plain.getByRole("navigation", { name: "Links" }).getByRole("link", { name: "Pricing" })).toBeVisible();
+  // And a link to a heading still lands below the header, which can't measure itself without it,
+  // however many lines those links take: they're under it and scroll away, not part of it.
+  await plain.goto(`/docs/${article.slug}#last-step`);
+  const heading = plain.getByRole("heading", { name: "Last step" });
+  await expect.poll(() => plain.evaluate(() => window.scrollY)).toBeGreaterThan(500);
+  const [headerBox, headingBox] = [(await plain.locator("[data-portal-top]").boundingBox())!, (await heading.boundingBox())!];
+  expect(headingBox.y).toBeGreaterThanOrEqual(headerBox.y + headerBox.height);
   await noScript.close();
 
   // On a private portal's sign-in page, the menu has them too (and no parts).
@@ -124,4 +156,47 @@ test("on a phone, the header's buttons stay on its first line beside a long name
   const outsiderMenu = outsider.getByRole("dialog", { name: "Menu" });
   await expect(outsiderMenu.getByRole("link", { name: "Pricing" })).toBeVisible();
   await expect(outsiderMenu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
+});
+
+test("a link to a heading lands below the header, even when the team's CSS makes it taller than usual", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const paragraph = (value: string) => ({ type: "paragraph", content: [{ type: "text", text: value }] });
+  const content = {
+    type: "doc",
+    content: [
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 1}: keep reading.`)),
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Last step" }] },
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 41}: nearly there.`)),
+    ],
+  };
+  const article = await api("/articles", { title: "Getting started", content });
+  await api(`/articles/${article.slug}/publish`, {});
+  // Taller than the room left for it before the page measures it (12rem).
+  await api("/branding", { customCss: ".portal-header { padding-bottom: 12rem; }" }, "PATCH");
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto(`/docs/${article.slug}#last-step`);
+  const top = visitor.locator("[data-portal-top]");
+  const heading = visitor.getByRole("heading", { name: "Last step" });
+  await expect.poll(async () => (await top.boundingBox())!.height).toBeGreaterThan(200);
+  // Scrolled to it: on screen, just below the header.
+  await expect(heading).toBeInViewport();
+  await expect.poll(async () => (await heading.boundingBox())!.y - (await top.boundingBox())!.height).toBeGreaterThanOrEqual(0);
+
+  // A link with a broken fragment doesn't stop the header measuring itself (a page of its own, not
+  // just a new fragment on this one).
+  await visitor.goto("/roadmap");
+  const errors: string[] = [];
+  visitor.on("pageerror", (error) => errors.push(error.message));
+  await visitor.goto(`/docs/${article.slug}#%`);
+  await expect(heading).toBeAttached();
+  await expect.poll(() => visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"))).toMatch(/^\d+(\.\d+)?px$/);
+  // And it keeps measuring it: a wider screen, a shorter header.
+  const before = await visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"));
+  await visitor.setViewportSize({ width: 1280, height: 844 });
+  await expect.poll(() => visitor.evaluate(() => document.documentElement.style.getPropertyValue("--portal-header-height"))).not.toBe(before);
+  expect(errors).toEqual([]);
 });

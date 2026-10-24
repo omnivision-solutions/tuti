@@ -148,6 +148,10 @@
     /* A link to a heading scrolls it into view below the portal's header (PortalTop). */
     scroll-padding-top: var(--portal-header-height, 0px);
   }
+  /* On the portal, until PortalTop measures itself (never, without JavaScript): about its tallest, on a phone with every row. */
+  html:has([data-portal-top]) {
+    scroll-padding-top: var(--portal-header-height, 12rem);
+  }
   h1,
   h2,
   h3 {

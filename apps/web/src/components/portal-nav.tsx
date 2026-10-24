@@ -27,7 +27,7 @@ type Board = { slug: string; name: string };
 /**
  * The parts in the header: Feedback opens the first board (and is left out without one).
  * `newChangelog`: the signed-in user has an announcement they haven't seen, so Changelog says "New".
- * On phones they get a line of their own, scrolling sideways.
+ * On phones they get a line of their own, as tabs scrolling sideways.
  */
 export function PortalParts({ boards, newChangelog = false }: { boards: Board[]; newChangelog?: boolean }) {
   const path = usePortalPath();
@@ -35,7 +35,7 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
   return (
     <nav
       aria-label="Portal"
-      className="order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-1 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1"
+      className="order-last -mx-3 flex w-[calc(100%+1.5rem)] gap-2 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:min-w-0 sm:flex-1 sm:gap-1"
     >
       {PORTAL_PARTS.map(({ key, label, href }) => {
         if (key === "feedback" && boards.length === 0) {
@@ -47,9 +47,10 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
             key={key}
             href={at(key === "feedback" ? boardPath(boards[0]!) : href)}
             aria-current={active ? "page" : undefined}
+            // On phones a tab of its own row, underlined (on the header's edge) when it's this part; wider, a pill.
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors",
-              active ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+              "border-b-2 px-3 pt-1 pb-2.5 text-[0.9375rem] whitespace-nowrap transition-colors sm:rounded-md sm:border-b-0 sm:py-1.5 sm:text-sm",
+              active ? "border-primary font-medium text-foreground sm:bg-accent" : "border-transparent text-muted-foreground hover:text-foreground",
             )}
           >
             {label}
@@ -65,31 +66,38 @@ export function PortalParts({ boards, newChangelog = false }: { boards: Board[];
 }
 
 /**
- * The header and the part's row, kept at the top on wider screens (on phones they take too much of
- * it). Their height is `--portal-header-height` (0 on phones), for what sticks under them (the docs
- * tree) and for links to a heading, which scroll it into view below them.
+ * The header and the part's row, kept at the top as the page scrolls, phones included (the search and
+ * the menu are always there). Their height is `--portal-header-height`, for what sticks under them
+ * (the docs tree) and for links to a heading, which scroll it into view below them.
  */
 export function PortalTop({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = ref.current!;
     const root = document.documentElement;
-    const update = () => {
-      const height = getComputedStyle(element).position === "sticky" ? element.offsetHeight : 0;
-      root.style.setProperty("--portal-header-height", `${height}px`);
-    };
+    const update = () => root.style.setProperty("--portal-header-height", `${element.offsetHeight}px`);
+    update();
+    // A link to a heading scrolled before this measured the header (with the fallback room, which the
+    // team's CSS may outgrow): scrolled again, now below it.
+    let id = window.location.hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch {
+      // A broken fragment ("#%"): looked up as it is.
+    }
+    const target = id && document.getElementById(id);
+    if (target) {
+      target.scrollIntoView();
+    }
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    // Crossing the breakpoint turns sticky on or off, which can leave its size as it was.
-    window.addEventListener("resize", update);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", update);
       root.style.removeProperty("--portal-header-height");
     };
   }, []);
   return (
-    <div ref={ref} className="z-40 bg-background md:sticky md:top-0">
+    <div ref={ref} data-portal-top className="sticky top-0 z-40 bg-background">
       {children}
     </div>
   );
