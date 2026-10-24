@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
@@ -427,14 +427,63 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await widget.getByRole("link", { name: "All articles" }).click();
   await expect(collections).toBeVisible();
 
-  // Search, read a result, and go back to the results.
+  // Search: results come as the visitor types, with no button to press. Cleared, the docs are back.
   const search = widget.getByRole("searchbox", { name: "Search the docs" });
-  await search.fill("invite");
-  await widget.getByRole("button", { name: "Search" }).click();
+  await expect(widget.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  await search.pressSequentially("invi");
   const results = widget.getByRole("list", { name: "Search results" });
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(results.getByRole("link", { name: "Exporting your data" })).toHaveCount(0);
+  await expect(collections).toBeHidden();
   await checkpoint(visitor, "widget-docs-search");
+  await search.fill("");
+  await expect(collections).toBeVisible();
+  await expect(results).toBeHidden();
+  await search.pressSequentially("billing");
+  await expect(widget.getByText("No articles match “billing”", { exact: true })).toBeVisible();
+  const panelUrl = () => visitor.frames().find((frame) => frame.url().includes("/widget"))?.url();
+  // Enter searches at its own address, as without the page's script, and that counts it. Pressed while
+  // the search as they typed is still on its way, which comes back before the page does, it isn't
+  // counted again when they leave the tab.
+  let searchSent!: () => void;
+  const sent = new Promise<void>((resolve) => (searchSent = resolve));
+  let releaseSearch!: () => void;
+  const released = new Promise<void>((resolve) => (releaseSearch = resolve));
+  let searchAnswered!: () => void;
+  const answered = new Promise<void>((resolve) => (searchAnswered = resolve));
+  const panelPages = (url: URL) => url.pathname === "/widget";
+  const holdSearch = async (route: Route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"] && request.postData()?.includes('"refunds"')) {
+      searchSent();
+      await released;
+      await route.fulfill({ response: await route.fetch() });
+      searchAnswered();
+      return;
+    }
+    if (request.method() === "GET" && new URL(request.url()).searchParams.get("q") === "refunds") {
+      await answered;
+    }
+    await route.continue();
+  };
+  await visitor.route(panelPages, holdSearch);
+  await search.fill("refunds");
+  await sent;
+  await search.press("Enter");
+  releaseSearch();
+  await expect.poll(panelUrl).toContain("q=refunds");
+  await visitor.unroute(panelPages, holdSearch);
+  await expect(widget.getByText("No articles match “refunds”", { exact: true })).toBeVisible();
+  await tabs.getByRole("link", { name: "What's new" }).click();
+  await tabs.getByRole("link", { name: "Docs" }).click();
+  await expect(collections).toBeVisible();
+  // What they type before the panel gets to a search's address stays.
+  await search.pressSequentially("billing");
+  await search.press("Enter");
+  await search.fill("invite");
+  await expect.poll(panelUrl).toContain("q=billing");
+  await expect(search).toHaveValue("invite");
+  // Read a result, and go back to the results.
   await results.getByRole("link", { name: "Inviting your team" }).click();
   const article = widget.getByRole("article", { name: "Inviting your team" });
   await expect(article.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
@@ -447,6 +496,13 @@ test("a customer's site shows its docs in the widget: search, read, and open an 
   await article.getByRole("link", { name: "Search results" }).click();
   await expect(results.getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await expect(search).toHaveValue("invite");
+  // The team's insights count what they searched for: "refunds" and "billing" (Enter), "invite" (typed,
+  // then a result opened) and its results again (going back); not what they typed on the way.
+  await owner.goto(`/app/${slug}/docs/insights`);
+  await expect(async () => {
+    await owner.reload();
+    await expect(owner.getByText(/ 4 searches, 2 failed searches\./)).toBeVisible({ timeout: 2_000 });
+  }).toPass();
 
   // The customer's page opens the widget at an article (say, from a contextual help button).
   await visitor.keyboard.press("Escape");
