@@ -134,7 +134,8 @@ export function WidgetDocsSearch({ query, children }: { query: string; children:
           action="/widget"
           onSubmit={(event) => {
             event.preventDefault();
-            // `?q=` counts it itself.
+            // `?q=` counts it itself, so a search as typed still on its way isn't kept to count again.
+            latest.current++;
             searched.current = null;
             setSent(q);
             router.push(docsHref({ q }));
