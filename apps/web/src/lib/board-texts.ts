@@ -1,6 +1,6 @@
 /** A board's words for posting when the team hasn't set its own (Boards → Edit). */
 export const BOARD_TEXT_DEFAULTS = {
-  postButton: "Give feedback",
+  postButton: "Submit post",
   titlePlaceholder: "Short, descriptive title",
   detailsPlaceholder: "Any more details? Type / for lists, images and more",
 };

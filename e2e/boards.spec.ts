@@ -93,7 +93,7 @@ test("a board's own words for posting: the team sees them in a preview as they t
   const dialog = owner.getByRole("dialog", { name: "Edit board" });
   const preview = dialog.getByRole("region", { name: "Preview" });
   // Until the team writes its own, the preview shows the defaults.
-  await expect(preview).toContainText("Give feedback");
+  await expect(preview).toContainText("Submit post");
   await expect(preview).toContainText("Short, descriptive title");
   await dialog.getByLabel("Description").fill("What should we build next?");
   await dialog.getByLabel("Button").fill("Request a feature");

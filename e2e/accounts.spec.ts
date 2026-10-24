@@ -80,7 +80,7 @@ test("someone signs up on a portal, signs out and signs back in there", async ({
   await ada.getByRole("button", { name: "Sign in" }).click();
   await expect(ada.getByRole("button", { name: "Account" })).toBeVisible();
   await ada.goto("/feedback/feature-requests");
-  await expect(ada.getByRole("button", { name: "Give feedback" })).toBeVisible();
+  await expect(ada.getByRole("button", { name: "Submit post" })).toBeVisible();
 });
 
 test("a visitor signs in to a portal with an emailed link and comes back to the post they started", async ({ browser }, testInfo) => {
@@ -114,7 +114,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await vera.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await vera.waitForURL(/\/feedback\/feature-requests\?title=/);
   // The post they started is open, ready to send.
-  const form = vera.getByRole("dialog", { name: "Give feedback" });
+  const form = vera.getByRole("dialog", { name: "Submit post" });
   await expect(form.getByLabel("Title")).toHaveValue(title);
   await checkpoint(vera, "portal-signed-in-with-link");
   await vera.keyboard.press("Escape");

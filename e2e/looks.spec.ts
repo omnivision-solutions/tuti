@@ -28,7 +28,7 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
   await createProject(owner, "Acme", slug);
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Give feedback" }).click();
+  await ada.getByRole("button", { name: "Submit post" }).click();
   await ada.getByLabel("Title").fill("Export everything to CSV, including archived boards and supercalifragilistic fields");
   await ada.getByRole("button", { name: "Submit feedback" }).click();
   await ada.getByRole("link", { name: /Export everything/ }).click();

@@ -35,7 +35,7 @@ test("a team enables SSO; their app signs people into the portal, once per token
   const sam = await newPerson(browser, portalUrl(slug));
   await sam.goto(sso);
   await expect(sam).toHaveURL(/\/feedback\/feature-requests$/);
-  await expect(sam.getByRole("button", { name: "Give feedback" })).toBeVisible();
+  await expect(sam.getByRole("button", { name: "Submit post" })).toBeVisible();
   await expect(sam.getByRole("link", { name: "Sign in" })).toHaveCount(0);
   await checkpoint(sam, "portal-signed-in-with-sso");
 

@@ -8,7 +8,7 @@ import { signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 async function submitFeedback(page: Page, title: string) {
-  await page.getByRole("button", { name: "Give feedback" }).click();
+  await page.getByRole("button", { name: "Submit post" }).click();
   await page.getByLabel("Title").fill(title);
   await page.getByRole("button", { name: "Submit feedback" }).click();
   await expect(page.getByRole("link", { name: title })).toBeVisible();
