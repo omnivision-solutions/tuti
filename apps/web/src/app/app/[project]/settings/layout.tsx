@@ -1,4 +1,4 @@
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, creditsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/page-header";
@@ -28,6 +28,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
           { title: "Developers", href: `${base}/developers` },
           { title: "Usage", href: `${base}/usage` },
           ...(aiEnabled() ? [{ title: "AI models", href: `${base}/ai-models` }] : []),
+          ...(creditsEnabled() ? [{ title: "Billing", href: `${base}/billing` }] : []),
         ]}
       />
       {children}

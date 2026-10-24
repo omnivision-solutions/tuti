@@ -1,5 +1,7 @@
-import { prisma } from "@tuti/db";
-import { type Ai, type AiFeature, type AiUsage, defaultModel, log, type Meter } from "@tuti/shared";
+import { Prisma, prisma } from "@tuti/db";
+import { type Ai, type AiFeature, type AiUsage, creditsEnabled, creditsPerUsageDollar, defaultModel, log, type Meter } from "@tuti/shared";
+
+import { chargeCredits, toCredits } from "./credits";
 
 /** A project's own model for each feature it picked one for (Settings → AI models); the others use the default. */
 export function projectModels(value: unknown): Partial<Record<AiFeature, string>> {
@@ -15,15 +17,28 @@ export async function aiFor(projectId: string, feature: AiFeature): Promise<Ai> 
 }
 
 /**
- * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project).
- * A failed write is logged, never thrown: the feature already has its answer.
+ * A Meter that records each answered request for `projectId` (docs/plan.md, AI usage per project),
+ * and with AI credits on charges its cost in credits, at the rate of the time (a request with no
+ * cost is charged 0, and stays flagged by its missing cost). A failed write is logged, never thrown:
+ * the feature already has its answer, which the provider already charged for (failing the feature too
+ * would only waste it). The log has what the row would have, so a missed charge can be made by hand.
  */
 function meter(projectId: string, feature: AiFeature): Meter {
   return async (usage: AiUsage) => {
+    const credits = creditsEnabled() ? toCredits(new Prisma.Decimal(usage.cost ?? 0).times(creditsPerUsageDollar())) : null;
     try {
-      await prisma.aiUsage.create({ data: { projectId, feature, ...usage } });
+      if (credits === null) {
+        await prisma.aiUsage.create({ data: { projectId, feature, ...usage } });
+        return;
+      }
+      await prisma.$transaction(async (tx) => {
+        // The charge takes the project's lock first: the usage row's key on the project, taken first,
+        // would make two charges at once wait for each other.
+        await chargeCredits(tx, projectId, credits);
+        await tx.aiUsage.create({ data: { projectId, feature, ...usage, credits } });
+      });
     } catch (error) {
-      log.error("Recording AI usage failed", { projectId, feature, kind: usage.kind, error });
+      log.error("Recording AI usage failed", { projectId, feature, ...usage, credits: credits?.toNumber() ?? null, error });
     }
   };
 }
