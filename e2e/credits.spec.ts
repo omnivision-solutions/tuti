@@ -77,6 +77,9 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toHaveCount(0);
   await owner.getByRole("button", { name: "Resume all" }).click();
   await expect(owner.getByText("Resumed")).toBeVisible();
+  // Home reads it again by itself: nothing is paused now.
+  await expect(owner.getByText("Merged pull requests not analysed yet")).toHaveCount(0);
+  await expect(owner.getByRole("button", { name: "Resume all" })).toHaveCount(0);
   await owner.goto(`/app/${slug}/code-changes`);
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });

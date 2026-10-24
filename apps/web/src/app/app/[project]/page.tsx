@@ -1,3 +1,4 @@
+import { prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -29,9 +30,10 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   if (!membership) {
     notFound();
   }
-  const [waiting, paused, outOfCredits] = await Promise.all([
+  const [waiting, paused, pausedCount, outOfCredits] = await Promise.all([
     codeChangeList(membership.project.id, { waiting: true }),
     codeChangeList(membership.project.id, { paused: true }),
+    prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
     aiPaused(membership.project.id),
   ]);
 
@@ -109,8 +111,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 />
               ))}
             </ItemList>
-            {paused.length > 10 && (
-              <p className="mt-2 text-sm text-muted-foreground">And {paused.length - 10} more in Code changes; Resume all resumes them too.</p>
+            {pausedCount > 10 && (
+              <p className="mt-2 text-sm text-muted-foreground">And {pausedCount - 10} more in Code changes; Resume all resumes them too.</p>
             )}
           </CardContent>
         </Card>

@@ -245,7 +245,8 @@ export const analyseCodeChange = defineOperation({
 
 export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
-  summary: "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again; refused (402) while the project is still out",
+  summary:
+    "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again (`resumed`; `failed`: those whose analysis failed at once, on a server that runs jobs inline); refused (402) while the project is still out",
   method: "POST",
   path: "/code-changes/resume",
   scope: "write",
@@ -262,18 +263,22 @@ export const resumeCodeChanges = defineOperation({
       data: { state: "ANALYSING", reason: "" },
       select: { id: true },
     });
+    let failed = 0;
     for (const [i, change] of claimed.entries()) {
       try {
         await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false });
       } catch {
-        // On Hatchet, queueing failed: those not queued wait, paused, for the next try. (Inline, the analysis itself failed, and says where.)
-        if (process.env.JOBS_DRIVER !== "inline") {
-          await prisma.codeChange.updateMany({ where: { id: { in: claimed.slice(i).map((c) => c.id) }, state: "ANALYSING" }, data: { state: "PAUSED" } });
-          throw new OperationError(503, "unavailable", "Couldn't resume them all. Try again in a moment.");
+        // Inline, the analysis itself failed (the code change says where): counted, and the rest go on.
+        if (process.env.JOBS_DRIVER === "inline") {
+          failed++;
+          continue;
         }
+        // On Hatchet, queueing failed: those not queued wait, paused, for the next try.
+        await prisma.codeChange.updateMany({ where: { id: { in: claimed.slice(i).map((c) => c.id) }, state: "ANALYSING" }, data: { state: "PAUSED" } });
+        throw new OperationError(503, "unavailable", "Couldn't resume them all. Try again in a moment.");
       }
     }
-    return { resumed: claimed.length };
+    return { resumed: claimed.length - failed, failed };
   },
 });
 

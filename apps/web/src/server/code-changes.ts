@@ -17,8 +17,12 @@ export async function analyseCodeChange(projectSlug: string, codeChangeId: strin
 }
 
 /** "Resume all" on Home: every code change paused for want of AI credits. */
-export async function resumeCodeChanges(projectSlug: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can resume code changes", (context) => call(resumeOperation, context, {}));
+export async function resumeCodeChanges(projectSlug: string): Promise<FormState & { failed?: number }> {
+  let failed = 0;
+  const result = await asTeam(projectSlug, "Only the project's team can resume code changes", async (context) => {
+    failed = (await call(resumeOperation, context, {})).failed;
+  });
+  return result.error ? result : { failed };
 }
 
 /**

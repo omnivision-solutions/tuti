@@ -61,6 +61,8 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
           const result = await resumeCodeChanges(projectSlug);
           if (result.error) {
             toast.error(result.error);
+          } else if (result.failed) {
+            toast.warning(`Resumed; ${result.failed === 1 ? "1 analysis" : `${result.failed} analyses`} stopped. See Code changes.`);
           } else {
             toast.success("Resumed");
           }

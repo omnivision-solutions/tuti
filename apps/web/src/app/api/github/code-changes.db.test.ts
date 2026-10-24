@@ -684,10 +684,24 @@ describe("out of AI credits", () => {
     await grantCredits(project.id, "TOPUP", 10, { days: 365 });
     model.decide(INTERNAL, "Dark mode 43");
     model.decide(INTERNAL, "Dark mode 44");
-    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2 });
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
     expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO", "NOTHING_TO_DO"]);
     // Nothing paused is left: none resumed, nothing asked.
-    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0 });
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 0 });
+  });
+
+  test("“Resume all” says which analyses stopped (jobs inline), and resumes the rest", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    // GitHub won't give Tuti the second pull request (the fake doesn't have it).
+    github.pullRequest(repo, pullRequest(45));
+    expect(await merge(45)).toBe(200);
+    expect(await merge(46)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    model.decide(INTERNAL, "Dark mode 45");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 1 });
+    const states = Object.fromEntries((await changes()).map((change) => [change.number, change.state]));
+    expect(states).toEqual({ 45: "NOTHING_TO_DO", 46: "FAILED" });
   });
 
   test("an analysis that started finishes, even past the last credit; the next merge is paused", async () => {
