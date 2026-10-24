@@ -119,10 +119,13 @@ export default async function PortalLayout({ children, docsTabs, params }: Layou
         <PortalTop>
         <header className="portal-header flex flex-wrap items-center gap-x-6 gap-y-1 border-b px-6 py-2">
           {/* On the app's own domain, / is the app's: the portal's home is its home page's part there. */}
-          <PortalLogo name={project.name} href={withBase(base, "/")} />
+          {/* On phones it takes what the buttons leave (a long name is cut short), so they share its line. */}
+          <div className="flex min-w-0 max-sm:grow max-sm:basis-0">
+            <PortalLogo name={project.name} href={withBase(base, "/")} />
+          </div>
           {canRead && <PortalParts boards={project.boards} newChangelog={newChangelog} />}
-          {/* On the right; on phones and tablets the links and contact button are in the menu. */}
-          <div className="ml-auto flex items-center gap-1 sm:gap-3">
+          {/* On the right; on phones and tablets the links and contact button are in the menu. It doesn't shrink: the logo does. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
             {canRead && <DocsSearch askAI={answersEnabled()} />}
             <PortalHeaderLinks />
             <PortalContact />

@@ -81,7 +81,13 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
       <SheetTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Menu" className="md:hidden" />}>
         <MenuIcon />
       </SheetTrigger>
-      <SheetContent side="right" showCloseButton={false} className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-sm">
+      {/* The whole screen wherever it shows (below tablet width), whatever's selected in it closing it if it's a link. */}
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        onClick={closeOnLink}
+        className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none"
+      >
         <div className="flex items-center justify-between gap-2 border-b px-6 py-2">
           <SheetTitle className="sr-only">Menu</SheetTitle>
           <SheetDescription className="sr-only">{name}: where to go from here.</SheetDescription>
@@ -90,7 +96,7 @@ export function PortalMenu({ name, homeHref, boards }: { name: string; homeHref:
             <XIcon />
           </SheetClose>
         </div>
-        <div onClick={closeOnLink} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           {/* A size up from the sidebar: these are taps on a phone. */}
           {part && <div className="border-b px-4 py-5 [&_nav]:text-base">{part}</div>}
           {(headerLinks.length > 0 || contact) && (

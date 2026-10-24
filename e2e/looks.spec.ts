@@ -4,7 +4,7 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, signUp } from "./helpers";
 
 /** Phone width (docs/design.md) and dark mode, on the screens people use most. */
 const LOOKS = [
@@ -73,4 +73,37 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
     await teamPage.context().close();
     await portalPage.context().close();
   }
+});
+
+test("on a phone, the header's buttons stay on its first line beside a long name; the menu takes the whole screen up to tablet width", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme Customer Success and Support Help Center", slug);
+  // An article, so the menu has the docs' tree.
+  const api = await apiFor(owner, slug);
+  const article = await api("/articles", { title: "Getting started", body: "Welcome." });
+  await api(`/articles/${article.slug}/publish`, {});
+  // And a header link, so it's there on every page (the logo's too).
+  await api("/branding", { headerLinks: [{ label: "Pricing", url: "https://example.com/pricing" }] }, "PATCH");
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto(`/docs/${article.slug}`);
+  const banner = visitor.getByRole("banner");
+  const name = banner.getByRole("link", { name: /^Acme Customer Success/ }).first();
+  const menuButton = banner.getByRole("button", { name: "Menu" });
+  const [nameBox, menuBox] = [(await name.boundingBox())!, (await menuButton.boundingBox())!];
+  // The same line, the name cut short before the buttons.
+  expect(Math.abs(nameBox.y + nameBox.height / 2 - (menuBox.y + menuBox.height / 2))).toBeLessThan(8);
+  expect(nameBox.x + nameBox.width).toBeLessThanOrEqual(menuBox.x);
+  await expectNoSidewaysScroll(visitor);
+  // Up to tablet width the menu is the whole screen; the logo in it, followed, closes it.
+  await visitor.setViewportSize({ width: 700, height: 900 });
+  await menuButton.click();
+  const menu = visitor.getByRole("dialog", { name: "Menu" });
+  expect((await menu.boundingBox())!.width).toBeGreaterThanOrEqual(699);
+  await expect(menu.getByRole("link", { name: "Pricing" })).toBeVisible();
+  await menu.getByRole("link", { name: /^Acme Customer Success/ }).click();
+  await visitor.waitForURL(/\/feedback\//);
+  await expect(menu).toBeHidden();
+  await expect(menuButton).toBeVisible();
 });

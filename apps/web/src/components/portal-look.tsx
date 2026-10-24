@@ -128,19 +128,21 @@ export function PortalLookProvider({ saved, appOrigin, children }: { saved: Port
 export function PortalLogo({ name, href }: { name: string; href: string }) {
   const { logo, logoDark, logoText, logoLink } = usePortalLook();
   const image = (image: LookImage, className?: string) => (
+    // Narrower on phones, so the header's buttons stay on its first line beside it.
     // eslint-disable-next-line @next/next/no-img-element -- from media storage, already resized
-    <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-48 object-contain object-left", className)} />
+    <img src={image.url} alt={logoText ? "" : name} width={image.width} height={image.height} className={cn("h-8 w-auto max-w-32 object-contain object-left sm:max-w-48", className)} />
   );
   const contents = logo ? (
     <>
       {image(logo, logoDark ? "dark:hidden" : undefined)}
       {logoDark && image(logoDark, "hidden dark:block")}
-      {logoText && <span>{logoText}</span>}
+      {logoText && <span className="truncate">{logoText}</span>}
     </>
   ) : (
-    logoText || name
+    <span className="truncate">{logoText || name}</span>
   );
-  const className = "flex items-center gap-2 font-heading text-lg font-bold tracking-tight";
+  // It gives way (a long name is cut short with "…") rather than the header's buttons.
+  const className = "flex min-w-0 items-center gap-2 font-heading text-lg font-bold tracking-tight";
   return logoLink ? (
     <a href={logoLink} className={className}>
       {contents}
