@@ -257,28 +257,29 @@ export const resumeCodeChanges = defineOperation({
       throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
     }
     await aiOrRefuse(projectId, "code_changes");
-    // Claimed first, so a second "Resume all" at once doesn't queue the same ones again.
-    const claimed = await prisma.codeChange.updateManyAndReturn({
+    // Nothing is marked before it's queued (the job marks it analysing as it starts, as for one), so
+    // one not queued yet, the server stopping meanwhile, stays paused for the next "Resume all".
+    // Not forced: a second "Resume all" at once finds it analysed already, and skips it.
+    const paused = await prisma.codeChange.findMany({
       where: { projectId, state: "PAUSED", project: { analyseCodeChanges: true } },
-      data: { state: "ANALYSING", reason: "" },
+      orderBy: { mergedAt: "asc" },
       select: { id: true },
     });
     let failed = 0;
-    for (const [i, change] of claimed.entries()) {
+    for (const change of paused) {
       try {
-        await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false });
+        await enqueue("codeChange", { codeChangeId: change.id, force: false, pastGate: false });
       } catch {
         // Inline, the analysis itself failed (the code change says where): counted, and the rest go on.
         if (process.env.JOBS_DRIVER === "inline") {
           failed++;
           continue;
         }
-        // On Hatchet, queueing failed: those not queued wait, paused, for the next try.
-        await prisma.codeChange.updateMany({ where: { id: { in: claimed.slice(i).map((c) => c.id) }, state: "ANALYSING" }, data: { state: "PAUSED" } });
+        // On Hatchet, queueing failed: those not queued are still paused, for the next try.
         throw new OperationError(503, "unavailable", "Couldn't resume them all. Try again in a moment.");
       }
     }
-    return { resumed: claimed.length - failed, failed };
+    return { resumed: paused.length - failed, failed };
   },
 });
 

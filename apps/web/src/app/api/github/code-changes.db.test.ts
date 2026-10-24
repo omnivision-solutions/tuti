@@ -690,6 +690,42 @@ describe("out of AI credits", () => {
     expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 0, failed: 0 });
   });
 
+  test("“Resume all” that can't queue them leaves them paused, to try again (nothing stuck as analysing)", async () => {
+    github.pullRequest(repo, pullRequest(47));
+    expect(await merge(47)).toBe(200);
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    // Hatchet, unreachable (no token): queueing fails.
+    vi.stubEnv("JOBS_DRIVER", "hatchet");
+    vi.stubEnv("HATCHET_CLIENT_TOKEN", "");
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 503, code: "unavailable" });
+    expect((await changes()).map((change) => change.state)).toEqual(["PAUSED"]);
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    model.decide(INTERNAL, "Dark mode 47");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect((await changes()).map((change) => change.state)).toEqual(["NOTHING_TO_DO"]);
+  });
+
+  test("while “Resume all” works through them, those not reached yet are still paused (a server stopping meanwhile leaves them resumable)", async () => {
+    vi.stubEnv("JOBS_DRIVER", "inline");
+    github.pullRequest(repo, pullRequest(48));
+    github.pullRequest(repo, pullRequest(49));
+    expect(await merge(48)).toBe(200);
+    expect(await merge(49)).toBe(200);
+    // 49 merged later, so it's resumed second.
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 49 }, data: { mergedAt: new Date("2026-10-21T10:00:00Z") } });
+    await grantCredits(project.id, "TOPUP", 10, { days: 365 });
+    let second: string | undefined;
+    model.decide(USERS, "Dark mode 48");
+    model.reply("Pick a dark theme in Settings.", async () => {
+      second = (await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 49 }, select: { state: true } })).state;
+    }, "Dark mode 48");
+    model.decide({ needed: 0.1 }, "existing_articles");
+    model.reply(JSON.stringify({ why: "It ships a dark theme.", changelog: "A dark theme", proposals: {} }), undefined, '"proposals"');
+    model.decide(INTERNAL, "Dark mode 49");
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 2, failed: 0 });
+    expect(second).toBe("PAUSED");
+  });
+
   test("“Resume all” says which analyses stopped (jobs inline), and resumes the rest", async () => {
     vi.stubEnv("JOBS_DRIVER", "inline");
     // GitHub won't give Tuti the second pull request (the fake doesn't have it).
