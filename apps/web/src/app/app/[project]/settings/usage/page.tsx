@@ -29,7 +29,7 @@ export default async function UsageSettingsPage(props: PageProps<"/app/[project]
     <>
       <p className="text-sm text-muted-foreground">Every AI request this project made, and what it cost, by month (UTC).</p>
       {months.length === 0 ? (
-        <EmptyState title="No AI use yet" description="AI answers, changelog drafts, code changes and search show up here, with what they cost, once they're used." />
+        <EmptyState title="No AI use yet" description="AI answers, changelog drafts and code changes show up here, with what they cost, once they're used." />
       ) : (
         months.map((month) => (
       <Card key={month.month}>
