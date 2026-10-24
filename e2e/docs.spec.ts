@@ -228,6 +228,12 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(asTyped.getByRole("option").nth(1)).toHaveAttribute("aria-selected", "true");
   await box.press("Enter");
   await visitor.waitForURL(/\/docs\/inviting-your-team$/);
+  // A search that fails (offline, the server down) says so, rather than finding nothing or loading forever.
+  await visitor.route("**/*", (route) => (route.request().method() === "POST" && route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await typeSearch(visitor, "invites");
+  await expect(visitor.getByRole("dialog").getByRole("alert")).toHaveText("Couldn't search just now. Keep typing to try again.");
+  await visitor.unroute("**/*");
+  await visitor.keyboard.press("Escape");
   // ⌘K opens it too; Enter on the first goes to the AI's answer and all the results for what they typed.
   await visitor.keyboard.press("ControlOrMeta+k");
   await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).fill("send invites");
@@ -240,6 +246,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await checkpoint(visitor, "portal-docs-search");
   await typeSearch(visitor, "refunds");
   await expect(visitor.getByRole("dialog").getByText("No articles match “refunds”.")).toBeVisible();
+  // The Enter that ends composing a word with an input method (Japanese, Chinese…) is the reader's: nothing opens.
+  await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).dispatchEvent("keydown", { key: "Enter", isComposing: true, bubbles: true });
+  await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeVisible();
+  await expect(visitor).toHaveURL(/\/docs\?q=send\+invites$/);
   await visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" }).press("Enter");
   await expect(visitor.getByText("No articles match “refunds”")).toBeVisible();
   await checkpoint(visitor, "portal-docs-search-empty");

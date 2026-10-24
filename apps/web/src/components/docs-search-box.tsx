@@ -139,7 +139,8 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
   const router = useRouter();
   const listId = useId();
   const [query, setQuery] = useState(initialQuery);
-  const [found, setFound] = useState<{ query: string; results: DocsSearchResult[] } | null>(null);
+  /** The latest search that came back; `failed` when it couldn't search (not counted in the insights). */
+  const [found, setFound] = useState<{ query: string; results: DocsSearchResult[]; failed?: true } | null>(null);
   const [active, setActive] = useState(0);
   const latest = useRef(0);
   // What to count when they're done: the last search that came back.
@@ -152,10 +153,15 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
       return;
     }
     const timer = setTimeout(async () => {
-      const results = await searchDocsAsTyped(slug, q);
+      let results: DocsSearchResult[] | null = null;
+      try {
+        results = await searchDocsAsTyped(slug, q);
+      } catch {
+        // Offline, or the server failed: said below, and not counted as a search.
+      }
       if (request === latest.current) {
-        setFound({ query: q, results });
-        searched.current = { query: q, results: results.length };
+        setFound(results ? { query: q, results } : { query: q, results: [], failed: true });
+        searched.current = results ? { query: q, results: results.length } : null;
       }
     }, SEARCH_DELAY_MS);
     return () => clearTimeout(timer);
@@ -224,7 +230,8 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
               if (options.length > 0) {
                 setActive((current + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
               }
-            } else if (event.key === "Enter" && options[current]) {
+            } else if (event.key === "Enter" && !event.nativeEvent.isComposing && options[current]) {
+              // (Not the Enter that ends composing a word with an input method: that one's the reader's.)
               event.preventDefault();
               choose(options[current]);
             }
@@ -280,7 +287,14 @@ function SearchDialog({ askAI, initialQuery, onClose }: { askAI: boolean; initia
                 <Skeleton className="h-3.5 w-5/6" />
               </li>
             )}
-            {!pending && results.length === 0 && <li className="px-3 py-4 text-center text-sm text-muted-foreground">No articles match “{q}”.</li>}
+            {!pending && found?.failed && (
+              <li role="alert" className="px-3 py-4 text-center text-sm text-muted-foreground">
+                Couldn&apos;t search just now. Keep typing to try again.
+              </li>
+            )}
+            {!pending && !found?.failed && results.length === 0 && (
+              <li className="px-3 py-4 text-center text-sm text-muted-foreground">No articles match “{q}”.</li>
+            )}
           </ul>
         )}
       </div>
