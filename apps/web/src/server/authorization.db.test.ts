@@ -16,6 +16,8 @@ import {
   startModelFake,
   startOpenAIFake,
   startS3Fake,
+  startStripeFake,
+  type StripeFake,
   startWebhookReceiver,
   type WebhookReceiver,
 } from "@tuti/testkit";
@@ -36,6 +38,7 @@ import * as branding from "./branding";
 import * as changelog from "./changelog";
 import * as changelogSeen from "./changelog-seen";
 import * as codeChanges from "./code-changes";
+import * as credits from "./credits";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
@@ -68,6 +71,7 @@ const modules = {
   changelog,
   "changelog-seen": changelogSeen,
   "code-changes": codeChanges,
+  credits,
   "ai-models": aiModels,
   "api-keys": apiKeys,
   assistant,
@@ -129,6 +133,9 @@ const matrix: Matrix = {
       call: (slug, f) => boards.updateBoard(slug, f.boardId, {}, form({ name: "Ideas", slug: "ideas" })),
     },
     deleteBoard: { allowed: "ADMIN", takesIds: true, call: (slug, f) => boards.deleteBoard(slug, f.emptyBoardId) },
+  },
+  credits: {
+    buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ AI_CREDITS: "on" }, () => credits.buyCredits(slug, 10)) },
   },
   "ai-models": {
     saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
@@ -523,6 +530,7 @@ let site: SiteFake;
 let model: ModelFake;
 let openai: OpenAIFake;
 let githubFake: GithubFake;
+let stripe: StripeFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
@@ -535,7 +543,9 @@ beforeAll(async () => {
   model = await startModelFake();
   openai = await startOpenAIFake();
   githubFake = await startGithubFake();
-  for (const [name, value] of Object.entries({ ...s3.env, ...model.env })) {
+  // Buying AI credits opens the local Stripe fake's page (with AI credits on just for that call).
+  stripe = await startStripeFake();
+  for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env })) {
     vi.stubEnv(name, value);
   }
   dns = await startDnsFake();
@@ -556,7 +566,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close(), stripe.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 

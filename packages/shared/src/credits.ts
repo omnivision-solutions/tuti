@@ -30,3 +30,8 @@ export function topupExpiryDays(): number | null {
 
 /** Credits every project is given once (AI_CREDITS_FREE, default none), lasting like a top-up. */
 export const freeCredits = () => positive("AI_CREDITS_FREE", 0);
+
+/** Top-ups through Stripe Checkout: with AI credits on, STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET (the webhook's signing secret). */
+export function topupsEnabled(): boolean {
+  return creditsEnabled() && Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
+}

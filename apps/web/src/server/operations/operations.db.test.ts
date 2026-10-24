@@ -1,5 +1,17 @@
 import { prisma } from "@tuti/db";
-import { type DnsFake, FAKE_OPENAI_KEY, type ModelFake, type OpenAIFake, type SiteFake, startDnsFake, startModelFake, startOpenAIFake, startSiteFake } from "@tuti/testkit";
+import {
+  type DnsFake,
+  FAKE_OPENAI_KEY,
+  type ModelFake,
+  type OpenAIFake,
+  type SiteFake,
+  startDnsFake,
+  startModelFake,
+  startOpenAIFake,
+  startSiteFake,
+  startStripeFake,
+  type StripeFake,
+} from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -114,6 +126,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "aiModels.update": () => ({ answers: "acme/tiny", changelog: "" }),
   // Like usage.get: admins only in the app (Settings → Billing).
   "credits.get": () => ({}),
+  // Like credits.get: admins only in the app (Buy credits); a Stripe Checkout page from the local fake.
+  "credits.topUp": () => ({ dollars: 10 }),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),
@@ -142,6 +156,7 @@ let model: ModelFake;
 let openai: OpenAIFake;
 let dns: DnsFake;
 let site: SiteFake;
+let stripe: StripeFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -160,6 +175,11 @@ beforeAll(async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   // license.check asks the local site, which has no licence server (its own 404): "unreachable".
   vi.stubEnv("LICENSE_SERVER_URL", site.origin);
+  // Top-ups pay on Stripe: the local fake (with AI credits on, only for credits.topUp; see below).
+  stripe = await startStripeFake();
+  for (const [name, value] of Object.entries(stripe.env)) {
+    vi.stubEnv(name, value);
+  }
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -171,7 +191,7 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close()]));
+afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close(), stripe.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
@@ -380,6 +400,8 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   let fixture = await createFixture(own);
   // AI answers and code changes need embeddings: on for docs.ask (nothing is close to its question, so the model isn't asked) and for analysing and resuming code changes.
   vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
+  // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
+  vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();

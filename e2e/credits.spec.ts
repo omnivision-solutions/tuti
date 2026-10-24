@@ -83,3 +83,28 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await owner.goto(`/app/${slug}/code-changes`);
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });
+
+test("an owner buys AI credits on Stripe; they're added once it's paid", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await spendCredits(slug);
+
+  await owner.goto(`/app/${slug}/settings/billing`);
+  await expect(owner.getByText(/^0 AI credits$/)).toBeVisible();
+  await owner.getByRole("button", { name: "$10", exact: true }).click();
+  // The journeys' rate: 100 credits a dollar, for a year.
+  await expect(owner.getByText("1,000 AI credits, lasting 365 days. You pay on Stripe.")).toBeVisible();
+  await checkpoint(owner, "team-settings-billing-buy");
+  await owner.getByRole("button", { name: "Buy credits" }).click();
+
+  // Stripe's page (the fake), then back to Billing with the credits.
+  await expect(owner.getByRole("heading", { name: `1,000 AI credits for ${slug}` })).toBeVisible();
+  await owner.getByRole("button", { name: "Pay $10.00" }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/billing?paid=1`);
+  await expect(owner.getByText("Thanks for your payment.")).toBeVisible();
+  await expect(owner.getByText(/^1,000 AI credits$/)).toBeVisible();
+  await expect(owner.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Top-up/ })).toContainText("1,000");
+  await checkpoint(owner, "team-settings-billing-paid");
+});

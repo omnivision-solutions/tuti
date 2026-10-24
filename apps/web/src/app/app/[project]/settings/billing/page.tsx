@@ -1,11 +1,14 @@
 import { creditBalance } from "@tuti/jobs";
-import { creditsEnabled } from "@tuti/shared";
+import { creditsEnabled, creditsPerTopupDollar, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { BuyCredits } from "@/components/buy-credits";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
+import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
@@ -19,7 +22,15 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
     notFound();
   }
   const { balance, grants } = await creditBalance(project.id);
+  // Back from Stripe's payment page: the credits come with Stripe's word that it's paid, usually within seconds.
+  const paid = (await props.searchParams).paid === "1";
   return (
+    <>
+      {paid && (
+        <Alert>
+          <AlertDescription>Thanks for your payment. Your credits show here as soon as Stripe confirms it, usually within a few seconds.</AlertDescription>
+        </Alert>
+      )}
     <Card>
       <CardHeader>
         <CardTitle>{credits(balance)} AI credits</CardTitle>
@@ -60,5 +71,17 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         )}
       </CardContent>
     </Card>
+      {topupsEnabled() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Buy credits</CardTitle>
+            <CardDescription>Credits are added once the payment goes through.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BuyCredits projectSlug={slug} perDollar={creditsPerTopupDollar()} days={topupExpiryDays()} min={TOPUP_DOLLARS.min} max={TOPUP_DOLLARS.max} />
+          </CardContent>
+        </Card>
+      )}
+    </>
   );
 }
