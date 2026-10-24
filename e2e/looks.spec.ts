@@ -157,3 +157,30 @@ test("on a phone, the header stays at the top and its buttons on its first line 
   await expect(outsiderMenu.getByRole("link", { name: "Pricing" })).toBeVisible();
   await expect(outsiderMenu.getByRole("navigation", { name: "Docs", exact: true })).toHaveCount(0);
 });
+
+test("a link to a heading lands below the header, even when the team's CSS makes it taller than usual", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const paragraph = (value: string) => ({ type: "paragraph", content: [{ type: "text", text: value }] });
+  const content = {
+    type: "doc",
+    content: [
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 1}: keep reading.`)),
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "Last step" }] },
+      ...Array.from({ length: 40 }, (_, i) => paragraph(`Step ${i + 41}: nearly there.`)),
+    ],
+  };
+  const article = await api("/articles", { title: "Getting started", content });
+  await api(`/articles/${article.slug}/publish`, {});
+  // Taller than the room left for it before the page measures it (12rem).
+  await api("/branding", { customCss: ".portal-header { padding-bottom: 12rem; }" }, "PATCH");
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.setViewportSize({ width: 390, height: 844 });
+  await visitor.goto(`/docs/${article.slug}#last-step`);
+  const top = visitor.locator("[data-portal-top]");
+  const heading = visitor.getByRole("heading", { name: "Last step" });
+  await expect.poll(async () => (await top.boundingBox())!.height).toBeGreaterThan(200);
+  await expect.poll(async () => (await heading.boundingBox())!.y - (await top.boundingBox())!.height).toBeGreaterThanOrEqual(0);
+});

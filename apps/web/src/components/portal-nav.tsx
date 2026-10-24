@@ -76,6 +76,13 @@ export function PortalTop({ children }: { children: React.ReactNode }) {
     const element = ref.current!;
     const root = document.documentElement;
     const update = () => root.style.setProperty("--portal-header-height", `${element.offsetHeight}px`);
+    update();
+    // A link to a heading scrolled before this measured the header (with the fallback room, which the
+    // team's CSS may outgrow): scrolled again, now below it.
+    const target = window.location.hash && document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+    if (target) {
+      target.scrollIntoView();
+    }
     const observer = new ResizeObserver(update);
     observer.observe(element);
     return () => {
