@@ -169,7 +169,8 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           </>
         }
       />
-      {docs.collections.length === 0 && docs.uncollected.length === 0 ? (
+      {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
+      {docs.tabs.length === 0 && docs.collections.length === 0 && docs.uncollected.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin." />
       ) : docs.tabs.length === 0 ? (
         <>

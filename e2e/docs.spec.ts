@@ -1400,3 +1400,17 @@ test("a docs-first team makes the docs the portal's home page", async ({ browser
   await visitor.goto("/");
   await expect(visitor).toHaveURL(`${portalUrl(slug)}/docs`);
 });
+
+test("the docs' home shows a tab with nothing in it yet, linking to its page", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/tabs", { name: "Guides" });
+
+  await team.goto(`/app/${slug}/docs`);
+  const guides = team.getByRole("region", { name: "Guides" });
+  await expect(guides).toContainText("Nothing in this tab yet.");
+  await guides.getByRole("link", { name: "Guides" }).click();
+  await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
+});
