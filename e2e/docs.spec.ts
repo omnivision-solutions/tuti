@@ -408,7 +408,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await checkpoint(visitor, "portal-docs-article-updated");
 
-  // Its history, in a panel from the right over the article, shows what changed since the first version.
+  // Its history (behind the top bar's "More actions"), in a panel from the right over the article, shows what changed since the first version.
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("link", { name: "History" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
   const historyPanel = team.getByRole("dialog", { name: "History" });
@@ -437,6 +438,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByText("Changes discarded")).toBeVisible();
   await expect(unpublished).toHaveCount(0);
   await expect(editor).toContainText(edited);
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("link", { name: "History" }).click();
   await expect(historyPanel.getByRole("link", { name: /^Saved / })).toHaveCount(5);
   // Closing it leaves the article where it was; its old address opens it too.
@@ -458,6 +460,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // In the article's settings, with what each listing means under it.
   const articleSettings = team.getByRole("dialog", { name: "Article settings" });
   const setListing = async (name: string, description: string, shot?: string) => {
+    await team.getByRole("button", { name: "More actions" }).click();
     await team.getByRole("button", { name: "Settings" }).click();
     await articleSettings.getByLabel("Listed in").click();
     if (shot) {
@@ -489,6 +492,7 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
 
   // Deleted, it leaves the portal; the team brings it back from Recently deleted, as a draft.
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Delete" }).click();
   const deletingArticle = team.getByRole("alertdialog");
   await expect(deletingArticle).toContainText("You can restore it from Recently deleted for 30 days.");
@@ -1111,6 +1115,10 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await api("/articles/inviting-your-team/publish", {});
 
   await team.goto(`/app/${slug}/docs/inviting-your-team`);
+  // History, Settings and Delete are behind the top bar's "More actions"; Save and Publish are in it.
+  await expect(team.getByRole("button", { name: "Save" })).toBeVisible();
+  await expect(team.getByRole("button", { name: "Settings" })).toBeHidden();
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Settings" }).click();
   const dialog = team.getByRole("dialog", { name: "Article settings" });
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
@@ -1480,13 +1488,15 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await expect(history).toBeVisible();
+  // Every action is a row alike in it: Publish has no fill of its own here (it does in the bar).
+  expect(await team.getByRole("button", { name: "Publish" }).evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   await checkpoint(team, "team-docs-article-actions-phone", { fullPage: false });
   // Settings opens its dialog, which stays as the menu closes.
   await team.getByRole("button", { name: "Settings" }).click();
   const settings = team.getByRole("dialog", { name: "Article settings" });
   await expect(settings).toBeVisible();
   // The dialog hides the page from role queries, so the menu is checked by its markup.
-  await expect(team.locator('button[aria-label="More actions"]')).toHaveAttribute("aria-expanded", "false");
+  await expect(team.locator('button[aria-label="More actions"]:visible')).toHaveAttribute("aria-expanded", "false");
   await team.keyboard.press("Escape");
   await expect(settings).toBeHidden();
   // Escape closes the menu too; from one of its actions, focus goes back to its button.
@@ -1505,6 +1515,6 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
   // The dialog hides the page from role queries, so both menus are checked by their markup.
-  await expect(team.locator('button[aria-label="More actions"]')).toHaveAttribute("aria-expanded", "false");
+  await expect(team.locator('button[aria-label="More actions"]:visible')).toHaveAttribute("aria-expanded", "false");
   await expect(team.locator('[role="menu"]')).toHaveCount(0);
 });
