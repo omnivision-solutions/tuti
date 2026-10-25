@@ -55,10 +55,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
           badgeAddOn: subscription.items.data.some((item) => isBadgePrice(item.price.id)),
         },
       });
-      if (count === 1) {
-        await tx.$executeRaw`UPDATE project SET "rejectedSubscriptionIds" = array_remove("rejectedSubscriptionIds", ${id}) WHERE id = ${projectId}`;
-      } else if (await tx.project.count({ where: { id: projectId } })) {
-        await tx.$executeRaw`UPDATE project SET "rejectedSubscriptionIds" = array_append("rejectedSubscriptionIds", ${id}) WHERE id = ${projectId} AND NOT (${id} = ANY("rejectedSubscriptionIds"))`;
+      if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
       return projectId;
@@ -74,9 +71,10 @@ export const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cyc
 /**
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often Stripe
- * says it's paid, and also when it says so only after the subscription ended (Stripe's events come in any
- * order), even when its subscription ended before Stripe said anything about it. Never for a second one
- * turned away while another held the plan (rejectedSubscriptionIds), unless it took the plan later.
+ * says it's paid, and whenever Stripe says so (its events come in any order, even all after the
+ * subscription ended). Not when another subscription held the project's plan at the moment it was paid
+ * (Stripe's times, so the order events arrive in doesn't matter): that's a second payment for the same
+ * time, logged for the operator to refund.
  */
 export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const invoice = await getInvoice(invoiceId);
@@ -87,9 +85,18 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
-  const holds = projectId && (await prisma.project.count({ where: { id: projectId, NOT: { rejectedSubscriptionIds: { has: subscription } } } }));
-  if (!holds || !line || !paid) {
+  const project = projectId && (await prisma.project.findUnique({ where: { id: projectId }, select: { stripeSubscriptionId: true } }));
+  if (!project || !line || !paid) {
     return;
+  }
+  const holder = project.stripeSubscriptionId;
+  const paidAt = invoice.status_transitions?.paid_at;
+  if (holder && holder !== subscription && paidAt) {
+    const other = await getSubscription(holder);
+    if (paidAt >= other.created && (other.ended_at === null || paidAt <= other.ended_at)) {
+      log.error("A second subscription's invoice, paid while another held the plan: no credits; refund it", { projectId, invoice: invoice.id });
+      return;
+    }
   }
   const credits = planCredits(paid.plan) * (paid.interval === "year" ? 12 : 1);
   if (credits === 0) {

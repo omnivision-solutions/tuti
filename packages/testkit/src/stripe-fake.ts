@@ -58,6 +58,8 @@ export type FakeSubscription = {
   metadata: Record<string, string>;
   cancel_at_period_end: boolean;
   cancel_at: number | null;
+  created: number;
+  ended_at: number | null;
   items: { data: { id: string; price: { id: string }; current_period_start: number; current_period_end: number }[] };
 };
 
@@ -69,6 +71,7 @@ export type FakeInvoice = {
   status: string;
   billing_reason: string;
   amount_paid: number;
+  status_transitions: { paid_at: number };
   parent: { type: "subscription_details"; subscription_details: { subscription: string; metadata: Record<string, string> } };
   lines: { data: { id: string; period: { start: number; end: number }; pricing: { type: "price_details"; price_details: { price: string } } }[] };
 };
@@ -116,6 +119,10 @@ export type StripeFake = {
 };
 
 const id = (prefix: string) => `${prefix}_${randomBytes(12).toString("hex")}`;
+
+/** Unix seconds that only go forward, one at least per call: events a test makes one after another never share a second. */
+let lastTick = 0;
+const tick = () => (lastTick = Math.max(Math.floor(Date.now() / 1000), lastTick + 1));
 
 /** `seconds` plus one month or year. */
 function after(seconds: number, interval: "month" | "year") {
@@ -184,6 +191,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       status: "paid",
       billing_reason: billingReason,
       amount_paid: sub.items.data.reduce((sum, each) => sum + centsOf(each.price.id), 0),
+      status_transitions: { paid_at: tick() },
       parent: { type: "subscription_details", subscription_details: { subscription: sub.id, metadata: sub.metadata } },
       lines: {
         data: sub.items.data.map((each) => ({
@@ -216,6 +224,8 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       metadata: session.subscription_metadata,
       cancel_at_period_end: false,
       cancel_at: null,
+      created: tick(),
+      ended_at: null,
       items: { data: [{ id: id("si"), price: { id: session.price! }, current_period_start: now, current_period_end: after(now, intervalOf(session.price!)!) }] },
     };
     subscriptions.set(sub.id, sub);
@@ -236,6 +246,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     const item = sub.items.data[0]!;
     if (changes.status) {
       sub.status = changes.status;
+      sub.ended_at = changes.status === "canceled" ? tick() : null;
     }
     if (changes.price) {
       item.price = { id: changes.price };
@@ -349,6 +360,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
           status: "paid",
           billing_reason: "subscription_update",
           amount_paid: centsOf(price),
+          status_transitions: { paid_at: tick() },
           parent: { type: "subscription_details", subscription_details: { subscription: sub.id, metadata: sub.metadata } },
           lines: { data: [{ id: id("il"), period: { start: item.current_period_start, end: item.current_period_end }, pricing: { type: "price_details", price_details: { price } } }] },
         };
