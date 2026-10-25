@@ -6,26 +6,31 @@ import { type ReactNode, useState } from "react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 /** A Customize page (/app/<project>/customize/<section>): the settings beside a preview of the portal. */
-export const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
+const CUSTOMIZE_SECTION = /^\/app\/[^/]+\/customize\/[^/]+/;
+/** A Docs page (/app/<project>/docs…): the docs' tree is a column of its own beside it. */
+const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
 
 /**
  * Every /app page's frame: the sidebar, the header, then the page. Pages sit in a column of max-w-4xl;
- * Customize's sections take the whole width instead, with the sidebar folded away (it opens again on
- * its own trigger, and is as it was on the way out).
+ * Customize's sections take the whole width instead. On both those and Docs pages the sidebar is folded
+ * away for room (it opens again on its own trigger, and is as it was on the way out).
  */
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
-  const customizing = CUSTOMIZE_SECTION.test(usePathname());
+  const pathname = usePathname();
+  const customizing = CUSTOMIZE_SECTION.test(pathname);
+  const folds = customizing ? "customize" : DOCS.test(pathname) ? "docs" : null;
+  const folded = folds !== null;
   const [open, setOpen] = useState(true);
-  // While customizing: the sidebar's own state, folded each time a section opens.
+  // While folded: the sidebar's own state, folded again each time a Customize section or Docs opens (one from the other too).
   const [peek, setPeek] = useState(false);
-  const [wasCustomizing, setWasCustomizing] = useState(customizing);
-  if (wasCustomizing !== customizing) {
-    setWasCustomizing(customizing);
+  const [wasFolds, setWasFolds] = useState(folds);
+  if (wasFolds !== folds) {
+    setWasFolds(folds);
     setPeek(false);
   }
 
   return (
-    <SidebarProvider open={customizing ? peek : open} onOpenChange={customizing ? setPeek : setOpen}>
+    <SidebarProvider open={folded ? peek : open} onOpenChange={folded ? setPeek : setOpen}>
       {sidebar}
       <SidebarInset>
         {header}
