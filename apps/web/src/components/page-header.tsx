@@ -2,6 +2,7 @@ import { cn } from "cn";
 import type { ReactNode } from "react";
 
 import { BackLink } from "@/components/back-link";
+import { PageActions } from "@/components/page-actions";
 
 /**
  * The top of every page: title, optional one-line description, optional
@@ -9,7 +10,8 @@ import { BackLink } from "@/components/back-link";
  * phones. In the app from tablet width up, the title (on one line, cut short
  * with "…") and the actions sit in the top bar (AppHeader), which stays at the
  * top as the page scrolls: fixed to the window, past the sidebar. `back` is the
- * way back ("← Docs"): above the title on phones, before it in the top bar.
+ * way back ("← Docs"): above the title on phones, before it in the top bar. In the
+ * app on phones, the actions are a menu from the top bar (PageActions).
  */
 export function PageHeader({
   title,
@@ -35,7 +37,7 @@ export function PageHeader({
           )}
           <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words topbar:truncate topbar:text-base topbar:font-semibold topbar:tracking-normal">{title}</h1>
         </div>
-        {actions && <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2 topbar:flex-nowrap">{actions}</div>}
+        {actions && <PageActions>{actions}</PageActions>}
       </div>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
     </div>

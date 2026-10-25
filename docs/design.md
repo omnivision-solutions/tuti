@@ -103,7 +103,8 @@ Use these instead of hand-rolling layout:
 
 - **`PageHeader`** (`title`, `description`, `actions`): the top of every page.
   Actions sit right on wide screens and under the title on phones; in the
-  app from tablet width up, title and actions go in the top bar.
+  app from tablet width up, title and actions go in the top bar, and on phones
+  the actions are a "More actions" menu from it (`PageActions`).
 - **`BackLink`**: "← Feedback" above a detail page's header; in the app it's
   `PageHeader`'s `back`, before the title in the top bar.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):

@@ -1119,8 +1119,9 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await team.waitForURL(`**/app/${slug}/docs/invites`);
   await expect(team.getByRole("link", { name: `${portalUrl(slug)}/docs/invites` })).toBeVisible();
 
-  // On a phone, the dialog scrolls in the window.
+  // On a phone (from the top bar's "More actions"), the dialog scrolls in the window.
   await team.setViewportSize({ width: 390, height: 844 });
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Settings" }).click();
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveValue("invites");
   await expect(dialog.getByRole("textbox", { name: "Keywords" })).toHaveValue("add a colleague, seats");
@@ -1440,4 +1441,44 @@ test("the docs' home shows a tab with nothing in it yet, linking to its page", a
   await expect(guides).toContainText("Nothing in this tab yet.");
   await guides.getByRole("link", { name: "Guides" }).click();
   await team.waitForURL(`**/app/${slug}/docs/tabs/guides`);
+});
+
+test("on a phone, a page's actions are a menu from the top bar", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const article = await api("/articles", { title: "Invite your team", body: "Open Team in the sidebar." });
+
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.goto(`/app/${slug}/docs/${article.slug}`);
+  const history = team.getByRole("link", { name: "History" });
+  await expect(history).toBeHidden();
+  const more = team.getByRole("button", { name: "More actions" });
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  await expect(history).toBeVisible();
+  await checkpoint(team, "team-docs-article-actions-phone", { fullPage: false });
+  // Settings opens its dialog, which stays as the menu closes.
+  await team.getByRole("button", { name: "Settings" }).click();
+  const settings = team.getByRole("dialog", { name: "Article settings" });
+  await expect(settings).toBeVisible();
+  await expect(history).toBeHidden();
+  await team.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  // Escape closes the menu too.
+  await more.click();
+  await expect(history).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(history).toBeHidden();
+
+  // A menu in it ("Add content" on the docs' home): picking from it closes both.
+  await team.goto(`/app/${slug}/docs`);
+  const insights = team.getByRole("link", { name: "Insights" });
+  await more.click();
+  await team.getByRole("button", { name: "Add content" }).click();
+  await team.getByRole("menuitem", { name: "New collection" }).click();
+  await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
+  await expect(insights).toBeHidden();
 });
