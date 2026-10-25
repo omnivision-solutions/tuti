@@ -1,9 +1,10 @@
 "use client";
 
 import type { Doc, MediaUrls } from "@tuti/content";
+import { cn } from "cn";
 import { PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useActionState, useState, useTransition } from "react";
+import { createContext, type ReactNode, useActionState, useContext, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { IconField } from "@/components/icon-field";
@@ -59,6 +60,25 @@ type Article = {
 type CollectionOption = { slug: string; name: string };
 
 /** Writes a new article (`article` null) or edits one: title, collection and text (its settings are in ArticleSettings). */
+const ARTICLE_FORM = "article-form";
+const ArticleSavingContext = createContext<{ pending: boolean; setPending: (pending: boolean) => void } | null>(null);
+
+/** An article's page: what ArticleSaveButton (in the top bar) needs from its ArticleForm (below it). */
+export function ArticleSaving({ children }: { children: ReactNode }) {
+  const [pending, setPending] = useState(false);
+  return <ArticleSavingContext value={{ pending, setPending }}>{children}</ArticleSavingContext>;
+}
+
+/** The article's Save in the top bar, from tablet width up: it submits the ArticleForm below. */
+export function ArticleSaveButton() {
+  const pending = useContext(ArticleSavingContext)?.pending ?? false;
+  return (
+    <Button type="submit" form={ARTICLE_FORM} disabled={pending} className="phonebar:hidden">
+      {pending ? "Saving…" : "Save"}
+    </Button>
+  );
+}
+
 export function ArticleForm({
   projectSlug,
   article,
@@ -85,9 +105,12 @@ export function ArticleForm({
   }, {});
   const items = [{ value: null, label: "No collection" }, ...collections.map((c) => ({ value: c.slug, label: c.name }))];
   const [collection, setCollection] = useState<string | null>(article?.collection ?? defaultCollection ?? null);
+  // The top bar's Save (ArticleSaveButton) says when it's saving too.
+  const saving = useContext(ArticleSavingContext);
+  useEffect(() => saving?.setPending(pending), [saving, pending]);
 
   return (
-    <form {...keepingFields(action)}>
+    <form id={ARTICLE_FORM} {...keepingFields(action)}>
       <FieldGroup>
         {/* Written as it's published: the collection above the title, then the text, no boxes. */}
         <div className="flex flex-col gap-1">
@@ -141,7 +164,8 @@ export function ArticleForm({
           {article?.published && (
             <p className="text-sm text-muted-foreground">Changes to the title, collection and text go live when you publish them.</p>
           )}
-          <Button type="submit" disabled={pending}>
+          {/* An article's page has Save in the top bar from tablet width up (ArticleSaveButton); a new one keeps it here. */}
+          <Button type="submit" disabled={pending} className={cn(article && "topbar:hidden")}>
             {pending ? "Saving…" : article ? "Save" : "Save draft"}
           </Button>
         </div>
@@ -156,11 +180,14 @@ export function ArticleActions({
   slug,
   title,
   published,
+  part,
 }: {
   projectSlug: string;
   slug: string;
   title: string;
   published: boolean;
+  /** Delete (behind the top bar's "More actions"), or Publish / Unpublish (in the bar). */
+  part: "delete" | "publish";
 }) {
   const [pending, startTransition] = useTransition();
   const run = (action: typeof publishArticle, done: string) =>
@@ -173,9 +200,8 @@ export function ArticleActions({
       }
     });
 
-  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
-  return (
-    <div className="contents">
+  if (part === "delete") {
+    return (
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
         <AlertDialogContent>
@@ -194,7 +220,9 @@ export function ArticleActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {published ? (
+    );
+  }
+  return published ? (
         <Button variant="outline" disabled={pending} onClick={() => run(unpublishArticle, "Unpublished")}>
           Unpublish
         </Button>
@@ -216,9 +244,7 @@ export function ArticleActions({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      )}
-    </div>
-  );
+      );
 }
 
 /**
