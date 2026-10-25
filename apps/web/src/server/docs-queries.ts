@@ -288,8 +288,7 @@ export function docsTree(docs: DocsContents, tab: string | null, at: string | nu
 
 export type DocsTree = ReturnType<typeof docsTree>;
 
-/** A tab's page: the first is /docs itself. */
-export const docsTabPath = (docs: { home: string | null }, tab: string) => (tab === docs.home ? "/docs" : `/docs/${tab}`);
+export { docsTabPath } from "@/lib/docs-level-above";
 
 /** Every collection in `collections` and the ones in them, in reading order. */
 export const everyCollection = (collections: DocsCollection[]): DocsCollection[] => collections.flatMap((c) => [c, ...everyCollection(c.collections)]);

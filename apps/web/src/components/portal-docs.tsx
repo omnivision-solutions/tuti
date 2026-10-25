@@ -9,8 +9,8 @@ import { ArticleActions, ArticleUpdated } from "@/components/article-actions";
 import { DOCS_HEADING, DocsHomeHeader, PopularArticles } from "@/components/docs-home";
 import { OnThisPage } from "@/components/on-this-page";
 import { DocsSidebarLinks, PortalFooter } from "@/components/portal-look";
-import { ArticleFeedback } from "@/components/article-feedback";
-import { BackLink } from "@/components/back-link";
+import { ArticleFeedback, ArticleViewCount } from "@/components/article-feedback";
+import { allCollections } from "@/lib/docs-level-above";
 import { CollectionIcon } from "@/components/collection-icon";
 import { EmptyState } from "@/components/empty-state";
 import { DocsAnswer } from "@/components/docs-answer";
@@ -248,15 +248,15 @@ export async function withPortalOpenGraph(metadata: Metadata, parent: ResolvingM
 export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { kind: "collection" }> }) {
   const at = await portalLinks();
   const { docs, tab, parent, collection } = page;
-  // The way back: the collection it's in, else its tab (on phones; wider screens have the tree).
-  const back = parent ? `/docs/${parent.slug}` : tab ? docsTabPath(docs, tab.slug) : "/docs";
+  // The level above: the collection it's in, else its tab or all of them.
+  const up = parent ? { href: `/docs/${parent.slug}`, label: parent.name } : allCollections(docs, tab);
   return (
     <DocsLayout tree={docsTree(docs, tab?.slug ?? null, collection.slug)} current={collection.slug}>
       <div className="flex flex-col gap-8">
         <div className="flex flex-col gap-6">
-          <BackLink href={at(back)} className="md:hidden">
-            {parent ? parent.name : "Docs"}
-          </BackLink>
+          <Link href={at(up.href)} className="self-start text-sm font-medium text-primary hover:underline">
+            {up.label}
+          </Link>
           <PageHeader
             title={
               // Its icon, in the accent colour, before its name.
@@ -304,28 +304,23 @@ export async function DocsArticle({
   const collection = article.collection && everyCollection(docs.collections).find((c) => c.slug === article.collection!.slug);
   // The tree: its tab's (the first tab's has the articles in none), its collection's branch open.
   const tree = docsTree(docs, article.tab ?? docs.home, article.collection?.slug ?? null);
+  const headings = readable ? docHeadings(readable.doc) : [];
+  const up = collection ? { href: `/docs/${collection.slug}`, label: collection.name } : allCollections(docs, tab);
+  // "Was this helpful?" goes under "On this page" where that shows (wide screens), else under the article.
+  const feedback = (beside: boolean, className?: string) => readable && <ArticleFeedback projectSlug={project} slug={slug} beside={beside} className={className} />;
   return (
-    <DocsLayout tree={tree} current={slug} headings={readable ? docHeadings(readable.doc) : []}>
+    <DocsLayout tree={tree} current={slug} headings={headings} beside={feedback(true)}>
       <article className="flex flex-col gap-6" aria-labelledby={ARTICLE_TITLE_ID}>
-        {/* On phones; wider screens have the tree. */}
-        <BackLink href={at(tab ? docsTabPath(docs, tab.slug) : "/docs")} className="md:hidden">
-          Docs
-        </BackLink>
         <div className="flex flex-col gap-1">
           {/* The actions beside the title on wide screens, under it on phones. */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-col gap-1">
-              {article.collection && (
-                <p className="text-sm font-medium text-primary">
-                  {collection ? (
-                    <Link href={at(`/docs/${collection.slug}`)} className="hover:underline">
-                      {collection.name}
-                    </Link>
-                  ) : (
-                    article.collection.name
-                  )}
-                </p>
-              )}
+              {/* The level above: its collection (when it has a page for this reader; an unlisted article may be all it has), else its tab or all of them. */}
+              <p className="text-sm font-medium text-primary">
+                <Link href={at(up.href)} className="hover:underline">
+                  {up.label}
+                </Link>
+              </p>
               <h1 id={ARTICLE_TITLE_ID} className="font-heading text-3xl font-bold tracking-tight break-words">
                 {article.title}
               </h1>
@@ -337,7 +332,8 @@ export async function DocsArticle({
         {readable ? (
           <>
             <RichText doc={readable.doc} mediaUrls={await mediaUrls(readable.doc)} headingIds className="rich-text article-text break-words" />
-            <ArticleFeedback projectSlug={project} slug={slug} />
+            <ArticleViewCount projectSlug={project} slug={slug} />
+            {feedback(false, outlined(headings) ? "xl:hidden" : undefined)}
           </>
         ) : (
           <LockedMessage signedIn={"signedIn" in article && article.signedIn} />
@@ -430,7 +426,23 @@ async function DocsTree({ tree, current }: { tree: DocsTree; current: string | n
  * menu instead), the page, and on an article its `headings` on the right ("On this page", on wide
  * screens, with two or more).
  */
-export function DocsLayout({ tree, current, headings = [], children }: { tree: DocsTree; current: string | null; headings?: Heading[]; children: React.ReactNode }) {
+/** Whether an article with `headings` gets "On this page" beside it (on wide screens). */
+const outlined = (headings: Heading[]) => headings.length >= 2;
+
+export function DocsLayout({
+  tree,
+  current,
+  headings = [],
+  beside,
+  children,
+}: {
+  tree: DocsTree;
+  current: string | null;
+  headings?: Heading[];
+  /** Under "On this page" (shown from wide screens with two headings or more; see `outlined`). */
+  beside?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   const hasTree = tree.collections.length > 0 || tree.uncollected.length > 0;
   return (
     <div className="flex gap-10">
@@ -462,9 +474,13 @@ export function DocsLayout({ tree, current, headings = [], children }: { tree: D
         {children}
         <PortalFooter docs />
       </div>
-      {headings.length >= 2 && (
+      {outlined(headings) && (
         <aside className="hidden w-64 shrink-0 xl:block">
-          <OnThisPage headings={headings} />
+          {/* Stays in view as the article scrolls, under the header. */}
+          <div className="sticky top-[calc(var(--portal-header-height,0px)+1.5rem)] flex max-h-[calc(100dvh-var(--portal-header-height,0px)-3rem)] flex-col gap-6 overflow-y-auto">
+            <OnThisPage headings={headings} />
+            {beside}
+          </div>
         </aside>
       )}
     </div>
