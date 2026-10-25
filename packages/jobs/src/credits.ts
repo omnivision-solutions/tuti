@@ -1,5 +1,6 @@
 import { type AiCreditSource, Prisma, prisma } from "@tuti/db";
-import { creditsEnabled, freeCredits, topupExpiryDays } from "@tuti/shared";
+import { creditsEmail, sendEmail } from "@tuti/email";
+import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
 
 import { lockProject } from "./running-draft";
 
@@ -106,4 +107,62 @@ export async function creditBalance(projectId: string): Promise<{ balance: numbe
 /** Whether the project's AI is paused: AI credits are on and its balance is 0 or below. */
 export async function aiPaused(projectId: string): Promise<boolean> {
   return creditsEnabled() && (await creditBalance(projectId)).balance <= 0;
+}
+
+/**
+ * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
+ * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant).
+ * Checked and claimed under the project's lock, which that trigger also takes: a grant either came first
+ * and counts, or comes after and clears the claim, and two charges at once send one email. An email that
+ * fails then isn't retried (logged), as the banner in the app says it too.
+ */
+export async function emailIfCreditsLow(projectId: string): Promise<void> {
+  // Most requests leave plenty: those need no lock.
+  const seen = creditsEnabled() ? (await creditBalance(projectId)).balance : null;
+  if (seen === null || (seen > 0 && seen >= lowCreditsAt())) {
+    return;
+  }
+  if (!process.env.APP_URL) {
+    log.warn("AI credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId });
+    return;
+  }
+  const claimed = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const [{ _sum }, project] = await Promise.all([
+      tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
+      tx.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: {
+          name: true,
+          slug: true,
+          aiCreditDebt: true,
+          aiCreditsLowEmailedAt: true,
+          aiCreditsOutEmailedAt: true,
+          team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
+        },
+      }),
+    ]);
+    const balance = (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).toNumber();
+    const out = balance <= 0;
+    // Nobody to email yet (no verified owner or admin): left unclaimed, so they hear once someone is.
+    if (project.team.length === 0 || (!out && balance >= lowCreditsAt()) || (out ? project.aiCreditsOutEmailedAt : project.aiCreditsLowEmailedAt)) {
+      return null;
+    }
+    await tx.project.update({ where: { id: projectId }, data: out ? { aiCreditsOutEmailedAt: new Date() } : { aiCreditsLowEmailedAt: new Date() } });
+    return { balance, out, project };
+  });
+  if (!claimed) {
+    return;
+  }
+  const { balance, out, project } = claimed;
+  const url = `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`;
+  const left = balance.toLocaleString("en", { maximumFractionDigits: balance >= 1 ? 0 : 2 });
+  const sent = await Promise.allSettled(
+    project.team.map(({ user }) => sendEmail({ to: user.email, ...creditsEmail({ projectName: project.name, out, left, url }) })),
+  );
+  for (const result of sent) {
+    if (result.status === "rejected") {
+      log.error("Emailing that AI credits are low failed", { projectId, out, error: result.reason });
+    }
+  }
 }

@@ -1,4 +1,5 @@
 export { changelogEmail } from "./changelog-email";
+export { creditsEmail } from "./credits-email";
 export { inviteEmail } from "./invite-email";
 export { passwordChangedEmail, passwordResetEmail } from "./password-reset-email";
 export { portalReaderEmail } from "./portal-reader-email";

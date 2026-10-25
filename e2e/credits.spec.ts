@@ -7,6 +7,7 @@ import { grantCredits, spendCredits } from "./credits";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { apiFor, createProject, signUp } from "./helpers";
+import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextDecision } from "./model";
 import { similar } from "./openai";
 
@@ -17,6 +18,8 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   const slug = `e2e-${id}`;
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
+  // Verified, so Tuti emails them about the project's credits.
+  await owner.goto(linkIn(await latestEmailTo(owner.email), `${APP_URL}/api/auth/verify-email`));
   const api = await apiFor(owner, slug);
   const question = `How do I add a colleague (${id})?`;
   const body = "Owners and admins send invites from the Team page.";
@@ -26,6 +29,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   const entry = await api("/changelog", { title: "Next release", body: "Dark mode is here." });
   const installationId = await connectGithub(owner, slug);
   await spendCredits(slug);
+  const emailsBefore = countEmailsTo(owner.email);
 
   // A visitor's question: no AI answer, the closest article instead.
   const visitor = await signUp(browser, portalUrl(slug), "Vera Visitor");
@@ -41,9 +45,16 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   await expect(conversation.getByRole("link", { name: "Post this as feedback" })).toBeVisible();
   await checkpoint(visitor, "portal-assistant-out-of-credits", { fullPage: false });
 
+  // That's when the owner hears the AI stopped (the credits ran out without a charge here).
+  const email = await latestEmailTo(owner.email, { after: emailsBefore });
+  expect(email.subject).toBe("Acme is out of AI credits");
+  expect(linkIn(email, APP_URL)).toBe(`${APP_URL}/app/${slug}/settings/billing`);
+
   // The changelog's AI: shown, disabled, and why.
   await owner.goto(`/app/${slug}/changelog/${entry.number}`);
-  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText("Draft with AI and Edit with AI are paused");
+  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
+    "AI answers, changelog drafts and code changes are paused",
+  );
   await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeDisabled();
   await checkpoint(owner, "team-changelog-out-of-credits");
@@ -53,6 +64,8 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   const pr = `Add a dark theme ${id}`;
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
   await owner.goto(`/app/${slug}/code-changes`);
+  // Every project page says so.
+  await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toBeVisible();
   const row = owner.getByRole("listitem").filter({ hasText: pr });
   await expect(row).toContainText("Paused");
   await expect(row).toContainText("The project ran out of AI credits.");

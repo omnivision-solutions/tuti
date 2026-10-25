@@ -28,6 +28,13 @@ export function topupExpiryDays(): number | null {
   return 365;
 }
 
+/** Below this balance owners and admins are emailed that credits are running low (AI_CREDITS_LOW, default 100); 0 emails only once they're out. */
+export function lowCreditsAt(): number {
+  const raw = process.env.AI_CREDITS_LOW?.trim();
+  const value = Number(raw);
+  return raw && Number.isFinite(value) && value >= 0 ? value : 100;
+}
+
 /** Credits every project is given once (AI_CREDITS_FREE, default none), lasting like a top-up. */
 export const freeCredits = () => positive("AI_CREDITS_FREE", 0);
 

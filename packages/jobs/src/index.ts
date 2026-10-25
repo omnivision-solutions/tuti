@@ -13,7 +13,7 @@ import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
 export { aiFor, projectModels } from "./ai-usage";
-export { aiPaused, creditBalance, type CreditGrant, grantCredits, OutOfCredits } from "./credits";
+export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { addToRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine } from "./running-draft";
 

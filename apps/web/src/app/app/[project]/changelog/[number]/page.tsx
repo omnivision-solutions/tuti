@@ -6,14 +6,13 @@ import { aiPaused } from "@tuti/jobs";
 import { aiEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
-import { AiPaused } from "@/components/ai-paused";
 import { ChangelogEntryActions, ChangelogForm, type TagName } from "@/components/changelog";
 import { PageHeader } from "@/components/page-header";
 import { STATUS_LABELS } from "@/components/post-status-badge";
 import { formatDate } from "@/lib/format";
 import { completablePosts } from "@/server/changelog-queries";
 import { displayDoc } from "@/server/content";
-import { getMembership, isAdminRole } from "@/server/membership";
+import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
 
 export default async function ChangelogEntryPage(props: PageProps<"/app/[project]/changelog/[number]">) {
@@ -41,7 +40,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
   }
   const listed = entry.posts.map(({ post }) => post.number);
   const posts = await completablePosts(membership.project.id, listed);
-  // Out of AI credits: the AI buttons stay, disabled, and say why.
+  // Out of AI credits: the AI buttons stay, disabled (the banner above every project page says why).
   const paused = aiEnabled() && (await aiPaused(membership.project.id));
 
   return (
@@ -67,7 +66,6 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
           />
         }
       />
-      {paused && <AiPaused projectSlug={slug} stops="Draft with AI and Edit with AI are paused" admin={isAdminRole(membership.role)} />}
       {/*
         New saved text (an AI draft, a save, a merged pull request added to the running draft)
         starts the form afresh; publishing or unpublishing keeps unsaved edits.
