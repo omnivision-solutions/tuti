@@ -48,7 +48,10 @@ Requirements:
   themselves). The `pgvector/pgvector` Docker image has both.
 - Background jobs: a [Hatchet](https://hatchet.run) server (Hatchet Cloud or self-hosted,
   configured only through `HATCHET_CLIENT_*` env vars), or none with `JOBS_DRIVER=inline`
-  (jobs run inside the web app; fine for small installs).
+  (jobs run inside the web app; fine for small installs). Inline jobs run once, with no
+  retries, so a failed webhook delivery or "shipped" email isn't tried again, and the scheduled
+  jobs never run: unused uploads aren't deleted (storage only grows), deleted docs articles
+  stay in the trash, and docs search counts aren't trimmed to their 30 days.
 - Optional: an OpenAI API key for duplicate detection and docs search by meaning
   (`OPENAI_API_KEY`). Without it, similar posts are still suggested by title and docs
   search matches words.
