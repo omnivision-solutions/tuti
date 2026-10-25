@@ -482,6 +482,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const recentlyDeleted = team.getByRole("region", { name: "Recently deleted" });
   await expect(recentlyDeleted).toContainText("Inviting your team");
   await checkpoint(team, "team-docs-recently-deleted");
+  // The filter goes through Recently deleted too.
+  const filter = team.getByRole("searchbox", { name: "Filter docs" });
+  await filter.fill("nothing like this");
+  await expect(recentlyDeleted).toHaveCount(0);
+  await expect(team.getByText("Nothing matches “nothing like this”.")).toBeVisible();
+  await filter.fill("inviting");
+  await expect(recentlyDeleted).toContainText("Inviting your team");
+  await expect(team.getByText(/^Nothing matches/)).toHaveCount(0);
+  await filter.fill("");
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
 

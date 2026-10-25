@@ -207,33 +207,36 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           </DocsMatch>
         ))
       )}
-      <DocsNoMatch texts={[...docs.tabs.map((tab) => tab.name), ...docs.collections.map((c) => c.name), ...docs.collections.flatMap((c) => c.articles.map((a) => a.title)), ...docs.uncollected.map((a) => a.title)]} />
+      <DocsNoMatch texts={[...docs.tabs.map((tab) => tab.name), ...docs.collections.map((c) => c.name), ...docs.collections.flatMap((c) => c.articles.map((a) => a.title)), ...docs.uncollected.map((a) => a.title), ...deleted.map((a) => a.title)]} />
       <div>
         <TabDialog projectSlug={slug} first={docs.tabs.length === 0 && docs.collections.length > 0} />
       </div>
       {deleted.length > 0 && (
-        <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">
-          <CardHeader>
-            <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
-            <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ItemList>
-              {deleted.map((article) => (
-                <ItemRow
-                  key={article.id}
-                  title={article.title}
-                  meta={`Deleted ${timeAgo(article.deletedAt!)}`}
-                  actions={
-                    article.revisions[0] && (
-                      <RestoreDeletedButton projectSlug={slug} slug={article.slug} revision={article.revisions[0].id} title={article.title} />
-                    )
-                  }
-                />
-              ))}
-            </ItemList>
-          </CardContent>
-        </Card>
+        <DocsMatch texts={deleted.map((article) => article.title)}>
+          <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">
+            <CardHeader>
+              <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
+              <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ItemList>
+                {deleted.map((article) => (
+                  <DocsMatch key={article.id} texts={[article.title]}>
+                    <ItemRow
+                      title={article.title}
+                      meta={`Deleted ${timeAgo(article.deletedAt!)}`}
+                      actions={
+                        article.revisions[0] && (
+                          <RestoreDeletedButton projectSlug={slug} slug={article.slug} revision={article.revisions[0].id} title={article.title} />
+                        )
+                      }
+                    />
+                  </DocsMatch>
+                ))}
+              </ItemList>
+            </CardContent>
+          </Card>
+        </DocsMatch>
       )}
     </>
   );
