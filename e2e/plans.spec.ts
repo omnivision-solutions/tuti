@@ -72,7 +72,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and code changes and its own address need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, and code changes, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -106,4 +106,14 @@ test("on the free plan, a project has up to 3 team members, invites included, an
   await expect(options.getByRole("radio", { name: /Sub-folder/ })).toContainText("A portal under a path of your site needs the Business plan.");
   await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
   await checkpoint(owner, "customize-address-free-plan");
+
+  // A private portal and reader groups are on Business.
+  await owner.goto(`/app/${slug}/settings`);
+  await expect(owner.getByRole("alert").filter({ hasText: "A private portal and reader groups need the Business plan." })).toContainText(
+    "Without it, a private portal and content for reader groups are your team's only.",
+  );
+  await owner.getByRole("combobox", { name: "Portal access" }).click();
+  await owner.getByRole("option", { name: "Private" }).click();
+  await expect(owner.getByText("A private portal and reader groups need the Business plan. See Settings → Billing.")).toBeVisible();
+  await checkpoint(owner, "settings-access-free-plan");
 });
