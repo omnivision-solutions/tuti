@@ -171,6 +171,14 @@ test("a second subscription's paid invoice reported after both ended still gives
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 1000]);
 });
 
+test("a paid subscription that ended before Stripe said anything about it still gives its month's credits", async () => {
+  const { subscription, events } = await subscribe("pro");
+  stripe.update(subscription, { status: "canceled" });
+  await deliver(...events);
+  expect(await plan()).toMatchObject({ plan: "free" });
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
+});
+
 test("a renewal reported after its subscription ended and another took the plan still gives its credits", async () => {
   const first = await subscribe("pro");
   await deliver(...first.events);
