@@ -92,7 +92,9 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   `rich-text`: bigger headings, softer body text, room between steps;
   their search box is in the header. A tab's overview has a large search box
   too, then a card per collection (icon, name, description; three per row
-  on wide screens, one on phones).
+  on wide screens, one on phones). A collection's page: its icon and name, a card of its
+  articles (rows with a chevron), then a card per collection in it (its name,
+  its articles, and the collections in that as folders opening their pages).
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
 
 ## Components

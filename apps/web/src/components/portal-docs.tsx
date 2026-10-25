@@ -257,7 +257,20 @@ export async function DocsCollectionPage({ page }: { page: Extract<DocsPage, { k
           <BackLink href={at(back)} className="md:hidden">
             {parent ? parent.name : "Docs"}
           </BackLink>
-          <PageHeader title={collection.name} description={collection.description} />
+          <PageHeader
+            title={
+              // Its icon, in the accent colour, before its name.
+              <span className="flex items-center gap-3">
+                {collection.icon && (
+                  <span className="text-primary">
+                    <CollectionIcon name={collection.icon} />
+                  </span>
+                )}
+                <span className="min-w-0">{collection.name}</span>
+              </span>
+            }
+            description={collection.description}
+          />
         </div>
         {collection.locked ? (
           <LockedMessage signedIn={docs.signedIn} />

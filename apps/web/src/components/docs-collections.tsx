@@ -1,6 +1,7 @@
 import { cn } from "cn";
-import { LockIcon } from "lucide-react";
+import { ChevronRightIcon, FolderIcon, LockIcon } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { CollectionIcon } from "@/components/collection-icon";
 import type { DocsArticleLink, DocsCollection } from "@/server/docs-queries";
@@ -32,48 +33,61 @@ export function ArticleLinks({ articles, href }: { articles: Articles; href: (sl
   );
 }
 
-/**
- * A collection: its heading (h2 at `level` 2, a level down for each one it's in; past h6, bold
- * text), its articles, then the collections in it.
- */
-function CollectionSection({
-  collection,
-  level,
-  href,
-  collectionHref,
-}: {
-  collection: DocsCollection;
-  level: number;
-  href: (slug: string) => string;
-  collectionHref: (slug: string) => string;
-}) {
-  const Heading = level <= 6 ? (`h${level}` as "h2") : "p";
+/** A link as a row of a collection's card: an icon, its name, and a chevron. */
+function Row({ href, icon, children }: { href: string; icon?: ReactNode; children: ReactNode }) {
   return (
-    <section aria-labelledby={`collection-${collection.slug}`} className="flex flex-col gap-2">
-      <Heading
-        id={`collection-${collection.slug}`}
-        className={cn("flex items-center gap-2 font-heading font-bold tracking-tight break-words", level === 2 && "text-lg")}
-      >
-        <CollectionIcon name={collection.icon} />
-        <Link href={collectionHref(collection.slug)} className="min-w-0 hover:underline">
-          {collection.name}
-          {collection.locked && <LockedMark />}
-        </Link>
-      </Heading>
-      {collection.description && <p className="text-sm text-muted-foreground">{collection.description}</p>}
-      {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={href} />}
-      {collection.collections.length > 0 && (
-        <div className="mt-2 flex flex-col gap-4 border-l pl-4">
-          {collection.collections.map((child) => (
-            <CollectionSection key={child.slug} collection={child} level={level + 1} href={href} collectionHref={collectionHref} />
-          ))}
-        </div>
-      )}
-    </section>
+    <li>
+      <Link href={href} className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-accent">
+        {icon}
+        <span className="min-w-0 flex-1 break-words">{children}</span>
+        <ChevronRightIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      </Link>
+    </li>
   );
 }
 
-/** A collection's page: its articles, then the collections in it (each with its own). */
+const card = "rounded-xl border bg-card text-card-foreground";
+
+/** Rows for `articles`, then for `collections` (each opens its own page, with a folder icon or its own). */
+function Rows({
+  articles,
+  collections = [],
+  href,
+  collectionHref,
+  label,
+}: {
+  articles: Articles;
+  collections?: DocsCollection[];
+  href: (slug: string) => string;
+  collectionHref: (slug: string) => string;
+  label?: string;
+}) {
+  return (
+    <ul aria-label={label} className="flex flex-col p-1.5">
+      {articles.map((article) => (
+        <Row key={article.slug} href={href(article.slug)}>
+          {article.title}
+          {article.locked && <LockedMark />}
+        </Row>
+      ))}
+      {collections.map((child) => (
+        <Row
+          key={child.slug}
+          href={collectionHref(child.slug)}
+          icon={<span className="text-muted-foreground">{child.icon ? <CollectionIcon name={child.icon} /> : <FolderIcon aria-hidden className="size-[1.25em]" />}</span>}
+        >
+          {child.name}
+          {child.locked && <LockedMark />}
+        </Row>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * A collection's page: a card of its articles, then a card for each collection in it (its name as
+ * the card's h2, then its articles and, as folders, the collections in it, each opening its own page).
+ */
 export function CollectionContents({
   collection,
   href,
@@ -85,9 +99,26 @@ export function CollectionContents({
 }) {
   return (
     <>
-      {collection.articles.length > 0 && <ArticleLinks articles={collection.articles} href={href} />}
+      {collection.articles.length > 0 && (
+        <div className={card}>
+          <Rows label="Articles" articles={collection.articles} href={href} collectionHref={collectionHref} />
+        </div>
+      )}
       {collection.collections.map((child) => (
-        <CollectionSection key={child.slug} collection={child} level={2} href={href} collectionHref={collectionHref} />
+        <section key={child.slug} aria-labelledby={`collection-${child.slug}`} className={card}>
+          <div className="flex flex-col gap-0.5 border-b px-4.5 py-3">
+            <h2 id={`collection-${child.slug}`} className="flex items-center gap-2 font-medium break-words">
+              <Link href={collectionHref(child.slug)} className="min-w-0 hover:underline">
+                {child.name}
+                {child.locked && <LockedMark />}
+              </Link>
+            </h2>
+            {child.description && <p className="text-sm text-muted-foreground">{child.description}</p>}
+          </div>
+          {child.articles.length + child.collections.length > 0 && (
+            <Rows articles={child.articles} collections={child.collections} href={href} collectionHref={collectionHref} />
+          )}
+        </section>
       ))}
     </>
   );
