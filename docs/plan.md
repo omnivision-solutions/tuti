@@ -435,10 +435,12 @@ What tuti.so sells, from a review of feedback, changelog and help center tools a
 Decided:
 - Hiding "Powered by tuti" is a $49 a month add-on per project, never part of a plan (2026-10-25). Paid plans on tuti.so can add it, and self-hosted projects buy it at the same price; the free plan can't
 - Three plans and Enterprise, per project, priced monthly (2026-10-25):
-  - Free, $0: 1 project, 3 team members, a `*.tuti.so` address, the badge (the add-on can't be bought), one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
+  - Free, $0: 3 team members, a `*.tuti.so` address, the badge (the add-on can't be bought), one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
   - Pro, $39 a month: unlimited team members, custom domain, code changes, AI credits every month
   - Business, $99 a month: Pro, plus a private portal, reader groups and readers by email, a portal under a path of your own site, more AI credits every month, priority support
   - Enterprise, by quote: SAML for the team, audit logs, an SLA, invoices
+- Free doesn't limit projects (2026-10-25): an account can make several free projects, as a plan is per project, not per account (it said "1 project" before)
+- A project on a lower plan (cancelled, or Business → Pro) keeps everything and nothing becomes more public (2026-10-25): what its plan doesn't include stops, nothing is deleted, and it all works again once the plan is back. A private portal and content for reader groups only are visible to the team only (settings kept, a banner says why); team members over the limit all stay, but no one new can be invited until it's under it; a custom domain or a path of their site stops serving the portal (its `*.tuti.so` address works; settings kept); code changes stop (merged pull requests still feed the running draft)
 - Why these steps: Pro sits by Frill, Nolt and Featurebase's first paid plans (about $25–39) while also including a changelog and docs; Business is 2.5× Pro, the usual step (Featurebase $29 → $59 → $99); Pro at $39 keeps the $49 add-on about the size of the plan rather than larger
 
 Proposed, not decided yet:
