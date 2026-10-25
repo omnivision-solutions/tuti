@@ -102,6 +102,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   // On a plan without private portals, a private portal is its team's only: nobody past it to tell.
   const teamOnly = project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal");
   const ids = teamOnly ? [] : [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
+  if (teamOnly) {
+    // Claims an earlier try left unsent won't be sent now: dropped, so the post isn't due again and again.
+    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null } });
+  }
   // A private portal's post is only for its readers: past the team, the people its SSO signs in and
   // the readers the team added by email (verified, as server/portal-access.ts asks).
   const readers =

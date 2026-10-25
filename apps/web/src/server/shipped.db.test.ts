@@ -132,6 +132,13 @@ describe("when a post ships", () => {
 
     expect(emailsTo(reader.email)).toEqual([]);
     expect(emailsTo(ssoEmail)).toEqual([]);
+    // A claim an earlier try left unsent doesn't keep the post due.
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    await prisma.shippedEmail.create({ data: { postId, userId: reader.id, claimedAt: new Date(Date.now() - 3_600_000) } });
+    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    expect(await prisma.shippedEmail.count({ where: { postId } })).toBe(0);
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toBeNull();
   });
 
   test("a mail outage doesn't lose anyone: the retry emails those not reached, once", async () => {
