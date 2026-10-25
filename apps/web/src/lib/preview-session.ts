@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { PREVIEW_TTL_SECONDS } from "./portal-base";
 import { signValue, verifyValue } from "./signed";
 
@@ -15,16 +17,16 @@ const PURPOSE = "preview";
 export { PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "./portal-base";
 
 /**
- * Signed with its time to the millisecond, so each render of a page gets a token of its own: Customize's
- * preview takes a new token when the one it's given changes, and two renders in a second would otherwise sign the same.
+ * With a random part, so each render of a page gets a token of its own: Customize's preview takes a new
+ * token when the one it's given changes, and two renders in the same second would otherwise sign the same.
  */
 export function previewToken(projectId: string, userId: string, now = Date.now()): string {
-  return signValue(PURPOSE, [projectId, userId, String(now)], PREVIEW_TTL_SECONDS, now);
+  return signValue(PURPOSE, [projectId, userId, randomBytes(9).toString("base64url")], PREVIEW_TTL_SECONDS, now);
 }
 
 /** The team member a preview token is for, if it's valid, unexpired and for this project. */
 export function previewUser(projectId: string, token: string, now = Date.now()): string | null {
   const fields = verifyValue(PURPOSE, String(token), now);
-  // ponytail: two fields are tokens from before they had their time, gone an hour after this shipped; then only 3.
+  // ponytail: two fields are tokens from before they had their random part, gone an hour after this shipped; then only 3.
   return fields && (fields.length === 2 || fields.length === 3) && fields[0] === projectId && fields[1] ? fields[1] : null;
 }

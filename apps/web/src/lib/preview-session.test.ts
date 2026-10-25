@@ -19,9 +19,9 @@ test("a preview token is for one person in one project, for an hour", () => {
   expect(previewUser("project-1", "", now)).toBeNull();
 });
 
-test("each page render gets a token of its own, even in the same second (Customize's preview takes a new token when it changes)", () => {
-  const now = Math.floor(Date.now() / 1000) * 1000;
-  const [first, second] = [previewToken("project-1", "user-1", now), previewToken("project-1", "user-1", now + 1)];
+test("each page render gets a token of its own, even at the same moment (Customize's preview takes a new token when it changes)", () => {
+  const now = Date.now();
+  const [first, second] = [previewToken("project-1", "user-1", now), previewToken("project-1", "user-1", now)];
   expect(first).not.toBe(second);
   expect([previewUser("project-1", first, now), previewUser("project-1", second, now)]).toEqual(["user-1", "user-1"]);
   // Tokens from before they had one, in previews open as this ships, still read the portal for their hour.
