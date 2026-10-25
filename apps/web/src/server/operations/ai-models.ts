@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { projectModels } from "@tuti/jobs";
-import { AI_FEATURES, type AiFeature, aiProvider, defaultModel, listModels, log } from "@tuti/shared";
+import { AI_FEATURES, type AiFeature, type AiModelListing, aiProvider, defaultModel, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
 import { z } from "zod";
 
 import { defineOperation, OperationError } from "./define";
@@ -34,7 +34,7 @@ const modelId = z.string().trim().max(200, "Model ids are under 200 characters")
 export const updateAiModels = defineOperation({
   name: "aiModels.update",
   summary:
-    "Pick the model an AI feature uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default. Features left out keep theirs",
+    "Pick the model an AI feature uses for this project: a model id the AI endpoint lists (OpenRouter's, e.g. anthropic/claude-sonnet-5.5), or \"\" for the server's default. The server may cap a model's price (AI_MODEL_MAX_PRICE). Features left out keep theirs",
   method: "PATCH",
   path: "/ai-models",
   scope: "write",
@@ -45,16 +45,22 @@ export const updateAiModels = defineOperation({
     const picked = Object.entries(input).filter((entry): entry is [AiFeature, string] => entry[1] !== undefined);
     const chosen = picked.filter(([, model]) => model !== "");
     if (chosen.length > 0) {
-      let listed: Set<string>;
+      let listed: Map<string, AiModelListing>;
       try {
-        listed = new Set((await listModels()).map((model) => model.id));
+        listed = new Map((await listModels()).map((model) => [model.id, model]));
       } catch (error) {
         log.warn("Listing the AI models failed", { projectId, error });
         throw new OperationError(502, "models_unavailable", "Couldn't check the models just now. Try again in a moment.");
       }
-      const unknown = chosen.find(([, model]) => !listed.has(model));
-      if (unknown) {
-        throw new OperationError(400, "unknown_model", `${aiProvider()} has no model “${unknown[1]}”`);
+      for (const [, id] of chosen) {
+        const model = listed.get(id);
+        if (!model) {
+          throw new OperationError(400, "unknown_model", `${aiProvider()} has no model “${id}”`);
+        }
+        if (!withinModelCap(model)) {
+          const price = model.output === null ? "has no price" : `costs $${Number((model.output * 1e6).toFixed(4))} per million output tokens`;
+          throw new OperationError(400, "model_over_cap", `“${id}” ${price}; this server allows models up to $${modelMaxPrice()}`);
+        }
       }
     }
     // Merged in the database, so two people picking different features at once both keep theirs.

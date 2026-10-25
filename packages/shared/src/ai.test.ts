@@ -1,7 +1,7 @@
 import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
-import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels } from "./ai";
+import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, withinModelCap } from "./ai";
 import type { AiUsage } from "./usage";
 
 let model: ModelFake;
@@ -64,6 +64,25 @@ test("lists the endpoint's models, with their prices per token", async () => {
   expect(models).toContainEqual({ id: DEFAULT_AI_MODEL, name: expect.any(String) as string, input: 1e-6, output: 5e-6 });
   expect(models.map((listed) => listed.id)).toContain("acme/no-price");
   expect(models.find((listed) => listed.id === "acme/no-price")).toMatchObject({ input: null, output: null });
+});
+
+test("the cap on the models projects pick: none unless AI_MODEL_MAX_PRICE is a positive price; under one, only models priced at or under it", () => {
+  const priced = (output: number | null) => ({ id: "acme/model", name: "Acme: Model", input: 0, output });
+  expect(modelMaxPrice()).toBeNull();
+  expect(withinModelCap(priced(null))).toBe(true);
+  for (const value of ["", "0", "-1", "lots"]) {
+    vi.stubEnv("AI_MODEL_MAX_PRICE", value);
+    expect(modelMaxPrice()).toBeNull();
+  }
+
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "0.4");
+  expect(modelMaxPrice()).toBe(0.4);
+  // OpenRouter's "0.0000004" per token is exactly the cap, though not exactly 0.4 / 1e6 in floating point.
+  expect(withinModelCap(priced(Number("0.0000004")))).toBe(true);
+  expect(withinModelCap(priced(Number("0.00000041")))).toBe(false);
+  expect(withinModelCap(priced(0))).toBe(true);
+  // Without a price it can't be checked.
+  expect(withinModelCap(priced(null))).toBe(false);
 });
 
 test("a failed request or an empty reply throws", async () => {

@@ -128,6 +128,19 @@ export async function listModels(): Promise<AiModelListing[]> {
     }));
 }
 
+/** The operator's cap on the models projects may pick (AI_MODEL_MAX_PRICE, dollars per million output tokens), or null for none. */
+export function modelMaxPrice(): number | null {
+  const value = Number(process.env.AI_MODEL_MAX_PRICE);
+  return process.env.AI_MODEL_MAX_PRICE && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/** Whether a project may pick `model` under modelMaxPrice: any model without a cap; with one, only a model with a price at or under it. */
+export function withinModelCap(model: AiModelListing): boolean {
+  const cap = modelMaxPrice();
+  // Compared in millionths of a dollar per million tokens, so a price written like the cap isn't over it by a rounding error.
+  return cap === null || (model.output !== null && Math.round(model.output * 1e12) <= Math.round(cap * 1e6));
+}
+
 /**
  * The decision model, apart from the writing model: DECISION_MODEL, by default the one that did best
  * on code changes' evaluation set (`pnpm test:live`; 2026-10-23, among OpenRouter's decision models).

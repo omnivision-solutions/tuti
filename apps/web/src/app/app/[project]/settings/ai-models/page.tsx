@@ -1,4 +1,4 @@
-import { aiEnabled, aiProvider, listModels, log } from "@tuti/shared";
+import { aiEnabled, aiProvider, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { AiModelsSettings } from "@/components/ai-models-settings";
@@ -16,17 +16,22 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
   const [models, listed] = await Promise.all([
     aiModels(project.id),
     // Only suggestions: without them a model id can still be typed (and is checked when saved).
-    listModels().catch((error: unknown) => {
-      log.warn("Listing the AI models failed", { projectId: project.id, error });
-      return [];
-    }),
+    listModels().then(
+      (models) => models.filter(withinModelCap),
+      (error: unknown) => {
+        log.warn("Listing the AI models failed", { projectId: project.id, error });
+        return [];
+      },
+    ),
   ]);
+  const cap = modelMaxPrice();
   return (
     <Card>
       <CardHeader>
         <CardTitle>AI models</CardTitle>
         <CardDescription>
           Which model writes for each AI feature, from the models at {aiProvider()}. Leave one empty to use the default. A bigger model can write better and costs more.
+          {cap !== null && ` This server allows models up to $${cap} per million output tokens.`}
         </CardDescription>
       </CardHeader>
       <CardContent>

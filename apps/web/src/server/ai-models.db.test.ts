@@ -83,6 +83,27 @@ test("only a model the endpoint lists can be picked; nothing is saved otherwise"
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiModels: true } })).toEqual({ aiModels: {} });
 });
 
+test("under the server's cap only models priced at or under it can be picked; the default needs no check", async () => {
+  vi.stubEnv("AI_MODEL_MAX_PRICE", "5");
+  // Claude Haiku costs $5 per million output tokens in the fake's list, Sonnet $15.
+  await call(updateAiModels, as(), { answers: "anthropic/claude-haiku-5.5" });
+  await expect(call(updateAiModels, as(), { changelog: "acme/tiny", answers: "anthropic/claude-sonnet-5.5" })).rejects.toMatchObject({
+    status: 400,
+    code: "model_over_cap",
+    message: "“anthropic/claude-sonnet-5.5” costs $15 per million output tokens; this server allows models up to $5",
+  });
+  await expect(call(updateAiModels, as(), { answers: "acme/no-price" })).rejects.toMatchObject({
+    code: "model_over_cap",
+    message: "“acme/no-price” has no price; this server allows models up to $5",
+  });
+  // Nothing of the refused requests was saved, not even acme/tiny, which is under the cap.
+  expect((await call(getAiModels, as(), {})).changelog.model).toBeNull();
+  vi.stubEnv("AI_MODEL_CHANGELOG", "anthropic/claude-sonnet-5.5");
+  await call(updateAiModels, as(), { answers: "" });
+  const models = await call(getAiModels, as(), {});
+  expect([models.answers.model, models.changelog]).toEqual([null, { model: null, default: "anthropic/claude-sonnet-5.5" }]);
+});
+
 test("two people picking models for different features at once both keep theirs", async () => {
   await Promise.all([call(updateAiModels, as(), { answers: "acme/tiny" }), call(updateAiModels, as(), { changelog: "anthropic/claude-sonnet-5.5" })]);
   const models = await call(getAiModels, as(), {});
