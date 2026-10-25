@@ -1477,10 +1477,12 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
 
   // A menu in it ("Add content" on the docs' home): picking from it closes both.
   await team.goto(`/app/${slug}/docs`);
-  const insights = team.getByRole("link", { name: "Insights" });
   await more.click();
+  await expect(team.getByRole("link", { name: "Insights" })).toBeVisible();
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
-  await expect(insights).toBeHidden();
+  // The dialog hides the page from role queries, so both menus are checked by their markup.
+  await expect(team.locator('button[aria-label="More actions"]')).toHaveAttribute("aria-expanded", "false");
+  await expect(team.locator('[role="menu"]')).toHaveCount(0);
 });
