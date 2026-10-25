@@ -1,4 +1,4 @@
-import { type DiffLine, diffLines } from "@/lib/line-diff";
+import type { DiffLine } from "@/lib/line-diff";
 
 /** Paragraphs from diffLines: removed ones struck through, added ones highlighted. */
 export function DiffLines({ lines }: { lines: DiffLine[] }) {
