@@ -152,6 +152,9 @@ export type StripeSubscription = {
   metadata: Record<string, string>;
   cancel_at_period_end: boolean;
   cancel_at: number | null;
+  /** When it started, and when it ended (null while it hasn't). */
+  created: number;
+  ended_at: number | null;
   items: { data: { id: string; price: { id: string }; current_period_end: number }[] };
 };
 
@@ -160,6 +163,7 @@ export type StripeInvoice = {
   id: string;
   status: string | null;
   billing_reason: string | null;
+  status_transitions?: { paid_at?: number | null };
   parent: { subscription_details?: { subscription?: string | null } | null } | null;
   lines: { data: { period: { end: number }; pricing: { price_details?: { price?: string | null } | null } | null }[] };
 };
