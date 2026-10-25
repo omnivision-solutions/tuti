@@ -2,8 +2,9 @@ import { prisma } from "@tuti/db";
 import { takeBackCredits } from "@tuti/jobs";
 import { isBadgePrice, log } from "@tuti/shared";
 
-import { cancelSubscription, checkoutOf, getCharge, getInvoice, getSubscription, invoiceOf, removeSubscriptionItem } from "./stripe";
-import { PERIOD_INVOICES, syncSubscription } from "./subscriptions";
+import { cancelSubscription, checkoutOf, getCharge, getCheckoutSession, getInvoice, getSubscription, invoiceOf, removeSubscriptionItem } from "./stripe";
+import { grantPlanCredits, PERIOD_INVOICES, syncSubscription } from "./subscriptions";
+import { grantTopUp } from "./topups";
 
 /**
  * Refunds and disputes take back what was paid for (docs/plan.md, Plans): Stripe's webhook calls this
@@ -23,7 +24,17 @@ export async function takeBackCharge(chargeId: string): Promise<void> {
   const session = await checkoutOf(charge.payment_intent);
   const invoiceId = session ? null : await invoiceOf(charge.payment_intent);
   const paidFor = session ? { stripeSessionId: session } : invoiceId ? { stripeInvoiceId: invoiceId } : null;
-  const grant = paidFor && (await prisma.aiCreditGrant.findFirst({ where: paidFor, select: { id: true, projectId: true } }));
+  const find = () => paidFor && prisma.aiCreditGrant.findFirst({ where: paidFor, select: { id: true, projectId: true } });
+  let grant = await find();
+  // Stripe said it's refunded before saying it's paid: what it paid for is given first (once, as its paid
+  // event would), so taking it back now leaves nothing for that event to give later.
+  if (!grant && session) {
+    await grantTopUp(await getCheckoutSession(session));
+    grant = await find();
+  } else if (!grant && invoiceId) {
+    await grantPlanCredits(invoiceId);
+    grant = await find();
+  }
   if (grant) {
     const credits = await takeBackCredits(grant.id, share);
     log.info("AI credits taken back for a refunded or disputed payment", { projectId: grant.projectId, charge: charge.id, credits });

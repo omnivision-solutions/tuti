@@ -321,6 +321,11 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         const invoice = params.get("payment[type]") === "payment_intent" ? paid.get(params.get("payment[payment_intent]") ?? "")?.invoice : undefined;
         return send(200, { object: "list", data: invoice ? [{ object: "invoice_payment", invoice }] : [] });
       }
+      const sessionRead = /^\/v1\/checkout\/sessions\/([^/]+)$/.exec(path);
+      if (req.method === "GET" && sessionRead) {
+        const found = sessions.find((s) => s.id === sessionRead[1]);
+        return found ? send(200, { object: "checkout.session", ...found }) : send(404, { error: { message: `No such checkout.session: '${sessionRead[1]}'` } });
+      }
       const chargeRead = /^\/v1\/charges\/([^/]+)$/.exec(path);
       if (req.method === "GET" && chargeRead) {
         const found = charges.get(chargeRead[1]!);

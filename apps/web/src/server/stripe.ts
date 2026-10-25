@@ -220,3 +220,7 @@ export async function invoiceOf(paymentIntent: string): Promise<string | null> {
 
 /** Ends a subscription at once (its webhook then takes the plan, and the add-on with it, away). */
 export const cancelSubscription = (id: string) => stripe<{ status: string }>("DELETE", `/v1/subscriptions/${encodeURIComponent(id)}`);
+
+/** A Checkout Session as Stripe has it now. */
+export const getCheckoutSession = (id: string) =>
+  stripe<{ id: string; amount_total: number | null; metadata: Record<string, string> }>("GET", `/v1/checkout/sessions/${encodeURIComponent(id)}`);

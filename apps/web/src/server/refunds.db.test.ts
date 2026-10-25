@@ -120,3 +120,21 @@ test("the add-on's own charge refunded in full removes it, with nothing more cre
   expect(await call(getPlan, as(), {})).toMatchObject({ plan: "pro", badge: false });
   expect(await shown()).toBe(true);
 });
+
+test("refunded before Stripe says it's paid: the credits are given and taken back, and the paid event gives nothing more", async () => {
+  await call(topUpCredits, as(), { dollars: 10 });
+  const session = stripe.sessions.at(-1)!;
+  const paid = stripe.pay(session.id);
+  await deliver(stripe.refund(stripe.chargeFor(session.id).id));
+  await deliver(...paid);
+  expect(await balance()).toBe(0);
+
+  await call(subscribePlan, as(), { plan: "pro", interval: "month" });
+  const plan = stripe.sessions.at(-1)!;
+  const events = stripe.pay(plan.id);
+  const invoice = [...stripe.invoices.values()].find((each) => each.parent.subscription_details.subscription === plan.subscription)!;
+  await deliver(stripe.refund(stripe.chargeFor(invoice.id).id));
+  await deliver(...events);
+  expect(await balance()).toBe(0);
+  expect(await call(getPlan, as(), {})).toMatchObject({ plan: "free" });
+});
