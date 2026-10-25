@@ -157,7 +157,8 @@ export const setBadgeAddOn = defineOperation({
           for (const item of on ? [] : items) {
             await removeSubscriptionItem(item.id);
           }
-          await tx.project.update({ where: { id: projectId }, data: { poweredBy: !on } });
+          // Stripe made the change: saved with it, so it holds even if reading the subscription back fails (its webhook reconciles).
+          await tx.project.update({ where: { id: projectId }, data: { poweredBy: !on, badgeAddOn: on } });
         },
         // Stripe's answers come within their 15-second timeouts.
         { timeout: 40_000 },
