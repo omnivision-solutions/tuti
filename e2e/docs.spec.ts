@@ -1464,7 +1464,8 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await team.getByRole("button", { name: "Settings" }).click();
   const settings = team.getByRole("dialog", { name: "Article settings" });
   await expect(settings).toBeVisible();
-  await expect(history).toBeHidden();
+  // The dialog hides the page from role queries, so the menu is checked by its markup.
+  await expect(team.locator('button[aria-label="More actions"]')).toHaveAttribute("aria-expanded", "false");
   await team.keyboard.press("Escape");
   await expect(settings).toBeHidden();
   // Escape closes the menu too; from one of its actions, focus goes back to its button.
