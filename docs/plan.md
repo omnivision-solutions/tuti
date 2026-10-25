@@ -176,7 +176,7 @@ Settings was one long page of cards. What changes how the portal looks moves to 
 
 ## Licences: hiding "Powered by tuti" (asked 2026-10-21)
 
-The badge is Tuti's attribution on every portal, so hiding it is paid: a flat monthly fee per project of an installation, on tuti.so and self-hosted alike. Tuti signs each licence key with its private key; installations trust only the public keys in the code (no setting, env var or database edit replaces them), so getting around it means forking, which the licence terms cover. Keys come from tuti.so only: bought on tuti.so, then fetched and renewed by the installation (no pasted keys for now).
+The badge is Tuti's attribution on every portal, so hiding it is paid: a flat monthly fee per project of an installation, on tuti.so and self-hosted alike. The fee is $49 a month per project (decided 2026-10-25); on tuti.so it's an add-on to a paid plan only, never on the free plan (see Plans). Tuti signs each licence key with its private key; installations trust only the public keys in the code (no setting, env var or database edit replaces them), so getting around it means forking, which the licence terms cover. Keys come from tuti.so only: bought on tuti.so, then fetched and renewed by the installation (no pasted keys for now).
 
 - [x] "Powered by tuti" links to tuti.so on every installation (it linked to the installation's own `APP_URL`)
 - [x] Enforcement: an installation id (random, made by the migration); a licence key is `{ installation, project, exp }` signed with Tuti's Ed25519 key, checked offline against the public keys in the code. The portal shows the badge unless the project has a valid key (so turning `poweredBy` off in the database isn't enough), and `branding.update` refuses to hide it without one
@@ -185,7 +185,7 @@ The badge is Tuti's attribution on every portal, so hiding it is paid: a flat mo
 - [x] Settings → Branding: unticking "Powered by tuti" opens a dialog (the badge spreads the word and brings contributors; "Get a licence" on tuti.so with both ids; "Check now"); once licensed the box can be unticked and it shows "Licensed until …". The dialog hides the badge only when the check just succeeded: a key still valid from before, while tuti.so is unreachable or was asked a moment ago, doesn't
 - [x] AGPL §7(b) term requiring the attribution unless licensed: `ADDITIONAL-TERMS.md` (beside LICENSE, which stays the AGPL's text unchanged, so GitHub still recognises it), pointed to from the README and the footer's code. Hiding it any other way (custom CSS or HTML, editing the code) isn't keeping it. The CLA wasn't needed first after all: every commit so far is the maintainer's, so the copyright holders can add the term to all of it; the CLA is still due before the first outside contribution
 - [ ] A lawyer reviews `ADDITIONAL-TERMS.md` (its wording, and whether to name the copyright holder)
-- [ ] Payment on tuti.so (replaces activating licences by hand)
+- [ ] Payment on tuti.so (replaces activating licences by hand): $49 a month per project through Stripe. On tuti.so it's an add-on to the project's paid plan (refused on the free plan, and ending when the plan goes back to free); a self-hosted installation buys it for a project on its own
 
 ## Phase 6 — First real users
 
@@ -422,6 +422,26 @@ Every AI request a project causes is tracked; on Tuti's cloud, projects will pay
 - [x] An operator cap on the models projects may pick (`AI_MODEL_MAX_PRICE`, dollars per million output tokens; off by default): Settings → AI models only suggests and accepts models priced at or under it, and none without a price (from CodeRabbit on #216: tenant model choice widens what a request can cost before the zero-balance stop) Done (2026-10-25): `aiModels.update` refuses a model over the cap or without a price (`model_over_cap`, saying its price and the cap), Settings → AI models suggests only models under it and says the cap; the server's defaults aren't checked. Left: a pick saved before the cap was set (or lowered, or before its model's price went up) keeps working until it's changed
 - [x] Owners and admins get an email when the balance runs low (`AI_CREDITS_LOW`, in credits) and when it's out, once each until the next grant; a banner in the app while it's out. Done (2026-10-25): after each charge, and when a request is refused (credits that expire run out without a charge), `emailIfCreditsLow` emails owners and admins with verified addresses: under `AI_CREDITS_LOW` (default 100; 0 for only once out) "<project> is running low on AI credits", at 0 or below "<project> is out of AI credits", each with a link to Billing. Each is checked and claimed on the project under its lock before sending (`aiCreditsLowEmailedAt`, `aiCreditsOutEmailedAt`), so two charges at once send one; a new grant clears both, by a trigger that waits for that lock, so the operator's script and Stripe's webhook do too, and a grant made meanwhile either counts or clears the claim. A failed email isn't retried (logged). The banner is on every project page now (it was on Home and the changelog entry)
 - [ ] Billing from it: a report across projects for the operator (tuti.so): credits granted, paid and spent, and unpriced requests by model
+
+## Plans (asked 2026-10-25)
+
+What tuti.so sells, from a review of feedback, changelog and help center tools and of open-source apps with a paid cloud (2026-10-25): plans per project, never per voter or per seat; readers always unlimited; every feature stays in the open-source app, so self-hosting is complete and free (only the badge licence is paid, see Licences). The cloud sells hosting, included AI credits and support.
+
+Decided:
+- Hiding "Powered by tuti" is a $49 a month add-on, only on paid plans, not part of any plan (2026-10-25)
+
+Proposed, not decided yet (prices and limits to confirm):
+- Free: 1 project, 3 team members, a `*.tuti.so` address, the badge, one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
+- Pro, about $29 a month ($24 yearly): unlimited team members, custom domain, code changes, 1,000 AI credits a month
+- Business, about $99 a month ($79 yearly): Pro, plus a private portal, reader groups and readers by email, a portal under a path of your own site, 5,000 AI credits a month, priority support
+- Enterprise, by quote: SAML for the team, audit logs, an SLA, invoices
+- AI: a credit is 1 cent to customers (`AI_CREDITS_PER_TOPUP_DOLLAR` 100); the usage rate is set once real costs per answer and per code change are known (Settings → Usage), likely a 3–5× markup, still well under competitors' $0.20–0.99 per AI answer. Plan credits are a `PLAN` grant that ends with its billing period
+
+- [ ] Stripe subscriptions per project: Checkout to start a plan, Stripe's customer portal to change or cancel it, and webhooks for subscriptions and paid invoices (each paid invoice gives that period's plan credits)
+- [ ] The "Powered by tuti" add-on as a subscription item on a paid plan: hides the badge while both are paid; refused on the free plan; ends with the plan
+- [ ] Plan limits checked in one place (like `creditsEnabled()` for credits), off unless the server sells plans, so self-hosting keeps everything: team members, custom domain, private portal and reader groups, code changes
+- [ ] A pricing page on tuti.so
+- [ ] Refunds and disputes take back what they paid for (credits, plan, add-on) before plans go live
 
 ## Phase 11 — AI answers
 
