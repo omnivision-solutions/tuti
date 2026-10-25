@@ -14,6 +14,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
+import { BADGE_PRICE } from "@/lib/plans";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
@@ -473,7 +474,7 @@ function PoweredByField({
             </DialogDescription>
           </DialogHeader>
           {plan ? (
-            <p className="text-sm">To remove it from this project, add it to its plan in Billing: $49 a month, on Pro or Business.</p>
+            <p className="text-sm">To remove it from this project, add it to its plan in Billing: ${BADGE_PRICE} a month, on Pro or Business.</p>
           ) : (
             <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
           )}
