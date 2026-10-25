@@ -256,6 +256,9 @@ model Project {
   planStatus            String?
   planPeriodEnd         DateTime?
   planEndsAt            DateTime?
+  /// The "Powered by tuti" add-on ($49 a month) is on the live subscription: with it the project may hide the
+  /// badge, as with a licence key (server/license.ts). False once either the add-on or the plan ends.
+  badgeAddOn            Boolean      @default(false)
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
