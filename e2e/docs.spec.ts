@@ -609,9 +609,12 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await main.getByRole("list", { name: "Collections" }).getByRole("link", { name: /^Billing/ }).click();
   await expect(visitor).toHaveURL(/\/docs\/billing$/);
   await expect(main.getByRole("heading", { level: 2 })).toHaveText(["Invoices"]);
+  // Its articles as a card of rows, then a card for Invoices: its article, then Taxes (in it) as a folder that opens its own page.
+  await expect(main.getByRole("list", { name: "Articles" }).getByRole("listitem")).toHaveText(["Card payments"]);
   const invoices = main.getByRole("region", { name: "Invoices" });
-  await expect(invoices.getByRole("heading", { level: 3 })).toHaveText(["Taxes"]);
-  await expect(invoices.getByRole("listitem")).toHaveText(["Downloading invoices", "VAT rates"]);
+  await expect(invoices.getByRole("heading")).toHaveCount(1);
+  await expect(invoices.getByRole("listitem")).toHaveText(["Downloading invoices", "Taxes"]);
+  await expect(invoices.getByRole("link", { name: "Taxes" })).toHaveAttribute("href", /\/docs\/taxes$/);
   await checkpoint(visitor, "portal-docs-nested");
   // A collection's page: the ones in it a level up; in the tree, its branch open and the rest closed.
   await invoices.getByRole("link", { name: "Invoices", exact: true }).click();
