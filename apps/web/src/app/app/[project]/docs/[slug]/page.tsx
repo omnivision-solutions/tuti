@@ -7,7 +7,6 @@ import { notFound } from "next/navigation";
 
 import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
-import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
 import { DocsFilter } from "@/components/docs-tree";
@@ -61,8 +60,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
 
   return (
     <>
-      <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
       <PageHeader
+        back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         // The form's title field shows it, right under this.
         title={<span className="sr-only">{article.title}</span>}
         description={

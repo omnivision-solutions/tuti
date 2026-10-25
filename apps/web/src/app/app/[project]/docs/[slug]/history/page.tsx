@@ -2,7 +2,6 @@ import { prisma } from "@tuti/db";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/back-link";
 import { RestoreVersionButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ArticleDiff } from "@/components/article-diff";
@@ -47,8 +46,8 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
 
   return (
     <>
-      <BackLink href={href}>{article.title}</BackLink>
       <PageHeader
+        back={{ href, label: article.title }}
         title="History"
         description={`Every save that changed “${article.title}”, newest first. The latest ${ARTICLE_REVISIONS_KEPT} are kept.`}
         actions={<DocsFilter />}
