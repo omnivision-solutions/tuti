@@ -128,6 +128,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "credits.get": () => ({}),
   // Like credits.get: admins only in the app (Buy credits); a Stripe Checkout page from the local fake.
   "credits.topUp": () => ({ dollars: 10 }),
+  // Like credits.topUp, with plans on for it only; plan.manage opens Stripe's portal for the project's customer (see beforeAll).
+  "plan.get": () => ({}),
+  "plan.subscribe": () => ({ plan: "pro", interval: "month" }),
+  "plan.manage": () => ({}),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),
@@ -183,6 +187,8 @@ beforeAll(async () => {
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
+  // A Stripe customer (it had a plan once), for plan.manage.
+  await prisma.project.update({ where: { id: project.id }, data: { stripeCustomerId: "cus_matrix" } });
   const other = await createProject(owner);
   keys = {
     read: (await createApiKey(project.slug, "Read", "READ")).key!,
@@ -402,6 +408,7 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
+  vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   const before = await snapshot();
