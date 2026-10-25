@@ -36,6 +36,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // A collection to put it in.
   await team.getByRole("link", { name: "Docs", exact: true }).click();
   await expect(team.getByText("No articles yet")).toBeVisible();
+  // The portal's docs are an icon beside the title.
+  await expect(team.getByRole("link", { name: "Open your portal's docs" })).toHaveAttribute("href", `${portalUrl(slug)}/docs`);
   // Docs without tabs have one "+" at the top of the tree.
   await teamTree.getByRole("button", { name: "Add to your docs" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { ChevronRightIcon, ExternalLinkIcon, FileTextIcon, GripVerticalIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, FileTextIcon, GripVerticalIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type DragEvent, type ReactNode, useContext, useEffect, useRef, useState, useTransition } from "react";
@@ -197,7 +197,7 @@ const rowLink =
   "flex min-w-0 flex-1 items-center gap-2 py-1.5 break-words rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:font-medium";
 
 /**
- * The team's docs beside every Docs page in the app: a "Manage" group, each tab with its collections
+ * The team's docs beside every Docs page in the app: each tab with its collections
  * (5 levels deep at most, each with its articles, then the collections in it) and the articles in none
  * (on the first tab), in the order readers see them, then "New tab" and "Recently deleted". A tab or a
  * collection opens its page, an article its editor; the page's own row is marked and its branch open.
@@ -216,8 +216,6 @@ export function DocsWorkspace({
   uncollected,
   access,
   parents,
-  portal,
-  admin,
   deleted,
   children,
 }: {
@@ -229,10 +227,6 @@ export function DocsWorkspace({
   /** For a new collection's "Who can read" and where it can go (collections less than 5 levels deep, named with the ones they're in). */
   access: AccessChoices;
   parents: { slug: string; name: string }[];
-  /** The portal's docs. */
-  portal: string;
-  /** Owners and admins get links to Settings' Branding and Groups. */
-  admin: boolean;
   /** How many articles were deleted lately (they can be restored from the Docs home). */
   deleted: number;
   children: ReactNode;
@@ -619,7 +613,7 @@ export function DocsWorkspace({
     })
     .filter(Boolean);
 
-  const manageLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
+  const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
       <div data-slot="docs-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
@@ -639,23 +633,6 @@ export function DocsWorkspace({
               <h2 className="font-heading font-semibold">Docs</h2>
               <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by title" aria-label="Filter docs" className="h-8" />
             </div>
-            <nav aria-label="Manage docs" className="flex flex-col gap-0.5">
-              <p className="px-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">Manage</p>
-              <a href={portal} target="_blank" rel="noopener noreferrer" className={manageLink}>
-                Open portal
-                <ExternalLinkIcon aria-hidden className="size-3.5 text-muted-foreground" />
-              </a>
-              {admin && (
-                <>
-                  <Link href={`/app/${projectSlug}/customize`} className={manageLink}>
-                    Customize
-                  </Link>
-                  <Link href={`/app/${projectSlug}/settings#groups`} className={manageLink}>
-                    Groups
-                  </Link>
-                </>
-              )}
-            </nav>
             <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
               {tabs.length > 0 ? (
                 <ul aria-label="Tabs" className="flex flex-col gap-3">
@@ -677,7 +654,7 @@ export function DocsWorkspace({
             <div className="flex flex-col gap-0.5 border-t pt-2">
               <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
               {deleted > 0 && (
-                <Link href={`${base}#recently-deleted`} className={manageLink}>
+                <Link href={`${base}#recently-deleted`} className={footerLink}>
                   <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
                   Recently deleted
                 </Link>
