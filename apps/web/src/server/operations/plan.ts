@@ -138,6 +138,7 @@ export const setBadgeAddOn = defineOperation({
       }
       return { on: false };
     }
+    // Adding charges at once, so not while a payment is failing; removing only lowers the bill, so always.
     if (on && project.planStatus === "past_due") {
       throw new OperationError(409, "payment_failing", "The last payment didn't go through. Update the card in Manage plan first.");
     }
@@ -163,7 +164,7 @@ export const setBadgeAddOn = defineOperation({
         throw new OperationError(402, "payment_failed", "The payment didn't go through. Update the card in Manage plan, then try again.");
       }
       log.error('Changing the "Powered by tuti" add-on on Stripe failed', { projectId, on, error });
-      throw new OperationError(502, "stripe_failed", "Couldn't reach Stripe. Try again in a moment.");
+      throw new OperationError(502, "stripe_failed", "Couldn't confirm the change with Stripe: it may have gone through. Check Billing in a moment before trying again.");
     }
     // Stripe's webhook says so too; read now so the badge changes at once.
     await syncSubscription(subscription);
