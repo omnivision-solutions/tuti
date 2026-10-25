@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { planFor, planIncludes, teamLimit } from "./plans";
+import { planFor, planIncludes, planOfPrice, planPrice, teamLimit } from "./plans";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -21,4 +21,16 @@ test("with plans: Free has 3 team members and none of the rest; Pro adds a domai
   expect(features.map((feature) => planIncludes("BUSINESS", feature))).toEqual([true, true, true, true]);
   expect([teamLimit("FREE"), teamLimit("PRO"), teamLimit("BUSINESS")]).toEqual([3, null, null]);
   expect(features.map(planFor)).toEqual(["PRO", "PRO", "BUSINESS", "BUSINESS"]);
+});
+
+test("a plan's env var is the price sold, then older ones still recognised", () => {
+  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", " price_new , price_old ");
+  expect(planPrice("PRO", "month")).toBe("price_new");
+  expect([planOfPrice("price_new"), planOfPrice("price_old"), planOfPrice("price_other")]).toEqual([
+    { plan: "PRO", interval: "month" },
+    { plan: "PRO", interval: "month" },
+    null,
+  ]);
+  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", "");
+  expect(planPrice("PRO", "month")).toBeNull();
 });

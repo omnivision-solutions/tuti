@@ -14,16 +14,26 @@ const PRICE_ENV = {
   BUSINESS: { month: "STRIPE_PRICE_BUSINESS_MONTHLY", year: "STRIPE_PRICE_BUSINESS_YEARLY" },
 } as const;
 
-/** The Stripe price a plan is sold at (STRIPE_PRICE_<PLAN>_<MONTHLY|YEARLY>), or null where it isn't for sale. */
+/**
+ * Stripe prices from an env var: the one sold first, then any older ones, comma-separated. Customers who
+ * subscribed at an older price keep their plan when it's replaced.
+ */
+export const pricesIn = (name: string) =>
+  (process.env[name] ?? "")
+    .split(",")
+    .map((price) => price.trim())
+    .filter(Boolean);
+
+/** The Stripe price a plan is sold at (the first of STRIPE_PRICE_<PLAN>_<MONTHLY|YEARLY>), or null where it isn't for sale. */
 export function planPrice(plan: PaidPlan, interval: PlanInterval): string | null {
-  return process.env[PRICE_ENV[plan][interval]]?.trim() || null;
+  return pricesIn(PRICE_ENV[plan][interval])[0] ?? null;
 }
 
-/** Which plan a Stripe price is, or null for any other price. */
+/** Which plan a Stripe price is (sold now, or before), or null for any other price. */
 export function planOfPrice(price: string | null | undefined): { plan: PaidPlan; interval: PlanInterval } | null {
   for (const plan of ["PRO", "BUSINESS"] as const) {
     for (const interval of ["month", "year"] as const) {
-      if (price && planPrice(plan, interval) === price) {
+      if (price && pricesIn(PRICE_ENV[plan][interval]).includes(price)) {
         return { plan, interval };
       }
     }
@@ -32,16 +42,17 @@ export function planOfPrice(price: string | null | undefined): { plan: PaidPlan;
 }
 
 /**
- * The add-on hiding "Powered by tuti" ($49 a month), priced for a plan billed each `interval`
- * (STRIPE_PRICE_BADGE_MONTHLY, STRIPE_PRICE_BADGE_YEARLY: a subscription's prices bill alike), or null
+ * The add-on hiding "Powered by tuti" ($49 a month), priced for a plan billed each `interval` (the first
+ * of STRIPE_PRICE_BADGE_MONTHLY, STRIPE_PRICE_BADGE_YEARLY: a subscription's prices bill alike), or null
  * where it isn't sold.
  */
 export function badgePrice(interval: PlanInterval): string | null {
-  return process.env[interval === "month" ? "STRIPE_PRICE_BADGE_MONTHLY" : "STRIPE_PRICE_BADGE_YEARLY"]?.trim() || null;
+  return pricesIn(interval === "month" ? "STRIPE_PRICE_BADGE_MONTHLY" : "STRIPE_PRICE_BADGE_YEARLY")[0] ?? null;
 }
 
-/** Whether a Stripe price is the "Powered by tuti" add-on's. */
-export const isBadgePrice = (price: string | null | undefined) => Boolean(price) && (price === badgePrice("month") || price === badgePrice("year"));
+/** Whether a Stripe price is the "Powered by tuti" add-on's (sold now, or before: see pricesIn). */
+export const isBadgePrice = (price: string | null | undefined) =>
+  Boolean(price) && [...pricesIn("STRIPE_PRICE_BADGE_MONTHLY"), ...pricesIn("STRIPE_PRICE_BADGE_YEARLY")].includes(price!);
 
 /** Plans can be bought: plans on, and Stripe set up (its secret key and the webhook's signing secret). */
 export function planSalesEnabled(): boolean {

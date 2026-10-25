@@ -12,7 +12,8 @@ import { getInvoice, getSubscription } from "./stripe";
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
-const NO_PLAN = { plan: "FREE", stripeSubscriptionId: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
+/** The free plan. The subscription stays recorded as the one that last held the plan (see grantPlanCredits). */
+const NO_PLAN = { plan: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
 const at = (seconds: number) => new Date(seconds * 1000);
 
@@ -41,7 +42,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
       }
       const periodEnd = at(item.current_period_end);
       const { count } = await tx.project.updateMany({
-        where: { id: projectId, OR: [{ stripeSubscriptionId: null }, { stripeSubscriptionId: id }] },
+        // Its own, or the plan is free (none yet, or the last one ended).
+        where: { id: projectId, OR: [{ stripeSubscriptionId: id }, { plan: "FREE" }] },
         data: {
           plan: paid.plan,
           stripeSubscriptionId: id,
@@ -70,7 +72,8 @@ const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often Stripe
  * says it's paid, and also when it says so only after the subscription ended (Stripe's events come in any
- * order). Not for a second subscription while another holds the project's plan (logged for a refund).
+ * order). Only for the subscription holding the project's plan or the last one to (it stays recorded once
+ * it ends), or any before the first: never a second one, rejected while another held the plan.
  */
 export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const invoice = await getInvoice(invoiceId);
@@ -81,7 +84,8 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
-  const holds = projectId && (await prisma.project.count({ where: { id: projectId, OR: [{ stripeSubscriptionId: subscription }, { stripeSubscriptionId: null }] } }));
+  const holds =
+    projectId && (await prisma.project.count({ where: { id: projectId, OR: [{ stripeSubscriptionId: subscription }, { stripeSubscriptionId: null }] } }));
   if (!holds || !line || !paid) {
     return;
   }
