@@ -462,8 +462,9 @@ export function ChangelogEntryActions({
       }
     });
 
+  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="contents">
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
         <AlertDialogContent>

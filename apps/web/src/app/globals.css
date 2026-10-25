@@ -11,6 +11,14 @@
     }
   }
 }
+/* In the app on phones, where a page's actions are a menu from the top bar (PageActions). */
+@custom-variant phonebar {
+  @media (width < 48rem) {
+    [data-slot="sidebar-inset"] & {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
