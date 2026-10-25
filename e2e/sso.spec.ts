@@ -78,8 +78,7 @@ test("a collection for one reader group: people the app signs in with that group
 
   // Without groups, "Specific groups" in the collection dialog points to Settings → Groups.
   await owner.goto(`/app/${slug}/docs`);
-  const tree = owner.getByRole("navigation", { name: "Docs", exact: true });
-  await tree.getByRole("button", { name: "Add to your docs" }).click();
+  await owner.getByRole("button", { name: "Add content" }).click();
   await owner.getByRole("menuitem", { name: "New collection" }).click();
   const dialog = owner.getByRole("dialog");
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
@@ -106,7 +105,7 @@ test("a collection for one reader group: people the app signs in with that group
 
   // "Specific groups" on a new collection: the group, picked from the list.
   await owner.goto(`/app/${slug}/docs`);
-  await tree.getByRole("button", { name: "Add to your docs" }).click();
+  await owner.getByRole("button", { name: "Add content" }).click();
   await owner.getByRole("menuitem", { name: "New collection" }).click();
   await dialog.getByLabel("Name").fill("Enterprise");
   await dialog.getByRole("radio", { name: "Specific groups" }).check();
@@ -115,7 +114,7 @@ test("a collection for one reader group: people the app signs in with that group
   await dialog.getByRole("button", { name: "Add collection" }).click();
   await expect(owner.getByText("Collection added")).toBeVisible();
   // Its page's Access says so.
-  await tree.getByRole("link", { name: "Enterprise", exact: true }).click();
+  await owner.getByRole("region", { name: "Enterprise" }).getByRole("link", { name: "Enterprise", exact: true }).click();
   await owner.getByRole("tab", { name: "Access" }).click();
   await expect(owner.getByRole("tabpanel", { name: "Access" }).getByRole("checkbox", { name: "Enterprise customers" })).toBeChecked();
   await checkpoint(owner, "team-docs-collection-groups");
@@ -189,7 +188,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   await articleSettings.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Settings saved")).toBeVisible();
   await owner.goto(`/app/${slug}/docs`);
-  await expect(owner.getByRole("region", { name: "Articles" }).getByRole("listitem").filter({ hasText: "Pricing" }).getByText("Signed-in", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "Basics" }).getByRole("listitem").filter({ hasText: "Pricing" }).getByText("Signed-in", { exact: true })).toBeVisible();
 
   // Someone signed out doesn't find it; anyone signed in on the portal reads it.
   const visitor = await newPerson(browser, portalUrl(slug));
@@ -204,7 +203,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
   // The Enterprise tab, for the group: "Who can read" in its page's Access.
   const tree = owner.getByRole("navigation", { name: "Docs", exact: true });
   const access = owner.getByRole("tabpanel", { name: "Access" });
-  await tree.getByRole("link", { name: "Enterprise", exact: true }).click();
+  await owner.getByRole("heading", { name: "Enterprise" }).getByRole("link").click();
   await owner.getByRole("tab", { name: "Access" }).click();
   await expect(access.getByRole("radio", { name: "Inherit" })).toBeChecked();
   await access.getByRole("radio", { name: "Specific groups" }).check();

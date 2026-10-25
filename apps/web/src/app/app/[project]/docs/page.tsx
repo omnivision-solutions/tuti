@@ -1,11 +1,13 @@
 import { prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
-import { ExternalLinkIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon, FileTextIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
-import { RestoreDeletedButton } from "@/components/docs";
+import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -18,11 +20,13 @@ import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
-import { accessBadgeFor } from "@/server/team-docs";
+import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
 
 /**
- * The team's docs: articles (drafts first, then latest edited) and articles deleted lately (which
- * can be restored). The tree beside it (the layout's) arranges them in tabs and collections.
+ * The team's docs at a glance, the whole width (no tree beside it; a tab's, a collection's or an
+ * article's page has it): each tab, its collections (each a card with its articles, then the
+ * collections in it) and, on the first, the articles in none, in the order readers see them; then
+ * articles deleted lately (which can be restored).
  */
 export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs">) {
   const { project: slug } = await props.params;
@@ -31,19 +35,11 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, deleted, access, portal] = await Promise.all([
+  const [docs, details, deleted, access, portal] = await Promise.all([
+    teamDocs(projectId),
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
-      orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
-      select: {
-        slug: true,
-        title: true,
-        publishedAt: true,
-        listing: true,
-        ...levelSelect,
-        collection: { select: { name: true } },
-        changes: { select: { articleId: true } },
-      },
+      select: { slug: true, publishedAt: true, listing: true, ...levelSelect, changes: { select: { articleId: true } } },
     }),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -62,6 +58,88 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
+  const detailsOf = new Map(details.map((d) => [d.slug, d]));
+  const base = `/app/${slug}/docs`;
+
+  const articleRows = (articles: { slug: string; title: string }[]) =>
+    articles.map(({ slug: articleSlug, title }) => {
+      const article = detailsOf.get(articleSlug);
+      return (
+        <ItemRow
+          key={articleSlug}
+          leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
+          title={
+            <Link href={`${base}/${articleSlug}`} className="hover:underline">
+              {title}
+            </Link>
+          }
+          badges={
+            article && (
+              <>
+                {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
+                {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
+              </>
+            )
+          }
+          meta={
+            article?.publishedAt
+              ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
+              : "Draft"
+          }
+        />
+      );
+    });
+
+  /** A top-level collection's card: its articles, then the collections in it (each opens its page). */
+  const collectionCard = (c: TeamDocs["collections"][number]) => {
+    const inside = docs.collections.filter((other) => other.parentId === c.id);
+    return (
+      <Card key={c.slug} role="region" aria-label={c.name}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {c.knownIcon && c.icon && <LucideIcon name={c.icon} className="text-muted-foreground" />}
+            <Link href={`${base}/collections/${c.slug}`} className="hover:underline">
+              {c.name}
+            </Link>
+            {badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
+          </CardTitle>
+          <CardDescription>{contentsMeta(c, docs)}</CardDescription>
+        </CardHeader>
+        {(c.articles.length > 0 || inside.length > 0) && (
+          <CardContent>
+            <ItemList>
+              {articleRows(c.articles)}
+              {inside.map((child) => (
+                <ItemRow
+                  key={child.slug}
+                  leading={child.knownIcon && child.icon ? <LucideIcon name={child.icon} className="text-muted-foreground" /> : undefined}
+                  title={
+                    <Link href={`${base}/collections/${child.slug}`} className="hover:underline">
+                      {child.name}
+                    </Link>
+                  }
+                  badges={badge(child) && <Badge variant="outline">{badge(child)}</Badge>}
+                  meta={contentsMeta(child, docs)}
+                  actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
+                />
+              ))}
+            </ItemList>
+          </CardContent>
+        )}
+      </Card>
+    );
+  };
+  const uncollectedCard = docs.uncollected.length > 0 && (
+    <Card role="region" aria-label="Not in a collection">
+      <CardHeader>
+        <CardTitle>Not in a collection</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ItemList>{articleRows(docs.uncollected)}</ItemList>
+      </CardContent>
+    </Card>
+  );
+  const top = (tab: string | null) => docs.collections.filter((c) => c.parent === null && c.tab === tab);
 
   return (
     <>
@@ -84,47 +162,38 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         description="Articles that answer your users' questions. Published ones show in your portal's docs."
         actions={
           <>
-            <Link href={`/app/${slug}/docs/insights`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={`${base}/insights`} className={buttonVariants({ variant: "outline" })}>
               Insights
             </Link>
-            <Link href={`/app/${slug}/docs/new`} className={buttonVariants()}>
-              New article
-            </Link>
+            <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />
           </>
         }
       />
-      {articles.length === 0 ? (
+      {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
+      {docs.tabs.length === 0 && docs.collections.length === 0 && docs.uncollected.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin." />
+      ) : docs.tabs.length === 0 ? (
+        <>
+          {top(null).map(collectionCard)}
+          {uncollectedCard}
+        </>
       ) : (
-        <Card role="region" aria-label="Articles">
-          <CardContent>
-            <ItemList>
-              {articles.map((article) => (
-                <ItemRow
-                  key={article.slug}
-                  title={
-                    <Link href={`/app/${slug}/docs/${article.slug}`} className="hover:underline">
-                      {article.title}
-                    </Link>
-                  }
-                  badges={
-                    <>
-                      {article.collection && <Badge variant="secondary">{article.collection.name}</Badge>}
-                      {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
-                      {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
-                    </>
-                  }
-                  meta={
-                    article.publishedAt
-                      ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
-                      : "Draft"
-                  }
-                />
-              ))}
-            </ItemList>
-          </CardContent>
-        </Card>
+        docs.tabs.map((tab, index) => (
+          <section key={tab.slug} aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-4">
+            <h2 id={`tab-${tab.slug}`} className="font-heading text-lg font-semibold">
+              <Link href={`${base}/tabs/${tab.slug}`} className="hover:underline">
+                {tab.name}
+              </Link>
+            </h2>
+            {top(tab.slug).map(collectionCard)}
+            {index === 0 && uncollectedCard}
+            {top(tab.slug).length === 0 && !(index === 0 && uncollectedCard) && <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>}
+          </section>
+        ))
       )}
+      <div>
+        <TabDialog projectSlug={slug} first={docs.tabs.length === 0 && docs.collections.length > 0} />
+      </div>
       {deleted.length > 0 && (
         <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">
           <CardHeader>
