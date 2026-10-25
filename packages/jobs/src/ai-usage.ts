@@ -1,7 +1,7 @@
 import { Prisma, prisma } from "@tuti/db";
 import { type Ai, type AiFeature, type AiUsage, creditsEnabled, creditsPerUsageDollar, defaultModel, log, type Meter } from "@tuti/shared";
 
-import { aiPaused, chargeCredits, OutOfCredits, toCredits } from "./credits";
+import { aiPaused, chargeCredits, emailIfCreditsLow, OutOfCredits, toCredits } from "./credits";
 
 /** A project's own model for each feature it picked one for (Settings → AI models); the others use the default. */
 export function projectModels(value: unknown): Partial<Record<AiFeature, string>> {
@@ -18,6 +18,8 @@ export function projectModels(value: unknown): Partial<Record<AiFeature, string>
  */
 export async function aiFor(projectId: string, feature: AiFeature): Promise<Ai> {
   if (await aiPaused(projectId)) {
+    // Also where credits that expired (no charge) first stop the AI.
+    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that AI credits are out failed", { projectId, error }));
     throw new OutOfCredits(projectId);
   }
   const project = await prisma.project.findUnique({ where: { id: projectId }, select: { aiModels: true } });
@@ -30,6 +32,7 @@ export async function aiFor(projectId: string, feature: AiFeature): Promise<Ai> 
  * cost is charged 0, and stays flagged by its missing cost). A failed write is logged, never thrown:
  * the feature already has its answer, which the provider already charged for (failing the feature too
  * would only waste it). The log has what the row would have, so a missed charge can be made by hand.
+ * A charge that leaves the balance low or out emails the owners and admins (emailIfCreditsLow).
  */
 function meter(projectId: string, feature: AiFeature): Meter {
   return async (usage: AiUsage) => {
@@ -47,6 +50,8 @@ function meter(projectId: string, feature: AiFeature): Meter {
       });
     } catch (error) {
       log.error("Recording AI usage failed", { projectId, feature, ...usage, credits: credits?.toNumber() ?? null, error });
+      return;
     }
+    await emailIfCreditsLow(projectId).catch((error: unknown) => log.error("Emailing that AI credits are low failed", { projectId, error }));
   };
 }

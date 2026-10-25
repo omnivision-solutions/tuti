@@ -1,12 +1,13 @@
 import { prisma } from "@tuti/db";
-import { aiFor, creditBalance, grantCredits } from "@tuti/jobs";
+import { aiFor, creditBalance, grantCredits, OutOfCredits } from "@tuti/jobs";
 import { type AiUsage, log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCredits } from "@/server/operations/credits";
 import { call } from "@/server/operations/run";
 import { getUsage } from "@/server/operations/usage";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { addMember, createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
 
 /** AI credits (docs/plan.md, AI usage per project): what each answered request is charged, from which grants, and the balance. */
 
@@ -115,6 +116,65 @@ test("requests charged at once all count", async () => {
   await grantCredits(project.id, "MANUAL", 100, { days: null });
   await Promise.all(Array.from({ length: 20 }, () => answered(0.01)));
   expect(await balance()).toBeCloseTo(80, 6);
+});
+
+/** Who got the project's email with `subject`, once per email sent. */
+const emailed = (subject: string) =>
+  mailbox.emails
+    .filter((email) => email.subject === `${project.name} ${subject}`)
+    .flatMap((email) => email.to)
+    .sort();
+
+test("owners and admins with verified addresses are emailed once when credits run low, once when they're out, and again after a grant", async () => {
+  vi.stubEnv("AI_CREDITS_LOW", "50");
+  const [admin, member, unverified] = await Promise.all([addMember(project.id, "ADMIN"), addMember(project.id, "MEMBER"), addMember(project.id, "ADMIN")]);
+  await prisma.user.updateMany({ where: { id: { in: [owner.id, admin.id, member.id] } }, data: { emailVerified: true } });
+  const told = [owner.email, admin.email].sort();
+  await grantCredits(project.id, "MANUAL", 100, { days: null });
+
+  await answered(0.4);
+  expect(emailed("is running low on AI credits")).toEqual([]);
+  await answered(0.2);
+  expect(emailed("is running low on AI credits")).toEqual(told);
+  const email = mailbox.emails.find((sent) => sent.to.includes(owner.email) && sent.subject.endsWith("is running low on AI credits"))!;
+  expect(email.text).toContain(`${project.name} has 40 AI credits left.`);
+  expect(email.text).toContain(`http://tuti.localhost:3100/app/${project.slug}/settings/billing`);
+  await answered(0.1);
+  expect(emailed("is running low on AI credits")).toEqual(told);
+
+  // Two charges at once take it past 0: one email each.
+  await Promise.all([answered(0.2), answered(0.2)]);
+  expect(emailed("is out of AI credits")).toEqual(told);
+  await expect(aiFor(project.id, "answers")).rejects.toThrow(OutOfCredits);
+  expect(emailed("is out of AI credits")).toEqual(told);
+  // Not members, nor an admin whose address isn't verified.
+  expect(mailbox.emails.some((sent) => sent.subject.startsWith(project.name) && (sent.to.includes(member.email) || sent.to.includes(unverified.email)))).toBe(false);
+
+  // More credits, still under 50 once the debt is paid: they hear again.
+  await grantCredits(project.id, "MANUAL", 30, { days: null });
+  await answered(0.01);
+  expect(emailed("is running low on AI credits")).toEqual([...told, ...told].sort());
+});
+
+test("credits that expire stop the AI with an email, though nothing was charged", async () => {
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  await grantCredits(project.id, "MANUAL", 500, { days: 1 });
+  await answered(0.01);
+  expect(emailed("is out of AI credits")).toEqual([]);
+  vi.setSystemTime(Date.now() + 2 * 86_400_000);
+  await expect(aiFor(project.id, "answers")).rejects.toThrow(OutOfCredits);
+  expect(emailed("is out of AI credits")).toEqual([owner.email]);
+});
+
+test("AI_CREDITS_LOW=0 emails only once credits are out", async () => {
+  vi.stubEnv("AI_CREDITS_LOW", "0");
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await grantCredits(project.id, "MANUAL", 10, { days: null });
+  await answered(0.09);
+  expect(emailed("is running low on AI credits")).toEqual([]);
+  await answered(0.01);
+  expect(emailed("is out of AI credits")).toEqual([owner.email]);
 });
 
 test("every project gets AI_CREDITS_FREE once, lasting like a top-up, however many look at once", async () => {

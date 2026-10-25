@@ -1,9 +1,7 @@
 import { prisma } from "@tuti/db";
-import { aiPaused } from "@tuti/jobs";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { AiPaused } from "@/components/ai-paused";
 import { ResumeAllButton } from "@/components/code-changes";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -12,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
-import { getMembership, isAdminRole } from "@/server/membership";
+import { getMembership } from "@/server/membership";
 import { codeChangeList } from "@/server/operations/code-changes";
 
 /** The Feedback list's filters, from when it was the project's first page: a link with them still finds it. */
@@ -30,19 +28,15 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   if (!membership) {
     notFound();
   }
-  const [waiting, paused, pausedCount, outOfCredits] = await Promise.all([
+  const [waiting, paused, pausedCount] = await Promise.all([
     codeChangeList(membership.project.id, { waiting: true }),
     codeChangeList(membership.project.id, { paused: true }),
     prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
-    aiPaused(membership.project.id),
   ]);
 
   return (
     <>
       <PageHeader title="Home" description={`What's waiting for the ${membership.project.name} team.`} />
-      {outOfCredits && (
-        <AiPaused projectSlug={slug} stops="AI answers, changelog drafts and code changes are paused" admin={isAdminRole(membership.role)} />
-      )}
       <Card>
         <CardHeader>
           <CardTitle>Catch up</CardTitle>

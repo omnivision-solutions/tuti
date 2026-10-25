@@ -1,5 +1,6 @@
 import { type AiCreditSource, Prisma, prisma } from "@tuti/db";
-import { creditsEnabled, freeCredits, topupExpiryDays } from "@tuti/shared";
+import { creditsEmail, sendEmail } from "@tuti/email";
+import { creditsEnabled, freeCredits, log, lowCreditsAt, topupExpiryDays } from "@tuti/shared";
 
 import { lockProject } from "./running-draft";
 
@@ -106,4 +107,47 @@ export async function creditBalance(projectId: string): Promise<{ balance: numbe
 /** Whether the project's AI is paused: AI credits are on and its balance is 0 or below. */
 export async function aiPaused(projectId: string): Promise<boolean> {
   return creditsEnabled() && (await creditBalance(projectId)).balance <= 0;
+}
+
+/**
+ * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
+ * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant). Claimed before sending, so two charges at once
+ * send one; an email that fails then isn't retried (logged), as the banner in the app says it too.
+ */
+export async function emailIfCreditsLow(projectId: string): Promise<void> {
+  if (!creditsEnabled()) {
+    return;
+  }
+  const { balance } = await creditBalance(projectId);
+  const out = balance <= 0;
+  if (!out && balance >= lowCreditsAt()) {
+    return;
+  }
+  if (!process.env.APP_URL) {
+    log.warn("AI credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId, balance });
+    return;
+  }
+  const field = out ? "aiCreditsOutEmailedAt" : "aiCreditsLowEmailedAt";
+  const { count } = await prisma.project.updateMany({ where: { id: projectId, [field]: null }, data: { [field]: new Date() } });
+  if (count === 0) {
+    return;
+  }
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: {
+      name: true,
+      slug: true,
+      team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
+    },
+  });
+  const url = `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`;
+  const left = balance.toLocaleString("en", { maximumFractionDigits: balance >= 1 ? 0 : 2 });
+  const sent = await Promise.allSettled(
+    project.team.map(({ user }) => sendEmail({ to: user.email, ...creditsEmail({ projectName: project.name, out, left, url }) })),
+  );
+  for (const result of sent) {
+    if (result.status === "rejected") {
+      log.error("Emailing that AI credits are low failed", { projectId, out, error: result.reason });
+    }
+  }
 }
