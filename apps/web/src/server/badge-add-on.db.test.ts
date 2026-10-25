@@ -102,6 +102,26 @@ test("added, but Stripe can't be read back: the badge setting is saved with it, 
   expect(await shown()).toBe(false);
 });
 
+test("added, but saving fails afterwards: the badge setting is saved anyway, so once Stripe's webhook says it's paid the badge is hidden", async () => {
+  const subscription = await subscribe();
+  const realFetch = globalThis.fetch;
+  // Stripe answers the addition, but the request takes longer than the transaction may last.
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const response = await realFetch(input, init);
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.includes("/v1/subscription_items")) {
+      throw new Error("The connection dropped after Stripe answered");
+    }
+    return response;
+  });
+  await expect(badge(true)).rejects.toMatchObject({ status: 502 });
+  vi.restoreAllMocks();
+  expect(items(subscription)).toContain(FAKE_STRIPE_PRICES.STRIPE_PRICE_BADGE_MONTHLY.id);
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { poweredBy: true } })).toEqual({ poweredBy: false });
+  await deliver(stripe.update(subscription, {}));
+  expect(await shown()).toBe(false);
+});
+
 test("it ends with the plan: the badge is back, and can't be hidden again without it", async () => {
   const subscription = await subscribe();
   await badge(true);
