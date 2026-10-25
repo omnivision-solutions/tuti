@@ -1538,3 +1538,23 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await expect(team.locator('button[aria-label="More actions"]:visible')).toHaveAttribute("aria-expanded", "false");
   await expect(team.locator('[role="menu"]')).toHaveCount(0);
 });
+
+test("a long article's History scrolls in its panel, its changes whole", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const paragraphs = (word: string) => Array.from({ length: 30 }, (_, i) => `${word} paragraph ${i + 1}, long enough to take a line or two.`).join("\n\n");
+  const article = await api("/articles", { title: "A long one", body: paragraphs("First") });
+  await api(`/articles/${article.slug}`, { body: paragraphs("Second") }, "PATCH");
+
+  await team.goto(`/app/${slug}/docs/${article.slug}?history`);
+  const panel = team.getByRole("dialog", { name: "History" });
+  await panel.getByRole("link", { name: /^Saved / }).last().click();
+  const changes = panel.getByRole("region", { name: "Changes since this version" });
+  await expect(changes).toContainText("First paragraph 30");
+  // The changes aren't cut short to fit the window: the panel scrolls to their end, and to the versions under them.
+  expect(await changes.evaluate((card) => card.scrollHeight - card.clientHeight)).toBeLessThanOrEqual(1);
+  await panel.getByRole("link", { name: /^Saved / }).first().scrollIntoViewIfNeeded();
+  await expect(panel.getByRole("link", { name: /^Saved / }).first()).toBeInViewport();
+});
