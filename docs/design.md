@@ -57,10 +57,12 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   holds the page's title and actions (`PageHeader` puts them there), its
   description staying on the page.
   A page with sections of its own lists them under its header with `SubNav`
-  (Settings → Access, Single sign-on, …). Docs pages add the docs as a
-  tree in a column of their own beside the page (`DocsWorkspace`; a "Browse
-  docs" menu above it on phones); a tab's or a collection's page has
-  Content, Access and Settings tabs. On Docs pages the sidebar is folded
+  (Settings → Access, Single sign-on, …). The Docs home shows every tab
+  with its collections as cards (each with its articles, then the collections
+  in it). A tab's, a collection's or an article's page has the docs as a tree
+  in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
+  above it on phones); a tab's or a collection's page has Content, Access and
+  Settings tabs. On Docs pages the sidebar is folded
   away, as on Customize's.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: the section's settings in a panel on

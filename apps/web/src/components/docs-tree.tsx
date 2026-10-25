@@ -197,7 +197,7 @@ const rowLink =
   "flex min-w-0 flex-1 items-center gap-2 py-1.5 break-words rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:font-medium";
 
 /**
- * The team's docs beside every Docs page in the app: each tab with its collections
+ * The team's docs beside a tab's, a collection's and an article's page in the app: each tab with its collections
  * (5 levels deep at most, each with its articles, then the collections in it) and the articles in none
  * (on the first tab), in the order readers see them, then "New tab" and "Recently deleted". A tab or a
  * collection opens its page, an article its editor; the page's own row is marked and its branch open.
@@ -617,51 +617,59 @@ export function DocsWorkspace({
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
       <div data-slot="docs-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
-        <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
-          <button
-            type="button"
-            aria-expanded={browsing}
-            aria-controls="docs-tree"
-            onClick={() => setBrowsing(!browsing)}
-            className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
-          >
-            <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
-            Browse docs
-          </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
-            <div className="flex flex-col gap-2 px-2 pt-1">
-              <h2 className="font-heading font-semibold">Docs</h2>
-              <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by title" aria-label="Filter docs" className="h-8" />
+        {/* Beside a tab's, a collection's or an article's page, to go between them; the docs' home shows them all itself. */}
+        {current && (
+          <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">
+            <button
+              type="button"
+              aria-expanded={browsing}
+              aria-controls="docs-tree"
+              onClick={() => setBrowsing(!browsing)}
+              className="flex w-full items-center gap-2 px-6 py-3 text-sm font-medium lg:hidden"
+            >
+              <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
+              Browse docs
+            </button>
+            <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
+              <div className="flex flex-col gap-2 px-2 pt-1">
+                {/* Back to the docs' home, which shows them all. */}
+                <h2 className="font-heading font-semibold">
+                  <Link href={base} className="hover:underline">
+                    Docs
+                  </Link>
+                </h2>
+                <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by title" aria-label="Filter docs" className="h-8" />
+              </div>
+              <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
+                {tabs.length > 0 ? (
+                  <ul aria-label="Tabs" className="flex flex-col gap-3">
+                    {tabSections}
+                  </ul>
+                ) : (
+                  <div className="flex flex-col gap-0.5">
+                    <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
+                      <span className={sectionHeader}>Collections</span>
+                    </Row>
+                    {collectionRows(childrenOf(null), "Collections")}
+                    {uncollectedRows()}
+                  </div>
+                )}
+                {q && tabSections.length === 0 && !collections.some(shows) && !shownArticles(uncollected).length && (
+                  <p className="px-2 py-1.5 text-sm break-words text-muted-foreground">Nothing matches “{query.trim()}”.</p>
+                )}
+              </nav>
+              <div className="flex flex-col gap-0.5 border-t pt-2">
+                <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
+                {deleted > 0 && (
+                  <Link href={`${base}#recently-deleted`} className={footerLink}>
+                    <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
+                    Recently deleted
+                  </Link>
+                )}
+              </div>
             </div>
-            <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
-              {tabs.length > 0 ? (
-                <ul aria-label="Tabs" className="flex flex-col gap-3">
-                  {tabSections}
-                </ul>
-              ) : (
-                <div className="flex flex-col gap-0.5">
-                  <Row draggable={false} drop={undefined} handlers={{}} actions={<AddContentMenu label="Add to your docs" parent={null} article={null} />}>
-                    <span className={sectionHeader}>Collections</span>
-                  </Row>
-                  {collectionRows(childrenOf(null), "Collections")}
-                  {uncollectedRows()}
-                </div>
-              )}
-              {q && tabSections.length === 0 && !collections.some(shows) && !shownArticles(uncollected).length && (
-                <p className="px-2 py-1.5 text-sm break-words text-muted-foreground">Nothing matches “{query.trim()}”.</p>
-              )}
-            </nav>
-            <div className="flex flex-col gap-0.5 border-t pt-2">
-              <TabDialog projectSlug={projectSlug} first={tabs.length === 0 && collections.length > 0} />
-              {deleted > 0 && (
-                <Link href={`${base}#recently-deleted`} className={footerLink}>
-                  <Trash2Icon aria-hidden className="size-4 text-muted-foreground" />
-                  Recently deleted
-                </Link>
-              )}
-            </div>
-          </div>
-        </aside>
+          </aside>
+        )}
         <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">{children}</div>
       </div>
       {adding && (
