@@ -52,6 +52,17 @@ export function licensedUntil(
   }
 }
 
+/**
+ * Whether the project may hide "Powered by tuti": a valid licence key for it on this installation, or on
+ * tuti.so the add-on on its plan (`badgeAddOn`, true only while the plan and the add-on are both live).
+ */
+export function badgeLicensed(
+  project: { id: string; licenseKey: string | null; badgeAddOn: boolean },
+  installation: { id: string; latestSeenAt: Date | null },
+): boolean {
+  return project.badgeAddOn || licensedUntil(project.licenseKey, { installation: installation.id, project: project.id }, licenseNow(installation)) !== null;
+}
+
 /** Tuti's licence server. LICENSE_SERVER_URL is for tests: keys from any other server don't verify. */
 export function licenseServer(): string {
   return process.env.LICENSE_SERVER_URL || "https://tuti.so";

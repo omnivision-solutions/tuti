@@ -5,12 +5,14 @@ import type { AddressInfo } from "node:net";
 export const FAKE_STRIPE_KEY = "sk_test_fake";
 export const FAKE_STRIPE_WEBHOOK_SECRET = "whsec_test_fake";
 
-/** The fake's prices for plans, by the env var the app reads each from, and how often each bills. */
+/** The fake's prices for plans and the "Powered by tuti" add-on, by the env var the app reads each from, and how often each bills. */
 export const FAKE_STRIPE_PRICES = {
   STRIPE_PRICE_PRO_MONTHLY: { id: "price_fake_pro_monthly", interval: "month" },
   STRIPE_PRICE_PRO_YEARLY: { id: "price_fake_pro_yearly", interval: "year" },
   STRIPE_PRICE_BUSINESS_MONTHLY: { id: "price_fake_business_monthly", interval: "month" },
   STRIPE_PRICE_BUSINESS_YEARLY: { id: "price_fake_business_yearly", interval: "year" },
+  STRIPE_PRICE_BADGE_MONTHLY: { id: "price_fake_badge_monthly", interval: "month" },
+  STRIPE_PRICE_BADGE_YEARLY: { id: "price_fake_badge_yearly", interval: "year" },
 } as const;
 
 /** How often a price bills: the fake's own, or any other `price_…` monthly (a price made for a test). */
@@ -39,7 +41,7 @@ export type FakeCheckoutSession = {
   url: string;
 };
 
-/** A subscription, shaped like Stripe's (API version 2025-03-31.basil), with one item. */
+/** A subscription, shaped like Stripe's (API version 2025-03-31.basil): its plan is its first item. */
 export type FakeSubscription = {
   id: string;
   object: "subscription";
@@ -53,7 +55,7 @@ export type FakeSubscription = {
   items: { data: { id: string; price: { id: string }; current_period_start: number; current_period_end: number }[] };
 };
 
-/** An invoice, shaped like Stripe's (2025-03-31.basil): its subscription, and one line paying for a period of its price. */
+/** An invoice, shaped like Stripe's (2025-03-31.basil): its subscription, and a line per item paying for a period of its price. */
 export type FakeInvoice = {
   id: string;
   object: "invoice";
@@ -92,7 +94,9 @@ export type StripeFake = {
   pay(sessionId: string): FakeStripeEvent[];
   /** A subscription's next period, paid: its events. */
   renew(subscriptionId: string): FakeStripeEvent[];
-  /** Changes a subscription (its status, price, or cancelling at the period's end): its event (`.deleted` once canceled). */
+  /** Cards are declined while this is true: adding an item to a subscription fails (402). */
+  declining: boolean;
+  /** Changes a subscription (its status, its plan's price, or cancelling at the period's end): its event (`.deleted` once canceled). */
   update(subscriptionId: string, changes: { status?: string; price?: string; cancelAtPeriodEnd?: boolean }): FakeStripeEvent;
   close(): Promise<void>;
 };
@@ -150,7 +154,6 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
 
   /** A paid invoice for the subscription's current period. */
   const invoice = (sub: FakeSubscription, billingReason: string) => {
-    const item = sub.items.data[0]!;
     const paid: FakeInvoice = {
       id: id("in"),
       object: "invoice",
@@ -160,7 +163,11 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       status_transitions: { paid_at: tick() },
       parent: { type: "subscription_details", subscription_details: { subscription: sub.id, metadata: sub.metadata } },
       lines: {
-        data: [{ id: id("il"), period: { start: item.current_period_start, end: item.current_period_end }, pricing: { type: "price_details", price_details: { price: item.price.id } } }],
+        data: sub.items.data.map((each) => ({
+          id: id("il"),
+          period: { start: each.current_period_start, end: each.current_period_end },
+          pricing: { type: "price_details" as const, price_details: { price: each.price.id } },
+        })),
       },
     };
     invoices.set(paid.id, paid);
@@ -195,9 +202,10 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
 
   const renew = (subscriptionId: string) => {
     const sub = subscription(subscriptionId);
-    const item = sub.items.data[0]!;
-    item.current_period_start = item.current_period_end;
-    item.current_period_end = after(item.current_period_end, intervalOf(item.price.id)!);
+    for (const item of sub.items.data) {
+      item.current_period_start = item.current_period_end;
+      item.current_period_end = after(item.current_period_end, intervalOf(item.price.id)!);
+    }
     return [signed("customer.subscription.updated", sub), invoice(sub, "subscription_cycle")];
   };
 
@@ -217,6 +225,9 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     }
     return signed(sub.status === "canceled" ? "customer.subscription.deleted" : "customer.subscription.updated", sub);
   };
+
+  /** Events an API call causes, sent after it answers, as Stripe's are (the caller may hold locks its webhook needs). */
+  const sendLater = (events: FakeStripeEvent[]) => void setTimeout(() => void post(events), 0);
 
   const post = async (events: FakeStripeEvent[]) => {
     for (const { body, headers } of webhookUrl ? events : []) {
@@ -277,6 +288,31 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         const found = (read[1] === "subscriptions" ? subscriptions : invoices).get(decodeURIComponent(read[2]!));
         return found ? send(200, found) : send(404, { error: { message: `No such ${read[1]!.slice(0, -1)}: '${read[2]}'` } });
       }
+      if (req.method === "POST" && path === "/v1/subscription_items") {
+        const sub = subscriptions.get(field("subscription") ?? "");
+        const price = field("price");
+        const item = sub?.items.data[0];
+        if (!sub || !item || !price || intervalOf(price) !== intervalOf(item.price.id) || field("quantity") !== "1") {
+          return send(400, { error: { message: "expected a subscription, and one of a known price billed like it" } });
+        }
+        if (fake.declining) {
+          return send(402, { error: { type: "card_error", message: "Your card was declined." } });
+        }
+        const added = { id: id("si"), price: { id: price }, current_period_start: item.current_period_start, current_period_end: item.current_period_end };
+        sub.items.data.push(added);
+        sendLater([signed("customer.subscription.updated", sub)]);
+        return send(200, { object: "subscription_item", ...added });
+      }
+      const removing = /^\/v1\/subscription_items\/([^/]+)$/.exec(path);
+      if (req.method === "DELETE" && removing) {
+        const sub = [...subscriptions.values()].find((s) => s.items.data.some((item) => item.id === removing[1]));
+        if (!sub) {
+          return send(404, { error: { message: `No such subscription item: '${removing[1]}'` } });
+        }
+        sub.items.data = sub.items.data.filter((item) => item.id !== removing[1]);
+        sendLater([signed("customer.subscription.updated", sub)]);
+        return send(200, { id: removing[1], object: "subscription_item", deleted: true });
+      }
       if (req.method === "POST" && path === "/v1/billing_portal/sessions") {
         if (!field("customer") || !field("return_url")) {
           return send(400, { error: { message: "expected a customer and a return_url" } });
@@ -327,8 +363,9 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return {
+  const fake: StripeFake = {
     url,
+    declining: false,
     env: {
       STRIPE_SECRET_KEY: FAKE_STRIPE_KEY,
       STRIPE_WEBHOOK_SECRET: FAKE_STRIPE_WEBHOOK_SECRET,
@@ -345,4 +382,5 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     update,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
+  return fake;
 }

@@ -2,6 +2,7 @@
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +14,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { linksFrom } from "@/lib/forms";
 import { LICENSE_UNREACHABLE, licenseCheckOutcome } from "@/lib/license-check";
+import { BADGE_PRICE } from "@/lib/plans";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import { COLOR_SCHEMES, type ColorScheme, CONTACT_LABEL_MAX, LOGO_TEXT_MAX } from "@/lib/portal-look";
 import { uploadImage } from "@/lib/upload-image";
@@ -267,12 +269,16 @@ export function NavigationSettings({
   );
 }
 
-/** Customize → Powered by: "Powered by tuti" in the footer, which needs a licence to hide (see branding.update). */
+/** What hiding the badge takes where plans are sold (tuti.so): the add-on on the project's plan, bought on Billing. */
+type BadgePlan = { addOn: boolean; billingUrl: string };
+
+/** Customize → Powered by: "Powered by tuti" in the footer, which needs a licence (or on tuti.so the add-on) to hide (see branding.update). */
 export function PoweredBySettings({
   projectSlug,
   poweredBy,
   licensedUntil,
   buyLicenseUrl,
+  plan,
 }: {
   projectSlug: string;
   poweredBy: boolean;
@@ -280,13 +286,15 @@ export function PoweredBySettings({
   licensedUntil: Date | null;
   /** tuti.so/license for this installation and project. */
   buyLicenseUrl: string;
+  /** Where plans are sold; null elsewhere. */
+  plan: BadgePlan | null;
 }) {
   const { state, form } = useBrandingForm(projectSlug, "Saved", (data) => ({ poweredBy: data.get("poweredBy") === "on" }));
   return (
     <form {...form}>
       <input type="hidden" name="part" value="poweredBy" />
       <FieldGroup>
-        <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} />
+        <PoweredByField projectSlug={projectSlug} poweredBy={poweredBy} licensedUntil={licensedUntil} buyLicenseUrl={buyLicenseUrl} plan={plan} />
         {state.error && <FieldError>{state.error}</FieldError>}
       </FieldGroup>
     </form>
@@ -379,19 +387,22 @@ export function ImageField({
 const untilDate = (date: Date) => date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 /**
- * "Powered by tuti" in the footer: on, unless the project has a licence. Without one, unticking it
- * opens a dialog instead: why the badge matters, where to buy a licence, and Check now.
+ * "Powered by tuti" in the footer: on, unless the project has a licence (or the add-on on its plan).
+ * Without one, unticking it opens a dialog instead: why the badge matters, and where to buy a licence
+ * (and Check now), or where plans are sold, the add-on on Billing.
  */
 function PoweredByField({
   projectSlug,
   poweredBy,
   licensedUntil: initial,
   buyLicenseUrl,
+  plan,
 }: {
   projectSlug: string;
   poweredBy: boolean;
   licensedUntil: Date | null;
   buyLicenseUrl: string;
+  plan: BadgePlan | null;
 }) {
   const [shown, setShown] = useState(poweredBy);
   const box = useRef<HTMLInputElement>(null);
@@ -433,7 +444,7 @@ function PoweredByField({
           name="poweredBy"
           checked={shown}
           onChange={(event) => {
-            if (!event.target.checked && !licensedUntil) {
+            if (!event.target.checked && !licensedUntil && !plan?.addOn) {
               setMessage(null);
               setOpen(true);
               return;
@@ -445,7 +456,13 @@ function PoweredByField({
         Show &quot;Powered by tuti&quot; in the footer
       </label>
       <FieldDescription>
-        {licensedUntil ? `Licensed until ${untilDate(licensedUntil)}.` : "Hiding it needs a licence for this project."}
+        {plan?.addOn
+          ? "Hidden with the add-on on this project's plan."
+          : licensedUntil
+            ? `Licensed until ${untilDate(licensedUntil)}.`
+            : plan
+              ? "Hiding it is an add-on to a paid plan."
+              : "Hiding it needs a licence for this project."}
       </FieldDescription>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
@@ -456,7 +473,11 @@ function PoweredByField({
               the project maintained.
             </DialogDescription>
           </DialogHeader>
-          <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
+          {plan ? (
+            <p className="text-sm">To remove it from this project, add it to its plan in Billing: ${BADGE_PRICE} a month, on Pro or Business.</p>
+          ) : (
+            <p className="text-sm">To remove it from this project, get a licence: a flat monthly fee per project.</p>
+          )}
           {message && (
             <p role="status" className="text-sm text-muted-foreground">
               {message}
@@ -466,20 +487,28 @@ function PoweredByField({
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
               Keep the badge
             </Button>
-            <Button type="button" variant="outline" disabled={checking} onClick={() => void check()}>
-              {checking ? "Checking…" : "Check now"}
-            </Button>
-            <a
-              href={buyLicenseUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants()}
-              // From now on, this installation checks daily whether the licence has been bought. The dialog
-              // says what this first check found (or that it failed) when they come back from tuti.so.
-              onClick={() => void check()}
-            >
-              Get a licence
-            </a>
+            {plan ? (
+              <Link href={plan.billingUrl} className={buttonVariants()}>
+                See Billing
+              </Link>
+            ) : (
+              <>
+                <Button type="button" variant="outline" disabled={checking} onClick={() => void check()}>
+                  {checking ? "Checking…" : "Check now"}
+                </Button>
+                <a
+                  href={buyLicenseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants()}
+                  // From now on, this installation checks daily whether the licence has been bought. The dialog
+                  // says what this first check found (or that it failed) when they come back from tuti.so.
+                  onClick={() => void check()}
+                >
+                  Get a licence
+                </a>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

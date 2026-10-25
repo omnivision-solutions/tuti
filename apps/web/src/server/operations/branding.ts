@@ -4,7 +4,7 @@ import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
-import { installation as thisInstallation, licensedUntil, licenseNow } from "../license";
+import { badgeLicensed, installation as thisInstallation } from "../license";
 import { lastingMediaUrl } from "../media-urls";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
@@ -93,6 +93,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
         footerLinks: true,
         poweredBy: true,
         licenseKey: true,
+        badgeAddOn: true,
         articleActions: true,
         articleCopyMarkdown: true,
         articleOpenChatGpt: true,
@@ -147,8 +148,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
     headerLinks: links(project.headerLinks),
     footerLinks: links(project.footerLinks),
     // Checked here, where the portal reads it, so turning poweredBy off in the database isn't enough.
-    poweredBy:
-      project.poweredBy || !licensedUntil(project.licenseKey, { installation: installation.id, project: project.id }, licenseNow(installation)),
+    poweredBy: project.poweredBy || !badgeLicensed(project, installation),
     contentActions: {
       menu: project.articleActions,
       copyMarkdown: project.articleCopyMarkdown,
@@ -256,9 +256,9 @@ export const updateBranding = defineOperation({
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({
           where: { id: projectId },
-          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, seoImageId: true, licenseKey: true },
+          select: { brandLogoId: true, brandLogoDarkId: true, brandFaviconId: true, seoImageId: true, licenseKey: true, badgeAddOn: true },
         });
-        if (input.poweredBy === false && !licensedUntil(current.licenseKey, { installation: installation.id, project: projectId }, licenseNow(installation))) {
+        if (input.poweredBy === false && !badgeLicensed({ id: projectId, ...current }, installation)) {
           throw new OperationError(400, "invalid_input", 'Hiding "Powered by tuti" needs a licence for this project');
         }
         const names = Object.keys(IMAGES) as ImageName[];

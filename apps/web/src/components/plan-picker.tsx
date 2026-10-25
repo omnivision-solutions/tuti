@@ -1,11 +1,23 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
-import { PLAN_PRICES, planPriceText } from "@/lib/plans";
-import { manageSubscription, subscribe } from "@/server/credits";
+import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { manageSubscription, setBadge, subscribe } from "@/server/credits";
 
 /** Settings → Billing on the free plan: Pro or Business, monthly or yearly, then Stripe's payment page. */
 export function PlanPicker({ projectSlug, credits }: { projectSlug: string; credits: { PRO: number; BUSINESS: number } | null }) {
@@ -77,5 +89,45 @@ export function ManagePlan({ projectSlug }: { projectSlug: string }) {
       </div>
       {error && <FieldError>{error}</FieldError>}
     </div>
+  );
+}
+
+/** The "Powered by tuti" add-on on a paid plan: "Hide the badge" (after saying what it costs), or "Show the badge again". */
+export function BadgeAddOn({ projectSlug, on }: { projectSlug: string; on: boolean }) {
+  const [pending, startTransition] = useTransition();
+  const change = (hide: boolean) =>
+    startTransition(async () => {
+      const result = await setBadge(projectSlug, hide);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success(hide ? '"Powered by tuti" is hidden' : '"Powered by tuti" is back on your portal');
+      }
+    });
+  if (on) {
+    return (
+      <div>
+        <Button type="button" variant="outline" disabled={pending} onClick={() => change(false)}>
+          Show the badge again
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger render={<Button type="button" disabled={pending} />}>Hide the badge</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Hide &quot;Powered by tuti&quot;?</AlertDialogTitle>
+          <AlertDialogDescription>
+            ${BADGE_PRICE} a month is added to this project&apos;s plan. You pay for the rest of this billing period now, with the card on the plan.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => change(true)}>Hide the badge</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

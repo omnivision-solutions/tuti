@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { log, planCredits, planOfPrice } from "@tuti/shared";
+import { isBadgePrice, log, planCredits, planOfPrice } from "@tuti/shared";
 
 import { getInvoice, getSubscription } from "./stripe";
 
@@ -13,12 +13,12 @@ import { getInvoice, getSubscription } from "./stripe";
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
 /** The free plan. The subscription stays recorded as the one that last held the plan. */
-const NO_PLAN = { plan: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null } as const;
+const NO_PLAN = { plan: "FREE", planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
 const at = (seconds: number) => new Date(seconds * 1000);
 
 /**
- * Brings the project's plan in step with subscription `id` as Stripe has it now, not as an event said it
+ * Brings the project's plan (and its "Powered by tuti" add-on) in step with subscription `id` as Stripe has it now, not as an event said it
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
  * subscription, read under the lock: the last write is always from the latest read. A project has one
  * plan, so a second live subscription for it is logged for the operator to refund and changes nothing.
@@ -28,12 +28,15 @@ export async function syncSubscription(id: string): Promise<string | null> {
   return prisma.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(5, hashtext(${id}))`;
-      const subscription = await getSubscription(id);
-      const projectId = subscription.metadata?.projectId;
+      const projectId = (await getSubscription(id)).metadata?.projectId;
       if (!projectId) {
         log.warn("A Stripe subscription without a project: not one Tuti started", { subscription: id });
         return null;
       }
+      // The project's lock too, the one changing the add-on takes (plan.badge), then read again under it:
+      // a read made before such a change can't be written after it.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${projectId}))`;
+      const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
       if (!LIVE.has(subscription.status) || !item || !paid) {
@@ -52,6 +55,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
           planStatus: subscription.status,
           planPeriodEnd: periodEnd,
           planEndsAt: subscription.cancel_at ? at(subscription.cancel_at) : subscription.cancel_at_period_end ? periodEnd : null,
+          badgeAddOn: subscription.items.data.some((item) => isBadgePrice(item.price.id)),
         },
       });
       if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
@@ -59,8 +63,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
       }
       return projectId;
     },
-    // Stripe's answer comes within its 15-second timeout.
-    { timeout: 20_000 },
+    // Stripe's two answers come within their 15-second timeouts.
+    { timeout: 35_000 },
   );
 }
 

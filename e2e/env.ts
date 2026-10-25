@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from "node:crypto";
 
-// Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e).
+// Another port lets two checkouts run their journeys at once (E2E_PORT=3300 pnpm test:e2e): each uses it and the next one.
 const PORT = Number(process.env.E2E_PORT || 3200);
 if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
   throw new Error(`E2E_PORT must be a port number from 1 to 65535, not "${process.env.E2E_PORT}"`);
@@ -9,6 +9,11 @@ export const APP_URL = `http://localhost:${PORT}`;
 
 /** A project's portal; *.localhost resolves to this machine in Chromium. */
 export const portalUrl = (slug: string) => `http://${slug}.localhost:${PORT}`;
+
+/** The same app as Tuti's cloud, which sells plans (cloudEnv), on the next port and the same database: for Billing's journeys. */
+const CLOUD_PORT = PORT + 1;
+export const CLOUD_URL = `http://localhost:${CLOUD_PORT}`;
+export const cloudPortalUrl = (slug: string) => `http://${slug}.localhost:${CLOUD_PORT}`;
 
 /** The project whose portal is on the app's own domain (APP_PORTAL_PROJECT). */
 export const APP_PORTAL_SLUG = "e2e-app-portal";
@@ -40,8 +45,8 @@ export const serverEnv = {
   AI_CREDITS_PER_TOPUP_DOLLAR: "",
   AI_CREDITS_PER_USAGE_DOLLAR: "",
   AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
-  // Plans sold, like Tuti's cloud (Stripe's prices are the fake's), with the default credits a month.
-  PLANS: "on",
+  // A self-hosted server: no plans (the cloud's server sells them, below), so every feature is on.
+  PLANS: "",
   AI_CREDITS_PRO: "",
   AI_CREDITS_BUSINESS: "",
   HATCHET_CLIENT_TOKEN: "",
@@ -59,4 +64,12 @@ export const serverEnv = {
   LICENSE_PRIVATE_KEY: generateKeyPairSync("ed25519").privateKey.export({ format: "der", type: "pkcs8" }).toString("base64"),
   // And its licence checks ask itself, never tuti.so.
   LICENSE_SERVER_URL: APP_URL,
+};
+
+/** What the cloud's server changes: its address, and plans sold (Stripe's prices are the fake's), with the default credits a month. */
+export const cloudEnv = {
+  PORT: String(CLOUD_PORT),
+  APP_URL: CLOUD_URL,
+  PORTAL_URL_TEMPLATE: `http://{project}.localhost:${CLOUD_PORT}`,
+  PLANS: "on",
 };

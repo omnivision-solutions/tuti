@@ -41,13 +41,13 @@ export async function fillSignUp(page: Page, name: string, email?: string) {
   await page.getByRole("button", { name: "Sign up" }).click();
 }
 
-/** Creates a project from /app/new and waits for its dashboard. */
-export async function createProject(page: Page, name: string, slug: string) {
+/** Creates a project from /app/new and waits for its dashboard (`portal`: the portal's address on the page's server). */
+export async function createProject(page: Page, name: string, slug: string, portal = portalUrl) {
   await page.goto("/app/new");
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("URL").fill(slug);
   // It says the portal's address as it's typed.
-  await expect(page.getByText(`Your portal will be ${new URL(portalUrl(slug)).host}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`Your portal will be ${new URL(portal(slug)).host}`, { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create project" }).click();
   await page.waitForURL(`**/app/${slug}`);
 }

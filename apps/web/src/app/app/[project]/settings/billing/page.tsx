@@ -5,10 +5,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
-import { ManagePlan, PlanPicker } from "@/components/plan-picker";
+import { BadgeAddOn, ManagePlan, PlanPicker } from "@/components/plan-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
@@ -29,7 +29,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
   }
   const [{ balance, grants }, plan] = await Promise.all([
     creditsEnabled() ? creditBalance(project.id) : { balance: 0, grants: [] },
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true, badgeAddOn: true } }),
   ]);
   // Back from Stripe's payment page: the credits or the plan come with Stripe's word that it's paid, usually within seconds.
   const searchParams = await props.searchParams;
@@ -73,6 +73,25 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
           </CardContent>
+        </Card>
+      )}
+      {plansEnabled() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Hide &quot;Powered by tuti&quot;</CardTitle>
+            <CardDescription>
+              {plan.badgeAddOn
+                ? `Hidden: $${BADGE_PRICE} a month on this project's plan. It ends with the plan.`
+                : plan.plan === "FREE"
+                  ? `Paid plans can hide the badge at the foot of the portal for $${BADGE_PRICE} a month.`
+                  : `The badge at the foot of the portal: hide it for $${BADGE_PRICE} a month, added to this project's plan.`}
+            </CardDescription>
+          </CardHeader>
+          {plan.plan !== "FREE" && (plan.badgeAddOn || planSalesEnabled()) && (
+            <CardContent>
+              <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+            </CardContent>
+          )}
         </Card>
       )}
       {creditsEnabled() && (

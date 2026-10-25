@@ -1,7 +1,7 @@
 "use server";
 
 import { topUpCredits } from "./operations/credits";
-import { managePlan, subscribePlan } from "./operations/plan";
+import { managePlan, setBadgeAddOn, subscribePlan } from "./operations/plan";
 import type { Actor } from "./operations/define";
 import { asAdmin, call } from "./operations/run";
 
@@ -27,4 +27,11 @@ export async function subscribe(projectSlug: string, plan: "pro" | "business", i
 /** "Manage plan" (see plan.manage). */
 export async function manageSubscription(projectSlug: string): Promise<{ error?: string; url?: string }> {
   return stripePage(projectSlug, "Only project owners and admins can change the plan", async (context) => (await call(managePlan, context, {})).url);
+}
+
+/** "Hide the badge" and "Show the badge again": the "Powered by tuti" add-on on the plan (see plan.badge). */
+export async function setBadge(projectSlug: string, on: boolean): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change the plan", async (context) => {
+    await call(setBadgeAddOn, context, { on: Boolean(on) });
+  });
 }

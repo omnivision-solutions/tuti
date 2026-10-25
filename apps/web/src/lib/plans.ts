@@ -11,3 +11,6 @@ export const PLAN_PRICES = {
 /** "$39 a month", or for yearly "$32 a month, billed yearly". */
 export const planPriceText = (plan: keyof typeof PLAN_PRICES, interval: "month" | "year") =>
   `$${PLAN_PRICES[plan][interval]} a month${interval === "year" ? ", billed yearly" : ""}`;
+
+/** The add-on hiding "Powered by tuti", a month (decided 2026-10-25); a yearly plan pays twelve of them a year. */
+export const BADGE_PRICE = 49;
