@@ -134,6 +134,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await team.getByRole("button", { name: "Save draft" }).click();
   await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
   await expect(team.getByRole("paragraph").filter({ hasText: /^Draft$/ })).toBeVisible();
+  // Its title is in the top bar, after "← Docs" (the form's title field is under it).
+  const barTitle = team.getByRole("heading", { level: 1, name: "Inviting your team" });
+  expect((await barTitle.boundingBox())!.width).toBeGreaterThan(50);
 
   // Visitors don't see it yet.
   const visitor = await newPerson(browser, portalUrl(slug));
