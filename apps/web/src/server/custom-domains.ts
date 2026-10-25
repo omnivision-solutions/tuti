@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { liveDomain, portalAddress as lookUpPortalAddress, type PortalAddress } from "@tuti/jobs";
+import { liveDomain, portalAddress as lookUpPortalAddress, type PortalAddress, projectWith } from "@tuti/jobs";
 
 import { customDomainTarget } from "@/lib/custom-domains";
 import { BASE_PATTERN } from "@/lib/portal-base";
@@ -45,8 +45,8 @@ async function customDomainSlug(hostname: string): Promise<string | null> {
   }
   const started = forgets;
   const domain = await prisma.customDomain.findFirst({
-    // Live ones only: the same ones links go to (see liveDomain).
-    where: { hostname, ...liveDomain },
+    // Live ones only, on a plan with custom domains: the same ones links go to (see liveDomain, portalAddress).
+    where: { hostname, ...liveDomain, project: projectWith("customDomain") },
     select: { project: { select: { slug: true } } },
   });
   if (cache.size >= MAX_CACHED) {
@@ -90,7 +90,11 @@ export async function siteMount(projectSlug: string): Promise<{ origin: string; 
     return cached.mount;
   }
   const started = forgets;
-  const row = await prisma.siteMount.findFirst({ where: { project: { slug: projectSlug }, verifiedAt: { not: null } }, select: { origin: true, path: true } });
+  // On a plan with it, like portalAddress.
+  const row = await prisma.siteMount.findFirst({
+    where: { project: { slug: projectSlug, ...projectWith("sitePath") }, verifiedAt: { not: null } },
+    select: { origin: true, path: true },
+  });
   const mount = row && BASE_PATTERN.test(row.path) ? row : null;
   if (forgets === started) {
     if (mounts.size >= MAX_CACHED) {

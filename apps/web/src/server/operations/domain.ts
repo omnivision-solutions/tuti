@@ -10,6 +10,7 @@ import { certificateStatus, CloudflareError, cloudflareConfigured, createCustomH
 import { forgetCustomDomain, txtRecords } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 import { lockOwnAddress } from "./own-address";
+import { requirePlan } from "./plan";
 
 /**
  * A portal on its own domain (help.acme.com), Phase 10: the team adds it, points it at Tuti (a
@@ -94,7 +95,7 @@ export const getDomain = defineOperation({
 export const setDomain = defineOperation({
   name: "domain.set",
   summary:
-    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is",
+    "Use your own domain for the portal and its docs (e.g. help.example.com; one per project, replacing any other; not while the portal is under a path of your site, see site.set: remove that first): add the DNS records it returns, then domain.verify. Until then the portal stays where it is. Where plans are sold, on Pro and Business (402 otherwise; on a lower plan a domain set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
   path: "/domain",
   scope: "write",
@@ -105,6 +106,7 @@ export const setDomain = defineOperation({
     if (!customDomainTarget()) {
       throw new OperationError(400, "invalid_input", OFF);
     }
+    await requirePlan(projectId, "customDomain");
     const normalized = normalizeHostname(input.hostname);
     if ("error" in normalized) {
       throw new OperationError(400, "invalid_input", normalized.error);

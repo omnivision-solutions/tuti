@@ -12,6 +12,7 @@ import { normalizeSiteUrl } from "@/lib/site-mounts";
 import { forgetCustomDomain } from "../custom-domains";
 import { defineOperation, OperationError } from "./define";
 import { lockOwnAddress } from "./own-address";
+import { requirePlan } from "./plan";
 import { projectSlug } from "./read";
 
 /**
@@ -67,7 +68,7 @@ export const getSite = defineOperation({
 export const setSite = defineOperation({
   name: "site.set",
   summary:
-    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify",
+    "Put the portal under a path of your own site (e.g. https://example.com/portal; one per project, replacing any other; not while the portal has a custom domain, see domain.set: remove that first): make your site forward everything under that path, and /_tuti (the portal's scripts and styles), to the portal's Tuti address, paths and all (`forward`), then site.verify. Where plans are sold, on Business (402 otherwise; on a lower plan a path set before isn't served, and the portal is at its Tuti address)",
   method: "POST",
   path: "/site",
   scope: "write",
@@ -75,6 +76,7 @@ export const setSite = defineOperation({
   input: z.object({ url: z.string().max(500) }),
   example: { url: "https://example.com/portal" },
   run: async ({ projectId }, input) => {
+    await requirePlan(projectId, "sitePath");
     const normalized = normalizeSiteUrl(input.url);
     if ("error" in normalized) {
       throw new OperationError(400, "invalid_input", normalized.error);
