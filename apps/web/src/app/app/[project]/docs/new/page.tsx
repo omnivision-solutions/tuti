@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/back-link";
 import { ArticleForm } from "@/components/docs";
 import { PageHeader } from "@/components/page-header";
 import { collectionOptions } from "@/server/docs-queries";
@@ -18,8 +17,7 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
   const collections = await collectionOptions(membership.project.id);
   return (
     <>
-      <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
-      <PageHeader title="New article" description="It stays a draft until you publish it." />
+      <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" description="It stays a draft until you publish it." />
       <ArticleForm
         // Another "+" starts it afresh in its collection.
         key={String(collection ?? "")}

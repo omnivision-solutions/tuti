@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/back-link";
 import { DismissGapButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -41,8 +40,8 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
 
   return (
     <>
-      <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
       <PageHeader
+        back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         title="Insights"
         description={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
       />

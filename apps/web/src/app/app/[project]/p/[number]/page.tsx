@@ -3,7 +3,6 @@ import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/back-link";
 import { CommentForm } from "@/components/comment-form";
 import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
@@ -83,9 +82,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
 
   return (
     <>
-      <BackLink href={`/app/${slug}/feedback`}>Feedback</BackLink>
-
       <PageHeader
+        back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
         title={post.title}
         description={
           <>

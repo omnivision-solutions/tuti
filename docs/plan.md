@@ -58,6 +58,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] The docs tree is only the docs: Open portal, Customize and Groups left it (the sidebar has the last two); the portal's docs are an icon beside the Docs title (asked 2026-10-25)
 - [x] The Docs home shows all the docs the whole width, without the tree: each tab with its collections as cards (their articles, with who can read them and when they were published, then the collections in them) and the articles in no collection, with Add content and New tab. The tree is beside a tab's, a collection's and an article's page, to go between them; its Docs heading leads home (asked 2026-10-25)
 - [x] "Filter by title" is in the top bar on Docs pages (the home, a tab's, a collection's and an article's page): it filters the tree and the home's cards and rows alike, keeping what matches with the tab and collection it's in, and stays as you go between them (asked 2026-10-25)
+- [x] The way back ("← Docs", "← Feedback") is in the top bar, before the page's title (asked 2026-10-25)
 - [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
 - [x] Per-project post numbers (`#123`) for `/p/<title>-<number>` URLs

@@ -1,7 +1,6 @@
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/back-link";
 import { AnalyseCodeChangeButton, ApplyLikelyButton, ChangelogProposal, DocsProposal, PostProposal } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -29,8 +28,8 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
 
   return (
     <>
-      <BackLink href={`/app/${slug}/code-changes`}>Code changes</BackLink>
       <PageHeader
+        back={{ href: `/app/${slug}/code-changes`, label: "Code changes" }}
         title={change.title}
         description={
           <>
