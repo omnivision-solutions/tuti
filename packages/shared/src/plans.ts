@@ -31,6 +31,18 @@ export function planOfPrice(price: string | null | undefined): { plan: PaidPlan;
   return null;
 }
 
+/**
+ * The add-on hiding "Powered by tuti" ($49 a month), priced for a plan billed each `interval`
+ * (STRIPE_PRICE_BADGE_MONTHLY, STRIPE_PRICE_BADGE_YEARLY: a subscription's prices bill alike), or null
+ * where it isn't sold.
+ */
+export function badgePrice(interval: PlanInterval): string | null {
+  return process.env[interval === "month" ? "STRIPE_PRICE_BADGE_MONTHLY" : "STRIPE_PRICE_BADGE_YEARLY"]?.trim() || null;
+}
+
+/** Whether a Stripe price is the "Powered by tuti" add-on's. */
+export const isBadgePrice = (price: string | null | undefined) => Boolean(price) && (price === badgePrice("month") || price === badgePrice("year"));
+
 /** Plans can be bought: plans on, and Stripe set up (its secret key and the webhook's signing secret). */
 export function planSalesEnabled(): boolean {
   return plansEnabled() && Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);

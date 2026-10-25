@@ -132,6 +132,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "plan.get": () => ({}),
   "plan.subscribe": () => ({ plan: "pro", interval: "month" }),
   "plan.manage": () => ({}),
+  // Off on the free plan: nothing to remove (adding it is in plans.db.test.ts).
+  "plan.badge": () => ({ on: false }),
   // Like branding.update: admins only in the app. The team's keys keep working on a private portal (portal-access.db.test.ts).
   "portal.get": () => ({}),
   "portal.update": () => ({ access: "private", home: "docs" }),

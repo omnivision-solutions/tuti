@@ -11,8 +11,19 @@ const api = () => (process.env.STRIPE_API_URL || "https://api.stripe.com").repla
 /** The API version every request asks for, so what's read below has the shape it expects whatever the account's default. */
 const STRIPE_VERSION = "2025-03-31.basil";
 
-/** A request to Stripe's API (form-encoded, like Stripe's); its JSON answer. Throws on any failure. */
-async function stripe<T>(method: "GET" | "POST", path: string, form?: Record<string, string>): Promise<T> {
+/** Stripe refused a request: its HTTP status (402 for a card that was declined) and its message. */
+export class StripeError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "StripeError";
+  }
+}
+
+/** A request to Stripe's API (form-encoded, like Stripe's); its JSON answer. Throws on any failure (a StripeError when Stripe answered). */
+async function stripe<T>(method: "GET" | "POST" | "DELETE", path: string, form?: Record<string, string>): Promise<T> {
   const response = await fetch(`${api()}${path}`, {
     method,
     headers: {
@@ -25,7 +36,7 @@ async function stripe<T>(method: "GET" | "POST", path: string, form?: Record<str
   });
   const json = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
   if (!response.ok || !json) {
-    throw new Error(`Stripe ${method} ${path} failed (${response.status}): ${json?.error?.message ?? "no answer"}`);
+    throw new StripeError(response.status, `Stripe ${method} ${path} failed (${response.status}): ${json?.error?.message ?? "no answer"}`);
   }
   return json as T;
 }
@@ -116,6 +127,23 @@ export async function createPortal({ customer, returnUrl }: { customer: string; 
   return session.url;
 }
 
+/**
+ * Adds `price` to a subscription, charging what's left of the period at once: a card that's declined
+ * fails it (402) and nothing is added.
+ */
+export const addSubscriptionItem = (subscription: string, price: string) =>
+  stripe<{ id: string }>("POST", "/v1/subscription_items", {
+    subscription,
+    price,
+    quantity: "1",
+    proration_behavior: "always_invoice",
+    payment_behavior: "error_if_incomplete",
+  });
+
+/** Removes an item from its subscription; what's left of the period it paid for is credited to the next invoice. */
+export const removeSubscriptionItem = (id: string) =>
+  stripe<{ deleted?: boolean }>("DELETE", `/v1/subscription_items/${encodeURIComponent(id)}?proration_behavior=create_prorations`);
+
 /** A subscription, as read here (STRIPE_VERSION). */
 export type StripeSubscription = {
   id: string;
@@ -124,7 +152,7 @@ export type StripeSubscription = {
   metadata: Record<string, string>;
   cancel_at_period_end: boolean;
   cancel_at: number | null;
-  items: { data: { price: { id: string }; current_period_end: number }[] };
+  items: { data: { id: string; price: { id: string }; current_period_end: number }[] };
 };
 
 /** An invoice, as read here (STRIPE_VERSION): its subscription and, per line, the price and the period it pays for. */

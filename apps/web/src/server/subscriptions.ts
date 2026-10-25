@@ -1,6 +1,6 @@
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
-import { log, planCredits, planOfPrice } from "@tuti/shared";
+import { isBadgePrice, log, planCredits, planOfPrice } from "@tuti/shared";
 
 import { getInvoice, getSubscription } from "./stripe";
 
@@ -12,12 +12,12 @@ import { getInvoice, getSubscription } from "./stripe";
 /** Statuses in which a subscription's plan holds: past_due too, while Stripe retries a failed payment. Any other is the free plan. */
 const LIVE = new Set(["active", "trialing", "past_due"]);
 
-const NO_PLAN = { plan: "FREE", stripeSubscriptionId: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null } as const;
+const NO_PLAN = { plan: "FREE", stripeSubscriptionId: null, planInterval: null, planStatus: null, planPeriodEnd: null, planEndsAt: null, badgeAddOn: false } as const;
 
 const at = (seconds: number) => new Date(seconds * 1000);
 
 /**
- * Brings the project's plan in step with subscription `id` as Stripe has it now, not as an event said it
+ * Brings the project's plan (and its "Powered by tuti" add-on) in step with subscription `id` as Stripe has it now, not as an event said it
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
  * subscription, read under the lock: the last write is always from the latest read. A project has one
  * plan, so a second live subscription for it is logged for the operator to refund and changes nothing.
@@ -51,6 +51,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
           planStatus: subscription.status,
           planPeriodEnd: periodEnd,
           planEndsAt: subscription.cancel_at ? at(subscription.cancel_at) : subscription.cancel_at_period_end ? periodEnd : null,
+          badgeAddOn: subscription.items.data.some((item) => isBadgePrice(item.price.id)),
         },
       });
       if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
