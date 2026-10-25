@@ -111,27 +111,39 @@ export async function aiPaused(projectId: string): Promise<boolean> {
 
 /**
  * Emails the project's owners and admins (verified addresses) once its balance is under AI_CREDITS_LOW,
- * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant). Claimed before sending, so two charges at once
- * send one; an email that fails then isn't retried (logged), as the banner in the app says it too.
+ * and again once it's out, once each until the next grant (which clears both: a trigger on ai_credit_grant).
+ * Checked and claimed under the project's lock, which that trigger also takes: a grant either came first
+ * and counts, or comes after and clears the claim, and two charges at once send one email. An email that
+ * fails then isn't retried (logged), as the banner in the app says it too.
  */
 export async function emailIfCreditsLow(projectId: string): Promise<void> {
-  if (!creditsEnabled()) {
-    return;
-  }
-  const { balance } = await creditBalance(projectId);
-  const out = balance <= 0;
-  if (!out && balance >= lowCreditsAt()) {
+  // Most requests leave plenty: those need no lock.
+  const seen = creditsEnabled() ? (await creditBalance(projectId)).balance : null;
+  if (seen === null || (seen > 0 && seen >= lowCreditsAt())) {
     return;
   }
   if (!process.env.APP_URL) {
-    log.warn("AI credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId, balance });
+    log.warn("AI credits are low, but APP_URL isn't set, so nobody can be emailed a link to Billing", { projectId });
     return;
   }
-  const field = out ? "aiCreditsOutEmailedAt" : "aiCreditsLowEmailedAt";
-  const { count } = await prisma.project.updateMany({ where: { id: projectId, [field]: null }, data: { [field]: new Date() } });
-  if (count === 0) {
+  const claimed = await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const [{ _sum }, project] = await Promise.all([
+      tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
+      tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true, aiCreditsLowEmailedAt: true, aiCreditsOutEmailedAt: true } }),
+    ]);
+    const balance = (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).toNumber();
+    const out = balance <= 0;
+    if ((!out && balance >= lowCreditsAt()) || (out ? project.aiCreditsOutEmailedAt : project.aiCreditsLowEmailedAt)) {
+      return null;
+    }
+    await tx.project.update({ where: { id: projectId }, data: out ? { aiCreditsOutEmailedAt: new Date() } : { aiCreditsLowEmailedAt: new Date() } });
+    return { balance, out };
+  });
+  if (!claimed) {
     return;
   }
+  const { balance, out } = claimed;
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
     select: {

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { aiFor, creditBalance, grantCredits, OutOfCredits } from "@tuti/jobs";
+import { aiFor, creditBalance, emailIfCreditsLow, grantCredits, OutOfCredits } from "@tuti/jobs";
 import { type AiUsage, log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -164,6 +164,42 @@ test("credits that expire stop the AI with an email, though nothing was charged"
   expect(emailed("is out of AI credits")).toEqual([]);
   vi.setSystemTime(Date.now() + 2 * 86_400_000);
   await expect(aiFor(project.id, "answers")).rejects.toThrow(OutOfCredits);
+  expect(emailed("is out of AI credits")).toEqual([owner.email]);
+});
+
+test("a grant made while the email is claimed counts: no email about the old balance, and the new credits running low still email", async () => {
+  vi.stubEnv("AI_CREDITS_LOW", "50");
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await grantCredits(project.id, "MANUAL", 10, { days: null });
+  // A grant, not yet committed (its trigger holds the project's row), while the email is being claimed.
+  let commit = () => {};
+  let granted = () => {};
+  const inserted = new Promise<void>((resolve) => (granted = resolve));
+  const granting = prisma.$transaction(
+    async (tx) => {
+      await grantCredits(project.id, "MANUAL", 1000, { days: null }, tx);
+      granted();
+      await new Promise<void>((resolve) => (commit = resolve));
+    },
+    { timeout: 20_000 },
+  );
+  await inserted;
+  const emailing = emailIfCreditsLow(project.id);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  commit();
+  await Promise.all([granting, emailing]);
+  expect(emailed("is running low on AI credits")).toEqual([]);
+
+  await answered(9.7);
+  expect(emailed("is running low on AI credits")).toEqual([owner.email]);
+});
+
+test("AI_CREDITS_LOW=0: a balance of exactly 0 is out", async () => {
+  vi.stubEnv("AI_CREDITS_LOW", "0");
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await grantCredits(project.id, "MANUAL", 10, { days: null });
+  await answered(0.1);
+  expect(await balance()).toBe(0);
   expect(emailed("is out of AI credits")).toEqual([owner.email]);
 });
 
