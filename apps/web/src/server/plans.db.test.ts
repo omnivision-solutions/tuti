@@ -192,6 +192,17 @@ test("a second subscription paid and cancelled while the first held the plan, be
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
 });
 
+test("a subscription paid after the first stopped holding the plan (unpaid, not ended) gets its credits", async () => {
+  const first = await subscribe("pro");
+  await deliver(...first.events);
+  await deliver(stripe.update(first.subscription, { status: "unpaid" }));
+  expect(await plan()).toMatchObject({ plan: "free" });
+  const next = await subscribe("business");
+  stripe.update(next.subscription, { status: "canceled" });
+  await deliver(...next.events);
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 5000]);
+});
+
 test("a renewal reported after its subscription ended and another took the plan still gives its credits", async () => {
   const first = await subscribe("pro");
   await deliver(...first.events);

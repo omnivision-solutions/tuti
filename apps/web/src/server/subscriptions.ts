@@ -37,6 +37,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
       if (!LIVE.has(subscription.status) || !item || !paid) {
+        // Since now, unless it had stopped already.
+        await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id, stripeSubscriptionEndedAt: null }, data: { stripeSubscriptionEndedAt: new Date() } });
         await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id }, data: NO_PLAN });
         return projectId;
       }
@@ -47,6 +49,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
         data: {
           plan: paid.plan,
           stripeSubscriptionId: id,
+          stripeSubscriptionEndedAt: null,
           stripeCustomerId: subscription.customer,
           planInterval: paid.interval,
           planStatus: subscription.status,
@@ -84,15 +87,20 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
-  const project = projectId && (await prisma.project.findUnique({ where: { id: projectId }, select: { stripeSubscriptionId: true } }));
+  const project =
+    projectId && (await prisma.project.findUnique({ where: { id: projectId }, select: { stripeSubscriptionId: true, stripeSubscriptionEndedAt: true } }));
   if (!project || !line || !paid) {
     return;
   }
   const holder = project.stripeSubscriptionId;
   const paidAt = invoice.status_transitions?.paid_at;
   if (holder && holder !== subscription && paidAt) {
+    // It held the plan from its start until it ended (Stripe's time), or, not ended but no longer holding
+    // it (unpaid…), until Tuti saw it stop.
     const other = await getSubscription(holder);
-    if (paidAt >= other.created && (other.ended_at === null || paidAt <= other.ended_at)) {
+    const stopped = project.stripeSubscriptionEndedAt ? Math.floor(project.stripeSubscriptionEndedAt.getTime() / 1000) : Infinity;
+    const until = other.ended_at ?? stopped;
+    if (paidAt >= other.created && paidAt <= until) {
       log.error("A second subscription's invoice, paid while another held the plan: no credits; refund it", { projectId, invoice: invoice.id });
       return;
     }
