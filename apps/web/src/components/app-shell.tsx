@@ -18,13 +18,14 @@ const DOCS = /^\/app\/[^/]+\/docs(\/|$)/;
 export function AppShell({ sidebar, header, banners, children }: { sidebar: ReactNode; header: ReactNode; banners: ReactNode; children: ReactNode }) {
   const pathname = usePathname();
   const customizing = CUSTOMIZE_SECTION.test(pathname);
-  const folded = customizing || DOCS.test(pathname);
+  const folds = customizing ? "customize" : DOCS.test(pathname) ? "docs" : null;
+  const folded = folds !== null;
   const [open, setOpen] = useState(true);
-  // While folded: the sidebar's own state, folded again each time a Customize section or Docs opens.
+  // While folded: the sidebar's own state, folded again each time a Customize section or Docs opens (one from the other too).
   const [peek, setPeek] = useState(false);
-  const [wasFolded, setWasFolded] = useState(folded);
-  if (wasFolded !== folded) {
-    setWasFolded(folded);
+  const [wasFolds, setWasFolds] = useState(folds);
+  if (wasFolds !== folds) {
+    setWasFolds(folds);
     setPeek(false);
   }
 

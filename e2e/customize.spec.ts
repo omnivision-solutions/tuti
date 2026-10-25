@@ -137,6 +137,15 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(async () => {
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
+
+  // The sidebar is folded here and on Docs: opened to go there, it's folded again when Docs opens.
+  const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/docs`);
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed");
 });
 
 test("the team's own CSS shows in the preview as it's typed, and on the portal once saved", async ({ browser }, testInfo) => {
