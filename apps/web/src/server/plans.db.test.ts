@@ -161,13 +161,26 @@ test("a second subscription's paid invoice reported after both ended still gives
   await deliver(...first.events);
   const [completed, created, paid] = stripe.pay(second.id);
   await deliver(completed!, created!);
+  // The first renews (paid), then both end, and Stripe reports those invoices only then.
+  const renewed = stripe.renew(first.subscription)[1]!;
   await deliver(stripe.update(second.subscription!, { status: "canceled" }), stripe.update(first.subscription, { status: "canceled" }));
   await deliver(paid!);
   expect(await plan()).toMatchObject({ plan: "free" });
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
-  // The first's renewal reported late (paid before it ended) still counts.
-  await deliver(stripe.renew(first.subscription)[1]!);
+  await deliver(renewed);
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 1000]);
+});
+
+test("a renewal reported after its subscription ended and another took the plan still gives its credits", async () => {
+  const first = await subscribe("pro");
+  await deliver(...first.events);
+  const renewed = stripe.renew(first.subscription)[1]!;
+  await deliver(stripe.update(first.subscription, { status: "canceled" }));
+  const next = await subscribe("business");
+  await deliver(...next.events);
+  expect(await plan()).toMatchObject({ plan: "business" });
+  await deliver(renewed);
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 5000, 1000]);
 });
 
 test("a plan's price replaced in Stripe: those on the older price keep their plan", async () => {
