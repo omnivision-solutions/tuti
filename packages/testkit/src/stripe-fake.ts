@@ -154,7 +154,6 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
 
   /** A paid invoice for the subscription's current period. */
   const invoice = (sub: FakeSubscription, billingReason: string) => {
-    const item = sub.items.data[0]!;
     const paid: FakeInvoice = {
       id: id("in"),
       object: "invoice",
@@ -166,7 +165,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       lines: {
         data: sub.items.data.map((each) => ({
           id: id("il"),
-          period: { start: item.current_period_start, end: item.current_period_end },
+          period: { start: each.current_period_start, end: each.current_period_end },
           pricing: { type: "price_details" as const, price_details: { price: each.price.id } },
         })),
       },
@@ -203,9 +202,10 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
 
   const renew = (subscriptionId: string) => {
     const sub = subscription(subscriptionId);
-    const item = sub.items.data[0]!;
-    item.current_period_start = item.current_period_end;
-    item.current_period_end = after(item.current_period_end, intervalOf(item.price.id)!);
+    for (const item of sub.items.data) {
+      item.current_period_start = item.current_period_end;
+      item.current_period_end = after(item.current_period_end, intervalOf(item.price.id)!);
+    }
     return [signed("customer.subscription.updated", sub), invoice(sub, "subscription_cycle")];
   };
 
