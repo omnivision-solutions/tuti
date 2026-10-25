@@ -134,6 +134,8 @@ test("a project has one plan: while one is live, another can't be started, and a
   await expect(call(subscribePlan, as(), { plan: "business", interval: "month" })).rejects.toMatchObject({ status: 409, code: "has_plan" });
   await deliver(...stripe.pay(second.id));
   expect(await plan()).toMatchObject({ plan: "pro" });
+  // Its paid invoice gives no credits either: only the first's month.
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { stripeSubscriptionId: true } })).toEqual({
     stripeSubscriptionId: first.subscription,
   });

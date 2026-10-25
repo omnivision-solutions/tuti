@@ -21,7 +21,8 @@ const at = (seconds: number) => new Date(seconds * 1000);
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
  * subscription, read under the lock: the last write is always from the latest read. A project has one
  * plan, so a second live subscription for it is logged for the operator to refund and changes nothing.
- * Returns the project it's for (the subscription's metadata), or null if Tuti didn't start it.
+ * Returns the project whose plan it is now, or null: Tuti didn't start it, it isn't live, or another
+ * subscription holds that project's plan (or the project is gone).
  */
 export async function syncSubscription(id: string): Promise<string | null> {
   return prisma.$transaction(
@@ -37,7 +38,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const paid = item && planOfPrice(item.price.id);
       if (!LIVE.has(subscription.status) || !item || !paid) {
         await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id }, data: NO_PLAN });
-        return projectId;
+        return null;
       }
       const periodEnd = at(item.current_period_end);
       const { count } = await tx.project.updateMany({
@@ -55,7 +56,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
       if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
-      return projectId;
+      return count === 1 ? projectId : null;
     },
     // Stripe's answer comes within its 15-second timeout.
     { timeout: 20_000 },
@@ -76,6 +77,7 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   if (invoice.status !== "paid" || !subscription || !PERIOD_INVOICES.has(invoice.billing_reason ?? "")) {
     return;
   }
+  // Only the subscription holding the project's plan: a second one (logged for a refund) gives nothing.
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
