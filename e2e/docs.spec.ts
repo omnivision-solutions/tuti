@@ -190,6 +190,10 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(tree.getByRole("link", { name: "Inviting your team" })).toHaveAttribute("aria-current", "page");
   const onThisPage = visitor.getByRole("navigation", { name: "On this page" });
   await expect(onThisPage.getByRole("link")).toHaveText(["Who can invite", "Roles"]);
+  // Under it, "Was this helpful?"; above the title, the level above: the collection it's in.
+  await expect(visitor.locator("aside", { has: onThisPage }).getByRole("region", { name: "Was this helpful?" })).toBeVisible();
+  await expect(article.getByRole("region", { name: "Was this helpful?" })).toBeHidden();
+  await expect(article.getByRole("link", { name: "Getting started" })).toHaveAttribute("href", "/docs/getting-started");
   await checkpoint(visitor, "portal-docs-article");
   await onThisPage.getByRole("link", { name: "Roles" }).click();
   await visitor.waitForURL(/\/docs\/inviting-your-team#roles$/);
@@ -215,6 +219,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(onThisPage).toBeHidden();
   await expect(tree).toBeHidden();
+  // "Was this helpful?" is under the article there.
+  await expect(article.getByRole("region", { name: "Was this helpful?" })).toBeVisible();
   // The page's actions under the title, only as wide as their buttons.
   const copyPage = visitor.getByRole("button", { name: "Copy page" });
   const actionsWidth = await copyPage.locator("..").evaluate((group) => group.getBoundingClientRect().width);
@@ -355,6 +361,18 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
   await visitor.goto("/docs");
   await expect(visitor.getByRole("navigation", { name: "Docs", exact: true }).getByRole("link", { name: "Inviting your team" })).toBeVisible();
+  // In no collection now, the level above it is all of them.
+  await visitor.goto("/docs/inviting-your-team");
+  await expect(article.getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
+  // So is it for an article whose collection has no page for readers: an unlisted article is all that's in it.
+  const api = await apiFor(team, slug);
+  await api("/collections", { name: "Hidden away" });
+  const unlisted = await api("/articles", { title: "Only by link", body: "Here.", collection: "hidden-away", listing: "unlisted" });
+  await api(`/articles/${unlisted.slug}/publish`, {});
+  await visitor.goto(`/docs/${unlisted.slug}`);
+  await expect(visitor.getByRole("article", { name: "Only by link" }).getByRole("link", { name: "All collections" })).toHaveAttribute("href", "/docs");
+  // (Making its API key took the team to Settings: back to the docs' home.)
+  await team.goto(`/app/${slug}/docs`);
 
   // The team edits it twice. It's published, so the edits wait as unpublished changes until the team publishes them.
   await team.getByRole("region", { name: "Not in a collection" }).getByRole("link", { name: "Inviting your team" }).click();
@@ -653,7 +671,7 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await tree.getByRole("link", { name: "Taxes" }).click();
   await expect(visitor).toHaveURL(/\/docs\/taxes$/);
   await expect(tree.getByRole("link", { name: "VAT rates" })).toBeVisible();
-  // On a phone, the way back to the one it's in is above it.
+  // Above its title, the level above: the one it's in (here on a phone, where the tree isn't beside it).
   await visitor.setViewportSize({ width: 390, height: 844 });
   await expect(main.getByRole("link", { name: "Invoices" })).toHaveAttribute("href", "/docs/invoices");
   await visitor.setViewportSize({ width: 1280, height: 720 });
@@ -970,10 +988,12 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(tree.getByRole("link", { name: "Billing" })).not.toHaveAttribute("aria-current");
   await expect(docsTabs.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
   await expect(docsTabs.getByRole("link", { name: "API reference" })).not.toHaveAttribute("aria-current");
-  // On a phone, the way back to its tab is above it (wider screens have the tree).
+  // Above its title, the level above: its collection (here on a phone, where the tree isn't beside it).
   await visitor.setViewportSize({ width: 390, height: 844 });
-  await main.getByRole("link", { name: "Docs", exact: true }).click();
-  await expect(visitor).toHaveURL(/\/docs\/guides$/);
+  await main.getByRole("link", { name: "Billing", exact: true }).click();
+  await expect(visitor).toHaveURL(/\/docs\/billing$/);
+  // And a top-level collection's is its tab.
+  await expect(main.getByRole("link", { name: "Guides", exact: true })).toHaveAttribute("href", "/docs/guides");
   await visitor.setViewportSize({ width: 1280, height: 720 });
   // Off Docs, its row goes (the boards' row isn't there either, with one board).
   await visitor.getByRole("navigation", { name: "Portal" }).getByRole("link", { name: "Feedback" }).click();
