@@ -634,7 +634,7 @@ export function DocsWorkspace({
             <ChevronRightIcon aria-hidden className={cn("size-4 transition-transform", browsing && "rotate-90")} />
             Browse docs
           </button>
-          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-0 lg:flex lg:max-h-dvh lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
+          <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
             <div className="flex flex-col gap-2 px-2 pt-1">
               <h2 className="font-heading font-semibold">Docs</h2>
               <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by title" aria-label="Filter docs" className="h-8" />

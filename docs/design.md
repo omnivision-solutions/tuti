@@ -53,8 +53,9 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
   (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
-  From tablet width up the top bar holds the page's title and actions
-  (`PageHeader` puts them there), its description staying on the page.
+  The top bar stays at the top as the page scrolls; from tablet width up it
+  holds the page's title and actions (`PageHeader` puts them there), its
+  description staying on the page.
   A page with sections of its own lists them under its header with `SubNav`
   (Settings → Access, Single sign-on, …). Docs pages add the docs as a
   tree in a column of their own beside the page (`DocsWorkspace`; a "Browse

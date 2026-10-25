@@ -30,7 +30,7 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
         </CardContent>
       </Card>
 
-      <Card id="groups" role="region" aria-labelledby="groups-title" className="scroll-mt-6">
+      <Card id="groups" role="region" aria-labelledby="groups-title" className="scroll-mt-18">
         <CardHeader>
           <CardTitle id="groups-title">Groups</CardTitle>
           <CardDescription>
