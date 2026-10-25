@@ -1,3 +1,4 @@
+import { plansEnabled } from "@tuti/shared";
 import Link from "next/link";
 
 import { TutiLogo } from "@/components/tuti-logo";
@@ -14,15 +15,22 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
         <Link href="/" aria-label="Tuti home">
           <TutiLogo />
         </Link>
-        {session ? (
-          <Link href="/app" className={buttonVariants({ size: "sm" })}>
-            Open app
-          </Link>
-        ) : (
-          <Link href="/sign-in" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-            Sign in
-          </Link>
-        )}
+        <div className="flex items-center gap-2">
+          {plansEnabled() && (
+            <Link href="/pricing" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              Pricing
+            </Link>
+          )}
+          {session ? (
+            <Link href="/app" className={buttonVariants({ size: "sm" })}>
+              Open app
+            </Link>
+          ) : (
+            <Link href="/sign-in" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              Sign in
+            </Link>
+          )}
+        </div>
       </header>
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
     </>
