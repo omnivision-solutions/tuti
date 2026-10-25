@@ -46,7 +46,8 @@ test("a team member switches projects, edits their account, signs out and back i
 
   // Signing out, then in: the old password no longer works.
   await olive.getByRole("button", { name: /Olive Q\. Owner/ }).click();
-  await olive.getByRole("menuitem", { name: "Sign out" }).click();
+  // From the keyboard: a click aimed while the menu is still opening can land on Theme, whose submenu then covers Sign out.
+  await olive.getByRole("menuitem", { name: "Sign out" }).press("Enter");
   await olive.waitForURL(`${APP_URL}/`);
   await olive.goto("/sign-in");
   await olive.getByLabel("Email").fill(olive.email);
