@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 
 import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
-import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
+import { ArticleActions, ArticleChanges, ArticleForm, ArticleSaveButton, ArticleSaving } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
 import { ArticleHistory } from "@/components/article-history";
 import { HistorySheet } from "@/components/history-sheet";
@@ -65,7 +65,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const parent = article.collection ? collections.find((c) => c.slug === article.collection!.slug) : access.firstTab;
 
   return (
-    <>
+    // Save in the top bar submits the form below, and says when it's saving.
+    <ArticleSaving>
       <PageHeader
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
@@ -93,6 +94,12 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         actions={
           <>
             <DocsFilter />
+            <ArticleSaveButton />
+            <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="publish" />
+          </>
+        }
+        more={
+          <>
             <Link href="?history" scroll={false} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
@@ -117,7 +124,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
               }}
               preview={article.publishedAt ? previewUrl(access, `/docs/${article.slug}`) : undefined}
             />
-            <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} />
+            <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="delete" />
           </>
         }
       />
@@ -158,6 +165,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
           />
         )}
       </HistorySheet>
-    </>
+    </ArticleSaving>
   );
 }

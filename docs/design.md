@@ -101,7 +101,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (`title`, `description`, `actions`): the top of every page.
+- **`PageHeader`** (`title`, `description`, `actions`, `more`): the top of every page;
+  `more` is the actions used less often, behind the top bar's "More actions".
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones
   the actions are a "More actions" menu from it (`PageActions`).

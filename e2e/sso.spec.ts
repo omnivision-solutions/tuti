@@ -178,6 +178,7 @@ test("who can read: an article for signed-in readers, and a tab for a group", as
 
   // In the editor's settings: "Who can read", inheriting from its collection, set to signed-in readers.
   await owner.goto(`/app/${slug}/docs/pricing`);
+  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Settings" }).click();
   const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
   const whoCanRead = articleSettings.getByRole("group", { name: "Who can read" });
@@ -259,6 +260,7 @@ test("people without access: an article shown with a lock asks people signed out
 
   // In the article's settings, "People without access" shows once some people can't read it: the group only, shown with a lock.
   await owner.goto(`/app/${slug}/docs/pricing`);
+  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Settings" }).click();
   const articleSettings = owner.getByRole("dialog", { name: "Article settings" });
   const withoutAccess = articleSettings.getByRole("group", { name: "People without access" });
@@ -308,6 +310,7 @@ test("people without access: an article shown with a lock asks people signed out
   await checkpoint(reader, "portal-docs-locked-signed-in");
 
   // "Preview as a reader", in the settings again, opens the portal as people signed out see it.
+  await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Settings" }).click();
   await expect(withoutAccess.getByRole("radio", { name: "Show with a lock" })).toBeChecked();
   const [preview] = await Promise.all([owner.waitForEvent("popup"), withoutAccess.getByRole("link", { name: "Preview as a reader" }).click()]);

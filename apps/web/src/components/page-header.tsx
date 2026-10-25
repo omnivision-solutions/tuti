@@ -18,12 +18,15 @@ export function PageHeader({
   back,
   description,
   actions,
+  more,
   className,
 }: {
   title: ReactNode;
   back?: { href: string; label: ReactNode };
   description?: ReactNode;
   actions?: ReactNode;
+  /** Actions used less often: behind the top bar's "More actions" (PageActions). */
+  more?: ReactNode;
   className?: string;
 }) {
   return (
@@ -37,7 +40,7 @@ export function PageHeader({
           )}
           <h1 className="min-w-0 text-2xl font-bold tracking-tight break-words topbar:truncate topbar:text-base topbar:font-semibold topbar:tracking-normal">{title}</h1>
         </div>
-        {actions && <PageActions>{actions}</PageActions>}
+        {(actions || more) && <PageActions more={more}>{actions}</PageActions>}
       </div>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
     </div>
