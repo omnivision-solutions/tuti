@@ -72,7 +72,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and code changes need Pro", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, and code changes and its own address need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -98,4 +98,12 @@ test("on the free plan, a project has up to 3 team members, invites included, an
     "Merged pull requests still go into the changelog's running draft",
   );
   await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+
+  // A domain of its own is on Pro, a path of the team's site on Business.
+  await owner.goto(`/app/${slug}/customize/address`);
+  const options = owner.getByRole("radiogroup", { name: "Where your portal goes live" });
+  await expect(options.getByRole("radio", { name: /Custom domain/ })).toContainText("A custom domain needs the Pro plan.");
+  await expect(options.getByRole("radio", { name: /Sub-folder/ })).toContainText("A portal under a path of your site needs the Business plan.");
+  await expect(options.getByRole("radio", { name: /Custom domain/ })).toHaveAttribute("aria-disabled", "true");
+  await checkpoint(owner, "customize-address-free-plan");
 });

@@ -1,7 +1,10 @@
+import { prisma } from "@tuti/db";
+import { planIncludes, planNeeded } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CustomizeShell } from "@/components/customize-shell";
 import { OwnAddressSettings } from "@/components/own-address";
+import { PlanNotice } from "@/components/plan-notice";
 import { customDomainTarget } from "@/lib/custom-domains";
 import { portalUrl } from "@/lib/hosts";
 import { portalPreview } from "@/server/customize";
@@ -18,15 +21,30 @@ export default async function AddressPage(props: PageProps<"/app/[project]/custo
   if (!project) {
     notFound();
   }
-  const [domain, site] = await Promise.all([customDomain(project.id), siteMountView(project.id)]);
+  const [domain, site, { plan }] = await Promise.all([
+    customDomain(project.id),
+    siteMountView(project.id),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+  ]);
+  // Set up before the plan dropped: kept, but not served.
+  const unpaid = domain && !planIncludes(plan, "customDomain") ? "customDomain" : site && !planIncludes(plan, "sitePath") ? "sitePath" : null;
   const portal = new URL(portalUrl(slug));
   return (
     <CustomizeShell backHref={`/app/${slug}/customize`} title={sectionTitle("address")} preview={await portalPreview(slug, "/")}>
+      {unpaid && (
+        <PlanNotice feature={unpaid} projectSlug={slug} admin>
+          Until it&apos;s back, your portal answers at its Tuti address. These settings are kept.
+        </PlanNotice>
+      )}
       <OwnAddressSettings
         projectSlug={slug}
         domain={domain}
         site={site}
         domainsOn={Boolean(customDomainTarget())}
+        notIncluded={{
+          domain: planIncludes(plan, "customDomain") ? null : planNeeded("customDomain"),
+          site: planIncludes(plan, "sitePath") ? null : planNeeded("sitePath"),
+        }}
         portalAddress={portal.host}
         protocol={portal.protocol}
       />

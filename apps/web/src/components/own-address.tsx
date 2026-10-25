@@ -25,6 +25,7 @@ export function OwnAddressSettings({
   domain,
   site,
   domainsOn,
+  notIncluded,
   portalAddress,
   protocol,
 }: {
@@ -33,6 +34,8 @@ export function OwnAddressSettings({
   site: Site;
   /** Whether this server can put portals on custom domains (CUSTOM_DOMAIN_TARGET). */
   domainsOn: boolean;
+  /** What the project's plan doesn't include, each saying which plan does (null: included). */
+  notIncluded: { domain: string | null; site: string | null };
   /** The portal's Tuti address, as a host (acme.tuti.so). */
   portalAddress: string;
   protocol: string;
@@ -46,8 +49,14 @@ export function OwnAddressSettings({
 
   const options: { value: Choice; title: string; example: string; icon: LucideIcon; off?: string }[] = [
     { value: "tuti", title: "Tuti address", example: portalAddress, icon: LinkIcon },
-    { value: "domain", title: "Custom domain", example: "help.yourcompany.com", icon: GlobeIcon, off: domainsOn ? undefined : "Not set up on this server" },
-    { value: "site", title: "Sub-folder", example: "yourcompany.com/help", icon: FolderIcon },
+    {
+      value: "domain",
+      title: "Custom domain",
+      example: "help.yourcompany.com",
+      icon: GlobeIcon,
+      off: !domainsOn ? "Not set up on this server" : (notIncluded.domain ?? undefined),
+    },
+    { value: "site", title: "Sub-folder", example: "yourcompany.com/help", icon: FolderIcon, off: notIncluded.site ?? undefined },
   ];
   const current = domain?.hostname ?? site?.url.replace(/^https?:\/\//, "");
 
