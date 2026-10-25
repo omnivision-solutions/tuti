@@ -230,7 +230,18 @@ function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: 
 }
 
 /** One proposal about the docs: an article's edit (its changes, to publish or finish in the editor) or a new article's draft. */
-export function DocsProposal({ projectSlug, codeChangeId, action }: { projectSlug: string; codeChangeId: string; action: Action }) {
+export function DocsProposal({
+  projectSlug,
+  codeChangeId,
+  action,
+  canAnalyse,
+}: {
+  projectSlug: string;
+  codeChangeId: string;
+  action: Action;
+  /** Whether it can be written again (the project's plan includes code changes). */
+  canAnalyse: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const edit = action.kind === "article_edit";
@@ -287,7 +298,7 @@ export function DocsProposal({ projectSlug, codeChangeId, action }: { projectSlu
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <DismissButton disabled={pending} onDismiss={dismiss} />
             {action.status === "stale" ? (
-              <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={codeChangeId} label="Write it again" />
+              canAnalyse && <AnalyseCodeChangeButton projectSlug={projectSlug} codeChangeId={codeChangeId} label="Write it again" />
             ) : edit ? (
               <>
                 <Button variant="outline" size="sm" disabled={pending} onClick={() => apply(false)}>
