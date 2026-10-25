@@ -4,7 +4,7 @@ CREATE TYPE "Plan" AS ENUM ('FREE', 'PRO', 'BUSINESS');
 ALTER TABLE "project" ADD COLUMN "plan" "Plan" NOT NULL DEFAULT 'FREE',
 ADD COLUMN "stripeCustomerId" TEXT,
 ADD COLUMN "stripeSubscriptionId" TEXT,
-ADD COLUMN "planSubscriptionIds" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "rejectedSubscriptionIds" TEXT[] DEFAULT ARRAY[]::TEXT[],
 ADD COLUMN "planInterval" TEXT,
 ADD COLUMN "planStatus" TEXT,
 ADD COLUMN "planPeriodEnd" TIMESTAMP(3),
