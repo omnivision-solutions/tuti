@@ -126,6 +126,16 @@ test("events late or out of order can't bring back an old state: the subscriptio
   expect(await plan()).toMatchObject({ plan: "free" });
 });
 
+test("a paid invoice Stripe reports only after the subscription ended still gives its month's credits", async () => {
+  const { subscription, events } = await subscribe("pro");
+  const [completed, created, paid] = events;
+  await deliver(completed!, created!);
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  await deliver(paid!);
+  expect(await plan()).toMatchObject({ plan: "free" });
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
+});
+
 test("a project has one plan: while one is live, another can't be started, and a second subscription changes nothing", async () => {
   const first = await subscribe("pro");
   // A second Checkout opened before the first was paid.
