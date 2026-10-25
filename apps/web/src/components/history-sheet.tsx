@@ -20,7 +20,8 @@ export function HistorySheet({ open, description, children }: { open: boolean; d
           <SheetTitle>History</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">{children}</div>
+        {/* Its cards keep their height (a card clips what overflows it), so a long version's changes scroll in the panel. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 *:shrink-0">{children}</div>
       </SheetContent>
     </Sheet>
   );
