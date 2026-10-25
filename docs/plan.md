@@ -176,7 +176,7 @@ Settings was one long page of cards. What changes how the portal looks moves to 
 
 ## Licences: hiding "Powered by tuti" (asked 2026-10-21)
 
-The badge is Tuti's attribution on every portal, so hiding it is paid: a flat monthly fee per project of an installation, on tuti.so and self-hosted alike. The fee is $49 a month per project (decided 2026-10-25); on tuti.so it's an add-on to a paid plan only, never on the free plan (see Plans). Tuti signs each licence key with its private key; installations trust only the public keys in the code (no setting, env var or database edit replaces them), so getting around it means forking, which the licence terms cover. Keys come from tuti.so only: bought on tuti.so, then fetched and renewed by the installation (no pasted keys for now).
+The badge is Tuti's attribution on every portal, so hiding it is paid: a flat monthly fee per project of an installation, on tuti.so and self-hosted alike. The fee is $49 a month per project, on tuti.so and self-hosted alike (decided 2026-10-25). Who can buy it: projects on a paid plan on tuti.so, and self-hosted projects; a project on tuti.so's free plan can't (see Plans). Tuti signs each licence key with its private key; installations trust only the public keys in the code (no setting, env var or database edit replaces them), so getting around it means forking, which the licence terms cover. Keys come from tuti.so only: bought on tuti.so, then fetched and renewed by the installation (no pasted keys for now).
 
 - [x] "Powered by tuti" links to tuti.so on every installation (it linked to the installation's own `APP_URL`)
 - [x] Enforcement: an installation id (random, made by the migration); a licence key is `{ installation, project, exp }` signed with Tuti's Ed25519 key, checked offline against the public keys in the code. The portal shows the badge unless the project has a valid key (so turning `poweredBy` off in the database isn't enough), and `branding.update` refuses to hide it without one
@@ -428,7 +428,7 @@ Every AI request a project causes is tracked; on Tuti's cloud, projects will pay
 What tuti.so sells, from a review of feedback, changelog and help center tools and of open-source apps with a paid cloud (2026-10-25): plans per project, never per voter or per seat; readers always unlimited; every feature stays in the open-source app, so self-hosting is complete and free (only the badge licence is paid, see Licences). The cloud sells hosting, included AI credits and support.
 
 Decided:
-- Hiding "Powered by tuti" is a $49 a month add-on, only on paid plans, not part of any plan (2026-10-25)
+- Hiding "Powered by tuti" is a $49 a month add-on per project, never part of a plan (2026-10-25). Paid plans on tuti.so can add it, and self-hosted projects buy it at the same price; the free plan can't
 
 Proposed, not decided yet (prices and limits to confirm):
 - Free: 1 project, 3 team members, a `*.tuti.so` address, the badge, one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
