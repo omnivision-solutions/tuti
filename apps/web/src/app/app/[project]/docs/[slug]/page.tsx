@@ -9,6 +9,8 @@ import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
+import { ArticleHistory } from "@/components/article-history";
+import { HistorySheet } from "@/components/history-sheet";
 import { DocsFilter } from "@/components/docs-tree";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
@@ -21,9 +23,12 @@ import { claimsOf, levelSelect } from "@/lib/reader-groups";
 import { accessChoices, collectionOptions } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
+import { ARTICLE_REVISIONS_KEPT } from "@/server/operations/docs";
 
 export default async function ArticlePage(props: PageProps<"/app/[project]/docs/[slug]">) {
-  const { project: slug, slug: articleSlug } = await props.params;
+  const [{ project: slug, slug: articleSlug }, search] = await Promise.all([props.params, props.searchParams]);
+  // `?history` opens its History panel (`&revision=…`: a version picked in it).
+  const showsHistory = search.history !== undefined;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -31,6 +36,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
   const article = await prisma.article.findFirst({
     where: { projectId: membership.project.id, slug: articleSlug, deletedAt: null },
     select: {
+      id: true,
       slug: true,
       title: true,
       body: true,
@@ -87,7 +93,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         actions={
           <>
             <DocsFilter />
-            <Link href={`/app/${slug}/docs/${article.slug}/history`} className={buttonVariants({ variant: "ghost" })}>
+            <Link href="?history" scroll={false} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>
             <ArticleSettings
@@ -139,6 +145,19 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         collections={collections}
         mediaUrls={await mediaUrls(displayDoc(edited))}
       />
+      <HistorySheet
+        open={showsHistory}
+        description={`Every save that changed “${article.title}”, newest first. The latest ${ARTICLE_REVISIONS_KEPT} are kept.`}
+      >
+        {showsHistory && (
+          <ArticleHistory
+            projectSlug={slug}
+            article={article}
+            current={edited}
+            selectedId={typeof search.revision === "string" ? search.revision : undefined}
+          />
+        )}
+      </HistorySheet>
     </>
   );
 }

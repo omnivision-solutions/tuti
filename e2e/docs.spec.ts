@@ -408,13 +408,15 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByText(/^Updated \d+ \w+ \d{4}$/)).toBeVisible();
   await checkpoint(visitor, "portal-docs-article-updated");
 
-  // Its history shows what changed since the first version.
+  // Its history, in a panel from the right over the article, shows what changed since the first version.
   await team.getByRole("link", { name: "History" }).click();
-  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team/history`);
-  const versions = team.getByRole("link", { name: /^Saved / });
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
+  const historyPanel = team.getByRole("dialog", { name: "History" });
+  await expect(historyPanel).toHaveAttribute("data-side", "right");
+  const versions = historyPanel.getByRole("link", { name: /^Saved / });
   await expect(versions).toHaveCount(3);
   await versions.nth(2).click();
-  await team.waitForURL(/\/history\?revision=/);
+  await team.waitForURL(/\/inviting-your-team\?history&revision=/);
   const changes = team.getByRole("region", { name: "Changes since this version" });
   await expect(changes.getByRole("deletion")).toHaveText(original);
   await expect(changes.getByRole("insertion")).toHaveText(edited);
@@ -436,7 +438,17 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(unpublished).toHaveCount(0);
   await expect(editor).toContainText(edited);
   await team.getByRole("link", { name: "History" }).click();
-  await expect(team.getByRole("link", { name: /^Saved / })).toHaveCount(5);
+  await expect(historyPanel.getByRole("link", { name: /^Saved / })).toHaveCount(5);
+  // Closing it leaves the article where it was; its old address opens it too.
+  await team.keyboard.press("Escape");
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
+  await expect(historyPanel).toHaveCount(0);
+  await expect(editor).toContainText(edited);
+  await team.goto(`/app/${slug}/docs/inviting-your-team/history`);
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team?history`);
+  await expect(historyPanel.getByRole("link", { name: /^Saved / })).toHaveCount(5);
+  await team.keyboard.press("Escape");
+  await team.waitForURL(`**/app/${slug}/docs/inviting-your-team`);
 
   // Listing: unlisted, it's gone from /docs but its link still works; hidden, its page is a 404.
   await teamTree.getByRole("link", { name: "Inviting your team" }).click();
