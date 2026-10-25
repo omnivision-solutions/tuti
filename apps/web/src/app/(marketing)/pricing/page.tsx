@@ -45,7 +45,7 @@ export default function PricingPage() {
     {
       name: PLAN_PRICES.PRO.name,
       price: `$${PLAN_PRICES.PRO.month}`,
-      per: `a month per project, or $${PLAN_PRICES.PRO.year} billed yearly`,
+      per: `a month per project, or $${PLAN_PRICES.PRO.year} a month, billed yearly`,
       features: [
         "Unlimited team members",
         "Your own domain",
@@ -59,7 +59,7 @@ export default function PricingPage() {
     {
       name: PLAN_PRICES.BUSINESS.name,
       price: `$${PLAN_PRICES.BUSINESS.month}`,
-      per: `a month per project, or $${PLAN_PRICES.BUSINESS.year} billed yearly`,
+      per: `a month per project, or $${PLAN_PRICES.BUSINESS.year} a month, billed yearly`,
       features: [
         "Everything in Pro",
         "A private portal",
