@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useEffect } from "react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -70,6 +71,9 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const current = useCurrentProject(projects, fallbackSlug);
+  const { setOpenMobile } = useSidebar();
+  // On phones it's a menu over the page: a new page closes it.
+  useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
 
   return (
     <Sidebar collapsible="icon">

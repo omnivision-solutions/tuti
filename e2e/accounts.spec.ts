@@ -23,6 +23,14 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByRole("menuitem", { name: /Acme/ }).click();
   await olive.waitForURL(`**/app/${acme}`);
 
+  // On a phone the sidebar is a menu over the page: picking a page closes it.
+  await olive.setViewportSize({ width: 390, height: 844 });
+  await olive.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();
+  await olive.getByRole("dialog").getByRole("link", { name: "Feedback", exact: true }).click();
+  await olive.waitForURL(`**/app/${acme}/feedback`);
+  await expect(olive.getByRole("dialog")).toBeHidden();
+  await olive.setViewportSize({ width: 1280, height: 720 });
+
   // Account settings: a new name and a new password.
   await olive.getByRole("button", { name: /Olive Owner/ }).click();
   await olive.getByRole("menuitem", { name: "Account settings" }).click();
