@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
+import { ExternalLinkIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -13,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
 import { formatDate, timeAgo } from "@/lib/format";
 import { levelSelect } from "@/lib/reader-groups";
+import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
@@ -29,7 +31,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [articles, deleted, access] = await Promise.all([
+  const [articles, deleted, access, portal] = await Promise.all([
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
       orderBy: [{ publishedAt: { sort: "desc", nulls: "first" } }, { updatedAt: "desc" }],
@@ -56,6 +58,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
       },
     }),
     accessChoices(projectId),
+    portalAddress(slug),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
@@ -63,7 +66,21 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   return (
     <>
       <PageHeader
-        title="Docs"
+        title={
+          <span className="inline-flex items-center gap-2">
+            Docs
+            <a
+              href={`${portal}/docs`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open your portal's docs"
+              title="Open your portal's docs"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ExternalLinkIcon aria-hidden className="size-4" />
+            </a>
+          </span>
+        }
         description="Articles that answer your users' questions. Published ones show in your portal's docs."
         actions={
           <>

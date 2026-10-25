@@ -2,9 +2,7 @@ import { prisma } from "@tuti/db";
 import { notFound } from "next/navigation";
 
 import { DocsWorkspace } from "@/components/docs-tree";
-import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
-import { isAdminRole } from "@/lib/roles";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
 import { newCollectionParents, teamDocs, treeArticle } from "@/server/team-docs";
@@ -17,11 +15,10 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, access, deleted, portal] = await Promise.all([
+  const [docs, access, deleted] = await Promise.all([
     teamDocs(projectId),
     accessChoices(projectId),
     prisma.article.count({ where: { projectId, deletedAt: { gte: restorableSince() } } }),
-    portalAddress(slug),
   ]);
   return (
     <DocsWorkspace
@@ -38,8 +35,6 @@ export default async function TeamDocsLayout({ children, params }: LayoutProps<"
       uncollected={docs.uncollected.map(treeArticle)}
       access={access}
       parents={newCollectionParents(docs)}
-      portal={`${portal}/docs`}
-      admin={isAdminRole(membership.role)}
       deleted={deleted}
     >
       {children}

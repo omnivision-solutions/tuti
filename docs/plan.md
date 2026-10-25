@@ -55,6 +55,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] Move admin pages to `/app` (project list, create, settings); apex `/` is marketing
 - [x] `/app` shell: shadcn sidebar with project switcher (switch / create) at the top, nav, account menu at the bottom
 - [x] Docs pages fold the sidebar away, as Customize does, for the tree and the page; it opens again on its trigger (asked 2026-10-25)
+- [x] The docs tree is only the docs: Open portal, Customize and Groups left it (the sidebar has the last two); the portal's docs are an icon beside the Docs title (asked 2026-10-25)
 - [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
 - [x] Per-project post numbers (`#123`) for `/p/<title>-<number>` URLs
