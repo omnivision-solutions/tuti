@@ -322,7 +322,8 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       }
       if (req.method === "GET" && path === "/v1/invoice_payments") {
         const invoice = params.get("payment[type]") === "payment_intent" ? paid.get(params.get("payment[payment_intent]") ?? "")?.invoice : undefined;
-        return send(200, { object: "list", data: invoice ? [{ object: "invoice_payment", invoice }] : [] });
+        const status = params.get("status");
+        return send(200, { object: "list", data: invoice && (!status || status === "paid") ? [{ object: "invoice_payment", invoice, status: "paid" }] : [] });
       }
       const sessionRead = /^\/v1\/checkout\/sessions\/([^/]+)$/.exec(path);
       if (req.method === "GET" && sessionRead) {

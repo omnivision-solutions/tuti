@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { log } from "@tuti/shared";
+
 /**
  * Stripe, for AI credit top-ups and plans (docs/plan.md, AI usage per project and Plans): Checkout
  * Sessions to pay, the customer portal, reading subscriptions and invoices, and webhooks' signatures.
@@ -209,13 +211,20 @@ export async function checkoutOf(paymentIntent: string): Promise<string | null> 
   return list.data[0]?.id ?? null;
 }
 
-/** The invoice a payment paid (a plan's), or null. */
+/**
+ * The invoice a payment paid (a plan's), or null: its paid invoice payment. A subscription's payment pays
+ * one invoice; one paying several (not something Tuti makes) is logged, and the first is taken.
+ */
 export async function invoiceOf(paymentIntent: string): Promise<string | null> {
-  const list = await stripe<{ data: { invoice: string }[] }>(
+  const list = await stripe<{ data: { invoice?: unknown; status?: unknown }[] }>(
     "GET",
-    `/v1/invoice_payments?${query({ "payment[type]": "payment_intent", "payment[payment_intent]": paymentIntent, limit: "1" })}`,
+    `/v1/invoice_payments?${query({ "payment[type]": "payment_intent", "payment[payment_intent]": paymentIntent, status: "paid", limit: "10" })}`,
   );
-  return list.data[0]?.invoice ?? null;
+  const invoices = list.data.filter((payment) => payment.status === "paid" && typeof payment.invoice === "string").map((payment) => payment.invoice as string);
+  if (invoices.length > 1) {
+    log.warn("A Stripe payment paid several invoices: refunds take back only the first's", { paymentIntent, invoices });
+  }
+  return invoices[0] ?? null;
 }
 
 /** Ends a subscription at once (its webhook then takes the plan, and the add-on with it, away). */
