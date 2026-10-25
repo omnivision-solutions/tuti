@@ -69,6 +69,8 @@ test("refused on the free plan, while a payment is failing, and when the card is
   const subscription = await subscribe();
   await deliver(stripe.update(subscription, { status: "past_due" }));
   await expect(badge(true)).rejects.toMatchObject({ status: 409, code: "payment_failing" });
+  // Removing it is still allowed then: it only lowers the bill.
+  expect(await badge(false)).toEqual({ on: false });
   await deliver(stripe.update(subscription, { status: "active" }));
   stripe.declining = true;
   await expect(badge(true)).rejects.toMatchObject({ status: 402, code: "payment_failed" });
@@ -87,6 +89,16 @@ test("it ends with the plan: the badge is back, and can't be hidden again withou
   expect(await call(getPlan, as(), {})).toMatchObject({ plan: "free", badge: false });
   expect(await shown()).toBe(true);
   await expect(call(updateBranding, as(), { poweredBy: false })).rejects.toMatchObject({ status: 400 });
+});
+
+test("its price replaced in Stripe: an add-on bought at the older one still hides the badge, and can still be removed", async () => {
+  const subscription = await subscribe();
+  await badge(true);
+  vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", `price_new_badge,${stripe.env.STRIPE_PRICE_BADGE_MONTHLY}`);
+  await deliver(stripe.update(subscription, {}));
+  expect(await shown()).toBe(false);
+  expect(await badge(false)).toEqual({ on: false });
+  expect(items(subscription)).toEqual([FAKE_STRIPE_PRICES.STRIPE_PRICE_PRO_MONTHLY.id]);
 });
 
 test("removed, in Tuti or in Stripe, the badge is back", async () => {
