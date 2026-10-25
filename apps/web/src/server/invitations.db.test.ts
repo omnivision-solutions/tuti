@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DAILY_INVITE_LIMIT, hashInvitationToken } from "@/lib/invitations";
 import { actAs, addMember, createProject, redirectTarget, signUp, type TestUser } from "@/test/helpers";
@@ -179,5 +179,60 @@ describe("pending invitations on the dashboard", () => {
       error: "This invite has expired, was revoked, or was already used",
     });
     expect(await isMember(invitee.id)).toBe(false);
+  });
+});
+
+describe("on the free plan (where plans are sold)", () => {
+  beforeEach(() => {
+    vi.stubEnv("PLANS", "on");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  const FULL = "Projects on the free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more.";
+
+  test("3 team members, invites still pending included; a new invite to the same address still replaces its own", async () => {
+    await addMember(project.id, "MEMBER");
+    const pending = newEmail();
+    expect(await createInvitation(project.slug, pending, "MEMBER")).toMatchObject({ emailSent: true });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toEqual({ error: FULL });
+    expect(await createInvitation(project.slug, pending, "ADMIN")).toMatchObject({ emailSent: true });
+    // On Pro, no limit.
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
+  });
+
+  test("two invites at once for the last place: only one is sent", async () => {
+    await addMember(project.id, "MEMBER");
+    const results = await Promise.all([createInvitation(project.slug, newEmail(), "MEMBER"), createInvitation(project.slug, newEmail(), "MEMBER")]);
+    expect(results.filter((result) => result.error === FULL)).toHaveLength(1);
+    expect(await prisma.invitation.count({ where: { projectId: project.id, revokedAt: null } })).toBe(1);
+  });
+
+  test("a project that dropped to Free keeps its team, but an invite sent before can't take a place it no longer has", async () => {
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    const email = newEmail();
+    const { url } = await createInvitation(project.slug, email, "MEMBER");
+    await addMember(project.id, "MEMBER");
+    await addMember(project.id, "MEMBER");
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "FREE" } });
+    const invitee = await signUp("Ivy", email);
+    actAs(invitee);
+    expect(await acceptInvitation(tokenOf(url!))).toEqual({
+      error: "This project's team is full on its plan. Ask one of its owners to upgrade it, then try again.",
+    });
+    expect(await isMember(invitee.id)).toBe(false);
+    expect(await prisma.teamMember.count({ where: { projectId: project.id } })).toBe(3);
+    // The invite is still there: it works once the plan is back.
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    expect(await redirectTarget(acceptInvitation(tokenOf(url!)))).toBe(`/app/${project.slug}`);
+  });
+
+  test("self-hosted (no plans), no limit", async () => {
+    vi.stubEnv("PLANS", "");
+    for (let i = 0; i < 3; i++) {
+      await addMember(project.id, "MEMBER");
+    }
+    expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
   });
 });

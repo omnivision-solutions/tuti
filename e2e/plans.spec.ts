@@ -71,3 +71,32 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByText("Paid plans can hide the badge at the foot of the portal for $49 a month.")).toBeVisible();
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
+
+test("on the free plan, a project has up to 3 team members, invites included, and code changes need Pro", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+  await owner.goto(`/app/${slug}/team`);
+  await expect(owner.getByText("Projects on the free plan have up to 3 team members, invites included (1 now)")).toBeVisible();
+  const invite = async (email: string) => {
+    await owner.getByRole("textbox", { name: "Email of the person to invite" }).fill(email);
+    await owner.getByRole("button", { name: "Send invite" }).click();
+  };
+  for (const email of [`e2e-${randomUUID()}@example.com`, `e2e-${randomUUID()}@example.com`]) {
+    await invite(email);
+    await expect(owner.getByText(`Invite sent to ${email}`)).toBeVisible();
+  }
+  await invite(`e2e-${randomUUID()}@example.com`);
+  await expect(
+    owner.getByText("Projects on the free plan have up to 3 team members, invites included. Upgrade to Pro in Settings → Billing to invite more."),
+  ).toBeVisible();
+  await checkpoint(owner, "team-free-plan-full");
+
+  await owner.goto(`/app/${slug}/code-changes`);
+  await expect(owner.getByRole("alert").filter({ hasText: "Code changes need the Pro plan." })).toContainText(
+    "Merged pull requests still go into the changelog's running draft",
+  );
+  await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByText("On this project's plan, merged pull requests go into the changelog's running draft only.")).toBeVisible();
+});
