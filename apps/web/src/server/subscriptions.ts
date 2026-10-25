@@ -72,7 +72,7 @@ const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often and in
  * whatever order Stripe says it's paid. Every paid period gets its credits, a second subscription's too:
- * it was paid for, and refunding it (as its log asks) takes them back (server/refunds.ts), so no guess
+ * it was paid for, and refunding it (as its log asks) takes them back (refunds, docs/plan.md), so no guess
  * about which subscription held the plan when is needed.
  */
 export async function grantPlanCredits(invoiceId: string): Promise<void> {
