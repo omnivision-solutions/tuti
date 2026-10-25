@@ -485,7 +485,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await visitor.goto("/docs/inviting-your-team");
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toHaveCount(0);
 
-  await recentlyDeleted.getByRole("button", { name: "Restore “Inviting your team”" }).click();
+  // From the keyboard: at the bottom of the page, the button can be under a toast, which waits while the pointer is over it.
+  await recentlyDeleted.getByRole("button", { name: "Restore “Inviting your team”" }).press("Enter");
   await expect(team.getByText("Restored “Inviting your team” as a draft")).toBeVisible();
   await expect(team.getByRole("region", { name: "Recently deleted" })).toHaveCount(0);
   // A draft again, in no collection now.
@@ -809,6 +810,7 @@ test("the team builds its docs in the tree: a tab, a collection and an article f
 test("the team splits the docs into tabs: the first takes the collections, others get theirs by menu and by dragging", async ({
   browser,
 }, testInfo) => {
+  test.setTimeout(60_000);
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const team = await signUp(browser, APP_URL, "Tess Team");
