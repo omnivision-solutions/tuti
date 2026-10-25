@@ -226,6 +226,9 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     return signed(sub.status === "canceled" ? "customer.subscription.deleted" : "customer.subscription.updated", sub);
   };
 
+  /** Events an API call causes, sent after it answers, as Stripe's are (the caller may hold locks its webhook needs). */
+  const sendLater = (events: FakeStripeEvent[]) => void setTimeout(() => void post(events), 0);
+
   const post = async (events: FakeStripeEvent[]) => {
     for (const { body, headers } of webhookUrl ? events : []) {
       await fetch(webhookUrl!, { method: "POST", body, headers }).catch(() => undefined);
@@ -297,7 +300,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         }
         const added = { id: id("si"), price: { id: price }, current_period_start: item.current_period_start, current_period_end: item.current_period_end };
         sub.items.data.push(added);
-        await post([signed("customer.subscription.updated", sub)]);
+        sendLater([signed("customer.subscription.updated", sub)]);
         return send(200, { object: "subscription_item", ...added });
       }
       const removing = /^\/v1\/subscription_items\/([^/]+)$/.exec(path);
@@ -307,7 +310,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
           return send(404, { error: { message: `No such subscription item: '${removing[1]}'` } });
         }
         sub.items.data = sub.items.data.filter((item) => item.id !== removing[1]);
-        await post([signed("customer.subscription.updated", sub)]);
+        sendLater([signed("customer.subscription.updated", sub)]);
         return send(200, { id: removing[1], object: "subscription_item", deleted: true });
       }
       if (req.method === "POST" && path === "/v1/billing_portal/sessions") {
