@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -93,7 +93,8 @@ export function ArticleSettings({
   const [customSlug, setCustomSlug] = useState(article.customSlug);
 
   return (
-    <Dialog
+    // A panel from the right, beside the article (which stays as it was underneath).
+    <Sheet
       open={open}
       onOpenChange={(next) => {
         // Opened again: as saved, not as left.
@@ -104,13 +105,13 @@ export function ArticleSettings({
         setOpen(next);
       }}
     >
-      <DialogTrigger render={<Button variant="ghost" />}>Settings</DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
-        <form {...keepingFields(action)}>
-          <DialogHeader>
-            <DialogTitle>Article settings</DialogTitle>
-          </DialogHeader>
-          <FieldGroup className="my-4">
+      <SheetTrigger render={<Button variant="ghost" />}>Settings</SheetTrigger>
+      <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        <form {...keepingFields(action)} className="flex min-h-0 flex-1 flex-col">
+          <SheetHeader className="border-b">
+            <SheetTitle>Article settings</SheetTitle>
+          </SheetHeader>
+          <FieldGroup className="min-h-0 flex-1 overflow-y-auto p-4">
             <WhoCanRead
               id="article-access"
               projectSlug={projectSlug}
@@ -193,14 +194,14 @@ export function ArticleSettings({
             </FieldSet>
             {state.error && <FieldError id="article-settings-error">{state.error}</FieldError>}
           </FieldGroup>
-          <DialogFooter className="items-center sm:justify-between">
+          <SheetFooter className="flex-row items-center justify-between border-t">
             <p className="text-sm text-muted-foreground">Applies to this article.</p>
             <Button type="submit" disabled={pending}>
               {pending ? "Saving…" : "Save changes"}
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

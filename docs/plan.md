@@ -60,6 +60,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] "Filter by title" is in the top bar on Docs pages (the home, a tab's, a collection's and an article's page): it filters the tree and the home's cards and rows alike, keeping what matches with the tab and collection it's in, and stays as you go between them (asked 2026-10-25)
 - [x] The way back ("← Docs", "← Feedback") is in the top bar, before the page's title (asked 2026-10-25)
 - [x] On phones, a page's actions (and the docs' filter) are a "More actions" menu from the top bar, not a row under the title (asked 2026-10-25)
+- [x] An article's Settings open in a panel from the right, beside the article, with Save changes always in view (asked 2026-10-25)
 - [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
 - [x] Per-project post numbers (`#123`) for `/p/<title>-<number>` URLs
