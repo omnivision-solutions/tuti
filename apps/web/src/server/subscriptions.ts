@@ -56,8 +56,9 @@ export async function syncSubscription(id: string): Promise<string | null> {
         },
       });
       if (count === 1) {
-        await tx.$executeRaw`UPDATE project SET "planSubscriptionIds" = array_append("planSubscriptionIds", ${id}) WHERE id = ${projectId} AND NOT (${id} = ANY("planSubscriptionIds"))`;
+        await tx.$executeRaw`UPDATE project SET "rejectedSubscriptionIds" = array_remove("rejectedSubscriptionIds", ${id}) WHERE id = ${projectId}`;
       } else if (await tx.project.count({ where: { id: projectId } })) {
+        await tx.$executeRaw`UPDATE project SET "rejectedSubscriptionIds" = array_append("rejectedSubscriptionIds", ${id}) WHERE id = ${projectId} AND NOT (${id} = ANY("rejectedSubscriptionIds"))`;
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
       return projectId;
@@ -74,8 +75,8 @@ export const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cyc
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often Stripe
  * says it's paid, and also when it says so only after the subscription ended (Stripe's events come in any
- * order). Only for a subscription that has held the project's plan (planSubscriptionIds), never a second
- * one rejected while another held it (unless it took the plan later, once that one ended).
+ * order), even when its subscription ended before Stripe said anything about it. Never for a second one
+ * turned away while another held the plan (rejectedSubscriptionIds), unless it took the plan later.
  */
 export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const invoice = await getInvoice(invoiceId);
@@ -86,7 +87,7 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
-  const holds = projectId && (await prisma.project.count({ where: { id: projectId, planSubscriptionIds: { has: subscription } } }));
+  const holds = projectId && (await prisma.project.count({ where: { id: projectId, NOT: { rejectedSubscriptionIds: { has: subscription } } } }));
   if (!holds || !line || !paid) {
     return;
   }
