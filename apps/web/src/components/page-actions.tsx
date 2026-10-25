@@ -16,6 +16,7 @@ export function PageActions({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   // A new page closes it.
   const pathname = usePathname();
   const [shown, setShown] = useState(pathname);
@@ -37,7 +38,16 @@ export function PageActions({ children }: { children: ReactNode }) {
     };
     // Picking from such a menu closes it too, once the pick is made.
     const picked = (event: MouseEvent) => (event.target as Element).closest?.('[role="menuitem"]') && setOpen(false);
-    const escape = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    // Escape from one of its actions takes focus back to its button, as they're about to be hidden.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      if (ref.current?.contains(document.activeElement)) {
+        toggle.current?.focus();
+      }
+      setOpen(false);
+    };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("click", picked);
     document.addEventListener("keydown", escape);
@@ -51,6 +61,7 @@ export function PageActions({ children }: { children: ReactNode }) {
   return (
     <div ref={ref} className="contents">
       <Button
+        ref={toggle}
         variant="ghost"
         size="icon"
         aria-label="More actions"

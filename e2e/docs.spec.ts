@@ -1467,11 +1467,13 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await expect(history).toBeHidden();
   await team.keyboard.press("Escape");
   await expect(settings).toBeHidden();
-  // Escape closes the menu too.
+  // Escape closes the menu too; from one of its actions, focus goes back to its button.
   await more.click();
   await expect(history).toBeVisible();
+  await history.focus();
   await team.keyboard.press("Escape");
   await expect(history).toBeHidden();
+  await expect(more).toBeFocused();
 
   // A menu in it ("Add content" on the docs' home): picking from it closes both.
   await team.goto(`/app/${slug}/docs`);
