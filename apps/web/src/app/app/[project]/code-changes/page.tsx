@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { codeChangesEnabled } from "@tuti/shared";
+import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -7,6 +7,7 @@ import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { PlanNotice } from "@/components/plan-notice";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,6 +27,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
     codeChangeList(projectId),
     prisma.githubInstallation.findUnique({ where: { projectId }, select: { project: { select: { analyseCodeChanges: true } } } }),
   ]);
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
   const listed = changes.filter((change) => change.state !== "nothing_to_do");
   const nothingToDo = changes.filter((change) => change.state === "nothing_to_do");
   const row = (change: CodeChangeView) => (
@@ -58,6 +60,11 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
         title="Code changes"
         description="Every pull request merged on your repositories, with what Tuti proposes: the feedback it resolves and the docs it changes. Nothing changes for your users until you apply it."
       />
+      {!planIncludes(plan, "codeChanges") && (
+        <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
+          Merged pull requests still go into the changelog&apos;s running draft, and code changes already here are kept.
+        </PlanNotice>
+      )}
       {changes.length === 0 ? (
         <EmptyState
           title="No code changes yet"

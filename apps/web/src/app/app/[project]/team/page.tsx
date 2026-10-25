@@ -1,4 +1,6 @@
 import { type TeamRole, prisma } from "@tuti/db";
+import { teamLimit } from "@tuti/shared";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { InviteForm, RevokeInvitationButton } from "@/components/invitations";
@@ -38,6 +40,8 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
       })
     : [];
   const assignable = ROLES.filter((r) => canAssignRole(myRole, r));
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } });
+  const limit = teamLimit(plan);
 
   return (
     <>
@@ -107,7 +111,19 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
         <Card>
           <CardHeader>
             <CardTitle>Invite people</CardTitle>
-            <CardDescription>We&apos;ll email them an invite. Only that email address can accept it.</CardDescription>
+            <CardDescription>
+              We&apos;ll email them an invite. Only that email address can accept it.
+              {limit !== null && (
+                <>
+                  {" "}
+                  Projects on the free plan have up to {limit} team members, invites included ({members.length + invitations.length} now);{" "}
+                  <Link href={`/app/${project.slug}/settings/billing`} className="underline underline-offset-4">
+                    upgrade
+                  </Link>{" "}
+                  for more.
+                </>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <InviteForm projectSlug={project.slug} roles={assignable} />
