@@ -68,7 +68,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
 }
 
 /** Invoices that pay for a period of the plan: the first and each renewal. An upgrade's proration isn't one: the new plan's credits come with its next period. */
-const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
+export const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
 
 /**
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,

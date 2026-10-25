@@ -7,13 +7,16 @@ export const FAKE_STRIPE_WEBHOOK_SECRET = "whsec_test_fake";
 
 /** The fake's prices for plans and the "Powered by tuti" add-on, by the env var the app reads each from, and how often each bills. */
 export const FAKE_STRIPE_PRICES = {
-  STRIPE_PRICE_PRO_MONTHLY: { id: "price_fake_pro_monthly", interval: "month" },
-  STRIPE_PRICE_PRO_YEARLY: { id: "price_fake_pro_yearly", interval: "year" },
-  STRIPE_PRICE_BUSINESS_MONTHLY: { id: "price_fake_business_monthly", interval: "month" },
-  STRIPE_PRICE_BUSINESS_YEARLY: { id: "price_fake_business_yearly", interval: "year" },
-  STRIPE_PRICE_BADGE_MONTHLY: { id: "price_fake_badge_monthly", interval: "month" },
-  STRIPE_PRICE_BADGE_YEARLY: { id: "price_fake_badge_yearly", interval: "year" },
+  STRIPE_PRICE_PRO_MONTHLY: { id: "price_fake_pro_monthly", interval: "month", cents: 3900 },
+  STRIPE_PRICE_PRO_YEARLY: { id: "price_fake_pro_yearly", interval: "year", cents: 38400 },
+  STRIPE_PRICE_BUSINESS_MONTHLY: { id: "price_fake_business_monthly", interval: "month", cents: 9900 },
+  STRIPE_PRICE_BUSINESS_YEARLY: { id: "price_fake_business_yearly", interval: "year", cents: 94800 },
+  STRIPE_PRICE_BADGE_MONTHLY: { id: "price_fake_badge_monthly", interval: "month", cents: 4900 },
+  STRIPE_PRICE_BADGE_YEARLY: { id: "price_fake_badge_yearly", interval: "year", cents: 58800 },
 } as const;
+
+/** What a price costs: the fake's own, or 1,000 cents for one made for a test. */
+const centsOf = (price: string): number => Object.values(FAKE_STRIPE_PRICES).find((p) => p.id === price)?.cents ?? 1000;
 
 /** How often a price bills: the fake's own, or any other `price_…` monthly (a price made for a test). */
 const intervalOf = (price: string) =>
@@ -37,9 +40,14 @@ export type FakeCheckoutSession = {
   customer: string | null;
   customer_email: string | null;
   subscription: string | null;
+  /** The payment once it's paid (a one-time payment's; a subscription's first is its invoice's). */
+  payment_intent: string | null;
   payment_status: "unpaid" | "paid";
   url: string;
 };
+
+/** A charge (2025-03-31.basil): the payment it's for, its amount, what's refunded, and whether it's disputed. */
+export type FakeCharge = { id: string; object: "charge"; amount: number; amount_refunded: number; disputed: boolean; payment_intent: string };
 
 /** A subscription, shaped like Stripe's (API version 2025-03-31.basil): its plan is its first item. */
 export type FakeSubscription = {
@@ -60,6 +68,7 @@ export type FakeInvoice = {
   customer: string;
   status: string;
   billing_reason: string;
+  amount_paid: number;
   parent: { type: "subscription_details"; subscription_details: { subscription: string; metadata: Record<string, string> } };
   lines: { data: { id: string; period: { start: number; end: number }; pricing: { type: "price_details"; price_details: { price: string } } }[] };
 };
@@ -80,6 +89,14 @@ export type StripeFake = {
   sessions: FakeCheckoutSession[];
   subscriptions: Map<string, FakeSubscription>;
   invoices: Map<string, FakeInvoice>;
+  /** Every charge, by id. */
+  charges: Map<string, FakeCharge>;
+  /** The charge that paid a Checkout Session (one-time payments) or an invoice. */
+  chargeFor(sessionOrInvoiceId: string): FakeCharge;
+  /** Refunds `cents` of a charge (all of what's left without), as the dashboard would: its `charge.refunded` event. */
+  refund(chargeId: string, cents?: number): FakeStripeEvent;
+  /** A customer disputes a charge: its `charge.dispute.created` event. */
+  dispute(chargeId: string): FakeStripeEvent;
   /** Customer portal sessions: each one's customer and where it returns to. */
   portals: { id: string; customer: string; return_url: string; url: string }[];
   /** A signed event about a session (marked paid for the "paid" ones), as Stripe would post it to the app's webhook. */
@@ -122,6 +139,18 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
   const subscriptions = new Map<string, FakeSubscription>();
   const invoices = new Map<string, FakeInvoice>();
   const portals: StripeFake["portals"] = [];
+  const charges = new Map<string, FakeCharge>();
+  /** Which Checkout Session or invoice each payment intent paid. */
+  const paid = new Map<string, { session?: string; invoice?: string }>();
+
+  /** A payment of `amount` for a session or an invoice: its payment intent and charge. */
+  const charge = (amount: number, paidFor: { session?: string; invoice?: string }) => {
+    const intent = id("pi");
+    const made: FakeCharge = { id: id("ch"), object: "charge", amount, amount_refunded: 0, disputed: false, payment_intent: intent };
+    charges.set(made.id, made);
+    paid.set(intent, paidFor);
+    return intent;
+  };
 
   const signed = (type: string, object: object): FakeStripeEvent => {
     const body = JSON.stringify({ id: id("evt"), object: "event", type, data: { object } });
@@ -148,12 +177,13 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
   /** A paid invoice for the subscription's current period. */
   const invoice = (sub: FakeSubscription, billingReason: string) => {
     const item = sub.items.data[0]!;
-    const paid: FakeInvoice = {
+    const paidInvoice: FakeInvoice = {
       id: id("in"),
       object: "invoice",
       customer: sub.customer,
       status: "paid",
       billing_reason: billingReason,
+      amount_paid: sub.items.data.reduce((sum, each) => sum + centsOf(each.price.id), 0),
       parent: { type: "subscription_details", subscription_details: { subscription: sub.id, metadata: sub.metadata } },
       lines: {
         data: sub.items.data.map((each) => ({
@@ -163,8 +193,9 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         })),
       },
     };
-    invoices.set(paid.id, paid);
-    return signed("invoice.paid", paid);
+    invoices.set(paidInvoice.id, paidInvoice);
+    charge(paidInvoice.amount_paid, { invoice: paidInvoice.id });
+    return signed("invoice.paid", paidInvoice);
   };
 
   const pay = (sessionId: string): FakeStripeEvent[] => {
@@ -173,6 +204,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       throw new Error(`No session ${sessionId}`);
     }
     if (session.mode === "payment") {
+      session.payment_intent ??= charge(session.amount_total, { session: session.id });
       return [event(session.id)];
     }
     const now = Math.floor(Date.now() / 1000);
@@ -263,11 +295,34 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
           customer: field("customer"),
           customer_email: field("customer_email"),
           subscription: null,
+          payment_intent: null,
           payment_status: "unpaid",
           url: `${url}/checkout/${sessionId}`,
         };
         sessions.push(session);
         return send(200, { object: "checkout.session", ...session });
+      }
+      const params = new URL(req.url ?? "/", "http://fake").searchParams;
+      if (req.method === "GET" && path === "/v1/checkout/sessions") {
+        return send(200, { object: "list", data: sessions.filter((s) => s.payment_intent && s.payment_intent === params.get("payment_intent")) });
+      }
+      if (req.method === "GET" && path === "/v1/invoice_payments") {
+        const invoice = params.get("payment[type]") === "payment_intent" ? paid.get(params.get("payment[payment_intent]") ?? "")?.invoice : undefined;
+        return send(200, { object: "list", data: invoice ? [{ object: "invoice_payment", invoice }] : [] });
+      }
+      const chargeRead = /^\/v1\/charges\/([^/]+)$/.exec(path);
+      if (req.method === "GET" && chargeRead) {
+        const found = charges.get(chargeRead[1]!);
+        return found ? send(200, found) : send(404, { error: { message: `No such charge: '${chargeRead[1]}'` } });
+      }
+      const cancelling = /^\/v1\/subscriptions\/([^/]+)$/.exec(path);
+      if (req.method === "DELETE" && cancelling) {
+        const sub = subscriptions.get(cancelling[1]!);
+        if (!sub || sub.status === "canceled") {
+          return send(sub ? 400 : 404, { error: { message: sub ? "This subscription is already canceled" : `No such subscription: '${cancelling[1]}'` } });
+        }
+        await post([update(sub.id, { status: "canceled" })]);
+        return send(200, sub);
       }
       const read = /^\/v1\/(subscriptions|invoices)\/([^/]+)$/.exec(path);
       if (req.method === "GET" && read) {
@@ -286,7 +341,20 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
         }
         const added = { id: id("si"), price: { id: price }, current_period_start: item.current_period_start, current_period_end: item.current_period_end };
         sub.items.data.push(added);
-        await post([signed("customer.subscription.updated", sub)]);
+        // Charged at once (always_invoice): an invoice for what's left of the period, paid.
+        const proration: FakeInvoice = {
+          id: id("in"),
+          object: "invoice",
+          customer: sub.customer,
+          status: "paid",
+          billing_reason: "subscription_update",
+          amount_paid: centsOf(price),
+          parent: { type: "subscription_details", subscription_details: { subscription: sub.id, metadata: sub.metadata } },
+          lines: { data: [{ id: id("il"), period: { start: item.current_period_start, end: item.current_period_end }, pricing: { type: "price_details", price_details: { price } } }] },
+        };
+        invoices.set(proration.id, proration);
+        charge(proration.amount_paid, { invoice: proration.id });
+        await post([signed("customer.subscription.updated", sub), signed("invoice.paid", proration)]);
         return send(200, { object: "subscription_item", ...added });
       }
       const removing = /^\/v1\/subscription_items\/([^/]+)$/.exec(path);
@@ -363,6 +431,25 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
     invoices,
     portals,
     event,
+    charges,
+    chargeFor: (sessionOrInvoiceId: string) => {
+      const intent = [...paid].find(([, paidFor]) => paidFor.session === sessionOrInvoiceId || paidFor.invoice === sessionOrInvoiceId)?.[0];
+      const found = [...charges.values()].find((c) => c.payment_intent === intent);
+      if (!found) {
+        throw new Error(`No charge for ${sessionOrInvoiceId}`);
+      }
+      return found;
+    },
+    refund: (chargeId: string, cents?: number) => {
+      const found = charges.get(chargeId)!;
+      found.amount_refunded = Math.min(found.amount, found.amount_refunded + (cents ?? found.amount - found.amount_refunded));
+      return signed("charge.refunded", found);
+    },
+    dispute: (chargeId: string) => {
+      const found = charges.get(chargeId)!;
+      found.disputed = true;
+      return signed("charge.dispute.created", { id: id("dp"), object: "dispute", charge: found.id, amount: found.amount, status: "needs_response" });
+    },
     pay,
     renew,
     update,
