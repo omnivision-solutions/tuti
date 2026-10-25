@@ -135,8 +135,10 @@ export const setBadgeAddOn = defineOperation({
       throw new OperationError(409, "payment_failing", "The last payment didn't go through. Update the card in Manage plan first.");
     }
     const subscription = project.stripeSubscriptionId;
+    const uncertain = "Couldn't confirm the change with Stripe: it may have gone through. Check Billing in a moment before trying again.";
     try {
-      // One change at a time per project, so two clicks can't add it twice.
+      // One change at a time per project, so two clicks can't add it twice, and the badge setting saved
+      // with the change it goes with: the last change made is the one that stays.
       await prisma.$transaction(
         async (tx) => {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${projectId}))`;
@@ -147,6 +149,7 @@ export const setBadgeAddOn = defineOperation({
           for (const item of on ? [] : items) {
             await removeSubscriptionItem(item.id);
           }
+          await tx.project.update({ where: { id: projectId }, data: { poweredBy: !on } });
         },
         // Stripe's answers come within their 15-second timeouts.
         { timeout: 40_000 },
@@ -156,11 +159,16 @@ export const setBadgeAddOn = defineOperation({
         throw new OperationError(402, "payment_failed", "The payment didn't go through. Update the card in Manage plan, then try again.");
       }
       log.error('Changing the "Powered by tuti" add-on on Stripe failed', { projectId, on, error });
-      throw new OperationError(502, "stripe_failed", "Couldn't confirm the change with Stripe: it may have gone through. Check Billing in a moment before trying again.");
+      throw new OperationError(502, "stripe_failed", uncertain);
     }
     // Stripe's webhook says so too; read now so the badge changes at once.
-    await syncSubscription(subscription);
-    const { badgeAddOn } = await prisma.project.update({ where: { id: projectId }, data: { poweredBy: !on }, select: { badgeAddOn: true } });
+    try {
+      await syncSubscription(subscription);
+    } catch (error) {
+      log.error('Reading the subscription after changing the "Powered by tuti" add-on failed', { projectId, on, error });
+      throw new OperationError(502, "stripe_failed", uncertain);
+    }
+    const { badgeAddOn } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { badgeAddOn: true } });
     return { on: badgeAddOn };
   },
 });
