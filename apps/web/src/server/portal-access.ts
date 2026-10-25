@@ -1,4 +1,5 @@
-import { prisma } from "@tuti/db";
+import { type Plan, prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
@@ -21,25 +22,29 @@ import { getSession } from "./session";
  * that email is verified); signing up, a sign-in link or any other Tuti account gets an account,
  * not a way in. proxy.ts applies this to every portal page and
  * file, the widget panel and /api/widget/latest to themselves, and the readers' actions through
- * readableProject (or canActIn, for those that need an account).
+ * readableProject (or canActIn, for those that need an account). On a plan without private portals
+ * (where plans are sold), a private portal stays private but only its team may read it, and content for
+ * reader groups is the team's only, until the plan is back: nothing becomes more public.
  *
  * Not a "use server" module: its exports must never be callable from browsers.
  */
 export async function canReadPortal(where: { id: string } | { slug: string }, userId: string | null | undefined): Promise<boolean> {
-  const project = await prisma.project.findUnique({ where, select: { id: true, portalAccess: true } });
+  const project = await prisma.project.findUnique({ where, select: { id: true, portalAccess: true, plan: true } });
   // A missing project has nothing to hide; callers answer "not found" for it.
   if (!project || project.portalAccess === "PUBLIC") {
     return true;
   }
-  return !!userId && (await isPrivateReader(project.id, userId));
+  return !!userId && (await isPrivateReader(project, userId));
 }
 
-/** On the project's team, signed in by its SSO, or one of its readers (with that email verified). */
-async function isPrivateReader(projectId: string, userId: string): Promise<boolean> {
+/** On the project's team, or, on a plan with private portals, signed in by its SSO or one of its readers (with that email verified). */
+async function isPrivateReader(project: { id: string; plan: Plan }, userId: string): Promise<boolean> {
+  const projectId = project.id;
+  const readers = planIncludes(project.plan, "privatePortal");
   const [member, sso, reader] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
-    prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }),
-    invitedReader(projectId, userId),
+    readers ? prisma.ssoIdentity.findFirst({ where: { userId, projectId }, select: { id: true } }) : null,
+    readers ? invitedReader(projectId, userId) : null,
   ]);
   return !!(member || sso || reader === "verified");
 }
@@ -63,12 +68,12 @@ export async function invitedReader(projectId: string, userId: string): Promise<
  * public portal (or a missing one) needs no session.
  */
 export async function portalVisitor(slug: string, headers: Headers, preview?: string): Promise<"public" | "allowed" | "refused"> {
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, portalAccess: true, plan: true } });
   if (!project || project.portalAccess === "PUBLIC") {
     return "public";
   }
   const session = await auth.api.getSession({ headers });
-  if (session && (await isPrivateReader(project.id, session.user.id))) {
+  if (session && (await isPrivateReader(project, session.user.id))) {
     return "allowed";
   }
   return (await previewReader(project.id, preview)) ? "allowed" : "refused";
@@ -134,19 +139,24 @@ export async function readableProject(slug: string): Promise<{ id: string } | nu
  * team (everything); else whether they're signed in, and the keys of the groups they're in as the
  * project's user (by their properties, see lib/group-conditions.ts): the one
  * its SSO signed them in as, or, signed in another way, the ones with their address once it's
- * verified (any of them puts them in a group). None for everyone else. Once per request: pages ask many times.
+ * verified (any of them puts them in a group). None for everyone else, and none on a plan without
+ * reader groups. Once per request: pages ask many times.
  */
 export const readerOf = cache(async (projectId: string, userId: string | null | undefined): Promise<Reader> => {
   if (!userId) {
     return SIGNED_OUT;
   }
-  const [member, account, groups] = await Promise.all([
+  const [member, account, groups, project] = await Promise.all([
     prisma.teamMember.findUnique({ where: { projectId_userId: { projectId, userId } }, select: { id: true } }),
     prisma.user.findUnique({ where: { id: userId }, select: { email: true, emailVerified: true } }),
     prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true } }),
+    prisma.project.findUnique({ where: { id: projectId }, select: { plan: true } }),
   ]);
   if (member) {
     return null;
+  }
+  if (!project || !planIncludes(project.plan, "privatePortal")) {
+    return { signedIn: true, groups: [] };
   }
   // SSO accounts' own addresses are placeholders, never verified. Emails are kept lowercase, but an
   // instance from before that (still running while a deploy overlaps it) may write one that isn't.

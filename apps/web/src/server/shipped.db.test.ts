@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
 import { startSmtpFake } from "@tuti/testkit/smtp";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { POST as unsubscribe } from "@/app/portal/[project]/(site)/unsubscribe/confirm/route";
 import { upsertProjectUser } from "@/server/project-users";
@@ -20,6 +20,9 @@ let project: Awaited<ReturnType<typeof createProject>>;
 beforeEach(async () => {
   owner = await signUp("Owner");
   project = await createProject(owner);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 const as = (userId: string) => ({ actor: { kind: "user" as const, userId }, projectId: project.id });
@@ -113,6 +116,35 @@ describe("when a post ships", () => {
 
     expect(emailsTo(colleague.email).map((email) => email.subject)).toEqual(["Done: SAML"]);
     expect(emailsTo(author.email)).toEqual([]);
+  });
+
+  test("on a private portal of a project whose plan no longer has private portals, it's the team's only: nobody hears", async () => {
+    vi.stubEnv("PLANS", "on");
+    const reader = await verified("Reader");
+    await prisma.portalReader.create({ data: { projectId: project.id, email: reader.email } });
+    const ssoEmail = `e2e-${randomUUID()}@example.com`;
+    const ssoUser = await upsertProjectUser(project.id, `ext-${randomUUID()}`, { name: "From the app", email: ssoEmail });
+    const post = await call(createPost, as(reader.id), { board: "feature-requests", title: "Webhooks" });
+    await call(setVote, as(ssoUser), { number: post.number, voted: true });
+    await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE", plan: "PRO" } });
+
+    await setStatus(post.number, "completed");
+
+    expect(emailsTo(reader.email)).toEqual([]);
+    expect(emailsTo(ssoEmail)).toEqual([]);
+    // A claim an earlier try left unsent doesn't keep the post due.
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    await prisma.shippedEmail.create({ data: { postId, userId: reader.id, claimedAt: new Date(Date.now() - 3_600_000) } });
+    // Another run's claim, still sending: kept.
+    const sending = await verified("Sending");
+    await prisma.shippedEmail.create({ data: { postId, userId: sending.id } });
+    await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    expect(await prisma.shippedEmail.findMany({ where: { postId }, select: { userId: true } })).toEqual([{ userId: sending.id }]);
+    // Once it's sent, the next run finds the post done.
+    await prisma.shippedEmail.update({ where: { postId_userId: { postId, userId: sending.id } }, data: { sentAt: new Date() } });
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toBeNull();
   });
 
   test("a mail outage doesn't lose anyone: the retry emails those not reached, once", async () => {

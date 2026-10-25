@@ -1,5 +1,8 @@
+import { prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
+import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { ReaderGroups } from "@/components/reader-groups";
@@ -15,10 +18,18 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
   if (!project) {
     notFound();
   }
-  const { access } = await portalAccess(project.id);
+  const [{ access }, { plan }] = await Promise.all([
+    portalAccess(project.id),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+  ]);
 
   return (
     <>
+      {!planIncludes(plan, "privatePortal") && (
+        <PlanNotice feature="privatePortal" projectSlug={project.slug} admin>
+          Without it, a private portal and content for reader groups are your team&apos;s only. Your settings are kept.
+        </PlanNotice>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Portal access</CardTitle>

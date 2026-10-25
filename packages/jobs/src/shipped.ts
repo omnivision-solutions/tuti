@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
-import type { JobInput } from "@tuti/shared";
+import { type JobInput, planIncludes } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { portalAddress } from "./portal-address";
@@ -89,7 +89,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       board: { select: { slug: true } },
       projectId: true,
       authorId: true,
-      project: { select: { name: true, slug: true, portalAccess: true } },
+      project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
       votes: { select: { userId: true } },
       comments: { select: { authorId: true } },
     },
@@ -99,7 +99,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { skipped: true };
   }
   const { projectId, project } = post;
-  const ids = [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
+  // On a plan without private portals, a private portal is its team's only: nobody past it to tell.
+  const teamOnly = project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal");
+  const ids = teamOnly ? [] : [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
+  if (teamOnly) {
+    // Claims a crashed try left unsent won't be sent now: dropped, so the post isn't due again and again.
+    // A run still sending keeps its claim (not stale yet), so it can mark it sent.
+    await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
+  }
   // A private portal's post is only for its readers: past the team, the people its SSO signs in and
   // the readers the team added by email (verified, as server/portal-access.ts asks).
   const readers =
