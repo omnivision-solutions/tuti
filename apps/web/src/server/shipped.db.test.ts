@@ -135,9 +135,15 @@ describe("when a post ships", () => {
     // A claim an earlier try left unsent doesn't keep the post due.
     const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
     await prisma.shippedEmail.create({ data: { postId, userId: reader.id, claimedAt: new Date(Date.now() - 3_600_000) } });
+    // Another run's claim, still sending: kept.
+    const sending = await verified("Sending");
+    await prisma.shippedEmail.create({ data: { postId, userId: sending.id } });
     await prisma.post.update({ where: { id: postId }, data: { shippedEmailsDueAt: new Date() } });
     await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
-    expect(await prisma.shippedEmail.count({ where: { postId } })).toBe(0);
+    expect(await prisma.shippedEmail.findMany({ where: { postId }, select: { userId: true } })).toEqual([{ userId: sending.id }]);
+    // Once it's sent, the next run finds the post done.
+    await prisma.shippedEmail.update({ where: { postId_userId: { postId, userId: sending.id } }, data: { sentAt: new Date() } });
+    await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
     expect((await prisma.post.findUniqueOrThrow({ where: { id: postId }, select: { shippedEmailsDueAt: true } })).shippedEmailsDueAt).toBeNull();
   });
 
