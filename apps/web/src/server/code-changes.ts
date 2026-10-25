@@ -65,7 +65,7 @@ export async function applyLikelyCodeChanges(projectSlug: string, codeChangeId: 
     }
     const actions = await prisma.codeChangeAction.findMany({
       where: { codeChangeId: change.id, status: "PENDING", kind: { in: ["RESOLVES", "MOVES_FORWARD", "LINKS", "CHANGELOG_LINE"] } },
-      orderBy: { probability: "desc" },
+      orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
       select: { id: true, kind: true, probability: true, payload: true },
     });
     for (const action of actions) {

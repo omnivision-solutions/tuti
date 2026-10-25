@@ -111,7 +111,7 @@ export async function codeChangeList(projectId: string, { waiting = false, pause
   return changes.map(changeView).sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
 }
 
-/** One code change with its proposed actions (most likely first), or null if the project has no such code change. */
+/** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
 export async function codeChangeDetail(projectId: string, id: string) {
   const change = await prisma.codeChange.findFirst({
     where: { id, projectId },
@@ -119,7 +119,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
       ...changeSelect,
       why: true,
       actions: {
-        orderBy: { probability: "desc" },
+        orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
         select: {
           id: true,
           kind: true,

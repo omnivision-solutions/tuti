@@ -174,6 +174,15 @@ test("the list puts code changes with proposals waiting first, then the newest",
   expect((await codeChangeList(project.id, { waiting: true })).map((change) => change.number)).toEqual([2]);
 });
 
+test("proposals as likely as each other keep one order: by kind, then id", async () => {
+  const { change, post, action: unlikely } = await proposal("LINKS", { probability: 0.5 });
+  // Created out of order, so the order they're stored in isn't the one the team sees.
+  for (const [id, kind] of [["b", "LINKS"], ["a", "LINKS"], ["c", "RESOLVES"]] as const) {
+    await prisma.codeChangeAction.create({ data: { id, codeChangeId: change.id, kind, postId: post.id, probability: 0.9 } });
+  }
+  expect((await call(getCodeChange, team(), { id: change.id })).actions.map((action) => action.id)).toEqual(["c", "a", "b", unlikely.id]);
+});
+
 test('"Apply likely" applies the likely feedback proposals and leaves the maybes, and a comment nobody wrote', async () => {
   // Most likely of all, but with no comment to post: it waits for the team, and doesn't stop the rest.
   const unwritten = await proposal("MOVES_FORWARD", { probability: 0.95 });
