@@ -430,13 +430,18 @@ What tuti.so sells, from a review of feedback, changelog and help center tools a
 
 Decided:
 - Hiding "Powered by tuti" is a $49 a month add-on per project, never part of a plan (2026-10-25). Paid plans on tuti.so can add it, and self-hosted projects buy it at the same price; the free plan can't
+- Three plans and Enterprise, per project, priced monthly (2026-10-25):
+  - Free, $0: 1 project, 3 team members, a `*.tuti.so` address, the badge (the add-on can't be bought), one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
+  - Pro, $39 a month: unlimited team members, custom domain, code changes, AI credits every month
+  - Business, $99 a month: Pro, plus a private portal, reader groups and readers by email, a portal under a path of your own site, more AI credits every month, priority support
+  - Enterprise, by quote: SAML for the team, audit logs, an SLA, invoices
+- Why these steps: Pro sits by Frill, Nolt and Featurebase's first paid plans (about $25–39) while also including a changelog and docs; Business is 2.5× Pro, the usual step (Featurebase $29 → $59 → $99); Pro at $39 keeps the $49 add-on about the size of the plan rather than larger
 
-Proposed, not decided yet (prices and limits to confirm):
-- Free: 1 project, 3 team members, a `*.tuti.so` address, the badge, one-off starter AI credits (`AI_CREDITS_FREE`), GitHub code changes off (merged pull requests still feed the running draft)
-- Pro, about $29 a month ($24 yearly): unlimited team members, custom domain, code changes, 1,000 AI credits a month
-- Business, about $99 a month ($79 yearly): Pro, plus a private portal, reader groups and readers by email, a portal under a path of your own site, 5,000 AI credits a month, priority support
-- Enterprise, by quote: SAML for the team, audit logs, an SLA, invoices
+Proposed, not decided yet:
+- Yearly: about two months free (Pro about $32 a month, Business about $79)
+- AI credits a month: Pro 1,000, Business 5,000; shown on the pricing page as "about N AI answers a month" once real costs per answer are known
 - AI: a credit is 1 cent to customers (`AI_CREDITS_PER_TOPUP_DOLLAR` 100); the usage rate is set once real costs per answer and per code change are known (Settings → Usage), likely a 3–5× markup, still well under competitors' $0.20–0.99 per AI answer. Plan credits are a `PLAN` grant that ends with its billing period
+- Business could later add features that grow with a team (a longer history in Usage and Insights, more GitHub repositories, approvals), so the step up isn't mostly credits and private portals
 
 - [ ] Stripe subscriptions per project: Checkout to start a plan, Stripe's customer portal to change or cancel it, and webhooks for subscriptions and paid invoices (each paid invoice gives that period's plan credits)
 - [ ] The "Powered by tuti" add-on as a subscription item on a paid plan: hides the badge while both are paid; refused on the free plan; ends with the plan
