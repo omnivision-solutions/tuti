@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { Fragment, type ReactNode } from "react";
 
-import { docHeadings } from "./document";
+import { docHeadings, listStart } from "./document";
 import { isSafeLink, isVideo, LINK_REL, VIDEO_SANDBOX, videoEmbedUrl } from "./links";
 import { imageKey, imageWidths, type MediaUrls } from "./media";
 import { isCellSpan, isMediaId, isPixelSize } from "./profiles";
@@ -53,9 +53,9 @@ function renderNode(node: JSONContent, key: number, media: MediaUrls | undefined
     case "bulletList":
       return <ul key={key}>{inner()}</ul>;
     case "orderedList": {
-      const start = Number(node.attrs?.start);
+      const start = listStart(node);
       return (
-        <ol key={key} start={Number.isInteger(start) && start > 1 ? start : undefined}>
+        <ol key={key} start={start > 1 ? start : undefined}>
           {inner()}
         </ol>
       );

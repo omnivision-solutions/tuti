@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { diffLines } from "./line-diff";
+import { diffBlocks, diffLines } from "./line-diff";
 
 const show = (before: string, after: string) =>
   diffLines(before, after).map(({ kind, text }) => `${{ same: " ", added: "+", removed: "-" }[kind]}${text}`);
@@ -28,4 +28,26 @@ test("a huge rewrite shows as replaced instead of using a lot of memory", () => 
   expect(diff[1]).toEqual({ kind: "removed", text: "old 0" });
   expect(diff[3001]).toEqual({ kind: "added", text: "new 0" });
   expect(diff.at(-1)).toEqual({ kind: "same", text: "End" });
+});
+
+test("blocks compare with their formatting, and a list's items one by one", () => {
+  const text = (value: string, bold = false) => ({ type: "text", text: value, ...(bold ? { marks: [{ type: "bold" }] } : {}) });
+  const p = (value: string, bold = false) => ({ type: "paragraph", content: [text(value, bold)] });
+  const item = (value: string) => ({ type: "listItem", content: [p(value)] });
+  const before = { type: "doc", content: [p("Intro"), p("Save draft"), { type: "orderedList", attrs: { start: 1 }, content: [item("One"), item("Two")] }] };
+  const after = { type: "doc", content: [p("Intro"), p("Save draft", true), { type: "orderedList", attrs: { start: 1 }, content: [item("One"), item("Two!")] }] };
+  const diff = diffBlocks(before, after);
+  expect(diff.map(({ kind }) => kind)).toEqual(["same", "removed", "added", "same", "removed", "added"]);
+  // Bold now: the added paragraph keeps its mark.
+  expect(diff[2]!.doc.content).toEqual([p("Save draft", true)]);
+  // The second item keeps its number.
+  expect(diff[5]!.doc.content).toEqual([{ type: "orderedList", attrs: { start: 2 }, content: [item("Two!")] }]);
+  // A list that starts at another number: its items read differently, so they've changed.
+  const renumbered = { type: "doc", content: [{ type: "orderedList", attrs: { start: 3 }, content: [item("One"), item("Two!")] }] };
+  expect(diffBlocks({ type: "doc", content: [after.content[2]!] }, renumbered).map(({ kind }) => kind)).toEqual(["removed", "removed", "added", "added"]);
+  // Readers' pages count a list stored as starting at 0 from 1 (listStart): the same list to them.
+  const fromZero = { type: "doc", content: [{ type: "orderedList", attrs: { start: 0 }, content: [item("One"), item("Two!")] }] };
+  const fromZeroDiff = diffBlocks(fromZero, { type: "doc", content: [after.content[2]!] });
+  expect(fromZeroDiff.map(({ kind }) => kind)).toEqual(["same", "same"]);
+  expect(fromZeroDiff[1]!.doc.content![0]!.attrs).toEqual({ start: 2 });
 });

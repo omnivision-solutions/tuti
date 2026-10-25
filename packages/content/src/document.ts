@@ -217,6 +217,12 @@ export function toChunks(doc: JSONContent): Chunk[] {
   return chunks.length ? chunks : [{ heading: "", text: "" }];
 }
 
+/** The number an ordered list starts at, as readers see it: a stored start that isn't a whole number above 1 counts from 1. */
+export function listStart(list: JSONContent): number {
+  const start = Number(list.attrs?.start);
+  return Number.isInteger(start) && start > 1 ? start : 1;
+}
+
 /** Whether there's nothing in it (no text, images or videos), e.g. an untouched editor. */
 export function isEmptyDoc(doc: JSONContent): boolean {
   let embeds = false;

@@ -9,7 +9,7 @@ import { ArticleSettings } from "@/components/article-settings";
 import { previewUrl } from "@/lib/portal-base";
 import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
-import { ArticleDiff } from "@/components/line-diff";
+import { ArticleDiff } from "@/components/article-diff";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
@@ -62,7 +62,8 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
     <>
       <BackLink href={`/app/${slug}/docs`}>Docs</BackLink>
       <PageHeader
-        title={article.title}
+        // The form's title field shows it, right under this.
+        title={<span className="sr-only">{article.title}</span>}
         description={
           article.publishedAt ? (
             <>

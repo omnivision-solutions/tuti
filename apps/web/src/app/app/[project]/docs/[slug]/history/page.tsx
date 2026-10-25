@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/back-link";
 import { RestoreVersionButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
-import { ArticleDiff } from "@/components/line-diff";
+import { ArticleDiff } from "@/components/article-diff";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,9 +29,10 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
       slug: true,
       title: true,
       body: true,
+      content: true,
       publishedAt: true,
       collection: { select: { name: true } },
-      changes: { select: { title: true, body: true, collection: { select: { name: true } } } },
+      changes: { select: { title: true, body: true, content: true, collection: { select: { name: true } } } },
     },
   });
   if (!article) {
