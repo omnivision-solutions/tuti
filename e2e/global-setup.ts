@@ -8,7 +8,7 @@ import { startMigratedPostgres } from "@tuti/testkit/postgres";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
 import { SCREENSHOTS_DIR } from "./checkpoint";
-import { APP_URL, serverEnv } from "./env";
+import { APP_URL, CLOUD_URL, cloudEnv, serverEnv } from "./env";
 import { MAIL_DIR } from "./mail";
 
 /**
@@ -16,14 +16,17 @@ import { MAIL_DIR } from "./mail";
  * OpenAI fake (embeddings for duplicate detection), the model fake (AI drafting), the S3 fake (image uploads), the
  * DNS fake (custom domains' TXT records), the Cloudflare fake (their certificates) and the
  * production build of the web app (`pnpm build` first; `pnpm test:e2e` does),
- * with background jobs running inline.
+ * with background jobs running inline: twice, as a self-hosted server (APP_URL) and as Tuti's cloud,
+ * which sells plans (CLOUD_URL), both on the same database.
  */
 export default async function globalSetup() {
   // A server already on the port (another checkout's run) would answer for ours, which then
   // fails to start: the journeys would quietly test that other code. (Checked again below: the
   // run waits for its own server to say it's listening.)
-  if (await portTaken(new URL(APP_URL))) {
-    throw new Error(`Something is already serving ${APP_URL} (another test run?). Stop it, or set E2E_PORT to a free port.`);
+  for (const url of [APP_URL, CLOUD_URL]) {
+    if (await portTaken(new URL(url))) {
+      throw new Error(`Something is already serving ${url} (another test run?). Stop it, or set E2E_PORT to a free port.`);
+    }
   }
   rmSync(SCREENSHOTS_DIR, { recursive: true, force: true });
   rmSync(MAIL_DIR, { recursive: true, force: true });
@@ -56,31 +59,46 @@ export default async function globalSetup() {
   const site = await startSiteFake();
   // A team's own website; journeys make it forward a path to their portal through /_fake/forward (e2e/site.ts).
   process.env.E2E_SITE_URL = site.origin;
-  // Stripe for buying AI credits and plans: its pages post the events Stripe would to the app's webhook.
-  const stripe = await startStripeFake({ webhookUrl: `${APP_URL}/api/stripe/webhook` });
+  // Stripe for buying AI credits and plans: its pages post the events Stripe would to the cloud's webhook.
+  const stripe = await startStripeFake({ webhookUrl: `${CLOUD_URL}/api/stripe/webhook` });
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
-  const server = spawn("node_modules/.bin/next", ["start"], {
-    cwd: "apps/web",
-    env: {
-      ...process.env,
-      ...serverEnv,
-      DATABASE_URL: postgres.url,
-      OPENAI_API_KEY: FAKE_OPENAI_KEY,
-      OPENAI_BASE_URL: openai.url,
-      SMTP_HOST: smtp.host,
-      SMTP_PORT: String(smtp.port),
-      ...model.env,
-      ...s3.env,
-      ...github.env,
-      ...stripe.env,
-      DNS_LOOKUP_URL: dns.url,
-      ...cloudflare.env,
-      NODE_ENV: "production",
-    },
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+  const env = {
+    ...process.env,
+    ...serverEnv,
+    DATABASE_URL: postgres.url,
+    OPENAI_API_KEY: FAKE_OPENAI_KEY,
+    OPENAI_BASE_URL: openai.url,
+    SMTP_HOST: smtp.host,
+    SMTP_PORT: String(smtp.port),
+    ...model.env,
+    ...s3.env,
+    ...github.env,
+    ...stripe.env,
+    DNS_LOOKUP_URL: dns.url,
+    ...cloudflare.env,
+    NODE_ENV: "production",
+  };
+  const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
+  const servers = started.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+  const failed = started.find((result) => result.status === "rejected");
+  if (failed) {
+    servers.forEach((server) => server.kill());
+    throw failed.reason;
+  }
+
+  return async () => {
+    servers.forEach((server) => server.kill());
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close()]);
+    // Every scripted reply was used, and nothing asked the model unscripted.
+    model.done();
+  };
+}
+
+/** Starts the production build at `url` with `env`, once it's listening. */
+async function startServer(url: string, env: NodeJS.ProcessEnv) {
+  const server = spawn("node_modules/.bin/next", ["start"], { cwd: "apps/web", env, stdio: ["ignore", "pipe", "inherit"] });
   // Next.js logs "Ready in" once *this* server listens; a server that couldn't take the port exits
   // instead, so another run's server answering on it can't pass for ours.
   let output = "";
@@ -89,19 +107,14 @@ export default async function globalSetup() {
   });
 
   const deadline = Date.now() + 30_000;
-  while (!output.includes("Ready in") || !(await fetch(APP_URL).then((r) => r.ok, () => false))) {
+  while (!output.includes("Ready in") || !(await fetch(url).then((r) => r.ok, () => false))) {
     if (server.exitCode !== null || Date.now() > deadline) {
-      throw new Error(`The web app didn't start on ${APP_URL} (did you run pnpm build? is the port free?)`);
+      server.kill();
+      throw new Error(`The web app didn't start on ${url} (did you run pnpm build? is the port free?)`);
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-
-  return async () => {
-    server.kill();
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close()]);
-    // Every scripted reply was used, and nothing asked the model unscripted.
-    model.done();
-  };
+  return server;
 }
 
 /** Whether something accepts connections on the URL's port (a timeout counts as taken). */
