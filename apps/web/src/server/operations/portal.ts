@@ -10,6 +10,7 @@ import { DOMAIN_ENTRY, OPEN_DOMAINS } from "@/lib/reader-domains";
 
 import { emailAddress } from "./assistant";
 import { defineOperation, OperationError } from "./define";
+import { requirePlan } from "./plan";
 
 /**
  * Who may read the portal (Phase 10): public (anyone), or private (only the team, the people the
@@ -43,7 +44,7 @@ export const getPortal = defineOperation({
 export const updatePortal = defineOperation({
   name: "portal.update",
   summary:
-    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
+    "Set who may read the portal: public (anyone), or private (only the team, people your app signs in with SSO and readers added by email, see portalReaders.add; its pages, feeds, widget and AI answers ask everyone else to sign in; where plans are sold, on Business: 402 otherwise, and on a lower plan a private portal is its team's only); and what its home page opens (`home`: feedback, its first board; roadmap; changelog; or docs)",
   method: "PATCH",
   path: "/portal",
   scope: "write",
@@ -54,6 +55,9 @@ export const updatePortal = defineOperation({
   }),
   example: { access: "private", home: "docs" },
   run: async ({ projectId }, input) => {
+    if (input.access === "private") {
+      await requirePlan(projectId, "privatePortal");
+    }
     await prisma.project.update({
       where: { id: projectId },
       data: {
@@ -128,6 +132,7 @@ export const addPortalReaders = defineOperation({
   }),
   example: { emails: ["e2e-reader@example.com"] },
   run: async ({ actor, projectId }, input) => {
+    await requirePlan(projectId, "privatePortal");
     const emails = [...new Set(input.emails)];
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, name: true, portalAccess: true } });
     const notify = input.notify && project.portalAccess === "PRIVATE" && emailConfigured();

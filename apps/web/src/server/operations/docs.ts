@@ -20,6 +20,7 @@ import { actorReader } from "../portal-access";
 import { isTeam } from "./changelog";
 import { saving } from "./create";
 import { type Actor, defineOperation, OperationError } from "./define";
+import { requirePlan } from "./plan";
 import { projectSlug } from "./read";
 
 /** The docs (Phase 10): articles the team writes, grouped in collections, published on the portal's /docs. */
@@ -121,6 +122,10 @@ async function accessChange(tx: Prisma.TransactionClient, projectId: string, inp
   }
   if (access !== "groups" && input.groups?.length) {
     throw new OperationError(400, "invalid_input", "Groups go with access “groups”");
+  }
+  // Content for reader groups is on Business, where plans are sold; taking it off them always works.
+  if (access === "groups") {
+    await requirePlan(projectId, "privatePortal");
   }
   return {
     access: toReadAccess(access),

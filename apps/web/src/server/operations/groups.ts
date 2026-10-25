@@ -8,6 +8,7 @@ import { readerGroup } from "@/lib/reader-groups";
 
 import { inGroupSql } from "../group-conditions-sql";
 import { defineOperation, OperationError } from "./define";
+import { requirePlan } from "./plan";
 
 /**
  * Reader groups (Settings → Groups): who's in one is worked out when they read: the project's users
@@ -102,6 +103,7 @@ export const createGroup = defineOperation({
   }),
   example: { name: "Pro customers", conditions: [{ property: "plan", op: "is_any_of", value: ["pro", "enterprise"] }, { property: "support_tier", op: "is_set" }] },
   run: async ({ projectId }, { name, description, conditions }) => {
+    await requirePlan(projectId, "privatePortal");
     // Locked, so two groups with the same name get "pro" and "pro-2".
     const key = await prisma.$transaction(async (tx) => {
       await lockProject(tx, projectId);
@@ -135,6 +137,7 @@ export const updateGroup = defineOperation({
   }),
   example: { name: "Enterprise customers", conditions: [{ property: "plan", op: "is", value: "enterprise" }] },
   run: async ({ projectId }, { group, ...input }) => {
+    await requirePlan(projectId, "privatePortal");
     // Its conditions say who's in it now, not a claim from before (see ReaderGroup.legacyClaim).
     const data = { ...input, ...(input.conditions && { legacyClaim: null }) };
     const { count } = await prisma.readerGroup.updateMany({ where: { projectId, key: group }, data });
