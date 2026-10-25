@@ -80,6 +80,8 @@ export function PageActions({ children, more }: { children?: ReactNode; more?: R
         className={cn(
           "flex max-w-full shrink-0 flex-wrap items-center gap-2 topbar:relative topbar:flex-nowrap",
           "phonebar:fixed phonebar:top-12 phonebar:right-2 phonebar:z-30 phonebar:w-60 phonebar:flex-col phonebar:items-stretch phonebar:gap-1 phonebar:rounded-lg phonebar:border phonebar:bg-popover phonebar:p-1 phonebar:shadow-md phonebar:*:justify-start",
+          // In the menu every action is a row alike: Publish's fill and Unpublish's outline are for the bar.
+          "phonebar:[&>button]:border-transparent phonebar:[&>button]:bg-transparent phonebar:[&>button]:text-foreground phonebar:[&>button]:shadow-none phonebar:[&>button:hover]:bg-accent",
           !open && "phonebar:hidden",
         )}
       >

@@ -1488,6 +1488,8 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   await more.click();
   await expect(more).toHaveAttribute("aria-expanded", "true");
   await expect(history).toBeVisible();
+  // Every action is a row alike in it: Publish has no fill of its own here (it does in the bar).
+  expect(await team.getByRole("button", { name: "Publish" }).evaluate((button) => getComputedStyle(button).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   await checkpoint(team, "team-docs-article-actions-phone", { fullPage: false });
   // Settings opens its dialog, which stays as the menu closes.
   await team.getByRole("button", { name: "Settings" }).click();
