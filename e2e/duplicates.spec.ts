@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { createProject, postFeedback, signUp } from "./helpers";
 import { similar } from "./openai";
 
 test("duplicates are suggested while typing, and flagged for the team to settle", async ({ browser }, testInfo) => {
@@ -21,10 +21,7 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await ada.getByLabel("Title").fill(original);
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await expect(ada.getByRole("link", { name: original })).toBeVisible();
+  await postFeedback(ada, original);
 
   // While typing a similar title, the portal suggests voting on the existing post.
   const bo = await signUp(browser, portalUrl(slug), "Bo");
@@ -35,7 +32,8 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await expect(suggestions.getByRole("link", { name: new RegExp(original) })).toBeVisible();
   await checkpoint(bo, "portal-similar-while-typing");
   await bo.getByRole("button", { name: "Submit post" }).click();
-  await expect(bo.getByRole("link", { name: duplicate })).toBeVisible();
+  // Saving runs its jobs first (see postFeedback).
+  await expect(bo.getByRole("link", { name: duplicate })).toBeVisible({ timeout: 15_000 });
 
   // The team sees it flagged, and can list only possible duplicates.
   await owner.goto(`/app/${slug}/feedback?show=duplicates`);

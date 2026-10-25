@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { createProject, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -96,10 +96,7 @@ test("a customer's site shows the widget: feedback and what's new", async ({ bro
 
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await ada.getByLabel("Title").fill("Dark mode");
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await postFeedback(ada, "Dark mode");
 
   // On another site the portal's cookies aren't sent, so the widget asks to sign in (in a new tab).
   await ada.goto(sitePage("customer.localhost", slug));

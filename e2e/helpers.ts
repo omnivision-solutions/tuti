@@ -53,6 +53,17 @@ export async function createProject(page: Page, name: string, slug: string) {
 }
 
 /** A read and write API key for project `slug`, made in its settings, and a call to the API with it (a POST unless `method` says otherwise). */
+/**
+ * Posts feedback from the board's dialog and waits for it on the board. Saving runs the post's
+ * jobs (inline here) before it answers, so it gets longer than an assertion's usual 5 seconds.
+ */
+export async function postFeedback(page: Page, title: string) {
+  await page.getByRole("button", { name: "Submit post" }).click();
+  await page.getByLabel("Title").fill(title);
+  await page.getByRole("button", { name: "Submit post" }).click();
+  await expect(page.getByRole("link", { name: title })).toBeVisible({ timeout: 15_000 });
+}
+
 export async function apiFor(team: Page, slug: string) {
   await team.goto(`/app/${slug}/settings/developers`);
   await team.getByRole("textbox", { name: "Key name" }).fill("Help test");
