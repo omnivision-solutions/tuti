@@ -21,8 +21,7 @@ const at = (seconds: number) => new Date(seconds * 1000);
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
  * subscription, read under the lock: the last write is always from the latest read. A project has one
  * plan, so a second live subscription for it is logged for the operator to refund and changes nothing.
- * Returns the project whose plan it is now, or null: Tuti didn't start it, it isn't live, or another
- * subscription holds that project's plan (or the project is gone).
+ * Returns the project it's for (the subscription's metadata), or null if Tuti didn't start it.
  */
 export async function syncSubscription(id: string): Promise<string | null> {
   return prisma.$transaction(
@@ -38,7 +37,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
       const paid = item && planOfPrice(item.price.id);
       if (!LIVE.has(subscription.status) || !item || !paid) {
         await tx.project.updateMany({ where: { id: projectId, stripeSubscriptionId: id }, data: NO_PLAN });
-        return null;
+        return projectId;
       }
       const periodEnd = at(item.current_period_end);
       const { count } = await tx.project.updateMany({
@@ -56,7 +55,7 @@ export async function syncSubscription(id: string): Promise<string | null> {
       if (count === 0 && (await tx.project.count({ where: { id: projectId } }))) {
         log.error("A second live Stripe subscription for a project: cancel and refund it", { projectId, subscription: id });
       }
-      return count === 1 ? projectId : null;
+      return projectId;
     },
     // Stripe's answer comes within its 15-second timeout.
     { timeout: 20_000 },
@@ -69,7 +68,8 @@ const PERIOD_INVOICES = new Set(["subscription_create", "subscription_cycle"]);
 /**
  * A paid invoice for a plan's period gives the project that period's AI credits (a month's for a month,
  * twelve for a year), a PLAN grant lasting until the period ends: once per invoice, however often Stripe
- * says it's paid.
+ * says it's paid, and also when it says so only after the subscription ended (Stripe's events come in any
+ * order). Not for a second subscription while another holds the project's plan (logged for a refund).
  */
 export async function grantPlanCredits(invoiceId: string): Promise<void> {
   const invoice = await getInvoice(invoiceId);
@@ -77,11 +77,11 @@ export async function grantPlanCredits(invoiceId: string): Promise<void> {
   if (invoice.status !== "paid" || !subscription || !PERIOD_INVOICES.has(invoice.billing_reason ?? "")) {
     return;
   }
-  // Only the subscription holding the project's plan: a second one (logged for a refund) gives nothing.
   const projectId = await syncSubscription(subscription);
   const line = invoice.lines.data.find((line) => planOfPrice(line.pricing?.price_details?.price));
   const paid = line && planOfPrice(line.pricing?.price_details?.price);
-  if (!projectId || !line || !paid) {
+  const holds = projectId && (await prisma.project.count({ where: { id: projectId, OR: [{ stripeSubscriptionId: subscription }, { stripeSubscriptionId: null }] } }));
+  if (!holds || !line || !paid) {
     return;
   }
   const credits = planCredits(paid.plan) * (paid.interval === "year" ? 12 : 1);
