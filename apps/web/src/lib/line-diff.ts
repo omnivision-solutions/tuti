@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { listStart } from "@tuti/content";
 
 export type DiffLine = { kind: "same" | "added" | "removed"; text: string };
 
@@ -75,7 +76,7 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
     (doc.content ?? []).flatMap((block) =>
       block.type === "bulletList" || block.type === "orderedList"
         ? (block.content ?? []).map((item, index) => {
-            const start = block.type === "orderedList" ? Number(block.attrs?.start) || 1 : null;
+            const start = block.type === "orderedList" ? listStart(block) : null;
             return {
               key: JSON.stringify([block.type, start, item]),
               block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },

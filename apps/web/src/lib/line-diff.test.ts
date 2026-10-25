@@ -45,4 +45,9 @@ test("blocks compare with their formatting, and a list's items one by one", () =
   // A list that starts at another number: its items read differently, so they've changed.
   const renumbered = { type: "doc", content: [{ type: "orderedList", attrs: { start: 3 }, content: [item("One"), item("Two!")] }] };
   expect(diffBlocks({ type: "doc", content: [after.content[2]!] }, renumbered).map(({ kind }) => kind)).toEqual(["removed", "removed", "added", "added"]);
+  // Readers' pages count a list stored as starting at 0 from 1 (listStart): the same list to them.
+  const fromZero = { type: "doc", content: [{ type: "orderedList", attrs: { start: 0 }, content: [item("One"), item("Two!")] }] };
+  const fromZeroDiff = diffBlocks(fromZero, { type: "doc", content: [after.content[2]!] });
+  expect(fromZeroDiff.map(({ kind }) => kind)).toEqual(["same", "same"]);
+  expect(fromZeroDiff[1]!.doc.content![0]!.attrs).toEqual({ start: 2 });
 });
