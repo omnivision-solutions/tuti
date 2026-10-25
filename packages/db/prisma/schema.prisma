@@ -1760,6 +1760,9 @@ model AiCreditGrant {
   paidCents Int?
   /// A plan's Stripe invoice: one grant per paid invoice (its period's credits).
   stripeInvoiceId String?  @unique
+  /// Credits taken back because the payment was refunded or disputed (server/refunds.ts): from what was
+  /// left, and the rest, already spent, as the project's debt.
+  takenBack Decimal        @default(0) @db.Decimal(20, 6)
   createdAt DateTime       @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
