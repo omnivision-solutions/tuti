@@ -568,6 +568,7 @@ export function articleRevisions(articleId: string) {
       id: true,
       title: true,
       body: true,
+      content: true,
       createdAt: true,
       collection: { select: { slug: true, name: true } },
       author: { select: { name: true } },

@@ -384,6 +384,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   const review = team.getByRole("dialog", { name: "Review changes" });
   await expect(review.getByRole("deletion")).toHaveText(original);
   await expect(review.getByRole("insertion")).toHaveText(edited);
+  // Formatted as readers see it: the unchanged heading is still a heading.
+  await expect(review.getByRole("heading", { name: "Who can invite", level: 2 })).toBeVisible();
   await checkpoint(team, "team-docs-article-review-changes", { fullPage: false });
   await review.getByRole("button", { name: "Publish changes" }).click();
   await expect(team.getByText("Changes published")).toBeVisible();
