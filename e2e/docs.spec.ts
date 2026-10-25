@@ -556,11 +556,16 @@ test("the team arranges the docs: collections three levels deep, moves with the 
   await expect(team.getByRole("menuitem", { name: "Move up" })).toBeDisabled();
   await team.keyboard.press("Escape");
   await expect(team.getByRole("menu")).toHaveCount(0);
+  // By its handle: pressed and moved, it drags its row (its menu opens on a click, so it doesn't take the drop).
   await structure.getByRole("button", { name: "Getting started", exact: true }).click();
-  await structure.getByRole("button", { name: "Move Your first board", exact: true }).focus();
-  await team.keyboard.press("Enter");
-  await team.getByRole("menuitem", { name: "Move up" }).press("Enter");
+  const handle = (await structure.getByRole("button", { name: "Move Your first board", exact: true }).boundingBox())!;
+  const above = (await structure.getByRole("link", { name: "Inviting your team" }).boundingBox())!;
+  await team.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await team.mouse.down();
+  await team.mouse.move(above.x + 10, above.y + 2, { steps: 10 });
+  await team.mouse.up();
   await expect(team.getByText("Your first board moved")).toBeVisible();
+  await expect(team.getByRole("menu")).toHaveCount(0);
   await expect(structure.getByRole("list", { name: "Articles in Getting started" }).getByRole("listitem")).toHaveText([
     /^Your first board/,
     /^Inviting your team/,

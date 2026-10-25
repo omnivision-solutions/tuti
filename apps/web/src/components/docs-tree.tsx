@@ -118,6 +118,9 @@ function MoveMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         id={id}
+        // Its menu opens on a click rather than as it's pressed, so pressing it and moving drags the row (an open menu would take the drop).
+        onPointerDown={(event) => event.preventBaseUIHandler()}
+        onMouseDown={(event) => event.preventBaseUIHandler()}
         render={<Button variant="ghost" size="icon-xs" aria-label={`Move ${name}`} disabled={disabled} className="cursor-grab text-muted-foreground" />}
       >
         <GripVerticalIcon aria-hidden />
