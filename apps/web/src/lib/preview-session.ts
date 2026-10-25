@@ -27,6 +27,5 @@ export function previewToken(projectId: string, userId: string, now = Date.now()
 /** The team member a preview token is for, if it's valid, unexpired and for this project. */
 export function previewUser(projectId: string, token: string, now = Date.now()): string | null {
   const fields = verifyValue(PURPOSE, String(token), now);
-  // ponytail: two fields are tokens from before they had their random part, gone an hour after this shipped; then only 3.
-  return fields && (fields.length === 2 || fields.length === 3) && fields[0] === projectId && fields[1] ? fields[1] : null;
+  return fields?.length === 3 && fields[0] === projectId && fields[1] ? fields[1] : null;
 }
