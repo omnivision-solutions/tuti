@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { AnalyseCodeChangeButton, ApplyLikelyButton, ChangelogProposal, DocsProposal, PostProposal } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
+import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
@@ -51,10 +52,15 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
           <AlertDescription>Tuti is analysing this pull request. Proposals show here when it&apos;s done.</AlertDescription>
         </Alert>
       )}
+      {!included && (
+        <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
+          It&apos;s kept, and can be analysed once the plan is back.
+        </PlanNotice>
+      )}
       {change.state === "paused" && (
         <Alert>
           <AlertDescription className="flex flex-col items-start gap-2">
-            {`Paused: ${change.reason} It's analysed when you resume it.`}
+            {included ? `Paused: ${change.reason} It's analysed when you resume it.` : `Paused: ${change.reason}`}
             {included && <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />}
           </AlertDescription>
         </Alert>
