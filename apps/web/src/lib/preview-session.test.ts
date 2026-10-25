@@ -24,6 +24,6 @@ test("each page render gets a token of its own, even at the same moment (Customi
   const [first, second] = [previewToken("project-1", "user-1", now), previewToken("project-1", "user-1", now)];
   expect(first).not.toBe(second);
   expect([previewUser("project-1", first, now), previewUser("project-1", second, now)]).toEqual(["user-1", "user-1"]);
-  // Tokens from before they had one, in previews open as this ships, still read the portal for their hour.
-  expect(previewUser("project-1", signValue("preview", ["project-1", "user-1"], PREVIEW_TTL_SECONDS, now), now)).toBe("user-1");
+  // Not one without it, from before tokens had one: those have all expired.
+  expect(previewUser("project-1", signValue("preview", ["project-1", "user-1"], PREVIEW_TTL_SECONDS, now), now)).toBeNull();
 });
