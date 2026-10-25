@@ -116,7 +116,7 @@ export const managePlan = defineOperation({
 export const setBadgeAddOn = defineOperation({
   name: "plan.badge",
   summary:
-    'The add-on hiding "Powered by tuti" on the portal ($49 a month, on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. Refused (409) on the free plan or while a payment is failing, and 402 if the card is declined',
+    'The add-on hiding "Powered by tuti" on the portal ($49 a month, on a paid plan): `on` adds it to the plan, charging what\'s left of the period at once, and hides the badge; `on: false` removes it (what\'s left of the period is credited to the next invoice) and shows the badge again. It ends with the plan. Adding is refused (409) on the free plan or while a payment is failing, and 402 if the card is declined; removing always works (on the free plan there\'s nothing to remove: `{ on: false }`)',
   method: "POST",
   path: "/plan/badge",
   scope: "write",
@@ -167,6 +167,11 @@ export const setBadgeAddOn = defineOperation({
         throw new OperationError(402, "payment_failed", "The payment didn't go through. Update the card in Manage plan, then try again.");
       }
       log.error('Changing the "Powered by tuti" add-on on Stripe failed', { projectId, on, error });
+      // Stripe may have made the change while saving the setting failed. Saving it now is right either way:
+      // the badge only hides with the add-on paid (badgeLicensed), which Stripe's webhook keeps in step.
+      await prisma.project.update({ where: { id: projectId }, data: { poweredBy: !on } }).catch((reason: unknown) => {
+        log.error('Saving the "Powered by tuti" setting after an uncertain add-on change failed', { projectId, on, error: reason });
+      });
       throw new OperationError(502, "stripe_failed", uncertain);
     }
     // Stripe's webhook says so too; read now so the badge changes at once.
