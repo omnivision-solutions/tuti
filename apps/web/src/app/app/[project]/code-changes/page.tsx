@@ -28,6 +28,8 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
     prisma.githubInstallation.findUnique({ where: { projectId }, select: { project: { select: { analyseCodeChanges: true } } } }),
   ]);
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+  // On a plan without code changes, those here are kept but can't be analysed (codeChanges.analyse refuses).
+  const included = planIncludes(plan, "codeChanges");
   const listed = changes.filter((change) => change.state !== "nothing_to_do");
   const nothingToDo = changes.filter((change) => change.state === "nothing_to_do");
   const row = (change: CodeChangeView) => (
@@ -47,7 +49,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
         </>
       }
       actions={
-        change.state === "nothing_to_do" || change.state === "paused" ? (
+        included && (change.state === "nothing_to_do" || change.state === "paused") ? (
           <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "paused" ? "Resume" : "Analyse anyway"} />
         ) : undefined
       }
@@ -60,7 +62,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
         title="Code changes"
         description="Every pull request merged on your repositories, with what Tuti proposes: the feedback it resolves and the docs it changes. Nothing changes for your users until you apply it."
       />
-      {!planIncludes(plan, "codeChanges") && (
+      {!included && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
           Merged pull requests still go into the changelog&apos;s running draft, and code changes already here are kept.
         </PlanNotice>
@@ -71,14 +73,16 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
           description={
             !codeChangesEnabled()
               ? "Code changes need AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example)."
-              : !connection
+              : !included
+                ? "On this project's plan, merged pull requests go into the changelog's running draft only."
+                : !connection
                 ? "Connect GitHub and add your repositories: each pull request merged there shows up here."
                 : !connection.project.analyseCodeChanges
                   ? "Code changes are off for this project. Turn them on in GitHub's settings."
                   : "Each pull request merged on your repositories shows up here."
           }
           action={
-            codeChangesEnabled() && (!connection || !connection.project.analyseCodeChanges) && membership.role !== "MEMBER" ? (
+            codeChangesEnabled() && included && (!connection || !connection.project.analyseCodeChanges) && membership.role !== "MEMBER" ? (
               <Link href={`/app/${slug}/settings/integrations${connection ? "/github" : ""}`} className={buttonVariants({ variant: "outline" })}>
                 {connection ? "GitHub settings" : "Connect GitHub"}
               </Link>

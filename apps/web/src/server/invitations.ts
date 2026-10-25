@@ -62,20 +62,6 @@ export async function createInvitation(
   if (onTeam) {
     return { error: `${parsed.data.email} is already on the team` };
   }
-  // Members and the invites still pending (a new invite to the same address replaces its own).
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
-  const limit = teamLimit(plan);
-  if (limit !== null) {
-    const [members, pending] = await Promise.all([
-      prisma.teamMember.count({ where: { projectId } }),
-      prisma.invitation.count({
-        where: { projectId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, NOT: { email: parsed.data.email } },
-      }),
-    ]);
-    if (members + pending >= limit) {
-      return { error: teamFull(limit) };
-    }
-  }
   const sentToday = await prisma.invitation.count({
     where: { projectId, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
   });
@@ -84,12 +70,27 @@ export async function createInvitation(
   }
 
   const token = generateInvitationToken();
-  await prisma.$transaction([
-    prisma.invitation.updateMany({
+  const full = await prisma.$transaction(async (tx) => {
+    // Room on the plan for members and invites still pending (a new invite to the same address replaces
+    // its own), counted under the project's lock, so two invites at once can't both take the last place.
+    const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${projectId} FOR UPDATE`;
+    const limit = project ? teamLimit(project.plan) : null;
+    if (limit !== null) {
+      const [members, pending] = await Promise.all([
+        tx.teamMember.count({ where: { projectId } }),
+        tx.invitation.count({
+          where: { projectId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, NOT: { email: parsed.data.email } },
+        }),
+      ]);
+      if (members + pending >= limit) {
+        return limit;
+      }
+    }
+    await tx.invitation.updateMany({
       where: { projectId, email: parsed.data.email, acceptedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },
-    }),
-    prisma.invitation.create({
+    });
+    await tx.invitation.create({
       data: {
         projectId,
         email: parsed.data.email,
@@ -98,8 +99,12 @@ export async function createInvitation(
         createdById: session.user.id,
         expiresAt: new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000),
       },
-    }),
-  ]);
+    });
+    return null;
+  });
+  if (full !== null) {
+    return { error: teamFull(full) };
+  }
   const url = `${appUrl().origin}/invite/${token}`;
 
   let emailSent = true;
