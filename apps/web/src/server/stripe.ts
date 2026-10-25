@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { log } from "@tuti/shared";
+
 /**
  * Stripe, for AI credit top-ups and plans (docs/plan.md, AI usage per project and Plans): Checkout
  * Sessions to pay, the customer portal, reading subscriptions and invoices, and webhooks' signatures.
@@ -140,9 +142,12 @@ export const addSubscriptionItem = (subscription: string, price: string) =>
     payment_behavior: "error_if_incomplete",
   });
 
-/** Removes an item from its subscription; what's left of the period it paid for is credited to the next invoice. */
-export const removeSubscriptionItem = (id: string) =>
-  stripe<{ deleted?: boolean }>("DELETE", `/v1/subscription_items/${encodeURIComponent(id)}?proration_behavior=create_prorations`);
+/**
+ * Removes an item from its subscription; what's left of the period it paid for is credited to the next
+ * invoice, unless `prorate` is false (it was refunded already).
+ */
+export const removeSubscriptionItem = (id: string, { prorate = true } = {}) =>
+  stripe<{ deleted?: boolean }>("DELETE", `/v1/subscription_items/${encodeURIComponent(id)}?proration_behavior=${prorate ? "create_prorations" : "none"}`);
 
 /** A subscription, as read here (STRIPE_VERSION). */
 export type StripeSubscription = {
@@ -191,3 +196,40 @@ export function stripeSigned(body: string, header: string | null, secret: string
     return timingSafeEqual(Buffer.from(value, "hex"), expected);
   });
 }
+
+/** A charge, as read here: the payment it's for, its amount, how much of it is refunded, and whether it's disputed. */
+export type StripeCharge = { id: string; amount: number; amount_refunded: number; disputed: boolean; payment_intent: string | null };
+
+/** The charge as Stripe has it now (refunds and disputes included). */
+export const getCharge = (id: string) => stripe<StripeCharge>("GET", `/v1/charges/${encodeURIComponent(id)}`);
+
+const query = (params: Record<string, string>) => new URLSearchParams(params).toString();
+
+/** The Checkout Session a payment paid (an AI credit top-up), or null. */
+export async function checkoutOf(paymentIntent: string): Promise<string | null> {
+  const list = await stripe<{ data: { id: string }[] }>("GET", `/v1/checkout/sessions?${query({ payment_intent: paymentIntent, limit: "1" })}`);
+  return list.data[0]?.id ?? null;
+}
+
+/**
+ * The invoice a payment paid (a plan's), or null: its paid invoice payment. A subscription's payment pays
+ * one invoice; one paying several (not something Tuti makes) is logged, and the first is taken.
+ */
+export async function invoiceOf(paymentIntent: string): Promise<string | null> {
+  const list = await stripe<{ data: { invoice?: unknown; status?: unknown }[] }>(
+    "GET",
+    `/v1/invoice_payments?${query({ "payment[type]": "payment_intent", "payment[payment_intent]": paymentIntent, status: "paid", limit: "10" })}`,
+  );
+  const invoices = list.data.filter((payment) => payment.status === "paid" && typeof payment.invoice === "string").map((payment) => payment.invoice as string);
+  if (invoices.length > 1) {
+    log.warn("A Stripe payment paid several invoices: refunds take back only the first's", { paymentIntent, invoices });
+  }
+  return invoices[0] ?? null;
+}
+
+/** Ends a subscription at once (its webhook then takes the plan, and the add-on with it, away). */
+export const cancelSubscription = (id: string) => stripe<{ status: string }>("DELETE", `/v1/subscriptions/${encodeURIComponent(id)}`);
+
+/** A Checkout Session as Stripe has it now. */
+export const getCheckoutSession = (id: string) =>
+  stripe<{ id: string; amount_total: number | null; metadata: Record<string, string> }>("GET", `/v1/checkout/sessions/${encodeURIComponent(id)}`);

@@ -821,3 +821,48 @@ describe("out of AI credits", () => {
     expect((await changes()).find((change) => change.number === 42)).toMatchObject({ state: "PAUSED" });
   });
 });
+
+describe("plans", () => {
+  beforeEach(() => {
+    vi.stubEnv("PLANS", "on");
+  });
+  const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+  const inRunningDraft = () => prisma.changelogEntryPullRequest.count({ where: { entry: { projectId: project.id } } });
+
+  test("on the free plan, a merge only feeds the running draft: nothing is read or asked; on Pro it's a code change", async () => {
+    github.pullRequest(repo, pullRequest(50));
+    expect(await merge(50)).toBe(200);
+    expect(await changes()).toEqual([]);
+    expect(readsOf(50)).toEqual([]);
+    expect(await inRunningDraft()).toBe(1);
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+    github.pullRequest(repo, pullRequest(51));
+    model.decide(INTERNAL);
+    expect(await merge(51)).toBe(200);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 51, state: "NOTHING_TO_DO" })]);
+  });
+
+  test("a code change waiting when the plan drops is paused, not deleted; resuming waits for the plan", async () => {
+    const { id } = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: installationId, repo, number: 52, url: `https://github.com/${repo}/pull/52`, title: "Dark mode 52", author: "octo", mergedAt: new Date(), state: "FAILED" },
+    });
+    github.pullRequest(repo, pullRequest(52));
+    await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
+    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Code changes need the Pro plan." })]);
+    expect(readsOf(52)).toEqual([]);
+    await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "plan_required" });
+    await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "plan_required" });
+    await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+    model.decide(INTERNAL);
+    expect(await call(resumeCodeChanges, team(), {})).toEqual({ resumed: 1, failed: 0 });
+    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "NOTHING_TO_DO" })]);
+  });
+
+  test("self-hosted (no plans), every project has code changes", async () => {
+    vi.stubEnv("PLANS", "");
+    github.pullRequest(repo, pullRequest(53));
+    model.decide(INTERNAL);
+    expect(await merge(53)).toBe(200);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 53, state: "NOTHING_TO_DO" })]);
+  });
+});

@@ -65,3 +65,39 @@ export function planCredits(plan: PaidPlan): number {
   const value = Number(process.env[name]);
   return process.env[name] && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
+
+/** What a plan may include beyond Free: a custom domain, the portal under a path of the team's site, a private portal (with reader groups and readers by email), code changes from GitHub. */
+export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges";
+
+const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
+  FREE: [],
+  PRO: ["customDomain", "codeChanges"],
+  BUSINESS: ["customDomain", "codeChanges", "privatePortal", "sitePath"],
+};
+
+/** The plan that first includes a feature, for saying what to upgrade to. */
+export const planFor = (feature: PlanFeature): PaidPlan => (INCLUDES.PRO.includes(feature) ? "PRO" : "BUSINESS");
+
+/**
+ * Whether a project on `plan` has `feature` (docs/plan.md, Plans): the one place plan limits are checked.
+ * Without plans (self-hosted), every project has everything. A project on a lower plan keeps what it set
+ * up, but what its plan doesn't include stops until the plan is back.
+ */
+export function planIncludes(plan: "FREE" | PaidPlan, feature: PlanFeature): boolean {
+  return !plansEnabled() || INCLUDES[plan].includes(feature);
+}
+
+const NEEDS: Record<PlanFeature, string> = {
+  customDomain: "A custom domain needs",
+  sitePath: "A portal under a path of your site needs",
+  privatePortal: "A private portal and reader groups need",
+  codeChanges: "Code changes need",
+};
+
+/** What a project is told when its plan doesn't include `feature`: "Code changes need the Pro plan." */
+export const planNeeded = (feature: PlanFeature) => `${NEEDS[feature]} the ${planFor(feature) === "PRO" ? "Pro" : "Business"} plan.`;
+
+/** How many team members a project on `plan` may have (Free: 3), or null for no limit. */
+export function teamLimit(plan: "FREE" | PaidPlan): number | null {
+  return plansEnabled() && plan === "FREE" ? 3 : null;
+}

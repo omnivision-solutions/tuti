@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { aiProvider, codeChangesEnabled } from "@tuti/shared";
+import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
 import { ArrowLeftRightIcon, ChevronLeftIcon } from "lucide-react";
 import { cookies } from "next/headers";
@@ -9,6 +9,7 @@ import { notFound, redirect } from "next/navigation";
 import { CodeChangeSwitch, DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
+import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +45,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
       repositories: true,
       createdAt: true,
       included: { select: { repoId: true } },
-      project: { select: { analyseCodeChanges: true, autoApplyLinks: true } },
+      project: { select: { analyseCodeChanges: true, autoApplyLinks: true, plan: true } },
     },
   });
   const integrations = `/app/${project.slug}/settings/integrations`;
@@ -169,7 +170,11 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          {codeChangesEnabled() ? (
+          {codeChangesEnabled() && !planIncludes(installation.project.plan, "codeChanges") ? (
+            <PlanNotice feature="codeChanges" projectSlug={project.slug} admin>
+              Merged pull requests still go into the changelog&apos;s running draft.
+            </PlanNotice>
+          ) : codeChangesEnabled() ? (
             <>
               <CodeChangeSwitch projectSlug={project.slug} setting="analysis" on={installation.project.analyseCodeChanges} provider={aiProvider()} />
               {installation.project.analyseCodeChanges && (

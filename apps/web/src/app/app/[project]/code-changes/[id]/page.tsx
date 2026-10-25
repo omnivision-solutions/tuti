@@ -1,8 +1,11 @@
+import { prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { AnalyseCodeChangeButton, ApplyLikelyButton, ChangelogProposal, DocsProposal, PostProposal } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
+import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
@@ -18,6 +21,9 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
     notFound();
   }
   const mergedAt = new Date(change.mergedAt);
+  // On a plan without code changes it's kept, but can't be analysed again (codeChanges.analyse refuses).
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
+  const included = planIncludes(plan, "codeChanges");
   const feedback = change.actions.filter((action) => action.post);
   // Article edits first, then new articles.
   const docs = change.actions
@@ -46,11 +52,16 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
           <AlertDescription>Tuti is analysing this pull request. Proposals show here when it&apos;s done.</AlertDescription>
         </Alert>
       )}
+      {!included && (
+        <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership!.role !== "MEMBER"}>
+          It&apos;s kept, and can be analysed once the plan is back.
+        </PlanNotice>
+      )}
       {change.state === "paused" && (
         <Alert>
           <AlertDescription className="flex flex-col items-start gap-2">
-            {`Paused: ${change.reason} It's analysed when you resume it.`}
-            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />
+            {included ? `Paused: ${change.reason} It's analysed when you resume it.` : `Paused: ${change.reason}`}
+            {included && <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />}
           </AlertDescription>
         </Alert>
       )}
@@ -58,7 +69,9 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
         <Alert variant={change.state === "failed" ? "destructive" : "default"}>
           <AlertDescription className="flex flex-col items-start gap-2">
             {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
-            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
+            {included && (
+              <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -113,7 +126,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
                 </h3>
                 <ul className="flex flex-col divide-y" aria-labelledby="docs-proposals">
                   {docs.map((action) => (
-                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} />
+                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} canAnalyse={included} />
                   ))}
                 </ul>
               </section>

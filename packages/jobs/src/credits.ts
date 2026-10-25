@@ -79,6 +79,30 @@ export async function grantCredits(
   });
 }
 
+/**
+ * Takes back `share` (0 to 1) of a grant whose payment was refunded or disputed, counting what was taken
+ * back before, so Stripe saying it again, or a second partial refund, takes only the difference: from
+ * what's left of the grant, and the rest, already spent, as the project's debt (paid first by its next
+ * credits). Under the project's lock, like charges. Returns the credits taken back now.
+ */
+export async function takeBackCredits(grantId: string, share: number): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const { projectId } = await tx.aiCreditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { projectId: true } });
+    await lockProject(tx, projectId);
+    const grant = await tx.aiCreditGrant.findUniqueOrThrow({ where: { id: grantId }, select: { credits: true, remaining: true, takenBack: true } });
+    const owed = toCredits(grant.credits.times(Math.min(1, Math.max(0, share)))).minus(grant.takenBack);
+    if (owed.lte(0)) {
+      return 0;
+    }
+    const fromGrant = Prisma.Decimal.min(grant.remaining, owed);
+    await tx.aiCreditGrant.update({ where: { id: grantId }, data: { remaining: grant.remaining.minus(fromGrant), takenBack: grant.takenBack.plus(owed) } });
+    if (owed.gt(fromGrant)) {
+      await tx.project.update({ where: { id: projectId }, data: { aiCreditDebt: { increment: owed.minus(fromGrant) } } });
+    }
+    return owed.toNumber();
+  });
+}
+
 /** AI_CREDITS_FREE, once per project: claimed with the grant, so two first looks can't both give it. */
 async function giveFreeCredits(projectId: string) {
   const credits = freeCredits();
