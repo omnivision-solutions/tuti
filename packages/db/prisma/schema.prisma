@@ -250,9 +250,6 @@ model Project {
   plan                  Plan         @default(FREE)
   stripeCustomerId      String?      @unique
   stripeSubscriptionId  String?      @unique
-  /// Live Stripe subscriptions turned away while another held the plan (logged for a refund): their paid
-  /// invoices give no credits. One that takes the plan later (once the other ended) leaves the list.
-  rejectedSubscriptionIds String[]   @default([])
   /// The live subscription's billing: "month" or "year", Stripe's status ("active", "trialing",
   /// "past_due" while Stripe retries a failed payment), when its period ends (it renews then), and
   /// when it ends for good if it's cancelled (null: it renews).
