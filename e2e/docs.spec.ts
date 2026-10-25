@@ -891,6 +891,8 @@ test("the team splits the docs into tabs: the first takes the collections, other
   await expect(team.getByText("API moved")).toBeVisible();
   await expect(rows("Tabs")).toHaveText([/^API/, /^Guides/]);
   await structure.getByRole("link", { name: "API", exact: true }).click();
+  // Its page first: the collection's page it comes from has a Settings tab too.
+  await team.waitForURL(`**/app/${slug}/docs/tabs/api`);
   await team.getByRole("tab", { name: "Settings" }).click();
   const settings = team.getByRole("tabpanel", { name: "Settings" });
   await settings.getByLabel("Name").fill("API reference");
