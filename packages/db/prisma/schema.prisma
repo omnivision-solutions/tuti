@@ -243,6 +243,20 @@ model Project {
   /// When owners and admins were emailed that AI credits ran low (AI_CREDITS_LOW) or out: once each until the next grant, which clears both (a trigger on ai_credit_grant).
   aiCreditsLowEmailedAt DateTime?
   aiCreditsOutEmailedAt DateTime?
+  /// The project's plan on tuti.so (docs/plan.md, Plans; only where PLANS=on), kept in step with its
+  /// Stripe subscription by Stripe's webhook (server/subscriptions.ts): FREE without a live one. Its
+  /// Stripe customer stays once made, so a later plan is billed to the same one; the subscription is the live
+  /// one, or once it ended the last one that held the plan (until another does).
+  plan                  Plan         @default(FREE)
+  stripeCustomerId      String?      @unique
+  stripeSubscriptionId  String?      @unique
+  /// The live subscription's billing: "month" or "year", Stripe's status ("active", "trialing",
+  /// "past_due" while Stripe retries a failed payment), when its period ends (it renews then), and
+  /// when it ends for good if it's cancelled (null: it renews).
+  planInterval          String?
+  planStatus            String?
+  planPeriodEnd         DateTime?
+  planEndsAt            DateTime?
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
@@ -1473,6 +1487,13 @@ enum DocsNoAnswerCause {
   UNKNOWN
 }
 
+/// What a project pays for on tuti.so (docs/plan.md, Plans).
+enum Plan {
+  FREE
+  PRO
+  BUSINESS
+}
+
 /// Who may read a project's portal.
 enum PortalAccess {
   PUBLIC
@@ -1731,6 +1752,8 @@ model AiCreditGrant {
   stripeSessionId String?  @unique
   /// What a top-up paid, in US cents.
   paidCents Int?
+  /// A plan's Stripe invoice: one grant per paid invoice (its period's credits).
+  stripeInvoiceId String?  @unique
   createdAt DateTime       @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

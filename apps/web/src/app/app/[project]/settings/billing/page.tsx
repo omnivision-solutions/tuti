@@ -1,11 +1,14 @@
+import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { creditsEnabled, creditsPerTopupDollar, topupExpiryDays, topupsEnabled } from "@tuti/shared";
+import { creditsEnabled, creditsPerTopupDollar, planCredits, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
+import { ManagePlan, PlanPicker } from "@/components/plan-picker";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PLAN_PRICES, planPriceText } from "@/lib/plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
@@ -14,23 +17,65 @@ const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "
 
 const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
-/** Settings → Billing (only with AI credits on): the project's balance, and the credits it has left by when they expire. */
+/**
+ * Settings → Billing (with plans or AI credits on): the project's plan, and its AI credits (the balance,
+ * and the credits it has left by when they expire).
+ */
 export default async function BillingSettingsPage(props: PageProps<"/app/[project]/settings/billing">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
-  if (!project || !creditsEnabled()) {
+  if (!project || !(creditsEnabled() || plansEnabled())) {
     notFound();
   }
-  const { balance, grants } = await creditBalance(project.id);
-  // Back from Stripe's payment page: the credits come with Stripe's word that it's paid, usually within seconds.
-  const paid = (await props.searchParams).paid === "1";
+  const [{ balance, grants }, plan] = await Promise.all([
+    creditsEnabled() ? creditBalance(project.id) : { balance: 0, grants: [] },
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true, planInterval: true, planStatus: true, planPeriodEnd: true, planEndsAt: true } }),
+  ]);
+  // Back from Stripe's payment page: the credits or the plan come with Stripe's word that it's paid, usually within seconds.
+  const searchParams = await props.searchParams;
+  const paid = searchParams.paid === "1";
+  const subscribed = searchParams.subscribed === "1";
   return (
     <>
-      {paid && (
+      {(paid || subscribed) && (
         <Alert>
-          <AlertDescription>Thanks for your payment. Your credits show here as soon as Stripe confirms it, usually within a few seconds.</AlertDescription>
+          <AlertDescription>
+            Thanks for your payment. Your {paid ? "credits show" : "plan starts"} here as soon as Stripe confirms it, usually within a few seconds.
+          </AlertDescription>
         </Alert>
       )}
+      {plansEnabled() && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{plan.plan === "FREE" ? "Free" : PLAN_PRICES[plan.plan].name} plan</CardTitle>
+            <CardDescription>
+              {plan.plan === "FREE"
+                ? "Upgrade this project for more. Plans are per project: readers are always unlimited."
+                : [
+                    planPriceText(plan.plan, plan.planInterval === "year" ? "year" : "month"),
+                    plan.planEndsAt ? `Ends on ${day(plan.planEndsAt)}` : plan.planPeriodEnd && `Renews on ${day(plan.planPeriodEnd)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {plan.planStatus === "past_due" && (
+              <Alert variant="destructive">
+                <AlertDescription>The last payment didn&apos;t go through. Stripe tries again; update the card in Manage plan.</AlertDescription>
+              </Alert>
+            )}
+            {plan.plan !== "FREE" ? (
+              <ManagePlan projectSlug={slug} />
+            ) : planSalesEnabled() ? (
+              <PlanPicker projectSlug={slug} credits={creditsEnabled() ? { PRO: planCredits("PRO"), BUSINESS: planCredits("BUSINESS") } : null} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {creditsEnabled() && (
     <Card>
       <CardHeader>
         <CardTitle>{credits(balance)} AI credits</CardTitle>
@@ -71,6 +116,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         )}
       </CardContent>
     </Card>
+      )}
       {topupsEnabled() && (
         <Card>
           <CardHeader>

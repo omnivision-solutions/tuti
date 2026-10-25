@@ -1,14 +1,49 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 /**
- * Stripe, for AI credit top-ups (docs/plan.md, AI usage per project): a Checkout Session to pay, and
- * its webhook's signature. Two requests' worth of Stripe's API, so no SDK.
+ * Stripe, for AI credit top-ups and plans (docs/plan.md, AI usage per project and Plans): Checkout
+ * Sessions to pay, the customer portal, reading subscriptions and invoices, and webhooks' signatures.
+ * A handful of requests to Stripe's API, so no SDK.
  */
 
 const api = () => (process.env.STRIPE_API_URL || "https://api.stripe.com").replace(/\/+$/, "");
 
+/** The API version every request asks for, so what's read below has the shape it expects whatever the account's default. */
+const STRIPE_VERSION = "2025-03-31.basil";
+
+/** A request to Stripe's API (form-encoded, like Stripe's); its JSON answer. Throws on any failure. */
+async function stripe<T>(method: "GET" | "POST", path: string, form?: Record<string, string>): Promise<T> {
+  const response = await fetch(`${api()}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_VERSION,
+      ...(form && { "Content-Type": "application/x-www-form-urlencoded" }),
+    },
+    body: form && new URLSearchParams(form),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const json = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (!response.ok || !json) {
+    throw new Error(`Stripe ${method} ${path} failed (${response.status}): ${json?.error?.message ?? "no answer"}`);
+  }
+  return json as T;
+}
+
+const metadataFields = (metadata: Record<string, string>, prefix = "metadata") =>
+  Object.fromEntries(Object.entries(metadata).map(([key, value]) => [`${prefix}[${key}]`, value]));
+
+/** A Checkout Session's id and payment page; throws unless Stripe gave both. */
+async function checkout(form: Record<string, string>): Promise<{ id: string; url: string }> {
+  const session = await stripe<{ id?: unknown; url?: unknown }>("POST", "/v1/checkout/sessions", form);
+  if (typeof session.id !== "string" || typeof session.url !== "string") {
+    throw new Error("Stripe Checkout gave no session");
+  }
+  return { id: session.id, url: session.url };
+}
+
 /** A one-time payment page for `cents` (USD) on Stripe Checkout; returns its URL. Throws on any failure. */
-export async function createCheckout({
+export function createCheckout({
   cents,
   product,
   metadata,
@@ -25,7 +60,7 @@ export async function createCheckout({
   email: string | null;
   reference: string;
 }): Promise<{ id: string; url: string }> {
-  const form = new URLSearchParams({
+  return checkout({
     mode: "payment",
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -34,21 +69,78 @@ export async function createCheckout({
     "line_items[0][price_data][currency]": "usd",
     "line_items[0][price_data][unit_amount]": String(cents),
     "line_items[0][price_data][product_data][name]": product,
-    ...Object.fromEntries(Object.entries(metadata).map(([key, value]) => [`metadata[${key}]`, value])),
+    ...metadataFields(metadata),
     ...(email && { customer_email: email }),
   });
-  const response = await fetch(`${api()}/v1/checkout/sessions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" },
-    body: form,
-    signal: AbortSignal.timeout(15_000),
-  });
-  const json = (await response.json().catch(() => null)) as { id?: unknown; url?: unknown; error?: { message?: string } } | null;
-  if (!response.ok || typeof json?.id !== "string" || typeof json.url !== "string") {
-    throw new Error(`Stripe Checkout failed (${response.status}): ${json?.error?.message ?? "no session"}`);
-  }
-  return { id: json.id, url: json.url };
 }
+
+/**
+ * A Checkout page to start a subscription to `price` for a project: the subscription carries the
+ * project's id in its metadata, which is how Stripe's webhook knows whose plan it is. Billed to the
+ * project's customer if it has one already, else Stripe makes one (with `email`).
+ */
+export function createSubscriptionCheckout({
+  price,
+  projectId,
+  customer,
+  email,
+  successUrl,
+  cancelUrl,
+}: {
+  price: string;
+  projectId: string;
+  customer: string | null;
+  email: string | null;
+  successUrl: string;
+  cancelUrl: string;
+}): Promise<{ id: string; url: string }> {
+  return checkout({
+    mode: "subscription",
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    client_reference_id: projectId,
+    "line_items[0][price]": price,
+    "line_items[0][quantity]": "1",
+    ...metadataFields({ projectId }),
+    ...metadataFields({ projectId }, "subscription_data[metadata]"),
+    ...(customer ? { customer } : email ? { customer_email: email } : {}),
+  });
+}
+
+/** Stripe's customer portal for `customer` (change or cancel the plan, the card, invoices); returns its URL. */
+export async function createPortal({ customer, returnUrl }: { customer: string; returnUrl: string }): Promise<string> {
+  const session = await stripe<{ url?: unknown }>("POST", "/v1/billing_portal/sessions", { customer, return_url: returnUrl });
+  if (typeof session.url !== "string") {
+    throw new Error("Stripe's customer portal gave no URL");
+  }
+  return session.url;
+}
+
+/** A subscription, as read here (STRIPE_VERSION). */
+export type StripeSubscription = {
+  id: string;
+  customer: string;
+  status: string;
+  metadata: Record<string, string>;
+  cancel_at_period_end: boolean;
+  cancel_at: number | null;
+  items: { data: { price: { id: string }; current_period_end: number }[] };
+};
+
+/** An invoice, as read here (STRIPE_VERSION): its subscription and, per line, the price and the period it pays for. */
+export type StripeInvoice = {
+  id: string;
+  status: string | null;
+  billing_reason: string | null;
+  parent: { subscription_details?: { subscription?: string | null } | null } | null;
+  lines: { data: { period: { end: number }; pricing: { price_details?: { price?: string | null } | null } | null }[] };
+};
+
+/** The subscription as Stripe has it now (not as an event said it was). */
+export const getSubscription = (id: string) => stripe<StripeSubscription>("GET", `/v1/subscriptions/${encodeURIComponent(id)}`);
+
+/** The invoice as Stripe has it now. */
+export const getInvoice = (id: string) => stripe<StripeInvoice>("GET", `/v1/invoices/${encodeURIComponent(id)}`);
 
 /** Stripe's tolerance for a webhook's timestamp: older ones are replays. */
 const TOLERANCE_SECONDS = 300;

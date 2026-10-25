@@ -136,6 +136,9 @@ const matrix: Matrix = {
   },
   credits: {
     buyCredits: { allowed: "ADMIN", call: (slug) => withEnv({ AI_CREDITS: "on" }, () => credits.buyCredits(slug, 10)) },
+    // Plans on just for that call; Manage plan opens Stripe's portal for the fixture's customer.
+    subscribe: { allowed: "ADMIN", call: (slug) => withEnv({ PLANS: "on" }, () => credits.subscribe(slug, "pro", "month")) },
+    manageSubscription: { allowed: "ADMIN", call: (slug) => credits.manageSubscription(slug) },
   },
   "ai-models": {
     saveAiModels: { allowed: "ADMIN", call: (slug) => aiModels.saveAiModels(slug, {}, form({ answers: "", changelog: "" })) },
@@ -543,7 +546,7 @@ beforeAll(async () => {
   model = await startModelFake();
   openai = await startOpenAIFake();
   githubFake = await startGithubFake();
-  // Buying AI credits opens the local Stripe fake's page (with AI credits on just for that call).
+  // Buying AI credits and plans opens the local Stripe fake's pages (with AI credits or plans on just for that call).
   stripe = await startStripeFake();
   for (const [name, value] of Object.entries({ ...s3.env, ...model.env, ...stripe.env })) {
     vi.stubEnv(name, value);
@@ -579,6 +582,8 @@ let installations = 0;
 async function createFixture(own: "domain" | "site" = "domain") {
   const project = await createProject(users.OWNER);
   const projectId = project.id;
+  // A Stripe customer (it had a plan once), for Manage plan.
+  await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}` } });
   await prisma.teamMember.createMany({
     data: [
       { projectId, userId: users.ADMIN.id, role: "ADMIN" },

@@ -48,12 +48,19 @@ export async function chargeCredits(tx: Prisma.TransactionClient, projectId: str
   await tx.project.update({ where: { id: projectId }, data: { aiCreditDebt: owed } });
 }
 
-/** Gives the project credits: for good without `days`. */
+/** Gives the project credits, lasting `days` or until `expiresAt`: for good without either. */
 export async function grantCredits(
   projectId: string,
   source: AiCreditSource,
   credits: number,
-  { days, note = "", stripeSessionId, paidCents }: { days: number | null; note?: string; stripeSessionId?: string; paidCents?: number },
+  {
+    days = null,
+    expiresAt = days === null ? null : new Date(Date.now() + days * 86_400_000),
+    note = "",
+    stripeSessionId,
+    stripeInvoiceId,
+    paidCents,
+  }: { days?: number | null; expiresAt?: Date | null; note?: string; stripeSessionId?: string; stripeInvoiceId?: string; paidCents?: number },
   tx: Prisma.TransactionClient = prisma,
 ) {
   const amount = toCredits(credits);
@@ -63,9 +70,10 @@ export async function grantCredits(
       source,
       credits: amount,
       remaining: amount,
-      expiresAt: days === null ? null : new Date(Date.now() + days * 86_400_000),
+      expiresAt,
       note,
       stripeSessionId,
+      stripeInvoiceId,
       paidCents,
     },
   });
