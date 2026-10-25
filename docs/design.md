@@ -53,6 +53,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 
 - **Admin app** (`/app`): every page lives in the sidebar shell
   (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
+  From tablet width up the top bar holds the page's title and actions
+  (`PageHeader` puts them there), its description staying on the page.
   A page with sections of its own lists them under its header with `SubNav`
   (Settings → Access, Single sign-on, …). Docs pages add the docs as a
   tree in a column of their own beside the page (`DocsWorkspace`; a "Browse
@@ -93,7 +95,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
 Use these instead of hand-rolling layout:
 
 - **`PageHeader`** (`title`, `description`, `actions`): the top of every page.
-  Actions sit right on wide screens and under the title on phones.
+  Actions sit right on wide screens and under the title on phones; in the
+  app from tablet width up, title and actions go in the top bar.
 - **`BackLink`**: "← Feedback" above a detail page's header.
 - **`ItemList` + `ItemRow`** (`leading`, `title`, `badges`, `meta`, `actions`):
   every list of things (posts, boards, team, invites, suggestions), usually in

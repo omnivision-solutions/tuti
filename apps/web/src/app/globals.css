@@ -3,6 +3,14 @@
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
+/* In the app from tablet width up, where a page's title and actions sit in the top bar (PageHeader). */
+@custom-variant topbar {
+  @media (width >= 48rem) {
+    [data-slot="sidebar-inset"] & {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
