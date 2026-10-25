@@ -2,7 +2,7 @@
 
 import { Prisma, prisma, type TeamRole } from "@tuti/db";
 import { inviteEmail, sendEmail } from "@tuti/email";
-import { log } from "@tuti/shared";
+import { log, teamLimit } from "@tuti/shared";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -20,6 +20,10 @@ import { getMembership } from "./membership";
 import { getAccountSession, getSession } from "./session";
 
 type Result = { error?: string };
+
+/** Said when a project's plan has no room for another team member (Free: 3). */
+const teamFull = (limit: number) =>
+  `Projects on the free plan have up to ${limit} team members, invites included. Upgrade to Pro in Settings → Billing to invite more.`;
 
 const roleSchema = z.enum(["OWNER", "ADMIN", "MEMBER"]);
 
@@ -57,6 +61,20 @@ export async function createInvitation(
   });
   if (onTeam) {
     return { error: `${parsed.data.email} is already on the team` };
+  }
+  // Members and the invites still pending (a new invite to the same address replaces its own).
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+  const limit = teamLimit(plan);
+  if (limit !== null) {
+    const [members, pending] = await Promise.all([
+      prisma.teamMember.count({ where: { projectId } }),
+      prisma.invitation.count({
+        where: { projectId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, NOT: { email: parsed.data.email } },
+      }),
+    ]);
+    if (members + pending >= limit) {
+      return { error: teamFull(limit) };
+    }
   }
   const sentToday = await prisma.invitation.count({
     where: { projectId, createdAt: { gt: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
@@ -210,6 +228,12 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
         if (claimed.count !== 1) {
           throw new InvitationUnavailableError();
         }
+        // Room on the plan, counted under the project's lock so two people joining at once can't both take the last place.
+        const [project] = await tx.$queryRaw<{ plan: "FREE" | "PRO" | "BUSINESS" }[]>`SELECT plan FROM project WHERE id = ${invitation.projectId} FOR UPDATE`;
+        const limit = project ? teamLimit(project.plan) : null;
+        if (limit !== null && (await tx.teamMember.count({ where: { projectId: invitation.projectId } })) >= limit) {
+          throw new TeamFullError();
+        }
         await tx.teamMember.create({ data: { projectId: invitation.projectId, userId, role: invitation.role } });
         if (verifyEmail) {
           await tx.user.update({ where: { id: userId }, data: { emailVerified: true } });
@@ -218,6 +242,9 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
     } catch (error) {
       if (error instanceof InvitationUnavailableError) {
         return { error: "This invite has expired, was revoked, or was already used" };
+      }
+      if (error instanceof TeamFullError) {
+        return { error: "This project's team is full on its plan. Ask one of its owners to upgrade it, then try again." };
       }
       // Became a member concurrently: fine.
       if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
@@ -231,3 +258,4 @@ async function join(invitation: InvitationForJoining, userId: string, { verifyEm
 }
 
 class InvitationUnavailableError extends Error {}
+class TeamFullError extends Error {}

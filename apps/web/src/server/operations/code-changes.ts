@@ -8,6 +8,7 @@ import { aiOrRefuse } from "./credits";
 import { createArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
+import { requirePlan } from "./plan";
 import { postSummarySelect, projectPortal, summary, toApiStatus } from "./read";
 import { call } from "./run";
 
@@ -213,7 +214,8 @@ export const getCodeChange = defineOperation({
 
 export const analyseCodeChange = defineOperation({
   name: "codeChanges.analyse",
-  summary: "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\")",
+  summary:
+    "Analyse a code change again; one with nothing to do is analysed past that decision (\"Analyse anyway\"); refused (402) out of AI credits or where the project's plan doesn't include code changes",
   method: "POST",
   path: "/code-changes/{id}/analyse",
   scope: "write",
@@ -230,6 +232,7 @@ export const analyseCodeChange = defineOperation({
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
       throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
     }
+    await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
     await aiOrRefuse(projectId, "code_changes");
     try {
@@ -246,7 +249,7 @@ export const analyseCodeChange = defineOperation({
 export const resumeCodeChanges = defineOperation({
   name: "codeChanges.resume",
   summary:
-    "Resume every code change paused because the project was out of AI credits (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out",
+    "Resume every paused code change, paused because the project was out of AI credits or its plan didn't include code changes (\"Resume all\"): each is analysed again (`resumed`: queued, or where jobs run inline, analysed; `failed`: those whose analysis failed at once, inline); refused (402) while the project is still out, or its plan still doesn't include them",
   method: "POST",
   path: "/code-changes/resume",
   scope: "write",
@@ -257,6 +260,7 @@ export const resumeCodeChanges = defineOperation({
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
       throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
     }
+    await requirePlan(projectId, "codeChanges");
     await aiOrRefuse(projectId, "code_changes");
     // Nothing is marked before it's queued (the job marks it analysing as it starts, as for one), so
     // one not queued yet, the server stopping meanwhile, stays paused for the next "Resume all".

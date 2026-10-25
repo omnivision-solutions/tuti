@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type Prisma, prisma } from "@tuti/db";
-import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, toVectorLiteral } from "@tuti/shared";
+import { type Ai, codeChangesEnabled, complete, decide, decisionModel, embed, type JobInput, planIncludes, planNeeded, toVectorLiteral } from "@tuti/shared";
 import { z } from "zod";
 
 import {
@@ -60,8 +60,8 @@ export async function startCodeChange(projectId: string, pr: MergedPullRequest):
 
 /** Whether the project's merged pull requests become code changes: on this server, and not turned off by the team. */
 export async function analysisOn(projectId: string): Promise<boolean> {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { analyseCodeChanges: true } });
-  return codeChangesEnabled() && project?.analyseCodeChanges === true;
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { analyseCodeChanges: true, plan: true } });
+  return codeChangesEnabled() && project?.analyseCodeChanges === true && planIncludes(project.plan, "codeChanges");
 }
 
 /**
@@ -81,7 +81,7 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
       url: true,
       title: true,
       state: true,
-      project: { select: { slug: true, analyseCodeChanges: true } },
+      project: { select: { slug: true, analyseCodeChanges: true, plan: true } },
     },
   });
   if (!change) {
@@ -105,6 +105,11 @@ export async function codeChange(input: JobInput<"codeChange">, log: JobLogger):
   if (!codeChangesEnabled()) {
     await prisma.codeChange.updateMany({ where: waiting, data: { state: "FAILED", reason: "AI isn't set up on this server." } });
     return { skipped: true };
+  }
+  // On a plan without code changes since it merged: kept, paused until the plan is back and the team resumes it.
+  if (!planIncludes(change.project.plan, "codeChanges")) {
+    await prisma.codeChange.updateMany({ where: waiting, data: { state: "PAUSED", reason: planNeeded("codeChanges") } });
+    return { skipped: true, paused: true };
   }
   // Still one of the project's repositories, on the installation it's connected to now.
   const repository = await prisma.githubRepository.findUnique({

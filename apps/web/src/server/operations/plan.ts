@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { badgePrice, isBadgePrice, log, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
+import { badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
@@ -10,6 +10,14 @@ import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
 /** The project's Billing page, where Stripe sends the team back. */
+/** Refuses (402) what the project's plan doesn't include (see planIncludes), saying which plan does. */
+export async function requirePlan(projectId: string, feature: PlanFeature): Promise<void> {
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+  if (!planIncludes(plan, feature)) {
+    throw new OperationError(402, "plan_required", `${planNeeded(feature)} See Settings → Billing.`);
+  }
+}
+
 const billingUrl = async (projectId: string) => new URL(`/app/${await projectSlug(projectId)}/settings/billing`, appUrl());
 
 export const getPlan = defineOperation({
