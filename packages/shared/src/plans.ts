@@ -14,16 +14,26 @@ const PRICE_ENV = {
   BUSINESS: { month: "STRIPE_PRICE_BUSINESS_MONTHLY", year: "STRIPE_PRICE_BUSINESS_YEARLY" },
 } as const;
 
-/** The Stripe price a plan is sold at (STRIPE_PRICE_<PLAN>_<MONTHLY|YEARLY>), or null where it isn't for sale. */
+/**
+ * Stripe prices from an env var: the one sold first, then any older ones, comma-separated. Customers who
+ * subscribed at an older price keep their plan when it's replaced.
+ */
+export const pricesIn = (name: string) =>
+  (process.env[name] ?? "")
+    .split(",")
+    .map((price) => price.trim())
+    .filter(Boolean);
+
+/** The Stripe price a plan is sold at (the first of STRIPE_PRICE_<PLAN>_<MONTHLY|YEARLY>), or null where it isn't for sale. */
 export function planPrice(plan: PaidPlan, interval: PlanInterval): string | null {
-  return process.env[PRICE_ENV[plan][interval]]?.trim() || null;
+  return pricesIn(PRICE_ENV[plan][interval])[0] ?? null;
 }
 
-/** Which plan a Stripe price is, or null for any other price. */
+/** Which plan a Stripe price is (sold now, or before), or null for any other price. */
 export function planOfPrice(price: string | null | undefined): { plan: PaidPlan; interval: PlanInterval } | null {
   for (const plan of ["PRO", "BUSINESS"] as const) {
     for (const interval of ["month", "year"] as const) {
-      if (price && planPrice(plan, interval) === price) {
+      if (price && pricesIn(PRICE_ENV[plan][interval]).includes(price)) {
         return { plan, interval };
       }
     }

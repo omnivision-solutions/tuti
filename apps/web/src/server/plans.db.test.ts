@@ -155,6 +155,34 @@ test("a project has one plan: while one is live, another can't be started, and a
   expect(await plan()).toMatchObject({ plan: "pro" });
 });
 
+test("a second subscription's paid invoice reported after both ended still gives nothing; the first's does", async () => {
+  const first = await subscribe("pro");
+  await call(subscribePlan, as(), { plan: "business", interval: "month" });
+  const second = stripe.sessions.at(-1)!;
+  await deliver(...first.events);
+  const [completed, created, paid] = stripe.pay(second.id);
+  await deliver(completed!, created!);
+  await deliver(stripe.update(second.subscription!, { status: "canceled" }), stripe.update(first.subscription, { status: "canceled" }));
+  await deliver(paid!);
+  expect(await plan()).toMatchObject({ plan: "free" });
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
+  // The first's renewal reported late (paid before it ended) still counts.
+  await deliver(stripe.renew(first.subscription)[1]!);
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 1000]);
+});
+
+test("a plan's price replaced in Stripe: those on the older price keep their plan", async () => {
+  const { subscription, events } = await subscribe("pro");
+  await deliver(...events);
+  vi.stubEnv("STRIPE_PRICE_PRO_MONTHLY", `price_new_pro,${stripe.env.STRIPE_PRICE_PRO_MONTHLY}`);
+  await deliver(stripe.update(subscription, {}));
+  expect(await plan()).toMatchObject({ plan: "pro" });
+  // New plans are sold at the new price.
+  await deliver(stripe.update(subscription, { status: "canceled" }));
+  await call(subscribePlan, as(), { plan: "pro", interval: "month" });
+  expect(stripe.sessions.at(-1)!.price).toBe("price_new_pro");
+});
+
 test("not sold: plans off, Stripe not set up, or a plan without its price; plan.get says plans are off", async () => {
   vi.stubEnv("STRIPE_PRICE_PRO_YEARLY", "");
   await expect(call(subscribePlan, as(), { plan: "pro", interval: "year" })).rejects.toMatchObject({ status: 503, code: "plans_unavailable" });
