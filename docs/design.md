@@ -57,7 +57,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   (Settings → Access, Single sign-on, …). Docs pages add the docs as a
   tree in a column of their own beside the page (`DocsWorkspace`; a "Browse
   docs" menu above it on phones); a tab's or a collection's page has
-  Content, Access and Settings tabs.
+  Content, Access and Settings tabs. On Docs pages the sidebar is folded
+  away, as on Customize's.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: the section's settings in a panel on
   the left (back, title; cards inside), the portal it changes on the right in
