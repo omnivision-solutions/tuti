@@ -97,7 +97,12 @@ test("added, but Stripe can't be read back: the badge setting is saved with it, 
   });
   await expect(badge(true)).rejects.toMatchObject({ status: 502, message: expect.stringContaining("it may have gone through") });
   vi.restoreAllMocks();
-  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { poweredBy: true } })).toEqual({ poweredBy: false });
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { poweredBy: true, badgeAddOn: true } })).toEqual({
+    poweredBy: false,
+    badgeAddOn: true,
+  });
+  // Hidden already, before Stripe's webhook says so.
+  expect(await shown()).toBe(false);
   await deliver(stripe.update(subscription, {}));
   expect(await shown()).toBe(false);
 });
