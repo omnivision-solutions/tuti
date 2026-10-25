@@ -135,7 +135,7 @@ test("a paid invoice Stripe reports only after the subscription ended still give
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
 });
 
-test("a project has one plan: while one is live, another can't be started, and a second subscription changes nothing", async () => {
+test("a project has one plan: while one is live, another can't be started, and a second subscription doesn't take it", async () => {
   const first = await subscribe("pro");
   // A second Checkout opened before the first was paid.
   await call(subscribePlan, as(), { plan: "business", interval: "month" });
@@ -144,8 +144,8 @@ test("a project has one plan: while one is live, another can't be started, and a
   await expect(call(subscribePlan, as(), { plan: "business", interval: "month" })).rejects.toMatchObject({ status: 409, code: "has_plan" });
   await deliver(...stripe.pay(second.id));
   expect(await plan()).toMatchObject({ plan: "pro" });
-  // Its paid invoice gives no credits either: only the first's month.
-  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
+  // Paid for, its month's credits come (refunding it, as the operator is asked to, takes them back).
+  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 5000]);
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { stripeSubscriptionId: true } })).toEqual({
     stripeSubscriptionId: first.subscription,
   });
@@ -154,41 +154,11 @@ test("a project has one plan: while one is live, another can't be started, and a
   expect(await plan()).toMatchObject({ plan: "pro" });
 });
 
-test("a second subscription's paid invoice reported after both ended still gives nothing; the first's does", async () => {
-  const first = await subscribe("pro");
-  await call(subscribePlan, as(), { plan: "business", interval: "month" });
-  const second = stripe.sessions.at(-1)!;
-  await deliver(...first.events);
-  const [completed, created, paid] = stripe.pay(second.id);
-  await deliver(completed!, created!);
-  // The first renews (paid), then both end, and Stripe reports those invoices only then.
-  const renewed = stripe.renew(first.subscription)[1]!;
-  await deliver(stripe.update(second.subscription!, { status: "canceled" }), stripe.update(first.subscription, { status: "canceled" }));
-  await deliver(paid!);
-  expect(await plan()).toMatchObject({ plan: "free" });
-  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
-  await deliver(renewed);
-  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000, 1000]);
-});
-
 test("a paid subscription that ended before Stripe said anything about it still gives its month's credits", async () => {
   const { subscription, events } = await subscribe("pro");
   stripe.update(subscription, { status: "canceled" });
   await deliver(...events);
   expect(await plan()).toMatchObject({ plan: "free" });
-  expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
-});
-
-test("a second subscription paid and cancelled while the first held the plan, before Stripe said anything about it, gives nothing", async () => {
-  const first = await subscribe("pro");
-  // A second Checkout opened before the first was paid.
-  await call(subscribePlan, as(), { plan: "business", interval: "month" });
-  const second = stripe.sessions.at(-1)!;
-  await deliver(...first.events);
-  const events = stripe.pay(second.id);
-  stripe.update(second.subscription!, { status: "canceled" });
-  await deliver(...events);
-  expect(await plan()).toMatchObject({ plan: "pro" });
   expect((await planGrants()).map((grant) => grant.credits.toNumber())).toEqual([1000]);
 });
 
