@@ -126,7 +126,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
                 </h3>
                 <ul className="flex flex-col divide-y" aria-labelledby="docs-proposals">
                   {docs.map((action) => (
-                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} />
+                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} canAnalyse={included} />
                   ))}
                 </ul>
               </section>
