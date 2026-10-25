@@ -13,7 +13,9 @@ export const FAKE_STRIPE_PRICES = {
   STRIPE_PRICE_BUSINESS_YEARLY: { id: "price_fake_business_yearly", interval: "year" },
 } as const;
 
-const intervalOf = (price: string) => Object.values(FAKE_STRIPE_PRICES).find((p) => p.id === price)?.interval;
+/** How often a price bills: the fake's own, or any other `price_…` monthly (a price made for a test). */
+const intervalOf = (price: string) =>
+  Object.values(FAKE_STRIPE_PRICES).find((p) => p.id === price)?.interval ?? (price.startsWith("price_") ? "month" : undefined);
 
 /** A Checkout Session as the fake keeps it: what was asked for, and whether it's paid. */
 export type FakeCheckoutSession = {

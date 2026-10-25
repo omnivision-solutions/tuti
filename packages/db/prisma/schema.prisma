@@ -245,7 +245,8 @@ model Project {
   aiCreditsOutEmailedAt DateTime?
   /// The project's plan on tuti.so (docs/plan.md, Plans; only where PLANS=on), kept in step with its
   /// Stripe subscription by Stripe's webhook (server/subscriptions.ts): FREE without a live one. Its
-  /// Stripe customer stays once made, so a later plan is billed to the same one.
+  /// Stripe customer stays once made, so a later plan is billed to the same one; the subscription is the live
+  /// one, or once it ended the last one that held the plan (until another does).
   plan                  Plan         @default(FREE)
   stripeCustomerId      String?      @unique
   stripeSubscriptionId  String?      @unique
