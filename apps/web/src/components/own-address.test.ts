@@ -9,9 +9,21 @@ const { OwnAddressSettings } = await import("./own-address");
 
 const domain = { hostname: "help.example.com", status: "verified" as const, certificate: null, records: [] };
 const site = { url: "https://example.com/portal", status: "verified" as const, forward: [] };
-const card = (props: { domain: typeof domain | null; site: typeof site | null; domainsOn?: boolean }) =>
+const card = (props: {
+  domain: typeof domain | null;
+  site: typeof site | null;
+  domainsOn?: boolean;
+  notIncluded?: { domain: string | null; site: string | null };
+}) =>
   renderToStaticMarkup(
-    createElement(OwnAddressSettings, { projectSlug: "acme", domainsOn: true, portalAddress: "acme.tuti.so", protocol: "https:", ...props }),
+    createElement(OwnAddressSettings, {
+      projectSlug: "acme",
+      domainsOn: true,
+      notIncluded: { domain: null, site: null },
+      portalAddress: "acme.tuti.so",
+      protocol: "https:",
+      ...props,
+    }),
   );
 /** The option cards: each one's title, and whether it's picked or locked. */
 const options = (html: string) =>
@@ -49,4 +61,11 @@ test("custom domains off on this server: that option says so and can't be picked
   const html = card({ domain: null, site: null, domainsOn: false });
   expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain (locked)", "Sub-folder"]);
   expect(html).toContain("Not set up on this server");
+});
+
+test("what the project's plan doesn't include is locked, saying which plan has it", () => {
+  const html = card({ domain: null, site: null, notIncluded: { domain: "A custom domain needs the Pro plan.", site: "A portal under a path of your site needs the Business plan." } });
+  expect(options(html)).toEqual(["Tuti address (picked)", "Custom domain (locked)", "Sub-folder (locked)"]);
+  expect(html).toContain("A custom domain needs the Pro plan.");
+  expect(html).toContain("A portal under a path of your site needs the Business plan.");
 });

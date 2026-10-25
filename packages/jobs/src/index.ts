@@ -21,7 +21,7 @@ export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";
 export { detectDuplicates, embedPosts } from "./duplicates";
 export { forgetRepositories, type GithubRepo, includeRepositories, inInstallation, installationRepositories, syncRepositories, listedRepositories, repositoryConnection } from "./github-repositories";
-export { liveDomain, portalAddress, type PortalAddress } from "./portal-address";
+export { liveDomain, portalAddress, type PortalAddress, projectWith } from "./portal-address";
 export { fetchSiteCheck } from "./site-check";
 export { emitEvent, portalPostUrl, postStatusChanged, queueDeliveries, recordEvent, postSummary, postSummarySelect, toApiStatus, type PostRow } from "./events";
 

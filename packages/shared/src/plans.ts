@@ -75,6 +75,11 @@ const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
   BUSINESS: ["customDomain", "codeChanges", "privatePortal", "sitePath"],
 };
 
+/** The plans that include `feature`, for filtering projects by it; null without plans (every project has it). */
+export function plansWith(feature: PlanFeature): ("FREE" | PaidPlan)[] | null {
+  return plansEnabled() ? (Object.keys(INCLUDES) as ("FREE" | PaidPlan)[]).filter((plan) => INCLUDES[plan].includes(feature)) : null;
+}
+
 /** The plan that first includes a feature, for saying what to upgrade to. */
 export const planFor = (feature: PlanFeature): PaidPlan => (INCLUDES.PRO.includes(feature) ? "PRO" : "BUSINESS");
 
