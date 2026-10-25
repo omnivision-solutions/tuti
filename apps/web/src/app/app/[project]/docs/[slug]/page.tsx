@@ -10,6 +10,7 @@ import { previewUrl } from "@/lib/portal-base";
 import { BackLink } from "@/components/back-link";
 import { ArticleActions, ArticleChanges, ArticleForm } from "@/components/docs";
 import { ArticleDiff } from "@/components/article-diff";
+import { DocsFilter } from "@/components/docs-tree";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
@@ -86,6 +87,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         }
         actions={
           <>
+            <DocsFilter />
             <Link href={`/app/${slug}/docs/${article.slug}/history`} className={buttonVariants({ variant: "ghost" })}>
               History
             </Link>

@@ -61,7 +61,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
-  above it on phones); a tab's or a collection's page has Content, Access and
+  above it on phones). "Filter by title" (`DocsFilter`) is in the top bar and
+  filters the tree and the home alike; a tab's or a collection's page has Content, Access and
   Settings tabs. On Docs pages the sidebar is folded
   away, as on Customize's.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the

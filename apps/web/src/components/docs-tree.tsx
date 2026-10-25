@@ -56,7 +56,47 @@ const INDENT = ["", "pl-5", "pl-8", "pl-11", "pl-14"];
 
 /** Where a new collection goes: in collection `parent`, else at the top level of tab `tab`. */
 type NewCollection = { parent: string | null; tab?: string };
-const DocsWorkspaceContext = createContext<{ projectSlug: string; depthOf: (slug: string) => number; newCollection: (at: NewCollection) => void } | null>(null);
+const DocsWorkspaceContext = createContext<{
+  projectSlug: string;
+  depthOf: (slug: string) => number;
+  newCollection: (at: NewCollection) => void;
+  /** What "Filter by title" has, the same on every Docs page (the tree and the docs' home follow it). */
+  query: string;
+  setQuery: (query: string) => void;
+} | null>(null);
+
+/** Whether `query` (as typed) matches any of `texts`, by title: all of them do while it's empty. */
+const matchesAny = (query: string, texts: string[]) => {
+  const q = query.trim().toLowerCase();
+  return !q || texts.some((text) => text.toLowerCase().includes(q));
+};
+
+/** "Filter by title" in a Docs page's top bar: it filters the tree beside the page, and the docs' home. */
+export function DocsFilter() {
+  const { query, setQuery } = useContext(DocsWorkspaceContext)!;
+  return (
+    <Input
+      type="search"
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+      placeholder="Filter by title"
+      aria-label="Filter docs"
+      className="h-8 w-full sm:w-48 lg:w-64"
+    />
+  );
+}
+
+/** Shows what's in it while the filter matches one of `texts` (or is empty): a row or card of the docs' home. */
+export function DocsMatch({ texts, children }: { texts: string[]; children: ReactNode }) {
+  const { query } = useContext(DocsWorkspaceContext)!;
+  return matchesAny(query, texts) ? children : null;
+}
+
+/** "Nothing matches" on the docs' home, when the filter matches none of `texts`. */
+export function DocsNoMatch({ texts }: { texts: string[] }) {
+  const { query } = useContext(DocsWorkspaceContext)!;
+  return matchesAny(query, texts) ? null : <p className="text-sm break-words text-muted-foreground">Nothing matches “{query.trim()}”.</p>;
+}
 
 /**
  * "+" on a tab or a collection, and its page's "Add content": a new article (in collection `article`;
@@ -615,7 +655,7 @@ export function DocsWorkspace({
 
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   return (
-    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
+    <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding, query, setQuery }}>
       <div data-slot="docs-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
         {/* Beside a tab's, a collection's or an article's page, to go between them; the docs' home shows them all itself. */}
         {current && (
@@ -631,15 +671,12 @@ export function DocsWorkspace({
               Browse docs
             </button>
             <div id="docs-tree" className={cn("flex-col gap-4 p-3 lg:sticky lg:top-12 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto", browsing ? "flex" : "hidden")}>
-              <div className="flex flex-col gap-2 px-2 pt-1">
-                {/* Back to the docs' home, which shows them all. */}
-                <h2 className="font-heading font-semibold">
-                  <Link href={base} className="hover:underline">
-                    Docs
-                  </Link>
-                </h2>
-                <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter by title" aria-label="Filter docs" className="h-8" />
-              </div>
+              {/* Back to the docs' home, which shows them all. Its filter is in the page's top bar (DocsFilter). */}
+              <h2 className="px-2 pt-1 font-heading font-semibold">
+                <Link href={base} className="hover:underline">
+                  Docs
+                </Link>
+              </h2>
               <nav aria-label="Docs" aria-busy={pending} className="flex flex-col">
                 {tabs.length > 0 ? (
                   <ul aria-label="Tabs" className="flex flex-col gap-3">
