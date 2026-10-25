@@ -98,6 +98,7 @@ test("on the free plan, a project has up to 3 team members, invites included, an
     "Merged pull requests still go into the changelog's running draft",
   );
   await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);
+  await expect(owner.getByText("On this project's plan, merged pull requests go into the changelog's running draft only.")).toBeVisible();
 
   // A domain of its own is on Pro, a path of the team's site on Business.
   await owner.goto(`/app/${slug}/customize/address`);

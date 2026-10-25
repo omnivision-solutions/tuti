@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
@@ -18,6 +20,9 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
     notFound();
   }
   const mergedAt = new Date(change.mergedAt);
+  // On a plan without code changes it's kept, but can't be analysed again (codeChanges.analyse refuses).
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
+  const included = planIncludes(plan, "codeChanges");
   const feedback = change.actions.filter((action) => action.post);
   // Article edits first, then new articles.
   const docs = change.actions
@@ -50,7 +55,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
         <Alert>
           <AlertDescription className="flex flex-col items-start gap-2">
             {`Paused: ${change.reason} It's analysed when you resume it.`}
-            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />
+            {included && <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label="Resume" />}
           </AlertDescription>
         </Alert>
       )}
@@ -58,7 +63,9 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
         <Alert variant={change.state === "failed" ? "destructive" : "default"}>
           <AlertDescription className="flex flex-col items-start gap-2">
             {change.state === "failed" ? `The analysis stopped. ${change.reason}` : `Nothing to do. ${change.reason}`}
-            <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
+            {included && (
+              <AnalyseCodeChangeButton projectSlug={slug} codeChangeId={change.id} label={change.state === "failed" ? "Analyse again" : "Analyse anyway"} />
+            )}
           </AlertDescription>
         </Alert>
       )}

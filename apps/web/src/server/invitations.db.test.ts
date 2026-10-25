@@ -202,6 +202,13 @@ describe("on the free plan (where plans are sold)", () => {
     expect(await createInvitation(project.slug, newEmail(), "MEMBER")).toMatchObject({ emailSent: true });
   });
 
+  test("two invites at once for the last place: only one is sent", async () => {
+    await addMember(project.id, "MEMBER");
+    const results = await Promise.all([createInvitation(project.slug, newEmail(), "MEMBER"), createInvitation(project.slug, newEmail(), "MEMBER")]);
+    expect(results.filter((result) => result.error === FULL)).toHaveLength(1);
+    expect(await prisma.invitation.count({ where: { projectId: project.id, revokedAt: null } })).toBe(1);
+  });
+
   test("a project that dropped to Free keeps its team, but an invite sent before can't take a place it no longer has", async () => {
     await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
     const email = newEmail();
