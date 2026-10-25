@@ -133,8 +133,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   await expect(form.getByLabel("Title")).toHaveValue("Dark mo");
   await form.getByLabel("Title").fill("Dark mode");
   await form.getByRole("button", { name: "Submit post" }).click();
-  // Posted: the dialog closes and the post is on the board; the next one starts empty.
-  await expect(form).toHaveCount(0);
+  // Posted (saving runs its jobs first, see postFeedback): the dialog closes and the post is on the board; the next one starts empty.
+  await expect(form).toHaveCount(0, { timeout: 15_000 });
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
   await ada.getByRole("button", { name: "Request a feature" }).click();
   await expect(form.getByLabel("Title")).toHaveValue("");

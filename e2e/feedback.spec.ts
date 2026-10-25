@@ -1,18 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { signUp } from "./helpers";
+import { postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
-
-async function submitFeedback(page: Page, title: string) {
-  await page.getByRole("button", { name: "Submit post" }).click();
-  await page.getByLabel("Title").fill(title);
-  await page.getByRole("button", { name: "Submit post" }).click();
-  await expect(page.getByRole("link", { name: title })).toBeVisible();
-}
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -54,12 +47,12 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // Two people post on the portal; the second also upvotes the first post.
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto("/feedback/feature-requests");
-  await submitFeedback(ada, "Dark mode");
+  await postFeedback(ada, "Dark mode");
   await checkpoint(ada, "portal-first-post");
 
   const bo = await signUp(browser, portalUrl(slug), "Bo");
   await bo.goto("/feedback/feature-requests");
-  await submitFeedback(bo, "Night theme for the editor");
+  await postFeedback(bo, "Night theme for the editor");
   await checkpoint(bo, "portal-two-posts");
   await bo.getByRole("link", { name: "Dark mode" }).click();
   // The board list has vote buttons too: vote only once the post page is open.

@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, signUp } from "./helpers";
+import { createProject, postFeedback, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 test("people hear when what they asked for ships, and can unsubscribe", async ({ browser }, testInfo) => {
@@ -17,10 +17,7 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
   const ada = await signUp(browser, portalUrl(slug), "Ada");
   await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
   await ada.goto("/feedback/feature-requests");
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await ada.getByLabel("Title").fill("Dark mode");
-  await ada.getByRole("button", { name: "Submit post" }).click();
-  await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  await postFeedback(ada, "Dark mode");
 
   // The team ships it.
   await team.goto(`/app/${slug}/p/1`);
