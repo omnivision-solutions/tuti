@@ -40,6 +40,10 @@ export const serverEnv = {
   AI_CREDITS_PER_TOPUP_DOLLAR: "",
   AI_CREDITS_PER_USAGE_DOLLAR: "",
   AI_CREDITS_TOPUP_EXPIRY_DAYS: "",
+  // Plans sold, like Tuti's cloud (Stripe's prices are the fake's), with the default credits a month.
+  PLANS: "on",
+  AI_CREDITS_PRO: "",
+  AI_CREDITS_BUSINESS: "",
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",

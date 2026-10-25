@@ -56,7 +56,7 @@ export default async function globalSetup() {
   const site = await startSiteFake();
   // A team's own website; journeys make it forward a path to their portal through /_fake/forward (e2e/site.ts).
   process.env.E2E_SITE_URL = site.origin;
-  // Stripe Checkout for buying AI credits: its "Pay" posts the paid event to the app's webhook.
+  // Stripe for buying AI credits and plans: its pages post the events Stripe would to the app's webhook.
   const stripe = await startStripeFake({ webhookUrl: `${APP_URL}/api/stripe/webhook` });
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
