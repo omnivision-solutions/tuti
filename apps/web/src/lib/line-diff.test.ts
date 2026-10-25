@@ -42,4 +42,7 @@ test("blocks compare with their formatting, and a list's items one by one", () =
   expect(diff[2]!.doc.content).toEqual([p("Save draft", true)]);
   // The second item keeps its number.
   expect(diff[5]!.doc.content).toEqual([{ type: "orderedList", attrs: { start: 2 }, content: [item("Two!")] }]);
+  // A list that starts at another number: its items read differently, so they've changed.
+  const renumbered = { type: "doc", content: [{ type: "orderedList", attrs: { start: 3 }, content: [item("One"), item("Two!")] }] };
+  expect(diffBlocks({ type: "doc", content: [after.content[2]!] }, renumbered).map(({ kind }) => kind)).toEqual(["removed", "removed", "added", "added"]);
 });

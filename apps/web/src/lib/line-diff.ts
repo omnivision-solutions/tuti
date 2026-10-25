@@ -68,16 +68,19 @@ export function diffBy<T>(a: T[], b: T[], key: (item: T) => string): { kind: Dif
 /**
  * The blocks removed from `before` and added in `after`, formatting included, each a document of
  * its own to render. A list's items count one by one (an ordered one's keep their numbers), so
- * changing one item doesn't mark the whole list.
+ * changing one item doesn't mark the whole list; a new start number for the list marks them all.
  */
 export function diffBlocks(before: JSONContent, after: JSONContent): { kind: DiffLine["kind"]; doc: JSONContent }[] {
   const blocks = (doc: JSONContent) =>
     (doc.content ?? []).flatMap((block) =>
       block.type === "bulletList" || block.type === "orderedList"
-        ? (block.content ?? []).map((item, index) => ({
-            key: JSON.stringify([block.type, item]),
-            block: { ...block, attrs: block.type === "orderedList" ? { start: (Number(block.attrs?.start) || 1) + index } : block.attrs, content: [item] },
-          }))
+        ? (block.content ?? []).map((item, index) => {
+            const start = block.type === "orderedList" ? Number(block.attrs?.start) || 1 : null;
+            return {
+              key: JSON.stringify([block.type, start, item]),
+              block: { ...block, attrs: start === null ? block.attrs : { start: start + index }, content: [item] },
+            };
+          })
         : [{ key: JSON.stringify(block), block }],
     );
   return diffBy(blocks(before), blocks(after), (unit) => unit.key).map(({ kind, item }) => ({
