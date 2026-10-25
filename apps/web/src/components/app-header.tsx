@@ -8,9 +8,10 @@ export function AppHeader({ projects, fallbackSlug }: { projects: ProjectSummary
   const current = useCurrentProject(projects, fallbackSlug);
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+    // At the top as the page scrolls; a page's title and actions sit in it (PageHeader).
+    <header className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4">
       <SidebarTrigger className="-ml-1" />
-      <Separator orientation="vertical" className="mr-2 data-[orientation=vertical]:h-4" />
+      <Separator orientation="vertical" className="mr-2 data-vertical:h-4 data-vertical:self-center" />
       {/* A page's title takes its place from tablet width up (PageHeader). */}
       <span className="text-sm font-medium md:in-[main:has([data-slot=page-header])]:hidden">{current?.name ?? "Tuti"}</span>
     </header>

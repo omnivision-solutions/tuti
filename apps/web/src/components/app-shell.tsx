@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { type ReactNode, useState } from "react";
+import { type CSSProperties, type ReactNode, useState } from "react";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
@@ -30,7 +30,12 @@ export function AppShell({ sidebar, header, banners, children }: { sidebar: Reac
   }
 
   return (
-    <SidebarProvider open={folded ? peek : open} onOpenChange={folded ? setPeek : setOpen}>
+    <SidebarProvider
+      open={folded ? peek : open}
+      onOpenChange={folded ? setPeek : setOpen}
+      // How wide the sidebar is now: the top bar's title starts past it (PageHeader).
+      style={{ "--app-sidebar": (folded ? peek : open) ? "var(--sidebar-width)" : "var(--sidebar-width-icon)" } as CSSProperties}
+    >
       {sidebar}
       <SidebarInset>
         {header}

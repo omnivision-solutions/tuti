@@ -103,7 +103,7 @@ for 4 hours).
 
 - [x] Brand direction "Parrot" (picked from four options): green + beak-orange tokens for light and dark, Figtree + Bricolage Grotesque, parrot mark, favicon, "Powered by tuti" on portals
 - [x] Shared layout components (`PageHeader`, `ItemList`/`ItemRow`, `EmptyState`, `BackLink`); every page moved onto them
-- [x] The app's top bar holds the page's title and actions from tablet width up, in place of the project's name (the sidebar's switcher has it); the description stays on the page, and on phones the header is as before (asked 2026-10-25)
+- [x] The app's top bar holds the page's title and actions from tablet width up, in place of the project's name (the sidebar's switcher has it); the description stays on the page, and on phones the header is as before (asked 2026-10-25). It stays at the top as the page scrolls (asked 2026-10-25)
 - [x] `docs/design.md` rulebook and a dev-only `/design` gallery (light and dark side by side)
 - [ ] A proper parrot illustration to replace the placeholder mark (moved to Later)
 

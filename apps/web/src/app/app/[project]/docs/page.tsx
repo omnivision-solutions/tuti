@@ -109,7 +109,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         </Card>
       )}
       {deleted.length > 0 && (
-        <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-6">
+        <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">
           <CardHeader>
             <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
             <CardDescription>Deleted articles can be restored for {DELETED_ARTICLE_DAYS} days. They come back as drafts.</CardDescription>
