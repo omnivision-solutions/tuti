@@ -28,12 +28,15 @@ export async function syncSubscription(id: string): Promise<string | null> {
   return prisma.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(5, hashtext(${id}))`;
-      const subscription = await getSubscription(id);
-      const projectId = subscription.metadata?.projectId;
+      const projectId = (await getSubscription(id)).metadata?.projectId;
       if (!projectId) {
         log.warn("A Stripe subscription without a project: not one Tuti started", { subscription: id });
         return null;
       }
+      // The project's lock too, the one changing the add-on takes (plan.badge), then read again under it:
+      // a read made before such a change can't be written after it.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(6, hashtext(${projectId}))`;
+      const subscription = await getSubscription(id);
       const item = subscription.items.data.find((item) => planOfPrice(item.price.id));
       const paid = item && planOfPrice(item.price.id);
       if (!LIVE.has(subscription.status) || !item || !paid) {
@@ -60,8 +63,8 @@ export async function syncSubscription(id: string): Promise<string | null> {
       }
       return projectId;
     },
-    // Stripe's answer comes within its 15-second timeout.
-    { timeout: 20_000 },
+    // Stripe's two answers come within their 15-second timeouts.
+    { timeout: 35_000 },
   );
 }
 
