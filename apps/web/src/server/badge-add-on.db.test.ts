@@ -82,6 +82,26 @@ test("refused on the free plan, while a payment is failing, and when the card is
   await expect(badge(true)).rejects.toMatchObject({ status: 503 });
 });
 
+test("added, but Stripe can't be read back: the badge setting is saved with it, the team hears it may have gone through, and the webhook catches up", async () => {
+  const subscription = await subscribe();
+  const realFetch = globalThis.fetch;
+  let added = false;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (url.includes("/v1/subscription_items")) {
+      added = true;
+    } else if (added && url.includes("/v1/subscriptions/")) {
+      return Response.json({ error: { message: "Stripe is down" } }, { status: 500 });
+    }
+    return realFetch(input, init);
+  });
+  await expect(badge(true)).rejects.toMatchObject({ status: 502, message: expect.stringContaining("it may have gone through") });
+  vi.restoreAllMocks();
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { poweredBy: true } })).toEqual({ poweredBy: false });
+  await deliver(stripe.update(subscription, {}));
+  expect(await shown()).toBe(false);
+});
+
 test("it ends with the plan: the badge is back, and can't be hidden again without it", async () => {
   const subscription = await subscribe();
   await badge(true);

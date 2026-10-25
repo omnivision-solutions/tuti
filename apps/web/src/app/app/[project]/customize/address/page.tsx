@@ -33,7 +33,11 @@ export default async function AddressPage(props: PageProps<"/app/[project]/custo
     <CustomizeShell backHref={`/app/${slug}/customize`} title={sectionTitle("address")} preview={await portalPreview(slug, "/")}>
       {unpaid && (
         <PlanNotice feature={unpaid} projectSlug={slug} admin>
-          Until it&apos;s back, your portal answers at its Tuti address. These settings are kept.
+          Until it&apos;s back, that address isn&apos;t served; your portal&apos;s Tuti address,{" "}
+          <a href={portal.origin} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-4">
+            {portal.host}
+          </a>
+          , keeps working. Its settings are kept.
         </PlanNotice>
       )}
       <OwnAddressSettings

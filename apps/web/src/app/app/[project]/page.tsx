@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -33,6 +34,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
     codeChangeList(membership.project.id, { paused: true }),
     prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
   ]);
+  // On a plan without code changes, paused ones wait for the plan (codeChanges.resume refuses until then).
+  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
+  const included = planIncludes(plan, "codeChanges");
 
   return (
     <>
@@ -80,10 +84,16 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
         <Card>
           <CardHeader>
             <CardTitle>Paused</CardTitle>
-            <CardDescription>Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more.</CardDescription>
-            <CardAction>
-              <ResumeAllButton projectSlug={slug} />
-            </CardAction>
+            <CardDescription>
+              {included
+                ? "Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more."
+                : "Merged pull requests not analysed yet: this project's plan doesn't include code changes. They wait for it."}
+            </CardDescription>
+            {included && (
+              <CardAction>
+                <ResumeAllButton projectSlug={slug} />
+              </CardAction>
+            )}
           </CardHeader>
           <CardContent>
             <ItemList>
@@ -106,7 +116,9 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               ))}
             </ItemList>
             {pausedCount > 10 && (
-              <p className="mt-2 text-sm text-muted-foreground">And {pausedCount - 10} more in Code changes; Resume all resumes them too.</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                And {pausedCount - 10} more in Code changes{included && "; Resume all resumes them too"}.
+              </p>
             )}
           </CardContent>
         </Card>
