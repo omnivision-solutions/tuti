@@ -1102,6 +1102,15 @@ test("an article's settings: its own address (the old one redirects), keywords r
   await team.getByRole("button", { name: "Settings" }).click();
   const dialog = team.getByRole("dialog", { name: "Article settings" });
   await expect(dialog.getByRole("radio", { name: "Inherit" })).toBeChecked();
+  // A panel from the right, the window's whole height and at most 448px wide, with the article beside it.
+  await expect(dialog).toHaveAttribute("data-side", "right");
+  // (Measured once it has slid in.)
+  await expect
+    .poll(async () => {
+      const panel = (await dialog.boundingBox())!;
+      return [Math.round(panel.y), Math.round(panel.x + panel.width), Math.round(panel.height), Math.round(panel.width) <= 448];
+    })
+    .toEqual([0, 1280, 720, true]);
   await expect(dialog.getByRole("textbox", { name: "Slug" })).toHaveCount(0);
   await dialog.getByRole("checkbox", { name: /^Custom slug/ }).check();
   const slugBox = dialog.getByRole("textbox", { name: "Slug" });
