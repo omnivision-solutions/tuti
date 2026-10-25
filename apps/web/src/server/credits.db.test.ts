@@ -185,7 +185,16 @@ test("a grant made while the email is claimed counts: no email about the old bal
   );
   await inserted;
   const emailing = emailIfCreditsLow(project.id);
-  await new Promise((resolve) => setTimeout(resolve, 200));
+  // Only once it waits for the project's lock, so the grant really lands in between.
+  await vi.waitFor(
+    async () => {
+      const [{ waiting }] = await prisma.$queryRaw<{ waiting: number }[]>`
+        SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%FROM project%FOR UPDATE%'`;
+      expect(waiting).toBeGreaterThan(0);
+    },
+    { timeout: 10_000, interval: 25 },
+  );
   commit();
   await Promise.all([granting, emailing]);
   expect(emailed("is running low on AI credits")).toEqual([]);
@@ -201,6 +210,16 @@ test("AI_CREDITS_LOW=0: a balance of exactly 0 is out", async () => {
   await answered(0.1);
   expect(await balance()).toBe(0);
   expect(emailed("is out of AI credits")).toEqual([owner.email]);
+});
+
+test("with nobody to email (no verified owner or admin yet), nothing is claimed: once someone is, the next charge emails them", async () => {
+  vi.stubEnv("AI_CREDITS_LOW", "50");
+  await grantCredits(project.id, "MANUAL", 40, { days: null });
+  await answered(0.01);
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { aiCreditsLowEmailedAt: true } })).toEqual({ aiCreditsLowEmailedAt: null });
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await answered(0.01);
+  expect(emailed("is running low on AI credits")).toEqual([owner.email]);
 });
 
 test("AI_CREDITS_LOW=0 emails only once credits are out", async () => {

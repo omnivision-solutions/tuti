@@ -130,28 +130,31 @@ export async function emailIfCreditsLow(projectId: string): Promise<void> {
     await lockProject(tx, projectId);
     const [{ _sum }, project] = await Promise.all([
       tx.aiCreditGrant.aggregate({ where: spendable(projectId, new Date()).where, _sum: { remaining: true } }),
-      tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { aiCreditDebt: true, aiCreditsLowEmailedAt: true, aiCreditsOutEmailedAt: true } }),
+      tx.project.findUniqueOrThrow({
+        where: { id: projectId },
+        select: {
+          name: true,
+          slug: true,
+          aiCreditDebt: true,
+          aiCreditsLowEmailedAt: true,
+          aiCreditsOutEmailedAt: true,
+          team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
+        },
+      }),
     ]);
     const balance = (_sum.remaining ?? new Prisma.Decimal(0)).minus(project.aiCreditDebt).toNumber();
     const out = balance <= 0;
-    if ((!out && balance >= lowCreditsAt()) || (out ? project.aiCreditsOutEmailedAt : project.aiCreditsLowEmailedAt)) {
+    // Nobody to email yet (no verified owner or admin): left unclaimed, so they hear once someone is.
+    if (project.team.length === 0 || (!out && balance >= lowCreditsAt()) || (out ? project.aiCreditsOutEmailedAt : project.aiCreditsLowEmailedAt)) {
       return null;
     }
     await tx.project.update({ where: { id: projectId }, data: out ? { aiCreditsOutEmailedAt: new Date() } : { aiCreditsLowEmailedAt: new Date() } });
-    return { balance, out };
+    return { balance, out, project };
   });
   if (!claimed) {
     return;
   }
-  const { balance, out } = claimed;
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: {
-      name: true,
-      slug: true,
-      team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
-    },
-  });
+  const { balance, out, project } = claimed;
   const url = `${new URL(process.env.APP_URL).origin}/app/${project.slug}/settings/billing`;
   const left = balance.toLocaleString("en", { maximumFractionDigits: balance >= 1 ? 0 : 2 });
   const sent = await Promise.allSettled(
