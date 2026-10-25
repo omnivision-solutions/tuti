@@ -6,6 +6,7 @@ import { BackLink } from "@/components/back-link";
 import { RestoreVersionButton } from "@/components/docs";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ArticleDiff } from "@/components/article-diff";
+import { DocsFilter } from "@/components/docs-tree";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,6 +51,7 @@ export default async function ArticleHistoryPage(props: PageProps<"/app/[project
       <PageHeader
         title="History"
         description={`Every save that changed “${article.title}”, newest first. The latest ${ARTICLE_REVISIONS_KEPT} are kept.`}
+        actions={<DocsFilter />}
       />
       {selected && (
         <Card role="region" aria-labelledby="version-title">

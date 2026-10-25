@@ -893,6 +893,16 @@ test("the team splits the docs into tabs: the first takes the collections, other
   const apiSection = team.getByRole("region", { name: "API reference" });
   await expect(apiSection.getByRole("region")).toHaveText([/^Endpoints/, /^Webhooks/, /^Errors/]);
   await checkpoint(team, "team-docs-home");
+  // "Filter by title" in the top bar keeps what matches, with the tab and collection it's in.
+  const filter = team.getByRole("searchbox", { name: "Filter docs" });
+  await filter.fill("signing");
+  await expect(team.getByRole("main").getByRole("heading", { level: 2 })).toHaveText(["API reference"]);
+  await expect(apiSection.getByRole("region")).toHaveText([/^Webhooks/]);
+  await expect(apiSection.getByRole("listitem")).toHaveText([/^Signing payloads/]);
+  await checkpoint(team, "team-docs-home-filtered");
+  await filter.fill("nothing like this");
+  await expect(team.getByText("Nothing matches “nothing like this”.")).toBeVisible();
+  await filter.fill("");
   await team.goto(`/app/${slug}/docs/tabs/api-reference`);
 
   // Readers get a tab for each one with something to read: the first at /docs, the others at their own path.

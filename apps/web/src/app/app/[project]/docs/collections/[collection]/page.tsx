@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, CollectionSettingsForm, DeleteCollectionButton } from "@/components/docs";
-import { AddContentMenu } from "@/components/docs-tree";
+import { AddContentMenu, DocsFilter } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -54,7 +54,12 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
           </span>
         }
         description={parent ? `Collection in ${docs.pathOf(parent.id)}` : tab ? `Collection in ${tab.name}` : "Collection"}
-        actions={<DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={inside.length > 0} />}
+        actions={
+          <>
+            <DocsFilter />
+            <DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={inside.length > 0} />
+          </>
+        }
       />
       <Tabs defaultValue="content">
         <TabsList>

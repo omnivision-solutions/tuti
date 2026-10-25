@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton, TabDialog } from "@/components/docs";
-import { AddContentMenu } from "@/components/docs-tree";
+import { AddContentMenu, DocsFilter, DocsMatch, DocsNoMatch } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -61,32 +61,40 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   const detailsOf = new Map(details.map((d) => [d.slug, d]));
   const base = `/app/${slug}/docs`;
 
+  /** Collection `c`'s name, and those of everything in it: what "Filter by title" looks for to show it. */
+  const textsOf = (c: TeamDocs["collections"][number]): string[] => [
+    c.name,
+    ...c.articles.map((a) => a.title),
+    ...docs.collections.filter((other) => other.parentId === c.id).flatMap(textsOf),
+  ];
+
   const articleRows = (articles: { slug: string; title: string }[]) =>
     articles.map(({ slug: articleSlug, title }) => {
       const article = detailsOf.get(articleSlug);
       return (
-        <ItemRow
-          key={articleSlug}
-          leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
-          title={
-            <Link href={`${base}/${articleSlug}`} className="hover:underline">
-              {title}
-            </Link>
-          }
-          badges={
-            article && (
-              <>
-                {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
-                {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
-              </>
-            )
-          }
-          meta={
-            article?.publishedAt
-              ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
-              : "Draft"
-          }
-        />
+        <DocsMatch key={articleSlug} texts={[title]}>
+          <ItemRow
+            leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
+            title={
+              <Link href={`${base}/${articleSlug}`} className="hover:underline">
+                {title}
+              </Link>
+            }
+            badges={
+              article && (
+                <>
+                  {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
+                  {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
+                </>
+              )
+            }
+            meta={
+              article?.publishedAt
+                ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
+                : "Draft"
+            }
+          />
+        </DocsMatch>
       );
     });
 
@@ -94,50 +102,55 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   const collectionCard = (c: TeamDocs["collections"][number]) => {
     const inside = docs.collections.filter((other) => other.parentId === c.id);
     return (
-      <Card key={c.slug} role="region" aria-label={c.name}>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {c.knownIcon && c.icon && <LucideIcon name={c.icon} className="text-muted-foreground" />}
-            <Link href={`${base}/collections/${c.slug}`} className="hover:underline">
-              {c.name}
-            </Link>
-            {badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
-          </CardTitle>
-          <CardDescription>{contentsMeta(c, docs)}</CardDescription>
-        </CardHeader>
-        {(c.articles.length > 0 || inside.length > 0) && (
-          <CardContent>
-            <ItemList>
-              {articleRows(c.articles)}
-              {inside.map((child) => (
-                <ItemRow
-                  key={child.slug}
-                  leading={child.knownIcon && child.icon ? <LucideIcon name={child.icon} className="text-muted-foreground" /> : undefined}
-                  title={
-                    <Link href={`${base}/collections/${child.slug}`} className="hover:underline">
-                      {child.name}
-                    </Link>
-                  }
-                  badges={badge(child) && <Badge variant="outline">{badge(child)}</Badge>}
-                  meta={contentsMeta(child, docs)}
-                  actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
-                />
-              ))}
-            </ItemList>
-          </CardContent>
-        )}
-      </Card>
+      <DocsMatch key={c.slug} texts={textsOf(c)}>
+        <Card role="region" aria-label={c.name}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {c.knownIcon && c.icon && <LucideIcon name={c.icon} className="text-muted-foreground" />}
+              <Link href={`${base}/collections/${c.slug}`} className="hover:underline">
+                {c.name}
+              </Link>
+              {badge(c) && <Badge variant="outline">{badge(c)}</Badge>}
+            </CardTitle>
+            <CardDescription>{contentsMeta(c, docs)}</CardDescription>
+          </CardHeader>
+          {(c.articles.length > 0 || inside.length > 0) && (
+            <CardContent>
+              <ItemList>
+                {articleRows(c.articles)}
+                {inside.map((child) => (
+                  <DocsMatch key={child.slug} texts={textsOf(child)}>
+                    <ItemRow
+                      leading={child.knownIcon && child.icon ? <LucideIcon name={child.icon} className="text-muted-foreground" /> : undefined}
+                      title={
+                        <Link href={`${base}/collections/${child.slug}`} className="hover:underline">
+                          {child.name}
+                        </Link>
+                      }
+                      badges={badge(child) && <Badge variant="outline">{badge(child)}</Badge>}
+                      meta={contentsMeta(child, docs)}
+                      actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
+                    />
+                  </DocsMatch>
+                ))}
+              </ItemList>
+            </CardContent>
+          )}
+        </Card>
+      </DocsMatch>
     );
   };
   const uncollectedCard = docs.uncollected.length > 0 && (
-    <Card role="region" aria-label="Not in a collection">
-      <CardHeader>
-        <CardTitle>Not in a collection</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ItemList>{articleRows(docs.uncollected)}</ItemList>
-      </CardContent>
-    </Card>
+    <DocsMatch texts={docs.uncollected.map((a) => a.title)}>
+      <Card role="region" aria-label="Not in a collection">
+        <CardHeader>
+          <CardTitle>Not in a collection</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ItemList>{articleRows(docs.uncollected)}</ItemList>
+        </CardContent>
+      </Card>
+    </DocsMatch>
   );
   const top = (tab: string | null) => docs.collections.filter((c) => c.parent === null && c.tab === tab);
 
@@ -162,6 +175,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         description="Articles that answer your users' questions. Published ones show in your portal's docs."
         actions={
           <>
+            <DocsFilter />
             <Link href={`${base}/insights`} className={buttonVariants({ variant: "outline" })}>
               Insights
             </Link>
@@ -179,18 +193,21 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         </>
       ) : (
         docs.tabs.map((tab, index) => (
-          <section key={tab.slug} aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-4">
-            <h2 id={`tab-${tab.slug}`} className="font-heading text-lg font-semibold">
-              <Link href={`${base}/tabs/${tab.slug}`} className="hover:underline">
-                {tab.name}
-              </Link>
-            </h2>
-            {top(tab.slug).map(collectionCard)}
-            {index === 0 && uncollectedCard}
-            {top(tab.slug).length === 0 && !(index === 0 && uncollectedCard) && <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>}
-          </section>
+          <DocsMatch key={tab.slug} texts={[tab.name, ...top(tab.slug).flatMap(textsOf), ...(index === 0 ? docs.uncollected.map((a) => a.title) : [])]}>
+            <section aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-4">
+              <h2 id={`tab-${tab.slug}`} className="font-heading text-lg font-semibold">
+                <Link href={`${base}/tabs/${tab.slug}`} className="hover:underline">
+                  {tab.name}
+                </Link>
+              </h2>
+              {top(tab.slug).map(collectionCard)}
+              {index === 0 && uncollectedCard}
+              {top(tab.slug).length === 0 && !(index === 0 && uncollectedCard) && <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>}
+            </section>
+          </DocsMatch>
         ))
       )}
+      <DocsNoMatch texts={[...docs.tabs.map((tab) => tab.name), ...docs.collections.map((c) => c.name), ...docs.collections.flatMap((c) => c.articles.map((a) => a.title)), ...docs.uncollected.map((a) => a.title)]} />
       <div>
         <TabDialog projectSlug={slug} first={docs.tabs.length === 0 && docs.collections.length > 0} />
       </div>
