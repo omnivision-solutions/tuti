@@ -88,20 +88,22 @@ export function createCheckout({
 }
 
 /**
- * A Checkout page to start a subscription to `price` for a project: the subscription carries the
- * project's id in its metadata, which is how Stripe's webhook knows whose plan it is. Billed to the
- * project's customer if it has one already, else Stripe makes one (with `email`).
+ * A Checkout page to start a subscription to `price`: the subscription carries `metadata` (a project's
+ * id for a plan, an installation's and project's for a licence), which is how Stripe's webhook knows
+ * what it pays for. Billed to `customer` if there's one already, else Stripe makes one (with `email`).
  */
 export function createSubscriptionCheckout({
   price,
-  projectId,
+  metadata,
+  reference,
   customer,
   email,
   successUrl,
   cancelUrl,
 }: {
   price: string;
-  projectId: string;
+  metadata: Record<string, string>;
+  reference: string;
   customer: string | null;
   email: string | null;
   successUrl: string;
@@ -111,11 +113,11 @@ export function createSubscriptionCheckout({
     mode: "subscription",
     success_url: successUrl,
     cancel_url: cancelUrl,
-    client_reference_id: projectId,
+    client_reference_id: reference,
     "line_items[0][price]": price,
     "line_items[0][quantity]": "1",
-    ...metadataFields({ projectId }),
-    ...metadataFields({ projectId }, "subscription_data[metadata]"),
+    ...metadataFields(metadata),
+    ...metadataFields(metadata, "subscription_data[metadata]"),
     ...(customer ? { customer } : email ? { customer_email: email } : {}),
   });
 }

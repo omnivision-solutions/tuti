@@ -28,6 +28,7 @@ import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
+import { testLicensePrivateKey } from "@/test/license";
 import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
@@ -44,6 +45,7 @@ import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
 import * as groups from "./groups";
 import * as invitations from "./invitations";
+import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
 import * as media from "./media";
 import * as portalHandoff from "./portal-handoff";
@@ -82,6 +84,7 @@ const modules = {
   "docs-readers": docsReaders,
   groups,
   invitations,
+  "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
   media,
   "password-reset": passwordReset,
@@ -423,6 +426,16 @@ const matrix: Matrix = {
       allowed: "signed in",
       refusesSsoUsers: true,
       call: () => projects.createProject({}, form({ name: "New project", slug: `new-${crypto.randomUUID().slice(0, 8)}` })),
+    },
+  },
+  // Anyone with tuti.so/license's link may pay for the licence it names (see license-checkout.db.test.ts).
+  "license-checkout": {
+    buyLicense: {
+      allowed: "public",
+      call: () =>
+        withEnv({ LICENSE_PRIVATE_KEY: testLicensePrivateKey, APP_URL: "https://app.tuti.example" }, () =>
+          licenseCheckout.buyLicense(form({ installation: "matrix-installation", project: "matrix-project" })),
+        ),
     },
   },
   "similar-posts": {

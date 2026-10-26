@@ -72,7 +72,8 @@ export const subscribePlan = defineOperation({
     try {
       const session = await createSubscriptionCheckout({
         price,
-        projectId,
+        metadata: { projectId },
+        reference: projectId,
         customer: project.stripeCustomerId,
         email: buyer?.email ?? null,
         successUrl: `${billing}?subscribed=1`,

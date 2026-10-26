@@ -1,4 +1,6 @@
-// Maintainers only: licences on Tuti's licence server (tuti.so), until there's a checkout.
+// Maintainers only: licences on Tuti's licence server (tuti.so), for support. Licences are bought on
+// tuti.so/license with Stripe; one bought there is on while its subscription is live, so cancel or
+// refund that in Stripe instead (Stripe's next event about it would turn it back on).
 // Run against tuti.so's database (DATABASE_URL), e.g. with the maintainers' Infisical:
 //
 //   infisical run --env=prod --path=/web -- node scripts/license.mjs activate <installation id> <project id>
