@@ -8,6 +8,22 @@ import { LICENSE_ID, licensePage, licensePrice } from "./license-sales";
 import { createSubscriptionCheckout } from "./stripe";
 
 /**
+ * Licence checkouts started a minute, across everyone: the page is public, so a flood of them can't use up
+ * Stripe's rate limit, which plans and top-ups share. Over it, the buyer is asked to try again in a moment.
+ * ponytail: counted per server process (tuti.so runs one web instance); a shared count once it runs several.
+ */
+const CHECKOUTS_PER_MINUTE = 20;
+let checkouts = { since: 0, count: 0 };
+
+function checkoutAllowed(now = Date.now()): boolean {
+  if (now - checkouts.since >= 60_000) {
+    checkouts = { since: now, count: 0 };
+  }
+  checkouts.count++;
+  return checkouts.count <= CHECKOUTS_PER_MINUTE;
+}
+
+/**
  * "Buy a licence" on tuti.so/license (docs/plan.md, Licences): a Stripe Checkout page for the monthly
  * licence of one project on one installation. Anyone with the page may pay for it; what they buy is
  * named by the ids in the link "Get a licence" opened. The subscription carries both ids, and Stripe's
@@ -23,6 +39,10 @@ export async function buyLicense(form: FormData): Promise<void> {
   const license = await prisma.license.findUnique({ where: { installationId_projectId: { installationId: installation, projectId: project } } });
   if (license?.active) {
     redirect(licensePage({ installation, project }).toString());
+  }
+  if (!checkoutAllowed()) {
+    log.warn("Licence checkouts over their limit a minute", { installation, project });
+    redirect(licensePage({ installation, project }, { failed: "1" }).toString());
   }
   let url: string;
   try {

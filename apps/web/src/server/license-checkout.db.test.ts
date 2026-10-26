@@ -121,6 +121,34 @@ test("its month refunded in full or disputed ends the subscription, and the lice
   expect(await license()).toMatchObject({ active: false });
 });
 
+test("a disputed month ends it too, and renewals are refused", async () => {
+  const subscription = await bought();
+  const [invoice] = [...stripe.invoices.values()].filter((each) => each.parent.subscription_details.subscription === subscription);
+  await deliver(stripe.dispute(stripe.chargeFor(invoice!.id).id));
+  expect(stripe.subscriptions.get(subscription)!.status).toBe("canceled");
+  expect(await license()).toMatchObject({ active: false });
+  expect(await claim()).toEqual({ error: "not_licensed" });
+});
+
+test("at most 20 checkouts a minute across everyone (the page is public): more are asked to try again in a moment", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    // A minute after the other tests' checkouts.
+    vi.setSystemTime(Date.now() + 61_000);
+    const sessions = stripe.sessions.length;
+    for (let i = 0; i < 20; i++) {
+      ids.project = `proj-${randomUUID()}`;
+      expect(await buy()).not.toContain("/license?");
+    }
+    expect(await buy()).toContain("failed=1");
+    expect(stripe.sessions.length).toBe(sessions + 20);
+    vi.setSystemTime(Date.now() + 61_000);
+    expect(await buy()).toBe(stripe.sessions.at(-1)!.url);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("without Stripe, or for ids that aren't ones, nothing is sold: back to the page, which says to email", async () => {
   vi.stubEnv("STRIPE_PRICE_BADGE_MONTHLY", "");
   const sessions = stripe.sessions.length;
