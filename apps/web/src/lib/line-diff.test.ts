@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
-import { diffBlocks, diffLines } from "./line-diff";
+import { diffBlocks, diffLines, nearChanges } from "./line-diff";
 
 const show = (before: string, after: string) =>
   diffLines(before, after).map(({ kind, text }) => `${{ same: " ", added: "+", removed: "-" }[kind]}${text}`);
@@ -50,4 +50,26 @@ test("blocks compare with their formatting, and a list's items one by one", () =
   const fromZeroDiff = diffBlocks(fromZero, { type: "doc", content: [after.content[2]!] });
   expect(fromZeroDiff.map(({ kind }) => kind)).toEqual(["same", "same"]);
   expect(fromZeroDiff[1]!.doc.content![0]!.attrs).toEqual({ start: 2 });
+});
+
+describe("nearChanges", () => {
+  const items = (kinds: string) => [...kinds].map((k, i) => ({ kind: ({ s: "same", a: "added", r: "removed" } as const)[k as "s" | "a" | "r"], i }));
+  const kept = (kinds: string, around: number) => nearChanges(items(kinds), around).map((item) => item.i);
+
+  it("keeps each change with that many unchanged items either side", () => {
+    expect(kept("sssrasss", 1)).toEqual([2, 3, 4, 5]);
+    expect(kept("sssrasss", 2)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("stops at the ends, and joins changes whose neighbours meet", () => {
+    expect(kept("assss", 1)).toEqual([0, 1]);
+    expect(kept("ssssr", 1)).toEqual([3, 4]);
+    expect(kept("asssa", 1)).toEqual([0, 1, 3, 4]);
+    expect(kept("assa", 1)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("keeps nothing without a change, and only changes with none around", () => {
+    expect(kept("ssss", 1)).toEqual([]);
+    expect(kept("sasas", 0)).toEqual([1, 3]);
+  });
 });

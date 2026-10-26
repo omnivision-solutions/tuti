@@ -1,20 +1,25 @@
 import { RichText } from "@tuti/content/react";
 
-import { diffBlocks } from "@/lib/line-diff";
+import { diffBlocks, nearChanges } from "@/lib/line-diff";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 
 type ArticleVersion = { title: string; body: string; content: unknown; collection: { name: string } | null };
 
-/** What changed from one version of an article to another: its title, collection and blocks, formatted as readers see them. `same` says there's nothing. */
-export async function ArticleDiff({ before, after, same }: { before: ArticleVersion; after: ArticleVersion; same: string }) {
+/**
+ * What changed from one version of an article to another: its title, collection and blocks, formatted
+ * as readers see them. `same` says there's nothing. With `around`, only the changed blocks show, each
+ * with that many unchanged ones on either side.
+ */
+export async function ArticleDiff({ before, after, same, around }: { before: ArticleVersion; after: ArticleVersion; same: string; around?: number }) {
   const [a, b] = [displayDoc(before), displayDoc(after)];
-  const blocks = diffBlocks(a, b);
+  const all = diffBlocks(a, b);
+  const blocks = around === undefined ? all : nearChanges(all, around);
   const fields = [
     { label: "Title", before: before.title, after: after.title },
     { label: "Collection", before: before.collection?.name ?? "None", after: after.collection?.name ?? "None" },
   ].filter((field) => field.before !== field.after);
-  if (fields.length === 0 && blocks.every((block) => block.kind === "same")) {
+  if (fields.length === 0 && all.every((block) => block.kind === "same")) {
     return <p className="text-sm text-muted-foreground">{same}</p>;
   }
   const media = await mediaUrls(a, b);

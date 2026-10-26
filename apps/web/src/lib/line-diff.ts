@@ -89,3 +89,8 @@ export function diffBlocks(before: JSONContent, after: JSONContent): { kind: Dif
     doc: { type: "doc", content: [item.block] },
   }));
 }
+
+/** The changed items of a diff, each with `around` unchanged ones on either side (the rest left out). */
+export function nearChanges<T extends { kind: DiffLine["kind"] }>(items: T[], around: number): T[] {
+  return items.filter((_, i) => items.slice(Math.max(0, i - around), i + around + 1).some((item) => item.kind !== "same"));
+}
