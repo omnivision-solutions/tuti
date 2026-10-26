@@ -58,6 +58,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] The docs tree is only the docs: Open portal, Customize and Groups left it (the sidebar has the last two); the portal's docs are an icon beside the Docs title (asked 2026-10-25)
 - [x] The Docs home shows all the docs the whole width, without the tree: each tab with its collections as cards (their articles, with who can read them and when they were published, then the collections in them) and the articles in no collection, with Add content and New tab. The tree is beside a tab's, a collection's and an article's page, to go between them; its Docs heading leads home (asked 2026-10-25)
 - [x] "Filter by title" is in the top bar on Docs pages (the home, a tab's, a collection's and an article's page): it filters the tree and the home's cards and rows alike, keeping what matches with the tab and collection it's in, and stays as you go between them (asked 2026-10-25)
+- [x] The Users page's search and group filter are in the top bar too (on phones, in its "More actions") (asked 2026-10-26)
 - [x] The way back ("← Docs", "← Feedback") is in the top bar, before the page's title (asked 2026-10-25)
 - [x] On phones, a page's actions (and the docs' filter) are a "More actions" menu from the top bar, not a row under the title (asked 2026-10-25)
 - [x] An article's Settings open in a panel from the right, beside the article, with Save changes always in view (asked 2026-10-25)
@@ -379,7 +380,7 @@ Follow-ups found while building items 1–15 (2026-10-21), one small PR each, mo
 - [ ] The Gaps list: from a failed search, "Add as a keyword" to an article the team picks (#147 left it out: it needs an article picker there)
 - [ ] The "Who can read" hint under "Inherit" says what it inherits; the "People without access" one says "Hidden (the default)" even when an explicit "Hide" above causes it: name the level it comes from
 - [ ] The icon picker opens with commonly used icons first (it starts at "A" today)
-- [ ] On phones the overview has its own search box and the header's: keep one
+- [x] On phones the overview has its own search box and the header's: both stay (decided 2026-10-26)
 - [x] Articles easier to read and skim (asked 2026-10-23, compared with Ferndesk): a larger title with its collection in green above it, larger section headings with more room above them, softer body text so headings and bold terms stand out, taller lines and space between list items; "On this page" as a rail with the section being read marked
 - [x] Above an article's or a collection's title in the portal, the level above (its collection, else its tab or "All collections") at every width; "Was this helpful?" under "On this page" where that shows, else under the article (asked 2026-10-25)
 - [x] A collection's page in the portal, as Ferndesk shows them: its icon by its name, a card of its articles as rows with a chevron, then a card per collection in it with its articles and, as folders, the collections in that (asked 2026-10-25)

@@ -41,7 +41,8 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows.filter({ hasText: "Bea Byte" })).not.toContainText("Enterprise");
   await checkpoint(owner, "team-users");
 
-  // Found by name, email or id.
+  // Found by name, email or id, from the search box in the top bar.
+  expect((await owner.getByRole("searchbox", { name: "Search users" }).boundingBox())!.y).toBeLessThan(48);
   await owner.getByRole("searchbox", { name: "Search users" }).fill("bea");
   await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
   await expect(rows).toHaveCount(1);
@@ -85,4 +86,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows).toHaveCount(1);
   expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
   await checkpoint(owner, "team-users-phone");
+  // There, the search is in the top bar's "More actions", with what it searched for.
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await expect(owner.getByRole("searchbox", { name: "Search users" })).toHaveValue("cipher");
 });
