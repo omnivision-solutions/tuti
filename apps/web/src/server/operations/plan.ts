@@ -2,7 +2,7 @@ import { prisma } from "@tuti/db";
 import { badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
 import { z } from "zod";
 
-import { appUrl } from "@/lib/hosts";
+import { appUrl, portalUrl } from "@/lib/hosts";
 
 import { addSubscriptionItem, createPortal, createSubscriptionCheckout, getSubscription, removeSubscriptionItem, StripeError } from "../stripe";
 import { syncSubscription } from "../subscriptions";
@@ -62,7 +62,7 @@ export const subscribePlan = defineOperation({
       throw new OperationError(503, "plans_unavailable", "That plan isn't sold on this server");
     }
     const [project, buyer, billing] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, stripeCustomerId: true } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true, stripeCustomerId: true, name: true, slug: true } }),
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
       billingUrl(projectId),
     ]);
@@ -73,6 +73,8 @@ export const subscribePlan = defineOperation({
       const session = await createSubscriptionCheckout({
         price,
         metadata: { projectId },
+        // "Tuti Pro for Acme (acme.tuti.so)": the portal address that stays, whatever domain it's on.
+        description: `Tuti ${input.plan === "pro" ? "Pro" : "Business"} for ${project.name} (${new URL(portalUrl(project.slug)).host})`,
         reference: projectId,
         customer: project.stripeCustomerId,
         email: buyer?.email ?? null,

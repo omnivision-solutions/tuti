@@ -79,6 +79,8 @@ test("bought with Stripe Checkout at the add-on's monthly price: once paid, the 
   await deliver(...stripe.pay(session.id));
   expect(await license()).toMatchObject({ active: true, stripeSubscriptionId: session.subscription });
   expect(await claim()).toMatchObject({ key: expect.any(String) });
+  // Its buyer may have several: Stripe's portal says which project and installation this one is for.
+  expect(stripe.subscriptions.get(session.subscription!)!.description).toBe(`Tuti licence for project ${ids.project} on installation ${ids.installation}`);
   // A licence's invoice gives no AI credits: it's no project's plan here.
   expect(await prisma.aiCreditGrant.count({ where: { stripeInvoiceId: { not: null } } })).toBe(0);
 });

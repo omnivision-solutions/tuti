@@ -51,6 +51,7 @@ export async function buyLicense(form: FormData): Promise<void> {
     ({ url } = await createSubscriptionCheckout({
       price,
       metadata: { licenseInstallation: installation, licenseProject: project },
+      description: `Tuti licence for project ${project} on installation ${installation}`,
       reference: installation,
       customer: null,
       email: null,
