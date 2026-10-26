@@ -26,15 +26,15 @@ function checkoutAllowed(now = Date.now()): boolean {
 }
 
 /**
- * "Buy a licence" on tuti.so/license (docs/plan.md, Licences): a Stripe Checkout page for the monthly
- * licence of one project on one installation. Anyone with the page may pay for it; what they buy is
+ * "Buy a licence" on tuti.so/license (docs/plan.md, Licences): a Stripe Checkout page for the licence
+ * of one project on one installation, billed each month or each year (`interval`). Anyone with the page may pay for it; what they buy is
  * named by the ids in the link "Get a licence" opened. The subscription carries both ids, and Stripe's
  * webhook turns the licence on once it's paid (server/subscriptions.ts).
  */
 export async function buyLicense(form: FormData): Promise<void> {
   const installation = String(form.get("installation") ?? "");
   const project = String(form.get("project") ?? "");
-  const price = licensePrice();
+  const price = licensePrice(form.get("interval") === "year" ? "year" : "month");
   if (!price || !LICENSE_ID.test(installation) || !LICENSE_ID.test(project)) {
     redirect(licensePage({ installation, project }).toString());
   }

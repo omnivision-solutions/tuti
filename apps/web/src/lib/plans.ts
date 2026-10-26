@@ -14,3 +14,14 @@ export const planPriceText = (plan: keyof typeof PLAN_PRICES, interval: "month" 
 
 /** The add-on hiding "Powered by tuti", a month (decided 2026-10-25); a yearly plan pays twelve of them a year. */
 export const BADGE_PRICE = 49;
+
+/**
+ * How tuti.so/license describes a licence's price and billing, from the intervals it's sold in:
+ * "$49 a month" and "each month or each year", or "billed yearly" when only yearly is.
+ */
+export function licenseBilling({ month, year }: { month: boolean; year: boolean }): { price: string; billed: string } {
+  return {
+    price: `$${BADGE_PRICE} a month${year && !month ? ", billed yearly" : ""}`,
+    billed: month && year ? "each month or each year" : year ? "each year" : "each month",
+  };
+}
