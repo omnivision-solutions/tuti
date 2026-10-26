@@ -37,7 +37,8 @@ export default async function LicensePage(props: PageProps<"/license">) {
     where: { installationId_projectId: { installationId: installation, projectId: project } },
     select: { active: true, stripeSubscriptionId: true },
   });
-  const sold = licensePrice();
+  const monthly = licensePrice("month");
+  const yearly = licensePrice("year");
   const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
@@ -87,15 +88,24 @@ export default async function LicensePage(props: PageProps<"/license">) {
         <p role="status">
           Thanks! The licence turns on as soon as Stripe confirms the payment, usually within seconds: reload this page to see it.
         </p>
-      ) : sold ? (
+      ) : monthly || yearly ? (
         <form action={buyLicense} className="flex flex-col gap-3">
           <input type="hidden" name="installation" value={installation} />
           <input type="hidden" name="project" value={project} />
           {failed && <p className="text-sm text-destructive">Couldn&apos;t open Stripe&apos;s checkout. Try again in a moment.</p>}
-          <p>Pay by card with Stripe. It renews each month until you cancel it.</p>
-          <Button type="submit" className="self-start">
-            Buy for ${BADGE_PRICE} a month
-          </Button>
+          <p>Pay by card with Stripe, each month or each year. It renews until you cancel it.</p>
+          <div className="flex flex-wrap gap-2">
+            {monthly && (
+              <Button type="submit" name="interval" value="month">
+                Buy for ${BADGE_PRICE} a month
+              </Button>
+            )}
+            {yearly && (
+              <Button type="submit" name="interval" value="year" variant={monthly ? "outline" : "default"}>
+                Buy for ${BADGE_PRICE * 12} a year
+              </Button>
+            )}
+          </div>
         </form>
       ) : (
         <>

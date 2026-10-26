@@ -14,6 +14,7 @@ test("someone buying a licence sees which installation and project it's for, and
   await expect(page.getByRole("heading", { name: 'Remove "Powered by tuti"' })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: installation })).toBeVisible();
   await expect(page.getByRole("definition").filter({ hasText: project })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Buy for $588 a year" })).toBeVisible();
   await checkpoint(page, "license-page");
 
   // Stripe's page (the fake), then back, licensed: the installation's next check gets its key.

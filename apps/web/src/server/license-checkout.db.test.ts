@@ -39,10 +39,13 @@ const deliver = async (...events: FakeStripeEvent[]) => {
 };
 
 /** Where buyLicense sent the buyer. */
-async function buy(): Promise<string> {
+async function buy(interval?: "month" | "year"): Promise<string> {
   const form = new FormData();
   form.set("installation", ids.installation);
   form.set("project", ids.project);
+  if (interval) {
+    form.set("interval", interval);
+  }
   try {
     await buyLicense(form);
   } catch (error) {
@@ -78,6 +81,20 @@ test("bought with Stripe Checkout at the add-on's monthly price: once paid, the 
   expect(await claim()).toMatchObject({ key: expect.any(String) });
   // A licence's invoice gives no AI credits: it's no project's plan here.
   expect(await prisma.aiCreditGrant.count({ where: { stripeInvoiceId: { not: null } } })).toBe(0);
+});
+
+test("or yearly, at the add-on's yearly price; without that price, a yearly one isn't sold", async () => {
+  await buy("year");
+  const session = stripe.sessions.at(-1)!;
+  expect(session).toMatchObject({ price: stripe.env.STRIPE_PRICE_BADGE_YEARLY, metadata: { licenseInstallation: ids.installation } });
+  await deliver(...stripe.pay(session.id));
+  expect(await license()).toMatchObject({ active: true, stripeSubscriptionId: session.subscription });
+
+  ids.project = `proj-${randomUUID()}`;
+  vi.stubEnv("STRIPE_PRICE_BADGE_YEARLY", "");
+  const sessions = stripe.sessions.length;
+  expect(await buy("year")).toBe(`https://app.tuti.example/license?installation=${ids.installation}&project=${ids.project}`);
+  expect(stripe.sessions.length).toBe(sessions);
 });
 
 test("cancelled in Stripe, renewals are refused, so the key lapses; bought again, it's back", async () => {
