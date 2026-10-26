@@ -1789,6 +1789,9 @@ model License {
   /// Requests with a spent token or a second claim, i.e. the licence in use on another installation.
   refusedCount   Int       @default(0)
   lastRefusedAt  DateTime?
+  /// The Stripe subscription paying for it (bought on tuti.so/license), kept in step by Stripe's
+  /// webhook: active while it's live. Null for one activated by hand.
+  stripeSubscriptionId String? @unique
   createdAt      DateTime  @default(now())
 
   @@unique([installationId, projectId])

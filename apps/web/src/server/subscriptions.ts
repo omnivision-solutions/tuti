@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import { Prisma, prisma } from "@tuti/db";
 import { grantCredits } from "@tuti/jobs";
 import { isBadgePrice, log, planCredits, planOfPrice } from "@tuti/shared";
 
-import { getInvoice, getSubscription } from "./stripe";
+import { getInvoice, getSubscription, type StripeSubscription } from "./stripe";
 
 /**
  * Plans through Stripe (docs/plan.md, Plans): Stripe's webhook brings each project's plan in step with
@@ -22,13 +24,19 @@ const at = (seconds: number) => new Date(seconds * 1000);
  * was, so events arriving late or out of order can't leave an old state behind. One at a time per
  * subscription, read under the lock: the last write is always from the latest read. A project has one
  * plan, so a second live subscription for it is logged for the operator to refund and changes nothing.
- * Returns the project it's for (the subscription's metadata), or null if Tuti didn't start it.
+ * A self-hosted licence's subscription brings its licence in step instead (syncLicense).
+ * Returns the project whose plan it is (the subscription's metadata), or null for a licence's or one Tuti didn't start.
  */
 export async function syncSubscription(id: string): Promise<string | null> {
   return prisma.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(5, hashtext(${id}))`;
-      const projectId = (await getSubscription(id)).metadata?.projectId;
+      const first = await getSubscription(id);
+      const { projectId, licenseInstallation, licenseProject } = first.metadata ?? {};
+      if (licenseInstallation && licenseProject) {
+        await syncLicense(tx, first, { installationId: licenseInstallation, projectId: licenseProject });
+        return null;
+      }
       if (!projectId) {
         log.warn("A Stripe subscription without a project: not one Tuti started", { subscription: id });
         return null;
@@ -66,6 +74,28 @@ export async function syncSubscription(id: string): Promise<string | null> {
     // Stripe's two answers come within their 15-second timeouts.
     { timeout: 35_000 },
   );
+}
+
+/**
+ * A self-hosted project's licence bought on tuti.so/license (docs/plan.md, Licences): active while its
+ * subscription is live, so its installation's renewals get keys; cancelled once it isn't, so its key
+ * lapses. A second live subscription for a licence another one pays for changes nothing and is logged
+ * for the operator to refund, like a plan's.
+ */
+async function syncLicense(tx: Prisma.TransactionClient, subscription: StripeSubscription, license: { installationId: string; projectId: string }) {
+  if (!LIVE.has(subscription.status)) {
+    await tx.license.updateMany({ where: { stripeSubscriptionId: subscription.id }, data: { active: false } });
+    return;
+  }
+  // Its own, or one nothing pays for (cancelled, or activated by hand): this subscription pays for it now.
+  const taken = await tx.$executeRaw`
+    INSERT INTO license (id, "installationId", "projectId", "stripeSubscriptionId")
+    VALUES (${randomUUID()}, ${license.installationId}, ${license.projectId}, ${subscription.id})
+    ON CONFLICT ("installationId", "projectId") DO UPDATE SET active = true, "stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId"
+    WHERE license."stripeSubscriptionId" = EXCLUDED."stripeSubscriptionId" OR license."stripeSubscriptionId" IS NULL OR NOT license.active`;
+  if (taken === 0) {
+    log.error("A second live Stripe subscription for a licence: cancel and refund it", { ...license, subscription: subscription.id });
+  }
 }
 
 /** Invoices that pay for a period of the plan: the first and each renewal. An upgrade's proration isn't one: the new plan's credits come with its next period. */
