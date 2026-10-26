@@ -1,6 +1,6 @@
 import { RichText } from "@tuti/content/react";
 
-import { diffBlocks } from "@/lib/line-diff";
+import { diffBlocks, nearChanges } from "@/lib/line-diff";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 
@@ -14,8 +14,7 @@ type ArticleVersion = { title: string; body: string; content: unknown; collectio
 export async function ArticleDiff({ before, after, same, around }: { before: ArticleVersion; after: ArticleVersion; same: string; around?: number }) {
   const [a, b] = [displayDoc(before), displayDoc(after)];
   const all = diffBlocks(a, b);
-  const near = (i: number) => all.slice(Math.max(0, i - around!), i + around! + 1).some((block) => block.kind !== "same");
-  const blocks = around === undefined ? all : all.filter((_, i) => near(i));
+  const blocks = around === undefined ? all : nearChanges(all, around);
   const fields = [
     { label: "Title", before: before.title, after: after.title },
     { label: "Collection", before: before.collection?.name ?? "None", after: after.collection?.name ?? "None" },
