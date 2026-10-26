@@ -4,6 +4,7 @@ import { FAKE_STRIPE_PRICES, startStripeFake, type FakeStripeEvent, type StripeF
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as webhook } from "@/app/api/stripe/webhook/route";
+import { portalUrl } from "@/lib/hosts";
 import { getPlan, managePlan, subscribePlan } from "@/server/operations/plan";
 import { call } from "@/server/operations/run";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
@@ -114,6 +115,21 @@ test("changes in the customer portal follow: another plan, a failed payment, can
   // The customer stays: a later plan is billed to it.
   await call(subscribePlan, as(), { plan: "pro", interval: "month" });
   expect(stripe.sessions.at(-1)).toMatchObject({ customer: stripe.subscriptions.get(subscription)!.customer, customer_email: null });
+});
+
+test("each project is its own Stripe customer, and its subscription says which project it is (Stripe's portal shows it)", async () => {
+  const { subscription, events } = await subscribe("business");
+  await deliver(...events);
+  const { name, slug, stripeCustomerId } = await prisma.project.findUniqueOrThrow({ where: { id: project.id } });
+  expect(stripe.subscriptions.get(subscription)!.description).toBe(`Tuti Business for ${name} (${new URL(portalUrl(slug)).host})`);
+  // Another project of the same owner: a customer of its own, so Manage plan there shows only its plan.
+  const other = await createProject(owner);
+  await call(subscribePlan, { actor: { kind: "user", userId: owner.id }, projectId: other.id }, { plan: "pro", interval: "month" });
+  await deliver(...stripe.pay(stripe.sessions.at(-1)!.id));
+  const second = await prisma.project.findUniqueOrThrow({ where: { id: other.id } });
+  expect(second.stripeCustomerId).toEqual(expect.any(String));
+  expect(second.stripeCustomerId).not.toBe(stripeCustomerId);
+  expect(stripe.subscriptions.get(second.stripeSubscriptionId!)!.description).toBe(`Tuti Pro for ${second.name} (${new URL(portalUrl(second.slug)).host})`);
 });
 
 test("events late or out of order can't bring back an old state: the subscription is read from Stripe", async () => {

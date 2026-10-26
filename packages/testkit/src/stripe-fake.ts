@@ -36,6 +36,8 @@ export type FakeCheckoutSession = {
   metadata: Record<string, string>;
   /** What a subscription it starts carries in its metadata (subscription_data[metadata]). */
   subscription_metadata: Record<string, string>;
+  /** What a subscription it starts is described as (subscription_data[description]). */
+  subscription_description: string | null;
   client_reference_id: string | null;
   customer: string | null;
   customer_email: string | null;
@@ -56,6 +58,8 @@ export type FakeSubscription = {
   customer: string;
   status: string;
   metadata: Record<string, string>;
+  /** What it's for, as shown to the customer (Stripe's customer portal). */
+  description: string | null;
   cancel_at_period_end: boolean;
   cancel_at: number | null;
   created: number;
@@ -221,6 +225,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
       customer: session.customer ?? id("cus"),
       status: "active",
       metadata: session.subscription_metadata,
+      description: session.subscription_description,
       cancel_at_period_end: false,
       cancel_at: null,
       created: tick(),
@@ -305,6 +310,7 @@ export async function startStripeFake({ webhookUrl }: { webhookUrl?: string } = 
           price,
           metadata: fields("metadata"),
           subscription_metadata: fields("subscription_data[metadata]"),
+          subscription_description: field("subscription_data[description]"),
           client_reference_id: field("client_reference_id"),
           customer: field("customer"),
           customer_email: field("customer_email"),
