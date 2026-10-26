@@ -130,20 +130,29 @@ test("a disputed month ends it too, and renewals are refused", async () => {
   expect(await claim()).toEqual({ error: "not_licensed" });
 });
 
-test("at most 20 checkouts a minute across everyone (the page is public): more are asked to try again in a moment", async () => {
+test("at most 20 checkouts in any minute across everyone (the page is public): more are asked to try again in a moment", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
+  const at = (seconds: number) => vi.setSystemTime(start + seconds * 1000);
+  // A minute after the other tests' checkouts.
+  const start = Date.now() + 61_000;
+  const buyOne = () => {
+    ids.project = `proj-${randomUUID()}`;
+    return buy();
+  };
   try {
-    // A minute after the other tests' checkouts.
-    vi.setSystemTime(Date.now() + 61_000);
     const sessions = stripe.sessions.length;
-    for (let i = 0; i < 20; i++) {
-      ids.project = `proj-${randomUUID()}`;
-      expect(await buy()).not.toContain("/license?");
+    at(0);
+    expect(await buyOne()).not.toContain("/license?");
+    at(50);
+    for (let i = 0; i < 19; i++) {
+      expect(await buyOne()).not.toContain("/license?");
     }
-    expect(await buy()).toContain("failed=1");
-    expect(stripe.sessions.length).toBe(sessions + 20);
-    vi.setSystemTime(Date.now() + 61_000);
-    expect(await buy()).toBe(stripe.sessions.at(-1)!.url);
+    expect(await buyOne()).toContain("failed=1");
+    // A minute after the first: only its place is free again, as the other 19 are still in the last minute.
+    at(61);
+    expect(await buyOne()).not.toContain("/license?");
+    expect(await buyOne()).toContain("failed=1");
+    expect(stripe.sessions.length).toBe(sessions + 21);
   } finally {
     vi.useRealTimers();
   }

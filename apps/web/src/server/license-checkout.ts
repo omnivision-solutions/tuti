@@ -13,14 +13,16 @@ import { createSubscriptionCheckout } from "./stripe";
  * ponytail: counted per server process (tuti.so runs one web instance); a shared count once it runs several.
  */
 const CHECKOUTS_PER_MINUTE = 20;
-let checkouts = { since: 0, count: 0 };
+/** When the checkouts of the last minute started: a rolling minute, so no burst of twice the limit spans a reset. */
+let checkouts: number[] = [];
 
 function checkoutAllowed(now = Date.now()): boolean {
-  if (now - checkouts.since >= 60_000) {
-    checkouts = { since: now, count: 0 };
+  checkouts = checkouts.filter((time) => now - time < 60_000);
+  if (checkouts.length >= CHECKOUTS_PER_MINUTE) {
+    return false;
   }
-  checkouts.count++;
-  return checkouts.count <= CHECKOUTS_PER_MINUTE;
+  checkouts.push(now);
+  return true;
 }
 
 /**
