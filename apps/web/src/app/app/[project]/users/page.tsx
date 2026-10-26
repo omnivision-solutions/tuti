@@ -47,27 +47,32 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
 
   return (
     <>
-      <PageHeader title="Users" description="The people your app signs in or sends to Tuti, with the properties your groups match." />
-
-      <div className="flex flex-wrap items-center gap-2">
-        <form role="search" className="flex min-w-0 flex-1 basis-60 gap-2">
-          {group && <input type="hidden" name="group" value={group} />}
-          <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
-        </form>
-        {groups.length > 0 && (
-          <ListFilters
-            filters={[
-              {
-                name: "group",
-                label: "Group",
-                // "*" can't be a group's key (a group named "All" has "all").
-                value: group ?? "*",
-                options: [{ value: "*", label: "All users" }, ...groups.map((g) => ({ value: g.key, label: g.name }))],
-              },
-            ]}
-          />
-        )}
-      </div>
+      <PageHeader
+        title="Users"
+        description="The people your app signs in or sends to Tuti, with the properties your groups match."
+        // In the top bar from tablet width up, like other pages' controls.
+        actions={
+          <>
+            <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
+              {group && <input type="hidden" name="group" value={group} />}
+              <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
+            </form>
+            {groups.length > 0 && (
+              <ListFilters
+                filters={[
+                  {
+                    name: "group",
+                    label: "Group",
+                    // "*" can't be a group's key (a group named "All" has "all").
+                    value: group ?? "*",
+                    options: [{ value: "*", label: "All users" }, ...groups.map((g) => ({ value: g.key, label: g.name }))],
+                  },
+                ]}
+              />
+            )}
+          </>
+        }
+      />
 
       {users.length === 0 ? (
         q || group ? (
