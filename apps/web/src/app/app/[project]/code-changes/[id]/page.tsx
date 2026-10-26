@@ -3,14 +3,46 @@ import { planIncludes } from "@tuti/shared";
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { RichText } from "@tuti/content/react";
+
+import { ArticleDiff } from "@/components/article-diff";
 import { AnalyseCodeChangeButton, ApplyLikelyButton, ChangelogProposal, DocsProposal, PostProposal } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
+import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
+import { mediaUrls } from "@/server/media-urls";
 import { codeChangeDetail } from "@/server/operations/code-changes";
+
+/**
+ * Pending docs proposals (`ids`) formatted as readers see them, by id: an edit's changed blocks (with
+ * one unchanged block either side) against the article as it is (a pending edit is out of date once
+ * the article changes, so that's what it was written from), and a new article's draft.
+ */
+async function docsPreviews(ids: string[]) {
+  const actions = await prisma.codeChangeAction.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, kind: true, payload: true, article: { select: { title: true, body: true, content: true, collection: { select: { name: true } } } } },
+  });
+  const previews = new Map<string, React.ReactNode>();
+  for (const action of actions) {
+    const payload = (action.payload ?? {}) as { content?: unknown; body?: string };
+    const proposed = { content: payload.content ?? null, body: payload.body ?? "" };
+    if (action.kind === "ARTICLE_EDIT" && action.article) {
+      previews.set(
+        action.id,
+        <ArticleDiff before={action.article} after={{ ...action.article, ...proposed }} same="No changes: it's the same as the article." around={1} />,
+      );
+    } else if (action.kind === "NEW_ARTICLE") {
+      const doc = displayDoc(proposed);
+      previews.set(action.id, <RichText doc={doc} mediaUrls={await mediaUrls(doc)} className="rich-text" />);
+    }
+  }
+  return previews;
+}
 
 /** A code change: the merged pull request, what changed for users, and the proposals to review. */
 export default async function CodeChangePage(props: PageProps<"/app/[project]/code-changes/[id]">) {
@@ -30,6 +62,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
     .filter((action) => action.kind === "article_edit" || action.kind === "new_article")
     .sort((a, b) => Number(a.kind === "new_article") - Number(b.kind === "new_article"));
   const line = change.actions.find((action) => action.kind === "changelog_line");
+  const previews = await docsPreviews(docs.filter((action) => action.status === "pending").map((action) => action.id));
   const likely = [...feedback, ...(line ? [line] : [])].filter((action) => action.applyLikely).length;
 
   return (
@@ -126,7 +159,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
                 </h3>
                 <ul className="flex flex-col divide-y" aria-labelledby="docs-proposals">
                   {docs.map((action) => (
-                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} canAnalyse={included} />
+                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} canAnalyse={included} preview={previews.get(action.id)} />
                   ))}
                 </ul>
               </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -235,12 +235,15 @@ export function DocsProposal({
   codeChangeId,
   action,
   canAnalyse,
+  preview,
 }: {
   projectSlug: string;
   codeChangeId: string;
   action: Action;
   /** Whether it can be written again (the project's plan includes code changes). */
   canAnalyse: boolean;
+  /** Formatted as readers see it (from the server): an edit's changed blocks, or a new article's draft. */
+  preview?: ReactNode;
 }) {
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -321,7 +324,11 @@ export function DocsProposal({
       {action.status === "pending" &&
         (edit ? (
           <div className="flex flex-col gap-1 rounded-lg border p-2 text-sm break-words" aria-label={`Changes to ${title}`}>
-            <DiffLines lines={changedLines(action.before ?? "", action.after ?? "")} />
+            {preview ?? <DiffLines lines={changedLines(action.before ?? "", action.after ?? "")} />}
+          </div>
+        ) : preview ? (
+          <div className="max-h-96 overflow-y-auto rounded-lg border p-3 text-sm break-words" aria-label={`Draft of ${title}`}>
+            {preview}
           </div>
         ) : (
           <p className="max-h-48 overflow-y-auto rounded-lg border p-3 text-sm whitespace-pre-wrap" aria-label={`Draft of ${title}`}>

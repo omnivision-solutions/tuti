@@ -38,7 +38,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextDecision({ effect: { wrong: 0.9, missing: 0.05, unaffected: 0.05 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
-  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, Dark or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
   // Home's Catch up has it, and so does Code changes, waiting for the team.
@@ -76,7 +76,10 @@ test("a merged pull request becomes a code change; the team completes the post i
   // The article's edit, as a diff against what's published, goes live as a new version.
   const edit = owner.getByRole("listitem", { name: `Updated: ${article}` });
   await expect(edit).toContainText("It says Light is the only theme.");
-  await expect(edit.getByRole("region", { name: `Changes to ${article}` }).or(edit.getByLabel(`Changes to ${article}`))).toContainText("Pick Light, Dark or System in Settings.");
+  const changes = edit.getByRole("region", { name: `Changes to ${article}` }).or(edit.getByLabel(`Changes to ${article}`));
+  await expect(changes).toContainText("Pick Light, Dark or System in Settings.");
+  // Formatted as readers see it: the new paragraph's bold is bold.
+  await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
   await checkpoint(owner, "code-change-docs");
   await edit.getByRole("button", { name: "Publish edit" }).click();
   await expect(owner.getByText(`${article} updated`)).toBeVisible();
@@ -119,4 +122,38 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.goto(`/app/${slug}/changelog/1`);
   await expect(owner.getByText("A dark theme, in Settings")).toBeVisible();
   await expect(owner.getByText(chore)).toHaveCount(0);
+});
+
+test("a pull request that needs a new article: its draft shows formatted, as readers will see it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const installationId = await connectGithub(owner, slug);
+
+  const pr = `Add exports ${id}`;
+  const summary = `You can now export your feedback as a CSV file (${id}).`;
+  const draft = `Export your feedback ${id}`;
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ needed: 0.9 }, `${summary}","existing_articles`);
+  await nextModelReply(
+    JSON.stringify({ title: draft, reason: "Nothing explains exports yet.", notes: "## Export it\n\n- Open **Settings**.\n- Pick **Export**." }),
+    `${summary}",\n "existing_articles"`,
+  );
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback exports", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr });
+
+  await owner.goto(`/app/${slug}/code-changes`);
+  await owner.getByRole("link", { name: pr }).click();
+  const proposal = owner.getByRole("listitem", { name: `New: ${draft}` });
+  await expect(proposal).toContainText("Nothing explains exports yet.");
+  // The draft as readers will see it: its heading, its list and its bold.
+  const preview = proposal.getByLabel(`Draft of ${draft}`);
+  await expect(preview.getByRole("heading", { name: "Export it" })).toBeVisible();
+  await expect(preview.getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
+  await expect(preview.locator("strong")).toHaveText(["Settings", "Export"]);
+  await checkpoint(owner, "code-change-new-article");
 });
