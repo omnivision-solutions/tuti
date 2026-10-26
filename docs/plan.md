@@ -63,6 +63,7 @@ Components live in `apps/web/src/components/ui`, on **Base UI**
 - [x] An article's Settings open in a panel from the right, beside the article, with Save changes always in view (asked 2026-10-25)
 - [x] An article's History opens in a panel from the right too (`?history`, a version `&revision=…`), over the article it belongs to; its old page redirects there (asked 2026-10-25)
 - [x] An article's top bar: Filter, Save and Publish (or Unpublish), with History, Settings and Delete behind "More actions" (`PageHeader`'s `more`). Save submits the form under it and says when it's saving; on phones and for a new article, Save stays under the form (asked 2026-10-25)
+- [x] Delete is behind "More actions" on a collection's, a tab's and a changelog entry's page too; the bar keeps Filter by title, and the entry's Draft with AI and Publish (asked 2026-10-26)
 - [x] Account settings page (`/app/account`: name, password)
 - [x] Portal pages: board list → `/b/<board>`, sign-in/up for end users
 - [x] Per-project post numbers (`#123`) for `/p/<title>-<number>` URLs

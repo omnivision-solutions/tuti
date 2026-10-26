@@ -63,6 +63,19 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
             postCount={listed.length}
             canDraftWithAi={aiEnabled() && entry.publishedAt === null}
             aiPaused={paused}
+            part="publish"
+          />
+        }
+        more={
+          <ChangelogEntryActions
+            projectSlug={slug}
+            number={entry.number}
+            title={entry.title}
+            published={entry.publishedAt !== null}
+            postCount={listed.length}
+            canDraftWithAi={aiEnabled() && entry.publishedAt === null}
+            aiPaused={paused}
+            part="delete"
           />
         }
       />
