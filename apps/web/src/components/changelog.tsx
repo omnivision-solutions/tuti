@@ -437,6 +437,7 @@ export function ChangelogEntryActions({
   postCount,
   canDraftWithAi,
   aiPaused = false,
+  part,
 }: {
   projectSlug: string;
   number: number;
@@ -448,6 +449,8 @@ export function ChangelogEntryActions({
   canDraftWithAi: boolean;
   /** The project is out of AI credits: Draft with AI shows, disabled. */
   aiPaused?: boolean;
+  /** Delete (behind the top bar's "More actions"), or Draft with AI and Publish / Unpublish (in the bar). */
+  part: "delete" | "publish";
 }) {
   const [pending, startTransition] = useTransition();
   const [drafting, setDrafting] = useState(false);
@@ -462,9 +465,8 @@ export function ChangelogEntryActions({
       }
     });
 
-  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
-  return (
-    <div className="contents">
+  if (part === "delete") {
+    return (
       <AlertDialog>
         <AlertDialogTrigger render={<Button variant="ghost" disabled={pending} />}>Delete</AlertDialogTrigger>
         <AlertDialogContent>
@@ -482,6 +484,11 @@ export function ChangelogEntryActions({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    );
+  }
+  // Its buttons sit with the page's other actions (PageHeader's), in the top bar or the phone menu.
+  return (
+    <div className="contents">
       {canDraftWithAi && (
         // Open while the model writes (a few seconds), closed once the new text is in.
         <AlertDialog open={drafting} onOpenChange={setDrafting}>

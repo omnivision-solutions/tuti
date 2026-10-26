@@ -96,6 +96,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Published and announced")).toBeVisible();
   await expect(team.getByRole("button", { name: "Unpublish" })).toBeVisible();
   await expect(team.getByLabel("Title")).toHaveValue("Dark mode is here, at last");
+  // Delete is behind the top bar's "More actions"; Unpublish is in the bar.
+  await expect(team.getByRole("button", { name: "Delete" })).toBeHidden();
+  await team.getByRole("button", { name: "More actions" }).click();
+  await expect(team.getByRole("button", { name: "Delete" })).toBeVisible();
+  await team.keyboard.press("Escape");
   // The team's list shows it with its tag.
   await team.getByRole("link", { name: "Changelog" }).click();
   await expect(team.getByRole("listitem").filter({ hasText: "Dark mode is here" }).getByText("New", { exact: true })).toBeVisible();

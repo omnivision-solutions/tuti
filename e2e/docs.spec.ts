@@ -348,6 +348,8 @@ test("the team writes a docs article in a collection, publishes it, and a visito
     }
     await route.continue();
   });
+  // Delete is behind the top bar's "More actions".
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Delete" }).click();
   const deleting = team.getByRole("alertdialog");
   await expect(deleting).toContainText("Its articles stay, without a collection.");
@@ -1019,7 +1021,10 @@ test("the team splits the docs into tabs: the first takes the collections, other
   // Deleting a tab moves its collections to the one before it. The first is the docs' home: it stays while there are others.
   await expect(team.getByRole("heading", { level: 1 })).toHaveText("API reference");
   await expect(team.getByRole("button", { name: "Delete API reference" })).toHaveCount(0);
+  // Nothing behind "More actions" there, so there's none.
+  await expect(team.getByRole("button", { name: "More actions" })).toHaveCount(0);
   await structure.getByRole("link", { name: "Guides", exact: true }).click();
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Delete Guides" }).click();
   const confirm = team.getByRole("alertdialog");
   await expect(confirm).toContainText("Its collections move to API reference");
