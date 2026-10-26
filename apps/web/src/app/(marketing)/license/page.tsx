@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { BADGE_PRICE } from "@/lib/plans";
+import { BADGE_PRICE, licenseBilling } from "@/lib/plans";
 import { buyLicense } from "@/server/license-checkout";
 import { LICENSE_ID, licensePrice } from "@/server/license-sales";
 import { licensePrivateKey } from "@/server/license-server";
@@ -39,6 +39,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
   });
   const monthly = licensePrice("month");
   const yearly = licensePrice("year");
+  const billing = licenseBilling({ month: Boolean(monthly), year: Boolean(yearly) });
   const portal = process.env.STRIPE_PORTAL_LOGIN_URL?.trim();
   const body = `Hi,\n\nI'd like a licence to remove "Powered by tuti".\n\nInstallation ID: ${installation}\nProject ID: ${project}\n`;
   const mailto = `mailto:${LICENSE_EMAIL}?${new URLSearchParams({ subject: "Tuti licence", body }).toString().replaceAll("+", "%20")}`;
@@ -48,7 +49,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
       <div className="flex flex-col gap-2">
         <h1 className="font-heading text-2xl font-bold tracking-tight">Remove &quot;Powered by tuti&quot;</h1>
         <p className="text-muted-foreground">
-          A licence hides &quot;Powered by tuti&quot; on one project&apos;s portal, for ${BADGE_PRICE} a month. It&apos;s for
+          A licence hides &quot;Powered by tuti&quot; on one project&apos;s portal, for {billing.price}. It&apos;s for
           this project on this installation of Tuti:
         </p>
       </div>
@@ -93,7 +94,7 @@ export default async function LicensePage(props: PageProps<"/license">) {
           <input type="hidden" name="installation" value={installation} />
           <input type="hidden" name="project" value={project} />
           {failed && <p className="text-sm text-destructive">Couldn&apos;t open Stripe&apos;s checkout. Try again in a moment.</p>}
-          <p>Pay by card with Stripe, each month or each year. It renews until you cancel it.</p>
+          <p>Pay by card with Stripe, {billing.billed}. It renews until you cancel it.</p>
           <div className="flex flex-wrap gap-2">
             {monthly && (
               <Button type="submit" name="interval" value="month">
