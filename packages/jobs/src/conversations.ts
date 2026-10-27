@@ -92,9 +92,15 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   if (failed.length < team.length) {
     // Some heard: the others are tried again on their own, so nobody gets a second copy.
     const missed = team.filter((_, i) => results[i]!.status === "rejected").map((member) => member.user.email);
-    await enqueue("conversationMessage", { messageId, only: missed }).catch((error: unknown) =>
-      log.warn(`Couldn't retry emailing ${missed.length} of the team about conversation #${conversation.number}: ${String(error)}`),
-    );
+    try {
+      await enqueue("conversationMessage", { messageId, only: missed });
+    } catch (error) {
+      // Their retry couldn't be queued: the whole job runs again instead. Those who heard may hear twice,
+      // which beats someone never hearing.
+      await prisma.conversation.updateMany({ where: { id: conversation.id, notifiedAt: claimedAt }, data: { notifiedAt: previous } });
+      log.warn(`Couldn't queue emailing ${missed.length} of the team about conversation #${conversation.number} again: ${String(error)}`);
+      throw error;
+    }
     return { emailed: team.length - failed.length, retrying: failed.length };
   }
   // Nobody heard: the claim goes back for the retry, unless a newer run has claimed it since.
