@@ -82,8 +82,10 @@ test("new conversations are limited per day, and messages per minute", async () 
   await prisma.conversation.createMany({
     data: Array.from({ length: 18 }, (_, i) => ({ projectId: project.id, number: 101 + i, subject: "Old", origin: "WIDGET" as const, userId })),
   });
-  expect(await widgetStartConversation(project.slug, token, "One more")).toEqual({ number: 1 });
-  expect(await widgetStartConversation(project.slug, token, "Too many")).toMatchObject({ error: expect.stringContaining("Try again tomorrow") });
+  // Started at once, the last two allowed go through and the third is refused (counted under the project's lock).
+  const atOnce = await Promise.all(["One", "Two", "Three"].map((text) => widgetStartConversation(project.slug, token, text)));
+  expect(atOnce.filter((r) => "number" in r)).toHaveLength(1);
+  expect(atOnce.filter((r) => "error" in r)).toEqual([{ error: expect.stringContaining("Try again tomorrow") }, { error: expect.stringContaining("Try again tomorrow") }]);
 
   await prisma.conversationMessage.createMany({
     data: Array.from({ length: 28 }, () => ({ projectId: project.id, conversationId: conversation.id, author: "USER" as const, authorId: userId, channel: "WIDGET" as const, body: "x" })),

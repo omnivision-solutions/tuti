@@ -7,6 +7,7 @@ import { widgetUser } from "@/lib/widget-session";
 
 import { canActIn } from "./membership";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
+import { OperationError } from "./operations/define";
 import { getSession } from "./session";
 
 /**
@@ -103,14 +104,8 @@ export async function widgetConversation(projectSlug: string, token: string | nu
 }
 
 /** Their limits: a few new conversations a day, and messages no faster than a person types. */
-async function overLimit(who: { projectId: string; userId: string }, starting: boolean) {
+async function overLimit(who: { projectId: string; userId: string }) {
   const since = (ms: number) => ({ gte: new Date(Date.now() - ms) });
-  if (starting) {
-    const started = await prisma.conversation.count({ where: { projectId: who.projectId, userId: who.userId, createdAt: since(24 * 60 * 60_000) } });
-    if (started >= NEW_CONVERSATIONS_PER_DAY) {
-      return { error: "You've started a lot of conversations today. Try again tomorrow, or add to one you have." };
-    }
-  }
   const sent = await prisma.conversationMessage.count({
     where: { projectId: who.projectId, authorId: who.userId, author: "USER", createdAt: since(60_000) },
   });
@@ -127,17 +122,27 @@ export async function widgetStartConversation(projectSlug: string, token: string
   if (!parsed.success) {
     return { error: parsed.error.issues[0]!.message };
   }
-  const limited = await overLimit(who, true);
+  const limited = await overLimit(who);
   if (limited) {
     return limited;
   }
-  const { conversation, message } = await startConversation(who.projectId, {
-    userId: who.userId,
-    email: null,
-    body: parsed.data,
-    origin: "WIDGET",
-    channel: "WIDGET",
-  });
+  let started;
+  try {
+    started = await startConversation(who.projectId, {
+      userId: who.userId,
+      email: null,
+      body: parsed.data,
+      origin: "WIDGET",
+      channel: "WIDGET",
+      perDay: { where: { userId: who.userId }, max: NEW_CONVERSATIONS_PER_DAY },
+    });
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  const { conversation, message } = started;
   await announceConversation(who.projectId, conversation, message);
   return { number: conversation.number };
 }
@@ -158,7 +163,7 @@ export async function widgetSendMessage(projectSlug: string, token: string | nul
   if (!parsed.success) {
     return { error: parsed.error.issues[0]!.message };
   }
-  const limited = await overLimit(who, false);
+  const limited = await overLimit(who);
   if (limited) {
     return limited;
   }

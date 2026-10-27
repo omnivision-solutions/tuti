@@ -107,6 +107,7 @@ function ConversationList({
         setError(result.error);
         return;
       }
+      setError(undefined);
       setConversations(result.conversations);
       tellPage(result.unseen);
     },
@@ -237,6 +238,7 @@ function Conversation({ projectSlug, token, number, onBack }: { projectSlug: str
         setError(result.error);
         return;
       }
+      setError(undefined);
       setOpened(result);
       // Shown, so seen: the page's count goes down.
       const listed = await widgetConversations(projectSlug, token);
