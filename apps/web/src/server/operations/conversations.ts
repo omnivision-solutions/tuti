@@ -251,16 +251,26 @@ export async function startConversation(
     body: string;
     origin: ConversationOrigin;
     channel: MessageChannel;
+    /** Refused (429) when the conversations `where` matches started this many in the last day: checked under the lock, so starts at once can't all pass. */
+    perDay?: { where: Prisma.ConversationWhereInput; max: number };
   },
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
-    // Locks the project row, so concurrent conversations get distinct numbers.
+    // Locks the project row, so concurrent conversations get distinct numbers (and limits hold).
     const { conversationCount: number } = await tx.project.update({
       where: { id: projectId },
       data: { conversationCount: { increment: 1 } },
       select: { conversationCount: true },
     });
+    if (start.perDay) {
+      const started = await tx.conversation.count({
+        where: { ...start.perDay.where, projectId, createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60_000) } },
+      });
+      if (started >= start.perDay.max) {
+        throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
+      }
+    }
     const conversation = await tx.conversation.create({
       data: {
         projectId,
