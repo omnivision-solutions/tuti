@@ -1,5 +1,5 @@
 {
-  "autoReview": ["open", "push"],
+  "autoReview": ["open", "push", "rebase"],
   "statusCheck": true,
   "disabledLabels": ["review:coderabbit"],
   "ignorePatterns": "pnpm-lock.yaml\n**/*.png\n**/*.jpg",
