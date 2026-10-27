@@ -196,21 +196,30 @@ function useHere(projectSlug: string, auth: WidgetAuth) {
 
 /**
  * Whether the panel is on screen: the page's script says when it opens and closes the floating one
- * (an inline panel, or one just opened, is shown). A hidden panel keeps its place but sees nothing.
+ * (an inline panel, or one just opened, is shown), and again when the panel says it's ready. A hidden
+ * panel keeps its place but sees nothing. Heard from the start, not once a view that asks mounts:
+ * closed while it was still loading is closed.
  */
+const shownStore = {
+  shown: true,
+  listeners: new Set<() => void>(),
+  subscribe(listener: () => void) {
+    shownStore.listeners.add(listener);
+    return () => shownStore.listeners.delete(listener);
+  },
+};
+if (typeof window !== "undefined") {
+  window.addEventListener("message", (event: MessageEvent) => {
+    const data = event.data as { type?: unknown; shown?: unknown } | null;
+    if (event.source === window.parent && data?.type === WIDGET_SHOWN_MESSAGE && typeof data.shown === "boolean") {
+      shownStore.shown = data.shown;
+      shownStore.listeners.forEach((listener) => listener());
+    }
+  });
+}
+
 function useShown(): boolean {
-  const [shown, setShown] = useState(true);
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: unknown; shown?: unknown } | null;
-      if (event.source === window.parent && data?.type === WIDGET_SHOWN_MESSAGE && typeof data.shown === "boolean") {
-        setShown(data.shown);
-      }
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
-  return shown;
+  return useSyncExternalStore(shownStore.subscribe, () => shownStore.shown, () => true);
 }
 
 /** The live stream's state: whether it's open, and a count of the changes (and reconnects) it reported. */
