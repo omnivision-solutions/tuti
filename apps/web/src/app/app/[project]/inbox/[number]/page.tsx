@@ -5,13 +5,14 @@ import { notFound } from "next/navigation";
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton } from "@/components/inbox/conversation-controls";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
+import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
-import { isOnline, presenceKey } from "@/server/presence";
+import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
@@ -59,8 +60,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   }
   const person = conversationPerson(conversation);
   const online =
-    (conversation.userId || conversation.visitorHash) &&
-    (await isOnline(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash })));
+    conversation.userId || conversation.visitorHash
+      ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
+      : null;
   const personName = person.name ?? person.email ?? "Unknown";
 
   return (
@@ -72,6 +74,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
           <>
             {online && (
               <>
+                {/* Shown until it runs out; coming online refreshes the page through its live stream. */}
+                <RefreshAt at={online.toISOString()} />
                 <span className="inline-flex items-center gap-1 font-medium text-foreground">
                   <span aria-hidden className="size-2 rounded-full bg-primary" />
                   Online

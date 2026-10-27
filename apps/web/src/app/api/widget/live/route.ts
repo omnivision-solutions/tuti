@@ -3,7 +3,6 @@ import { prisma } from "@tuti/db";
 import { visitorHash } from "@/lib/visitor-session";
 import { widgetUser } from "@/lib/widget-session";
 import { inboxStream } from "@/server/live";
-import { presenceKey, touchPresence } from "@/server/presence";
 import { getSession } from "@/server/session";
 import { widgetPerson } from "@/server/widget-person";
 
@@ -23,23 +22,14 @@ export async function GET(request: Request) {
   }
   const session = kind ? null : await getSession();
   const { projectId } = who;
-  // Online while it's open: each check below counts as being here (written at most once a minute).
-  const here = () => touchPresence(projectId, presenceKey(who));
-  await here();
   return inboxStream(request, {
     wants: (change) =>
       change.projectId === projectId && (who.userId ? change.userId === who.userId : change.visitorHash === who.visitorHash),
-    stillAllowed: async () => {
-      const allowed =
-        kind === "Widget"
-          ? widgetUser(projectId, token!) !== null
-          : kind === "Visitor"
-            ? visitorHash(projectId, token!) !== null
-            : !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0;
-      if (allowed) {
-        await here();
-      }
-      return allowed;
-    },
+    stillAllowed: async () =>
+      kind === "Widget"
+        ? widgetUser(projectId, token!) !== null
+        : kind === "Visitor"
+          ? visitorHash(projectId, token!) !== null
+          : !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0,
   });
 }

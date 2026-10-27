@@ -9,6 +9,7 @@ import { visitorHash } from "@/lib/visitor-session";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
+import { notifyInboxNow } from "./live";
 import { presenceKey, touchPresence } from "./presence";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
@@ -28,13 +29,18 @@ const email = z.email("Enter a valid email address").max(320);
 
 type Person = WidgetPerson;
 
-/** Who's here (server/widget-person.ts); being here is what makes them online for the team. */
-async function person(projectSlug: string, auth: WidgetAuth) {
-  const who = await widgetPerson(projectSlug, auth);
-  if (who) {
-    await touchPresence(who.projectId, presenceKey(who));
+const person = widgetPerson;
+
+/**
+ * Their Messages is on screen: they're online for the team (server/presence.ts). The panel says so
+ * when it's shown and every minute while it is; never while it's hidden, so closing it lets them go.
+ */
+export async function widgetHere(projectSlug: string, auth: WidgetAuth): Promise<object> {
+  const who = await person(projectSlug, auth);
+  if (who && (await touchPresence(who.projectId, presenceKey(who)))) {
+    await notifyInboxNow({ projectId: who.projectId, conversationId: "", userId: who.userId, visitorHash: who.visitorHash });
   }
-  return who;
+  return {};
 }
 
 const signInFirst = { error: "Sign in to message the team" };
