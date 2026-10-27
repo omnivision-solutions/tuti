@@ -158,6 +158,7 @@ Test layers (set up in Phase 4):
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
 - [x] Review bots: CodeRabbit (free for public repos; `.coderabbit.yaml`, follows AGENTS.md); Dependabot security updates
+- [ ] One review bot per PR so their rate limits last: Greptile by default (`greptile.json`), CodeRabbit for PRs labeled `review:coderabbit`, added when Greptile says it can no longer review or while `CODERABBIT_UNTIL` holds a later date (`review-bot.yml`). Left: install Greptile on the repo
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 

@@ -36,7 +36,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - New user-facing text: quote it in the description and say why it's needed.
 - UI changes: include a screenshot of the changed screen.
 - A failing check you believe is unrelated: prove it by restoring the touched files to `main` and rerunning that test; say so in the PR.
-- After opening a PR, follow `.claude/skills/pr-watch/SKILL.md`: stay with it until checks and review bots finish and every finding is answered. One exception, spelled out there: once CodeRabbit has passed the PR's code, pushes that only change tests, docs or comments (or rebase without changing the PR's code) can merge on green checks without waiting for its next review.
+- After opening a PR, follow `.claude/skills/pr-watch/SKILL.md`: stay with it until checks and review bots finish and every finding is answered. One exception, spelled out there: once the PR's review bot (Greptile, or CodeRabbit when labeled `review:coderabbit`) has passed the PR's code, pushes that only change tests, docs or comments (or rebase without changing the PR's code) can merge on green checks without waiting for its next review.
 
 ## Public repository
 
