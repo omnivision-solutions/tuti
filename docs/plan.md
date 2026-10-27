@@ -159,6 +159,7 @@ Test layers (set up in Phase 4):
 - [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
 - [x] Review bots: CodeRabbit (free for public repos; `.coderabbit.yaml`, follows AGENTS.md); Dependabot security updates
 - [x] One review bot per PR so their rate limits last (`review-bot.yml`): odd-numbered PRs get CodeRabbit, even ones Greptile; a PR moves to CodeRabbit (label `review:coderabbit`) when Greptile says it can no longer review
+- [x] Migrations keep working with the previous release, which runs beside the new schema during a deploy: the rule in AGENTS.md, checked by `packages/db/src/migrations.test.ts` (no drops, renames, retypes or new required columns without a `-- Previous release:` note) and by both review bots
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 
