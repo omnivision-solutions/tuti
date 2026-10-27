@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
@@ -27,6 +28,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   }
   const projectId = membership.project.id;
 
+  // On a server selling plans, replies wait to be emailed until the operator approves the project.
+  const waitingForApproval =
+    plansEnabled() && !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
@@ -143,13 +147,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                         <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
-                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus) && (
+                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitingForApproval) && (
                         <p className="text-xs text-muted-foreground">
                           {message.seenAt
                             ? "Seen"
                             : message.emailStatus === "SENT"
                               ? "Emailed"
-                              : `Couldn't email it${message.emailError ? `: ${message.emailError}` : ""}`}
+                              : message.emailStatus === "FAILED"
+                                ? `Couldn't email it${message.emailError ? `: ${message.emailError}` : ""}`
+                                : "Not emailed until your project is approved (Settings → Support)"}
                         </p>
                       )}
                       {message.original && (

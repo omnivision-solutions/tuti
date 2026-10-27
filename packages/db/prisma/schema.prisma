@@ -139,6 +139,10 @@ model Project {
   conversationCount     Int          @default(0)
   /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
   supportInbox          Boolean      @default(false)
+  /// On a server selling plans, the operator approves a project before its replies are emailed to its
+  /// users (one project's spam mustn't hurt everyone's delivery): when it asked, and when it was approved.
+  emailRequestedAt      DateTime?
+  emailApprovedAt       DateTime?
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone         String       @default("")

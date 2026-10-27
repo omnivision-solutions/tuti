@@ -26,6 +26,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@/lib/invitations";
 import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
+import { approvalToken } from "@/lib/email-approval";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
@@ -44,6 +45,7 @@ import * as credits from "./credits";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
+import * as emailApproval from "./email-approval";
 import * as groups from "./groups";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -85,6 +87,7 @@ const modules = {
   github,
   docs,
   "docs-readers": docsReaders,
+  "email-approval": emailApproval,
   groups,
   inbox,
   invitations,
@@ -361,17 +364,28 @@ const matrix: Matrix = {
       call: (_slug, f) => invitations.declineInvitation(f.emailInvitationId),
     },
   },
+  // On a server selling plans (on for these calls), with an operator address and email set up.
+  "email-approval": {
+    requestEmailSending: {
+      allowed: "ADMIN",
+      call: (slug) => withEnv({ PLANS: "on", APP_PORTAL_OWNER: "e2e-operator@example.com" }, () => emailApproval.requestEmailSending(slug)),
+    },
+    // The operator's signed link is what allows it.
+    approveEmailSending: {
+      allowed: "public",
+      call: async (slug) => {
+        const { id } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
+        return emailApproval.approveEmailSending(approvalToken(id));
+      },
+    },
+  },
   inbox: {
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
     setConversationStatus: { allowed: "MEMBER", call: (slug) => inbox.setConversationStatus(slug, 1, "closed") },
     assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
     markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
-    getSupportAddress: {
-      allowed: "ADMIN",
-      before: () => vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email"),
-      call: (slug) => inbox.getSupportAddress(slug),
-    },
+    getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
   },
   "manage-posts": {

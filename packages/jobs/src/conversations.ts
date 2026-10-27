@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@tuti/db";
 import { conversationEmail, conversationReplyEmail, emailConfigured, sendEmail } from "@tuti/email";
-import type { JobInput } from "@tuti/shared";
+import { type JobInput, plansEnabled } from "@tuti/shared";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -140,7 +140,8 @@ const unsent = (now: Date) => ({
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
   OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
-  conversation: { spam: false },
+  // On a server selling plans, only once the operator has approved the project (they wait till then).
+  conversation: { spam: false, ...(plansEnabled() && { project: { emailApprovedAt: { not: null } } }) },
 });
 
 /**
