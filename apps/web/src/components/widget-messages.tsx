@@ -89,20 +89,21 @@ function useVisitor(projectSlug: string): Visitor | null {
  * email to write, and the panel keeps a visitor token to show them their conversations.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
-  const { signedIn, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const { signedIn, error, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
-  // Signed out after someone was: the team's messages to them aren't anyone's here now (their
+  // The page signed out whoever was here: the team's messages to them aren't anyone's now (their
   // counts stopped with their Messages, so this is the page's last word; a visitor's own come after).
+  // Not when this frame's own exchange failed: another panel may have the page's person, and their count.
   const wasSignedIn = useRef(false);
   useEffect(() => {
     if (signedIn) {
       wasSignedIn.current = true;
-    } else if (wasSignedIn.current && !portalSignedIn) {
+    } else if (wasSignedIn.current && !portalSignedIn && !error) {
       wasSignedIn.current = false;
       tellPage(0);
     }
-  }, [signedIn, portalSignedIn]);
+  }, [signedIn, portalSignedIn, error]);
   // Signed in on the portal in another tab since this panel loaded: the server knows them by its cookie now.
   const [signedInSince, setSignedInSince] = useState(false);
   const known = portalSignedIn || !!signedIn || signedInSince;
