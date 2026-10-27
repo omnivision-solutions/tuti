@@ -116,6 +116,7 @@ export function widgetLoader(portalTemplate: string): string {
   var unseenMessages = 0;
   // Counts from the open panel, which knows best: a server answer asked for before the latest of them is old.
   var panelCounts = 0;
+  var countReads = 0;
   // The project's support inbox is on: the team may have written to whoever the page signs in.
   var inbox = false;
   var known = false;
@@ -213,6 +214,8 @@ export function widgetLoader(portalTemplate: string): string {
   function seenOnServer(at) {
     if (!getToken || !window.fetch) return Promise.resolve(null);
     var asked = panelCounts;
+    // The latest status read only: an older answer that arrives after it is old too.
+    var read = at ? countReads : ++countReads;
     return Promise.resolve()
       .then(function () { return getToken(); })
       .then(function (token) {
@@ -223,7 +226,7 @@ export function widgetLoader(portalTemplate: string): string {
           .then(function (response) { return response.ok ? response.json() : null; });
       })
       .then(function (data) {
-        if (data && typeof data.messages === "number" && asked === panelCounts) unseenMessages = data.messages;
+        if (data && typeof data.messages === "number" && asked === panelCounts && read === countReads) unseenMessages = data.messages;
         return data && typeof data.seen === "string" ? data.seen : null;
       })
       .catch(function () { return null; });
@@ -337,6 +340,13 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
+      // Panels already on the page trade the new person's token for their own (a panel kept the one it
+      // had, the previous person's, until it reloads).
+      if (frame) sendToken(frame);
+      var mounts = document.querySelectorAll("[data-tuti-inline]");
+      for (var i = 0; i < mounts.length; i++) {
+        if (mounts[i].__tutiFrame) sendToken(mounts[i].__tutiFrame);
+      }
       // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
       if (unseen || inbox) checkElsewhere();
     },
