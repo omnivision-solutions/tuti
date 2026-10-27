@@ -39,26 +39,32 @@ async function person(projectSlug: string, token: string | null) {
 
 const signInFirst = { error: "Sign in to message the team" };
 
-/** Their conversations, latest first, each with how many of the team's messages they haven't seen. */
+/**
+ * Their latest conversations, each with how many of the team's messages they haven't seen, and how
+ * many they haven't seen in all (`unseen`, for the launcher's dot, older conversations included).
+ */
 export async function widgetConversations(projectSlug: string, token: string | null): Promise<
-  Result<{ conversations: { number: number; subject: string; lastMessageAt: Date; unseen: number }[] }>
+  Result<{ conversations: { number: number; subject: string; lastMessageAt: Date; unseen: number }[]; unseen: number }>
 > {
   const who = await person(projectSlug, token);
   if (!who) {
     return signInFirst;
   }
-  const rows = await prisma.conversation.findMany({
-    where: { projectId: who.projectId, userId: who.userId },
-    orderBy: { lastMessageAt: "desc" },
-    take: 50,
-    select: {
-      number: true,
-      subject: true,
-      lastMessageAt: true,
-      _count: { select: { messages: { where: { author: "TEAM", seenAt: null } } } },
-    },
-  });
-  return { conversations: rows.map(({ _count, ...row }) => ({ ...row, unseen: _count.messages })) };
+  const [rows, unseen] = await Promise.all([
+    prisma.conversation.findMany({
+      where: { projectId: who.projectId, userId: who.userId },
+      orderBy: { lastMessageAt: "desc" },
+      take: 50,
+      select: {
+        number: true,
+        subject: true,
+        lastMessageAt: true,
+        _count: { select: { messages: { where: { author: "TEAM", seenAt: null } } } },
+      },
+    }),
+    prisma.conversationMessage.count({ where: { author: "TEAM", seenAt: null, conversation: { projectId: who.projectId, userId: who.userId } } }),
+  ]);
+  return { conversations: rows.map(({ _count, ...row }) => ({ ...row, unseen: _count.messages })), unseen };
 }
 
 /** One of their conversations' messages, oldest first; the team's are seen now that they're shown. */

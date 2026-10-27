@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -25,8 +25,7 @@ type Listed = Extract<Awaited<ReturnType<typeof widgetConversations>>, { convers
 type Opened = Extract<Awaited<ReturnType<typeof widgetConversation>>, { messages: unknown }>;
 
 /** Tells the page how many of the team's messages they haven't seen (the launcher's dot, Tuti.unseen). */
-const tellPage = (conversations: Listed) =>
-  window.parent.postMessage({ type: WIDGET_UNSEEN_MESSAGES, count: conversations.reduce((sum, c) => sum + c.unseen, 0) }, "*");
+const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNSEEN_MESSAGES, count }, "*");
 
 /**
  * The widget's Messages tab: the signed-in person's conversations with the team. Signed in by
@@ -61,13 +60,28 @@ function Messages({ projectSlug, token }: { projectSlug: string; token: string |
   return <ConversationList projectSlug={projectSlug} token={token} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
 }
 
-/** Runs `load` now and every POLL_MS while shown. */
-function usePolling(load: () => Promise<void>) {
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
+/**
+ * Runs `load` now and every POLL_MS while shown, and returns a way to run it again (after sending).
+ * Runs can overlap: `load` gets `isLatest`, to check after each await that no newer run started
+ * (and that it's still shown) before it shows what it got.
+ */
+function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
+  const sequence = useRef(0);
+  const mounted = useRef(false);
+  const run = useCallback(() => {
+    const mine = ++sequence.current;
+    return load(() => mounted.current && mine === sequence.current);
   }, [load]);
+  useEffect(() => {
+    mounted.current = true;
+    void run();
+    const timer = setInterval(() => void run(), POLL_MS);
+    return () => {
+      mounted.current = false;
+      clearInterval(timer);
+    };
+  }, [run]);
+  return run;
 }
 
 function ConversationList({
@@ -83,15 +97,21 @@ function ConversationList({
 }) {
   const [conversations, setConversations] = useState<Listed | null>(null);
   const [error, setError] = useState<string>();
-  const load = useCallback(async () => {
-    const result = await widgetConversations(projectSlug, token);
-    if ("error" in result) {
-      setError(result.error);
-      return;
-    }
-    setConversations(result.conversations);
-    tellPage(result.conversations);
-  }, [projectSlug, token]);
+  const load = useCallback(
+    async (isLatest: () => boolean) => {
+      const result = await widgetConversations(projectSlug, token);
+      if (!isLatest()) {
+        return;
+      }
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      setConversations(result.conversations);
+      tellPage(result.unseen);
+    },
+    [projectSlug, token],
+  );
   usePolling(load);
 
   return (
@@ -207,20 +227,26 @@ function NewConversation({
 function Conversation({ projectSlug, token, number, onBack }: { projectSlug: string; token: string | null; number: number; onBack: () => void }) {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [error, setError] = useState<string>();
-  const load = useCallback(async () => {
-    const result = await widgetConversation(projectSlug, token, number);
-    if ("error" in result) {
-      setError(result.error);
-      return;
-    }
-    setOpened(result);
-    // Shown, so seen: the page's count goes down.
-    const listed = await widgetConversations(projectSlug, token);
-    if (!("error" in listed)) {
-      tellPage(listed.conversations);
-    }
-  }, [projectSlug, token, number]);
-  usePolling(load);
+  const load = useCallback(
+    async (isLatest: () => boolean) => {
+      const result = await widgetConversation(projectSlug, token, number);
+      if (!isLatest()) {
+        return;
+      }
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      setOpened(result);
+      // Shown, so seen: the page's count goes down.
+      const listed = await widgetConversations(projectSlug, token);
+      if (isLatest() && !("error" in listed)) {
+        tellPage(listed.unseen);
+      }
+    },
+    [projectSlug, token, number],
+  );
+  const reload = usePolling(load);
 
   return (
     <div className="flex flex-col gap-3">
@@ -247,7 +273,7 @@ function Conversation({ projectSlug, token, number, onBack }: { projectSlug: str
             send={async (text) => {
               const result = await widgetSendMessage(projectSlug, token, number, text);
               if (!("error" in result)) {
-                await load();
+                await reload();
               }
               return result;
             }}

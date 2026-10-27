@@ -126,6 +126,8 @@ your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
 portal, the Changelog tab says "New" until they've looked.
 
+Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
+
 ## Messages
 
 With Settings → Support → Messages in the widget on, the panel has a Messages tab where
@@ -133,7 +135,5 @@ the people you sign in with `identify` (or on your portal) write to your team an
 its replies; your team answers them from the Inbox in Tuti. The tab checks for replies
 every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
 `true`) while a reply is waiting for them. People who aren't signed in see a sign-in link.
-
-Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
 
 The panel's text is in English for now; there's no `locale` setting yet.
