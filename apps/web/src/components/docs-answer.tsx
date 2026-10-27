@@ -243,6 +243,8 @@ export function AskAPerson({
 }) {
   const [open, setOpen] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  // What the server did: started a conversation (its reply shows in Messages) or emailed the team.
+  const [toInbox, setToInbox] = useState(false);
   /** The email as the visitor typed it; null until they type. */
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
@@ -269,11 +271,12 @@ export function AskAPerson({
       if (result.visitor) {
         visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
       }
+      setToInbox(result.conversation !== undefined);
       setSentTo(email.trim().toLowerCase());
     });
   };
 
-  if (sentTo && inbox) {
+  if (sentTo && toInbox) {
     return (
       <div role="status" className="flex w-full flex-col items-start gap-2 text-foreground">
         <p className="font-semibold">We&apos;ve passed this to the team. Their reply will show in Messages.</p>
