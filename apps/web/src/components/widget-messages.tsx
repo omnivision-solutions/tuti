@@ -2,7 +2,7 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
@@ -28,32 +28,40 @@ type Opened = Extract<Awaited<ReturnType<typeof widgetConversation>>, { messages
 type Visitor = { token: string; email: string };
 
 /** Tells the page how many of the team's messages they haven't seen (the launcher's dot, Tuti.unseen). */
-const tellPage = (conversations: Listed) =>
-  window.parent.postMessage({ type: WIDGET_UNSEEN_MESSAGES, count: conversations.reduce((sum, c) => sum + c.unseen, 0) }, "*");
+const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNSEEN_MESSAGES, count }, "*");
 
 /**
  * A signed-out visitor's token and email, in the panel's own storage: partitioned per embedding
- * site, so the customer's page can't read it. The token expires by itself after 30 days.
+ * site, so the customer's page can't read it. The token expires by itself after 30 days. Kept in
+ * memory too, so where storage is blocked or full they're still a visitor for this page view.
  */
 export const visitorStore = {
   key: (projectSlug: string) => `tuti:visitor:${projectSlug}`,
+  memory: new Map<string, string>(),
   listeners: new Set<() => void>(),
   read(projectSlug: string): string | null {
+    const key = visitorStore.key(projectSlug);
     try {
-      return window.localStorage.getItem(visitorStore.key(projectSlug));
+      return window.localStorage.getItem(key) ?? visitorStore.memory.get(key) ?? null;
     } catch {
-      return null;
+      return visitorStore.memory.get(key) ?? null;
     }
   },
   write(projectSlug: string, visitor: Visitor | null) {
+    const key = visitorStore.key(projectSlug);
+    if (visitor) {
+      visitorStore.memory.set(key, JSON.stringify(visitor));
+    } else {
+      visitorStore.memory.delete(key);
+    }
     try {
       if (visitor) {
-        window.localStorage.setItem(visitorStore.key(projectSlug), JSON.stringify(visitor));
+        window.localStorage.setItem(key, JSON.stringify(visitor));
       } else {
-        window.localStorage.removeItem(visitorStore.key(projectSlug));
+        window.localStorage.removeItem(key);
       }
     } catch {
-      // Storage blocked: they're a visitor for this page view only.
+      // Storage blocked or full: the copy in memory lasts this page view.
     }
     visitorStore.listeners.forEach((listener) => listener());
   },
@@ -107,11 +115,25 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
       auth={auth}
       visitorEmail={known ? null : visitor!.email}
       opened={known ? null : started}
+      onNewVisitor={setStarted}
     />
   );
 }
 
-function Messages({ projectSlug, auth, visitorEmail, opened }: { projectSlug: string; auth: WidgetAuth; visitorEmail: string | null; opened: number | null }) {
+function Messages({
+  projectSlug,
+  auth,
+  visitorEmail,
+  opened,
+  onNewVisitor,
+}: {
+  projectSlug: string;
+  auth: WidgetAuth;
+  visitorEmail: string | null;
+  opened: number | null;
+  /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
+  onNewVisitor: (number: number) => void;
+}) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   if (view.kind === "new") {
     return (
@@ -121,6 +143,7 @@ function Messages({ projectSlug, auth, visitorEmail, opened }: { projectSlug: st
         visitorEmail={visitorEmail}
         onBack={() => setView({ kind: "list" })}
         onStarted={(number) => setView({ kind: "conversation", number })}
+        onNewVisitor={onNewVisitor}
       />
     );
   }
@@ -130,13 +153,28 @@ function Messages({ projectSlug, auth, visitorEmail, opened }: { projectSlug: st
   return <ConversationList projectSlug={projectSlug} auth={auth} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
 }
 
-/** Runs `load` now and every POLL_MS while shown. */
-function usePolling(load: () => Promise<void>) {
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
+/**
+ * Runs `load` now and every POLL_MS while shown, and returns a way to run it again (after sending).
+ * Runs can overlap: `load` gets `isLatest`, to check after each await that no newer run started
+ * (and that it's still shown) before it shows what it got.
+ */
+function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
+  const sequence = useRef(0);
+  const mounted = useRef(false);
+  const run = useCallback(() => {
+    const mine = ++sequence.current;
+    return load(() => mounted.current && mine === sequence.current);
   }, [load]);
+  useEffect(() => {
+    mounted.current = true;
+    void run();
+    const timer = setInterval(() => void run(), POLL_MS);
+    return () => {
+      mounted.current = false;
+      clearInterval(timer);
+    };
+  }, [run]);
+  return run;
 }
 
 function ConversationList({
@@ -152,15 +190,25 @@ function ConversationList({
 }) {
   const [conversations, setConversations] = useState<Listed | null>(null);
   const [error, setError] = useState<string>();
-  const load = useCallback(async () => {
-    const result = await widgetConversations(projectSlug, auth);
-    if ("error" in result) {
-      setError(result.error);
-      return;
-    }
-    setConversations(result.conversations);
-    tellPage(result.conversations);
-  }, [projectSlug, auth]);
+  const load = useCallback(
+    async (isLatest: () => boolean) => {
+      const result = await widgetConversations(projectSlug, auth);
+      if (!isLatest()) {
+        return;
+      }
+      if ("error" in result) {
+        // A visitor token that no longer checks out (30 days on): they start again with their email.
+        if (auth.visitor) {
+          visitorStore.write(projectSlug, null);
+        }
+        setError(result.error);
+        return;
+      }
+      setConversations(result.conversations);
+      tellPage(result.unseen);
+    },
+    [projectSlug, auth],
+  );
   usePolling(load);
 
   return (
@@ -303,12 +351,14 @@ function NewConversation({
   visitorEmail,
   onBack,
   onStarted,
+  onNewVisitor,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
   visitorEmail: string | null;
   onBack: () => void;
   onStarted: (number: number) => void;
+  onNewVisitor: (number: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -321,6 +371,12 @@ function NewConversation({
           const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email);
           if ("error" in result) {
             return result;
+          }
+          // A new token: theirs had expired. It's who they are now, and the conversation opens once they are.
+          if (result.visitor) {
+            onNewVisitor(result.number);
+            visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+            return {};
           }
           if (visitorEmail !== null && auth.visitor) {
             visitorStore.write(projectSlug, { token: auth.visitor, email: email.trim() });
@@ -336,20 +392,26 @@ function NewConversation({
 function Conversation({ projectSlug, auth, number, onBack }: { projectSlug: string; auth: WidgetAuth; number: number; onBack: () => void }) {
   const [opened, setOpened] = useState<Opened | null>(null);
   const [error, setError] = useState<string>();
-  const load = useCallback(async () => {
-    const result = await widgetConversation(projectSlug, auth, number);
-    if ("error" in result) {
-      setError(result.error);
-      return;
-    }
-    setOpened(result);
-    // Shown, so seen: the page's count goes down.
-    const listed = await widgetConversations(projectSlug, auth);
-    if (!("error" in listed)) {
-      tellPage(listed.conversations);
-    }
-  }, [projectSlug, auth, number]);
-  usePolling(load);
+  const load = useCallback(
+    async (isLatest: () => boolean) => {
+      const result = await widgetConversation(projectSlug, auth, number);
+      if (!isLatest()) {
+        return;
+      }
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      setOpened(result);
+      // Shown, so seen: the page's count goes down.
+      const listed = await widgetConversations(projectSlug, auth);
+      if (isLatest() && !("error" in listed)) {
+        tellPage(listed.unseen);
+      }
+    },
+    [projectSlug, auth, number],
+  );
+  const reload = usePolling(load);
 
   return (
     <div className="flex flex-col gap-3">
@@ -376,7 +438,7 @@ function Conversation({ projectSlug, auth, number, onBack }: { projectSlug: stri
             send={async (text) => {
               const result = await widgetSendMessage(projectSlug, auth, number, text);
               if (!("error" in result)) {
-                await load();
+                await reload();
               }
               return result;
             }}

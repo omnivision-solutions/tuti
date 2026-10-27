@@ -1123,6 +1123,23 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await stranger.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" }).click();
   await expect(stranger.frameLocator('iframe[title="Feedback"]').getByRole("textbox", { name: "Your email" })).toBeVisible();
   await expect(stranger.frameLocator('iframe[title="Feedback"]').getByRole("list", { name: "Conversations" })).toHaveCount(0);
+
+  // A browser whose storage refuses writes still opens the conversation they start (for this visit).
+  const blockedContext = await browser.newContext();
+  await blockedContext.addInitScript(() => {
+    Storage.prototype.setItem = () => {
+      throw new DOMException("Blocked", "SecurityError");
+    };
+  });
+  const blocked = await blockedContext.newPage();
+  await blocked.goto(sitePage("customer.localhost", slug));
+  await blocked.getByRole("button", { name: "Feedback" }).click();
+  const blockedWidget = blocked.frameLocator('iframe[title="Feedback"]');
+  await blockedWidget.getByRole("link", { name: "Messages" }).click();
+  await blockedWidget.getByRole("textbox", { name: "Your email" }).fill(`e2e-blocked-${slug}@example.com`);
+  await blockedWidget.getByRole("textbox", { name: "Message" }).fill("Storage is off here");
+  await blockedWidget.getByRole("button", { name: "Send" }).click();
+  await expect(blockedWidget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(1);
 });
 
 
