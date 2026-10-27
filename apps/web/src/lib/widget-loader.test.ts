@@ -718,7 +718,6 @@ test("a slow answer from the server doesn't bring back a count the open panel ha
   expect(page.Tuti.unseen()).toBe(false);
 });
 
-
 test("a page that signs nobody in says so, so the panel doesn't wait for a token before someone writes as a visitor", async () => {
   for (const settings of [undefined, { identify: () => null }, { identify: () => Promise.reject(new Error("Not signed in")) }]) {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -729,5 +728,18 @@ test("a page that signs nobody in says so, so the panel doesn't wait for a token
     await settled();
     expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: null }, "https://acme.tuti.example");
     error.mockRestore();
+  }
+});
+
+test("Tuti.identify with someone else hands the new token to panels already open, so none keeps the previous person's", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST, before: (page) => void inlineMount(page) });
+  await settled();
+  page.Tuti.open();
+  const floating = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  const inline = page.inlineFrames[0]!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+  page.Tuti.identify(() => Promise.resolve("someone-else"));
+  await settled();
+  for (const panel of [floating, inline]) {
+    expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:identify", token: "someone-else" }, "https://acme.tuti.example");
   }
 });

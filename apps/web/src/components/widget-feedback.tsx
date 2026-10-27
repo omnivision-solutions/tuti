@@ -10,7 +10,7 @@ import { widgetCreatePost, widgetSignIn } from "@/server/widget";
 
 type SignedIn = { id: string; token: string; name: string; email: string | null };
 
-type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true };
+type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true } | { pending: true };
 
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
@@ -31,6 +31,10 @@ async function onIdentify(event: MessageEvent) {
   }
   if (typeof data.token !== "string") {
     return;
+  }
+  // A token came: someone's signing in, however long trading it takes.
+  for (const subscriber of subscribers) {
+    subscriber.tell({ pending: true });
   }
   const result = await widgetSignIn(projectSlug, data.token);
   for (const subscriber of subscribers) {
@@ -54,9 +58,14 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     if (!enabled) {
       return;
     }
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        if ("pending" in result) {
+          clearTimeout(giveUp);
+          return;
+        }
         setKnown(true);
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
@@ -77,7 +86,8 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     subscribers.add(subscriber);
     // Ready for a token (the page may have one; nothing secret in this message).
     window.parent.postMessage({ type: WIDGET_READY_MESSAGE }, "*");
-    const giveUp = setTimeout(() => setKnown(true), 3000);
+    // Only if no token comes at all: once one has, it waits for its result.
+    giveUp = setTimeout(() => setKnown(true), 3000);
     return () => {
       clearTimeout(giveUp);
       subscribers.delete(subscriber);
