@@ -15,11 +15,13 @@
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0"
+    "@prisma/client": "7.10.0",
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@tuti/typescript-config": "workspace:*",
     "@types/node": "^22",
+    "@types/pg": "8.23.1",
     "dotenv": "^17",
     "prisma": "7.10.0",
     "typescript": "^6.0.3"

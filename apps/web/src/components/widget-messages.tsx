@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
-import { WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
+import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
   widgetConversations,
@@ -19,7 +19,7 @@ import {
 } from "@/server/widget-inbox";
 import type { WidgetAuth } from "@/server/widget-person";
 
-/** How often an open Messages tab checks for replies (live updates come later). */
+/** How often an open Messages tab checks for replies when its live stream can't stay open. */
 const POLL_MS = 10_000;
 
 type View = { kind: "list" } | { kind: "new" } | { kind: "conversation"; number: number };
@@ -135,6 +135,7 @@ function Messages({
   onNewVisitor: (number: number) => void;
 }) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
+  const live = useLive(projectSlug, auth);
   if (view.kind === "new") {
     return (
       <NewConversation
@@ -148,17 +149,99 @@ function Messages({
     );
   }
   if (view.kind === "conversation") {
-    return <Conversation key={view.number} projectSlug={projectSlug} auth={auth} number={view.number} onBack={() => setView({ kind: "list" })} />;
+    return <Conversation key={view.number} projectSlug={projectSlug} auth={auth} live={live} number={view.number} onBack={() => setView({ kind: "list" })} />;
   }
-  return <ConversationList projectSlug={projectSlug} auth={auth} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
+  return (
+    <ConversationList
+      projectSlug={projectSlug}
+      auth={auth}
+      live={live}
+      onOpen={(number) => setView({ kind: "conversation", number })}
+      onNew={() => setView({ kind: "new" })}
+    />
+  );
 }
 
 /**
- * Runs `load` now and every POLL_MS while shown, and returns a way to run it again (after sending).
- * Runs can overlap: `load` gets `isLatest`, to check after each await that no newer run started
- * (and that it's still shown) before it shows what it got.
+ * Whether the panel is on screen: the page's script says when it opens and closes the floating one
+ * (an inline panel, or one just opened, is shown). A hidden panel keeps its place but sees nothing.
  */
-function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
+function useShown(): boolean {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; shown?: unknown } | null;
+      if (event.source === window.parent && data?.type === WIDGET_SHOWN_MESSAGE && typeof data.shown === "boolean") {
+        setShown(data.shown);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  return shown;
+}
+
+/** The live stream's state: whether it's open, and a count of the changes (and reconnects) it reported. */
+type Live = { connected: boolean; version: number };
+
+/**
+ * Their changes as they happen (/api/widget/live, server/live.ts), read with fetch so who they are goes
+ * in a header, never the URL. It reconnects after a drop, and each (re)connect counts as a change:
+ * whatever happened meanwhile was missed.
+ */
+function useLive(projectSlug: string, auth: WidgetAuth): Live {
+  const [live, setLive] = useState<Live>({ connected: false, version: 0 });
+  useEffect(() => {
+    const controller = new AbortController();
+    const authorization = auth.token ? `Widget ${auth.token}` : auth.visitor ? `Visitor ${auth.visitor}` : null;
+    const changed = (connected: boolean) => setLive((now) => ({ connected, version: now.version + 1 }));
+    void (async () => {
+      while (!controller.signal.aborted) {
+        try {
+          const response = await fetch(`/api/widget/live?project=${encodeURIComponent(projectSlug)}`, {
+            headers: authorization ? { authorization } : {},
+            signal: controller.signal,
+          });
+          if (!response.ok || !response.body) {
+            throw new Error(`Live updates answered ${response.status}`);
+          }
+          const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+          let buffer = "";
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+            buffer += value;
+            for (let end = buffer.indexOf("\n\n"); end !== -1; end = buffer.indexOf("\n\n")) {
+              const event = /^event: (\w+)$/m.exec(buffer.slice(0, end))?.[1];
+              buffer = buffer.slice(end + 2);
+              if (event === "ready" || event === "change") {
+                changed(true);
+              }
+            }
+          }
+        } catch {
+          // Closed, refused or offline: polling covers it until the next try.
+        }
+        if (controller.signal.aborted) {
+          return;
+        }
+        setLive((now) => ({ ...now, connected: false }));
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
+    })();
+    return () => controller.abort();
+  }, [projectSlug, auth.token, auth.visitor]);
+  return live;
+}
+
+/**
+ * Runs `load` now, on each change the live stream reports, and every POLL_MS while it isn't open,
+ * and returns a way to run it again (after sending). Runs can overlap: `load` gets `isLatest`, to
+ * check after each await that no newer run started (and that it's still shown) before it shows what it got.
+ */
+function usePolling(load: (isLatest: () => boolean) => Promise<void>, live: Live) {
   const sequence = useRef(0);
   const mounted = useRef(false);
   const run = useCallback(() => {
@@ -167,24 +250,33 @@ function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
   }, [load]);
   useEffect(() => {
     mounted.current = true;
-    void run();
-    const timer = setInterval(() => void run(), POLL_MS);
     return () => {
       mounted.current = false;
-      clearInterval(timer);
     };
-  }, [run]);
+  }, []);
+  useEffect(() => {
+    void run();
+  }, [run, live.version]);
+  useEffect(() => {
+    if (live.connected) {
+      return;
+    }
+    const timer = setInterval(() => void run(), POLL_MS);
+    return () => clearInterval(timer);
+  }, [run, live.connected]);
   return run;
 }
 
 function ConversationList({
   projectSlug,
   auth,
+  live,
   onOpen,
   onNew,
 }: {
   projectSlug: string;
   auth: WidgetAuth;
+  live: Live;
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
@@ -210,7 +302,7 @@ function ConversationList({
     },
     [projectSlug, auth],
   );
-  usePolling(load);
+  usePolling(load, live);
 
   return (
     <div className="flex flex-col gap-3">
@@ -390,12 +482,26 @@ function NewConversation({
   );
 }
 
-function Conversation({ projectSlug, auth, number, onBack }: { projectSlug: string; auth: WidgetAuth; number: number; onBack: () => void }) {
+function Conversation({
+  projectSlug,
+  auth,
+  live,
+  number,
+  onBack,
+}: {
+  projectSlug: string;
+  auth: WidgetAuth;
+  live: Live;
+  number: number;
+  onBack: () => void;
+}) {
   const [opened, setOpened] = useState<Opened | null>(null);
+  // Replies count as seen only while the panel is on screen; opening it again shows (and so sees) them.
+  const shown = useShown();
   const [error, setError] = useState<string>();
   const load = useCallback(
     async (isLatest: () => boolean) => {
-      const result = await widgetConversation(projectSlug, auth, number);
+      const result = await widgetConversation(projectSlug, auth, number, shown);
       if (!isLatest()) {
         return;
       }
@@ -411,9 +517,9 @@ function Conversation({ projectSlug, auth, number, onBack }: { projectSlug: stri
         tellPage(listed.unseen);
       }
     },
-    [projectSlug, auth, number],
+    [projectSlug, auth, number, shown],
   );
-  const reload = usePolling(load);
+  const reload = usePolling(load, live);
 
   return (
     <div className="flex flex-col gap-3">

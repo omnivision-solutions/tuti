@@ -686,3 +686,14 @@ test("with the support inbox on, the team's unseen messages to whoever the page 
   expect(off.seenRequests).toEqual([]);
   expect(off.Tuti.unseen()).toBe(false);
 });
+
+test("the floating panel hears when it's closed and opened again, so a hidden one doesn't count replies as seen", async () => {
+  const page = loadWidget({});
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  const panel = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  page.Tuti.close();
+  expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:shown", shown: false }, "https://acme.tuti.example");
+  page.Tuti.open();
+  expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:shown", shown: true }, "https://acme.tuti.example");
+});

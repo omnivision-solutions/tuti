@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/prisma/client";
 
 export * from "./generated/prisma/client";
+export { listen } from "./listen";
 
 function createPrismaClient() {
   // No connection is opened until the first query, so a missing URL only fails
