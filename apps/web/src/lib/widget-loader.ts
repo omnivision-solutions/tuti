@@ -114,6 +114,8 @@ export function widgetLoader(portalTemplate: string): string {
   // latest announcement is newer than what this visitor has seen, or the team wrote to them (Messages).
   var unseen = false;
   var unseenMessages = 0;
+  // Counts from the open panel, which knows best: a server answer asked for before the latest of them is old.
+  var panelCounts = 0;
   // The project's support inbox is on: the team may have written to whoever the page signs in.
   var inbox = false;
   var known = false;
@@ -210,6 +212,7 @@ export function widgetLoader(portalTemplate: string): string {
   // sent to Tuti's API only; null without one, or if it fails.
   function seenOnServer(at) {
     if (!getToken || !window.fetch) return Promise.resolve(null);
+    var asked = panelCounts;
     return Promise.resolve()
       .then(function () { return getToken(); })
       .then(function (token) {
@@ -220,7 +223,7 @@ export function widgetLoader(portalTemplate: string): string {
           .then(function (response) { return response.ok ? response.json() : null; });
       })
       .then(function (data) {
-        if (data && typeof data.messages === "number") unseenMessages = data.messages;
+        if (data && typeof data.messages === "number" && asked === panelCounts) unseenMessages = data.messages;
         return data && typeof data.seen === "string" ? data.seen : null;
       })
       .catch(function () { return null; });
@@ -356,18 +359,24 @@ export function widgetLoader(portalTemplate: string): string {
 
   // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
   // for: an older one the app answers later may be for someone signed in before.
+  // With nobody signed in (no identify, or it gives no token), it says so: token null, so the panel
+  // knows not to wait for one before someone writes as a visitor.
   function sendToken(to) {
-    if (!getToken) return;
     var target = to.contentWindow;
+    var tell = function (token) { target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin); };
+    if (!getToken) return tell(null);
     var asked = (to.__tutiAsked = (to.__tutiAsked || 0) + 1);
     Promise.resolve()
       .then(function () { return getToken(); })
       .then(
         function (token) {
           if (asked !== to.__tutiAsked) return;
-          if (typeof token === "string" && token) target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin);
+          tell(typeof token === "string" && token ? token : null);
         },
-        function (error) { console.error("Tuti widget: identify failed", error); }
+        function (error) {
+          console.error("Tuti widget: identify failed", error);
+          if (asked === to.__tutiAsked) tell(null);
+        }
       );
   }
 
@@ -387,6 +396,7 @@ export function widgetLoader(portalTemplate: string): string {
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
       unseenMessages = event.data.count;
+      panelCounts++;
       setUnseen(anyUnseen());
     }
   });
