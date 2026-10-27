@@ -23,14 +23,14 @@ const signInFirst = { error: "Sign in to message the team" };
 
 test("someone the page signs in writes to the team, sees replies, and seeing them clears the count", async () => {
   const { project, team, auth } = await setup();
-  expect(await widgetConversations(project.slug, auth)).toEqual({ conversations: [] });
+  expect(await widgetConversations(project.slug, auth)).toEqual({ conversations: [], unseen: 0 });
 
   const started = await widgetStartConversation(project.slug, auth, "Where's my invoice?");
   expect(started).toEqual({ number: 1 });
   expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ origin: "WIDGET", status: "OPEN" });
 
   await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
-  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, subject: "Where's my invoice?", unseen: 1 }] });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, subject: "Where's my invoice?", unseen: 1 }], unseen: 1 });
 
   const opened = await widgetConversation(project.slug, auth, 1);
   expect(opened).toMatchObject({
@@ -52,7 +52,7 @@ test("nobody reaches another person's conversations, another project's, or any w
   await widgetStartConversation(project.slug, auth, "Mine");
   const someoneElse = { token: widgetToken(project.id, await upsertProjectUser(project.id, "user-43", { name: "Kim" })) };
 
-  expect(await widgetConversations(project.slug, someoneElse)).toEqual({ conversations: [] });
+  expect(await widgetConversations(project.slug, someoneElse)).toEqual({ conversations: [], unseen: 0 });
   expect(await widgetConversation(project.slug, someoneElse, 1)).toEqual({ error: "Conversation not found" });
   expect(await widgetSendMessage(project.slug, someoneElse, 1, "Hi")).toEqual({ error: "Conversation not found" });
 
@@ -152,3 +152,18 @@ test("new conversations are limited per day and per typed address, and messages 
   expect(results.slice(0, 5).every((r) => "number" in r)).toBe(true);
   expect(results[5]).toMatchObject({ error: expect.stringContaining("a lot of emails to this address") });
 });
+
+test("the total unseen count includes conversations older than the latest 50 the list shows", async () => {
+  const { project, auth, userId } = await setup();
+  const old = await prisma.conversation.create({
+    data: { projectId: project.id, number: 1, subject: "Old", origin: "WIDGET", userId, lastMessageAt: new Date(Date.now() - 86_400_000) },
+  });
+  await prisma.conversationMessage.create({ data: { projectId: project.id, conversationId: old.id, author: "TEAM", channel: "APP", body: "Still there?" } });
+  await prisma.conversation.createMany({
+    data: Array.from({ length: 50 }, (_, i) => ({ projectId: project.id, number: 2 + i, subject: "Newer", origin: "WIDGET" as const, userId })),
+  });
+  const listed = await widgetConversations(project.slug, auth);
+  expect(listed).toMatchObject({ unseen: 1 });
+  expect((listed as { conversations: { number: number }[] }).conversations.map((c) => c.number)).not.toContain(1);
+});
+

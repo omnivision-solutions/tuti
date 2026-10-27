@@ -126,6 +126,8 @@ your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
 portal, the Changelog tab says "New" until they've looked.
 
+Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
+
 ## Messages
 
 With Settings → Support → Messages in the widget on, the panel has a Messages tab where
@@ -137,7 +139,5 @@ signed in leave their email to write; the panel keeps a token for 30 days in its
 storage (per site, out of your page's reach) so they see their conversations when they come
 back, and drops it when your page signs someone in. Their address isn't verified, and it's
 never linked to one of your users: the team only sees that it may be them.
-
-Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
 
 The panel's text is in English for now; there's no `locale` setting yet.
