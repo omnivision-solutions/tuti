@@ -1044,6 +1044,8 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.goto(`/app/${slug}/inbox`);
   await owner.getByRole("link", { name: "How do I export my data?" }).click();
   await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
+  // Sam has the widget open: they're online.
+  await expect(owner.getByText("Online", { exact: true })).toBeVisible();
   await owner.getByRole("textbox", { name: "Reply" }).fill("Settings → Export, then Download.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);

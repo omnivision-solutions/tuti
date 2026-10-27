@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
+import { isOnline, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
@@ -38,6 +39,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         emailVerified: true,
         assigneeId: true,
         userId: true,
+        visitorHash: true,
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         messages: {
@@ -56,6 +58,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     notFound();
   }
   const person = conversationPerson(conversation);
+  const online =
+    (conversation.userId || conversation.visitorHash) &&
+    (await isOnline(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash })));
   const personName = person.name ?? person.email ?? "Unknown";
 
   return (
@@ -65,6 +70,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         title={conversation.subject}
         description={
           <>
+            {online && (
+              <>
+                <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                  <span aria-hidden className="size-2 rounded-full bg-primary" />
+                  Online
+                </span>{" "}
+                ·{" "}
+              </>
+            )}
             #{conversation.number} · {personName}
             {person.email && person.name && ` (${person.email}${person.verified ? "" : ", not verified"})`}
             {!person.name && person.email && !person.verified && " (not verified)"} · started from {ORIGINS[conversation.origin]}{" "}

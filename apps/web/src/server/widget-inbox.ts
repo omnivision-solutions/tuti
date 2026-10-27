@@ -9,6 +9,7 @@ import { visitorHash } from "@/lib/visitor-session";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
+import { presenceKey, touchPresence } from "./presence";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
@@ -26,7 +27,15 @@ const body = z.string().trim().min(1, "Write something first").max(MAX_MESSAGE_L
 const email = z.email("Enter a valid email address").max(320);
 
 type Person = WidgetPerson;
-const person = widgetPerson;
+
+/** Who's here (server/widget-person.ts); being here is what makes them online for the team. */
+async function person(projectSlug: string, auth: WidgetAuth) {
+  const who = await widgetPerson(projectSlug, auth);
+  if (who) {
+    await touchPresence(who.projectId, presenceKey(who));
+  }
+  return who;
+}
 
 const signInFirst = { error: "Sign in to message the team" };
 
