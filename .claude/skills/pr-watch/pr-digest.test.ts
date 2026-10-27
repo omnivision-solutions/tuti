@@ -132,6 +132,7 @@ describe("pr-digest", () => {
       ["greptile-apps[bot]", "To keep reviewing, [Reactivate Greptile](https://example.com)"],
       ["greptile-apps[bot]", "<h3>Greptile Summary</h3>"],
       ["github-actions[bot]", "<!-- tuti-e2e-screenshots -->\n### Screenshots"],
+      ["github-actions[bot]", "@greptileai"],
     ])("skips %s chrome", (login, body) => {
       expect(observe({ conversation: [comment(30, login, body)] }).verdict).toBe("green");
     });
@@ -139,6 +140,7 @@ describe("pr-digest", () => {
     it("doesn't skip the same text from a person or a real bot finding", () => {
       expect(observe({ conversation: [comment(30, "reviewer", "<!-- tuti-e2e-screenshots -->")] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [comment(30, "coderabbitai[bot]", "Please fix this")] }).verdict).toBe("open-comments");
+      expect(observe({ conversation: [comment(30, "github-actions[bot]", "@greptileai the deploy step failed")] }).verdict).toBe("open-comments");
     });
 
     it("blocks a change request until that reviewer approves", () => {

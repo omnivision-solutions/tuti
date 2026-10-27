@@ -26,14 +26,15 @@ export function botState(name, runs, statuses) {
 }
 
 // Status chrome, not findings: CodeRabbit's walkthrough, Greptile's summary and
-// lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh).
+// lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
+// the @greptileai mention review-bot.yml posts to start Greptile.
 function isNoise({ user, body }) {
   if (user.type !== "Bot") return false;
   if (user.login === "coderabbitai[bot]")
     return /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body);
   if (user.login === "greptile-apps[bot]")
     return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || body.includes("Reactivate Greptile");
-  if (user.login === "github-actions[bot]") return body.startsWith("<!-- tuti-e2e-screenshots -->");
+  if (user.login === "github-actions[bot]") return body.startsWith("<!-- tuti-e2e-screenshots -->") || body.trim() === "@greptileai";
   return false;
 }
 
