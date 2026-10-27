@@ -19,15 +19,21 @@ import { updateWidgetSettings } from "./operations/widget";
  * tokens), and the team's launcher settings.
  */
 
+// Lets the panel's pages show a private portal to whoever the page signed in (see portal-access.ts).
+// Partitioned: kept per embedding site, never shared across sites; gone when the browser closes or the token expires.
+const readerCookie = { httpOnly: true, sameSite: "none", secure: true, partitioned: true, path: "/" } as const;
+
+/** The page has nobody signed in now: the panel's pages stop showing a private portal to whoever was. */
+export async function widgetSignOut() {
+  (await cookies()).set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
+}
+
 /** Trades an SSO token from the project's own app for a widget token, and says who signed in. */
 export async function widgetSignIn(
   projectSlug: string,
   ssoToken: string,
 ): Promise<{ id: string; token: string; name: string; email: string | null } | { error: string }> {
   const jar = await cookies();
-  // Lets the panel's pages show a private portal to them (see portal-access.ts). Partitioned: kept
-  // per embedding site, never shared across sites; gone when the browser closes or the token expires.
-  const readerCookie = { httpOnly: true, sameSite: "none", secure: true, partitioned: true, path: "/" } as const;
   // Whoever the page signed in before isn't who's here now unless this token says so.
   jar.set(WIDGET_READER_COOKIE, "", { ...readerCookie, maxAge: 0 });
   const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, ssoSecret: true } });
