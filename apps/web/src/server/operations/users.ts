@@ -40,8 +40,8 @@ const userSelect = {
   user: { select: { name: true, image: true } },
 } as const;
 
-/** The project's users as views, with the groups each is in. */
-async function viewsOf(projectId: string, users: { externalId: string; email: string | null; properties: unknown; createdAt: Date; updatedAt: Date; user: { name: string; image: string | null } }[]) {
+/** The project's users as views, with the groups each is in (also the inbox's panel beside a conversation). */
+export async function viewsOf(projectId: string, users: { externalId: string; email: string | null; properties: unknown; createdAt: Date; updatedAt: Date; user: { name: string; image: string | null } }[]) {
   const groups = await prisma.readerGroup.findMany({ where: { projectId }, select: { key: true, conditions: true }, orderBy: { key: "asc" } });
   const rules = groups.map((group) => ({ key: group.key, conditions: storedConditions(group.conditions) }));
   return users.map((user): UserView => {

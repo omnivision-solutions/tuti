@@ -26,6 +26,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
     body: "The export button does nothing on the reports page.",
   });
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  // What the team's app says about Sam, and a group for its enterprise customers.
+  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40 } }] });
+  await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
   const views = owner.getByRole("navigation", { name: "Views" });
   await owner.goto(`/app/${slug}/inbox`);
@@ -50,6 +53,15 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
+
+  // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
+  const about = owner.getByRole("complementary", { name: "About them" });
+  await expect(about).toContainText("Sam Smith");
+  await expect(about).toContainText("e2e-sam@example.com");
+  await expect(about).toContainText("id user-42");
+  await expect(about).toContainText("Enterprise");
+  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40"]);
+  await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now.
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
@@ -86,6 +98,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // The other one is spam: marked from More actions, it leaves the inbox for Spam.
   await owner.goto(`/app/${slug}/inbox/2`);
+  // Someone known only by their address.
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Known only by this address.");
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Mark as spam" }).click();
   await expect(owner.getByText("Marked as spam")).toBeVisible();
