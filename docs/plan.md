@@ -159,6 +159,7 @@ Test layers (set up in Phase 4):
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
 - [x] Review bots: CodeRabbit (free for public repos; `.coderabbit.yaml`, follows AGENTS.md); Dependabot security updates
+- [x] Weekly dependency updates (`weekly-dependencies.yml`, `.github/DEPENDENCY_UPDATES.md`): Claude Code, on a Claude subscription, updates the npm dependencies every Monday and opens one PR (what it updated, held back and why); it runs as an unprivileged user without the GitHub write token, and the patch is applied in a fresh job that rejects workflow, instruction and env file changes. Alongside Dependabot security updates
 - [x] One review bot per PR so their rate limits last (`review-bot.yml`): odd-numbered PRs get CodeRabbit, even ones Greptile; a PR moves to CodeRabbit (label `review:coderabbit`) when Greptile says it can no longer review
 - [x] Migrations keep working with the previous release, which runs beside the new schema during a deploy: the rule in AGENTS.md, checked by `packages/db/src/migrations.test.ts` (no drops, renames, retypes or new required columns without a `-- Previous release:` note) and by both review bots
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
