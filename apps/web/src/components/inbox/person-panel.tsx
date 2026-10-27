@@ -134,7 +134,7 @@ export async function PersonPanel({
 
       {view && Object.keys(view.properties).length > 0 && (
         <Section title="Properties">
-          <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
+          <dl className="grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
                 <dt className="break-all text-muted-foreground">{name}</dt>
