@@ -249,7 +249,9 @@ export function AskAPerson({
   const [pending, startTransition] = useTransition();
   // In the widget on a customer's site, the page may sign its visitor in: start with their email, and
   // with the inbox, it's their conversation (else a visitor's, the one they had or a new one).
-  const { signedIn } = useWidgetSignIn(projectSlug, widget && open && (inbox || !defaultEmail));
+  const { signedIn, known } = useWidgetSignIn(projectSlug, widget && open && (inbox || !defaultEmail));
+  // With the inbox, whose conversation it starts depends on who the page signs in: wait for its answer.
+  const waiting = widget && inbox && !known;
   const visitor = useVisitor(projectSlug);
   const id = useId();
 
@@ -326,7 +328,7 @@ export function AskAPerson({
         <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
           Cancel
         </Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || waiting}>
           {pending ? "Sending…" : "Send to the team"}
         </Button>
       </div>
