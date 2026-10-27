@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 reviews:
   profile: chill
+  # No "review skipped" comment on the PRs CodeRabbit sits out.
+  review_status: false
   # PR descriptions already say Why / What changed / How tested.
   high_level_summary: false
   poem: false
@@ -16,6 +18,11 @@ reviews:
     docstrings:
       mode: "off"
   auto_review:
+    # Greptile is the default reviewer; CodeRabbit only reviews PRs labeled
+    # review:coderabbit (see .github/workflows/review-bot.yml).
+    enabled: false
+    labels:
+      - "review:coderabbit"
     # Review every push: pr-watch waits for a review of the PR's latest commit.
     auto_pause_after_reviewed_commits: 0
     # Stacked PRs target another PR's branch, not main; review those too.

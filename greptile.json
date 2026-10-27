@@ -1,0 +1,13 @@
+{
+  "autoReview": ["open", "push", "rebase"],
+  "statusCheck": true,
+  "disabledLabels": ["review:coderabbit"],
+  "ignorePatterns": "pnpm-lock.yaml\n**/*.png\n**/*.jpg",
+  "customContext": {
+    "files": [
+      { "path": "AGENTS.md", "description": "Repository rules: tests, operations, pull requests, public repo" },
+      { "path": "docs/design.md", "description": "Design rules" }
+    ]
+  },
+  "instructions": "Server actions (apps/web/src/server/**) are public endpoints: check that each one checks who is calling (signed in, team role), scopes every id it receives to the caller's project, and is listed in authorization.db.test.ts. Tests must be deterministic and offline: no real network calls, API keys or shared databases; external services use the fakes in @tuti/testkit. CI runs pull requests from forks: workflows must never need secrets, and must never check out or run pull request code under pull_request_target."
+}
