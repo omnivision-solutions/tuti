@@ -123,8 +123,10 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   if (!known && !pageAnswered) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
-  if (!known && !visitor) {
-    return (
+  // The page signed someone in but their token didn't trade: say so, or they'd write as a visitor not knowing why.
+  const failed = error && !known && <p className="text-sm text-destructive">{error}</p>;
+  const view =
+    !known && !visitor ? (
       <FirstMessage
         projectSlug={projectSlug}
         onStarted={setStarted}
@@ -133,18 +135,24 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
           setSignedInSince(true);
         }}
       />
+    ) : (
+      // Someone else here: their own Messages, from their list.
+      <Messages
+        key={auth.token ?? auth.visitor ?? "portal"}
+        projectSlug={projectSlug}
+        auth={auth}
+        visitorEmail={known ? null : visitor!.email}
+        opened={known && !signedInSince ? null : started}
+        onNewVisitor={setStarted}
+      />
     );
-  }
-  // Someone else here: their own Messages, from their list.
-  return (
-    <Messages
-      key={auth.token ?? auth.visitor ?? "portal"}
-      projectSlug={projectSlug}
-      auth={auth}
-      visitorEmail={known ? null : visitor!.email}
-      opened={known && !signedInSince ? null : started}
-      onNewVisitor={setStarted}
-    />
+  return failed ? (
+    <div className="flex flex-col gap-3">
+      {failed}
+      {view}
+    </div>
+  ) : (
+    view
   );
 }
 

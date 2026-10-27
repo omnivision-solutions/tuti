@@ -1074,6 +1074,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "someone-else"));
   await expect(widget.getByText("Leave your email so the team can get back to you.")).toBeVisible();
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
   await expect(messages).toHaveCount(0);
 });
 
@@ -1128,6 +1129,12 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await widget.getByRole("link", { name: "Messages" }).click();
   await expect(widget.getByText("Loading…")).toBeVisible();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
+  // The page signs someone in after all, later than that: while their token's traded, the visitor
+  // can't write either (here Tuti never answers, so it stays that way).
+  await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
+  await expect(widget.getByText("Loading…")).toBeVisible();
+  await expect(widget.getByRole("list", { name: "Conversations" })).toHaveCount(0);
 
   // Another browser has none of it.
   const stranger = await (await browser.newContext()).newPage();

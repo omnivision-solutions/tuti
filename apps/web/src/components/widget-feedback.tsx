@@ -70,8 +70,10 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        // Someone's signing in: not known who's here until it's traded, even after the 3 seconds.
         if ("pending" in result) {
           clearTimeout(giveUp);
+          setKnown(false);
           return;
         }
         setKnown(true);
