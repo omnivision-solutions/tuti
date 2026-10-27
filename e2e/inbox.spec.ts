@@ -26,6 +26,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
     body: "The export button does nothing on the reports page.",
   });
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
+  // What the team's app says about Sam, and a group for its enterprise customers.
+  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
+  await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
   const views = owner.getByRole("navigation", { name: "Views" });
   await owner.goto(`/app/${slug}/inbox`);
@@ -50,6 +53,19 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/inbox/1$`));
   await expect(owner.getByRole("heading", { name: "Can't export to CSV" })).toBeVisible();
   await expect(owner.getByText("#1 · Sam Smith (e2e-sam@example.com) · started from the API")).toBeVisible();
+
+  // Beside it, who Sam is: their app's id, properties and groups, and nothing else from them yet.
+  const about = owner.getByRole("complementary", { name: "About them" });
+  await expect(about).toContainText("Sam Smith");
+  await expect(about).toContainText("e2e-sam@example.com");
+  await expect(about).toContainText("id user-42");
+  await expect(about).toContainText("Enterprise");
+  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "x"]);
+  // Long names wrap inside the panel, never past it.
+  const panel = (await about.boundingBox())!;
+  const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
+  expect(name.x + name.width).toBeLessThanOrEqual(panel.x + panel.width);
+  await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now.
   const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
@@ -86,6 +102,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // The other one is spam: marked from More actions, it leaves the inbox for Spam.
   await owner.goto(`/app/${slug}/inbox/2`);
+  // Someone known only by their address.
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Known only by this address.");
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Mark as spam" }).click();
   await expect(owner.getByText("Marked as spam")).toBeVisible();
@@ -103,4 +122,22 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await owner.goto(`/app/${slug}/inbox?view=constructor`);
   await expect(views.getByRole("link", { name: "Open 0" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
+});
+
+test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const address = "e2e-a-rather-long-address-for-the-about-button-on-phones@example.com";
+  await (await apiFor(owner, slug))("/conversations", { email: address, body: "Hello from a phone" });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const about = owner.getByRole("button", { name: `About ${address}` });
+  await expect(about).toBeVisible();
+  // Inside the page, not past its right edge (nothing scrolls sideways).
+  expect((await about.boundingBox())!.x + (await about.boundingBox())!.width).toBeLessThanOrEqual(390);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await about.click();
+  await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 });

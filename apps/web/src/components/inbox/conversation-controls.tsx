@@ -5,10 +5,8 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CONVERSATION_STATUS_LABELS, type ConversationStatusName as Status } from "@/lib/conversation-statuses";
 import { assignConversation, markConversationSpam, setConversationStatus } from "@/server/inbox";
-
-export const CONVERSATION_STATUS_LABELS = { open: "Open", waiting: "Waiting", closed: "Closed" } as const;
-type Status = keyof typeof CONVERSATION_STATUS_LABELS;
 
 type Props = { projectSlug: string; number: number };
 

@@ -3,6 +3,8 @@ import { cn } from "cn";
 import { notFound } from "next/navigation";
 
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton } from "@/components/inbox/conversation-controls";
+import { PersonDetails } from "@/components/inbox/person-details";
+import { PersonPanel } from "@/components/inbox/person-panel";
 import { ReplyForm } from "@/components/inbox/reply-form";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +37,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         email: true,
         emailVerified: true,
         assigneeId: true,
+        userId: true,
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         messages: {
@@ -88,26 +91,33 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
       {conversation.spam && <Badge variant="outline">Spam</Badge>}
 
-      <ol className="flex flex-col gap-3" aria-label="Messages">
-        {conversation.messages.map((message) => {
-          const fromTeam = message.author === "TEAM";
-          const name = message.author === "USER" ? personName : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
-          return (
-            <li key={message.id} className={cn("flex", fromTeam && "justify-end")}>
-              <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted")}>
-                <CardContent className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
-                  </p>
-                  <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
-                </CardContent>
-              </Card>
-            </li>
-          );
-        })}
-      </ol>
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
+        <PersonDetails name={personName}>
+          <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+        </PersonDetails>
+        <div className="flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1">
+          <ol className="flex flex-col gap-3" aria-label="Messages">
+            {conversation.messages.map((message) => {
+              const fromTeam = message.author === "TEAM";
+              const name = message.author === "USER" ? personName : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
+              return (
+                <li key={message.id} className={cn("flex", fromTeam && "justify-end")}>
+                  <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted")}>
+                    <CardContent className="flex flex-col gap-1">
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
+                      </p>
+                      <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
+                    </CardContent>
+                  </Card>
+                </li>
+              );
+            })}
+          </ol>
 
-      <ReplyForm projectSlug={slug} number={conversation.number} />
+          <ReplyForm projectSlug={slug} number={conversation.number} />
+        </div>
+      </div>
     </>
   );
 }
