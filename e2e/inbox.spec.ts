@@ -139,3 +139,21 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(views.getByRole("link", { name: "Open 0" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
+
+test("on a phone, who the conversation is with opens as a sheet, and a long address wraps in its button", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const address = "e2e-a-rather-long-address-for-the-about-button-on-phones@example.com";
+  await (await apiFor(owner, slug))("/conversations", { email: address, body: "Hello from a phone" });
+
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  const about = owner.getByRole("button", { name: `About ${address}` });
+  await expect(about).toBeVisible();
+  // Inside the page, not past its right edge (nothing scrolls sideways).
+  expect((await about.boundingBox())!.x + (await about.boundingBox())!.width).toBeLessThanOrEqual(390);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await about.click();
+  await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
+});
