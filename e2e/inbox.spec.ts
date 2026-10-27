@@ -29,7 +29,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   });
   await api("/conversations", { email: "e2e-asker@example.com", body: "Do you have a discount for nonprofits?" });
   // What the team's app says about Sam, and a group for its enterprise customers.
-  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40 } }] });
+  await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
   // The team hears of each by email.
@@ -70,7 +70,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(about).toContainText("e2e-sam@example.com");
   await expect(about).toContainText("id user-42");
   await expect(about).toContainText("Enterprise");
-  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40"]);
+  await expect(about.getByRole("definition")).toHaveText(["enterprise", "40", "x"]);
+  // Long names wrap inside the panel, never past it.
+  const panel = (await about.boundingBox())!;
+  const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
+  expect(name.x + name.width).toBeLessThanOrEqual(panel.x + panel.width);
   await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now.
