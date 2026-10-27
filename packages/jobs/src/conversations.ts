@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { prisma } from "@tuti/db";
-import { conversationEmail, conversationReplyEmail, emailConfigured, sendEmail } from "@tuti/email";
+import { INBOX_CHANNEL, prisma } from "@tuti/db";
+import { conversationEmail, conversationReplyEmail, deliveredMessageId, emailConfigured, sendEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -179,6 +179,9 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
     prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
       select: {
+        projectId: true,
+        userId: true,
+        visitorHash: true,
         subject: true,
         replyToken: true,
         email: true,
@@ -196,10 +199,18 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       where: { conversationId, OR: [{ emailMessageId: { not: null } }, { sentMessageId: { not: null } }] },
       orderBy: { createdAt: "desc" },
       take: MAX_REFERENCES,
-      select: { emailMessageId: true, sentMessageId: true },
+      select: { emailMessageId: true, sentMessageId: true, deliveredMessageId: true },
     }),
   ]);
   const ids = messages.map((m) => m.id);
+  // Open inbox pages show each message's delivery: tell them it changed (apps/web/src/server/live.ts).
+  const notify = () =>
+    prisma.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({
+      projectId: conversation.projectId,
+      conversationId,
+      userId: conversation.userId,
+      visitorHash: conversation.visitorHash,
+    })})`;
   const settle = (data: { emailStatus?: "SENT" | "FAILED"; emailError?: string | null; emailAttempts?: { increment: number } }) =>
     prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailClaimedAt: claimedAt }, data: { ...data, emailClaimedAt: null } });
 
@@ -208,6 +219,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   const subdomain = conversation.project.mailSubdomain?.subdomain;
   if (!to || !subdomain) {
     await settle({ emailStatus: "FAILED", emailError: to ? "The project has no support address" : "They have no email address" });
+    await notify();
     return false;
   }
   const address = (token?: string) => `support${token ? `+${token}` : ""}@${subdomain}.${domain}`;
@@ -215,11 +227,12 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   const from = `"${(teammate ? `${teammate} at ${conversation.project.name}` : conversation.project.name).replace(/["\\\r\n]/g, "")}" <${address()}>`;
   const messageId = `<${randomUUID()}@${subdomain}.${domain}>`;
   const references = thread
-    .map((m) => m.sentMessageId ?? m.emailMessageId)
+    .map((m) => m.deliveredMessageId ?? m.sentMessageId ?? m.emailMessageId)
     .filter((id): id is string => !!id)
     .reverse();
+  let response: string | null;
   try {
-    await sendEmail({
+    response = await sendEmail({
       to,
       from,
       replyTo: address(conversation.replyToken),
@@ -241,12 +254,17 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       // Out of tries: failed for good, shown on the message.
       prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailAttempts: { gte: MAX_TRIES } }, data: { emailStatus: "FAILED" } }),
     ]);
+    await notify();
     return false;
   }
   await prisma.$transaction([
     settle({ emailStatus: "SENT", emailError: null }),
     // One Message-ID per email: the last message carries it, for replies that name it.
-    prisma.conversationMessage.update({ where: { id: ids.at(-1)! }, data: { sentMessageId: messageId } }),
+    prisma.conversationMessage.update({
+      where: { id: ids.at(-1)! },
+      data: { sentMessageId: messageId, deliveredMessageId: deliveredMessageId(response) },
+    }),
   ]);
+  await notify();
   return true;
 }

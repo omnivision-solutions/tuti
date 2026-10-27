@@ -263,7 +263,10 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     (named.length > 0
       ? ((
           await prisma.conversationMessage.findFirst({
-            where: { projectId, sentMessageId: { in: named.slice(-50) } },
+            where: {
+              projectId,
+              OR: [{ sentMessageId: { in: named.slice(-50) } }, { deliveredMessageId: { in: named.slice(-50) } }],
+            },
             orderBy: { createdAt: "desc" },
             select: { conversation: { select } },
           })

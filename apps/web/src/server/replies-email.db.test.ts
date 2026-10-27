@@ -7,6 +7,7 @@ import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
+import { notifyInboxNow, subscribeInbox } from "./live";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 
@@ -36,7 +37,7 @@ async function setup() {
 
 /** Moves the conversation's messages back in time, so the minute has passed. */
 const aMinuteOn = (projectId: string) =>
-  prisma.conversationMessage.updateMany({ where: { projectId }, data: { createdAt: new Date(Date.now() - 2 * 60_000) } });
+  prisma.$executeRaw`UPDATE "conversation_message" SET "createdAt" = "createdAt" - interval '2 minutes' WHERE "projectId" = ${projectId}`;
 const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.includes(address));
 
 test("a reply they haven't seen a minute on is emailed from the project's address, Reply-To the conversation's, threaded", async () => {
@@ -78,6 +79,60 @@ test("their reply naming our Message-ID joins the conversation, even to the plai
   const conversations = await prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: true } });
   expect(conversations).toHaveLength(1);
   expect(conversations[0]!.messages.map((m) => m.body)).toContain("Yes, thanks!");
+});
+
+test("sent through Amazon SES, under its own Message-ID: replies naming that one join too, and later emails reference it", async () => {
+  const { project, address, team, kim } = await setup();
+  await call(replyToConversation, team, { number: 1, body: "Found it?" });
+  await aMinuteOn(project.id);
+  const ses = "0100019a2b3c4d5e-1a2b3c4d-5e6f-4a1b-9c8d-0123456789ab-000000";
+  mailbox.answerNext(kim, `Ok ${ses}`);
+  await run();
+  const delivered = `<${ses}@email.amazonses.com>`;
+  expect(await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id, author: "TEAM" } })).toMatchObject({
+    deliveredMessageId: delivered,
+  });
+
+  await postEmail(rawEmail({ from: kim, to: address, subject: "Re: Invoice missing", body: "Yes, thanks!", headers: { "In-Reply-To": delivered } }), {
+    recipient: address,
+  });
+  const conversations = await prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: true } });
+  expect(conversations).toHaveLength(1);
+  expect(conversations[0]!.messages.map((m) => m.body)).toContain("Yes, thanks!");
+
+  await call(replyToConversation, team, { number: 1, body: "Great" });
+  await aMinuteOn(project.id);
+  await run();
+  expect(emailsTo(kim)[1]!.headers.references).toContain(delivered);
+});
+
+test("the team's pages hear when a reply is emailed, or fails for good", async () => {
+  const { project, team } = await setup();
+  await call(replyToConversation, team, { number: 1, body: "Hello?" });
+  await aMinuteOn(project.id);
+  const stops: (() => void)[] = [];
+  const heardOf = (wants: (conversationId: string) => boolean) => {
+    const heard: number[] = [];
+    stops.push(subscribeInbox((change) => change.projectId === project.id && wants(change.conversationId), () => heard.push(1)));
+    return heard;
+  };
+  const marker = (conversationId: string) => notifyInboxNow({ projectId: project.id, conversationId, userId: null, visitorHash: null });
+  const connected = heardOf((id) => id === "connected");
+  const last = heardOf((id) => id === "last");
+  const heard = heardOf((id) => id !== "connected" && id !== "last");
+  try {
+    // Listening once a marker's heard; and NOTIFYs arrive in order, so once the last one's heard, so is the job's.
+    await vi.waitFor(async () => {
+      await marker("connected");
+      expect(connected.length).toBeGreaterThan(0);
+    });
+    await run();
+    await marker("last");
+    await vi.waitFor(() => expect(last).toHaveLength(1));
+    expect(heard).toHaveLength(1);
+  } finally {
+    stops.forEach((stop) => stop());
+  }
 });
 
 test("seen in the widget, a note, spam, or two runs at once: no email, or just one", async () => {

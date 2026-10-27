@@ -4,6 +4,9 @@ import { PrismaClient } from "./generated/prisma/client";
 export * from "./generated/prisma/client";
 export { listen } from "./listen";
 
+/** The NOTIFY channel of the support inbox's live updates (apps/web/src/server/live.ts). */
+export const INBOX_CHANNEL = "tuti_inbox";
+
 function createPrismaClient() {
   // No connection is opened until the first query, so a missing URL only fails
   // at query time. Apps validate DATABASE_URL on startup instead (builds don't

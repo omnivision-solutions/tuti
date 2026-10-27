@@ -1,4 +1,4 @@
-import { listen, type Prisma, prisma } from "@tuti/db";
+import { INBOX_CHANNEL as CHANNEL, listen, type Prisma, prisma } from "@tuti/db";
 
 /**
  * Live updates for the support inbox (docs/plan.md, Support inbox, "Live"): a change commits with a
@@ -7,8 +7,6 @@ import { listen, type Prisma, prisma } from "@tuti/db";
  * a stream's client then fetches what changed through the usual actions, so access is checked in
  * one place. NOTIFY reaches only those already listening, so a stream that (re)opens fetches anew.
  */
-
-const CHANNEL = "tuti_inbox";
 
 export type InboxChange = {
   projectId: string;
