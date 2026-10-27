@@ -173,7 +173,10 @@ jobs:
   nightly-failure:
     name: Report nightly failure
     needs: [lint, typecheck, test, test-db, e2e, docker, build]
-    if: failure() && github.event_name == 'schedule'
+    # A job that hits its timeout ends "cancelled", not "failed".
+    if: >-
+      always() && github.event_name == 'schedule' &&
+      (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
