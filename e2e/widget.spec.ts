@@ -1005,3 +1005,75 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   await sidebar.getByRole("button", { name: "Close" }).click();
   await expect(drawer).toBeHidden();
 });
+
+test("with the support inbox on, someone the page signs in messages the team from the widget and sees the reply", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  ssoSecrets.set(slug, await owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" }).locator("code").innerText());
+
+  // No Messages until the team turns the inbox on.
+  const before = await (await browser.newContext()).newPage();
+  await before.goto(sitePage("customer.localhost", slug));
+  await before.getByRole("button", { name: "Feedback" }).click();
+  await expect(before.frameLocator('iframe[title="Feedback"]').getByText("Posting as Sam from Acme")).toBeVisible();
+  await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
+
+  await owner.goto(`/app/${slug}/settings`);
+  await owner.getByRole("link", { name: "Support" }).click();
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+
+  // Sam writes to the team (in a new browser: the script reads whether the inbox is on once a minute at most).
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByText("No messages yet")).toBeVisible();
+  await widget.getByRole("button", { name: "New message" }).click();
+  await widget.getByRole("textbox", { name: "Message" }).fill("How do I export my data?");
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(1);
+  await expect(widget.getByRole("list", { name: "Messages" })).toContainText("You");
+
+  // It's in the team's inbox, from the widget; they reply.
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("link", { name: "How do I export my data?" }).click();
+  await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Settings → Export, then Download.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+
+  // The reply shows in the open widget within a few seconds (it checks every 10).
+  const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveCount(2, { timeout: 15_000 });
+  await expect(messages.last()).toContainText("Olive Owner");
+  await expect(messages.last()).toContainText("Settings → Export, then Download.");
+  await checkpoint(visitor, "widget-messages");
+
+  // Another reply while the panel's closed: the launcher's dot, until it's seen.
+  await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Did that work?");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3);
+  await visitor.reload();
+  await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
+  await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
+  await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByRole("list", { name: "Conversations" }).getByText("New reply")).toBeAttached();
+  await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
+  await expect(messages).toHaveCount(3);
+  await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
+
+  // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
+  // signed in, not Sam, whose messages go.
+  await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "someone-else"));
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(messages).toHaveCount(0);
+  await expect(widget.getByRole("link", { name: "Sign in" })).toBeVisible();
+});

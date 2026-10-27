@@ -11,7 +11,8 @@ import { call } from "@/server/operations/run";
  * its users in (Tuti.identify): GET says up to when this person has seen the project's
  * announcements, on any device; POST `{ at }` records that they've seen them up to `at`
  * (it never moves back). The script only calls it when this browser hasn't seen the
- * latest announcement, or after the panel showed it.
+ * latest announcement, or after the panel showed it. GET also says how many of the team's
+ * messages to them in the support inbox they haven't seen (`messages`; 0 with the inbox off).
  *
  * Signed in with a fresh SSO token from the customer's app as a bearer token (checked like
  * /sso: signature, lifetime, single use), never cookies, so any site may call it; the
@@ -25,12 +26,14 @@ async function signedIn(request: Request) {
   if (!SLUG_PATTERN.test(slug) || !token) {
     return null;
   }
-  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true } });
+  const project = await prisma.project.findUnique({ where: { slug }, select: { id: true, ssoSecret: true, supportInbox: true } });
   if (!project?.ssoSecret) {
     return null;
   }
   const verified = await verifySsoToken({ id: project.id, ssoSecret: project.ssoSecret }, token);
-  return "error" in verified ? null : { actor: { kind: "user" as const, userId: verified.userId }, projectId: project.id };
+  return "error" in verified
+    ? null
+    : { actor: { kind: "user" as const, userId: verified.userId }, projectId: project.id, inbox: project.supportInbox };
 }
 
 const refused = () => Response.json({ error: "Sign in with a fresh token from your app" }, { status: 401, headers });
@@ -40,8 +43,15 @@ export async function GET(request: Request) {
   if (!context) {
     return refused();
   }
-  const seen = await changelogSeenAt(context.projectId, context.actor.userId);
-  return Response.json({ seen: seen?.toISOString() ?? null }, { headers });
+  const [seen, messages] = await Promise.all([
+    changelogSeenAt(context.projectId, context.actor.userId),
+    context.inbox
+      ? prisma.conversationMessage.count({
+          where: { author: "TEAM", seenAt: null, conversation: { projectId: context.projectId, userId: context.actor.userId } },
+        })
+      : 0,
+  ]);
+  return Response.json({ seen: seen?.toISOString() ?? null, messages }, { headers });
 }
 
 export async function POST(request: Request) {

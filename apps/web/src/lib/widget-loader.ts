@@ -1,5 +1,13 @@
 import { SLUG_PATTERN } from "./project-slugs";
-import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDGET_READY_MESSAGE, WIDGET_SEEN_MESSAGE } from "./widget-messages";
+import {
+  WIDGET_CLOSE_MESSAGE,
+  WIDGET_IDENTIFY_MESSAGE,
+  WIDGET_INLINE_NAME,
+  WIDGET_READY_MESSAGE,
+  WIDGET_SEEN_MESSAGE,
+  WIDGET_SHOWN_MESSAGE,
+  WIDGET_UNSEEN_MESSAGES,
+} from "./widget-messages";
 
 /**
  * The widget loader served at /widget.js, for customers' own sites:
@@ -102,15 +110,24 @@ export function widgetLoader(portalTemplate: string): string {
     try { return fn(window.localStorage); } catch (error) { return null; }
   }
 
-  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")):
-  // whether the latest announcement is newer than what this visitor has seen.
+  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")): whether the
+  // latest announcement is newer than what this visitor has seen, or the team wrote to them (Messages).
   var unseen = false;
+  var unseenMessages = 0;
+  // Counts from the open panel, which knows best: a server answer asked for before the latest of them is old.
+  var panelCounts = 0;
+  var countReads = 0;
+  // The project's support inbox is on: the team may have written to whoever the page signs in.
+  var inbox = false;
   var known = false;
   var latest = null;
   var seen = null;
   var listeners = [];
   function isUnseen() {
     return !!latest && (!seen || latest > seen);
+  }
+  function anyUnseen() {
+    return isUnseen() || unseenMessages > 0;
   }
   // Seen up to \`at\` (ISO times compare as strings): kept if it's later than what this browser had.
   function remember(at) {
@@ -184,10 +201,11 @@ export function widgetLoader(portalTemplate: string): string {
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
+      inbox = !!(data && data.inbox === true);
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen()) checkElsewhere(); else setUnseen(false);
+      if (isUnseen() || (inbox && getToken)) checkElsewhere(); else setUnseen(false);
     });
 
   // People the page signs in (Tuti.identify): up to when they've seen announcements on any
@@ -195,29 +213,39 @@ export function widgetLoader(portalTemplate: string): string {
   // sent to Tuti's API only; null without one, or if it fails.
   function seenOnServer(at) {
     if (!getToken || !window.fetch) return Promise.resolve(null);
+    var asked = panelCounts;
+    // The latest status read only: an older answer that arrives after it is old too.
+    var read = at ? countReads : ++countReads;
     return Promise.resolve()
       .then(function () { return getToken(); })
       .then(function (token) {
-        if (typeof token !== "string" || !token) return null;
+        if (typeof token !== "string" || !token) {
+          // Nobody's signed in now: the team's messages to whoever was aren't theirs.
+          if (!at && asked === panelCounts && read === countReads) unseenMessages = 0;
+          return null;
+        }
         return fetch(api + "/api/widget/seen?project=" + encodeURIComponent(slug), at
           ? { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ at: at }) }
           : { headers: { authorization: "Bearer " + token } })
           .then(function (response) { return response.ok ? response.json() : null; });
       })
-      .then(function (data) { return data && typeof data.seen === "string" ? data.seen : null; })
+      .then(function (data) {
+        if (data && typeof data.messages === "number" && asked === panelCounts && read === countReads) unseenMessages = data.messages;
+        return data && typeof data.seen === "string" ? data.seen : null;
+      })
       .catch(function () { return null; });
   }
-  // Unseen in this browser: maybe they've seen it on another device.
+  // Unseen in this browser: maybe they've seen it on another device; and the team's messages to them.
   function checkElsewhere() {
     return seenOnServer().then(function (at) {
       if (at) remember(at);
-      setUnseen(isUnseen());
+      setUnseen(anyUnseen());
     });
   }
 
-  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs" };
+  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs", messages: "?tab=messages" };
   function tabQuery(tab) {
-    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or docs");
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new, docs or messages");
     return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
   }
   function newFrame(src) {
@@ -243,14 +271,21 @@ export function widgetLoader(portalTemplate: string): string {
     }
     if (panel.style.display === "none") returnFocus = from;
     panel.style.display = "block";
+    tellShown(true);
     showBackdrop();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
 
+  // The floating panel, whether it's on screen: only then does it count the team's replies as seen.
+  function tellShown(shown) {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
+  }
+
   function close() {
     if (panel.style.display === "none") return;
     panel.style.display = "none";
+    tellShown(false);
     showBackdrop();
     button.setAttribute("aria-expanded", "false");
     (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
@@ -309,8 +344,23 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
-      // Signed in after the status was worked out: they may have seen it elsewhere.
-      if (unseen) checkElsewhere();
+      // Read before it's reset below: a count from a panel means the team writes to people here, even
+      // if the inbox flag the script read is from before it was turned on.
+      var check = unseen || inbox;
+      // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
+      // already on their way are too, so they're old now). Their own count comes from the server or a panel.
+      unseenMessages = 0;
+      panelCounts++;
+      if (known) setUnseen(anyUnseen());
+      // Panels already on the page trade the new person's token for their own (a panel kept the one it
+      // had, the previous person's, until it reloads).
+      if (frame) sendToken(frame);
+      var mounts = document.querySelectorAll("[data-tuti-inline]");
+      for (var i = 0; i < mounts.length; i++) {
+        if (mounts[i].__tutiFrame) sendToken(mounts[i].__tutiFrame);
+      }
+      // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
+      if (check) checkElsewhere();
     },
     open: function (options) {
       open(options, document.activeElement);
@@ -331,18 +381,24 @@ export function widgetLoader(portalTemplate: string): string {
 
   // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
   // for: an older one the app answers later may be for someone signed in before.
+  // With nobody signed in (no identify, or it gives no token, or it fails), it says so: token null,
+  // so the panel forgets whoever was signed in before.
   function sendToken(to) {
-    if (!getToken) return;
     var target = to.contentWindow;
+    var tell = function (token) { target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin); };
+    if (!getToken) return tell(null);
     var asked = (to.__tutiAsked = (to.__tutiAsked || 0) + 1);
     Promise.resolve()
       .then(function () { return getToken(); })
       .then(
         function (token) {
           if (asked !== to.__tutiAsked) return;
-          if (typeof token === "string" && token) target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin);
+          tell(typeof token === "string" && token ? token : null);
         },
-        function (error) { console.error("Tuti widget: identify failed", error); }
+        function (error) {
+          console.error("Tuti widget: identify failed", error);
+          if (asked === to.__tutiAsked) tell(null);
+        }
       );
   }
 
@@ -358,7 +414,12 @@ export function widgetLoader(portalTemplate: string): string {
       remember(event.data.at);
       seenOnServer(event.data.at);
       // The panel may have been rendered before a newer announcement than the one it showed.
-      if (!isUnseen()) setUnseen(false);
+      setUnseen(anyUnseen());
+    }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
+      unseenMessages = event.data.count;
+      panelCounts++;
+      setUnseen(anyUnseen());
     }
   });
 })();

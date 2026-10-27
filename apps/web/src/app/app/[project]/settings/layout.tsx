@@ -24,6 +24,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
         items={[
           { title: "Access", href: base },
           { title: "Single sign-on", href: `${base}/sso` },
+          { title: "Support", href: `${base}/support` },
           { title: "Integrations", href: `${base}/integrations` },
           { title: "Developers", href: `${base}/developers` },
           { title: "Usage", href: `${base}/usage` },

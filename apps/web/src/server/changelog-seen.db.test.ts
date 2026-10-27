@@ -45,7 +45,7 @@ async function ask(token: string | null, { at, slug = project.slug }: { at?: str
 const rows = () => prisma.changelogSeen.findMany({ orderBy: [{ projectId: "asc" }, { userId: "asc" }] });
 
 test("someone the page signs in: what they've seen is kept and read back, from any device, and never moves back", async () => {
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: null, messages: 0 });
 
   const response = await ask(await ssoToken("app-user-1"), { at: "2026-10-18T10:00:00.000Z" });
   expect(response.body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
@@ -56,7 +56,7 @@ test("someone the page signs in: what they've seen is kept and read back, from a
 
   // An older time (a device that showed an older list) doesn't move it back.
   expect((await ask(await ssoToken("app-user-1"), { at: "2026-10-01T00:00:00.000Z" })).body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0 });
   // Nor does one from the future go past now.
   const future = await ask(await ssoToken("app-user-1"), { at: "2099-01-01T00:00:00.000Z" });
   expect(new Date(future.body.seen!).getTime()).toBeLessThanOrEqual(Date.now());
@@ -66,20 +66,20 @@ test("someone the page signs in: what they've seen is kept and read back, from a
     ask(await ssoToken("app-user-2"), { at: "2026-10-18T10:00:00.000Z" }),
     ask(await ssoToken("app-user-2"), { at: "2026-10-19T10:00:00.000Z" }),
   ]);
-  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: "2026-10-19T10:00:00.000Z" });
+  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: "2026-10-19T10:00:00.000Z", messages: 0 });
 });
 
 test("each person and project has their own; nobody else's changes", async () => {
   await ask(await ssoToken("app-user-1"), { at: "2026-10-18T10:00:00.000Z" });
-  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: null });
+  expect((await ask(await ssoToken("app-user-2"))).body).toEqual({ seen: null, messages: 0 });
 
   // The same person's id in another project's app is someone else.
   const other = await createProject(await signUp());
   const otherSecret = generateSsoSecret();
   await prisma.project.update({ where: { id: other.id }, data: { ssoSecret: otherSecret } });
-  expect((await ask(await ssoToken("app-user-1", { key: otherSecret }), { slug: other.slug })).body).toEqual({ seen: null });
+  expect((await ask(await ssoToken("app-user-1", { key: otherSecret }), { slug: other.slug })).body).toEqual({ seen: null, messages: 0 });
   await ask(await ssoToken("app-user-1", { key: otherSecret }), { at: "2026-10-19T10:00:00.000Z", slug: other.slug });
-  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z" });
+  expect((await ask(await ssoToken("app-user-1"))).body).toEqual({ seen: "2026-10-18T10:00:00.000Z", messages: 0 });
   expect(await prisma.changelogSeen.count({ where: { projectId: { in: [project.id, other.id] } } })).toBe(2);
 });
 
@@ -135,4 +135,23 @@ test("on the portal, a signed-in user who views the changelog has seen it: the n
   actAs(null);
   expect(await markChangelogSeen(project.slug, new Date().toISOString())).toEqual({ error: "Sign in first" });
   expect(await prisma.changelogSeen.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("with the support inbox on, it also says how many of the team's messages they haven't seen", async () => {
+  await ask(await ssoToken("app-user-1"));
+  const sam = await prisma.ssoIdentity.findFirstOrThrow({ where: { projectId: project.id, externalId: "app-user-1" } });
+  const conversation = await prisma.conversation.create({
+    data: { projectId: project.id, number: 1, subject: "Help", origin: "WIDGET", userId: sam.userId },
+  });
+  await prisma.conversationMessage.createMany({
+    data: [
+      { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: sam.userId, channel: "WIDGET", body: "Help" },
+      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Seen", seenAt: new Date() },
+      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet" },
+    ],
+  });
+  expect((await ask(await ssoToken("app-user-1"))).body).toMatchObject({ messages: 0 });
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+  expect((await ask(await ssoToken("app-user-1"))).body).toMatchObject({ messages: 1 });
+  expect((await ask(await ssoToken("app-user-2"))).body).toMatchObject({ messages: 0 });
 });

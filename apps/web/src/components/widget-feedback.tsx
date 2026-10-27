@@ -5,27 +5,48 @@ import { useEffect, useState } from "react";
 import { NewPostForm } from "@/components/new-post-form";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import { latestOnly } from "@/lib/latest-only";
 import { WIDGET_IDENTIFY_MESSAGE, WIDGET_READY_MESSAGE } from "@/lib/widget-messages";
-import { widgetCreatePost, widgetSignIn } from "@/server/widget";
+import { widgetCreatePost, widgetSignIn, widgetSignOut } from "@/server/widget";
 
 type SignedIn = { id: string; token: string; name: string; email: string | null };
 
-type SignInResult = { signedIn: SignedIn } | { error: string };
+type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true };
 
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
 
-async function onIdentify(event: MessageEvent) {
+// One sign-in exchange at a time, the page's latest identity only: a slower one for someone before
+// can't set its cookie or tell the panel after nobody, or someone else, is signed in.
+const exchange = latestOnly();
+
+function onIdentify(event: MessageEvent) {
   // Only from the page that embeds us; the token proves who it's for, whatever site that is.
   const data = event.data as { type?: unknown; token?: unknown } | null;
   const projectSlug = subscribers.values().next().value?.projectSlug;
-  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || typeof data.token !== "string" || !projectSlug) {
+  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || !projectSlug) {
     return;
   }
-  const result = await widgetSignIn(projectSlug, data.token);
-  for (const subscriber of subscribers) {
-    subscriber.tell("error" in result ? { error: result.error } : { signedIn: result });
+  const tell = (result: SignInResult) => {
+    for (const subscriber of subscribers) {
+      subscriber.tell(result);
+    }
+  };
+  // The page has nobody signed in now (its app gave no token): nobody is, not whoever was before.
+  if (data.token === null) {
+    // Signed out here even if clearing the cookie fails (it lasts until the browser closes or the token expires).
+    exchange(() => widgetSignOut().catch(() => {}), () => tell({ signedOut: true }));
+    return;
   }
+  if (typeof data.token !== "string") {
+    return;
+  }
+  const token = data.token;
+  exchange(
+    // A failed exchange (the network, the server) signs nobody in, not whoever was before.
+    () => widgetSignIn(projectSlug, token).catch(() => ({ error: "Couldn't sign you in" })),
+    (result) => tell("error" in result ? { error: result.error } : { signedIn: result }),
+  );
 }
 
 /**
@@ -47,6 +68,9 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
           setError(result.error);
+          setSignedIn(null);
+        } else if ("signedOut" in result) {
+          setError(undefined);
           setSignedIn(null);
         } else {
           setError(undefined);

@@ -1,3 +1,5 @@
+import { prisma } from "@tuti/db";
+
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { textColorOn, widgetSettings } from "@/server/operations/widget";
@@ -17,7 +19,11 @@ export async function GET(request: Request) {
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
-  const [latest, settings] = await Promise.all([latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }), widgetSettings({ slug })]);
+  const [latest, settings, project] = await Promise.all([
+    latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
+    widgetSettings({ slug }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true } }),
+  ]);
   const launcher = settings && {
     label: settings.label,
     // Null: the loader's brand green, which has a dark-mode shade.
@@ -25,7 +31,8 @@ export async function GET(request: Request) {
     textColor: settings.color && textColorOn(settings.color),
     position: settings.position,
   };
-  return Response.json({ latest: latest?.toISOString() ?? null, launcher }, { headers });
+  // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
+  return Response.json({ latest: latest?.toISOString() ?? null, launcher, inbox: project?.supportInbox ?? false }, { headers });
 }
 
 /** CORS preflight, for browsers that send one (e.g. when extensions or proxies add headers). */

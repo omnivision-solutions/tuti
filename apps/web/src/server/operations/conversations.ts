@@ -1,4 +1,4 @@
-import { type ConversationStatus, type Prisma, prisma } from "@tuti/db";
+import { type ConversationOrigin, type ConversationStatus, type MessageChannel, type Prisma, prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
@@ -213,45 +213,88 @@ export const createConversation = defineOperation({
     const userId = input.user
       ? await upsertProjectUser(projectId, input.user.id, { name: input.user.name, email: input.user.email })
       : null;
-    const slug = await projectSlug(projectId);
-    const now = new Date();
-    const { conversation, message } = await prisma.$transaction(async (tx) => {
-      // Locks the project row, so concurrent conversations get distinct numbers.
-      const { conversationCount: number } = await tx.project.update({
-        where: { id: projectId },
-        data: { conversationCount: { increment: 1 } },
-        select: { conversationCount: true },
-      });
-      const created = await tx.conversation.create({
-        data: {
-          projectId,
-          number,
-          subject: input.subject ?? subjectFrom(input.body),
-          origin: "API",
-          userId,
-          email: input.email?.toLowerCase() ?? null,
-          lastMessageAt: now,
-          waitingSince: now,
-        },
-        select: { ...conversationSelect },
-      });
-      const first = await tx.conversationMessage.create({
-        data: { projectId, conversationId: created.id, author: "USER", authorId: userId, channel: "API", body: input.body, createdAt: now },
-        select: messageSelect,
-      });
-      return { conversation: created, message: first };
+    const { conversation, message } = await startConversation(projectId, {
+      userId,
+      email: input.email ?? null,
+      subject: input.subject,
+      body: input.body,
+      origin: "API",
+      channel: "API",
     });
-    const result = { ...view(conversation, slug), messages: [messageView(message)] };
-    await emitEvent(projectId, "conversation.created", result);
-    return result;
+    return announceConversation(projectId, conversation, message);
   },
 });
+
+/** A new conversation as the API shows it, told to the project's webhooks. */
+export async function announceConversation(projectId: string, conversation: ConversationRow, message: MessageRow) {
+  const result = { ...view(conversation, await projectSlug(projectId)), messages: [messageView(message)] };
+  await emitEvent(projectId, "conversation.created", result);
+  return result;
+}
+
+/** A message from the user, told to the project's webhooks (the team's own replies aren't, so they don't echo back). */
+export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
+  const result = messageView(message);
+  await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
+  return result;
+}
+
+/** A new conversation, numbered in the project, with the user's first message: open, and waiting on the team from now. */
+export async function startConversation(
+  projectId: string,
+  start: {
+    userId: string | null;
+    email: string | null;
+    subject?: string;
+    body: string;
+    origin: ConversationOrigin;
+    channel: MessageChannel;
+    /** Refused (429) when the conversations `where` matches started this many in the last day: checked under the lock, so starts at once can't all pass. */
+    perDay?: { where: Prisma.ConversationWhereInput; max: number };
+  },
+) {
+  const now = new Date();
+  return prisma.$transaction(async (tx) => {
+    // Locks the project row, so concurrent conversations get distinct numbers (and limits hold).
+    const { conversationCount: number } = await tx.project.update({
+      where: { id: projectId },
+      data: { conversationCount: { increment: 1 } },
+      select: { conversationCount: true },
+    });
+    if (start.perDay) {
+      const started = await tx.conversation.count({
+        where: { ...start.perDay.where, projectId, createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60_000) } },
+      });
+      if (started >= start.perDay.max) {
+        throw new OperationError(429, "rate_limited", "You've started a lot of conversations today. Try again tomorrow, or add to one you have.");
+      }
+    }
+    const conversation = await tx.conversation.create({
+      data: {
+        projectId,
+        number,
+        subject: start.subject ?? subjectFrom(start.body),
+        origin: start.origin,
+        userId: start.userId,
+        email: start.email?.toLowerCase() ?? null,
+        lastMessageAt: now,
+        waitingSince: now,
+      },
+      select: conversationSelect,
+    });
+    const message = await tx.conversationMessage.create({
+      data: { projectId, conversationId: conversation.id, author: "USER", authorId: start.userId, channel: start.channel, body: start.body, createdAt: now },
+      select: messageSelect,
+    });
+    return { conversation, message };
+  });
+}
 
 /**
  * Adds a message and moves the conversation on: the team replying leaves it Waiting (on the user),
  * the user writing opens it again and keeps how long they've been waiting from their oldest unanswered message.
  */
-async function addMessage(
+export async function addMessage(
   conversationId: string,
   projectId: string,
   message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string },
@@ -307,12 +350,7 @@ export const replyToConversation = defineOperation({
         body: input.body,
       });
     }
-    const result = messageView(message);
-    // Only the user's messages: a team's own replies don't echo back to it.
-    if (message.author === "USER") {
-      await emitEvent(projectId, "conversation.message_created", { conversation: conversation.number, message: result });
-    }
-    return result;
+    return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);
   },
 });
 
