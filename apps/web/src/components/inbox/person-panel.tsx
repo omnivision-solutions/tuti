@@ -48,9 +48,10 @@ function Links({ items, empty }: { items: { href: string; title: string; meta: s
  * that has posted, voted or commented here (never just any account, which would tell the team who
  * has one).
  */
-async function maybeUser(projectId: string, email: string) {
+export async function maybeUser(projectId: string, email: string) {
   const sso = await prisma.ssoIdentity.findFirst({
-    where: { projectId, email },
+    // Case-insensitive: emails older instances saved kept their capitals.
+    where: { projectId, email: { equals: email, mode: "insensitive" } },
     orderBy: { updatedAt: "desc" },
     select: { externalId: true, user: { select: { name: true } } },
   });
@@ -59,7 +60,7 @@ async function maybeUser(projectId: string, email: string) {
   }
   const account = await prisma.user.findFirst({
     where: {
-      email,
+      email: { equals: email, mode: "insensitive" },
       emailVerified: true,
       ssoIdentity: null,
       OR: [{ posts: { some: { projectId } } }, { votes: { some: { projectId } } }, { comments: { some: { projectId } } }],

@@ -7,7 +7,8 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
-import { widgetConversation, widgetConversations, widgetSendMessage, widgetStartConversation } from "./widget-inbox";
+import { subscribeInbox } from "./live";
+import { widgetConversation, widgetConversations, widgetHere, widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 
 async function setup(inbox = true) {
   const owner = await signUp("Olive Owner");
@@ -177,3 +178,22 @@ test("the total unseen count includes conversations older than the latest 50 the
   expect((listed as { conversations: { number: number }[] }).conversations.map((c) => c.number)).not.toContain(1);
 });
 
+
+test("the shown panel saying they're here makes them online, and tells the team's pages once", async () => {
+  const { project, auth } = await setup();
+  const heard: number[] = [];
+  const stop = subscribeInbox((change) => change.projectId === project.id, () => heard.push(1));
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(await widgetHere(project.slug, auth)).toEqual({});
+    expect(await widgetHere(project.slug, auth)).toEqual({});
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(heard).toHaveLength(1);
+  } finally {
+    stop();
+  }
+  // Reading their conversations alone (a hidden panel's checks) doesn't make them online.
+  const other = await setup();
+  await widgetConversations(other.project.slug, other.auth);
+  expect(await prisma.widgetPresence.count({ where: { projectId: other.project.id } })).toBe(0);
+});

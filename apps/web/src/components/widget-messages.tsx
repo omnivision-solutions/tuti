@@ -14,6 +14,7 @@ import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messa
 import {
   widgetConversation,
   widgetConversations,
+  widgetHere,
   widgetSendMessage,
   widgetStartConversation,
 } from "@/server/widget-inbox";
@@ -152,6 +153,7 @@ function Messages({
 }) {
   const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   const live = useLive(projectSlug, auth);
+  useHere(projectSlug, auth);
   if (view.kind === "new") {
     return (
       <NewConversation
@@ -176,6 +178,20 @@ function Messages({
       onNew={() => setView({ kind: "new" })}
     />
   );
+}
+
+/** While their Messages is on screen, tells the team they're here (now, then every minute); a hidden panel doesn't. */
+function useHere(projectSlug: string, auth: WidgetAuth) {
+  const shown = useShown();
+  useEffect(() => {
+    if (!shown) {
+      return;
+    }
+    const here = () => void widgetHere(projectSlug, auth).catch(() => {});
+    here();
+    const timer = setInterval(here, 60_000);
+    return () => clearInterval(timer);
+  }, [projectSlug, auth, shown]);
 }
 
 /**
@@ -370,10 +386,12 @@ function Composer({
   const submit = () =>
     startTransition(async () => {
       // Offline, or the server failing: say so by the form, and keep what they wrote.
-      const result = await send(text, address).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const sent = text;
+      const result = await send(sent, address).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
-        setText("");
+        // Only what was sent: anything typed meanwhile stays.
+        setText((now) => (now === sent ? "" : now));
       }
     });
   return (
