@@ -1,11 +1,11 @@
 name: Review bot
 
 # One review bot per PR, so each one's rate limits and credits last twice as long.
-# Odd-numbered PRs go to CodeRabbit, even ones to Greptile. A PR labeled
-# review:coderabbit goes to CodeRabbit (.coderabbit.yaml opts it in,
-# greptile.json opts it out). The label is added when an odd PR opens, and when
-# Greptile replies that it can no longer review. Label a PR by hand to switch
-# just that one.
+# Each bot only reviews PRs carrying its label (.coderabbit.yaml, greptile.json),
+# so neither starts before this workflow picks one: review:coderabbit for
+# odd-numbered PRs, review:greptile for even ones. When Greptile replies that it
+# can no longer review, the PR moves to CodeRabbit. Swap the label by hand to
+# switch one PR.
 #
 # pull_request_target so fork PRs can be labeled on open; this workflow never
 # checks out or runs PR code.
@@ -29,13 +29,19 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Hand the PR to CodeRabbit
+      - name: Pick the PR's review bot
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
           EVENT: ${{ github.event_name }}
         run: |
-          if [[ "$EVENT" == pull_request_review ]] || (( PR % 2 )); then
-            gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:coderabbit" --silent
+          if [[ "$EVENT" == pull_request_review ]]; then
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent || true
+            bot=coderabbit
+          elif (( PR % 2 )); then
+            bot=coderabbit
+          else
+            bot=greptile
           fi
+          gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:$bot" --silent
