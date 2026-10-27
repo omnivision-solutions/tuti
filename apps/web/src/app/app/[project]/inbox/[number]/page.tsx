@@ -52,6 +52,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             note: true,
             fromAddress: true,
             original: true,
+            seenAt: true,
+            emailStatus: true,
+            emailError: true,
             createdAt: true,
             authorUser: { select: { name: true } },
           },
@@ -140,6 +143,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                         <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
+                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus) && (
+                        <p className="text-xs text-muted-foreground">
+                          {message.seenAt
+                            ? "Seen"
+                            : message.emailStatus === "SENT"
+                              ? "Emailed"
+                              : `Couldn't email it${message.emailError ? `: ${message.emailError}` : ""}`}
+                        </p>
+                      )}
                       {message.original && (
                         <details className="text-xs text-muted-foreground">
                           <summary className="cursor-pointer">Show the whole email</summary>

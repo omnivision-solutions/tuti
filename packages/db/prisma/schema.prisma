@@ -932,6 +932,12 @@ model Conversation {
   @@map("conversation")
 }
 
+/// A team message's email to the user: sent, or failed after its tries.
+enum EmailStatus {
+  SENT
+  FAILED
+}
+
 /// Received: kept until it's read into a message (or ignored); a failed one for 30 days.
 enum InboundStatus {
   RECEIVED
@@ -1017,6 +1023,14 @@ model ConversationMessage {
   emailMessageId String?
   fromAddress    String?
   original       String?
+  /// The team's messages the user hasn't seen a minute on are emailed to them (docs/plan.md, Support
+  /// inbox, "Reaching the user"): how that went, how many tries, and the claim a sending run holds.
+  emailStatus    EmailStatus?
+  emailAttempts  Int            @default(0)
+  emailClaimedAt DateTime?
+  emailError     String?
+  /// The Message-ID it was emailed with (ours, random): replies that name it in In-Reply-To or References belong here.
+  sentMessageId  String?        @unique
   /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
   seenAt         DateTime?
   createdAt      DateTime       @default(now())
