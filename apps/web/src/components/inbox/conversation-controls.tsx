@@ -34,7 +34,8 @@ export function ConversationStatusSelect({ projectSlug, number, status }: Props 
       </SelectTrigger>
       <SelectContent>
         {(Object.keys(CONVERSATION_STATUS_LABELS) as Status[]).map((s) => (
-          <SelectItem key={s} value={s}>
+          // Waiting is the team having replied last: replying sets it, not this.
+          <SelectItem key={s} value={s} disabled={s === "waiting"}>
             {CONVERSATION_STATUS_LABELS[s]}
           </SelectItem>
         ))}
