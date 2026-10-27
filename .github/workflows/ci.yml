@@ -167,3 +167,26 @@ jobs:
           APP_URL: https://tuti.example
           PORTAL_URL_TEMPLATE: https://{project}.tuti.example
           BETTER_AUTH_SECRET: ci-build-secret-at-least-32-characters-long
+
+  # A failed nightly opens one issue, or comments on it while it's open, so the
+  # failure is seen by more than the cron line's last editor.
+  nightly-failure:
+    name: Report nightly failure
+    needs: [lint, typecheck, test, test-db, e2e, docker, build]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - run: |
+          n=$(gh issue list -R "$REPO" --state open --author app/github-actions --search 'in:title "Nightly CI failed"' --json number --jq '.[0].number')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" -R "$REPO" --body "Failed again: $RUN_URL"
+          else
+            gh issue create -R "$REPO" --title "Nightly CI failed" --body "The nightly CI run on main failed: $RUN_URL. Later failures are added as comments. Close this once the nightly passes again."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
