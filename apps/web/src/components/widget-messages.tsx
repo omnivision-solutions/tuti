@@ -34,17 +34,18 @@ const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNS
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
   const { signedIn, error } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const token = portalSignedIn ? null : (signedIn?.token ?? null);
-  // Signed out after someone was: the team's messages to them aren't anyone's here now (their
-  // counts stopped with their Messages, so this is the page's last word).
+  // The page signed out whoever was here: the team's messages to them aren't anyone's now (their
+  // counts stopped with their Messages, so this is the page's last word). Not when this frame's own
+  // exchange failed: another panel may have the page's person, and their count.
   const wasSignedIn = useRef(false);
   useEffect(() => {
     if (signedIn) {
       wasSignedIn.current = true;
-    } else if (wasSignedIn.current && !portalSignedIn) {
+    } else if (wasSignedIn.current && !portalSignedIn && !error) {
       wasSignedIn.current = false;
       tellPage(0);
     }
-  }, [signedIn, portalSignedIn]);
+  }, [signedIn, portalSignedIn, error]);
   if (!portalSignedIn && !signedIn) {
     return (
       <div className="flex flex-col items-start gap-3">

@@ -709,6 +709,17 @@ test("Tuti.identify again: the team's messages counted for whoever was before st
   expect(page.Tuti.unseen()).toBe(false);
 });
 
+test("Tuti.identify after a panel reported messages the script didn't know the inbox had: the new person's are read", async () => {
+  // The inbox flag was read before the team turned it on.
+  const page = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: false }, messages: 2 });
+  await settled();
+  page.Tuti.open();
+  page.message((page.frame as unknown as { contentWindow: unknown }).contentWindow, { type: "tuti:unseen-messages", count: 3 });
+  page.Tuti.identify(token);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+});
+
 test("the floating panel hears when it's closed and opened again, so a hidden one doesn't count replies as seen", async () => {
   const page = loadWidget({});
   await settled();

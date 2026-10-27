@@ -344,6 +344,9 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
+      // Read before it's reset below: a count from a panel means the team writes to people here, even
+      // if the inbox flag the script read is from before it was turned on.
+      var check = unseen || inbox;
       // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
       // already on their way are too, so they're old now). Their own count comes from the server or a panel.
       unseenMessages = 0;
@@ -357,7 +360,7 @@ export function widgetLoader(portalTemplate: string): string {
         if (mounts[i].__tutiFrame) sendToken(mounts[i].__tutiFrame);
       }
       // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
-      if (unseen || inbox) checkElsewhere();
+      if (check) checkElsewhere();
     },
     open: function (options) {
       open(options, document.activeElement);
