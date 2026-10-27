@@ -4,6 +4,8 @@ import { prisma } from "@tuti/db";
 import { headers } from "next/headers";
 import { z } from "zod";
 
+import { visitorHash } from "@/lib/visitor-session";
+
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
