@@ -9,34 +9,51 @@ Passing checks alone don't mean a PR is done: review bots post after CI starts, 
 
 Each PR gets one review bot, so their rate limits last (`.github/workflows/review-bot.yml`): **CodeRabbit** (`.coderabbit.yaml`) on PRs labeled `review:coderabbit`, **Greptile** (`greptile.json`) on PRs labeled `review:greptile`; neither reviews an unlabeled PR. The workflow labels odd-numbered PRs for CodeRabbit and even ones for Greptile when they open (plus an `@greptileai` comment, since Greptile doesn't start on a label alone), and swaps the label when Greptile says it can no longer review. Swap the label by hand to switch one PR (`gh pr edit <n> --remove-label review:greptile --add-label review:coderabbit`, then `@coderabbitai review` or `@greptileai` if no review starts). On a fork PR the workflow can't add the label after Greptile's lockout (its token is read-only there), so add it yourself, or as the contributor ask a maintainer to. The PR's bot reviews every push, often 10–15 minutes each, and shows up as its status on the commit (`Greptile Review` or `CodeRabbit`). Greptile's "Reactivate Greptile" notice is not a finding. `main` only merges when every review thread is resolved. Each push costs a review, so before opening or pushing: review your own diff for races, partial failures, retries and stale reads, run the full suites, and push fixes together rather than one at a time.
 
+## Read the PR with the digest
+
+`node .claude/skills/pr-watch/pr-digest.mjs [<n>]` (from the repo root) reads the PR's head commit once: its check runs and commit statuses, the review bot its label asks for, review threads, comments and reviews. It prints only what needs a decision, then a `VERDICT`:
+
+| Verdict | Exit | Means |
+| --- | --- | --- |
+| `green` | 0 | The gate below holds, except what only you can judge (last section of it). |
+| `failures` | 10 | A check or status failed on the head (`FAIL` lines). |
+| `no-bot` | 13 | No `review:*` label: no bot reviews this PR. Add one. |
+| `open-comments` | 11 | Comments to answer, threads to resolve or a change request (`[…]` blocks). |
+| `pending` | 12 | Checks or the PR's bot haven't finished on the head (`PENDING`, `BOT` lines). |
+| `out-of-sync` | 20 | Your local branch, the PR head and the remote disagree, the head moved while reading, or the PR conflicts with `main`. Sync or rebase first. |
+
+Use it instead of reading checks and comments with `gh api` by hand. A verdict is good only for the head it names.
+
 ## Wait without polling
 
-- In T3 Code, call `watch_pull_request` with the PR URL and end your turn. You're woken when checks finish, someone comments or reviews, or the branch conflicts.
-- Elsewhere, run `gh pr checks <number> --watch --fail-fast` as one background command. Never sleep-and-poll in the foreground.
+- In T3 Code, call `watch_pull_request` with the PR URL and end your turn. You're woken when checks finish, someone comments or reviews, or the branch conflicts; run the digest on each wake.
+- Elsewhere, run `node .claude/skills/pr-watch/pr-digest.mjs --watch <n>` as one background command. It waits until nothing is pending or a new failure or comment arrives, then prints the digest. Never sleep-and-poll in the foreground.
 
 ## On each wake
 
-1. **Check the head.** `gh pr view <n> --json headRefOid,mergeable,statusCheckRollup`. Results for an older commit don't count; if your local branch and the PR head differ, sync first.
-2. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed`. Fix the cause and push. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
-3. **Review comments.** List them: `gh api --paginate repos/{owner}/{repo}/pulls/<n>/comments` (inline) and `gh pr view <n> --comments` (conversation). Judge each on its merits; bots are confidently wrong often enough to check.
+1. **Failed checks.** Read the log before guessing: `gh run view <run-id> --log-failed` (the run id is in the `FAIL` line's URL). Fix the cause and push. Before calling a failure unrelated or flaky, restore the touched files to `main`, rerun that test, and say what happened in the PR.
+2. **Review comments.** Each `[…]` block is a comment with no reply from you after its latest edit, an unresolved thread, or a change request. Judge each on its merits; bots are confidently wrong often enough to check.
    - Real issue: fix it, push, then reply in the thread saying what changed.
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
-   A comment is answered only when you've replied after its latest edit.
-   - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the GraphQL `resolveReviewThread` mutation; `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
-   - Thread state isn't in the REST comment list. Check it with:
-     `gh api graphql --paginate -f query='query($o:String!,$r:String!,$n:Int!,$endCursor:String){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{id isResolved comments(first:1){nodes{author{login} path body}}}}}}}' -f o=<owner> -f r=<repo> -F n=<n>`
-4. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
+   Reply to an inline comment in its thread: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body='…'`. A conversation comment has no thread: answer with a new `gh pr comment` that quotes its full permalink (the digest prints it). A person's edit after your reply reopens the comment; a bot's edits to its own comment don't.
+   - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the id the digest prints: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`. `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
+3. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
 
 ## Merge when all of these hold
 
-- Every required check passed on the current head commit.
+`VERDICT green` means the first three hold on the head:
+
+- Every check passed on the current head commit.
 - The PR's review bot has reviewed the PR's code. Either its status on the head commit is a success (or it said it skipped the commit), or **all** of these hold:
   - its status was a success on an earlier commit of this PR, and every finding from its reviews is answered;
-  - every push since that commit changes only tests, docs or comments, or is a rebase onto `main` that left the PR's own code as reviewed. Check it: `git diff <reviewed-sha> <head> -- . ':!*.md' ':!docs/**' ':!e2e/**' ':!**/*.test.ts' ':!**/*.test.tsx' ':!**/*.db.test.ts'` shows only comment lines; for a rebase, `git range-diff <reviewed-sha>...<head>` shows the PR's commits unchanged.
+  - every push since that commit changes only tests, docs or comments, or is a rebase onto `main` that left the PR's own code as reviewed.
 
-  Any other change in behaviour waits for the bot's status on the head. Pending, failed or missing means not reviewed yet: check that the status is there, not only that nothing failed (a check that filters for failures passes when the status is missing).
-- Every review comment has a reply, the GraphQL query above shows no unresolved thread, and no review is "changes requested".
+  The digest checks this down to files: if only tests and docs changed since the reviewed commit, the `BOT` line says so and it counts. Comment-only code changes and rebases it leaves `pending`, listing the changed files; judge those yourself: `git diff <reviewed-sha> <head> -- . ':!*.md' ':!docs/**' ':!e2e/**' ':!**/*.test.ts' ':!**/*.test.tsx'` shows only comment lines, or `git range-diff <reviewed-sha>...<head>` shows the PR's commits unchanged. A rebase replaces the PR's commits, so find the reviewed one in the PR's timeline. Any other change in behaviour waits for the bot's status on the head.
+- Every review comment has a reply, no review thread is unresolved, and no review is "changes requested".
+
+And one only you can check:
+
 - The PR description still matches what the PR does.
 
 Then `gh pr merge <n> --squash --delete-branch`, update local `main`, and in T3 Code call `unwatch_pull_request` if you're handing back to the user.
