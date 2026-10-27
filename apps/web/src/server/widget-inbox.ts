@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 
 import { countEmailedLink } from "./email-link-limits";
+import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
 import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
@@ -153,14 +154,25 @@ export async function widgetStartConversation(
       return { error: "error" in counted ? counted.error : "Too many messages from here in the last hour. Try again later." };
     }
   }
-  const { conversation, message } = await startConversation(who.projectId, {
-    userId: who.userId,
-    email: signedOutEmail,
-    visitorHash: who.visitorHash,
-    body: parsed.data,
-    origin: "WIDGET",
-    channel: "WIDGET",
-  });
+  let started;
+  try {
+    started = await startConversation(who.projectId, {
+      userId: who.userId,
+      email: signedOutEmail,
+      visitorHash: who.visitorHash,
+      body: parsed.data,
+      origin: "WIDGET",
+      channel: "WIDGET",
+      // Checked again under the project's lock: starts at once can't all pass the check above.
+      perDay: { where: who.where, max: NEW_CONVERSATIONS_PER_DAY },
+    });
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+  const { conversation, message } = started;
   await announceConversation(who.projectId, conversation, message);
   return { number: conversation.number, ...(visitor && { visitor }) };
 }

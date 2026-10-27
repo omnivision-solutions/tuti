@@ -19,6 +19,21 @@ import { getAssistantSettings, updateAssistantSettings } from "./operations/assi
 import { askAPerson, escalateDocs as escalateOperation } from "./operations/docs-escalate";
 import { getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
+
+/** Makes announcing a new conversation fail (webhooks, the team's email), once it's started. */
+const announcing = vi.hoisted(() => ({ fails: false }));
+vi.mock("./operations/conversations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations/conversations")>();
+  return {
+    ...actual,
+    announceConversation: async (...args: Parameters<typeof actual.announceConversation>) => {
+      if (announcing.fails) {
+        throw new Error("Announcing failed");
+      }
+      return actual.announceConversation(...args);
+    },
+  };
+});
 import { upsertProjectUser } from "./project-users";
 import { widgetConversation } from "./widget-inbox";
 
@@ -544,5 +559,20 @@ describe("with the support inbox on, from the widget", () => {
       conversation: 1,
     });
     expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ userId, email: null, visitorHash: null });
+  });
+
+  test("once the conversation is started, the question stays passed on even if announcing it fails", async () => {
+    const reader = asReader();
+    const question = await asked(reader, { source: "WIDGET" });
+    model.reply("They want to pay in crypto.");
+    announcing.fails = true;
+    try {
+      expect(await escalateDocs(project.slug, question.id, newAddress(), "", "widget", {})).toEqual({ conversation: 1, visitor: expect.any(String) });
+    } finally {
+      announcing.fails = false;
+    }
+    expect(await escalated(question.id)).toEqual({ escalatedAt: expect.any(Date), escalatedTo: null });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "", "widget", {})).toEqual({ error: "You've already passed this question to the team" });
+    expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(1);
   });
 });
