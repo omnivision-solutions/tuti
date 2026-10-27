@@ -1,6 +1,7 @@
 {
   "autoReview": ["open", "push", "rebase"],
   "statusCheck": true,
+  "labels": ["review:greptile"],
   "disabledLabels": ["review:coderabbit"],
   "ignorePatterns": "pnpm-lock.yaml\n**/*.png\n**/*.jpg",
   "customContext": {

@@ -18,7 +18,7 @@ reviews:
     docstrings:
       mode: "off"
   auto_review:
-    # Greptile is the default reviewer; CodeRabbit only reviews PRs labeled
+    # Greptile and CodeRabbit take turns; CodeRabbit only reviews PRs labeled
     # review:coderabbit (see .github/workflows/review-bot.yml).
     enabled: false
     labels:
