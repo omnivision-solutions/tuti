@@ -743,3 +743,17 @@ test("Tuti.identify with someone else hands the new token to panels already open
     expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:identify", token: "someone-else" }, "https://acme.tuti.example");
   }
 });
+
+test("when the page's new identify gives no token or fails, open panels hear nobody's signed in", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const page = loadWidget({ settings: { identify: token }, latest: LATEST });
+  await settled();
+  page.Tuti.open();
+  const panel = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  for (const identify of [() => Promise.resolve(""), () => Promise.reject(new Error("Signed out"))]) {
+    page.Tuti.identify(identify);
+    await settled();
+    expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:identify", token: null }, "https://acme.tuti.example");
+  }
+  error.mockRestore();
+});
