@@ -544,6 +544,8 @@ const matrix: Matrix = {
         return widget.widgetSignIn(slug, jwt);
       },
     },
+    // Only clears the caller's own cookie.
+    widgetSignOut: { allowed: "public", call: () => widget.widgetSignOut() },
     saveWidgetSettings: {
       allowed: "ADMIN",
       call: (slug) => widget.saveWidgetSettings(slug, {}, form({ label: "Help", color: "#5b21b6", position: "bottom-left" })),
