@@ -15,7 +15,7 @@ export function InviteEmail({ inviterName, projectName, roleLabel, url }: Invite
       </Text>
       <Button
         href={url}
-        style={{ backgroundColor: colors.green, color: "#ffffff", borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
       >
         Accept invite
       </Button>

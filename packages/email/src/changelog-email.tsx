@@ -26,7 +26,7 @@ export function ChangelogEmail({ projectName, entryTitle, entryUrl, doc, mediaUr
       <EmailRichText doc={doc} mediaUrls={mediaUrls} linkUrl={entryUrl} />
       <Button
         href={entryUrl}
-        style={{ backgroundColor: colors.green, color: "#ffffff", borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
+        style={{ backgroundColor: colors.green, color: colors.onGreen, borderRadius: 10, padding: "12px 20px", fontSize: 15, fontWeight: 600 }}
       >
         See the update
       </Button>
