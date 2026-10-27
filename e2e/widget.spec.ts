@@ -1117,10 +1117,16 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
 
-  // Back later in the same browser: their conversation is still there.
+  // Back later in the same browser: their conversation is still there. But not before the page says
+  // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
+  // mustn't write as the visitor and lose sight of it.
+  await visitor.context().addInitScript(() => {
+    (window as unknown as { TutiSettings: unknown }).TutiSettings = { identify: () => new Promise(() => {}) };
+  });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByText("Loading…")).toBeVisible();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
 
   // Another browser has none of it.

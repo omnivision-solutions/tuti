@@ -118,12 +118,12 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   }, [known, visitor, projectSlug]);
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
+  // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
+  // to sign in would write in a conversation they'd lose sight of once it does.
+  if (!known && !pageAnswered) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
   if (!known && !visitor) {
-    // Until the page says who's here, nobody writes as a visitor: someone it's about to sign in would
-    // start a conversation they'd lose sight of once it does.
-    if (!pageAnswered) {
-      return <p className="text-sm text-muted-foreground">Loading…</p>;
-    }
     return (
       <FirstMessage
         projectSlug={projectSlug}
