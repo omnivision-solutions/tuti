@@ -138,11 +138,11 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   const mine = conversation.filter((c) => c.user.login === viewer);
   const bodies = [
     ...conversation.map((c) => ({ ...c, at: since(c), kind: "conversation" })),
-    ...reviews.filter((r) => r.body).map((r) => ({ ...r, at: r.submitted_at, kind: "review" })),
+    ...reviews.filter((r) => r.body).map((r) => ({ ...r, at: since({ ...r, created_at: r.submitted_at, updated_at: r.edited_at ?? r.submitted_at }), kind: "review" })),
   ];
   for (const c of bodies) {
     // Nothing to answer: chrome, or only markup (Greptile's approval is an HTML comment).
-    if (c.user.login === viewer || isNoise(c) || !clean(c.body)) continue;
+    if (c.user.login === viewer || isNoise(c) || !clean(c.body, true)) continue;
     if (mine.some((m) => m.created_at > c.at && links(m.body).includes(c.html_url))) continue;
     findings.push({ key: `${c.id}:${c.at}`, title: `${c.id} ${c.user.login} ${c.kind} · no reply quoting ${c.html_url}`, body: c.body, review: c.kind === "review" });
   }
@@ -182,6 +182,9 @@ const THREADS = `query($owner: String!, $name: String!, $number: Int!, $endCurso
     reviewThreads(first: 100, after: $endCursor) {
       pageInfo { hasNextPage endCursor } nodes { id isResolved comments(first: 1) { nodes { databaseId } } } } } } }`;
 
+const EDITS = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviews(last: 100) { nodes { databaseId lastEditedAt } } } } }`;
+
 function observe(repo, viewer, number) {
   const pr = gh("pr", "view", number, "--repo", repo, "--json", "number,state,headRefOid,headRefName,mergeable,labels");
   const head = pr.headRefOid;
@@ -191,7 +194,12 @@ function observe(repo, viewer, number) {
     .flatMap((p) => p.data.repository.pullRequest.reviewThreads.nodes);
   const inline = pages(`repos/${repo}/pulls/${pr.number}/comments?per_page=100`).flat();
   const conversation = pages(`repos/${repo}/issues/${pr.number}/comments?per_page=100`).flat();
-  const reviews = pages(`repos/${repo}/pulls/${pr.number}/reviews?per_page=100`).flat();
+  // REST has no edit time for a review; GraphQL does.
+  const edited = new Map(
+    gh("api", "graphql", "-f", `query=${EDITS}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `number=${pr.number}`)
+      .data.repository.pullRequest.reviews.nodes.map((r) => [r.databaseId, r.lastEditedAt]),
+  );
+  const reviews = pages(`repos/${repo}/pulls/${pr.number}/reviews?per_page=100`).flat().map((r) => ({ ...r, edited_at: edited.get(r.id) ?? undefined }));
 
   let earlier;
   const bot = BOTS[pr.labels.map((l) => l.name).find((n) => n in BOTS)];

@@ -169,6 +169,13 @@ describe("pr-digest", () => {
       expect(observe({ reviews: [outside], conversation: [answer] }).verdict).toBe("green");
       const header = review(5, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "**Actionable comments posted: 2**");
       expect(observe({ reviews: [header] }).verdict).toBe("green");
+      const person = review(7, "reviewer", "COMMENTED", "2026-01-01T00:00:00Z", "Looks fine");
+      const answered = comment(22, viewer, person.html_url, "2026-01-02T00:00:00Z");
+      expect(observe({ reviews: [person], conversation: [answered] }).verdict).toBe("green");
+      expect(observe({ reviews: [{ ...person, edited_at: "2026-01-03T00:00:00Z" }], conversation: [answered] }).verdict).toBe("open-comments");
+      expect(observe({ reviews: [{ ...outside, edited_at: "2026-01-03T00:00:00Z" }], conversation: [answer] }).verdict).toBe("green");
+      const collapsed = review(8, "reviewer", "COMMENTED", "2026-01-01T00:00:00Z", "<details><summary>One question</summary>Why poll?</details>");
+      expect(observe({ reviews: [collapsed] }).verdict).toBe("open-comments");
       const approval = review(6, "greptile-apps[bot]", "APPROVED", "2026-01-01T00:00:00Z", '<!-- greptile-auto-approve {"headSha":"a"} -->\n');
       expect(observe({ reviews: [approval] }).verdict).toBe("green");
     });
