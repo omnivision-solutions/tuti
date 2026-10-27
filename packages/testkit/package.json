@@ -15,10 +15,10 @@
     "@testcontainers/postgresql": "^12.2.1",
     "@tuti/typescript-config": "workspace:*",
     "@types/mailparser": "^3.9.0",
-    "@types/node": "^22",
+    "@types/node": "^22.20.5",
     "@types/smtp-server": "^3.5.13",
-    "mailparser": "^3.9.40",
-    "smtp-server": "^3.19.23",
+    "mailparser": "^3.12.4",
+    "smtp-server": "^3.21.1",
     "typescript": "^6.0.3"
   }
 }

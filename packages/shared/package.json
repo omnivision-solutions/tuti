@@ -14,14 +14,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hatchet-dev/typescript-sdk": "^1.33.2",
+    "@hatchet-dev/typescript-sdk": "^1.44.0",
     "aws4fetch": "^1.0.20",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tuti/testkit": "workspace:*",
     "@tuti/typescript-config": "workspace:*",
-    "@types/node": "^22",
+    "@types/node": "^22.20.5",
     "typescript": "^6.0.3"
   }
 }

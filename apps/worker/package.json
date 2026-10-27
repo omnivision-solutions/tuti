@@ -12,27 +12,27 @@
     "release:media": "tsx --env-file-if-exists=.env src/scripts/release-media.ts"
   },
   "dependencies": {
-    "@hatchet-dev/typescript-sdk": "^1.33.2",
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
+    "@hatchet-dev/typescript-sdk": "^1.44.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@react-email/components": "^1.0.12",
     "@react-email/render": "^2.1.1",
     "@tuti/db": "workspace:*",
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
-    "nodemailer": "^10.1.2",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "nodemailer": "^10.2.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "sharp": "^0.35.5",
-    "undici": "^7.30.0",
-    "zod": "^4.6.5"
+    "undici": "^7.30.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tuti/typescript-config": "workspace:*",
-    "@types/node": "^22",
-    "tsup": "^8",
-    "tsx": "^4",
+    "@types/node": "^22.20.5",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
 }
