@@ -3,6 +3,13 @@ import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
 import { analyseCodeChange, applyCodeChangeAction, dismissCodeChangeAction, getCodeChange, listCodeChanges, resumeCodeChanges } from "./code-changes";
 import { createComment, createPost } from "./create";
+import {
+  createConversation,
+  getConversation,
+  listConversations,
+  replyToConversation,
+  updateConversation,
+} from "./conversations";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
@@ -68,6 +75,11 @@ export { type Actor, type ApiKeyActor, type Operation, OperationError } from "./
 const all = [
   getProject,
   listTeam,
+  listConversations,
+  getConversation,
+  createConversation,
+  replyToConversation,
+  updateConversation,
   listBoards,
   getRoadmap,
   listChangelog,

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { timeAgo } from "./format";
+import { shortDuration, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -15,4 +15,13 @@ test.each([
   [400 * 24 * 3600, "last year"],
 ])("%i seconds → %j", (seconds, text) => {
   expect(ago(seconds)).toBe(text);
+});
+
+test.each([
+  [30, "1m"],
+  [45 * 60, "45m"],
+  [3 * 3600 + 59 * 60, "3h"],
+  [49 * 3600, "2d"],
+])("shortDuration: %i seconds → %j", (seconds, text) => {
+  expect(shortDuration(new Date(now.getTime() - seconds * 1000), now)).toBe(text);
 });

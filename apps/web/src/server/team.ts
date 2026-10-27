@@ -1,6 +1,6 @@
 "use server";
 
-import { type TeamRole, prisma } from "@tuti/db";
+import { type Prisma, type TeamRole, prisma } from "@tuti/db";
 import { refresh, revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -53,6 +53,14 @@ export async function changeTeamRole(projectSlug: string, memberId: string, role
   return {};
 }
 
+/** Takes someone off the team; the conversations assigned to them become unassigned. */
+async function removeFromTeam(projectId: string, userId: string, member: Prisma.TeamMemberWhereUniqueInput) {
+  await prisma.$transaction([
+    prisma.teamMember.delete({ where: member }),
+    prisma.conversation.updateMany({ where: { projectId, assigneeId: userId }, data: { assigneeId: null } }),
+  ]);
+}
+
 export async function removeMember(projectSlug: string, memberId: string): Promise<Result> {
   const pair = await loadPair(projectSlug, memberId);
   if (!pair) {
@@ -69,7 +77,7 @@ export async function removeMember(projectSlug: string, memberId: string): Promi
   if (await isLastOwner(actor.project.id, target.role)) {
     return { error: "A project needs at least one owner" };
   }
-  await prisma.teamMember.delete({ where: { id: target.id } });
+  await removeFromTeam(actor.project.id, target.userId, { id: target.id });
   refresh();
   return {};
 }
@@ -83,8 +91,8 @@ export async function leaveProject(projectSlug: string): Promise<Result> {
   if (await isLastOwner(membership.project.id, membership.role)) {
     return { error: "You're the only owner. Make someone else an owner before leaving." };
   }
-  await prisma.teamMember.delete({
-    where: { projectId_userId: { projectId: membership.project.id, userId: session.user.id } },
+  await removeFromTeam(membership.project.id, session.user.id, {
+    projectId_userId: { projectId: membership.project.id, userId: session.user.id },
   });
   // The /app layout lists your projects; refresh it before navigating.
   revalidatePath("/app", "layout");

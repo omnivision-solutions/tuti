@@ -44,6 +44,7 @@ import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
 import * as groups from "./groups";
+import * as inbox from "./inbox";
 import * as invitations from "./invitations";
 import * as licenseCheckout from "./license-checkout";
 import * as managePosts from "./manage-posts";
@@ -83,6 +84,7 @@ const modules = {
   docs,
   "docs-readers": docsReaders,
   groups,
+  inbox,
   invitations,
   "license-checkout": licenseCheckout,
   "manage-posts": managePosts,
@@ -349,6 +351,12 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (_slug, f) => invitations.declineInvitation(f.emailInvitationId),
     },
+  },
+  inbox: {
+    replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
+    setConversationStatus: { allowed: "MEMBER", call: (slug) => inbox.setConversationStatus(slug, 1, "closed") },
+    assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
+    markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
@@ -618,7 +626,19 @@ async function createFixture(own: "domain" | "site" = "domain") {
       }),
     ),
   );
-  await prisma.project.update({ where: { id: projectId }, data: { postCount: 2 } });
+  await prisma.project.update({ where: { id: projectId }, data: { postCount: 2, conversationCount: 1 } });
+  // Conversation #1, from an email address.
+  await prisma.conversation.create({
+    data: {
+      projectId,
+      number: 1,
+      subject: "Help",
+      origin: "API",
+      email: "e2e-asker@example.com",
+      waitingSince: new Date(),
+      messages: { create: { projectId, author: "USER", channel: "API", body: "Help" } },
+    },
+  });
   const suggestion = await prisma.duplicateSuggestion.create({
     data: { projectId, postId: duplicate!.id, originalId: post!.id, similarity: 0.9 },
   });

@@ -7,6 +7,8 @@ export const WEBHOOK_EVENTS = {
   "comment.created": "New comment",
   "changelog.published": "Changelog published",
   "code_change.ready": "Code change ready",
+  "conversation.created": "New conversation",
+  "conversation.message_created": "New message from a user",
 } as const;
 
 export type WebhookEvent = keyof typeof WEBHOOK_EVENTS;
