@@ -17,7 +17,7 @@ export function PersonDetails({ name, children }: { name: string; children: Reac
         </Card>
       </aside>
       <Sheet>
-        <SheetTrigger render={<Button variant="outline" size="sm" className="self-start lg:hidden" />}>
+        <SheetTrigger render={<Button variant="outline" size="sm" className="h-auto max-w-full self-start text-left break-all whitespace-normal lg:hidden" />}>
           <UserIcon />
           About {name}
         </SheetTrigger>
