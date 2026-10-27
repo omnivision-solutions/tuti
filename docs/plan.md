@@ -148,7 +148,8 @@ Test layers (set up in Phase 4):
 - [x] Screenshots on PRs: after CI, a trusted workflow uploads the journey screenshots to S3-compatible storage (R2 bucket `tuti-ci`, public at `ci.tuti.so`, 30-day expiry) and posts them in one PR comment (like rakazo, which uses Hetzner Object Storage)
 - [x] Journeys (with screenshots) for every screen: feedback + merge + filters, email verification, invites (by email, wrong account, dashboard), boards (create, change URL with redirect, delete, portal tabs), SSO (enable, sign-in, replayed token, disable), duplicates (typing suggestions, flagged list, panel, "Not a duplicate"), accounts (project switcher, account settings, sign-out and sign-in on the app and on a portal), Continue as, rich text, and the main team and portal screens at phone width and in dark mode (checked for sideways scrolling). New screens add their journey in the PR that builds them
 - [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
-- [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
+- [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else the digest's `--watch`), answer every finding, at most 20 rounds; never merge with open findings
+- [x] `pr-digest` for pr-watch (ported from rakazo): one read of the PR's head prints its failures, its review bot's state, unanswered comments and unresolved threads, and a verdict that applies the merge gate (a missing bot status is pending, never a pass)
 
 ## Phase 5 — Open source
 
@@ -158,7 +159,9 @@ Test layers (set up in Phase 4):
 - [ ] CLA (CLA Assistant bot on PRs) before the first outside contribution, so Tuti can also be offered under a commercial licence
 - [x] Make the repo public; `main` ruleset: required checks from Phase 4, squash-only, resolved review threads, no force pushes or deletion; secret scanning with push protection
 - [x] Review bots: CodeRabbit (free for public repos; `.coderabbit.yaml`, follows AGENTS.md); Dependabot security updates
+- [x] Weekly dependency updates (`weekly-dependencies.yml`, `.github/DEPENDENCY_UPDATES.md`): Claude Code, on a Claude subscription, updates the npm dependencies every Monday and opens one PR (what it updated, held back and why); it runs as an unprivileged user without the GitHub write token, and the patch is applied in a fresh job that rejects workflow, instruction and env file changes. Alongside Dependabot security updates
 - [x] One review bot per PR so their rate limits last (`review-bot.yml`): odd-numbered PRs get CodeRabbit, even ones Greptile; a PR moves to CodeRabbit (label `review:coderabbit`) when Greptile says it can no longer review
+- [x] Migrations keep working with the previous release, which runs beside the new schema during a deploy: the rule in AGENTS.md, checked by `packages/db/src/migrations.test.ts` (no drops, renames, retypes or new required columns without a `-- Previous release:` note) and by both review bots
 - [x] CI safety for forks: tests need no secrets; never run fork code with secrets (no `pull_request_target` checkouts)
 - [ ] Dogfood: Tuti's own feedback portal for Tuti
 

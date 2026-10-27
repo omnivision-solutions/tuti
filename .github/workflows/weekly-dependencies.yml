@@ -1,0 +1,140 @@
+name: Weekly dependency updates
+
+# Claude Code updates the dependencies once a week and one PR goes up for review.
+# Setup and the security model: .github/DEPENDENCY_UPDATES.md.
+#
+# Schedule and manual dispatch only, on main: no pull request's code ever runs
+# here, so fork code never sees these secrets. Actions are pinned by SHA because
+# this workflow holds secrets.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: weekly-dependencies
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      changed: ${{ steps.patch.outputs.changed }}
+      base: ${{ steps.base.outputs.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Skip when an update PR is already open
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --base main --state open --limit 1000 --json headRefName,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false and (.headRefName | startswith("deps/weekly-")))] | length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+      - name: Record base revision
+        id: base
+        if: steps.existing.outputs.count == '0'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.existing.outputs.count == '0'
+        with:
+          node-version: 22
+      - name: Prepare an unprivileged user for Claude Code
+        id: prepare
+        if: steps.existing.outputs.count == '0'
+        run: |
+          set -euo pipefail
+          # Into Node's own directory, which the other user can read: package.json's pnpm and a pinned Claude Code.
+          npm install --global "$(node -p 'require("./package.json").packageManager')" @anthropic-ai/claude-code@2.1.311
+          sudo useradd --create-home --shell /bin/bash claude-updater
+          sudo chown -R claude-updater:claude-updater "$GITHUB_WORKSPACE"
+          install -d -m 700 "$RUNNER_TEMP/dependency-update"
+      - name: Update dependencies with Claude Code
+        if: steps.prepare.outcome == 'success'
+        timeout-minutes: 50
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Claude and every package script it runs are another user, with only the
+          # subscription token: none of the runner's tokens or files. The final
+          # message (the PR description) is the only output kept; the session isn't saved.
+          # The placeholders are the ones CI builds with.
+          sudo -n -H -u claude-updater --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env \
+            PATH="$PATH" \
+            APP_URL=https://tuti.example \
+            PORTAL_URL_TEMPLATE='https://{project}.tuti.example' \
+            BETTER_AUTH_SECRET=ci-build-secret-at-least-32-characters-long \
+            claude -p --dangerously-skip-permissions --no-session-persistence --output-format text \
+            < .github/prompts/weekly-dependencies.md \
+            > "$RUNNER_TEMP/dependency-update/pr.md"
+      - name: Collect the patch
+        id: patch
+        if: success() && steps.prepare.outcome == 'success'
+        env:
+          UPDATE_BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # Git runs as the agent's user too: the checkout's git config is untrusted now.
+          sudo -n -H -u claude-updater env UPDATE_BASE="$UPDATE_BASE" \
+            bash -e -o pipefail -c 'git add -N .; git diff --no-ext-diff --binary "$UPDATE_BASE"' \
+            > "$RUNNER_TEMP/dependency-update/update.patch"
+          if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then
+            test -s "$RUNNER_TEMP/dependency-update/pr.md"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.patch.outputs.changed == 'true'
+        with:
+          name: weekly-dependency-update
+          path: |
+            ${{ runner.temp }}/dependency-update/update.patch
+            ${{ runner.temp }}/dependency-update/pr.md
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.update.outputs.base }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: weekly-dependency-update
+          path: ${{ runner.temp }}/dependency-update
+      - name: Check and apply the patch
+        run: bash .github/scripts/apply-dependency-update.sh "$RUNNER_TEMP/dependency-update/update.patch"
+      # A PR opened with GITHUB_TOKEN wouldn't start CI, so a fine-grained token opens it.
+      - name: Push the branch and open the PR
+        env:
+          GH_TOKEN: ${{ secrets.GH_DEPENDENCY_UPDATES_PAT }}
+        run: |
+          set -euo pipefail
+          git config core.hooksPath /dev/null
+          git config commit.gpgsign false
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          branch="deps/weekly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$branch"
+          git commit -m 'Dependencies: weekly update'
+          gh auth setup-git
+          git push --set-upstream origin "$branch"
+          gh pr create --base main --head "$branch" --title 'Dependencies: weekly update' \
+            --body-file "$RUNNER_TEMP/dependency-update/pr.md"

@@ -38,6 +38,11 @@ reviews:
       instructions: >-
         Tests must be deterministic and offline: no real network calls, API keys or
         shared databases. External services use the fakes in @tuti/testkit.
+    - path: "packages/db/prisma/migrations/**"
+      instructions: >-
+        The previous release keeps running against the new schema during a deploy. Check
+        that the migration works with the code on main before this PR: no dropped, renamed,
+        retyped or newly required columns or tables it still reads or writes (see AGENTS.md).
     - path: ".github/workflows/**"
       instructions: >-
         CI runs pull requests from forks: it must never need secrets, and must never
