@@ -19,7 +19,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: [...sources, "vitest.setup.test.ts", ".claude/skills/*/*.test.ts"],
+          include: [...sources, "vitest.setup.test.ts", ".claude/skills/*/*.test.ts", ".github/scripts/*.test.ts"],
           exclude: [...dbTests, ...liveTests],
           setupFiles: ["./vitest.setup.ts"],
         },
