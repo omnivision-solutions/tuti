@@ -32,7 +32,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 ## Pull requests
 
 - One topic per PR, small enough to review in a few minutes. Squash-merged into `main`.
-- The description says **Why** (the product reason), **What changed**, and **How tested**. Describe results in words; don't paste tool output.
+- The description says **Why**, **What changed**, and **How tested**. Why is the product reason: what was wrong and what this changes, never `<name> wants` or a briefing about a named person; the maintainer is the author. Describe results in words; don't paste tool output.
 - New user-facing text: quote it in the description and say why it's needed.
 - UI changes: include a screenshot of the changed screen.
 - A failing check you believe is unrelated: prove it by restoring the touched files to `main` and rerunning that test; say so in the PR.
@@ -40,7 +40,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 
 ## Public repository
 
-Tuti is open source: everything tracked, and every commit message, PR, issue and comment, is public. No secrets, `.env` files, real user data, private hostnames, account or project ids, or local paths. Use placeholders.
+Tuti is open source: everything tracked, and every commit message, PR, issue and comment, is public. No secrets, `.env` files, real user data, or anything that identifies a person, machine or account: local paths, usernames, private hostnames, account emails, signing identities, legal entity names, or account, project, key, issuer or tenant ids. Use placeholders. No business metrics either (analytics, traffic, click-through, conversion, signup, revenue or star-growth numbers): give the product reason in words, even when data motivated the change.
 
 CI runs pull requests from forks, so it must never need secrets, and workflows never check out or run a pull request's code under `pull_request_target` (it has write access and secrets).
 

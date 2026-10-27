@@ -1,6 +1,6 @@
 ## Why
 
-<!-- The product reason: what problem does this solve, for whom? -->
+<!-- The product reason: what was wrong, for whom, and what this changes. -->
 
 ## What changed
 
