@@ -198,7 +198,8 @@ function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
   const mounted = useRef(false);
   const run = useCallback(() => {
     const mine = ++sequence.current;
-    return load(() => mounted.current && mine === sequence.current);
+    // Offline or the server failing: the next run tries again (and a send that worked isn't said to have failed).
+    return load(() => mounted.current && mine === sequence.current).catch(() => {});
   }, [load]);
   useEffect(() => {
     mounted.current = true;
