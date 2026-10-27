@@ -31,7 +31,7 @@ function Links({ items, empty }: { items: { href: string; title: string; meta: s
     <ul className="flex flex-col gap-1">
       {items.map((item) => (
         <li key={item.href} className="flex min-w-0 items-baseline justify-between gap-2 text-sm">
-          <Link href={item.href} className="min-w-0 truncate hover:underline">
+          <Link href={item.href} className="min-w-0 break-words hover:underline">
             {item.title}
           </Link>
           <span className="shrink-0 text-xs text-muted-foreground">{item.meta}</span>
