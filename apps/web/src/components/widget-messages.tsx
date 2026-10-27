@@ -290,7 +290,8 @@ function ConversationList({
       }
       if ("error" in result) {
         // A visitor token that no longer checks out (30 days on): they start again with their email.
-        if (auth.visitor) {
+        // Not when Messages is only off for now: their token still works once it's back on.
+        if (auth.visitor && "expired" in result) {
           visitorStore.write(projectSlug, null);
         }
         setError(result.error);
@@ -352,7 +353,8 @@ function Composer({
   const [pending, startTransition] = useTransition();
   const submit = () =>
     startTransition(async () => {
-      const result = await send(text, address);
+      // Offline, or the server failing: say so by the form, and keep what they wrote.
+      const result = await send(text, address).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
         setText("");

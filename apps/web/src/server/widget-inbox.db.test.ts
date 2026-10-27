@@ -62,7 +62,7 @@ test("nobody reaches another person's conversations, another project's, or any w
   // A token for another project, a made-up one, or none (and nobody signed in on the portal).
   const other = await setup();
   for (const bad of [other.auth, { token: "not-a-token" }, { visitor: "not-a-token" }, {}]) {
-    expect(await widgetConversations(project.slug, bad)).toEqual(signInFirst);
+    expect(await widgetConversations(project.slug, bad)).toMatchObject(signInFirst);
     expect(await widgetConversation(project.slug, bad, 1)).toEqual(signInFirst);
   }
   // A widget token that doesn't check out isn't taken as someone signed out either.
@@ -107,10 +107,15 @@ test("someone signed out gives their email, gets a visitor token, and sees only 
   expect(await widgetConversations(project.slug, strangerAuth)).toMatchObject({ conversations: [{ number: 3 }] });
   expect(await widgetConversation(project.slug, strangerAuth, 1)).toEqual({ error: "Conversation not found" });
 
-  // A visitor token runs out after 30 days.
+  // With Messages off for now, the token isn't said to have run out: the panel keeps it for when they're back on.
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: false } });
+  expect(await widgetConversations(project.slug, visitor)).toEqual(signInFirst);
+  await prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } });
+
+  // A visitor token runs out after 30 days, and the answer says so (the panel then forgets it).
   vi.useFakeTimers({ now: Date.now() + 31 * 24 * 60 * 60_000, toFake: ["Date"] });
   try {
-    expect(await widgetConversations(project.slug, visitor)).toEqual(signInFirst);
+    expect(await widgetConversations(project.slug, visitor)).toEqual({ ...signInFirst, expired: true });
   } finally {
     vi.useRealTimers();
   }
