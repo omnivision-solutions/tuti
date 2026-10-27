@@ -25,28 +25,24 @@ const VIEWS = {
 } as const;
 type View = keyof typeof VIEWS;
 
+/** A view's conversations: always this project's, whatever the view. */
 function viewWhere(view: View, projectId: string, userId: string): Prisma.ConversationWhereInput {
-  const inbox = { projectId, spam: false };
-  switch (view) {
-    case "open":
-      return { ...inbox, status: "OPEN" };
-    case "mine":
-      return { ...inbox, assigneeId: userId, status: { not: "CLOSED" } };
-    case "unassigned":
-      return { ...inbox, assigneeId: null, status: "OPEN" };
-    case "waiting":
-      return { ...inbox, status: "WAITING" };
-    case "closed":
-      return { ...inbox, status: "CLOSED" };
-    case "spam":
-      return { projectId, spam: true };
-  }
+  const filters: Record<View, Prisma.ConversationWhereInput> = {
+    open: { spam: false, status: "OPEN" },
+    mine: { spam: false, assigneeId: userId, status: { not: "CLOSED" } },
+    unassigned: { spam: false, assigneeId: null, status: "OPEN" },
+    waiting: { spam: false, status: "WAITING" },
+    closed: { spam: false, status: "CLOSED" },
+    spam: { spam: true },
+  };
+  return { ...filters[view], projectId };
 }
 
 export default async function InboxPage(props: PageProps<"/app/[project]/inbox">) {
   const { project: slug } = await props.params;
   const { view: param } = await props.searchParams;
-  const view: View = typeof param === "string" && param in VIEWS ? (param as View) : "open";
+  // Own keys only: `in` would also take inherited names like "constructor".
+  const view: View = typeof param === "string" && Object.hasOwn(VIEWS, param) ? (param as View) : "open";
   const [membership, session] = await Promise.all([getMembership(slug), getSession()]);
   if (!membership || !session) {
     notFound();

@@ -94,4 +94,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Spam 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
+
+  // A view name the page doesn't know (even one every object has) is the Open view, of this project only.
+  await owner.goto(`/app/${slug}/inbox?view=constructor`);
+  await expect(views.getByRole("link", { name: "Open 0" })).toHaveAttribute("aria-current", "page");
+  await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
 });
