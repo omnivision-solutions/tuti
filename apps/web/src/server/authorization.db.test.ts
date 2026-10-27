@@ -27,6 +27,7 @@ import { hashInvitationToken } from "@/lib/invitations";
 import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
 import { widgetToken } from "@/lib/widget-session";
+import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { testLicensePrivateKey } from "@/test/license";
 import { request } from "@/test/next-headers";
@@ -60,6 +61,7 @@ import * as ssoSettings from "./sso-settings";
 import * as team from "./team";
 import * as webhooks from "./webhooks";
 import * as widget from "./widget";
+import * as widgetInbox from "./widget-inbox";
 
 /**
  * Every server action, who may call it, and a valid call. The type lists each
@@ -100,6 +102,7 @@ const modules = {
   team,
   webhooks,
   widget,
+  "widget-inbox": widgetInbox,
 };
 
 type Level = "public" | "signed in" | TeamRole;
@@ -124,6 +127,12 @@ const form = (fields: Record<string, string>) => {
   }
   return data;
 };
+
+/** The inbox on, and a widget token for one of the project's users (what Tuti.identify gets the panel). */
+async function inboxToken(slug: string) {
+  const project = await prisma.project.update({ where: { slug }, data: { supportInbox: true }, select: { id: true } });
+  return widgetToken(project.id, await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user" }));
+}
 
 const matrix: Matrix = {
   "api-keys": {
@@ -357,6 +366,7 @@ const matrix: Matrix = {
     setConversationStatus: { allowed: "MEMBER", call: (slug) => inbox.setConversationStatus(slug, 1, "closed") },
     assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
     markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
+    setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
@@ -491,6 +501,27 @@ const matrix: Matrix = {
     leaveProject: { allowed: "MEMBER", call: (slug) => team.leaveProject(slug) },
   },
   // Signed in with tokens, not sessions: anyone holding a valid one may act (see widget.db.test.ts).
+  // A widget token is who's writing (widget-inbox.db.test.ts covers refusing others').
+  "widget-inbox": {
+    widgetConversations: { allowed: "public", call: async (slug) => widgetInbox.widgetConversations(slug, await inboxToken(slug)) },
+    widgetConversation: {
+      allowed: "public",
+      call: async (slug) => {
+        const token = await inboxToken(slug);
+        const started = await widgetInbox.widgetStartConversation(slug, token, "Help");
+        return widgetInbox.widgetConversation(slug, token, "number" in started ? started.number : 0);
+      },
+    },
+    widgetStartConversation: { allowed: "public", call: async (slug) => widgetInbox.widgetStartConversation(slug, await inboxToken(slug), "Help") },
+    widgetSendMessage: {
+      allowed: "public",
+      call: async (slug) => {
+        const token = await inboxToken(slug);
+        const started = await widgetInbox.widgetStartConversation(slug, token, "Help");
+        return widgetInbox.widgetSendMessage(slug, token, "number" in started ? started.number : 0, "More");
+      },
+    },
+  },
   widget: {
     widgetSignIn: {
       allowed: "public",

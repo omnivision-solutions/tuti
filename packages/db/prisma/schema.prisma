@@ -137,6 +137,8 @@ model Project {
   changelogCount        Int          @default(0)
   /// Last conversation number handed out (#1, #2, … per project, like postCount).
   conversationCount     Int          @default(0)
+  /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
+  supportInbox          Boolean      @default(false)
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone         String       @default("")
@@ -928,6 +930,8 @@ model ConversationMessage {
   channel        MessageChannel
   /// Plain text (links kept).
   body           String
+  /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
+  seenAt         DateTime?
   createdAt      DateTime       @default(now())
 
   project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)

@@ -81,7 +81,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, seenHere, narrow = false, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenHere, narrow = false, before }: {
   attributes?: Record<string, string>;
   settings?: object;
   /** Whether the screen is narrow (max-width: 640px). */
@@ -92,6 +92,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   latest?: object | null | "hang";
   /** What this person has seen on any device; "fail": the request fails. */
   seen?: string | null | "fail";
+  /** How many of the team's messages (support inbox) this person hasn't seen. */
+  messages?: number;
   seenHere?: string;
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
@@ -172,7 +174,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       fetch: vi.fn(async (url: string) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
           if (seen === "fail") throw new TypeError("Failed to fetch");
-          return { ok: true, json: async () => ({ seen }) };
+          return { ok: true, json: async () => ({ seen, messages }) };
         }
         if (latest === "hang") return new Promise(() => {});
         if (!latest) throw new TypeError("Failed to fetch");
@@ -299,7 +301,7 @@ test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; 
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   page.Tuti.open({ tab: "settings" });
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or docs");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new, docs or messages");
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   error.mockRestore();
 });
@@ -581,7 +583,7 @@ test("inline mounts work in every mode, also ones added later, each mounted once
   inlineMount(page, "settings");
   page.mutated();
   page.mutated();
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new or docs");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new, docs or messages");
   error.mockRestore();
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
     "https://acme.tuti.example/widget?tab=whats-new&display=inline",
@@ -661,4 +663,26 @@ test("an inline mount the page removes and puts back (tab panels, keep-alive vie
   expect(page.Tuti.unseen()).toBe(true);
   page.message(frameWindow, { type: "tuti:seen", at: LATEST.latest });
   expect(page.Tuti.unseen()).toBe(false);
+});
+
+test("with the support inbox on, the team's unseen messages to whoever the page signs in show the dot, until the panel says they're seen", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: true }, messages: 2 });
+  await settled();
+  expect(page.seenRequests).toHaveLength(1);
+  expect(page.Tuti.unseen()).toBe(true);
+  expect(page.button!.getAttribute("aria-label")).toBe("Feedback, new updates");
+
+  page.Tuti.open({ tab: "messages" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=messages");
+  const frameWindow = (page.frame as unknown as { contentWindow: unknown }).contentWindow;
+  page.message(frameWindow, { type: "tuti:unseen-messages", count: 1 });
+  expect(page.Tuti.unseen()).toBe(true);
+  page.message(frameWindow, { type: "tuti:unseen-messages", count: 0 });
+  expect(page.Tuti.unseen()).toBe(false);
+
+  // With it off, nobody's asked about.
+  const off = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null }, messages: 2 });
+  await settled();
+  expect(off.seenRequests).toEqual([]);
+  expect(off.Tuti.unseen()).toBe(false);
 });

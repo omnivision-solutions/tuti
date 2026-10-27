@@ -10,6 +10,7 @@ import {
   replyToConversation,
   updateConversation,
 } from "./conversations";
+import { getSupportSettings, updateSupportSettings } from "./support";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
@@ -80,6 +81,8 @@ const all = [
   createConversation,
   replyToConversation,
   updateConversation,
+  getSupportSettings,
+  updateSupportSettings,
   listBoards,
   getRoadmap,
   listChangelog,

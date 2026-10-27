@@ -6,7 +6,8 @@ import { z } from "zod";
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
 import { CONVERSATION_STATUSES, replyToConversation, updateConversation } from "./operations/conversations";
-import { asTeam, call } from "./operations/run";
+import { asAdmin, asTeam, call } from "./operations/run";
+import { updateSupportSettings } from "./operations/support";
 
 /** The team's actions in the support inbox (any team role), through the conversations operations. */
 
@@ -57,5 +58,12 @@ export async function assignConversation(projectSlug: string, conversation: numb
 export async function markConversationSpam(projectSlug: string, conversation: number, spam: boolean): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),
+  );
+}
+
+/** Settings → Support: turns the inbox on or off (owners and admins). */
+export async function setSupportInbox(projectSlug: string, on: boolean): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
+    call(updateSupportSettings, context, { inbox: on === true }),
   );
 }

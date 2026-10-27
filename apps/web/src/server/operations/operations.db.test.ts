@@ -106,6 +106,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
+  // Like widget.update: admins only in the app (Settings → Support).
+  "support.get": () => ({}),
+  "support.update": () => ({ inbox: true }),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "codeChanges.list": () => ({}),
@@ -402,6 +405,7 @@ const snapshot = () =>
         assistantOffLimits: true,
         supportEmail: true,
         supportEmailPending: true,
+        supportInbox: true,
       },
     }),
     prisma.docsQuestion.findMany({ where: { projectId: project.id, escalatedAt: { not: null } } }),

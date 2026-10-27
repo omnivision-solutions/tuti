@@ -14,6 +14,7 @@ import { WidgetClose } from "@/components/widget-close";
 import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
+import { WidgetMessages } from "@/components/widget-messages";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/docs-queries";
@@ -22,6 +23,7 @@ import { MAX_POST_TITLE } from "@/server/operations/create";
 import { answersEnabled } from "@/server/operations/docs-ask";
 import { askAPerson } from "@/server/operations/docs-escalate";
 import { widgetSettings } from "@/server/operations/widget";
+import { canActIn } from "@/server/membership";
 import { mayRead } from "@/server/portal-access";
 import { getSession } from "@/server/session";
 import { mediaUrls } from "@/server/media-urls";
@@ -34,6 +36,7 @@ const TABS = [
   { tab: "feedback", href: "/widget", name: "Feedback" },
   { tab: "whats-new", href: "/widget?tab=whats-new", name: "What's new" },
   { tab: "docs", href: "/widget?tab=docs", name: "Docs" },
+  { tab: "messages", href: "/widget?tab=messages", name: "Messages" },
 ] as const;
 
 /**
@@ -52,6 +55,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         name: true,
         boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
+        supportInbox: true,
       },
     }),
     widgetSettings({ slug }),
@@ -76,7 +80,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
   }
   // Docs once an article is listed, or when asked for one (Tuti.open({ article }) may open an unlisted one).
   const hasDocs = project.articles.length > 0 || (tabParam === "docs" && typeof article === "string");
-  const tabs = TABS.filter(({ tab }) => tab !== "docs" || hasDocs);
+  const tabs = TABS.filter(({ tab }) => (tab !== "docs" || hasDocs) && (tab !== "messages" || project.supportInbox));
   const tab = tabs.find(({ tab }) => tab === tabParam)?.tab ?? "feedback";
   // The docs' assistant, in the panel, when the server has AI answers (asked from the Docs tab).
   const session = answersEnabled() ? await getSession() : null;
@@ -146,6 +150,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
           collection={typeof collection === "string" ? collection : undefined}
         />
       )}
+      {tab === "messages" && <Messages projectId={project.id} slug={slug} />}
       {tab === "feedback" && (
         <Feedback slug={slug} board={project.boards[0]} title={typeof title === "string" ? title.slice(0, MAX_POST_TITLE) : undefined} />
       )}
@@ -194,6 +199,12 @@ async function Feedback({
       </CardContent>
     </Card>
   );
+}
+
+/** Their conversations with the team: signed in on the portal itself, or by the customer's page (Tuti.identify). */
+async function Messages({ projectId, slug }: { projectId: string; slug: string }) {
+  const session = await getSession();
+  return <WidgetMessages projectSlug={slug} portalSignedIn={!!session && (await canActIn(session.user.id, projectId))} />;
 }
 
 async function WhatsNew({ slug }: { slug: string }) {

@@ -1,5 +1,12 @@
 import { SLUG_PATTERN } from "./project-slugs";
-import { WIDGET_CLOSE_MESSAGE, WIDGET_IDENTIFY_MESSAGE, WIDGET_INLINE_NAME, WIDGET_READY_MESSAGE, WIDGET_SEEN_MESSAGE } from "./widget-messages";
+import {
+  WIDGET_CLOSE_MESSAGE,
+  WIDGET_IDENTIFY_MESSAGE,
+  WIDGET_INLINE_NAME,
+  WIDGET_READY_MESSAGE,
+  WIDGET_SEEN_MESSAGE,
+  WIDGET_UNSEEN_MESSAGES,
+} from "./widget-messages";
 
 /**
  * The widget loader served at /widget.js, for customers' own sites:
@@ -102,15 +109,21 @@ export function widgetLoader(portalTemplate: string): string {
     try { return fn(window.localStorage); } catch (error) { return null; }
   }
 
-  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")):
-  // whether the latest announcement is newer than what this visitor has seen.
+  // The unseen status, for the dot and for the page (Tuti.unseen, Tuti.on("unseen")): whether the
+  // latest announcement is newer than what this visitor has seen, or the team wrote to them (Messages).
   var unseen = false;
+  var unseenMessages = 0;
+  // The project's support inbox is on: the team may have written to whoever the page signs in.
+  var inbox = false;
   var known = false;
   var latest = null;
   var seen = null;
   var listeners = [];
   function isUnseen() {
     return !!latest && (!seen || latest > seen);
+  }
+  function anyUnseen() {
+    return isUnseen() || unseenMessages > 0;
   }
   // Seen up to \`at\` (ISO times compare as strings): kept if it's later than what this browser had.
   function remember(at) {
@@ -184,10 +197,11 @@ export function widgetLoader(portalTemplate: string): string {
     .catch(function () { return null; }) : Promise.resolve(null))
     .then(function (data) {
       latest = data && typeof data.latest === "string" ? data.latest : null;
+      inbox = !!(data && data.inbox === true);
       setUp(data && data.launcher);
       var stored = storage(function (s) { return s.getItem(seenKey); });
       if (stored) remember(stored);
-      if (isUnseen()) checkElsewhere(); else setUnseen(false);
+      if (isUnseen() || (inbox && getToken)) checkElsewhere(); else setUnseen(false);
     });
 
   // People the page signs in (Tuti.identify): up to when they've seen announcements on any
@@ -204,20 +218,23 @@ export function widgetLoader(portalTemplate: string): string {
           : { headers: { authorization: "Bearer " + token } })
           .then(function (response) { return response.ok ? response.json() : null; });
       })
-      .then(function (data) { return data && typeof data.seen === "string" ? data.seen : null; })
+      .then(function (data) {
+        if (data && typeof data.messages === "number") unseenMessages = data.messages;
+        return data && typeof data.seen === "string" ? data.seen : null;
+      })
       .catch(function () { return null; });
   }
-  // Unseen in this browser: maybe they've seen it on another device.
+  // Unseen in this browser: maybe they've seen it on another device; and the team's messages to them.
   function checkElsewhere() {
     return seenOnServer().then(function (at) {
       if (at) remember(at);
-      setUnseen(isUnseen());
+      setUnseen(anyUnseen());
     });
   }
 
-  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs" };
+  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs", messages: "?tab=messages" };
   function tabQuery(tab) {
-    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new or docs");
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new, docs or messages");
     return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
   }
   function newFrame(src) {
@@ -309,8 +326,8 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
-      // Signed in after the status was worked out: they may have seen it elsewhere.
-      if (unseen) checkElsewhere();
+      // Signed in after the status was worked out: they may have seen it elsewhere, and the team may have written.
+      if (unseen || inbox) checkElsewhere();
     },
     open: function (options) {
       open(options, document.activeElement);
@@ -358,7 +375,11 @@ export function widgetLoader(portalTemplate: string): string {
       remember(event.data.at);
       seenOnServer(event.data.at);
       // The panel may have been rendered before a newer announcement than the one it showed.
-      if (!isUnseen()) setUnseen(false);
+      setUnseen(anyUnseen());
+    }
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_UNSEEN_MESSAGES)} && typeof event.data.count === "number") {
+      unseenMessages = event.data.count;
+      setUnseen(anyUnseen());
     }
   });
 })();

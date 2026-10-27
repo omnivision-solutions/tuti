@@ -1,7 +1,8 @@
 # Widget
 
 A button on your site that opens a panel with your project's feedback form, what's
-new (the changelog) and, once you've published articles, your docs. Add one script tag
+new (the changelog), your docs once you've published articles, and Messages to your team
+once you turn the support inbox on (see [Messages](#messages)). Add one script tag
 anywhere in your pages:
 
 ```html
@@ -106,11 +107,11 @@ panel instead of leaving the page.
 | Call | What it does |
 | --- | --- |
 | `Tuti.open()` | Opens the panel where it was (the Feedback tab the first time). |
-| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"` or `"docs"`. |
+| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"`, `"docs"` or `"messages"`. |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |
-| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new. |
+| `Tuti.unseen()` | `true` when there's an announced changelog entry (from the last 30 days) this visitor hasn't seen in What's new, or, with the support inbox on, a reply from your team they haven't seen in Messages. |
 | `Tuti.on("unseen", callback)` | Calls `callback(unseen)` once the status is known and whenever it changes, e.g. to put a dot on your own button. |
 
 ```js
@@ -124,6 +125,14 @@ your site's `localStorage` (`tuti:seen:<project>`). For users you sign in with
 `identify`, it's also kept per user, so seeing it on one device clears it on the others
 (the later of the two counts; see [sso.md](sso.md#in-the-widget)). Signed in on your
 portal, the Changelog tab says "New" until they've looked.
+
+## Messages
+
+With Settings → Support → Messages in the widget on, the panel has a Messages tab where
+the people you sign in with `identify` (or on your portal) write to your team and read
+its replies; your team answers them from the Inbox in Tuti. The tab checks for replies
+every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
+`true`) while a reply is waiting for them. People who aren't signed in see a sign-in link.
 
 Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` and `display`.
 
