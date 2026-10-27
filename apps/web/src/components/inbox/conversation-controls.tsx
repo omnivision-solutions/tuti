@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName as Status } from "@/lib/conversation-statuses";
-import { assignConversation, markConversationSpam, setConversationStatus } from "@/server/inbox";
+import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails } from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
 
@@ -106,6 +106,30 @@ export function SpamButton({ projectSlug, number, spam }: Props & { spam: boolea
       }
     >
       {spam ? "Not spam" : "Mark as spam"}
+    </Button>
+  );
+}
+
+/** The team member's own "Email me new conversations" (new ones, and replies on unassigned ones). */
+export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: string; on: boolean }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await setNewConversationEmails(projectSlug, !on);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success(on ? "You won't be emailed new conversations" : "You'll be emailed new conversations");
+          }
+        })
+      }
+    >
+      {on ? "Stop emailing me new conversations" : "Email me new conversations"}
     </Button>
   );
 }

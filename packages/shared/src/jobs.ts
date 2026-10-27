@@ -25,6 +25,11 @@ export const jobs = {
       postId: z.string(),
     }),
   },
+  /** A user wrote in the support inbox (a new conversation or a reply): email the team members it's for. */
+  conversationMessage: {
+    name: "conversation-message",
+    input: z.object({ messageId: z.string() }),
+  },
   /** A docs article was published or changed: embed its sections for search (or remove them if it's no longer published). */
   articleChanged: {
     name: "article-changed",

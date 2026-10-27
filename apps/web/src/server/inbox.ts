@@ -67,3 +67,16 @@ export async function setSupportInbox(projectSlug: string, on: boolean): Promise
     call(updateSupportSettings, context, { inbox: on === true }),
   );
 }
+
+/** "Email me new conversations": the signed-in team member's own choice, in the inbox. */
+export async function setNewConversationEmails(projectSlug: string, on: boolean): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team gets the inbox's emails", async ({ actor, projectId }) => {
+    if (actor.kind !== "user") {
+      return;
+    }
+    await prisma.teamMember.update({
+      where: { projectId_userId: { projectId, userId: actor.userId } },
+      data: { emailNewConversations: on === true },
+    });
+  });
+}

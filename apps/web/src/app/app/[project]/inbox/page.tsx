@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
+import { NewConversationEmailsButton } from "@/components/inbox/conversation-controls";
 import { ListKeys } from "@/components/inbox/list-keys";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -49,6 +50,10 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
   }
   const projectId = membership.project.id;
   const userId = session.user.id;
+  const member = await prisma.teamMember.findUniqueOrThrow({
+    where: { projectId_userId: { projectId, userId } },
+    select: { emailNewConversations: true },
+  });
 
   const views = Object.keys(VIEWS) as View[];
   const [counts, conversations] = await Promise.all([
@@ -75,7 +80,11 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
 
   return (
     <>
-      <PageHeader title="Inbox" description="Your users' conversations with your team." />
+      <PageHeader
+        title="Inbox"
+        description="Your users' conversations with your team."
+        more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />}
+      />
       <SubNav
         label="Views"
         current={href(view)}
