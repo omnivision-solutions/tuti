@@ -10,5 +10,7 @@ export const WIDGET_IDENTIFY_MESSAGE = "tuti:identify";
 export const WIDGET_SEEN_MESSAGE = "tuti:seen";
 /** Panel → page: `{ type, count }`, how many of the team's messages (Messages) the signed-in person hasn't seen. */
 export const WIDGET_UNSEEN_MESSAGES = "tuti:unseen-messages";
+/** Page → panel: `{ type, shown }`, the floating panel was opened or closed (a hidden panel sees nothing: Messages don't count as seen). */
+export const WIDGET_SHOWN_MESSAGE = "tuti:shown";
 /** The name of an inline panel's iframe (its `window.name`): there's nothing to close. */
 export const WIDGET_INLINE_NAME = "tuti-inline";

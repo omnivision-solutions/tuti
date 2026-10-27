@@ -5,6 +5,7 @@ import {
   WIDGET_INLINE_NAME,
   WIDGET_READY_MESSAGE,
   WIDGET_SEEN_MESSAGE,
+  WIDGET_SHOWN_MESSAGE,
   WIDGET_UNSEEN_MESSAGES,
 } from "./widget-messages";
 
@@ -260,14 +261,21 @@ export function widgetLoader(portalTemplate: string): string {
     }
     if (panel.style.display === "none") returnFocus = from;
     panel.style.display = "block";
+    tellShown(true);
     showBackdrop();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
 
+  // The floating panel, whether it's on screen: only then does it count the team's replies as seen.
+  function tellShown(shown) {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
+  }
+
   function close() {
     if (panel.style.display === "none") return;
     panel.style.display = "none";
+    tellShown(false);
     showBackdrop();
     button.setAttribute("aria-expanded", "false");
     (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();

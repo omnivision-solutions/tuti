@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
-import { WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
+import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
   widgetConversation,
   widgetConversations,
@@ -58,6 +58,25 @@ function Messages({ projectSlug, token }: { projectSlug: string; token: string |
     return <Conversation key={view.number} projectSlug={projectSlug} token={token} number={view.number} onBack={() => setView({ kind: "list" })} />;
   }
   return <ConversationList projectSlug={projectSlug} token={token} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
+}
+
+/**
+ * Whether the panel is on screen: the page's script says when it opens and closes the floating one
+ * (an inline panel, or one just opened, is shown). A hidden panel keeps its place but sees nothing.
+ */
+function useShown(): boolean {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: unknown; shown?: unknown } | null;
+      if (event.source === window.parent && data?.type === WIDGET_SHOWN_MESSAGE && typeof data.shown === "boolean") {
+        setShown(data.shown);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  return shown;
 }
 
 /**
@@ -227,10 +246,12 @@ function NewConversation({
 
 function Conversation({ projectSlug, token, number, onBack }: { projectSlug: string; token: string | null; number: number; onBack: () => void }) {
   const [opened, setOpened] = useState<Opened | null>(null);
+  // Replies count as seen only while the panel is on screen; opening it again shows (and so sees) them.
+  const shown = useShown();
   const [error, setError] = useState<string>();
   const load = useCallback(
     async (isLatest: () => boolean) => {
-      const result = await widgetConversation(projectSlug, token, number);
+      const result = await widgetConversation(projectSlug, token, number, shown);
       if (!isLatest()) {
         return;
       }
@@ -246,7 +267,7 @@ function Conversation({ projectSlug, token, number, onBack }: { projectSlug: str
         tellPage(listed.unseen);
       }
     },
-    [projectSlug, token, number],
+    [projectSlug, token, number, shown],
   );
   const reload = usePolling(load);
 

@@ -68,8 +68,8 @@ export async function widgetConversations(projectSlug: string, token: string | n
   return { conversations: rows.map(({ _count, ...row }) => ({ ...row, unseen: _count.messages })), unseen };
 }
 
-/** One of their conversations' messages, oldest first; the team's are seen now that they're shown. */
-export async function widgetConversation(projectSlug: string, token: string | null, number: number): Promise<
+/** One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false). */
+export async function widgetConversation(projectSlug: string, token: string | null, number: number, markSeen = true): Promise<
   Result<{ subject: string; messages: { id: string; fromTeam: boolean; name: string | null; body: string; createdAt: Date }[] }>
 > {
   const who = await person(projectSlug, token);
@@ -82,10 +82,12 @@ export async function widgetConversation(projectSlug: string, token: string | nu
   if (!conversation) {
     return who ? { error: "Conversation not found" } : signInFirst;
   }
-  await prisma.conversationMessage.updateMany({
-    where: { conversationId: conversation.id, author: "TEAM", seenAt: null },
-    data: { seenAt: new Date() },
-  });
+  if (markSeen !== false) {
+    await prisma.conversationMessage.updateMany({
+      where: { conversationId: conversation.id, author: "TEAM", seenAt: null },
+      data: { seenAt: new Date() },
+    });
+  }
   const messages = await prisma.conversationMessage.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
