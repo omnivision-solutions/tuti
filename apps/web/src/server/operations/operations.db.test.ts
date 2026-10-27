@@ -101,6 +101,11 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "posts.create": () => ({ board: "feature-requests", title: "From the matrix" }),
   "comments.create": () => ({ number: 1, body: "From the matrix" }),
   "posts.update": () => ({ number: 1, status: "planned" }),
+  "conversations.list": () => ({ status: "open" }),
+  "conversations.get": () => ({ number: 1 }),
+  "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
+  "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
+  "conversations.update": () => ({ number: 1, status: "closed" }),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "codeChanges.list": () => ({}),
@@ -224,7 +229,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
   await prisma.readerGroup.create({ data: { projectId: project.id, key: "beta", name: "Beta", conditions: inGroupNamed("beta") } });
   // One of the project's users, and none the sync would add.
   await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "matrix-new" } });
-  await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free" } });
+  const matrixUser = await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user", properties: { plan: "free" } });
   // The portal's own address, one or the other like a real project's: the portal on a site, waiting
   // for its check, which the site answers (for site.*); else a custom domain waiting for DNS, with
   // its TXT record there to verify it.
@@ -269,6 +274,22 @@ async function createFixture(own: "domain" | "site" = "domain") {
       }),
     ),
   );
+  // Conversations #1 (with one of the project's users) and #2 (an email address).
+  await prisma.conversation.deleteMany({ where: { projectId: project.id } });
+  await prisma.project.update({ where: { id: project.id }, data: { conversationCount: 2 } });
+  for (const [number, who] of [[1, { userId: matrixUser }], [2, { email: "e2e-asker@example.com" }]] as const) {
+    await prisma.conversation.create({
+      data: {
+        projectId: project.id,
+        number,
+        subject: `${marker} ${number}`,
+        origin: "API",
+        ...who,
+        waitingSince: new Date(),
+        messages: { create: { projectId: project.id, author: "USER", authorId: "userId" in who ? who.userId : null, channel: "API", body: marker } },
+      },
+    });
+  }
   const link = await prisma.postLink.create({
     data: {
       projectId: project.id,
@@ -396,6 +417,7 @@ const snapshot = () =>
     prisma.siteMount.findMany({ where: { projectId: project.id } }),
     prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } }),
     prisma.codeChange.findMany({ where: { projectId: project.id }, include: { actions: { orderBy: { id: "asc" } } } }),
+    prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } } }, orderBy: { number: "asc" } }),
   ]);
 
 test("every operation is in this matrix", () => {

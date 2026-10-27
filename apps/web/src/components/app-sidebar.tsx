@@ -12,6 +12,7 @@ import {
   LayoutListIcon,
   LogOutIcon,
   MegaphoneIcon,
+  MessagesSquareIcon,
   MonitorIcon,
   MoonIcon,
   PaintbrushIcon,
@@ -138,6 +139,7 @@ function projectNav(project: ProjectSummary) {
   const base = `/app/${project.slug}`;
   return [
     { title: "Home", href: base, icon: HouseIcon },
+    { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon },
     { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true },

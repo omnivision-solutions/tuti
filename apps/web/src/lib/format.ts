@@ -24,3 +24,13 @@ export function timeAgo(date: Date, now = new Date()): string {
 export function formatDate(date: Date): string {
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
+
+/** How long since `date`, short: "5m", "3h", "2d" (under a minute is "1m"). */
+export function shortDuration(date: Date, now = new Date()): string {
+  const minutes = Math.max(1, Math.floor((now.getTime() - date.getTime()) / 60_000));
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}

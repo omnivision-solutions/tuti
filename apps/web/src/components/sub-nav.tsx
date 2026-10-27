@@ -2,13 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { activeHref } from "@/lib/active-link";
 import { cn } from "@/lib/utils";
 
 /** A page's sections as links under its header (Settings → Access, Single sign-on, …); they wrap on phones. */
-export function SubNav({ label, items }: { label: string; items: { title: string; href: string }[] }) {
-  const current = activeHref(usePathname(), items.map((item) => item.href));
+export function SubNav({
+  label,
+  items,
+  current: given,
+}: {
+  label: string;
+  items: { title: ReactNode; href: string }[];
+  /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
+  current?: string;
+}) {
+  const fromPath = activeHref(usePathname(), items.map((item) => item.href));
+  const current = given ?? fromPath;
   return (
     <nav aria-label={label} className="-mt-2 flex flex-wrap gap-x-1 gap-y-1 border-b">
       {items.map((item) => {

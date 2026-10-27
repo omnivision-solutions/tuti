@@ -33,18 +33,21 @@ model User {
   changelogSeen      ChangelogSeen[]
   ssoIdentity        SsoIdentity?
 
-  invitationsCreated  Invitation[]      @relation("InvitationCreatedBy")
-  portalReadersAdded  PortalReader[]    @relation("PortalReaderAddedBy")
-  customDomainsAdded  CustomDomain[]    @relation("CustomDomainAddedBy")
-  invitationsAccepted Invitation[]      @relation("InvitationAcceptedBy")
-  portalHandoffs      PortalHandoff[]
-  apiKeysCreated      ApiKey[]
-  webhooksCreated     Webhook[]
-  media               Media[]
-  emailOptOuts        EmailOptOut[]
-  shippedEmails       ShippedEmail[]
-  articleRevisions    ArticleRevision[]
-  codeChangeActions   CodeChangeAction[]
+  invitationsCreated    Invitation[]          @relation("InvitationCreatedBy")
+  portalReadersAdded    PortalReader[]        @relation("PortalReaderAddedBy")
+  customDomainsAdded    CustomDomain[]        @relation("CustomDomainAddedBy")
+  invitationsAccepted   Invitation[]          @relation("InvitationAcceptedBy")
+  portalHandoffs        PortalHandoff[]
+  apiKeysCreated        ApiKey[]
+  webhooksCreated       Webhook[]
+  media                 Media[]
+  emailOptOuts          EmailOptOut[]
+  shippedEmails         ShippedEmail[]
+  articleRevisions      ArticleRevision[]
+  codeChangeActions     CodeChangeAction[]
+  conversations         Conversation[]        @relation("ConversationUser")
+  assignedConversations Conversation[]        @relation("ConversationAssignee")
+  conversationMessages  ConversationMessage[]
 
   @@unique([email])
   @@map("user")
@@ -132,6 +135,8 @@ model Project {
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
   changelogCount        Int          @default(0)
+  /// Last conversation number handed out (#1, #2, … per project, like postCount).
+  conversationCount     Int          @default(0)
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone         String       @default("")
@@ -266,6 +271,8 @@ model Project {
   team                 TeamMember[]
   boards               Board[]
   posts                Post[]
+  conversations        Conversation[]
+  conversationMessages ConversationMessage[]
   votes                Vote[]
   comments             Comment[]
   ssoIdentities        SsoIdentity[]
@@ -334,14 +341,14 @@ model TeamMember {
 /// project's own user id (`sub`), never by email, so each (project, sub) gets
 /// its own User and one project can't sign in as another project's users.
 model SsoIdentity {
-  id         String   @id @default(cuid())
-  projectId  String
+  id           String   @id @default(cuid())
+  projectId    String
   /// The `sub` claim: the user's id in the project's app.
-  externalId String
-  userId     String   @unique
+  externalId   String
+  userId       String   @unique
   /// Email as asserted by the project's app (User.email is a placeholder), lowercase. Someone signed
   /// in to the portal another way with this address, verified, has this user's groups too.
-  email      String?
+  email        String?
   /// Their `groups` property as it was kept before it was a property (the token's `groups`): written
   /// alongside it, and copied into it by a trigger when an instance from before writes it, so the two
   /// agree while a deploy overlaps them. Goes, with the trigger, in a later migration.
@@ -349,9 +356,9 @@ model SsoIdentity {
   /// What the project's app says about them (strings, numbers, booleans and lists of strings by name,
   /// up to 50; lib/user-properties.ts), set by SSO sign-ins and the API; matched against groups' conditions.
   /// The column keeps its old name, so app instances from before it keep working while a deploy overlaps them.
-  properties Json     @default("{}") @map("attributes")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  properties   Json     @default("{}") @map("attributes")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -465,19 +472,19 @@ enum PostLinkSource {
 
 /// A post's link to GitHub: the pull request, issue or release that works on or ships it.
 model PostLink {
-  id          String         @id @default(cuid())
-  projectId   String
-  postId      String
-  kind        PostLinkKind
+  id           String         @id @default(cuid())
+  projectId    String
+  postId       String
+  kind         PostLinkKind
   /// owner/name
-  repo        String
+  repo         String
   /// PR or issue number; null for releases.
-  number      Int?
+  number       Int?
   /// Release tag; null otherwise.
-  tag         String?
-  url         String
+  tag          String?
+  url          String
   /// From GitHub once the app is connected (null when added by hand).
-  title       String?
+  title        String?
   source       PostLinkSource
   /// The code change whose applied action wrote it (source CODE_CHANGE).
   codeChangeId String?
@@ -842,6 +849,93 @@ model Post {
   @@index([duplicateOfId])
   @@index([shippedEmailsDueAt])
   @@map("post")
+}
+
+// ─── Support inbox ───────────────────────────────────────────────────────────
+// A project's users write to its team (docs/plan.md, Support inbox); every message lands in one inbox.
+
+/// Open: the team owes a reply. Waiting: the team replied last. Closed: by hand; a message from the user opens it again.
+enum ConversationStatus {
+  OPEN
+  WAITING
+  CLOSED
+}
+
+/// Where a conversation began.
+enum ConversationOrigin {
+  WIDGET
+  EMAIL
+  ESCALATION
+  API
+}
+
+enum MessageAuthor {
+  USER
+  TEAM
+  AI
+  TUTI
+}
+
+/// How a message arrived: the widget, email, the API, or the app (the team's inbox).
+enum MessageChannel {
+  WIDGET
+  EMAIL
+  API
+  APP
+}
+
+model Conversation {
+  id            String             @id @default(cuid())
+  projectId     String
+  /// Per-project number (#12), like posts.
+  number        Int
+  subject       String
+  status        ConversationStatus @default(OPEN)
+  /// A team member, or nobody.
+  assigneeId    String?
+  origin        ConversationOrigin
+  /// Who's writing, when Tuti knows them (an SSO user or a portal account)…
+  userId        String?
+  /// …otherwise just their email, lowercase, and whether it's verified.
+  email         String?
+  emailVerified Boolean            @default(false)
+  spam          Boolean            @default(false)
+  lastMessageAt DateTime           @default(now())
+  /// The user's oldest message the team hasn't answered; null once the team has replied.
+  waitingSince  DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  project  Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User?                 @relation("ConversationAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  user     User?                 @relation("ConversationUser", fields: [userId], references: [id], onDelete: SetNull)
+  messages ConversationMessage[]
+
+  @@unique([projectId, number])
+  @@index([projectId, spam, status, lastMessageAt(sort: Desc)])
+  @@index([assigneeId])
+  @@index([userId])
+  @@map("conversation")
+}
+
+model ConversationMessage {
+  id             String         @id @default(cuid())
+  projectId      String
+  conversationId String
+  author         MessageAuthor
+  /// The team member or the user who wrote it; null for the AI, Tuti and email-only people.
+  authorId       String?
+  channel        MessageChannel
+  /// Plain text (links kept).
+  body           String
+  createdAt      DateTime       @default(now())
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  authorUser   User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_message")
 }
 
 model Vote {
@@ -1335,18 +1429,18 @@ model Article {
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
-  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  collection Collection?       @relation(fields: [collectionId], references: [id], onDelete: SetNull)
-  chunks     ArticleChunk[]
-  feedback   ArticleFeedback[]
-  viewDays   ArticleViewDay[]
-  revisions  ArticleRevision[]
-  changes    ArticleChanges?
-  redirects  DocsRedirect[]
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  collection        Collection?        @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  chunks            ArticleChunk[]
+  feedback          ArticleFeedback[]
+  viewDays          ArticleViewDay[]
+  revisions         ArticleRevision[]
+  changes           ArticleChanges?
+  redirects         DocsRedirect[]
   /// With `access` GROUPS: the groups whose readers may read it (none: only the team).
-  groups     ArticleGroup[]
+  groups            ArticleGroup[]
   /// Tabs that show it at their path.
-  landingOf  DocsTab[]         @relation("DocsTabLanding")
+  landingOf         DocsTab[]          @relation("DocsTabLanding")
   codeChangeActions CodeChangeAction[]
 
   @@unique([projectId, slug], where: raw("\"deletedAt\" IS NULL"))
@@ -1742,25 +1836,25 @@ enum AiCreditSource {
 /// AI credits a project was given (docs/plan.md, AI usage per project): spent soonest-expiring first,
 /// and gone once they expire. The balance is what's left of unexpired grants, less the project's debt.
 model AiCreditGrant {
-  id        String         @id @default(cuid())
-  projectId String
-  source    AiCreditSource
-  credits   Decimal        @db.Decimal(20, 6)
-  remaining Decimal        @db.Decimal(20, 6)
+  id              String         @id @default(cuid())
+  projectId       String
+  source          AiCreditSource
+  credits         Decimal        @db.Decimal(20, 6)
+  remaining       Decimal        @db.Decimal(20, 6)
   /// Null: for good.
-  expiresAt DateTime?
+  expiresAt       DateTime?
   /// For the operator: why it was given (a support case, a plan's period).
-  note      String         @default("")
+  note            String         @default("")
   /// A top-up's Stripe Checkout Session: one grant per payment, however often Stripe says it's paid.
-  stripeSessionId String?  @unique
+  stripeSessionId String?        @unique
   /// What a top-up paid, in US cents.
-  paidCents Int?
+  paidCents       Int?
   /// A plan's Stripe invoice: one grant per paid invoice (its period's credits).
-  stripeInvoiceId String?  @unique
+  stripeInvoiceId String?        @unique
   /// Credits taken back because the payment was refunded or disputed (server/refunds.ts): from what was
   /// left, and the rest, already spent, as the project's debt.
-  takenBack Decimal        @default(0) @db.Decimal(20, 6)
-  createdAt DateTime       @default(now())
+  takenBack       Decimal        @default(0) @db.Decimal(20, 6)
+  createdAt       DateTime       @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
@@ -1774,25 +1868,25 @@ model AiCreditGrant {
 /// key, the licence and a generation, so none is stored: the current one is `generation`'s, and 0
 /// means no installation has claimed it yet.
 model License {
-  id             String    @id @default(cuid())
-  installationId String
-  projectId      String
+  id                   String    @id @default(cuid())
+  installationId       String
+  projectId            String
   /// False once cancelled: renewals are refused, so the installation's key lapses.
-  active         Boolean   @default(true)
-  generation     Int       @default(0)
+  active               Boolean   @default(true)
+  generation           Int       @default(0)
   /// The request that made the current generation: a retry of it with the previous token (its answer
   /// was lost) gets the same answer again.
-  requestId      String?
+  requestId            String?
   /// The app version the installation last renewed from, for support.
-  version        String?
-  lastRefreshAt  DateTime?
+  version              String?
+  lastRefreshAt        DateTime?
   /// Requests with a spent token or a second claim, i.e. the licence in use on another installation.
-  refusedCount   Int       @default(0)
-  lastRefusedAt  DateTime?
+  refusedCount         Int       @default(0)
+  lastRefusedAt        DateTime?
   /// The Stripe subscription paying for it (bought on tuti.so/license), kept in step by Stripe's
   /// webhook: active while it's live. Null for one activated by hand.
-  stripeSubscriptionId String? @unique
-  createdAt      DateTime  @default(now())
+  stripeSubscriptionId String?   @unique
+  createdAt            DateTime  @default(now())
 
   @@unique([installationId, projectId])
   @@map("license")
