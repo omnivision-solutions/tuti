@@ -265,6 +265,7 @@ async function toConversation(
     throw new OperationError(409, "already_escalated", "You've already passed this question to the team");
   }
   const note = input.note || null;
+  let started;
   try {
     const { earlier, notHelpful, sources, summary } = await escalationContext(projectId, askerId, question, note, timeoutMs);
     const forTeam = [
@@ -272,7 +273,7 @@ async function toConversation(
       earlier.length > 0 && `Asked before: ${earlier.join(" / ")}`,
       notHelpful && "They marked the AI's answer not helpful.",
     ].filter(Boolean);
-    const { conversation, message } = await startConversation(projectId, {
+    started = await startConversation(projectId, {
       userId: who.userId,
       email: who.userId ? null : input.email,
       visitorHash: who.visitorHash,
@@ -285,12 +286,17 @@ async function toConversation(
         ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
       ],
     });
-    await announceConversation(projectId, conversation, message);
-    return { id: question.id, escalated: true, conversation: conversation.number, ...(fresh && { visitor: fresh.token }) };
   } catch (error) {
+    // Nothing was started: the question may be passed on again.
     await prisma.docsQuestion.updateMany({ where: { id: question.id }, data: { escalatedAt: null } });
     throw error;
   }
+  // Started: the question stays claimed whatever happens next, or a retry would start a second conversation.
+  const { conversation, message } = started;
+  await announceConversation(projectId, conversation, message).catch((error: unknown) =>
+    log.error("Announcing an escalated question's conversation failed", { projectId, error }),
+  );
+  return { id: question.id, escalated: true, conversation: conversation.number, ...(fresh && { visitor: fresh.token }) };
 }
 
 export const escalateDocs = defineOperation({
