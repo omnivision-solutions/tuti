@@ -1210,6 +1210,6 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await checkpoint(owner, "escalated-conversation");
 
   // In the widget, the note isn't there.
-  await widget.getByRole("button", { name: new RegExp(question.replace(/[?]/g, "\\?")) }).click();
+  await widget.getByRole("button", { name: question }).click();
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 });
