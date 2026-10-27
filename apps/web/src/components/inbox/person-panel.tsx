@@ -158,7 +158,7 @@ export async function PersonPanel({
         {view && view.groups.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {view.groups.map((key) => (
-              <Badge key={key} variant="secondary">
+              <Badge key={key} variant="secondary" className="h-auto max-w-full shrink whitespace-normal break-words">
                 {names.get(key) ?? key}
               </Badge>
             ))}
@@ -168,10 +168,10 @@ export async function PersonPanel({
 
       {view && Object.keys(view.properties).length > 0 && (
         <Section title="Properties">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+          <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-sm">
             {Object.entries(view.properties).map(([name, value]) => (
               <div key={name} className="contents">
-                <dt className="text-muted-foreground">{name}</dt>
+                <dt className="break-all text-muted-foreground">{name}</dt>
                 <dd className="min-w-0 break-words">{text(value)}</dd>
               </div>
             ))}
