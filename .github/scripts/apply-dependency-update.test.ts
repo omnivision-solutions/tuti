@@ -64,6 +64,7 @@ test.each([
   [".agents", "symlink"],
   [".coderabbit.yaml", "add"],
   ["greptile.json", "add"],
+  ["apps/web/greptile.json", "add"],
   [".greptile/rules.md", "add"],
   [".cursorrules", "add"],
   ["apps/web/.cursor/rules/deps.mdc", "add"],
