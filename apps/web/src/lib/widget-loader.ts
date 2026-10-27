@@ -344,6 +344,11 @@ export function widgetLoader(portalTemplate: string): string {
         return;
       }
       getToken = fn;
+      // Someone else, maybe: the team's messages counted so far were to whoever was before (counts
+      // already on their way are too, so they're old now). Their own count comes from the server or a panel.
+      unseenMessages = 0;
+      panelCounts++;
+      if (known) setUnseen(anyUnseen());
       // Panels already on the page trade the new person's token for their own (a panel kept the one it
       // had, the previous person's, until it reloads).
       if (frame) sendToken(frame);

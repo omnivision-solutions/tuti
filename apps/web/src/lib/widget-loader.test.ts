@@ -699,6 +699,16 @@ test("when the page signs them out (Tuti.identify with no token), the team's uns
   expect(page.Tuti.unseen()).toBe(false);
 });
 
+test("Tuti.identify again: the team's messages counted for whoever was before stop showing at once, not once the new token's read", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: true }, messages: 0 });
+  await settled();
+  page.Tuti.open();
+  page.message((page.frame as unknown as { contentWindow: unknown }).contentWindow, { type: "tuti:unseen-messages", count: 3 });
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => new Promise<string>(() => {}));
+  expect(page.Tuti.unseen()).toBe(false);
+});
+
 test("the floating panel hears when it's closed and opened again, so a hidden one doesn't count replies as seen", async () => {
   const page = loadWidget({});
   await settled();
