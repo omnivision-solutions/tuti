@@ -1,15 +1,23 @@
 name: CI
 
+# Nightly on main too: catches what changes without a commit (base images, the
+# Testcontainers Postgres image, browsers, the date) and flaky tests between PRs.
+# A failed scheduled run emails whoever last changed the cron line.
 on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # Keyed on the event too, so a nightly run and a push to main never queue behind
+  # (or replace) each other.
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -134,6 +142,8 @@ jobs:
           context: .
           file: apps/${{ matrix.app }}/Dockerfile
           push: false
+          # Nightly: rebuild every layer, so package and download drift shows up.
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 
