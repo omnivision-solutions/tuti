@@ -95,7 +95,11 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
 
-  // A view name the page doesn't know (even one every object has) is the Open view, of this project only.
+  // A view name the page doesn't know (even one every object has) is the Open view, of this project only:
+  // another project's open conversation stays out of it.
+  const otherSlug = `e2e-${randomUUID().slice(0, 8)}`;
+  await createProject(owner, "Other", otherSlug);
+  await (await apiFor(owner, otherSlug))("/conversations", { email: "e2e-elsewhere@example.com", body: "Another project's question" });
   await owner.goto(`/app/${slug}/inbox?view=constructor`);
   await expect(views.getByRole("link", { name: "Open 0" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("Nothing waits for an answer.")).toBeVisible();
