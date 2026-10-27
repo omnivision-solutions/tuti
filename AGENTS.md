@@ -29,6 +29,11 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - A change to a user-facing flow updates its journey in `e2e/` (or adds one). While a dialog is open the page behind it is hidden from role queries, so after a dialog action wait for its result (a toast, the URL) before asserting that something is gone. Journeys save numbered screenshots with `checkpoints()`; CI uploads them in the `playwright-report` artifact.
 - Marketing pages get no tests; check them with a build and a screenshot.
 
+## Database migrations
+
+- A deploy runs the previous release beside the new schema for a while: the web container applies migrations when it starts, while the old web container and the worker keep running, and self-hosters update the same way. Prisma reads every column it knows about, so each migration must keep working with the previous release's code. Add tables, nullable or defaulted columns, and enum values first; drop, rename, retype or make columns required only in a later release, once no released code uses them.
+- `packages/db/src/migrations.test.ts` fails on those statements. When one is safe (nothing released reads it any more), put a `-- Previous release: <why it's safe>` comment directly above it.
+
 ## Pull requests
 
 - One topic per PR, small enough to review in a few minutes. Squash-merged into `main`.

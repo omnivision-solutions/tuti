@@ -3,9 +3,9 @@ name: Review bot
 # One review bot per PR, so each one's rate limits and credits last twice as long.
 # Each bot only reviews PRs carrying its label (.coderabbit.yaml, greptile.json),
 # so neither starts before this workflow picks one: review:coderabbit for
-# odd-numbered PRs, review:greptile for even ones. When Greptile replies that it
-# can no longer review, the PR moves to CodeRabbit. Swap the label by hand to
-# switch one PR.
+# odd-numbered PRs, review:greptile (and an @greptileai mention) for even ones.
+# When Greptile replies that it can no longer review, the PR moves to CodeRabbit.
+# Swap the label by hand to switch one PR.
 #
 # pull_request_target so fork PRs can be labeled on open; this workflow never
 # checks out or runs PR code.
@@ -45,3 +45,7 @@ jobs:
             bot=greptile
           fi
           gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=review:$bot" --silent
+          # Greptile doesn't start on a label added after the PR opened; a mention does.
+          if [[ "$bot" == greptile ]]; then
+            gh api "repos/$REPO/issues/$PR/comments" -f body="@greptileai" --silent
+          fi
