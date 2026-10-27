@@ -690,6 +690,15 @@ test("with the support inbox on, the team's unseen messages to whoever the page 
   expect(off.Tuti.unseen()).toBe(false);
 });
 
+test("when the page signs them out (Tuti.identify with no token), the team's unseen messages to them stop showing", async () => {
+  const page = loadWidget({ settings: { identify: token }, latest: { latest: null, launcher: null, inbox: true }, messages: 2 });
+  await settled();
+  expect(page.Tuti.unseen()).toBe(true);
+  page.Tuti.identify(() => null);
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+});
+
 test("the floating panel hears when it's closed and opened again, so a hidden one doesn't count replies as seen", async () => {
   const page = loadWidget({});
   await settled();
