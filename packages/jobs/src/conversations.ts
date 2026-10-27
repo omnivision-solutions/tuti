@@ -108,3 +108,12 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   throw (failed[0] as PromiseRejectedResult).reason;
 }
 
+/** Raw received emails (support inbox) still unread after 30 days, failed or stuck: their bodies go, the rows stay. */
+export async function pruneInboundEmails(): Promise<JobResult> {
+  const { count } = await prisma.inboundEmail.updateMany({
+    where: { raw: { not: null }, createdAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } },
+    data: { raw: null },
+  });
+  return { pruned: count };
+}
+

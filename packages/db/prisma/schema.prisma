@@ -276,6 +276,8 @@ model Project {
   conversations        Conversation[]
   conversationMessages ConversationMessage[]
   widgetPresence       WidgetPresence[]
+  mailSubdomain        MailSubdomain?
+  inboundEmails        InboundEmail[]
   votes                Vote[]
   comments             Comment[]
   ssoIdentities        SsoIdentity[]
@@ -912,6 +914,8 @@ model Conversation {
   waitingSince  DateTime?
   /// When the team was last emailed about it: at most once every 10 minutes.
   notifiedAt    DateTime?
+  /// Random, in its reply address (support+<token>@…): an email to it joins this conversation (from its people only).
+  replyToken    String             @unique @default(dbgenerated("replace(gen_random_uuid()::text, '-', '')"))
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 
@@ -926,6 +930,60 @@ model Conversation {
   @@index([userId])
   @@index([visitorHash])
   @@map("conversation")
+}
+
+/// Received: kept until it's read into a message (or ignored); a failed one for 30 days.
+enum InboundStatus {
+  RECEIVED
+  ADDED
+  IGNORED
+  FAILED
+  /// Over a limit: refused before its body was stored.
+  REFUSED
+}
+
+/// A project's support address's subdomain (<subdomain>.<SUPPORT_EMAIL_DOMAIN>), its for good: never
+/// given to another project, even after this one is deleted, so mail to an old address reaches nobody else.
+model MailSubdomain {
+  subdomain String   @id
+  projectId String?  @unique
+  createdAt DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("mail_subdomain")
+}
+
+/// An email the support inbox received (docs/plan.md, Support inbox, "Receiving email"), stored before it's read.
+model InboundEmail {
+  id             String        @id @default(cuid())
+  projectId      String
+  /// The envelope recipient: the project's address it came to.
+  recipient      String
+  /// The From address, lowercase.
+  sender         String
+  subject        String        @default("")
+  messageId      String?
+  /// Its Message-ID and sender together (a SHA-256 of the raw message without a Message-ID): a redelivery is a no-op.
+  dedupeKey      String
+  /// The raw message, until it's read; null once it is, and for refused mail.
+  raw            Bytes?
+  size           Int
+  /// The receiver's results: "pass", "fail" or "none".
+  spf            String        @default("none")
+  dkim           String        @default("none")
+  dmarc          String        @default("none")
+  status         InboundStatus @default(RECEIVED)
+  /// Why it was ignored, failed or refused.
+  reason         String        @default("")
+  conversationId String?
+  createdAt      DateTime      @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, dedupeKey])
+  @@index([projectId, createdAt])
+  @@map("inbound_email")
 }
 
 /// When someone was last in the widget's Messages (docs/plan.md, Support inbox, "Live"): online while
@@ -954,6 +1012,11 @@ model ConversationMessage {
   body           String
   /// An internal note: the team's only, never shown to the user or sent.
   note           Boolean        @default(false)
+  /// Received by email: its Message-ID (to show the thread; it never joins anything), who sent it,
+  /// and the whole text when quoted replies were cut from `body`.
+  emailMessageId String?
+  fromAddress    String?
+  original       String?
   /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
   seenAt         DateTime?
   createdAt      DateTime       @default(now())

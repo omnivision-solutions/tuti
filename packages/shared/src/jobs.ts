@@ -133,6 +133,12 @@ export const jobs = {
     input: z.object({}),
     cron: "43 * * * *",
   },
+  /** Lets go of raw received emails that couldn't be read in 30 days (read ones go as they're read). */
+  pruneInboundEmails: {
+    name: "prune-inbound-emails",
+    input: z.object({}),
+    cron: "37 * * * *",
+  },
   /** Removes docs searches' counts and failed searches older than the insights' 30 days. */
   pruneDocsSearches: {
     name: "prune-docs-searches",

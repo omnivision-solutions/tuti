@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { APP_URL } from "./env";
+import { APP_URL, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo } from "./mail";
 
@@ -157,3 +157,49 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await about.click();
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 });
+
+test("with an address for the project, an email to it lands in the inbox without the part it quotes", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  const address = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
+  await expect(owner.getByText(address)).toBeVisible();
+  await expect(owner.getByText("No email received yet.")).toBeVisible();
+  await checkpoint(owner, "support-email-settings");
+
+  // A customer writes to the team's own support address, which forwards it here.
+  await receive(address, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "I can't find my October invoice.\r\n\r\nOn Mon, someone wrote:\r\n> earlier"));
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("link", { name: "Invoice missing" }).click();
+  await expect(owner.getByText(/e2e-kim@example\.com · started from email/)).toBeVisible();
+  const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveText([/I can't find my October invoice\.\s*Show the whole email/]);
+  await owner.getByText("Show the whole email").click();
+  await expect(messages.first()).toContainText("> earlier");
+  await owner.goto(`/app/${slug}/settings/support`);
+  await expect(owner.getByText(/^Last email received/)).toBeVisible();
+});
+
+/** A raw email as a mail provider delivers it. */
+function rawEmail(from: string, subject: string, body: string) {
+  return [`From: ${from}`, `Subject: ${subject}`, `Message-ID: <${randomUUID()}@mail.example.com>`, "Content-Type: text/plain; charset=utf-8", "", body].join("\r\n");
+}
+
+/** Posts `raw` to /api/inbound/email as the receiver does, signed, with DMARC passed. */
+async function receive(recipient: string, raw: string) {
+  const auth = "spf=pass dkim=pass dmarc=pass";
+  const body = Buffer.from(raw);
+  const t = Math.floor(Date.now() / 1000);
+  const hash = createHash("sha256").update(body).digest("hex");
+  const signature = createHmac("sha256", INBOUND_SECRET).update(`${t}.${recipient}.${auth}.${hash}`).digest("hex");
+  const response = await fetch(`${APP_URL}/api/inbound/email`, {
+    method: "POST",
+    headers: { "tuti-recipient": recipient, "tuti-auth": auth, "tuti-signature": `t=${t},v1=${signature}` },
+    body,
+  });
+  expect(response.status).toBe(200);
+}

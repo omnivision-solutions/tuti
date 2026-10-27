@@ -367,6 +367,11 @@ const matrix: Matrix = {
     assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
     markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
+    getSupportAddress: {
+      allowed: "ADMIN",
+      before: () => vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "tuti.email"),
+      call: (slug) => inbox.getSupportAddress(slug),
+    },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
   },
   "manage-posts": {
