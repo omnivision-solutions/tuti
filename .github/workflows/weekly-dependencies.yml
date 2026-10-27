@@ -57,7 +57,9 @@ jobs:
           # Into Node's own directory, which the other user can read: package.json's pnpm and a pinned Claude Code.
           npm install --global "$(node -p 'require("./package.json").packageManager')" @anthropic-ai/claude-code@2.1.311
           sudo useradd --create-home --shell /bin/bash claude-updater
-          sudo chown -R claude-updater:claude-updater "$GITHUB_WORKSPACE"
+          # The runner's home is closed to other users, so the agent works on a copy in its own.
+          sudo cp -a "$GITHUB_WORKSPACE" /home/claude-updater/tuti
+          sudo chown -R claude-updater:claude-updater /home/claude-updater/tuti
           install -d -m 700 "$RUNNER_TEMP/dependency-update"
       - name: Update dependencies with Claude Code
         if: steps.prepare.outcome == 'success'
@@ -70,14 +72,15 @@ jobs:
           # subscription token: none of the runner's tokens or files. The final
           # message (the PR description) is the only output kept; the session isn't saved.
           # The placeholders are the ones CI builds with.
-          sudo -n -H -u claude-updater --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env \
+          sudo -n -H -u claude-updater --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-updater/tuti \
             PATH="$PATH" \
             APP_URL=https://tuti.example \
             PORTAL_URL_TEMPLATE='https://{project}.tuti.example' \
             BETTER_AUTH_SECRET=ci-build-secret-at-least-32-characters-long \
             claude -p --dangerously-skip-permissions --no-session-persistence --output-format text \
             < .github/prompts/weekly-dependencies.md \
-            > "$RUNNER_TEMP/dependency-update/pr.md"
+            > "$RUNNER_TEMP/dependency-update/pr.md" \
+            || { tail -n 50 "$RUNNER_TEMP/dependency-update/pr.md"; exit 1; } # Claude reports its errors there
       - name: Collect the patch
         id: patch
         if: success() && steps.prepare.outcome == 'success'
@@ -86,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           # Git runs as the agent's user too: the checkout's git config is untrusted now.
-          sudo -n -H -u claude-updater env UPDATE_BASE="$UPDATE_BASE" \
+          sudo -n -H -u claude-updater env -C /home/claude-updater/tuti UPDATE_BASE="$UPDATE_BASE" \
             bash -e -o pipefail -c 'git add -N .; git diff --no-ext-diff --binary "$UPDATE_BASE"' \
             > "$RUNNER_TEMP/dependency-update/update.patch"
           if [ -s "$RUNNER_TEMP/dependency-update/update.patch" ]; then

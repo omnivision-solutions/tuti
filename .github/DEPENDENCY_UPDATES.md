@@ -18,7 +18,7 @@ It signs in through the browser and prints a token valid for a year. Then:
 gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo omnivision-solutions/tuti
 ```
 
-and paste it at the prompt (it isn't echoed or saved in your shell history). Renew it the same way before it expires; a run fails at Claude Code's step when it has.
+and paste it at the prompt (it isn't echoed or saved in your shell history). The terminal wraps the long token, and copying it can add a space at the wrap; remove it, or Claude Code fails with "Not logged in". Renew it the same way before it expires; a run fails at Claude Code's step when it has.
 
 **`GH_DEPENDENCY_UPDATES_PAT`**: a fine-grained personal access token that opens the pull request (one opened with the workflow's own `GITHUB_TOKEN` wouldn't start CI). Create it at GitHub → Settings → Developer settings → Fine-grained tokens: resource owner the organization, only this repository, permissions **Contents: Read and write** and **Pull requests: Read and write**, and the longest expiry you're comfortable with. Then:
 
