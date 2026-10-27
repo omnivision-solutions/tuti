@@ -219,7 +219,11 @@ export function widgetLoader(portalTemplate: string): string {
     return Promise.resolve()
       .then(function () { return getToken(); })
       .then(function (token) {
-        if (typeof token !== "string" || !token) return null;
+        if (typeof token !== "string" || !token) {
+          // Nobody's signed in now: the team's messages to whoever was aren't theirs.
+          if (!at && asked === panelCounts && read === countReads) unseenMessages = 0;
+          return null;
+        }
         return fetch(api + "/api/widget/seen?project=" + encodeURIComponent(slug), at
           ? { method: "POST", headers: { authorization: "Bearer " + token, "content-type": "application/json" }, body: JSON.stringify({ at: at }) }
           : { headers: { authorization: "Bearer " + token } })
