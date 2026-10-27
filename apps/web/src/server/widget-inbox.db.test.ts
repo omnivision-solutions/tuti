@@ -32,6 +32,9 @@ test("someone the page signs in writes to the team, sees replies, and seeing the
   await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
   expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ number: 1, subject: "Where's my invoice?", unseen: 1 }], unseen: 1 });
 
+  // A hidden panel reads it without seeing it.
+  await widgetConversation(project.slug, auth, 1, false);
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ unseen: 1 });
   const opened = await widgetConversation(project.slug, auth, 1);
   expect(opened).toMatchObject({
     messages: [

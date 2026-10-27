@@ -63,8 +63,8 @@ async function theirConversation(who: Person, number: number) {
   });
 }
 
-/** One of their conversations' messages, oldest first; the team's are seen now that they're shown. */
-export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number): Promise<
+/** One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false). */
+export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
   Result<{ subject: string; messages: { id: string; fromTeam: boolean; name: string | null; body: string; createdAt: Date }[] }>
 > {
   const who = await person(projectSlug, auth);
@@ -72,10 +72,12 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
   if (!conversation) {
     return who ? { error: "Conversation not found" } : signInFirst;
   }
-  await prisma.conversationMessage.updateMany({
-    where: { conversationId: conversation.id, author: "TEAM", seenAt: null },
-    data: { seenAt: new Date() },
-  });
+  if (markSeen !== false) {
+    await prisma.conversationMessage.updateMany({
+      where: { conversationId: conversation.id, author: "TEAM", seenAt: null },
+      data: { seenAt: new Date() },
+    });
+  }
   const messages = await prisma.conversationMessage.findMany({
     // The team's notes are theirs alone.
     where: { conversationId: conversation.id, note: false },
