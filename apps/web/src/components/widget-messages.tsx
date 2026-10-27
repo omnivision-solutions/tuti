@@ -34,6 +34,17 @@ const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNS
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
   const { signedIn, error } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const token = portalSignedIn ? null : (signedIn?.token ?? null);
+  // Signed out after someone was: the team's messages to them aren't anyone's here now (their
+  // counts stopped with their Messages, so this is the page's last word).
+  const wasSignedIn = useRef(false);
+  useEffect(() => {
+    if (signedIn) {
+      wasSignedIn.current = true;
+    } else if (wasSignedIn.current && !portalSignedIn) {
+      wasSignedIn.current = false;
+      tellPage(0);
+    }
+  }, [signedIn, portalSignedIn]);
   if (!portalSignedIn && !signedIn) {
     return (
       <div className="flex flex-col items-start gap-3">

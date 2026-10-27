@@ -1068,4 +1068,12 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
   await expect(messages).toHaveCount(3);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
+
+  // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
+  // signed in, not Sam, whose messages go.
+  await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "someone-else"));
+  await expect(widget.getByText("Couldn't sign you in")).toBeVisible();
+  await expect(messages).toHaveCount(0);
+  await expect(widget.getByRole("link", { name: "Sign in" })).toBeVisible();
 });
