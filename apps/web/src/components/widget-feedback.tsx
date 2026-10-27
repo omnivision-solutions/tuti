@@ -58,7 +58,6 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     if (!enabled) {
       return;
     }
-    let giveUp: ReturnType<typeof setTimeout> | undefined;
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
@@ -87,7 +86,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     // Ready for a token (the page may have one; nothing secret in this message).
     window.parent.postMessage({ type: WIDGET_READY_MESSAGE }, "*");
     // Only if no token comes at all: once one has, it waits for its result.
-    giveUp = setTimeout(() => setKnown(true), 3000);
+    const giveUp = setTimeout(() => setKnown(true), 3000);
     return () => {
       clearTimeout(giveUp);
       subscribers.delete(subscriber);
