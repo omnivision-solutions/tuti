@@ -28,16 +28,23 @@ const person = widgetPerson;
 
 const signInFirst = { error: "Sign in to message the team" };
 
+/** Whether a visitor token is no good for a project whose Messages are on (not just off for now). */
+async function visitorExpired(projectSlug: string, token: string) {
+  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, supportInbox: true } });
+  return !!project?.supportInbox && visitorHash(project.id, String(token)) === null;
+}
+
 /**
  * Their latest conversations, each with how many of the team's messages they haven't seen, and how
  * many they haven't seen in all (`unseen`, for the launcher's dot, older conversations included).
  */
 export async function widgetConversations(projectSlug: string, auth: WidgetAuth): Promise<
-  Result<{ conversations: { number: number; subject: string; lastMessageAt: Date; unseen: number }[]; unseen: number }>
+  Result<{ conversations: { number: number; subject: string; lastMessageAt: Date; unseen: number }[]; unseen: number }> | { error: string; expired: true }
 > {
   const who = await person(projectSlug, auth);
   if (!who) {
-    return signInFirst;
+    // A visitor's token that's run out (or was never ours), as opposed to Messages being off: the panel forgets it.
+    return auth.visitor && (await visitorExpired(projectSlug, auth.visitor)) ? { ...signInFirst, expired: true } : signInFirst;
   }
   const [rows, unseen] = await Promise.all([
     prisma.conversation.findMany({
