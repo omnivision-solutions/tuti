@@ -10,7 +10,7 @@ import { widgetCreatePost, widgetSignIn } from "@/server/widget";
 
 type SignedIn = { id: string; token: string; name: string; email: string | null };
 
-type SignInResult = { signedIn: SignedIn } | { error: string };
+type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true };
 
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
@@ -19,7 +19,17 @@ async function onIdentify(event: MessageEvent) {
   // Only from the page that embeds us; the token proves who it's for, whatever site that is.
   const data = event.data as { type?: unknown; token?: unknown } | null;
   const projectSlug = subscribers.values().next().value?.projectSlug;
-  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || typeof data.token !== "string" || !projectSlug) {
+  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || !projectSlug) {
+    return;
+  }
+  // The page signs nobody in.
+  if (data.token === null) {
+    for (const subscriber of subscribers) {
+      subscriber.tell({ signedOut: true });
+    }
+    return;
+  }
+  if (typeof data.token !== "string") {
     return;
   }
   const result = await widgetSignIn(projectSlug, data.token);
@@ -36,6 +46,9 @@ async function onIdentify(event: MessageEvent) {
 export function useWidgetSignIn(projectSlug: string, enabled = true) {
   const [signedIn, setSignedIn] = useState<SignedIn | null>(null);
   const [error, setError] = useState<string>();
+  // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
+  // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
+  const [known, setKnown] = useState(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -44,9 +57,13 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        setKnown(true);
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
           setError(result.error);
+          setSignedIn(null);
+        } else if ("signedOut" in result) {
+          setError(undefined);
           setSignedIn(null);
         } else {
           setError(undefined);
@@ -60,7 +77,9 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     subscribers.add(subscriber);
     // Ready for a token (the page may have one; nothing secret in this message).
     window.parent.postMessage({ type: WIDGET_READY_MESSAGE }, "*");
+    const giveUp = setTimeout(() => setKnown(true), 3000);
     return () => {
+      clearTimeout(giveUp);
       subscribers.delete(subscriber);
       if (subscribers.size === 0) {
         window.removeEventListener("message", onIdentify);
@@ -68,7 +87,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error };
+  return { signedIn, error, known: !enabled || known };
 }
 
 /**
