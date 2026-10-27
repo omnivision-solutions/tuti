@@ -65,3 +65,12 @@ test("a reply on an unassigned conversation goes to everyone with the emails on,
   expect(to(member.email)).toEqual(["New conversation: Discount?"]);
   expect((await mailbox.latestTo(owner.email)).text).toContain("e2e-asker@example.com started a conversation");
 });
+
+test("one address that's refused doesn't keep the rest of the team from hearing, and only it is tried again", async () => {
+  const { owner, member, key } = await setup();
+  mailbox.refuseNext(member.email);
+  await call(createConversation, key, { email: "e2e-asker@example.com", subject: "Refund", body: "Please" });
+  // The owner heard once; the member, refused at first, heard from the retry, once.
+  expect(to(owner.email)).toEqual(["New conversation: Refund"]);
+  expect(to(member.email)).toEqual(["New conversation: Refund"]);
+});

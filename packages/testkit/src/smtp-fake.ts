@@ -21,6 +21,8 @@ export type SmtpFake = {
   emails: CapturedEmail[];
   /** The latest email to `address` (waits up to a few seconds for it to arrive). */
   latestTo(address: string): Promise<CapturedEmail>;
+  /** Refuses the next email to `address` (a mail server rejecting it), then takes them again. */
+  refuseNext(address: string): void;
   close(): Promise<void>;
 };
 
@@ -33,6 +35,7 @@ export async function startSmtpFake({
   onEmail,
 }: { onEmail?: (email: CapturedEmail) => void | Promise<void> } = {}): Promise<SmtpFake> {
   const emails: CapturedEmail[] = [];
+  const refusing = new Set<string>();
   const server = new SMTPServer({
     authOptional: true,
     disabledCommands: ["STARTTLS"],
@@ -51,6 +54,11 @@ export async function startSmtpFake({
           html: typeof mail.html === "string" ? mail.html : "",
           headers: Object.fromEntries(mail.headerLines.map((h) => [h.key, h.line.slice(h.line.indexOf(":") + 1).trim()])),
         };
+        const refused = to.find((address) => refusing.has(address));
+        if (refused) {
+          refusing.delete(refused);
+          throw new Error(`Mailbox ${refused} refused`);
+        }
         await onEmail?.(email);
         emails.push(email);
         callback();
@@ -76,6 +84,7 @@ export async function startSmtpFake({
       }
       throw new Error(`No email to ${address} arrived`);
     },
+    refuseNext: (address) => void refusing.add(address),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }

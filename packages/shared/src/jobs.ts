@@ -28,7 +28,8 @@ export const jobs = {
   /** A user wrote in the support inbox (a new conversation or a reply): email the team members it's for. */
   conversationMessage: {
     name: "conversation-message",
-    input: z.object({ messageId: z.string() }),
+    // `only`: the addresses a first run couldn't reach, tried again on their own (no claim: the first run made it).
+    input: z.object({ messageId: z.string(), only: z.array(z.string()).optional() }),
   },
   /** A docs article was published or changed: embed its sections for search (or remove them if it's no longer published). */
   articleChanged: {
