@@ -12,22 +12,30 @@ const breaking = [
   /\bSET\s+NOT\s+NULL\b/i,
 ];
 
+const markedSafe = "\u0000previous-release\u0000";
+
 /** The statements in a migration that the previous release can't run against, unless marked safe. */
 function unsafeStatements(sql: string): string[] {
-  return sql
+  // One pass, so a quote inside a comment or "--" inside a string can't confuse the other.
+  const code = sql.replace(/'(?:[^']|'')*'|--[^\n]*/g, (token) =>
+    token.startsWith("--") ? (/^--\s*Previous release:/i.test(token) ? markedSafe : "") : "''",
+  );
+  return code
     .split(";")
-    .filter((statement) => !/^\s*--\s*Previous release:/im.test(statement))
-    .filter(
-      (statement) =>
-        breaking.some((pattern) => pattern.test(statement)) ||
+    .filter((statement) => !statement.includes(markedSafe))
+    .filter((statement) => {
+      const bare = statement.replace(/"[^"]*"/g, '""');
+      return (
+        breaking.some((pattern) => pattern.test(bare)) ||
         // A required column without a default: the previous release's inserts leave it out.
-        statement
-          .split(/\bADD\s+COLUMN\b/i)
+        bare
+          .split(/\bADD\s+(?!CONSTRAINT|PRIMARY|FOREIGN|UNIQUE|CHECK|EXCLUDE|VALUE)(?:COLUMN\b)?/i)
           .slice(1)
           .map((rest) => rest.split(/,\s*(?:ADD|ALTER|DROP)\b/i)[0] ?? "")
-          .some((column) => /\bNOT\s+NULL\b/i.test(column) && !/\bDEFAULT\b/i.test(column)),
-    )
-    .map((statement) => statement.replace(/^\s*--.*$/gm, "").trim());
+          .some((column) => /\bNOT\s+NULL\b/i.test(column) && !/\bDEFAULT\b/i.test(column))
+      );
+    })
+    .map((statement) => statement.trim());
 }
 
 describe("migrations", () => {
@@ -54,8 +62,16 @@ describe("migrations", () => {
     ['ALTER TABLE "post" ADD COLUMN "slug" TEXT NOT NULL'],
     ['ALTER TABLE "post" ADD COLUMN "a" TEXT, ADD COLUMN "slug" TEXT NOT NULL'],
     ['ALTER TABLE "post" ADD COLUMN "price" DECIMAL(10,2) NOT NULL'],
+    ['ALTER TABLE "post" ADD "slug" TEXT NOT NULL'],
+    ['ALTER TABLE "post" ADD COLUMN "default" TEXT NOT NULL'],
   ])("flags %s", (sql) => {
     expect(unsafeStatements(`-- AlterTable\n${sql};\n`)).toEqual([sql]);
+  });
+
+  it("ignores what comments and strings say", () => {
+    const sql = 'ALTER TABLE "post" ADD COLUMN "slug" TEXT NOT NULL -- DEFAULT comes later; promise\n;';
+    expect(unsafeStatements(sql)).toEqual(['ALTER TABLE "post" ADD COLUMN "slug" TEXT NOT NULL']);
+    expect(unsafeStatements("UPDATE \"post\" SET \"title\" = 'DROP TABLE x; -- y';\n")).toEqual([]);
   });
 
   it.each([
@@ -67,6 +83,9 @@ describe("migrations", () => {
     ['ALTER INDEX "a" RENAME TO "b"'],
     ['ALTER TYPE "Role" ADD VALUE \'OWNER\''],
     ['-- Previous release: 1.4 stopped reading it.\nALTER TABLE "post" DROP COLUMN "title"'],
+    ['ALTER TABLE "post" ADD CONSTRAINT "c" CHECK ("title" IS NOT NULL)'],
+    ["-- Previous release: unused since 1.4; safe to remove.\nALTER TABLE \"post\" DROP COLUMN \"title\""],
+    ["-- Previous release: nothing reads it (it's new).\nALTER TABLE \"post\" DROP COLUMN \"title\""],
   ])("allows %s", (sql) => {
     expect(unsafeStatements(`${sql};\n`)).toEqual([]);
   });
