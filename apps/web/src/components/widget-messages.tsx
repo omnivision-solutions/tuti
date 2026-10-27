@@ -171,10 +171,12 @@ function Composer({ placeholder, send, label }: { placeholder: string; label: st
   const submit = () =>
     startTransition(async () => {
       // Offline, or the server failing: say so by the form, and keep what they wrote.
-      const result = await send(text).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const sent = text;
+      const result = await send(sent).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
-        setText("");
+        // Only what was sent: anything typed meanwhile stays.
+        setText((now) => (now === sent ? "" : now));
       }
     });
   return (
