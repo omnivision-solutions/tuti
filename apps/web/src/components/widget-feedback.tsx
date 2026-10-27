@@ -10,7 +10,7 @@ import { widgetCreatePost, widgetSignIn } from "@/server/widget";
 
 type SignedIn = { id: string; token: string; name: string; email: string | null };
 
-type SignInResult = { signedIn: SignedIn } | { error: string };
+type SignInResult = { signedIn: SignedIn } | { error: string } | { signedOut: true };
 
 /** Every useWidgetSignIn on the page, told each token's result: one listener trades each token once, as each works only once. */
 const subscribers = new Set<{ projectSlug: string; tell: (result: SignInResult) => void }>();
@@ -19,7 +19,17 @@ async function onIdentify(event: MessageEvent) {
   // Only from the page that embeds us; the token proves who it's for, whatever site that is.
   const data = event.data as { type?: unknown; token?: unknown } | null;
   const projectSlug = subscribers.values().next().value?.projectSlug;
-  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || typeof data.token !== "string" || !projectSlug) {
+  if (event.source !== window.parent || data?.type !== WIDGET_IDENTIFY_MESSAGE || !projectSlug) {
+    return;
+  }
+  // The page has nobody signed in now (its app gave no token): nobody is, not whoever was before.
+  if (data.token === null) {
+    for (const subscriber of subscribers) {
+      subscriber.tell({ signedOut: true });
+    }
+    return;
+  }
+  if (typeof data.token !== "string") {
     return;
   }
   const result = await widgetSignIn(projectSlug, data.token);
@@ -47,6 +57,9 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
           setError(result.error);
+          setSignedIn(null);
+        } else if ("signedOut" in result) {
+          setError(undefined);
           setSignedIn(null);
         } else {
           setError(undefined);

@@ -369,18 +369,24 @@ export function widgetLoader(portalTemplate: string): string {
 
   // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
   // for: an older one the app answers later may be for someone signed in before.
+  // With nobody signed in (no identify, or it gives no token, or it fails), it says so: token null,
+  // so the panel forgets whoever was signed in before.
   function sendToken(to) {
-    if (!getToken) return;
     var target = to.contentWindow;
+    var tell = function (token) { target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin); };
+    if (!getToken) return tell(null);
     var asked = (to.__tutiAsked = (to.__tutiAsked || 0) + 1);
     Promise.resolve()
       .then(function () { return getToken(); })
       .then(
         function (token) {
           if (asked !== to.__tutiAsked) return;
-          if (typeof token === "string" && token) target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin);
+          tell(typeof token === "string" && token ? token : null);
         },
-        function (error) { console.error("Tuti widget: identify failed", error); }
+        function (error) {
+          console.error("Tuti widget: identify failed", error);
+          if (asked === to.__tutiAsked) tell(null);
+        }
       );
   }
 
