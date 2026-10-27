@@ -170,7 +170,8 @@ function Composer({ placeholder, send, label }: { placeholder: string; label: st
   const [pending, startTransition] = useTransition();
   const submit = () =>
     startTransition(async () => {
-      const result = await send(text);
+      // Offline, or the server failing: say so by the form, and keep what they wrote.
+      const result = await send(text).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
         setText("");
