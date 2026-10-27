@@ -7,7 +7,7 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { replyToConversation, updateConversation } from "./operations/conversations";
 import { call } from "./operations/run";
 import { upsertProjectUser } from "./project-users";
-import { subscribeInbox } from "./live";
+import { notifyInboxNow, subscribeInbox } from "./live";
 import { widgetConversation, widgetConversations, widgetHere, widgetSendMessage, widgetStartConversation } from "./widget-inbox";
 
 async function setup(inbox = true) {
@@ -181,16 +181,30 @@ test("the total unseen count includes conversations older than the latest 50 the
 
 test("the shown panel saying they're here makes them online, and tells the team's pages once", async () => {
   const { project, auth } = await setup();
-  const heard: number[] = [];
-  const stop = subscribeInbox((change) => change.projectId === project.id, () => heard.push(1));
+  // Markers of our own: one heard means the listener's connected; and since NOTIFYs arrive in the
+  // order they're sent, once the last one's heard, so is everything before it.
+  const marker = (conversationId: string) => notifyInboxNow({ projectId: project.id, conversationId, userId: null, visitorHash: null });
+  const heardOf = (wants: (conversationId: string) => boolean) => {
+    const heard: number[] = [];
+    stops.push(subscribeInbox((change) => change.projectId === project.id && wants(change.conversationId), () => heard.push(1)));
+    return heard;
+  };
+  const stops: (() => void)[] = [];
+  const connected = heardOf((id) => id === "connected");
+  const last = heardOf((id) => id === "last");
+  const heard = heardOf((id) => id !== "connected" && id !== "last");
   try {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await vi.waitFor(async () => {
+      await marker("connected");
+      expect(connected.length).toBeGreaterThan(0);
+    });
     expect(await widgetHere(project.slug, auth)).toEqual({});
     expect(await widgetHere(project.slug, auth)).toEqual({});
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await marker("last");
+    await vi.waitFor(() => expect(last).toHaveLength(1));
     expect(heard).toHaveLength(1);
   } finally {
-    stop();
+    stops.forEach((stop) => stop());
   }
   // Reading their conversations alone (a hidden panel's checks) doesn't make them online.
   const other = await setup();

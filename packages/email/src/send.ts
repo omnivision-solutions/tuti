@@ -58,3 +58,17 @@ export async function sendEmail({
   const info = (await smtp().sendMail({ from, to, subject, html, text, replyTo, headers, messageId })) as { response?: string };
   return info.response ?? null;
 }
+
+/**
+ * The Message-ID an email was delivered with, from the SMTP server's answer to it: Amazon SES
+ * replaces ours with its own, `<id@email.amazonses.com>` (`<id@REGION.amazonses.com>` outside
+ * us-east-1), and answers "250 Ok <id>". Null for other servers, which keep ours.
+ */
+export function deliveredMessageId(response: string | null, host = process.env.SMTP_HOST ?? ""): string | null {
+  const id = response?.match(/^250 Ok ([0-9a-f]+(?:-[0-9a-f]+){5,})\s*$/i)?.[1];
+  if (!id) {
+    return null;
+  }
+  const region = host.match(/^email-smtp(?:-fips)?\.([a-z0-9-]+)\.amazonaws\.com$/i)?.[1]?.toLowerCase() ?? "us-east-1";
+  return `<${id}@${region === "us-east-1" ? "email" : region}.amazonses.com>`;
+}
