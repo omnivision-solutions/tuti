@@ -131,7 +131,7 @@ const form = (fields: Record<string, string>) => {
 /** The inbox on, and a widget token for one of the project's users (what Tuti.identify gets the panel). */
 async function inboxToken(slug: string) {
   const project = await prisma.project.update({ where: { slug }, data: { supportInbox: true }, select: { id: true } });
-  return widgetToken(project.id, await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user" }));
+  return { token: widgetToken(project.id, await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user" })) };
 }
 
 const matrix: Matrix = {

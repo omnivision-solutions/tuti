@@ -245,6 +245,8 @@ export async function startConversation(
   start: {
     userId: string | null;
     email: string | null;
+    /** A signed-out visitor's, in the widget (lib/visitor-session.ts). */
+    visitorHash?: string | null;
     subject?: string;
     body: string;
     origin: ConversationOrigin;
@@ -267,6 +269,7 @@ export async function startConversation(
         origin: start.origin,
         userId: start.userId,
         email: start.email?.toLowerCase() ?? null,
+        visitorHash: start.visitorHash ?? null,
         lastMessageAt: now,
         waitingSince: now,
       },

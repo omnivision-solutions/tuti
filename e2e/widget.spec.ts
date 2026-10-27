@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -1069,3 +1069,59 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(messages).toHaveCount(3);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
 });
+
+test("signed out, a visitor leaves their email to message the team, and their browser keeps the conversation", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("switch", { name: "Messages in the widget" }).click();
+  await expect(owner.getByText("Messages on")).toBeVisible();
+  // Someone the team's app already told Tuti about.
+  const kim = `e2e-kim-${slug}@example.com`;
+  const api = await apiFor(owner, slug);
+  await api("/users", { users: [{ id: "kim-1", name: "Kim Lee", email: kim }] });
+
+  // A visitor of the customer's site (it signs nobody in) writes, giving their email.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByText("Leave your email so the team can get back to you.")).toBeVisible();
+  await widget.getByRole("textbox", { name: "Your email" }).fill(kim);
+  await widget.getByRole("textbox", { name: "Message" }).fill("Is there a nonprofit discount?");
+  await checkpoint(visitor, "widget-signed-out-message");
+  await widget.getByRole("button", { name: "Send" }).click();
+  const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveCount(1);
+
+  // The team sees an address that isn't verified, and only a hint of who it may be.
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("link", { name: "Is there a nonprofit discount?" }).click();
+  const about = owner.getByRole("complementary", { name: "About them" });
+  await expect(about).toContainText(`${kim} (not verified)`);
+  await expect(about).toContainText("Maybe Kim Lee (not signed in), id kim-1");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Yes: 50% off for registered charities.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+
+  await expect(messages).toHaveCount(2, { timeout: 15_000 });
+  await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
+
+  // Back later in the same browser: their conversation is still there.
+  await visitor.reload();
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
+
+  // Another browser has none of it.
+  const stranger = await (await browser.newContext()).newPage();
+  await stranger.goto(sitePage("customer.localhost", slug));
+  await stranger.getByRole("button", { name: "Feedback" }).click();
+  await stranger.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" }).click();
+  await expect(stranger.frameLocator('iframe[title="Feedback"]').getByRole("textbox", { name: "Your email" })).toBeVisible();
+  await expect(stranger.frameLocator('iframe[title="Feedback"]').getByRole("list", { name: "Conversations" })).toHaveCount(0);
+});
+
