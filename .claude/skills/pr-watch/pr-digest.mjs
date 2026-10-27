@@ -45,9 +45,10 @@ function isNoise({ user, body }) {
 const since = (c) => (c.user.type === "Bot" ? c.created_at : c.updated_at);
 
 // Bots pad bodies with HTML comments, collapsed sections and badges; the prose around them is the finding.
-function clean(body) {
+// A review keeps its collapsed sections: CodeRabbit puts the findings outside the diff in them.
+function clean(body, keepDetails = false) {
   let text = (body ?? "").replace(/<!--[\s\S]*?-->/g, "");
-  for (let i = 0; i < 6; i++) text = text.replace(/<details>(?:(?!<details>)[\s\S])*?<\/details>/g, "");
+  for (let i = 0; i < 6 && !keepDetails; i++) text = text.replace(/<details>(?:(?!<details>)[\s\S])*?<\/details>/g, "");
   return text
     .replace(/<img[^>]*alt="([^"]*)"[^>]*>/g, "$1")
     .replace(/<[^>]+>/g, "")
@@ -122,13 +123,14 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
     const followUps = inline.filter((r) => r.in_reply_to_id === c.id);
     const answers = followUps.filter((r) => r.user.login === viewer).map((r) => r.created_at);
     const asks = [c, ...followUps.filter((r) => r.user.type !== "Bot")].filter((r) => r.user.login !== viewer);
-    const unanswered = asks.some((a) => !answers.some((at) => at > since(a)));
+    // Shows the latest comment still waiting for you: a follow-up's question, not the root you already answered.
+    const ask = asks.findLast((a) => !answers.some((at) => at > since(a)));
     const thread = unresolved.get(c.id);
-    if (unanswered || thread)
+    if (ask || thread)
       findings.push({
         key: `${c.id}:${asks.map(since).join()}`,
-        title: `${c.id} ${c.user.login} ${c.path}:${c.line ?? c.original_line}${unanswered ? " · no reply" : ""}${thread ? ` · unresolved thread ${thread}` : ""}`,
-        body: c.body,
+        title: `${c.id} ${(ask ?? c).user.login} ${c.path}:${c.line ?? c.original_line}${ask ? ` · no reply${ask === c ? "" : ` to follow-up ${ask.id}`}` : ""}${thread ? ` · unresolved thread ${thread}` : ""}`,
+        body: (ask ?? c).body,
       });
   }
   // Conversation comments and review bodies have no threads: answered by your later
@@ -139,9 +141,10 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
     ...reviews.filter((r) => r.body).map((r) => ({ ...r, at: r.submitted_at, kind: "review" })),
   ];
   for (const c of bodies) {
-    if (c.user.login === viewer || isNoise(c)) continue;
+    // Nothing to answer: chrome, or only markup (Greptile's approval is an HTML comment).
+    if (c.user.login === viewer || isNoise(c) || !clean(c.body)) continue;
     if (mine.some((m) => m.created_at > c.at && links(m.body).includes(c.html_url))) continue;
-    findings.push({ key: `${c.id}:${c.at}`, title: `${c.id} ${c.user.login} ${c.kind} · no reply quoting ${c.html_url}`, body: c.body });
+    findings.push({ key: `${c.id}:${c.at}`, title: `${c.id} ${c.user.login} ${c.kind} · no reply quoting ${c.html_url}`, body: c.body, review: c.kind === "review" });
   }
   // A change request stands until that reviewer approves or it's dismissed.
   const latest = new Map();
@@ -149,7 +152,7 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
     latest.set(r.user.login, r);
   for (const r of latest.values())
     if (r.state === "CHANGES_REQUESTED") findings.push({ key: `review ${r.id}`, title: `review ${r.id} ${r.user.login} requested changes`, body: r.body });
-  for (const f of findings) lines.push("", `[${f.title}]`, `  ${clean(f.body)}`);
+  for (const f of findings) lines.push("", `[${f.title}]`, `  ${clean(f.body, f.review)}`);
 
   const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : !bot ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
   lines.push(`VERDICT ${verdict}`);

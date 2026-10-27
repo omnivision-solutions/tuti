@@ -129,7 +129,9 @@ describe("pr-digest", () => {
 
     it("needs a reply to a person's follow-up, not a bot's", () => {
       const followUp = (login: string) => inlineComment(12, login, "2026-01-03T00:00:00Z", undefined, 10);
-      expect(observe({ inline: [root, reply, followUp("reviewer")], threads: [thread(10, true)] }).verdict).toBe("open-comments");
+      const open = observe({ inline: [root, reply, { ...followUp("reviewer"), body: "And the timeout?" }], threads: [thread(10, true)] });
+      expect(open.verdict).toBe("open-comments");
+      expect(open.lines).toContain("  And the timeout?");
       expect(observe({ inline: [root, reply, followUp("coderabbitai[bot]")], threads: [thread(10, true)] }).verdict).toBe("green");
       const answer = inlineComment(13, viewer, "2026-01-04T00:00:00Z", undefined, 10);
       expect(observe({ inline: [root, reply, followUp("reviewer"), answer], threads: [thread(10, true)] }).verdict).toBe("green");
@@ -159,12 +161,16 @@ describe("pr-digest", () => {
 
     it("needs a reply to a review body with findings, quoting its permalink", () => {
       const outside = review(5, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "**Actionable comments posted: 1**\n<details><summary>⚠️ Outside diff range comments (1)</summary>…</details>");
-      expect(observe({ reviews: [outside] }).verdict).toBe("open-comments");
+      const open = observe({ reviews: [outside] });
+      expect(open.verdict).toBe("open-comments");
+      expect(open.lines.join("\n")).toContain("Outside diff range comments (1)…");
       expect(observe({ reviews: [review(5, "reviewer", "COMMENTED", "2026-01-01T00:00:00Z", "Split this up")] }).verdict).toBe("open-comments");
       const answer = comment(21, viewer, `Fixed: ${outside.html_url}`, "2026-01-02T00:00:00Z");
       expect(observe({ reviews: [outside], conversation: [answer] }).verdict).toBe("green");
       const header = review(5, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "**Actionable comments posted: 2**");
       expect(observe({ reviews: [header] }).verdict).toBe("green");
+      const approval = review(6, "greptile-apps[bot]", "APPROVED", "2026-01-01T00:00:00Z", '<!-- greptile-auto-approve {"headSha":"a"} -->\n');
+      expect(observe({ reviews: [approval] }).verdict).toBe("green");
     });
 
     it.each([
@@ -178,7 +184,7 @@ describe("pr-digest", () => {
     });
 
     it("doesn't skip the same text from a person or a real bot finding", () => {
-      expect(observe({ conversation: [comment(30, "reviewer", "<!-- tuti-e2e-screenshots -->")] }).verdict).toBe("open-comments");
+      expect(observe({ conversation: [comment(30, "reviewer", "<!-- tuti-e2e-screenshots -->\n### Screenshots")] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [comment(30, "coderabbitai[bot]", "Please fix this")] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [comment(30, "github-actions[bot]", "@greptileai the deploy step failed")] }).verdict).toBe("open-comments");
     });
