@@ -36,7 +36,7 @@ Use it instead of reading checks and comments with `gh api` by hand. A verdict i
    - Real issue: fix it, push, then reply in the thread saying what changed.
    - Wrong: reply with the evidence (code, test, docs).
    - A product decision: ask the user.
-   Reply to an inline comment in its thread: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body='…'`. A conversation comment has no thread: answer with a new `gh pr comment` that quotes its full permalink (the digest prints it). A person's edit after your reply reopens the comment; a bot's edits to its own comment don't.
+   Reply to an inline comment in its thread: `gh api repos/{owner}/{repo}/pulls/<n>/comments/<id>/replies -f body='…'`. A conversation comment or a review's own text (a person's review, or CodeRabbit's comments outside the diff and nitpicks) has no thread: answer with a new `gh pr comment` that quotes its full permalink (the digest prints it). A person's follow-up in a thread, or their edit after your reply, needs another reply; a bot's follow-ups and edits to its own comments don't.
    - Resolving: once a bot's finding is fixed or answered, resolve that thread (CodeRabbit often resolves its own after the fix lands). Resolve one thread at a time with the id the digest prints: `gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -f id=<thread-id>`. `@coderabbitai resolve` resolves *all* of CodeRabbit's threads, so use it only once every one of them is handled. A person's thread is theirs to resolve: reply, and ask the user if it blocks the merge.
 3. Repeat after every push. Each push restarts the wait: checks and bots run again on the new commit.
 

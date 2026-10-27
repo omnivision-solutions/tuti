@@ -26,7 +26,15 @@ const inlineComment = (id: number, login: string, at: string, edited = at, reply
   in_reply_to_id: replyTo,
 });
 const thread = (rootId: number, isResolved: boolean) => ({ id: `T${rootId}`, isResolved, comments: { nodes: [{ databaseId: rootId }] } });
-const review = (id: number, login: string, state: string, at: string) => ({ id, user: user(login), state, body: "Summary", submitted_at: at });
+const review = (id: number, login: string, state: string, at: string, body = "") => ({
+  id,
+  user: user(login),
+  state,
+  body,
+  submitted_at: at,
+  html_url: `https://github.com/example/project/pull/1#pullrequestreview-${id}`,
+});
+const files = (...names: string[]) => names.map((filename) => ({ filename }));
 
 // A green PR: CI and CodeRabbit passed on the head, nothing to answer.
 function observe(changes: Record<string, unknown> = {}) {
@@ -78,12 +86,24 @@ describe("pr-digest", () => {
 
     it("accepts an earlier review when only tests and docs changed since", () => {
       const runs = [run("Unit tests")];
-      const earlier = { sha: reviewed, files: ["docs/plan.md", "e2e/a.spec.ts", "apps/web/src/a.db.test.ts", ".claude/skills/x/SKILL.md"] };
+      const earlier = { sha: reviewed, files: files("docs/plan.md", "e2e/a.spec.ts", "apps/web/src/a.db.test.ts", ".claude/skills/x/SKILL.md") };
       expect(observe({ runs, earlier }).verdict).toBe("green");
 
-      const result = observe({ runs, earlier: { sha: reviewed, files: ["docs/plan.md", "apps/web/src/a.ts"] } });
+      const result = observe({ runs, earlier: { sha: reviewed, files: files("docs/plan.md", "apps/web/src/a.ts") } });
       expect(result.verdict).toBe("pending");
-      expect(result.lines.at(-2)).toContain("changed since: apps/web/src/a.ts.");
+      expect(result.lines.find((l: string) => l.startsWith("BOT"))).toContain("changed since: apps/web/src/a.ts.");
+    });
+
+    it("counts a file moved into docs as a code change", () => {
+      const earlier = { sha: reviewed, files: [{ filename: "docs/a.ts", previous_filename: "apps/web/src/a.ts" }] };
+      expect(observe({ runs: [run("Unit tests")], earlier }).verdict).toBe("pending");
+    });
+
+    it("doesn't wait for the bot's new review when the earlier one counts", () => {
+      const earlier = { sha: reviewed, files: files("docs/plan.md") };
+      expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)], earlier }).verdict).toBe("green");
+      const statuses = [{ context: "CodeRabbit", state: "pending" }];
+      expect(observe({ runs: [run("Unit tests")], statuses, earlier }).verdict).toBe("green");
     });
   });
 
@@ -107,6 +127,14 @@ describe("pr-digest", () => {
       expect(observe({ inline: [root, reply], threads: [thread(10, true)] }).verdict).toBe("green");
     });
 
+    it("needs a reply to a person's follow-up, not a bot's", () => {
+      const followUp = (login: string) => inlineComment(12, login, "2026-01-03T00:00:00Z", undefined, 10);
+      expect(observe({ inline: [root, reply, followUp("reviewer")], threads: [thread(10, true)] }).verdict).toBe("open-comments");
+      expect(observe({ inline: [root, reply, followUp("coderabbitai[bot]")], threads: [thread(10, true)] }).verdict).toBe("green");
+      const answer = inlineComment(13, viewer, "2026-01-04T00:00:00Z", undefined, 10);
+      expect(observe({ inline: [root, reply, followUp("reviewer"), answer], threads: [thread(10, true)] }).verdict).toBe("green");
+    });
+
     it("blocks a resolved thread with no reply", () => {
       expect(observe({ inline: [root], threads: [thread(10, true)] }).verdict).toBe("open-comments");
     });
@@ -125,6 +153,18 @@ describe("pr-digest", () => {
       expect(observe({ conversation: [question, answer(`Because. ${question.html_url}.`)] }).verdict).toBe("green");
       expect(observe({ conversation: [question, answer(`${question.html_url}1`)] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [question, answer("#issuecomment-20")] }).verdict).toBe("open-comments");
+      const botEdited = { ...comment(20, "greptile-apps[bot]", "Why this?"), updated_at: "2026-01-03T00:00:00Z" };
+      expect(observe({ conversation: [botEdited, answer(question.html_url)] }).verdict).toBe("green");
+    });
+
+    it("needs a reply to a review body with findings, quoting its permalink", () => {
+      const outside = review(5, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "**Actionable comments posted: 1**\n<details><summary>⚠️ Outside diff range comments (1)</summary>…</details>");
+      expect(observe({ reviews: [outside] }).verdict).toBe("open-comments");
+      expect(observe({ reviews: [review(5, "reviewer", "COMMENTED", "2026-01-01T00:00:00Z", "Split this up")] }).verdict).toBe("open-comments");
+      const answer = comment(21, viewer, `Fixed: ${outside.html_url}`, "2026-01-02T00:00:00Z");
+      expect(observe({ reviews: [outside], conversation: [answer] }).verdict).toBe("green");
+      const header = review(5, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "**Actionable comments posted: 2**");
+      expect(observe({ reviews: [header] }).verdict).toBe("green");
     });
 
     it.each([

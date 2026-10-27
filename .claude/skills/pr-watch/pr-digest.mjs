@@ -25,18 +25,24 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
-// Status chrome, not findings: CodeRabbit's walkthrough, Greptile's summary and
-// lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
+// Status chrome, not findings: CodeRabbit's walkthrough and review headers (unless
+// they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
 // the @greptileai mention review-bot.yml posts to start Greptile.
 function isNoise({ user, body }) {
   if (user.type !== "Bot") return false;
   if (user.login === "coderabbitai[bot]")
-    return /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body);
+    return (
+      /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body) ||
+      (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body))
+    );
   if (user.login === "greptile-apps[bot]")
     return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || body.includes("Reactivate Greptile");
   if (user.login === "github-actions[bot]") return body.startsWith("<!-- tuti-e2e-screenshots -->") || body.trim() === "@greptileai";
   return false;
 }
+
+// Bots edit their comments for bookkeeping ("Addressed in commit", reply markers); only a person's edit reopens one.
+const since = (c) => (c.user.type === "Bot" ? c.created_at : c.updated_at);
 
 // Bots pad bodies with HTML comments, collapsed sections and badges; the prose around them is the finding.
 function clean(body) {
@@ -51,12 +57,14 @@ function clean(body) {
     .slice(0, 400);
 }
 
+// A renamed file counts at both paths: moving code into docs/ still changes the code.
+const paths = (earlier) => earlier.files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean));
 const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((url) => url.replace(/[.,;:!?]+$/, ""));
 
 /**
  * Applies the merge gate to one observation of the PR's head. `earlier` is the
- * newest earlier commit the bot passed on ({ sha, files } changed since), given
- * only when the bot hasn't passed on the head.
+ * newest earlier commit the bot passed on ({ sha, files }: the compare API's files
+ * changed since), given only when the bot hasn't passed on the head.
  */
 export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier }) {
   const head = pr.headRefOid;
@@ -81,7 +89,6 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   for (const r of runs) counts[r.conclusion ?? "pending"] = (counts[r.conclusion ?? "pending"] ?? 0) + 1;
   lines.push(`checks ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(" · ") || "none"}`);
   for (const f of failed) lines.push(`FAIL ${f}`);
-  if (pending.length) lines.push(`PENDING ${pending.join(", ")}`);
 
   // A missing bot status is not a pass: the PR's bot must have passed on the head, or on
   // an earlier commit with only tests and docs changed since.
@@ -91,11 +98,13 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   if (!bot) lines.push("BOT none: no review:coderabbit or review:greptile label, so no bot reviews this PR. Add one");
   else if (state === "success") lines.push(`BOT ${bot}: passed on the head`);
   else if (state !== "pending" && state !== "missing") lines.push(`BOT ${bot}: ${state} on the head`);
-  else if (earlier && earlier.files.every((f) => TESTS_OR_DOCS.test(f)))
+  else if (earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f))) {
+    // The earlier review counts, so a review running on the head isn't waited for.
+    if (pending.includes(bot)) pending.splice(pending.indexOf(bot), 1);
     lines.push(`BOT ${bot}: passed on ${earlier.sha.slice(0, 8)}; only tests and docs changed since`);
-  else {
-    pending.push(bot);
-    const code = earlier?.files.filter((f) => !TESTS_OR_DOCS.test(f));
+  } else {
+    if (!pending.includes(bot)) pending.push(bot);
+    const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
     lines.push(
       `BOT ${bot}: ${state} on the head` +
         (earlier
@@ -103,29 +112,36 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
           : ""),
     );
   }
+  if (pending.length) lines.push(`PENDING ${pending.join(", ")}`);
 
   const findings = [];
-  // Inline comments: answered by your reply after the root's latest edit, and the thread resolved.
+  // Inline threads: the root and every person's follow-up need your later reply, and the thread resolved.
+  // A bot's follow-up (usually an acknowledgement) doesn't.
   const unresolved = new Map(threads.filter((t) => !t.isResolved).map((t) => [t.comments.nodes[0]?.databaseId, t.id]));
-  const replies = inline.filter((c) => c.in_reply_to_id && c.user.login === viewer);
   for (const c of inline.filter((c) => !c.in_reply_to_id)) {
-    // Bots edit their roots for bookkeeping ("Addressed in commit", reply markers); only a person's edit reopens.
-    const since = c.user.type === "Bot" ? c.created_at : c.updated_at;
-    const unanswered = c.user.login !== viewer && !replies.some((r) => r.in_reply_to_id === c.id && r.created_at > since);
+    const followUps = inline.filter((r) => r.in_reply_to_id === c.id);
+    const answers = followUps.filter((r) => r.user.login === viewer).map((r) => r.created_at);
+    const asks = [c, ...followUps.filter((r) => r.user.type !== "Bot")].filter((r) => r.user.login !== viewer);
+    const unanswered = asks.some((a) => !answers.some((at) => at > since(a)));
     const thread = unresolved.get(c.id);
     if (unanswered || thread)
       findings.push({
-        key: `${c.id}:${c.updated_at}`,
+        key: `${c.id}:${asks.map(since).join()}`,
         title: `${c.id} ${c.user.login} ${c.path}:${c.line ?? c.original_line}${unanswered ? " · no reply" : ""}${thread ? ` · unresolved thread ${thread}` : ""}`,
         body: c.body,
       });
   }
-  // Conversation comments have no threads: answered by your later comment quoting its permalink.
+  // Conversation comments and review bodies have no threads: answered by your later
+  // conversation comment quoting their permalink.
   const mine = conversation.filter((c) => c.user.login === viewer);
-  for (const c of conversation) {
+  const bodies = [
+    ...conversation.map((c) => ({ ...c, at: since(c), kind: "conversation" })),
+    ...reviews.filter((r) => r.body).map((r) => ({ ...r, at: r.submitted_at, kind: "review" })),
+  ];
+  for (const c of bodies) {
     if (c.user.login === viewer || isNoise(c)) continue;
-    if (mine.some((m) => m.created_at > c.updated_at && links(m.body).includes(c.html_url))) continue;
-    findings.push({ key: `${c.id}:${c.updated_at}`, title: `${c.id} ${c.user.login} conversation · no reply quoting ${c.html_url}`, body: c.body });
+    if (mine.some((m) => m.created_at > c.at && links(m.body).includes(c.html_url))) continue;
+    findings.push({ key: `${c.id}:${c.at}`, title: `${c.id} ${c.user.login} ${c.kind} · no reply quoting ${c.html_url}`, body: c.body });
   }
   // A change request stands until that reviewer approves or it's dismissed.
   const latest = new Map();
@@ -179,7 +195,7 @@ function observe(repo, viewer, number) {
   if (bot && ["pending", "missing"].includes(botState(bot, runs, statuses))) {
     const shas = pages(`repos/${repo}/pulls/${pr.number}/commits?per_page=100`).flat().map((c) => c.sha).reverse();
     const sha = shas.slice(1).find((s) => { const c = checksOn(repo, s); return botState(bot, c.runs, c.statuses) === "success"; });
-    if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files.map((f) => f.filename) };
+    if (sha) earlier = { sha, files: gh("api", `repos/${repo}/compare/${sha}...${head}`).files };
   }
   const local = git("branch", "--show-current") === pr.headRefName ? { sha: git("rev-parse", "HEAD"), upstream: git("rev-parse", "@{upstream}") } : undefined;
   // A verdict describes one commit: if the head moved while reading, it's stale.
