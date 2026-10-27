@@ -1125,3 +1125,61 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(stranger.frameLocator('iframe[title="Feedback"]').getByRole("list", { name: "Conversations" })).toHaveCount(0);
 });
 
+
+test("with the support inbox on, “Ask a person” in the widget starts a conversation the visitor finds in Messages", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  // An article close to the visitor's question, and the inbox on (no support email needed).
+  const question = `How do I add a colleague to Acme ${slug}?`;
+  const body = "Owners and admins send invites from the Team page.";
+  await similar(question, `Inviting your team\n\n${body}`, 0.8);
+  const article = await api("/articles", { title: "Inviting your team", body });
+  await api(`/articles/${article.slug}/publish`, {});
+  await api("/support", { inbox: true }, "PATCH");
+
+  // A signed-out visitor asks the docs' AI; the answer doesn't help.
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(sitePage("customer.localhost", slug));
+  await visitor.getByRole("button", { name: "Feedback" }).click();
+  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  await widget.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Docs" }).click();
+  const search = widget.getByRole("searchbox", { name: "Search the docs" });
+  await search.fill(question);
+  await search.press("Enter");
+  await nextModelReply(JSON.stringify({ answer: "Owners and admins send invites from the Team page.", sources: ["s1"] }), question);
+  await widget.getByRole("button", { name: `Ask AI: ${question}` }).click();
+  const ai = widget.getByRole("dialog", { name: "Assistant" }).getByRole("log", { name: "Conversation" });
+  await expect(ai.getByText("Owners and admins send invites from the Team page.")).toBeVisible();
+  await ai.getByRole("button", { name: "Not helpful" }).click();
+
+  // They ask a person: it goes to the team's inbox, and the reply will be in Messages.
+  await ai.getByRole("button", { name: "Ask a person" }).click();
+  const form = ai.getByRole("form", { name: "Ask a person" });
+  await expect(form).toContainText("They'll reply in Messages.");
+  await form.getByRole("textbox", { name: "Your email" }).fill(`e2e-asker-${slug}@example.com`);
+  await form.getByRole("textbox", { name: "Anything to add? (optional)" }).fill("I'm not an admin.");
+  await nextModelReply("They want to invite a colleague but aren't an admin.", "not an admin");
+  await form.getByRole("button", { name: "Send to the team" }).click();
+  await expect(ai.getByText("We've passed this to the team. Their reply will show in Messages.")).toBeVisible();
+  await ai.getByRole("link", { name: "Open Messages" }).click();
+  await expect(widget.getByRole("list", { name: "Conversations" })).toContainText(question);
+
+  // The team sees the question, the AI's answer and, for them only, the AI's summary.
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("link", { name: question }).click();
+  await expect(owner.getByText(/started from an AI answer/)).toBeVisible();
+  const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  await expect(messages).toHaveCount(3);
+  await expect(messages.nth(0)).toContainText("I'm not an admin.");
+  await expect(messages.nth(1)).toContainText("Owners and admins send invites from the Team page.");
+  await expect(messages.nth(2)).toContainText("Note · AI");
+  await expect(messages.nth(2)).toContainText("Summary: They want to invite a colleague but aren't an admin.");
+  await checkpoint(owner, "escalated-conversation");
+
+  // In the widget, the note isn't there.
+  await widget.getByRole("button", { name: new RegExp(question.replace(/[?]/g, "\\?")) }).click();
+  await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
+});

@@ -933,6 +933,8 @@ model ConversationMessage {
   channel        MessageChannel
   /// Plain text (links kept).
   body           String
+  /// An internal note: the team's only, never shown to the user or sent.
+  note           Boolean        @default(false)
   /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
   seenAt         DateTime?
   createdAt      DateTime       @default(now())

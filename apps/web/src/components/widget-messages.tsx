@@ -12,12 +12,12 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
 import { WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
-  type WidgetAuth,
   widgetConversation,
   widgetConversations,
   widgetSendMessage,
   widgetStartConversation,
 } from "@/server/widget-inbox";
+import type { WidgetAuth } from "@/server/widget-person";
 
 /** How often an open Messages tab checks for replies (live updates come later). */
 const POLL_MS = 10_000;
@@ -35,7 +35,7 @@ const tellPage = (conversations: Listed) =>
  * A signed-out visitor's token and email, in the panel's own storage: partitioned per embedding
  * site, so the customer's page can't read it. The token expires by itself after 30 days.
  */
-const visitorStore = {
+export const visitorStore = {
   key: (projectSlug: string) => `tuti:visitor:${projectSlug}`,
   listeners: new Set<() => void>(),
   read(projectSlug: string): string | null {
@@ -63,7 +63,7 @@ const visitorStore = {
   },
 };
 
-function useVisitor(projectSlug: string): Visitor | null {
+export function useVisitor(projectSlug: string): Visitor | null {
   const raw = useSyncExternalStore(visitorStore.subscribe, () => visitorStore.read(projectSlug), () => null);
   return useMemo(() => {
     try {

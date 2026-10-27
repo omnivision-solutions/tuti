@@ -64,7 +64,7 @@ export function DocsAssistantProvider({
   /** Who's reading: their account's id, or null signed out (each has a conversation of their own). */
   viewer: string | null;
   feedbackPath: string | null;
-  askAPerson: { email: string } | null;
+  askAPerson: { email: string; inbox?: boolean } | null;
   widget?: boolean;
   children: React.ReactNode;
 }) {
@@ -211,7 +211,7 @@ function AssistantPanel({
   projectName: string;
   turns: Turn[];
   feedbackPath: string | null;
-  askAPerson: { email: string } | null;
+  askAPerson: { email: string; inbox?: boolean } | null;
   widget: boolean;
   onAsk: (question: string) => void;
   onRetry: (turn: Turn) => void;
@@ -303,7 +303,7 @@ function AssistantReply({
 }: {
   turn: Turn;
   feedbackPath: string | null;
-  askAPerson: { email: string } | null;
+  askAPerson: { email: string; inbox?: boolean } | null;
   widget: boolean;
   onRetry: () => void;
   onRated: (helpful: boolean) => void;
@@ -332,7 +332,9 @@ function AssistantReply({
       </p>
     );
   }
-  const person = askAPerson && <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />;
+  const person = askAPerson && (
+    <AskAPerson projectSlug={slug} questionId={answer.id} defaultEmail={askAPerson.email} inbox={askAPerson.inbox ?? false} widget={widget} onLeave={onLeave} />
+  );
   // In the widget, an article opens in the panel's Docs tab (the portal's page is a link away from there).
   const sourceHref = widget ? (article: string) => `/widget?${new URLSearchParams({ tab: "docs", article })}` : undefined;
   if (answer.status === "failed") {

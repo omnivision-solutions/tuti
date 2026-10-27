@@ -11,9 +11,11 @@ import { readableArticle } from "../docs-queries";
 import { countEmailedLink } from "../email-link-limits";
 import { actorReader, ownAddresses } from "../portal-access";
 import { getSession } from "../session";
+import { newWidgetVisitor, type WidgetAuth, widgetPerson } from "../widget-person";
 import { emailAddress, limitHeaders } from "./assistant";
 import { defineOperation, OperationError } from "./define";
 import { earlierTurns } from "./docs-ask";
+import { announceConversation, startConversation } from "./conversations";
 import { projectPortal } from "./read";
 
 /**
@@ -47,18 +49,23 @@ async function supportAddress(where: { id: string } | { slug: string }) {
   return project?.supportEmail ?? null;
 }
 
-/** For the portal and the widget: null when "Ask a person" is off, else the address to start with (the signed-in person's). */
-export async function askAPerson(projectSlug: string): Promise<{ email: string } | null> {
-  if (!(await supportAddress({ slug: projectSlug }))) {
+/**
+ * For the portal and the widget: null when "Ask a person" is off, else the address to start with (the
+ * signed-in person's), and whether it starts a conversation in the support inbox (`inbox`: in the
+ * widget, with the inbox on) rather than emailing the support address.
+ */
+export async function askAPerson(projectSlug: string, { widget = false } = {}): Promise<{ email: string; inbox: boolean } | null> {
+  const inbox = widget && !!(await prisma.project.findUnique({ where: { slug: projectSlug }, select: { supportInbox: true } }))?.supportInbox;
+  if (!inbox && !(await supportAddress({ slug: projectSlug }))) {
     return null;
   }
   const session = await getSession();
   if (!session) {
-    return { email: "" };
+    return { email: "", inbox };
   }
   // People from the project's SSO have a placeholder account email; their own is on the identity, if the token gave one.
   const sso = await prisma.ssoIdentity.findUnique({ where: { userId: session.user.id }, select: { email: true } });
-  return { email: sso ? (sso.email ?? "") : session.user.email };
+  return { email: sso ? (sso.email ?? "") : session.user.email, inbox };
 }
 
 const SUMMARY_SYSTEM = `You tell a product's support team, in one or two sentences, what a user who asked the product's docs needs.
@@ -110,7 +117,8 @@ async function copySources(projectId: string, asker: Asker, email: string, artic
 
 /**
  * Passes question `questionId` to the team, if `asker` asked it in the last hour and hasn't yet.
- * `requestHeaders` tell visitors apart for the per-visitor limit.
+ * `requestHeaders` tell visitors apart for the per-visitor limit. From the widget (`widget`: who the
+ * panel says is here) with the support inbox on, it starts a conversation instead of an email.
  */
 export async function escalateQuestion(
   projectId: string,
@@ -118,9 +126,12 @@ export async function escalateQuestion(
   input: z.infer<typeof escalateFields>,
   requestHeaders: Headers,
   timeoutMs = SUMMARY_TIMEOUT_MS,
+  widget?: WidgetAuth,
 ) {
-  const to = await supportAddress({ id: projectId });
-  if (!to) {
+  const settings = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { slug: true, supportInbox: true } });
+  const toInbox = !!widget && settings.supportInbox;
+  const address = toInbox ? null : await supportAddress({ id: projectId });
+  if (!toInbox && !address) {
     throw new OperationError(403, "escalation_off", "These docs don't take questions by email");
   }
   const question = await prisma.docsQuestion.findFirst({
@@ -139,6 +150,10 @@ export async function escalateQuestion(
   if ("error" in limited || !limited.id) {
     throw new OperationError(429, "rate_limited", "error" in limited ? limited.error : "You've sent a lot of emails in the last hour. Try again later.");
   }
+  if (toInbox) {
+    return toConversation(projectId, settings.slug, asker.id, question, input, widget!, timeoutMs);
+  }
+  const to = address!;
   // Looked up before the claim: if they failed after, the question would stay claimed with nothing sent.
   const [portal, mayName] = await Promise.all([projectPortal(projectId), copySources(projectId, asker, input.email, question.articleIds)]);
   // Claimed before anything is sent, so a double click or a retry can't send it twice; released if the team's email fails.
@@ -200,6 +215,82 @@ export async function escalateQuestion(
     log.warn("Sending the visitor's copy of an escalated question failed", { projectId, error }),
   );
   return { id: question.id, escalated: true };
+}
+
+type Escalated = { id: string; question: string; answer: string | null; articleIds: string[]; helpful: boolean | null; followsId: string | null };
+
+/** What the team needs, as for the email: the earlier questions, the articles the answer cited (with links) and the AI's summary. */
+async function escalationContext(projectId: string, askerId: string, question: Escalated, note: string | null, timeoutMs: number) {
+  const notHelpful = question.helpful === false;
+  const earlier = question.followsId
+    ? (await earlierTurns(projectId, askerId, question.followsId).catch(() => [])).map((turn) => turn.question)
+    : [];
+  const [portal, articles, summary] = await Promise.all([
+    projectPortal(projectId),
+    prisma.article.findMany({
+      where: { id: { in: question.articleIds }, projectId, publishedAt: { not: null }, deletedAt: null, listing: { not: "HIDDEN" } },
+      select: { slug: true, title: true, listing: true },
+      orderBy: { title: "asc" },
+    }),
+    summarize(projectId, { question: question.question, askedBefore: earlier, answer: question.answer, notHelpful, note }, timeoutMs),
+  ]);
+  const sources = articles.map((article) => (article.listing === "AI_ONLY" ? article.title : `${article.title} (${portal}/docs/${article.slug})`));
+  return { earlier, notHelpful, sources, summary };
+}
+
+/**
+ * "Ask a person" in the widget with the support inbox on: a conversation, with the question (and
+ * their note) from them, the AI's answer, and for the team only, a note with the AI's summary. With
+ * the person the panel says is here, or, signed out, the address they typed (a new visitor, whose
+ * token comes back for the panel to keep, as when they write in Messages).
+ */
+async function toConversation(
+  projectId: string,
+  projectSlug: string,
+  askerId: string,
+  question: Escalated & { escalatedAt: Date | null },
+  input: z.infer<typeof escalateFields>,
+  widget: WidgetAuth,
+  timeoutMs: number,
+) {
+  const here = await widgetPerson(projectSlug, widget);
+  // A widget token that doesn't check out is nobody, not a new visitor.
+  if (!here && widget.token) {
+    throw new OperationError(403, "forbidden", "Sign in again to ask a person");
+  }
+  const fresh = here ? null : newWidgetVisitor(projectId);
+  const who = here ?? fresh!.person;
+  const { count } = await prisma.docsQuestion.updateMany({ where: { id: question.id, escalatedAt: null }, data: { escalatedAt: new Date(), escalatedTo: null } });
+  if (count === 0) {
+    throw new OperationError(409, "already_escalated", "You've already passed this question to the team");
+  }
+  const note = input.note || null;
+  try {
+    const { earlier, notHelpful, sources, summary } = await escalationContext(projectId, askerId, question, note, timeoutMs);
+    const forTeam = [
+      summary && `Summary: ${summary}`,
+      earlier.length > 0 && `Asked before: ${earlier.join(" / ")}`,
+      notHelpful && "They marked the AI's answer not helpful.",
+    ].filter(Boolean);
+    const { conversation, message } = await startConversation(projectId, {
+      userId: who.userId,
+      email: who.userId ? null : input.email,
+      visitorHash: who.visitorHash,
+      subject: question.question,
+      body: note ? `${question.question}\n\n${note}` : question.question,
+      origin: "ESCALATION",
+      channel: "WIDGET",
+      then: [
+        ...(question.answer ? [{ author: "AI" as const, body: sources.length > 0 ? `${question.answer}\n\nSources: ${sources.join(", ")}` : question.answer }] : []),
+        ...(forTeam.length > 0 ? [{ author: "AI" as const, body: forTeam.join("\n"), note: true }] : []),
+      ],
+    });
+    await announceConversation(projectId, conversation, message);
+    return { id: question.id, escalated: true, conversation: conversation.number, ...(fresh && { visitor: fresh.token }) };
+  } catch (error) {
+    await prisma.docsQuestion.updateMany({ where: { id: question.id }, data: { escalatedAt: null } });
+    throw error;
+  }
 }
 
 export const escalateDocs = defineOperation({
