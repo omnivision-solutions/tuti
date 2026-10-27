@@ -81,7 +81,7 @@ type FakePage = ReturnType<typeof loadWidget>;
  * Runs the loader on a fake page whose script tag has `attributes`, with /api/widget/latest answering
  * `latest`, /api/widget/seen answering `seen` and this browser having seen announcements up to `seenHere`.
  */
-function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenHere, narrow = false, before }: {
+function loadWidget({ attributes = {}, settings, latest = { latest: null, launcher: null }, seen = null, messages = 0, seenAfter, seenHere, narrow = false, before }: {
   attributes?: Record<string, string>;
   settings?: object;
   /** Whether the screen is narrow (max-width: 640px). */
@@ -94,6 +94,8 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   seen?: string | null | "fail";
   /** How many of the team's messages (support inbox) this person hasn't seen. */
   messages?: number;
+  /** /api/widget/seen answers once this settles (a slow request). */
+  seenAfter?: Promise<void>;
   seenHere?: string;
 }) {
   const documentListeners: Record<string, ((event: object) => void)[]> = {};
@@ -174,6 +176,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       fetch: vi.fn(async (url: string) => {
         if (url.startsWith("https://app.tuti.example/api/widget/seen?")) {
           if (seen === "fail") throw new TypeError("Failed to fetch");
+          await seenAfter;
           return { ok: true, json: async () => ({ seen, messages }) };
         }
         if (latest === "hang") return new Promise(() => {});
@@ -697,3 +700,21 @@ test("the floating panel hears when it's closed and opened again, so a hidden on
   page.Tuti.open();
   expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:shown", shown: true }, "https://acme.tuti.example");
 });
+
+test("a slow answer from the server doesn't bring back a count the open panel has since cleared", async () => {
+  let answer!: () => void;
+  const page = loadWidget({
+    settings: { identify: token },
+    latest: { latest: null, launcher: null, inbox: true },
+    messages: 1,
+    seenAfter: new Promise<void>((resolve) => (answer = resolve)),
+  });
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  // The panel showed the reply (so it's seen) before the server's count, asked for earlier, arrives.
+  page.message((page.frame as unknown as { contentWindow: unknown }).contentWindow, { type: "tuti:unseen-messages", count: 0 });
+  answer();
+  await settled();
+  expect(page.Tuti.unseen()).toBe(false);
+});
+
