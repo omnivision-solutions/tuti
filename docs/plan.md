@@ -148,7 +148,8 @@ Test layers (set up in Phase 4):
 - [x] Screenshots on PRs: after CI, a trusted workflow uploads the journey screenshots to S3-compatible storage (R2 bucket `tuti-ci`, public at `ci.tuti.so`, 30-day expiry) and posts them in one PR comment (like rakazo, which uses Hetzner Object Storage)
 - [x] Journeys (with screenshots) for every screen: feedback + merge + filters, email verification, invites (by email, wrong account, dashboard), boards (create, change URL with redirect, delete, portal tabs), SSO (enable, sign-in, replayed token, disable), duplicates (typing suggestions, flagged list, panel, "Not a duplicate"), accounts (project switcher, account settings, sign-out and sign-in on the app and on a portal), Continue as, rich text, and the main team and portal screens at phone width and in dark mode (checked for sideways scrolling). New screens add their journey in the PR that builds them
 - [x] AGENTS.md: test commands table, offline-by-default rule, PR rules (Why / What changed / How tested; prove a failure is unrelated by rerunning with the touched files restored to `main`; UI PRs link their screenshot; new user-facing copy is quoted in the PR)
-- [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else `gh pr checks --watch`), answer every finding, at most 20 rounds; never merge with open findings
+- [x] `pr-watch` skill: wait for checks and review bots on the PR's latest commit (T3 Code's PR watch, else the digest's `--watch`), answer every finding, at most 20 rounds; never merge with open findings
+- [x] `pr-digest` for pr-watch (ported from rakazo): one read of the PR's head prints its failures, its review bot's state, unanswered comments and unresolved threads, and a verdict that applies the merge gate (a missing bot status is pending, never a pass)
 
 ## Phase 5 — Open source
 
