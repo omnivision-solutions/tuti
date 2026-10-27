@@ -32,7 +32,7 @@ The first run can be a manual one: Actions → Weekly dependency updates → Run
 
 - Schedule and manual dispatch only, on `main`: no pull request's code runs in this workflow, so fork code never meets its secrets. Its actions are pinned by commit SHA.
 - Claude Code, and every install and build script it runs, is a separate unprivileged user holding only the Claude token: not the runner's tokens or files, and the GitHub write token isn't in that job at all.
-- That job hands over only a patch and the description. A fresh job applies the patch with `scripts/apply-dependency-update.sh`, which rejects the whole update if it touches workflows, agent or review-bot instructions (`.github/`, `.claude/`, AGENTS.md, CLAUDE.md, `.coderabbit.yaml`, `greptile.json`) or env files, and only then uses the fine-grained token to push and open the pull request. Its test is `scripts/apply-dependency-update.test.ts`, in `pnpm test`.
+- That job hands over only a patch and the description. A fresh job applies the patch with `scripts/apply-dependency-update.sh`, which rejects the whole update if it touches workflows, agent or review-bot instructions or env files: any dot file or directory (`.github/`, `.claude/`, `.env*`, `.coderabbit.yaml`, `.greptile/`, …), and AGENTS.md, CLAUDE.md, GEMINI.md, SKILL.md and `greptile.json` wherever they are, and only then uses the fine-grained token to push and open the pull request. Its test is `scripts/apply-dependency-update.test.ts`, in `pnpm test`.
 - Claude's session isn't saved or uploaded, and nothing but the patch and the description is kept as an artifact (for a day).
 
 ## With Dependabot

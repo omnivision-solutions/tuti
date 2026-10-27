@@ -64,6 +64,11 @@ test.each([
   [".agents", "symlink"],
   [".coderabbit.yaml", "add"],
   ["greptile.json", "add"],
+  [".greptile/rules.md", "add"],
+  [".cursorrules", "add"],
+  ["apps/web/.cursor/rules/deps.mdc", "add"],
+  ["GEMINI.md", "add"],
+  [".npmrc", "add"],
   [".env.production", "add"],
   ["apps/web/.env.example", "add"],
 ] as const)("refuses a patch that changes %s (%s), leaving the checkout as it was", (path, operation) => {

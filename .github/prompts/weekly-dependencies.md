@@ -10,7 +10,7 @@ You run unattended in a GitHub Actions checkout of `main`, with Node 22 and pnpm
 - Before changing Turborepo's configuration or commands, read the docs bundled with the installed `turbo` package, as AGENTS.md's Turborepo block says.
 - Keep `engines` and Node 22 support. Respect `pnpm-workspace.yaml`: don't add `minimumReleaseAgeExclude` entries (a release too new to install waits for next week) or allow new packages' build scripts.
 - Fix code only as far as an update needs it, in the update's spirit. Never weaken a test, a type or a lint rule to make an update pass: hold the update back instead.
-- Don't change anything under `.github/` or `.claude/`, AGENTS.md, CLAUDE.md, `.coderabbit.yaml`, `greptile.json` or any `.env*` file: the workflow rejects the whole update if you do. If a command rewrites one of them (turbo can rewrite its block in AGENTS.md), restore it with `git checkout -- <file>` and mention it in your final message so a maintainer can update it.
+- Don't change any dot file or directory (`.github/`, `.claude/`, `.npmrc`, `.env*`, …), AGENTS.md, CLAUDE.md, GEMINI.md, SKILL.md or `greptile.json`, anywhere in the repository: the workflow rejects the whole update if you do. If a command rewrites one of them (turbo can rewrite its block in AGENTS.md), restore it with `git checkout -- <file>` and mention it in your final message so a maintainer can update it.
 
 ## Checking
 
