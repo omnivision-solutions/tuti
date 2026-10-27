@@ -17,7 +17,7 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
           Messages in the widget
         </label>
         <p className="text-sm text-muted-foreground">
-          Signed-in users get a Messages tab in the widget to write to your team, and see your replies there.
+          Your users get a Messages tab in the widget to write to your team and see your replies there. Signed out, they leave their email first.
         </p>
       </div>
       <Switch

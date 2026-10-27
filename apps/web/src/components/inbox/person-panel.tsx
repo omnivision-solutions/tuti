@@ -42,6 +42,35 @@ function Links({ items, empty }: { items: { href: string; title: string; meta: s
 }
 
 /**
+ * One of the project's users with this address, as a hint for the team: someone writing signed out
+ * may be them, or may only have typed their address, so it's never linked and the visitor sees
+ * nothing of theirs. Someone from the project's app, else an account with that address verified
+ * that has posted, voted or commented here (never just any account, which would tell the team who
+ * has one).
+ */
+export async function maybeUser(projectId: string, email: string) {
+  const sso = await prisma.ssoIdentity.findFirst({
+    // Case-insensitive: emails older instances saved kept their capitals.
+    where: { projectId, email: { equals: email, mode: "insensitive" } },
+    orderBy: { updatedAt: "desc" },
+    select: { externalId: true, user: { select: { name: true } } },
+  });
+  if (sso) {
+    return { name: sso.user.name, id: sso.externalId };
+  }
+  const account = await prisma.user.findFirst({
+    where: {
+      email: { equals: email, mode: "insensitive" },
+      emailVerified: true,
+      ssoIdentity: null,
+      OR: [{ posts: { some: { projectId } } }, { votes: { some: { projectId } } }, { comments: { some: { projectId } } }],
+    },
+    select: { name: true },
+  });
+  return account && { name: account.name, id: null };
+}
+
+/**
  * Who the conversation is with, beside it: someone Tuti knows (their app's id, properties, groups,
  * posts and votes) or just an email address, and their other conversations.
  */
@@ -79,6 +108,7 @@ export async function PersonPanel({
       where: { projectId, number: { not: conversation.number }, ...(userId ? { userId } : { userId: null, email }) },
     }),
   ]);
+  const lookalike = !userId && email ? await maybeUser(projectId, email) : null;
   const sso = user?.ssoIdentity;
   const view = sso && user ? (await viewsOf(projectId, [{ ...sso, user: { name: user.name, image: user.image } }]))[0]! : null;
   const [posts, postCount, votes, voteCount] = userId
@@ -121,6 +151,11 @@ export async function PersonPanel({
         )}
         {view && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
+        {lookalike && (
+          <p className="text-xs break-words text-muted-foreground">
+            Maybe {lookalike.name} (not signed in){lookalike.id && <span className="break-all">, id {lookalike.id}</span>}
+          </p>
+        )}
         {view && view.groups.length > 0 && (
           <div className="mt-1 flex flex-wrap gap-1">
             {view.groups.map((key) => (

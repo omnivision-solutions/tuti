@@ -134,6 +134,10 @@ With Settings → Support → Messages in the widget on, the panel has a Message
 the people you sign in with `identify` (or on your portal) write to your team and read
 its replies; your team answers them from the Inbox in Tuti. The tab checks for replies
 every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
-`true`) while a reply is waiting for them. People who aren't signed in see a sign-in link.
+`true`) while a reply is waiting for them (for people you sign in). People who aren't
+signed in leave their email to write; the panel keeps a token for 30 days in its own
+storage (per site, out of your page's reach) so they see their conversations when they come
+back, and drops it when your page signs someone in. Their address isn't verified, and it's
+never linked to one of your users: the team only sees that it may be them.
 
 The panel's text is in English for now; there's no `locale` setting yet.

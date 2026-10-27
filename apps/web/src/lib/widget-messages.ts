@@ -4,7 +4,7 @@
 export const WIDGET_CLOSE_MESSAGE = "tuti:close";
 /** Panel → page: ready for a sign-in token (Tuti.identify). */
 export const WIDGET_READY_MESSAGE = "tuti:ready";
-/** Page → panel: `{ type, token }`, a sign-in token from the customer's app. */
+/** Page → panel: `{ type, token }`, a sign-in token from the customer's app, or null when the page signs nobody in. */
 export const WIDGET_IDENTIFY_MESSAGE = "tuti:identify";
 /** Panel → page: `{ type, at }`, the visitor has seen the announcements published up to `at`. */
 export const WIDGET_SEEN_MESSAGE = "tuti:seen";

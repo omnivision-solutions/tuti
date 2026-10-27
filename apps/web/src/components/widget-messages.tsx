@@ -2,15 +2,17 @@
 
 import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { EmptyState } from "@/components/empty-state";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
+  type WidgetAuth,
   widgetConversation,
   widgetConversations,
   widgetSendMessage,
@@ -23,20 +25,76 @@ const POLL_MS = 10_000;
 type View = { kind: "list" } | { kind: "new" } | { kind: "conversation"; number: number };
 type Listed = Extract<Awaited<ReturnType<typeof widgetConversations>>, { conversations: unknown }>["conversations"];
 type Opened = Extract<Awaited<ReturnType<typeof widgetConversation>>, { messages: unknown }>;
+type Visitor = { token: string; email: string };
 
 /** Tells the page how many of the team's messages they haven't seen (the launcher's dot, Tuti.unseen). */
 const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNSEEN_MESSAGES, count }, "*");
 
 /**
- * The widget's Messages tab: the signed-in person's conversations with the team. Signed in by
- * the customer's page (Tuti.identify), or on the portal itself (`portalSignedIn`).
+ * A signed-out visitor's token and email, in the panel's own storage: partitioned per embedding
+ * site, so the customer's page can't read it. The token expires by itself after 30 days. Kept in
+ * memory too, so where storage is blocked or full they're still a visitor for this page view.
+ */
+const visitorStore = {
+  key: (projectSlug: string) => `tuti:visitor:${projectSlug}`,
+  memory: new Map<string, string>(),
+  listeners: new Set<() => void>(),
+  read(projectSlug: string): string | null {
+    const key = visitorStore.key(projectSlug);
+    try {
+      return window.localStorage.getItem(key) ?? visitorStore.memory.get(key) ?? null;
+    } catch {
+      return visitorStore.memory.get(key) ?? null;
+    }
+  },
+  write(projectSlug: string, visitor: Visitor | null) {
+    const key = visitorStore.key(projectSlug);
+    if (visitor) {
+      visitorStore.memory.set(key, JSON.stringify(visitor));
+    } else {
+      visitorStore.memory.delete(key);
+    }
+    try {
+      if (visitor) {
+        window.localStorage.setItem(key, JSON.stringify(visitor));
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // Storage blocked or full: the copy in memory lasts this page view.
+    }
+    visitorStore.listeners.forEach((listener) => listener());
+  },
+  subscribe(listener: () => void) {
+    visitorStore.listeners.add(listener);
+    return () => visitorStore.listeners.delete(listener);
+  },
+};
+
+function useVisitor(projectSlug: string): Visitor | null {
+  const raw = useSyncExternalStore(visitorStore.subscribe, () => visitorStore.read(projectSlug), () => null);
+  return useMemo(() => {
+    try {
+      const parsed = raw ? (JSON.parse(raw) as Partial<Visitor>) : null;
+      return typeof parsed?.token === "string" && typeof parsed.email === "string" ? (parsed as Visitor) : null;
+    } catch {
+      return null;
+    }
+  }, [raw]);
+}
+
+/**
+ * The widget's Messages tab: someone's conversations with the team. Signed in by the customer's
+ * page (Tuti.identify) or on the portal itself (`portalSignedIn`); signed out, they give their
+ * email to write, and the panel keeps a visitor token to show them their conversations.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
-  const { signedIn, error } = useWidgetSignIn(projectSlug, !portalSignedIn);
-  const token = portalSignedIn ? null : (signedIn?.token ?? null);
+  const { signedIn, error, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const visitor = useVisitor(projectSlug);
+  const token = signedIn?.token ?? null;
   // The page signed out whoever was here: the team's messages to them aren't anyone's now (their
-  // counts stopped with their Messages, so this is the page's last word). Not when this frame's own
-  // exchange failed: another panel may have the page's person, and their count.
+  // counts stopped with their Messages, so this is the page's last word; a visitor's own come after).
+  // Not when this frame's own exchange failed: another panel may have the page's person, and their count.
   const wasSignedIn = useRef(false);
   useEffect(() => {
     if (signedIn) {
@@ -46,30 +104,81 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
       tellPage(0);
     }
   }, [signedIn, portalSignedIn, error]);
-  if (!portalSignedIn && !signedIn) {
+  // Signed in on the portal in another tab since this panel loaded: the server knows them by its cookie now.
+  const [signedInSince, setSignedInSince] = useState(false);
+  const known = portalSignedIn || !!signedIn || signedInSince;
+  // The conversation someone signed out just started, to open once they're a visitor.
+  const [started, setStarted] = useState<number | null>(null);
+
+  // Signed in now: whoever had this browser before as a visitor isn't who's here.
+  useEffect(() => {
+    if (known && visitor) {
+      visitorStore.write(projectSlug, null);
+    }
+  }, [known, visitor, projectSlug]);
+
+  const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
+  // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
+  // to sign in would write in a conversation they'd lose sight of once it does.
+  if (!known && !pageAnswered) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
+  if (!known && !visitor) {
     return (
-      <div className="flex flex-col items-start gap-3">
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <p className="text-sm text-muted-foreground">Sign in to message the team. It opens in a new tab.</p>
-        <a href="/sign-in" target="_blank" rel="noreferrer" className={buttonVariants()}>
-          Sign in
-        </a>
-      </div>
+      <FirstMessage
+        projectSlug={projectSlug}
+        onStarted={setStarted}
+        onSignedIn={(number) => {
+          setStarted(number);
+          setSignedInSince(true);
+        }}
+      />
     );
   }
-  // Someone else signed in: their own Messages, from their list.
-  return <Messages key={token ?? "portal"} projectSlug={projectSlug} token={token} />;
+  // Someone else here: their own Messages, from their list.
+  return (
+    <Messages
+      key={auth.token ?? auth.visitor ?? "portal"}
+      projectSlug={projectSlug}
+      auth={auth}
+      visitorEmail={known ? null : visitor!.email}
+      opened={known && !signedInSince ? null : started}
+      onNewVisitor={setStarted}
+    />
+  );
 }
 
-function Messages({ projectSlug, token }: { projectSlug: string; token: string | null }) {
-  const [view, setView] = useState<View>({ kind: "list" });
+function Messages({
+  projectSlug,
+  auth,
+  visitorEmail,
+  opened,
+  onNewVisitor,
+}: {
+  projectSlug: string;
+  auth: WidgetAuth;
+  visitorEmail: string | null;
+  opened: number | null;
+  /** Their token had expired, so starting a conversation made them a new visitor: open it once they are. */
+  onNewVisitor: (number: number) => void;
+}) {
+  const [view, setView] = useState<View>(opened ? { kind: "conversation", number: opened } : { kind: "list" });
   if (view.kind === "new") {
-    return <NewConversation projectSlug={projectSlug} token={token} onBack={() => setView({ kind: "list" })} onStarted={(number) => setView({ kind: "conversation", number })} />;
+    return (
+      <NewConversation
+        projectSlug={projectSlug}
+        auth={auth}
+        visitorEmail={visitorEmail}
+        onBack={() => setView({ kind: "list" })}
+        onStarted={(number) => setView({ kind: "conversation", number })}
+        onNewVisitor={onNewVisitor}
+      />
+    );
   }
   if (view.kind === "conversation") {
-    return <Conversation key={view.number} projectSlug={projectSlug} token={token} number={view.number} onBack={() => setView({ kind: "list" })} />;
+    return <Conversation key={view.number} projectSlug={projectSlug} auth={auth} number={view.number} onBack={() => setView({ kind: "list" })} />;
   }
-  return <ConversationList projectSlug={projectSlug} token={token} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
+  return <ConversationList projectSlug={projectSlug} auth={auth} onOpen={(number) => setView({ kind: "conversation", number })} onNew={() => setView({ kind: "new" })} />;
 }
 
 /**
@@ -118,12 +227,12 @@ function usePolling(load: (isLatest: () => boolean) => Promise<void>) {
 
 function ConversationList({
   projectSlug,
-  token,
+  auth,
   onOpen,
   onNew,
 }: {
   projectSlug: string;
-  token: string | null;
+  auth: WidgetAuth;
   onOpen: (number: number) => void;
   onNew: () => void;
 }) {
@@ -131,11 +240,16 @@ function ConversationList({
   const [error, setError] = useState<string>();
   const load = useCallback(
     async (isLatest: () => boolean) => {
-      const result = await widgetConversations(projectSlug, token);
+      const result = await widgetConversations(projectSlug, auth);
       if (!isLatest()) {
         return;
       }
       if ("error" in result) {
+        // A visitor token that no longer checks out (30 days on): they start again with their email.
+        // Not when Messages is only off for now: their token still works once it's back on.
+        if (auth.visitor && "expired" in result) {
+          visitorStore.write(projectSlug, null);
+        }
         setError(result.error);
         return;
       }
@@ -143,7 +257,7 @@ function ConversationList({
       setConversations(result.conversations);
       tellPage(result.unseen);
     },
-    [projectSlug, token],
+    [projectSlug, auth],
   );
   usePolling(load);
 
@@ -177,15 +291,27 @@ function ConversationList({
   );
 }
 
-function Composer({ placeholder, send, label }: { placeholder: string; label: string; send: (text: string) => Promise<{ error?: string }> }) {
+/** A message box (⌘/Ctrl+Enter sends), with an email field first when `email` is given (someone signed out). */
+function Composer({
+  placeholder,
+  label,
+  email,
+  send,
+}: {
+  placeholder: string;
+  label: string;
+  email?: string;
+  send: (text: string, email: string) => Promise<{ error?: string }>;
+}) {
   const [text, setText] = useState("");
+  const [address, setAddress] = useState(email ?? "");
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const submit = () =>
     startTransition(async () => {
       // Offline, or the server failing: say so by the form, and keep what they wrote.
       const sent = text;
-      const result = await send(sent).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const result = await send(sent, address).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything typed meanwhile stays.
@@ -200,6 +326,17 @@ function Composer({ placeholder, send, label }: { placeholder: string; label: st
         submit();
       }}
     >
+      {email !== undefined && (
+        <Input
+          type="email"
+          aria-label="Your email"
+          placeholder="Your email"
+          autoComplete="email"
+          required
+          value={address}
+          onChange={(event) => setAddress(event.target.value)}
+        />
+      )}
       <Textarea
         aria-label={label}
         placeholder={placeholder}
@@ -209,7 +346,7 @@ function Composer({ placeholder, send, label }: { placeholder: string; label: st
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending) {
             event.preventDefault();
-            submit();
+            event.currentTarget.form?.requestSubmit();
           }
         }}
       />
@@ -230,16 +367,62 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
-function NewConversation({
+/** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
+function FirstMessage({
   projectSlug,
-  token,
-  onBack,
   onStarted,
+  onSignedIn,
 }: {
   projectSlug: string;
-  token: string | null;
+  onStarted: (number: number) => void;
+  /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
+  onSignedIn: (number: number) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">
+        Leave your email so the team can get back to you.{" "}
+        <a href="/sign-in" target="_blank" rel="noreferrer" className="underline underline-offset-4">
+          Sign in
+        </a>{" "}
+        to see your past conversations.
+      </p>
+      <Composer
+        label="Message"
+        placeholder="How can we help?"
+        email=""
+        send={async (text, email) => {
+          const result = await widgetStartConversation(projectSlug, {}, text, email);
+          if ("error" in result) {
+            return result;
+          }
+          if (!result.visitor) {
+            onSignedIn(result.number);
+            return {};
+          }
+          onStarted(result.number);
+          visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+          return {};
+        }}
+      />
+    </div>
+  );
+}
+
+function NewConversation({
+  projectSlug,
+  auth,
+  visitorEmail,
+  onBack,
+  onStarted,
+  onNewVisitor,
+}: {
+  projectSlug: string;
+  auth: WidgetAuth;
+  visitorEmail: string | null;
   onBack: () => void;
   onStarted: (number: number) => void;
+  onNewVisitor: (number: number) => void;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -247,10 +430,20 @@ function NewConversation({
       <Composer
         label="Message"
         placeholder="How can we help?"
-        send={async (text) => {
-          const result = await widgetStartConversation(projectSlug, token, text);
+        email={visitorEmail ?? undefined}
+        send={async (text, email) => {
+          const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email);
           if ("error" in result) {
             return result;
+          }
+          // A new token: theirs had expired. It's who they are now, and the conversation opens once they are.
+          if (result.visitor) {
+            onNewVisitor(result.number);
+            visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+            return {};
+          }
+          if (visitorEmail !== null && auth.visitor) {
+            visitorStore.write(projectSlug, { token: auth.visitor, email: email.trim() });
           }
           onStarted(result.number);
           return {};
@@ -260,14 +453,14 @@ function NewConversation({
   );
 }
 
-function Conversation({ projectSlug, token, number, onBack }: { projectSlug: string; token: string | null; number: number; onBack: () => void }) {
+function Conversation({ projectSlug, auth, number, onBack }: { projectSlug: string; auth: WidgetAuth; number: number; onBack: () => void }) {
   const [opened, setOpened] = useState<Opened | null>(null);
   // Replies count as seen only while the panel is on screen; opening it again shows (and so sees) them.
   const shown = useShown();
   const [error, setError] = useState<string>();
   const load = useCallback(
     async (isLatest: () => boolean) => {
-      const result = await widgetConversation(projectSlug, token, number, shown);
+      const result = await widgetConversation(projectSlug, auth, number, shown);
       if (!isLatest()) {
         return;
       }
@@ -278,12 +471,12 @@ function Conversation({ projectSlug, token, number, onBack }: { projectSlug: str
       setError(undefined);
       setOpened(result);
       // Shown, so seen: the page's count goes down.
-      const listed = await widgetConversations(projectSlug, token);
+      const listed = await widgetConversations(projectSlug, auth);
       if (isLatest() && !("error" in listed)) {
         tellPage(listed.unseen);
       }
     },
-    [projectSlug, token, number, shown],
+    [projectSlug, auth, number, shown],
   );
   const reload = usePolling(load);
 
@@ -310,7 +503,7 @@ function Conversation({ projectSlug, token, number, onBack }: { projectSlug: str
             label="Reply"
             placeholder="Write a reply…"
             send={async (text) => {
-              const result = await widgetSendMessage(projectSlug, token, number, text);
+              const result = await widgetSendMessage(projectSlug, auth, number, text);
               if (!("error" in result)) {
                 await reload();
               }

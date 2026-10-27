@@ -381,8 +381,8 @@ export function widgetLoader(portalTemplate: string): string {
 
   // Hands a panel a fresh sign-in token, only ever to the portal's origin. Only the newest it asked
   // for: an older one the app answers later may be for someone signed in before.
-  // With nobody signed in (no identify, or it gives no token, or it fails), it says so: token null,
-  // so the panel forgets whoever was signed in before.
+  // With nobody signed in (no identify, or it gives no token), it says so: token null, so the panel
+  // knows not to wait for one before someone writes as a visitor.
   function sendToken(to) {
     var target = to.contentWindow;
     var tell = function (token) { target.postMessage({ type: ${JSON.stringify(WIDGET_IDENTIFY_MESSAGE)}, token: token }, origin); };

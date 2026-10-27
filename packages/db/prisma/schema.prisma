@@ -901,6 +901,8 @@ model Conversation {
   /// …otherwise just their email, lowercase, and whether it's verified.
   email         String?
   emailVerified Boolean            @default(false)
+  /// A signed-out visitor's widget token (SHA-256 of its id; lib/visitor-session.ts): who may read it in the widget.
+  visitorHash   String?
   spam          Boolean            @default(false)
   lastMessageAt DateTime           @default(now())
   /// The user's oldest message the team hasn't answered; null once the team has replied.
@@ -917,6 +919,7 @@ model Conversation {
   @@index([projectId, spam, status, lastMessageAt(sort: Desc)])
   @@index([assigneeId])
   @@index([userId])
+  @@index([visitorHash])
   @@map("conversation")
 }
 
