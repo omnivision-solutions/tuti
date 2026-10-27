@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { CONVERSATION_STATUSES, replyToConversation, updateConversation } from "./operations/conversations";
+import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { updateSupportSettings } from "./operations/support";
 
@@ -29,7 +29,7 @@ export async function replyInConversation(projectSlug: string, conversation: num
 
 export async function setConversationStatus(projectSlug: string, conversation: number, status: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can change a conversation's status", async (context) => {
-    const parsed = z.enum(CONVERSATION_STATUSES).safeParse(status);
+    const parsed = z.enum(SETTABLE_STATUSES).safeParse(status);
     if (!parsed.success) {
       throw new OperationError(400, "invalid_input", "Unknown status");
     }

@@ -69,6 +69,8 @@ test("replies move the status: the team's leaves it waiting, the user's opens it
   expect(reply).toMatchObject({ author: "team", name: "Olive Owner", channel: "api" });
   expect(await call(getConversation, context, { number: 1 })).toMatchObject({ status: "waiting", waitingSince: null });
 
+  // Only replying sets waiting (the team spoke last); by hand, it's open or closed.
+  await expect(call(updateConversation, context, { number: 1, status: "waiting" } as never)).rejects.toMatchObject({ status: 400 });
   await call(updateConversation, context, { number: 1, status: "closed" });
   const first = await call(replyToConversation, context, { number: 1, body: "Still broken", author: { id: sam.id } });
   expect(first).toMatchObject({ author: "user", name: "Sam" });
