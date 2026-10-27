@@ -90,7 +90,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         viewer: session?.user.id ?? null,
         // "Post this as feedback" opens the Feedback tab, with the question as the title.
         feedbackPath: project.boards.length > 0 ? "/widget" : null,
-        askAPerson: await askAPerson(slug),
+        askAPerson: await askAPerson(slug, { widget: true }),
       }
     : null;
 

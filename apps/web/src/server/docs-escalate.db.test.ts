@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import DocsInsightsPage from "@/app/app/[project]/docs/insights/page";
 import { hashSecret } from "@/lib/portal-handoff";
+import { widgetToken } from "@/lib/widget-session";
 import { SIGN_IN_LINKS_PER_ADDRESS_PER_HOUR, SIGN_IN_LINKS_PER_CLIENT_PER_HOUR, SIGN_IN_LINKS_PER_PORTAL_PER_HOUR } from "@/lib/sign-in-link";
 import { actAs, addMember, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
@@ -18,6 +19,23 @@ import { getAssistantSettings, updateAssistantSettings } from "./operations/assi
 import { askAPerson, escalateDocs as escalateOperation } from "./operations/docs-escalate";
 import { getDocsInsights } from "./operations/docs-insights";
 import { call } from "./operations/run";
+
+/** Makes announcing a new conversation fail (webhooks, the team's email), once it's started. */
+const announcing = vi.hoisted(() => ({ fails: false }));
+vi.mock("./operations/conversations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./operations/conversations")>();
+  return {
+    ...actual,
+    announceConversation: async (...args: Parameters<typeof actual.announceConversation>) => {
+      if (announcing.fails) {
+        throw new Error("Announcing failed");
+      }
+      return actual.announceConversation(...args);
+    },
+  };
+});
+import { upsertProjectUser } from "./project-users";
+import { widgetConversation } from "./widget-inbox";
 
 /**
  * "Ask a person": the team's support email (confirmed by a link before it's used) and
@@ -119,7 +137,7 @@ describe("support email", () => {
     const next = newAddress();
     await saveSupportEmail(project.slug, {}, form({ supportEmail: next }));
     expect(await settings()).toMatchObject({ supportEmail: support, supportEmailPending: next });
-    expect(await askAPerson(project.slug)).toEqual({ email: owner.email });
+    expect(await askAPerson(project.slug)).toEqual({ email: owner.email, inbox: false });
     const token = await confirmationToken(next);
 
     // Saving the confirmed address again drops the waiting one, and its link.
@@ -466,18 +484,95 @@ test("the Gaps list counts escalated questions and labels them", async () => {
 test("“Ask a person” starts with the signed-in person's email, or the one their project's SSO gave", async () => {
   await turnOn();
   actAs(null);
-  expect(await askAPerson(project.slug)).toEqual({ email: "" });
+  expect(await askAPerson(project.slug)).toEqual({ email: "", inbox: false });
   const reader = await signUp("Reader");
   actAs(reader);
-  expect(await askAPerson(project.slug)).toEqual({ email: reader.email });
+  expect(await askAPerson(project.slug)).toEqual({ email: reader.email, inbox: false });
   const ssoUser = await signUp("SSO user");
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "app-user-7", userId: ssoUser.id, email: "e2e-sam@example.com" } });
   actAs(ssoUser);
-  expect(await askAPerson(project.slug)).toEqual({ email: "e2e-sam@example.com" });
+  expect(await askAPerson(project.slug)).toEqual({ email: "e2e-sam@example.com", inbox: false });
 });
 
 test("assistant.update over the API sets the support email too", async () => {
   const key = { actor: { kind: "apiKey" as const, keyId: "k", projectId: project.id, scope: "write" as const, createdById: owner.id }, projectId: project.id };
   expect(await call(updateAssistantSettings, key, { supportEmail: support })).toMatchObject({ supportEmail: null, supportEmailPending: support });
   expect(await confirmSupportEmail(await confirmationToken(support))).toEqual({ address: support, projectName: project.name });
+});
+
+describe("with the support inbox on, from the widget", () => {
+  beforeEach(() => prisma.project.update({ where: { id: project.id }, data: { supportInbox: true } }));
+
+  test("it's offered without a support email, in the widget only, and starts a conversation instead of emailing", async () => {
+    const reader = asReader();
+    expect(await askAPerson(project.slug, { widget: true })).toEqual({ email: "", inbox: true });
+    expect(await askAPerson(project.slug)).toBeNull();
+
+    const article = await prisma.article.create({
+      data: { projectId: project.id, slug: "payments", title: "Payments", publishedAt: new Date() },
+    });
+    const question = await asked(reader, {
+      status: "ANSWERED",
+      answer: "We take cards and bank transfers.",
+      articleIds: [article.id],
+      helpful: false,
+      source: "WIDGET",
+    });
+    const visitor = newAddress();
+    model.reply("They want to pay in crypto.");
+    const result = await escalateDocs(project.slug, question.id, visitor, "We're a crypto company.", "widget", {});
+    expect(result).toEqual({ conversation: 1, visitor: expect.any(String) });
+
+    const conversation = await prisma.conversation.findFirstOrThrow({
+      where: { projectId: project.id },
+      include: { messages: { orderBy: { createdAt: "asc" } } },
+    });
+    expect(conversation).toMatchObject({ origin: "ESCALATION", status: "OPEN", email: visitor, userId: null, subject: "Can I pay with crypto?" });
+    expect(conversation.messages.map((m) => ({ author: m.author, note: m.note, body: m.body }))).toEqual([
+      { author: "USER", note: false, body: "Can I pay with crypto?\n\nWe're a crypto company." },
+      { author: "AI", note: false, body: expect.stringMatching(/^We take cards and bank transfers\.\n\nSources: Payments \(http.*\/docs\/payments\)$/) },
+      { author: "AI", note: true, body: "Summary: They want to pay in crypto.\nThey marked the AI's answer not helpful." },
+    ]);
+    expect(await escalated(question.id)).toEqual({ escalatedAt: expect.any(Date), escalatedTo: null });
+    expect(sentTo(visitor)).toEqual([]);
+
+    // Theirs in Messages, with their visitor token, and the note isn't.
+    const opened = await widgetConversation(project.slug, { visitor: (result as { visitor: string }).visitor }, 1);
+    expect(opened).toMatchObject({ messages: [{ fromTeam: false }, { fromTeam: true, body: expect.stringContaining("cards") }] });
+    expect((opened as { messages: unknown[] }).messages).toHaveLength(2);
+
+    // Once only.
+    expect(await escalateDocs(project.slug, question.id, visitor, "", "widget", {})).toEqual({ error: "You've already passed this question to the team" });
+  });
+
+  test("someone the page signs in gets it as their own conversation; a token that doesn't check out is refused", async () => {
+    const userId = await upsertProjectUser(project.id, "user-7", { name: "Sam", email: "e2e-sam-7@example.com" });
+    const reader = asReader();
+    const question = await asked(reader, { source: "WIDGET" });
+    model.reply("They want to pay in crypto.");
+    expect(await escalateDocs(project.slug, question.id, "e2e-sam-7@example.com", "", "widget", { token: "not-a-token" })).toEqual({
+      error: "Sign in again to ask a person",
+    });
+    expect(await escalated(question.id)).toEqual({ escalatedAt: null, escalatedTo: null });
+
+    expect(await escalateDocs(project.slug, question.id, "e2e-sam-7@example.com", "", "widget", { token: widgetToken(project.id, userId) })).toEqual({
+      conversation: 1,
+    });
+    expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ userId, email: null, visitorHash: null });
+  });
+
+  test("once the conversation is started, the question stays passed on even if announcing it fails", async () => {
+    const reader = asReader();
+    const question = await asked(reader, { source: "WIDGET" });
+    model.reply("They want to pay in crypto.");
+    announcing.fails = true;
+    try {
+      expect(await escalateDocs(project.slug, question.id, newAddress(), "", "widget", {})).toEqual({ conversation: 1, visitor: expect.any(String) });
+    } finally {
+      announcing.fails = false;
+    }
+    expect(await escalated(question.id)).toEqual({ escalatedAt: expect.any(Date), escalatedTo: null });
+    expect(await escalateDocs(project.slug, question.id, newAddress(), "", "widget", {})).toEqual({ error: "You've already passed this question to the team" });
+    expect(await prisma.conversation.count({ where: { projectId: project.id } })).toBe(1);
+  });
 });

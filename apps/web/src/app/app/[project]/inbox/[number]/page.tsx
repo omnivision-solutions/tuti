@@ -42,7 +42,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         messages: {
           orderBy: { createdAt: "asc" },
-          select: { id: true, author: true, body: true, createdAt: true, authorUser: { select: { name: true } } },
+          select: { id: true, author: true, body: true, note: true, createdAt: true, authorUser: { select: { name: true } } },
         },
       },
     }),
@@ -98,13 +98,14 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         <div className="flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <ol className="flex flex-col gap-3" aria-label="Messages">
             {conversation.messages.map((message) => {
-              const fromTeam = message.author === "TEAM";
+              const fromTeam = message.author !== "USER";
               const name = message.author === "USER" ? personName : (message.authorUser?.name ?? (message.author === "AI" ? "AI" : "Tuti"));
               return (
-                <li key={message.id} className={cn("flex", fromTeam && "justify-end")}>
-                  <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted")}>
+                <li key={message.id} className={cn("flex", fromTeam && "justify-end", message.note && "justify-center")}>
+                  <Card size="sm" className={cn("max-w-[85%]", fromTeam && "bg-muted", message.note && "border-dashed bg-highlight/40")}>
                     <CardContent className="flex flex-col gap-1">
                       <p className="text-xs text-muted-foreground">
+                        {message.note && <span className="font-medium text-foreground">Note · </span>}
                         <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>

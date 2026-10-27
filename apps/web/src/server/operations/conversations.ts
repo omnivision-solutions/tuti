@@ -51,6 +51,7 @@ const messageSelect = {
   author: true,
   channel: true,
   body: true,
+  note: true,
   createdAt: true,
   authorUser: { select: { name: true } },
 } satisfies Prisma.ConversationMessageSelect;
@@ -92,6 +93,7 @@ function messageView(row: MessageRow) {
     name: row.authorUser?.name ?? null,
     channel: row.channel.toLowerCase(),
     body: row.body,
+    note: row.note,
     createdAt: row.createdAt,
   };
 }
@@ -253,6 +255,8 @@ export async function startConversation(
     body: string;
     origin: ConversationOrigin;
     channel: MessageChannel;
+    /** Messages after the user's first, oldest first: an AI answer and the AI's summary as a note, for an escalated question. */
+    then?: { author: "AI"; body: string; note?: boolean }[];
     /** Refused (429) when the conversations `where` matches started this many in the last day: checked under the lock, so starts at once can't all pass. */
     perDay?: { where: Prisma.ConversationWhereInput; max: number };
   },
@@ -290,6 +294,18 @@ export async function startConversation(
     const message = await tx.conversationMessage.create({
       data: { projectId, conversationId: conversation.id, author: "USER", authorId: start.userId, channel: start.channel, body: start.body, createdAt: now },
       select: messageSelect,
+    });
+    // A millisecond apart, so they read in order.
+    await tx.conversationMessage.createMany({
+      data: (start.then ?? []).map((next, i) => ({
+        projectId,
+        conversationId: conversation.id,
+        author: next.author,
+        channel: start.channel,
+        body: next.body,
+        note: next.note ?? false,
+        createdAt: new Date(now.getTime() + i + 1),
+      })),
     });
     return { conversation, message };
   });

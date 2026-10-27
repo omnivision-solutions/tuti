@@ -16,6 +16,7 @@ import { answerFields, saveAnswer } from "./operations/docs-insights";
 import { OperationError } from "./operations";
 import { currentAsker, currentReader, readableProject } from "./portal-access";
 import { getSession } from "./session";
+import type { WidgetAuth } from "./widget-person";
 
 /**
  * Readers' actions on the portal's docs (and the widget's): answering "Was this helpful?", counting
@@ -179,14 +180,19 @@ export async function rateDocsAnswer(projectSlug: string, questionId: string, he
   return {};
 }
 
-/** "Ask a person" after an AI answer that didn't help: emails the question to the team (see docs.escalate). Only the asker may. */
+/**
+ * "Ask a person" after an AI answer that didn't help: emails the question to the team (see docs.escalate),
+ * or from the widget with the support inbox on, starts a conversation with whoever `widget` says is here
+ * (its number, and a new visitor's token for the panel to keep). Only the asker may.
+ */
 export async function escalateDocs(
   projectSlug: string,
   questionId: string,
   email: string,
   note: string,
   from: "portal" | "widget" = "portal",
-): Promise<FormState> {
+  widget?: WidgetAuth,
+): Promise<FormState & { conversation?: number; visitor?: string }> {
   const input = escalateFields.safeParse({ questionId, email, note });
   if (!input.success) {
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
@@ -197,12 +203,13 @@ export async function escalateDocs(
   }
   try {
     const asker = { id: await readerId(String(projectSlug), from === "widget"), ...(await currentAsker(project.id)) };
-    await escalateQuestion(project.id, asker, input.data, await headers());
+    const inWidget = from === "widget" ? { token: widget?.token ?? null, visitor: widget?.visitor ?? null } : undefined;
+    const escalated = await escalateQuestion(project.id, asker, input.data, await headers(), undefined, inWidget);
+    return "conversation" in escalated ? { conversation: escalated.conversation, ...(escalated.visitor && { visitor: escalated.visitor }) } : {};
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };
     }
     throw error;
   }
-  return {};
 }

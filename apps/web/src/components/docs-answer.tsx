@@ -10,6 +10,7 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWidgetSignIn } from "@/components/widget-feedback";
+import { useVisitor, visitorStore } from "@/components/widget-messages";
 import { answerBlocks } from "@/lib/answer-text";
 import { askDocs, escalateDocs, rateDocsAnswer } from "@/server/docs-readers";
 import type { DocsAnswer as Answer } from "@/server/operations/docs-ask";
@@ -34,7 +35,7 @@ export function DocsAnswer({
   projectSlug: string;
   question: string;
   feedbackHref: string | null;
-  askAPerson: { email: string } | null;
+  askAPerson: { email: string; inbox?: boolean } | null;
   widget?: boolean;
 }) {
   const assistant = useDocsAssistant();
@@ -63,7 +64,7 @@ export function DocsAnswer({
     });
 
   const person = askAPerson && answer && (
-    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} widget={widget} />
+    <AskAPerson projectSlug={projectSlug} questionId={answer.id} defaultEmail={askAPerson.email} inbox={askAPerson.inbox ?? false} widget={widget} />
   );
 
   // On the portal, the conversation can go on in the assistant (the widget has none).
@@ -223,15 +224,37 @@ export function AnswerSources({
  * the email the customer's page signs them in with) and an optional note, then the question goes to
  * the team by email (docs.escalate). Opens in place, taking the row's width.
  */
-export function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { projectSlug: string; questionId: string; defaultEmail: string; widget: boolean }) {
+export function AskAPerson({
+  projectSlug,
+  questionId,
+  defaultEmail,
+  inbox,
+  widget,
+  onLeave,
+}: {
+  projectSlug: string;
+  questionId: string;
+  defaultEmail: string;
+  /** It starts a conversation in the support inbox (the widget, with it on), whose reply shows in Messages. */
+  inbox: boolean;
+  widget: boolean;
+  /** Closes the assistant around it when "Open Messages" leaves for the Messages tab. */
+  onLeave?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  // What the server did: started a conversation (its reply shows in Messages) or emailed the team.
+  const [toInbox, setToInbox] = useState(false);
   /** The email as the visitor typed it; null until they type. */
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
-  // In the widget on a customer's site, the page may sign its visitor in: start with their email.
-  const { signedIn } = useWidgetSignIn(projectSlug, widget && open && !defaultEmail);
+  // In the widget on a customer's site, the page may sign its visitor in: start with their email, and
+  // with the inbox, it's their conversation (else a visitor's, the one they had or a new one).
+  const { signedIn, known } = useWidgetSignIn(projectSlug, widget && open && (inbox || !defaultEmail));
+  // With the inbox, whose conversation it starts depends on who the page signs in: wait for its answer.
+  const waiting = widget && inbox && !known;
+  const visitor = useVisitor(projectSlug);
   const id = useId();
 
   const send = (event: FormEvent<HTMLFormElement>) => {
@@ -239,15 +262,30 @@ export function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { 
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") ?? "");
     startTransition(async () => {
-      const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal");
+      const who = inbox ? { token: signedIn?.token ?? null, visitor: signedIn ? null : (visitor?.token ?? null) } : undefined;
+      const result = await escalateDocs(projectSlug, questionId, email, String(form.get("note") ?? ""), widget ? "widget" : "portal", who);
       if (result.error) {
         setError(result.error);
         return;
       }
+      if (result.visitor) {
+        visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+      }
+      setToInbox(result.conversation !== undefined);
       setSentTo(email.trim().toLowerCase());
     });
   };
 
+  if (sentTo && toInbox) {
+    return (
+      <div role="status" className="flex w-full flex-col items-start gap-2 text-foreground">
+        <p className="font-semibold">We&apos;ve passed this to the team. Their reply will show in Messages.</p>
+        <Link href="/widget?tab=messages" onClick={onLeave} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          Open Messages
+        </Link>
+      </div>
+    );
+  }
   if (sentTo) {
     return (
       <div role="status" className="flex w-full flex-col gap-1 text-foreground">
@@ -265,7 +303,11 @@ export function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { 
   }
   return (
     <form aria-label="Ask a person" onSubmit={send} className="flex w-full flex-col gap-3 rounded-lg border p-3 text-foreground">
-      <p className="text-sm text-muted-foreground">We&apos;ll email your question and the AI&apos;s answer to the team. They&apos;ll reply to you by email.</p>
+      <p className="text-sm text-muted-foreground">
+        {inbox
+          ? "We'll pass your question and the AI's answer to the team. They'll reply in Messages."
+          : "We'll email your question and the AI's answer to the team. They'll reply to you by email."}
+      </p>
       <Field>
         <FieldLabel htmlFor={`${id}-email`}>Your email</FieldLabel>
         <Input
@@ -289,7 +331,7 @@ export function AskAPerson({ projectSlug, questionId, defaultEmail, widget }: { 
         <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
           Cancel
         </Button>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || waiting}>
           {pending ? "Sending…" : "Send to the team"}
         </Button>
       </div>

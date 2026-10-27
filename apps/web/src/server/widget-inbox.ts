@@ -1,25 +1,20 @@
 "use server";
 
-import { type Prisma, prisma } from "@tuti/db";
+import { prisma } from "@tuti/db";
 import { headers } from "next/headers";
 import { z } from "zod";
 
-import { newVisitor, visitorHash } from "@/lib/visitor-session";
-import { widgetUser } from "@/lib/widget-session";
+import { visitorHash } from "@/lib/visitor-session";
 
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
-import { canActIn } from "./membership";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
-import { getSession } from "./session";
+import { newWidgetVisitor, type WidgetAuth, type WidgetPerson, widgetPerson } from "./widget-person";
 
 /**
  * Messages in the widget (docs/plan.md, Support inbox): someone's conversations with the
- * project's team. Signed in: the panel's widget token from the page's current Tuti.identify
- * (lib/widget-session.ts), or the portal's own sign-in. Signed out: a visitor token
- * (lib/visitor-session.ts) the panel got when they first wrote, with an email address that's
- * never verified and never linked to a user. Never the reader cookie, which only says who may
- * read a private portal.
+ * project's team, as server/widget-person.ts says who's here. Someone signed out gives an email
+ * address that's never verified and never linked to a user.
  */
 
 const NEW_CONVERSATIONS_PER_DAY = 20;
@@ -27,32 +22,11 @@ const MESSAGES_PER_MINUTE = 30;
 
 type Result<T> = T | { error: string };
 
-/** What the panel holds: a widget token when the page signed someone in, else a visitor token if they've written before. */
-export type WidgetAuth = { token?: string | null; visitor?: string | null };
-
 const body = z.string().trim().min(1, "Write something first").max(MAX_MESSAGE_LENGTH, "That's too long");
 const email = z.email("Enter a valid email address").max(320);
 
-type Person = { projectId: string; where: Prisma.ConversationWhereInput; userId: string | null; visitorHash: string | null };
-
-/** Whose Messages these are: the project's inbox must be on; then whoever the panel says is here, signed in first. */
-async function person(projectSlug: string, auth: WidgetAuth): Promise<Person | null> {
-  const project = await prisma.project.findUnique({ where: { slug: String(projectSlug) }, select: { id: true, supportInbox: true } });
-  if (!project?.supportInbox) {
-    return null;
-  }
-  const signedIn = (userId: string): Person => ({ projectId: project.id, where: { userId }, userId, visitorHash: null });
-  if (auth.token) {
-    const userId = widgetUser(project.id, String(auth.token));
-    return userId ? signedIn(userId) : null;
-  }
-  const session = await getSession();
-  if (session && (await canActIn(session.user.id, project.id))) {
-    return signedIn(session.user.id);
-  }
-  const hash = auth.visitor ? visitorHash(project.id, String(auth.visitor)) : null;
-  return hash ? { projectId: project.id, where: { visitorHash: hash, userId: null }, userId: null, visitorHash: hash } : null;
-}
+type Person = WidgetPerson;
+const person = widgetPerson;
 
 const signInFirst = { error: "Sign in to message the team" };
 
@@ -114,7 +88,8 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     });
   }
   const messages = await prisma.conversationMessage.findMany({
-    where: { conversationId: conversation.id },
+    // The team's notes are theirs alone.
+    where: { conversationId: conversation.id, note: false },
     orderBy: { createdAt: "asc" },
     select: { id: true, author: true, body: true, createdAt: true, authorUser: { select: { name: true } } },
   });
@@ -171,9 +146,9 @@ export async function widgetStartConversation(
     }
     signedOutEmail = given.data.toLowerCase();
     if (!who) {
-      const fresh = newVisitor(project.id);
+      const fresh = newWidgetVisitor(project.id);
       visitor = fresh.token;
-      who = { projectId: project.id, where: { visitorHash: fresh.hash, userId: null }, userId: null, visitorHash: fresh.hash };
+      who = fresh.person;
     }
   }
   if (!parsed.success) {

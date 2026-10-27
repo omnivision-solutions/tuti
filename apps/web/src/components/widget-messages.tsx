@@ -12,12 +12,12 @@ import { useWidgetSignIn } from "@/components/widget-feedback";
 import { timeAgo } from "@/lib/format";
 import { WIDGET_SHOWN_MESSAGE, WIDGET_UNSEEN_MESSAGES } from "@/lib/widget-messages";
 import {
-  type WidgetAuth,
   widgetConversation,
   widgetConversations,
   widgetSendMessage,
   widgetStartConversation,
 } from "@/server/widget-inbox";
+import type { WidgetAuth } from "@/server/widget-person";
 
 /** How often an open Messages tab checks for replies (live updates come later). */
 const POLL_MS = 10_000;
@@ -35,7 +35,7 @@ const tellPage = (count: number) => window.parent.postMessage({ type: WIDGET_UNS
  * site, so the customer's page can't read it. The token expires by itself after 30 days. Kept in
  * memory too, so where storage is blocked or full they're still a visitor for this page view.
  */
-const visitorStore = {
+export const visitorStore = {
   key: (projectSlug: string) => `tuti:visitor:${projectSlug}`,
   memory: new Map<string, string>(),
   listeners: new Set<() => void>(),
@@ -71,7 +71,7 @@ const visitorStore = {
   },
 };
 
-function useVisitor(projectSlug: string): Visitor | null {
+export function useVisitor(projectSlug: string): Visitor | null {
   const raw = useSyncExternalStore(visitorStore.subscribe, () => visitorStore.read(projectSlug), () => null);
   return useMemo(() => {
     try {
