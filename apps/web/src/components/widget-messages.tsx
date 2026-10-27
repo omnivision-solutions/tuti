@@ -89,10 +89,12 @@ function useVisitor(projectSlug: string): Visitor | null {
  * email to write, and the panel keeps a visitor token to show them their conversations.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
-  const { signedIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const { signedIn, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
-  const known = portalSignedIn || !!signedIn;
+  // Signed in on the portal in another tab since this panel loaded: the server knows them by its cookie now.
+  const [signedInSince, setSignedInSince] = useState(false);
+  const known = portalSignedIn || !!signedIn || signedInSince;
   // The conversation someone signed out just started, to open once they're a visitor.
   const [started, setStarted] = useState<number | null>(null);
 
@@ -105,7 +107,21 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
   if (!known && !visitor) {
-    return <FirstMessage projectSlug={projectSlug} onStarted={setStarted} />;
+    // Until the page says who's here, nobody writes as a visitor: someone it's about to sign in would
+    // start a conversation they'd lose sight of once it does.
+    if (!pageAnswered) {
+      return <p className="text-sm text-muted-foreground">Loading…</p>;
+    }
+    return (
+      <FirstMessage
+        projectSlug={projectSlug}
+        onStarted={setStarted}
+        onSignedIn={(number) => {
+          setStarted(number);
+          setSignedInSince(true);
+        }}
+      />
+    );
   }
   // Someone else here: their own Messages, from their list.
   return (
@@ -114,7 +130,7 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
       projectSlug={projectSlug}
       auth={auth}
       visitorEmail={known ? null : visitor!.email}
-      opened={known ? null : started}
+      opened={known && !signedInSince ? null : started}
       onNewVisitor={setStarted}
     />
   );
@@ -337,7 +353,16 @@ function BackButton({ onBack }: { onBack: () => void }) {
 }
 
 /** Someone signed out, writing for the first time: their email, so the team can reply once they've left. */
-function FirstMessage({ projectSlug, onStarted }: { projectSlug: string; onStarted: (number: number) => void }) {
+function FirstMessage({
+  projectSlug,
+  onStarted,
+  onSignedIn,
+}: {
+  projectSlug: string;
+  onStarted: (number: number) => void;
+  /** It turned out they'd signed in on the portal meanwhile (no visitor token came back): the conversation is theirs. */
+  onSignedIn: (number: number) => void;
+}) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
@@ -356,10 +381,12 @@ function FirstMessage({ projectSlug, onStarted }: { projectSlug: string; onStart
           if ("error" in result) {
             return result;
           }
-          onStarted(result.number);
-          if (result.visitor) {
-            visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
+          if (!result.visitor) {
+            onSignedIn(result.number);
+            return {};
           }
+          onStarted(result.number);
+          visitorStore.write(projectSlug, { token: result.visitor, email: email.trim() });
           return {};
         }}
       />

@@ -718,3 +718,16 @@ test("a slow answer from the server doesn't bring back a count the open panel ha
   expect(page.Tuti.unseen()).toBe(false);
 });
 
+
+test("a page that signs nobody in says so, so the panel doesn't wait for a token before someone writes as a visitor", async () => {
+  for (const settings of [undefined, { identify: () => null }, { identify: () => Promise.reject(new Error("Not signed in")) }]) {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const page = loadWidget({ settings, latest: LATEST, before: (page) => void inlineMount(page) });
+    await settled();
+    const frameWindow = page.inlineFrames[0]!.contentWindow as { postMessage: ReturnType<typeof vi.fn> };
+    page.message(frameWindow, { type: "tuti:ready" });
+    await settled();
+    expect(frameWindow.postMessage).toHaveBeenCalledWith({ type: "tuti:identify", token: null }, "https://acme.tuti.example");
+    error.mockRestore();
+  }
+});
