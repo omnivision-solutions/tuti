@@ -233,6 +233,14 @@ test("Send a test email only when replies do come from it: not on a plan without
   expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("The test email couldn't be sent") });
   ses.failing.clear();
 
+  // No mail server: nothing would go out.
+  vi.stubEnv("SMTP_HOST", "");
+  expect(await sendEmailDomainTest(project.slug)).toEqual({ error: "This server doesn't send email (SMTP_HOST isn't set)" });
+  vi.unstubAllEnvs();
+  for (const [name, value] of Object.entries({ ...ses.env, SUPPORT_EMAIL_DOMAIN: DOMAIN })) {
+    vi.stubEnv(name, value);
+  }
+
   vi.stubEnv("PLANS", "on");
   expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("Pro plan") });
 });

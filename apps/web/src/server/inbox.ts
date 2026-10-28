@@ -3,7 +3,7 @@
 import { prisma } from "@tuti/db";
 import { log } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
-import { emailDomainTestEmail, sendEmail } from "@tuti/email";
+import { emailConfigured, emailDomainTestEmail, sendEmail } from "@tuti/email";
 import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
@@ -169,6 +169,10 @@ export async function sendEmailDomainTest(projectSlug: string): Promise<FormStat
     }
     if (!user) {
       throw new OperationError(400, "no_address", "There's no address to send the test to");
+    }
+    // Without a mail server, sendEmail only logs it: not a test of anything.
+    if (!emailConfigured()) {
+      throw new OperationError(409, "email_off", "This server doesn't send email (SMTP_HOST isn't set)");
     }
     try {
       await sendEmail({

@@ -32,6 +32,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { testLicensePrivateKey } from "@/test/license";
+import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
@@ -415,7 +416,8 @@ const matrix: Matrix = {
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
     saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },
     checkEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.checkEmailDomain(slug)) },
-    sendEmailDomainTest: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.sendEmailDomainTest(slug)) },
+    // To the local SMTP fake.
+    sendEmailDomainTest: { allowed: "ADMIN", call: (slug) => withSes(() => withEnv({ SMTP_HOST: mailbox.host, SMTP_PORT: String(mailbox.port) }, () => inbox.sendEmailDomainTest(slug))) },
     forgetEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.forgetEmailDomain(slug)) },
   },
   "manage-posts": {
