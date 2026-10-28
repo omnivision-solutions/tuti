@@ -105,6 +105,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   with icons at the bottom and "Powered by tuti" under them. Home is a
   greeting in the accent colour, then a card for each part the project has
   (Messages, a docs search box, Feedback, the latest update) and the quick links.
+  It grows out of the launcher's corner as it opens (a sidebar slides in from
+  its edge) and shrinks back as it closes; with reduced motion it just appears.
   A conversation in Messages opens at its newest message, its reply box at the
   bottom of the panel as the messages scroll under it.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.

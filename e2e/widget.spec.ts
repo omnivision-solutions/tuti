@@ -1045,7 +1045,8 @@ test("a customer's site shows the widget inline in its page, and as a sidebar", 
   const sidebar = drawer.locator("iframe").contentFrame();
   await expect(sidebar.getByText("How can we help?")).toBeVisible();
   const viewport = visitor.viewportSize()!;
-  expect(await drawer.boundingBox()).toEqual({ x: viewport.width - 400, y: 0, width: 400, height: viewport.height });
+  // Once it has slid in.
+  await expect.poll(() => drawer.boundingBox()).toEqual({ x: viewport.width - 400, y: 0, width: 400, height: viewport.height });
   await checkpoint(visitor, "widget-sidebar");
   await closeWithEscape(visitor, drawer);
   await expect(launcher).toBeFocused();
