@@ -74,13 +74,13 @@ export const setEmailDomain = defineOperation({
       throw new OperationError(400, "invalid_domain", "Use an address on your own domain");
     }
     // One change at a time to the project's domain, and to this domain and those above it.
-    await withEmailDomainLocks([projectId, ...domainAndParents(domain)], async () => {
-      const current = await prisma.emailDomain.findUnique({ where: { projectId } });
+    await withEmailDomainLocks([projectId, ...domainAndParents(domain)], async (tx) => {
+      const current = await tx.emailDomain.findUnique({ where: { projectId } });
       if (current && current.domain !== domain) {
         throw new OperationError(409, "domain_set", `Remove ${current.domain} first`);
       }
       if (!current) {
-        if (await prisma.emailDomain.findUnique({ where: { domain } })) {
+        if (await tx.emailDomain.findUnique({ where: { domain } })) {
           throw new OperationError(409, "domain_taken", "Another project sends from this domain");
         }
         // SES has one identity per domain, and a domain sends as a verified domain above it allows.
@@ -90,7 +90,7 @@ export const setEmailDomain = defineOperation({
             continue;
           }
           // Left by a project since deleted: free again.
-          if (identity.projectId && !(await prisma.project.findUnique({ where: { id: identity.projectId }, select: { id: true } }))) {
+          if (identity.projectId && !(await tx.project.findUnique({ where: { id: identity.projectId }, select: { id: true } }))) {
             await forgetIdentity(identity.projectId, name);
             continue;
           }
@@ -105,9 +105,9 @@ export const setEmailDomain = defineOperation({
         if (!created && existing?.projectId !== projectId) {
           throw new OperationError(409, "domain_taken", "Another project sends from this domain");
         }
-        await prisma.emailDomain.create({ data: { projectId, domain, address, dkimTokens: (created ?? existing)?.tokens ?? [] } });
+        await tx.emailDomain.create({ data: { projectId, domain, address, dkimTokens: (created ?? existing)?.tokens ?? [] } });
       } else {
-        await prisma.emailDomain.update({ where: { projectId }, data: { address } });
+        await tx.emailDomain.update({ where: { projectId }, data: { address } });
       }
     });
     return supportSettings(projectId);

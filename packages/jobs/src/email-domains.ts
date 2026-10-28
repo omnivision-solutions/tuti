@@ -1,4 +1,4 @@
-import { type EmailDomain, prisma } from "@tuti/db";
+import { type EmailDomain, type Prisma, prisma } from "@tuti/db";
 import { ses } from "@tuti/shared/ses";
 
 import type { JobLogger, JobResult } from "./index";
@@ -40,15 +40,16 @@ export async function checkEmailDomain(projectId: string, now = new Date()) {
 /**
  * Runs `fn` holding these locks, one change at a time to each: a project's domain setup (adding,
  * removing, its tenant's associations) and each domain, whichever project it's for. SES calls
- * happen under them, so `fn` reads what it changes again first.
+ * happen under them, so `fn` reads what it changes again first, through `tx` (the locks' own
+ * connection: callers waiting for them can't take the one it needs).
  */
-export async function withEmailDomainLocks<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
+export async function withEmailDomainLocks<T>(keys: string[], fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return prisma.$transaction(
     async (tx) => {
       for (const key of [...new Set(keys)].sort()) {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`email-domain:${key}`}))`;
       }
-      return fn();
+      return fn(tx);
     },
     { maxWait: 60_000, timeout: 60_000 },
   );
@@ -72,19 +73,17 @@ export async function dropEmailDomain(projectId: string, only: (setup: EmailDoma
   if (!first) {
     return;
   }
-  await withEmailDomainLocks([projectId, first.domain], async () => {
+  await withEmailDomainLocks([projectId, first.domain], async (tx) => {
     // Still the setup it was meant for (`only`), not one changed or added meanwhile.
-    const own = await prisma.emailDomain.findUnique({ where: { projectId } });
+    const own = await tx.emailDomain.findUnique({ where: { projectId } });
     if (!own || own.domain !== first.domain || own.createdAt.getTime() !== first.createdAt.getTime() || !only(own)) {
       return;
     }
     if ((await ses()?.identity(own.domain))?.projectId === projectId) {
       await forgetIdentity(projectId, own.domain);
     }
-    await prisma.$transaction([
-      prisma.emailDomain.deleteMany({ where: { projectId, domain: own.domain } }),
-      prisma.project.update({ where: { id: projectId }, data: { sesTenant: null } }),
-    ]);
+    await tx.emailDomain.deleteMany({ where: { projectId, domain: own.domain } });
+    await tx.project.update({ where: { id: projectId }, data: { sesTenant: null } });
   });
 }
 

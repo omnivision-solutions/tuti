@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { ses } from "@tuti/shared/ses";
 
 import { withEmailDomainLocks } from "./email-domains";
@@ -21,16 +21,16 @@ export async function sesTenantHeaders(projectId: string, domain: string, teamDo
   // account or region, sets it up again.
   const identities = [domain, ...(teamDomain ? [teamDomain] : [])].map((name) => api.identityArn(name));
   const setUp = [tenant, ...identities].join(" ");
-  const current = async () => (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } })).sesTenant;
-  if ((await current()) !== setUp) {
+  const current = async (db: Prisma.TransactionClient) => (await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } })).sesTenant;
+  if ((await current(prisma)) !== setUp) {
     // Not while the team's domain is being removed (SES won't delete an identity a tenant uses).
-    await withEmailDomainLocks([projectId], async () => {
-      if ((await current()) === setUp) {
+    await withEmailDomainLocks([projectId], async (tx) => {
+      if ((await current(tx)) === setUp) {
         return;
       }
       await api.createTenant(tenant);
       await Promise.all([...identities, api.configurationSetArn].map((arn) => api.associate(tenant, arn)));
-      await prisma.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
+      await tx.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
     });
   }
   return { "X-SES-TENANT": tenant, "X-SES-CONFIGURATION-SET": api.configurationSet };
