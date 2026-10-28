@@ -44,16 +44,21 @@ export async function startSesFake(): Promise<SesFake> {
   const key = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const otherKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
   let confirmations = 0;
+  const topicArn = "arn:aws:sns:us-east-1:000000000000:tuti-test-events";
 
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
       const path = new URL(req.url ?? "/", "http://fake").pathname;
-      if (req.method === "GET" && path === "/sns/cert.pem") {
+      const query = new URL(req.url ?? "/", "http://fake").searchParams;
+      if (req.method === "GET" && path === "/sns/SimpleNotificationService-fake.pem") {
         return res.writeHead(200).end(key.publicKey.export({ type: "spki", format: "pem" }));
       }
-      if (req.method === "GET" && path === "/sns/confirm") {
+      if (req.method === "GET" && path === "/sns/" && query.get("Action") === "ConfirmSubscription") {
+        if (query.get("TopicArn") !== topicArn || query.get("Token") !== "fake-token") {
+          return res.writeHead(400).end();
+        }
         confirmations++;
         return res.writeHead(200).end("<ConfirmSubscriptionResponse/>");
       }
@@ -92,7 +97,6 @@ export async function startSesFake(): Promise<SesFake> {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const topicArn = "arn:aws:sns:us-east-1:000000000000:tuti-test-events";
   return {
     url,
     env: {
@@ -114,8 +118,8 @@ export async function startSesFake(): Promise<SesFake> {
         Message: message,
         Timestamp: new Date().toISOString(),
         SignatureVersion: "2",
-        SigningCertURL: `${url}/sns/cert.pem`,
-        ...(type === "SubscriptionConfirmation" && { Token: "fake-token", SubscribeURL: `${url}/sns/confirm?Token=fake-token` }),
+        SigningCertURL: `${url}/sns/SimpleNotificationService-fake.pem`,
+        ...(type === "SubscriptionConfirmation" && { Token: "fake-token", SubscribeURL: `${url}/sns/?Action=ConfirmSubscription&TopicArn=${encodeURIComponent(topic)}&Token=fake-token` }),
       };
       const text = SNS_SIGNED[type]
         .filter((field) => field in fields)

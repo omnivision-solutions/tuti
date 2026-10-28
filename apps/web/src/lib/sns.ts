@@ -2,8 +2,8 @@ import { createVerify } from "node:crypto";
 
 /**
  * Amazon SNS's HTTPS messages (docs/plan.md, Support inbox, item 11: SES's events come through SNS),
- * checked the way AWS documents: the signature over the message's fields, with the certificate from
- * the URL it names, which must be SNS's own.
+ * checked the way AWS documents: the signature over the message's fields, with the certificate it
+ * names, which must be SNS's own in the events topic's region.
  */
 export type SnsMessage = {
   Type: string;
@@ -26,37 +26,40 @@ const SIGNED: Record<string, (keyof SnsMessage)[]> = {
   UnsubscribeConfirmation: ["Message", "MessageId", "SubscribeURL", "Timestamp", "Token", "TopicArn", "Type"],
 };
 
-/** An address on SNS itself (https://sns.<region>.amazonaws.com/…), or, in tests, on the SES fake. */
-export function snsUrl(url: string | undefined): boolean {
+/**
+ * SNS in the events topic's region (in tests, the SES fake): everything fetched is there, its address
+ * made from the server's settings, never taken from a message.
+ */
+function sns(): string {
   const fake = process.env.SES_API_URL?.replace(/\/$/, "");
-  if (url && fake && url.startsWith(`${fake}/`)) {
-    return true;
-  }
-  try {
-    const parsed = new URL(url ?? "");
-    return parsed.protocol === "https:" && /^sns\.[a-z0-9-]+\.amazonaws\.com$/.test(parsed.hostname);
-  } catch {
-    return false;
-  }
+  return fake ? `${fake}/sns` : `https://sns.${process.env.SES_EVENTS_TOPIC_ARN?.split(":")[3]}.amazonaws.com`;
+}
+
+/** The link that confirms a subscription to the topic (what SNS's SubscribeURL is). */
+export function confirmSubscriptionUrl(message: SnsMessage): string {
+  return `${sns()}/?Action=ConfirmSubscription&TopicArn=${encodeURIComponent(message.TopicArn)}&Token=${encodeURIComponent(message.Token ?? "")}`;
 }
 
 /** Certificates by URL: SNS signs with a few, for months each. */
 const certificates = new Map<string, string>();
 
 export async function snsSignatureValid(message: SnsMessage): Promise<boolean> {
-  const fields = SIGNED[message.Type];
-  const algorithm = { "1": "RSA-SHA1", "2": "RSA-SHA256" }[message.SignatureVersion];
-  if (!fields || !algorithm || !snsUrl(message.SigningCertURL) || !new URL(message.SigningCertURL).pathname.endsWith(".pem")) {
+  const fields = Object.hasOwn(SIGNED, message.Type) ? SIGNED[message.Type] : null;
+  const algorithm = message.SignatureVersion === "1" ? "RSA-SHA1" : message.SignatureVersion === "2" ? "RSA-SHA256" : null;
+  // The certificate is SNS's (SimpleNotificationService-<id>.pem), from SNS in the topic's region.
+  const file = /^SimpleNotificationService-[\w-]+\.pem$/.exec(String(message.SigningCertURL).split("/").at(-1) ?? "")?.[0];
+  const url = file && `${sns()}/${file}`;
+  if (!fields || !algorithm || !url || message.SigningCertURL !== url) {
     return false;
   }
-  let certificate = certificates.get(message.SigningCertURL);
+  let certificate = certificates.get(url);
   if (!certificate) {
-    const response = await fetch(message.SigningCertURL, { signal: AbortSignal.timeout(5_000) });
+    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
     if (!response.ok) {
       return false;
     }
     certificate = await response.text();
-    certificates.set(message.SigningCertURL, certificate);
+    certificates.set(url, certificate);
   }
   const signed = fields
     .filter((field) => typeof message[field] === "string")

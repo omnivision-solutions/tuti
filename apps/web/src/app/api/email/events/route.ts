@@ -1,7 +1,7 @@
 import { log } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 
-import { type SnsMessage, snsSignatureValid, snsUrl } from "@/lib/sns";
+import { confirmSubscriptionUrl, type SnsMessage, snsSignatureValid } from "@/lib/sns";
 import { recordEmailEvent } from "@/server/email-events";
 
 /** SNS's messages are 256 KB at most. */
@@ -34,10 +34,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Bad signature" }, { status: 401 });
   }
   if (message.Type === "SubscriptionConfirmation") {
-    if (!snsUrl(message.SubscribeURL)) {
-      return Response.json({ error: "Not an SNS address" }, { status: 400 });
-    }
-    const confirmed = await fetch(message.SubscribeURL!, { signal: AbortSignal.timeout(5_000) }).catch(() => null);
+    const confirmed = await fetch(confirmSubscriptionUrl(message), { signal: AbortSignal.timeout(5_000) }).catch(() => null);
     log.info("Confirming the SES events subscription", { status: confirmed?.status });
     return Response.json({}, { status: confirmed?.ok ? 200 : 502 });
   }
