@@ -2,8 +2,10 @@
 
 A button on your site that opens a panel with your project's feedback form, what's
 new (the changelog), your docs once you've published articles, and Messages to your team
-once you turn the support inbox on (see [Messages](#messages)). Add one script tag
-anywhere in your pages:
+once you turn the support inbox on (see [Messages](#messages)). It opens at Home: a way
+into each of those, and your quick links. The tabs are at the bottom of the panel, with
+"Powered by tuti" under them unless your project hides it (Customize → Powered by). Add one
+script tag anywhere in your pages:
 
 ```html
 <script src="https://tuti.so/widget.js" data-project="acme" async></script>
@@ -19,8 +21,8 @@ In the Tuti app, your project's **Customize → Widget** (owners and admins) set
 - **Button label** (default "Feedback", up to 30 characters).
 - **Colour** (default the Tuti green; the text on it is black or white, whichever reads better).
 - **Position**: bottom right or bottom left.
-- **Quick links**: up to 5 links (a label and an `https://` address) at the top of the
-  panel, such as your status page or docs. They open in a new tab.
+- **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
+  such as your status page or docs. They open in a new tab.
 
 The script reads these once per page view; changes show up within a minute. The same
 settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
@@ -60,9 +62,9 @@ the panel (in `inline` mode, the floating one, as with `data-hide-launcher`).
 
 Every element with `data-tuti-inline` gets its own panel, in any display mode, so a page can
 have a launcher and an inline panel, or several inline ones (say Feedback on one side and
-What's new on the other). The attribute's value picks its tab: `feedback`, `whats-new` or `docs`;
-empty (`<div data-tuti-inline>`) is Feedback, and so is an unknown one, with an error in the
-browser console. The panel fills the element's width and height, and is at least 500px tall; give the
+What's new on the other). The attribute's value picks its tab: `home`, `messages`, `docs`,
+`feedback` or `whats-new`; empty (`<div data-tuti-inline>`) is Home, and so is an unknown one,
+with an error in the browser console. The panel fills the element's width and height, and is at least 500px tall; give the
 element a height to make it taller. It has no close button, since there's nothing to close.
 Elements added to the page later (single-page apps) get their panel when they appear.
 
@@ -106,8 +108,8 @@ panel instead of leaving the page.
 
 | Call | What it does |
 | --- | --- |
-| `Tuti.open()` | Opens the panel where it was (the Feedback tab the first time). |
-| `Tuti.open({ tab })` | Opens it at a tab: `"feedback"`, `"whats-new"`, `"docs"` or `"messages"`. |
+| `Tuti.open()` | Opens the panel where it was (Home the first time). |
+| `Tuti.open({ tab })` | Opens it at a tab: `"home"`, `"messages"`, `"docs"`, `"feedback"` or `"whats-new"`. |
 | `Tuti.open({ article: "<slug>" })` | Opens it at an article from your docs. |
 | `Tuti.close()` | Closes it (as do Escape and the panel's close button). Inline panels stay. |
 | `Tuti.identify(getToken)` | Signs your users in with SSO: see [sso.md](sso.md#in-the-widget). |

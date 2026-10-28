@@ -301,10 +301,12 @@ test("Tuti.open({ tab }) opens the panel at that tab, Tuti.open() where it was; 
   page.Tuti.open();
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=docs");
   page.Tuti.open({ tab: "feedback" });
+  expect(page.frame!.src).toBe("https://acme.tuti.example/widget?tab=feedback");
+  page.Tuti.open({ tab: "home" });
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   page.Tuti.open({ tab: "settings" });
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new, docs or messages");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of home, messages, docs, feedback or whats-new");
   expect(page.frame!.src).toBe("https://acme.tuti.example/widget");
   error.mockRestore();
 });
@@ -586,7 +588,7 @@ test("inline mounts work in every mode, also ones added later, each mounted once
   inlineMount(page, "settings");
   page.mutated();
   page.mutated();
-  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of feedback, whats-new, docs or messages");
+  expect(error).toHaveBeenCalledWith("Tuti widget: tab is one of home, messages, docs, feedback or whats-new");
   error.mockRestore();
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual([
     "https://acme.tuti.example/widget?tab=whats-new&display=inline",

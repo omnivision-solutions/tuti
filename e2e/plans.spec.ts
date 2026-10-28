@@ -43,6 +43,10 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
   await reader.goto(cloudPortalUrl(slug));
   await expect(reader.getByRole("banner")).toBeVisible();
   await expect(reader.getByRole("link", { name: /Powered by/ })).toHaveCount(0);
+  // Nor under the widget's tabs.
+  await reader.goto(`${cloudPortalUrl(slug)}/widget`);
+  await expect(reader.getByRole("navigation", { name: "Widget" })).toBeVisible();
+  await expect(reader.getByRole("link", { name: /Powered by/ })).toHaveCount(0);
   await reader.close();
   await owner.goto(`/app/${slug}/customize/powered-by`);
   await expect(owner.getByText("Hidden with the add-on on this project's plan.")).toBeVisible();
