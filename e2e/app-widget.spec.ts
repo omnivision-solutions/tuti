@@ -27,11 +27,15 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await expect(panel.getByText("Feedback posted")).toBeVisible();
   await checkpoint(owner, "app-widget-signed-in");
 
-  // Not on the marketing pages, nor on a portal.
+  // Not on the marketing pages, nor on a portal: no script (the launcher would only come after it loads).
+  const script = owner.locator('script[src$="/widget.js"]');
+  await expect(script).toHaveCount(1);
   await owner.goto("/");
   await expect(owner.getByRole("banner").getByRole("link", { name: "Open app" })).toBeVisible();
+  await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
   await owner.goto(`${cloudPortalUrl(APP_WIDGET_SLUG)}/feedback/feature-requests`);
   await expect(owner.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
 });
