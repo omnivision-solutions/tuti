@@ -1,7 +1,9 @@
+import { connect } from "node:net";
+
 import { inboundSignatureValid } from "@tuti/shared/inbound-signature";
 import nodemailer from "nodemailer";
 import type { SMTPServer } from "smtp-server";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
 
@@ -26,7 +28,13 @@ let server: SMTPServer | undefined;
 afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
-async function receiver(answers: { status: number; outcome?: string }[] = [], { maxBytes, maxRecipients }: { maxBytes?: number; maxRecipients?: number } = {}) {
+type Limits = { maxBytes?: number; maxRecipients?: number; maxPerSource?: number; maxInFlight?: number; sessionLifetimeMs?: number };
+
+async function receiver(
+  answers: { status: number; outcome?: string }[] = [],
+  limits: Limits = {},
+  post?: (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<{ status: number; outcome?: string }>,
+) {
   const posts: { url: string; body: Buffer; headers: Record<string, string> }[] = [];
   server = await startSmtpReceiver({
     domain: "support.test",
@@ -36,17 +44,25 @@ async function receiver(answers: { status: number; outcome?: string }[] = [], { 
     host: "127.0.0.1",
     serverName: "mx.support.test",
     resolver,
-    maxBytes,
-    maxRecipients,
+    ...limits,
     post: async (url, request) => {
       posts.push({ url, ...request });
-      return answers.shift() ?? { status: 200, outcome: "conversation" };
+      return post ? post(url, request) : (answers.shift() ?? { status: 200, outcome: "conversation" });
     },
   });
   const { port } = server.server.address() as { port: number };
   const transport = nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true });
   const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
-  return { posts, send };
+  /** A raw connection: what the server says first, and when it hangs up. */
+  const open = () =>
+    new Promise<{ greeting: string; closed: Promise<void>; write: (line: string) => void; end: () => void }>((resolve) => {
+      const socket = connect(port, "127.0.0.1");
+      const closed = new Promise<void>((done) => socket.on("close", () => done()));
+      socket.once("data", (data) =>
+        resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), end: () => socket.destroy() }),
+      );
+    });
+  return { posts, send, open };
 }
 
 test("mail for a project's address is posted to the app signed, with SPF and DMARC as checked here", async () => {
@@ -109,6 +125,40 @@ test("recipients past the limit are told to come separately (452), and only the 
   const sent = await send("sam@example.org", ["support@a.support.test", "support@b.support.test", "support@c.support.test"]);
   expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@a.support.test", "support@b.support.test"]);
   expect(sent.rejected).toEqual(["support@c.support.test"]);
+});
+
+test("one address can't hold every connection: past its share it's told to come back (421)", async () => {
+  const { open } = await receiver([], { maxPerSource: 1 });
+  const first = await open();
+  const second = await open();
+  expect(first.greeting).toMatch(/^220 /);
+  expect(second.greeting).toMatch(/^421 /);
+  first.end();
+  second.end();
+});
+
+test("a session is closed past its lifetime, however busy it keeps itself", async () => {
+  const { open } = await receiver([], { sessionLifetimeMs: 300 });
+  const session = await open();
+  const busy = setInterval(() => session.write("NOOP"), 50);
+  await session.closed;
+  clearInterval(busy);
+});
+
+test("messages still being delivered count, even after their sender hangs up: past the limit, try again later (451)", async () => {
+  let release!: () => void;
+  const slow = new Promise<void>((resolve) => (release = resolve));
+  const { send, posts } = await receiver([], { maxInFlight: 1 }, async () => {
+    await slow;
+    return { status: 200, outcome: "conversation" };
+  });
+  const first = send("sam@example.org", ["support@a.support.test"]);
+  await vi.waitFor(() => expect(posts).toHaveLength(1));
+  await expect(send("sam@example.org", ["support@b.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  release();
+  await first;
+  await send("sam@example.org", ["support@c.support.test"]);
+  expect(posts).toHaveLength(2);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {

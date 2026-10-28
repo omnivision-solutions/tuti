@@ -24,6 +24,12 @@ export const MAX_BYTES = 25 * 1024 * 1024;
  */
 export const MAX_CLIENTS = 10;
 export const MAX_RECIPIENTS = 20;
+/** Connections from one address at once, so one sender can't hold them all (421 past it). */
+export const MAX_PER_SOURCE = 3;
+/** Messages being received or delivered at once, whether their sender is still connected or not (451 past it). */
+export const MAX_IN_FLIGHT = 10;
+/** A session's longest life, however busy it keeps itself (NOOPs reset the idle timeout). */
+export const SESSION_LIFETIME_MS = 10 * 60_000;
 
 /** The app's answer: its status, and for a 200 or 404 its `outcome` (`no such address` for a 404 that means it). */
 type Answer = { status: number; outcome?: string };
@@ -42,6 +48,10 @@ export type ReceiverOptions = {
   /** The largest message taken (MAX_BYTES), and the most recipients per message (MAX_RECIPIENTS); tests set less. */
   maxBytes?: number;
   maxRecipients?: number;
+  /** The limits above (tests set less). */
+  maxPerSource?: number;
+  maxInFlight?: number;
+  sessionLifetimeMs?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: (name: string, type: string) => Promise<unknown>;
   post?: Post;
@@ -89,6 +99,13 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const serverName = options.serverName ?? hostname();
   const post = options.post ?? postWithFetch;
   const url = new URL("/api/inbound/email", options.appUrl).toString();
+  const maxPerSource = options.maxPerSource ?? MAX_PER_SOURCE;
+  const maxInFlight = options.maxInFlight ?? MAX_IN_FLIGHT;
+  const lifetime = options.sessionLifetimeMs ?? SESSION_LIFETIME_MS;
+  /** Open sessions per address, and when each accepted session started. */
+  const perSource = new Map<string, number>();
+  const started = new Map<string, number>();
+  let inFlight = 0;
 
   const server = new SMTPServer({
     name: serverName,
@@ -99,6 +116,29 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     disabledCommands: options.tls ? ["AUTH"] : ["AUTH", "STARTTLS"],
     ...(options.tls && { key: options.tls.key, cert: options.tls.cert }),
     logger: false,
+    // The checks don't use the client's hostname, so no DNS lookup for it.
+    disableReverseLookup: true,
+    onConnect(session, callback) {
+      const count = perSource.get(session.remoteAddress) ?? 0;
+      if (count >= maxPerSource) {
+        callback(answer(421, "Too many connections from you: try again later"));
+        return;
+      }
+      perSource.set(session.remoteAddress, count + 1);
+      started.set(session.id, Date.now());
+      callback();
+    },
+    onClose(session) {
+      // Only sessions it let in (a refused one closes too).
+      if (started.delete(session.id)) {
+        const count = (perSource.get(session.remoteAddress) ?? 1) - 1;
+        if (count > 0) {
+          perSource.set(session.remoteAddress, count);
+        } else {
+          perSource.delete(session.remoteAddress);
+        }
+      }
+    },
     onRcptTo(address, session, callback) {
       if (session.envelope.rcptTo.length >= (options.maxRecipients ?? MAX_RECIPIENTS)) {
         callback(answer(452, "Too many recipients: send the rest separately"));
@@ -109,6 +149,21 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       callback(recipient.endsWith(`.${domain}`) ? undefined : answer(550, "No such address here"));
     },
     onData(stream, session, callback) {
+      if (inFlight >= maxInFlight) {
+        // Busy: none of it kept, and the sender tries again later.
+        stream.on("data", () => {});
+        stream.on("end", () => callback(answer(451, "Busy: try again later")));
+        return;
+      }
+      inFlight++;
+      let settled = false;
+      const done: typeof callback = (...args) => {
+        if (!settled) {
+          settled = true;
+          inFlight--;
+          callback(...args);
+        }
+      };
       const chunks: Buffer[] = [];
       // Past the limit, nothing more is kept: it's refused at the end, whatever its size.
       stream.on("data", (chunk: Buffer) => {
@@ -116,18 +171,18 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
           chunks.push(chunk);
         }
       });
-      stream.on("error", (error) => callback(error));
+      stream.on("error", (error) => done(error));
       stream.on("end", () => {
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
-          callback(answer(552, "Message too large"));
+          done(answer(552, "Message too large"));
           return;
         }
         const raw = Buffer.concat(chunks);
         deliver(raw, session)
-          .then((code) => callback(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
+          .then((code) => done(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
           .catch((error: unknown) => {
             log.error("Posting a received email to the app failed", { error: String(error) });
-            callback(answer(451, "Try again later"));
+            done(answer(451, "Try again later"));
           });
       });
     },
@@ -178,6 +233,21 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     }
     return 250;
   }
+
+  // Sessions past their lifetime are closed, however busy they keep themselves.
+  const reaper = setInterval(
+    () => {
+      for (const connection of server.connections as Set<{ session?: { id: string }; close(): void }>) {
+        const since = connection.session && started.get(connection.session.id);
+        if (since && Date.now() - since > lifetime) {
+          connection.close();
+        }
+      }
+    },
+    Math.min(lifetime / 2, 30_000),
+  );
+  reaper.unref();
+  server.on("close", () => clearInterval(reaper));
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);
