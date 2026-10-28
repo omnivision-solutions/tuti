@@ -34,8 +34,8 @@ lives in `/shared`, which the others import.
 
 | Folder | Holds | Local file (dev) |
 |---|---|---|
-| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings), `OPENROUTER_API_KEY`, `APP_URL` (dev: `https://dev.tuti.so`), `PORTAL_URL_TEMPLATE` (dev: `https://{project}--dev.tuti.so`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587), `MEDIA_*`; prod also `APP_PORTAL_PROJECT`, `CUSTOM_DOMAIN_TARGET` | — |
-| `/web` ← shared | `BETTER_AUTH_SECRET`, `MEDIA_LINK_SECRET`; prod also `APP_PORTAL_OWNER`, `APP_WIDGET_PROJECT` (`help`: its widget in the team app; turn on SSO in that project to sign people in), `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `TRUSTED_IP_HEADER`, `LICENSE_PRIVATE_KEY` (makes tuti.so the licence server; `scripts/license.mjs` sells licences) | `apps/web/.env` |
+| `/shared` | `DATABASE_URL`, `HATCHET_CLIENT_TOKEN`, `OPENAI_API_KEY` (embeddings), `OPENROUTER_API_KEY`, `APP_URL` (dev: the dev box's URL), `PORTAL_URL_TEMPLATE` (dev: `https://{project}.<dev box host>`), `SMTP_*` + `EMAIL_FROM` (Resend over SMTP from `mail.tuti.so`, port 587), `MEDIA_*`; prod also `APP_PORTAL_PROJECT`, `CUSTOM_DOMAIN_TARGET` | — |
+| `/web` ← shared | `BETTER_AUTH_SECRET`, `MEDIA_LINK_SECRET`; dev also `ALLOWED_DEV_ORIGINS` (the dev box's host and its subdomains, `<host>,*.<host>`, matching `APP_URL` and `PORTAL_URL_TEMPLATE`); prod also `APP_PORTAL_OWNER`, `APP_WIDGET_PROJECT` (`help`: its widget in the team app; turn on SSO in that project to sign people in), `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`, `TRUSTED_IP_HEADER`, `LICENSE_PRIVATE_KEY` (makes tuti.so the licence server; `scripts/license.mjs` sells licences) | `apps/web/.env` |
 | `/worker` ← shared | nothing of its own | `apps/worker/.env` |
 | `/scripts` ← shared (dev only) | `SHADOW_DATABASE_URL` (`tuti_dev_shadow`, for `prisma migrate dev`, since `tuti_dev` can't create databases) | `packages/db/.env` |
 

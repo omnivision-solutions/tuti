@@ -44,6 +44,9 @@ settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
 | `sidebar` | The button, which opens the panel as a full-height drawer on its side (right, or left with a bottom-left button). On screens up to 640px wide the rest of the page is dimmed, and tapping it closes the drawer. |
 | `inline` | No button: the panel shows in your page, where you put it (see below). |
 
+The floating panel grows out of the button's corner as it opens and shrinks back as it closes; a
+sidebar slides in from its edge. Visitors whose device asks for reduced motion get it without the motion.
+
 ```html
 <!-- Launcher (the default) -->
 <script src="https://tuti.so/widget.js" data-project="acme" async></script>
