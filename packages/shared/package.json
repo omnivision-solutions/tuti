@@ -8,7 +8,8 @@
     "./hatchet": "./src/hatchet.ts",
     "./storage": "./src/storage.ts",
     "./webhook-url": "./src/webhook-url.ts",
-    "./post-urls": "./src/post-urls.ts"
+    "./post-urls": "./src/post-urls.ts",
+    "./inbound-signature": "./src/inbound-signature.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
