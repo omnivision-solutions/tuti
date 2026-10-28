@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 import { expect, test } from "vitest";
 
@@ -15,7 +16,9 @@ test("the built worker loads, and stops only for its missing settings", () => {
   // Inside the app, so the bundle finds its external packages in the app's node_modules.
   const out = mkdtempSync(join(app, ".bundle-test-"));
   try {
-    execFileSync("pnpm", ["exec", "tsup", "--out-dir", out, "--silent"], { cwd: app, stdio: "pipe" });
+    // tsup's own CLI script run by Node, not a shell shim (pnpm and npx are .cmd files on Windows).
+    const tsup = createRequire(join(app, "package.json")).resolve("tsup/package.json");
+    execFileSync(process.execPath, [join(dirname(tsup), "dist/cli-default.js"), "--out-dir", out, "--silent"], { cwd: app, stdio: "pipe" });
     const run = spawnSync(process.execPath, [join(out, "index.js")], { cwd: app, env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 30_000 });
     expect(run.stderr).not.toContain("Dynamic require");
     expect(run.stderr).toContain("Missing required environment variables: DATABASE_URL");
