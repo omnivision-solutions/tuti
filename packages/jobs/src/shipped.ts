@@ -4,6 +4,7 @@ import { type JobInput, planIncludes } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { portalAddress } from "./portal-address";
+import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
 /** An unsent claim (or a due post) this old belongs to a run that died or never started. */
@@ -99,6 +100,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { skipped: true };
   }
   const { projectId, project } = post;
+  // Waiting for the operator's approval: still due, so the cron brings it back (for a day) once approved.
+  if (await projectEmailWaits(projectId)) {
+    return { waiting: "the project isn't approved to email its users yet" };
+  }
   // On a plan without private portals, a private portal is its team's only: nobody past it to tell.
   const teamOnly = project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal");
   const ids = teamOnly ? [] : [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
@@ -131,6 +136,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   });
 
   const origin = await portalAddress(project.slug);
+  const sender = await projectSender(projectId);
   const postUrl = portalPostUrl(origin, post);
   const sentTo = new Set<string>();
   let emailed = 0;
@@ -153,8 +159,10 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       sendEmail({
         to: address,
         ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl }),
+        ...sender,
         // One-click unsubscribe (RFC 8058): mail apps POST to this URL.
         headers: {
+          ...sender.headers,
           "List-Unsubscribe": `<${origin}/unsubscribe/confirm?token=${token}>`,
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
