@@ -262,10 +262,14 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     original: stripped ? plain.slice(0, 200_000) : null,
     attachmentsDropped: attachments.dropped,
   };
+  // Removed again only if nothing that points at them was written: once the message is in, they're its.
+  let written = false;
   try {
     return await place();
   } catch (error) {
-    await attachments.discard();
+    if (!written) {
+      await attachments.discard();
+    }
     throw error;
   }
 
@@ -313,6 +317,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
             await finish(tx, { status: "ADDED", conversationId: conversation.id });
           },
         );
+        written = true;
         await announceUserMessage(projectId, conversation.number, message);
         return "added";
       }
@@ -338,6 +343,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
         await finish(tx, { status: "ADDED", conversationId });
       },
     });
+    written = true;
     if (auth.dmarc !== "fail") {
       await announceConversation(projectId, started.conversation, started.message);
     }

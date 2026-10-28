@@ -115,6 +115,18 @@ test("an email's attachments are kept whole in the media storage and linked to i
   });
 });
 
+test("the webhook for a new conversation says what came with its message", async () => {
+  const { project, owner, address } = await setup();
+  await prisma.webhook.create({
+    data: { projectId: project.id, url: "https://hooks.example.com/tuti", secret: "whsec_test", events: ["conversation.created"], createdById: owner.id },
+  });
+  await postEmail(withAttachments("Kim <e2e-kim@example.com>", address), { recipient: address });
+  const delivery = await prisma.webhookDelivery.findFirstOrThrow({ where: { webhook: { projectId: project.id } } });
+  expect(delivery.payload).toMatchObject({
+    data: { messages: [{ attachments: [{ filename: "Invoice Oct.pdf" }, { filename: "screenshot.png" }], attachmentsDropped: 0 }] },
+  });
+});
+
 test("without media storage the attachments are dropped, and the message says how many", async () => {
   vi.stubEnv("MEDIA_S3_ENDPOINT", "");
   const { project, address } = await setup();

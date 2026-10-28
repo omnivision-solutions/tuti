@@ -331,7 +331,12 @@ export async function startConversation(
       },
       select: messageSelect,
     });
-    await start.alongside?.(tx, conversation.id, message.id);
+    let first = message;
+    if (start.alongside) {
+      await start.alongside(tx, conversation.id, message.id);
+      // What it wrote with the first message (a received email's attachments) is part of the message announced.
+      first = await tx.conversationMessage.findUniqueOrThrow({ where: { id: message.id }, select: messageSelect });
+    }
     // A millisecond apart, so they read in order.
     await tx.conversationMessage.createMany({
       data: (start.then ?? []).map((next, i) => ({
@@ -345,7 +350,7 @@ export async function startConversation(
       })),
     });
     await notifyInbox(tx, { projectId, conversationId: conversation.id, userId: start.userId, visitorHash: start.visitorHash ?? null });
-    return { conversation, message };
+    return { conversation, message: first };
   });
 }
 
@@ -369,12 +374,17 @@ export async function addMessage(
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
     });
-    await alongside?.(tx, created.id);
+    let written = created;
+    if (alongside) {
+      await alongside(tx, created.id);
+      // What it wrote with it (a received email's attachments) is part of the message the caller announces.
+      written = await tx.conversationMessage.findUniqueOrThrow({ where: { id: created.id }, select: messageSelect });
+    }
     const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { userId: true, visitorHash: true } });
     await notifyInbox(tx, { projectId, conversationId, ...whose });
     if (message.note) {
       // The team's note to itself: nobody replied, and the user mustn't see anything move (their list is by lastMessageAt).
-      return created;
+      return written;
     }
     if (message.author === "TEAM") {
       await tx.conversation.update({
@@ -385,7 +395,7 @@ export async function addMessage(
       // In SQL, so two messages at once keep the older waitingSince.
       await tx.$executeRaw`UPDATE "conversation" SET "status" = 'OPEN', "waitingSince" = COALESCE("waitingSince", ${now}), "lastMessageAt" = ${now}, "updatedAt" = ${now} WHERE "id" = ${conversationId}`;
     }
-    return created;
+    return written;
   });
 }
 
