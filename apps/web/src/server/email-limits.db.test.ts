@@ -130,6 +130,8 @@ test("a capped project's replies aren't picked, so they can't hold up other proj
   const emailed = await twoReplies(other.project, other.team);
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(1);
+});
+
 let events = 0;
 /** SES's event for one of the project's emails, through SNS. */
 async function sesEvent(projectId: string, eventType: "Bounce" | "Complaint") {
