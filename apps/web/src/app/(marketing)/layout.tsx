@@ -1,6 +1,7 @@
 import { plansEnabled } from "@tuti/shared";
 import Link from "next/link";
 
+import { AppWidget } from "@/components/app-widget";
 import { TutiLogo } from "@/components/tuti-logo";
 import { buttonVariants } from "@/components/ui/button";
 import { getSession } from "@/server/session";
@@ -33,6 +34,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
         </div>
       </header>
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10">{children}</main>
+      <AppWidget />
     </>
   );
 }

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
+import { AppWidget } from "@/components/app-widget";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
@@ -44,6 +45,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       }
     >
       {children}
+      <AppWidget />
     </AppShell>
   );
 }
