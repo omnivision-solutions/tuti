@@ -15,8 +15,9 @@ export async function sesTenantHeaders(projectId: string, domain: string): Promi
   }
   // Named after the configuration set too, so two servers on one SES account keep apart.
   const tenant = `${api.configurationSet}-${projectId}`;
-  // Kept with the domain whose identity it has: another support domain needs associating too.
-  const setUp = `${tenant} ${domain}`;
+  // Kept with the identity it has (its ARN names the account and region too): another support
+  // domain, or another SES account or region, sets it up again.
+  const setUp = `${tenant} ${api.identityArn(domain)}`;
   const { sesTenant } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } });
   if (sesTenant !== setUp) {
     await api.createTenant(tenant);

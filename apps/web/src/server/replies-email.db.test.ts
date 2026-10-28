@@ -231,4 +231,13 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   await run();
   expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:000000000000:identity/help.example.com");
   expect(emailsTo(kim)).toHaveLength(3);
+
+  // Another SES account (or region), same configuration set: the tenant is made there too.
+  ses.tenants.clear();
+  vi.stubEnv("SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:111111111111:tuti-test-events");
+  await call(replyToConversation, team, { number: 1, body: "Last one." });
+  await aMinuteOn(project.id);
+  await run();
+  expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:111111111111:configuration-set/tuti-test");
+  expect(emailsTo(kim)).toHaveLength(4);
 });

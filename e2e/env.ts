@@ -58,6 +58,12 @@ export const serverEnv = {
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
+  // No Amazon SES: journeys never create real tenants.
+  SES_REGION: "",
+  SES_ACCESS_KEY_ID: "",
+  SES_SECRET_ACCESS_KEY: "",
+  SES_CONFIGURATION_SET: "",
+  SES_EVENTS_TOPIC_ARN: "",
   EMAIL_FROM: "Tuti Test <test@example.com>",
   // Support email on: journeys post received mail to /api/inbound/email, signed like a receiver would.
   SUPPORT_EMAIL_DOMAIN: SUPPORT_EMAIL_DOMAIN,
