@@ -38,6 +38,7 @@ export const serverEnv = {
   AI_MODEL: "",
   AI_MODEL_ANSWERS: "",
   AI_MODEL_ESCALATIONS: "",
+  AI_MODEL_SUPPORT: "",
   AI_MODEL_CHANGELOG: "",
   AI_MODEL_CODE_CHANGES: "",
   // A cap on the models projects pick, like Tuti's cloud: the model fake's Sonnet ($15 per million output tokens) is the most it allows.

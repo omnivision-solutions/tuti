@@ -80,7 +80,7 @@ The JSON may also have the team's settings for you, apart from the sections: a t
 
 Reply with JSON only, no other text: {"answer": "...", "sources": ["s1"]}`;
 
-function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[]) {
+export function answerPrompt(question: string, sections: AnswerSection[], settings: AssistantSettings, earlier: Turn[]) {
   const teamSettings = {
     ...(settings.tone && { tone: settings.tone }),
     ...(settings.instructions && { standingInstructions: settings.instructions }),
@@ -102,7 +102,7 @@ function answerPrompt(question: string, sections: AnswerSection[], settings: Ass
 }
 
 /** The model's answer and the sections it cites (only those it was given), or null if it gave no answer or cited none. */
-function readAnswer(reply: string, sections: AnswerSection[]): { answer: string; cited: AnswerSection[] } | null {
+export function readAnswer(reply: string, sections: AnswerSection[]): { answer: string; cited: AnswerSection[] } | null {
   let parsed: unknown;
   try {
     // Models sometimes wrap JSON in a code fence or a sentence: take the outermost object.

@@ -382,7 +382,7 @@ export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string
 export async function addMessage(
   conversationId: string,
   projectId: string,
-  message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
+  message: { author: "USER" | "TEAM" | "AI"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
 ) {

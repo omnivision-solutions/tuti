@@ -1,6 +1,6 @@
 "use client";
 
-import { PaperclipIcon, XIcon } from "lucide-react";
+import { PaperclipIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useId, useRef, useState, useTransition } from "react";
 
 import { fileSize } from "@/components/inbox/message-attachments";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { replyInConversation, uploadReplyAttachment } from "@/server/inbox";
+import { draftReplyWithAi, replyInConversation, uploadReplyAttachment } from "@/server/inbox";
 
 type Kind = "reply" | "note";
 type Upload = { key: string; name: string; size: number; id?: string; error?: string };
@@ -19,12 +19,23 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
  * The team's reply box, or a note only the team sees (never sent); ⌘/Ctrl+Enter sends. Each keeps its
  * own draft. Files attached upload straight to the media storage and go with what's sent.
  */
-export function ReplyForm({ projectSlug, number }: { projectSlug: string; number: number }) {
+export function ReplyForm({
+  projectSlug,
+  number,
+  draftWithAi = "off",
+}: {
+  projectSlug: string;
+  number: number;
+  /** "Draft with AI": shown when the server has AI and docs search ("on"), disabled while the project is out of AI credits ("paused"). */
+  draftWithAi?: "on" | "paused" | "off";
+}) {
   const [kind, setKind] = useState<Kind>("reply");
   const [drafts, setDrafts] = useState<Record<Kind, string>>({ reply: "", note: "" });
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
+  const [drafting, startDrafting] = useTransition();
+  const [notice, setNotice] = useState<string>();
   const form = useRef<HTMLFormElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const errorId = useId();
@@ -60,6 +71,22 @@ export function ReplyForm({ projectSlug, number }: { projectSlug: string; number
       picker.current.value = "";
     }
   };
+
+  // A reply drafted from the docs, into the reply box (below anything already written there), to edit and send.
+  const draft = () =>
+    startDrafting(async () => {
+      setNotice(undefined);
+      const result = await draftReplyWithAi(projectSlug, number).catch(() => ({ error: "The AI couldn't draft a reply: try again" }));
+      if ("error" in result) {
+        setNotice(result.error);
+      } else if (result.draft === null) {
+        setNotice(result.reason);
+      } else {
+        const text = result.draft;
+        setKind("reply");
+        setDrafts((current) => ({ ...current, reply: current.reply.trim() ? `${current.reply.trimEnd()}\n\n${text}` : text }));
+      }
+    });
 
   const send = () =>
     startTransition(async () => {
@@ -134,12 +161,28 @@ export function ReplyForm({ projectSlug, number }: { projectSlug: string; number
           ))}
         </ul>
       )}
+      {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
       <div className="flex items-center justify-between gap-2">
-        <input ref={picker} type="file" multiple hidden aria-label="Files to attach" onChange={(event) => attach(event.target.files)} />
-        <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
-          <PaperclipIcon />
-          Attach files
-        </Button>
+        <div className="flex items-center gap-1">
+          <input ref={picker} type="file" multiple hidden aria-label="Files to attach" onChange={(event) => attach(event.target.files)} />
+          <Button type="button" variant="ghost" size="sm" onClick={() => picker.current?.click()}>
+            <PaperclipIcon />
+            Attach files
+          </Button>
+          {draftWithAi !== "off" && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={drafting || draftWithAi === "paused"}
+              title={draftWithAi === "paused" ? "This project is out of AI credits" : undefined}
+              onClick={draft}
+            >
+              <SparklesIcon />
+              {drafting ? "Drafting…" : "Draft with AI"}
+            </Button>
+          )}
+        </div>
         <Button type="submit" disabled={pending || uploading}>
           {pending ? "Sending…" : note ? "Add note" : "Send"}
         </Button>
