@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
 import { conversationEmail, conversationReplyEmail, deliveredMessageId, emailConfigured, sendEmail } from "@tuti/email";
-import { type JobInput, plansEnabled } from "@tuti/shared";
+import { type JobInput, planIncludes, plansEnabled } from "@tuti/shared";
+import { ses } from "@tuti/shared/ses";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
@@ -195,7 +196,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
         replyToken: true,
         email: true,
         user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
-        project: { select: { name: true, mailSubdomain: { select: { subdomain: true } } } },
+        project: { select: { name: true, plan: true, mailSubdomain: { select: { subdomain: true } }, emailDomain: { select: { domain: true, address: true, verifiedAt: true } } } },
       },
     }),
     prisma.conversationMessage.findMany({
@@ -244,7 +245,10 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   }
   const address = (token?: string) => `support${token ? `+${token}` : ""}@${subdomain}.${domain}`;
   const teammate = messages.at(-1)!.authorUser?.name;
-  const from = `"${(teammate ? `${teammate} at ${conversation.project.name}` : conversation.project.name).replace(/["\\\r\n]/g, "")}" <${address()}>`;
+  // From the team's own domain once SES has it verified (on a plan with it), else the project's support address.
+  const own = conversation.project.emailDomain;
+  const teamDomain = own?.verifiedAt && ses() && planIncludes(conversation.project.plan, "emailDomain") ? own : null;
+  const from = `"${(teammate ? `${teammate} at ${conversation.project.name}` : conversation.project.name).replace(/["\\\r\n]/g, "")}" <${teamDomain?.address ?? address()}>`;
   const messageId = `<${randomUUID()}@${subdomain}.${domain}>`;
   const references = thread
     .map((m) => m.deliveredMessageId ?? m.sentMessageId ?? m.emailMessageId)
@@ -259,7 +263,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       throw new Error("Its attachments can't be read: this server has no file storage");
     }
     const attachments = await Promise.all(files.map(async (f) => ({ filename: f.filename, contentType: f.contentType, content: await storage!.get(f.key) })));
-    const tenant = await sesTenantHeaders(conversation.projectId, domain);
+    const tenant = await sesTenantHeaders(conversation.projectId, domain, teamDomain?.domain);
     response = await sendEmail({
       to,
       from,

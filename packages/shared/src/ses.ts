@@ -27,11 +27,27 @@ export type Ses = {
   /** The ARNs of an identity (a domain verified in SES) and of the configuration set, for tenants. */
   identityArn(domain: string): string;
   configurationSetArn: string;
+  /** A project's tenant: named after the configuration set too, so two servers on one SES account keep apart. */
+  tenant(projectId: string): string;
   /** Creates a tenant, with its own suppression list (nothing if it's there). */
   createTenant(name: string): Promise<void>;
   /** Lets a tenant's mail use a resource (SES refuses mail naming a tenant that a resource it uses isn't associated with). */
   associate(tenant: string, resourceArn: string): Promise<void>;
+  /** Undoes that (nothing if it isn't): SES won't delete an identity a tenant still uses. */
+  dissociate(tenant: string, resourceArn: string): Promise<void>;
+  /**
+   * Adds a team's domain (Easy DKIM, its mail naming the configuration set), tagged with the project
+   * it's for; null if SES already has it (see `identity` for whose it is).
+   */
+  addDomain(domain: string, projectId: string): Promise<{ tokens: string[] } | null>;
+  /** A domain SES has: whether it may send (its DKIM records found), its DKIM tokens, and the project it was added for. */
+  identity(domain: string): Promise<{ verified: boolean; tokens: string[]; projectId: string | null } | null>;
+  /** Removes a domain (nothing if SES doesn't have it). */
+  removeDomain(domain: string): Promise<void>;
 };
+
+/** The tag naming the project an identity was added for. */
+const PROJECT_TAG = "tuti-project";
 
 /** The configured SES API, or null without the settings. */
 export function ses(): Ses | null {
@@ -46,23 +62,32 @@ export function ses(): Ses | null {
   const base = (env.SES_API_URL || `https://email.${region}.amazonaws.com`).replace(/\/$/, "");
   const arn = (resource: string) => `arn:aws:ses:${region}:${account}:${resource}`;
 
-  /** Calls SESv2; SES already having it is fine (each call is safe to repeat). */
-  const call = async (method: string, path: string, body?: unknown) => {
+  /** Calls SESv2: its answer, or "exists" or "missing" when SES says it already has it or doesn't. */
+  const call = async (method: string, path: string, body?: unknown): Promise<Record<string, unknown> | "exists" | "missing"> => {
     const response = await client.fetch(`${base}/v2/email${path}`, {
       method,
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (response.ok || response.headers.get("x-amzn-errortype")?.startsWith("AlreadyExistsException")) {
-      return;
+    if (response.ok) {
+      return ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+    }
+    const error = response.headers.get("x-amzn-errortype") ?? "";
+    if (error.startsWith("AlreadyExistsException")) {
+      return "exists";
+    }
+    if (error.startsWith("NotFoundException")) {
+      return "missing";
     }
     throw new Error(`SES ${method} ${path} failed with ${response.status}: ${(await response.text()).slice(0, 300)}`);
   };
+  const tokens = (answer: Record<string, unknown>) => ((answer.DkimAttributes as { Tokens?: string[] } | undefined)?.Tokens ?? []).slice(0, 3);
 
   return {
     configurationSet: env.SES_CONFIGURATION_SET!,
     identityArn: (domain) => arn(`identity/${domain}`),
     configurationSetArn: arn(`configuration-set/${env.SES_CONFIGURATION_SET}`),
+    tenant: (projectId) => `${env.SES_CONFIGURATION_SET}-${projectId}`,
     createTenant: async (name) => {
       await call("POST", "/tenants", {
         TenantName: name,
@@ -72,6 +97,35 @@ export function ses(): Ses | null {
     },
     associate: async (tenant, resourceArn) => {
       await call("POST", "/tenants/resources", { TenantName: tenant, ResourceArn: resourceArn });
+    },
+    dissociate: async (tenant, resourceArn) => {
+      await call("POST", "/tenants/resources/delete", { TenantName: tenant, ResourceArn: resourceArn });
+    },
+    addDomain: async (domain, projectId) => {
+      const answer = await call("POST", "/identities", {
+        EmailIdentity: domain,
+        ConfigurationSetName: env.SES_CONFIGURATION_SET,
+        Tags: [{ Key: PROJECT_TAG, Value: projectId }],
+      });
+      if (answer === "missing") {
+        throw new Error(`SES couldn't add ${domain}`);
+      }
+      return answer === "exists" ? null : { tokens: tokens(answer) };
+    },
+    identity: async (domain) => {
+      const answer = await call("GET", `/identities/${encodeURIComponent(domain)}`);
+      if (answer === "missing" || answer === "exists") {
+        return null;
+      }
+      const tags = (answer.Tags as { Key: string; Value: string }[] | undefined) ?? [];
+      return {
+        verified: answer.VerifiedForSendingStatus === true,
+        tokens: tokens(answer),
+        projectId: tags.find((tag) => tag.Key === PROJECT_TAG)?.Value ?? null,
+      };
+    },
+    removeDomain: async (domain) => {
+      await call("DELETE", `/identities/${encodeURIComponent(domain)}`);
     },
   };
 }

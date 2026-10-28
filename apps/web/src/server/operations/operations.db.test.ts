@@ -12,6 +12,7 @@ import {
   startStripeFake,
   type StripeFake,
 } from "@tuti/testkit";
+import { type SesFake, startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { DELETE, GET, PATCH, POST } from "@/app/api/v1/[...path]/route";
@@ -112,6 +113,10 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // Like widget.update: admins only in the app (Settings → Support).
   "support.get": () => ({}),
   "support.update": () => ({ inbox: true }),
+  // With Amazon SES (the fake; see below): the fixture's project sends from matrix.example.com, so another project can't take it.
+  "support.setEmailDomain": () => ({ address: "help@matrix.example.com" }),
+  "support.checkEmailDomain": () => ({}),
+  "support.removeEmailDomain": () => ({}),
   "posts.merge": () => ({ number: 2, into: 1 }),
   "links.remove": (f) => ({ number: 1, id: f.linkId }),
   "codeChanges.list": () => ({}),
@@ -174,6 +179,7 @@ let openai: OpenAIFake;
 let dns: DnsFake;
 let site: SiteFake;
 let stripe: StripeFake;
+let ses: SesFake;
 let keys: { read: string; write: string; otherWrite: string };
 let project: Awaited<ReturnType<typeof createProject>>;
 
@@ -197,6 +203,7 @@ beforeAll(async () => {
   for (const [name, value] of Object.entries(stripe.env)) {
     vi.stubEnv(name, value);
   }
+  ses = await startSesFake();
   owner = await signUp("Olive Owner");
   actAs(owner);
   project = await createProject(owner);
@@ -210,12 +217,19 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close(), stripe.close()]));
+afterAll(() => Promise.all([model.close(), openai.close(), dns.close(), site.close(), stripe.close(), ses.close()]));
 // Refused calls never reach the model; the allowed one uses its reply.
 afterEach(() => model.done());
 
 /** Fresh posts #1 and #2 (with a link on #1) for each case; numbers restart per fixture. */
 async function createFixture(own: "domain" | "site" = "domain") {
+  // The project sends from its own domain (support.checkEmailDomain checks it; support.removeEmailDomain removes it).
+  await prisma.emailDomain.upsert({
+    where: { projectId: project.id },
+    create: { projectId: project.id, domain: "matrix.example.com", address: "support@matrix.example.com", dkimTokens: ["matrixtoken1"] },
+    update: {},
+  });
+  ses.identities.set("matrix.example.com", { tags: { "tuti-project": project.id }, tokens: ["matrixtoken1"], configurationSet: "tuti-test", verified: true });
   await prisma.post.deleteMany({ where: { projectId: project.id } });
   await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
   await prisma.project.update({ where: { id: project.id }, data: { postCount: 2, changelogCount: 2 } });
@@ -425,6 +439,7 @@ const snapshot = () =>
     prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } }),
     prisma.codeChange.findMany({ where: { projectId: project.id }, include: { actions: { orderBy: { id: "asc" } } } }),
     prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } } }, orderBy: { number: "asc" } }),
+    prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
   ]);
 
 test("every operation is in this matrix", () => {
@@ -440,6 +455,11 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
   vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
+  // Email, and Amazon SES for teams' own domains, for the support settings.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", operation.name.startsWith("support.") ? "tuti.email" : "");
+  for (const [name, value] of Object.entries(ses.env)) {
+    vi.stubEnv(name, operation.name.startsWith("support.") ? value : "");
+  }
 
   // Another project's key: nothing of this project comes back, and nothing changes.
   if (operation.name === "conversations.summarize") {

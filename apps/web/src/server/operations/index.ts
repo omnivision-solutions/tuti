@@ -10,7 +10,7 @@ import {
   replyToConversation,
   updateConversation,
 } from "./conversations";
-import { getSupportSettings, updateSupportSettings } from "./support";
+import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
 import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
@@ -86,6 +86,9 @@ const all = [
   summarizeConversation,
   getSupportSettings,
   updateSupportSettings,
+  setEmailDomain,
+  checkEmailDomainOperation,
+  removeEmailDomain,
   listBoards,
   getRoadmap,
   listChangelog,

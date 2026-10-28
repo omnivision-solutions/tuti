@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export type SesFakeTenant = { suppression: unknown; resources: Set<string> };
+export type SesFakeIdentity = { tags: Record<string, string>; tokens: string[]; configurationSet: string | undefined; verified: boolean };
 
 export type SesFake = {
   url: string;
@@ -10,6 +11,8 @@ export type SesFake = {
   env: Record<string, string>;
   /** Tenants by name: their suppression settings and the ARNs associated with them. */
   tenants: Map<string, SesFakeTenant>;
+  /** Domains added, by name; set `verified` to have SES find their DKIM records. */
+  identities: Map<string, SesFakeIdentity>;
   /** Every call, as `<method> <path>`. */
   calls: string[];
   /** Paths that answer 500 while they're in it, to test failures. */
@@ -33,12 +36,14 @@ const SNS_SIGNED = {
 
 /**
  * A local stand-in for Amazon SES's API (v2): the calls Tuti makes. Tenants, created with their own
- * suppression list, and resources associated with them. A repeated create answers SES's
+ * suppression list, and resources associated with them; domains (identities), with their DKIM
+ * tokens and tags. A repeated create answers SES's
  * `AlreadyExistsException`. Requests must be signed; signatures themselves aren't checked. And SNS's
  * side of the events: signed messages, the certificate, and the link that confirms a subscription.
  */
 export async function startSesFake(): Promise<SesFake> {
   const tenants = new Map<string, SesFakeTenant>();
+  const identities = new Map<string, SesFakeIdentity>();
   const calls: string[] = [];
   const failing = new Set<string>();
   const key = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -92,6 +97,45 @@ export async function startSesFake(): Promise<SesFake> {
         tenant.resources.add(arn);
         return answer(200);
       }
+      if (req.method === "POST" && path === "/v2/email/tenants/resources/delete") {
+        const tenant = tenants.get(String(body.TenantName));
+        if (!tenant?.resources.delete(String(body.ResourceArn))) {
+          return answer(404, { message: "Resource association not found" }, "NotFoundException");
+        }
+        return answer(200);
+      }
+      if (req.method === "POST" && path === "/v2/email/identities") {
+        const domain = String(body.EmailIdentity);
+        if (identities.has(domain)) {
+          return answer(400, { message: `Email identity ${domain} already exist.` }, "AlreadyExistsException");
+        }
+        const tokens = [1, 2, 3].map((n) => `${domain.replace(/\W/g, "")}token${n}`);
+        const tags = Object.fromEntries(((body.Tags as { Key: string; Value: string }[] | undefined) ?? []).map((tag) => [tag.Key, tag.Value]));
+        identities.set(domain, { tags, tokens, configurationSet: body.ConfigurationSetName as string | undefined, verified: false });
+        return answer(200, { IdentityType: "DOMAIN", VerifiedForSendingStatus: false, DkimAttributes: { Status: "PENDING", Tokens: tokens } });
+      }
+      const identityPath = /^\/v2\/email\/identities\/([^/]+)$/.exec(path);
+      const identity = identityPath && identities.get(decodeURIComponent(identityPath[1]!));
+      if (identityPath && !identity) {
+        return answer(404, { message: "Email identity does not exist." }, "NotFoundException");
+      }
+      if (identity && req.method === "GET") {
+        return answer(200, {
+          IdentityType: "DOMAIN",
+          VerifiedForSendingStatus: identity.verified,
+          DkimAttributes: { Status: identity.verified ? "SUCCESS" : "PENDING", Tokens: identity.tokens },
+          Tags: Object.entries(identity.tags).map(([Key, Value]) => ({ Key, Value })),
+        });
+      }
+      if (identity && req.method === "DELETE") {
+        const domain = decodeURIComponent(identityPath![1]!);
+        // Like SES: not while a tenant uses it.
+        if ([...tenants.values()].some((t) => [...t.resources].some((arn) => arn.endsWith(`:identity/${domain}`)))) {
+          return answer(400, { message: `Cannot delete ${domain} because it has tenant associations` }, "BadRequestException");
+        }
+        identities.delete(domain);
+        return answer(200);
+      }
       answer(404, { message: "Not found" }, "NotFoundException");
     });
   });
@@ -108,6 +152,7 @@ export async function startSesFake(): Promise<SesFake> {
       SES_EVENTS_TOPIC_ARN: topicArn,
     },
     tenants,
+    identities,
     calls,
     failing,
     sns(type, message, { messageId = randomUUID(), topicArn: topic = topicArn, signed = true } = {}) {

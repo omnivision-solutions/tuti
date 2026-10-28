@@ -151,6 +151,12 @@ export const jobs = {
     input: z.object({}),
     cron: "37 * * * *",
   },
+  /** Asks Amazon SES again whether each team's own email domain may send (support inbox). */
+  checkEmailDomains: {
+    name: "check-email-domains",
+    input: z.object({}),
+    cron: "23 5 * * *",
+  },
   /** Removes docs searches' counts and failed searches older than the insights' 30 days. */
   pruneDocsSearches: {
     name: "prune-docs-searches",
