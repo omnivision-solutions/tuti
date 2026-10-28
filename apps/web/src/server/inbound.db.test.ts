@@ -224,10 +224,10 @@ test("raw bodies that couldn't be read go after 30 days; the rows stay. Projects
       },
     });
   const [old, recent] = [await make(31), await make(29)];
-  const day = (days: number) => new Date(new Date(Date.now() - days * 24 * 60 * 60_000).toISOString().slice(0, 10));
-  await prisma.projectEmailDay.createMany({ data: [31, 29].map((days) => ({ projectId: project.id, day: day(days), sent: 1 })) });
+  const [oldDay, recentDay] = [31, 29].map((days) => new Date(new Date(Date.now() - days * 24 * 60 * 60_000).toISOString().slice(0, 10)));
+  await prisma.projectEmailDay.createMany({ data: [oldDay!, recentDay!].map((day) => ({ projectId: project.id, day, sent: 1 })) });
   await handlers.pruneInboundEmails({}, { info: () => {}, warn: () => {} });
-  expect(await prisma.projectEmailDay.findMany({ where: { projectId: project.id }, select: { day: true } })).toEqual([{ day: day(29) }]);
+  expect(await prisma.projectEmailDay.findMany({ where: { projectId: project.id }, select: { day: true } })).toEqual([{ day: recentDay }]);
   expect((await prisma.inboundEmail.findUniqueOrThrow({ where: { id: old.id } })).raw).toBeNull();
   expect((await prisma.inboundEmail.findUniqueOrThrow({ where: { id: recent.id } })).raw).not.toBeNull();
 });
