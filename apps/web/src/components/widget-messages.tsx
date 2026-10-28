@@ -5,6 +5,7 @@ import { ChevronLeftIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { EmptyState } from "@/components/empty-state";
+import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -616,6 +617,7 @@ function Conversation({
                     {m.fromTeam ? (m.name ?? "The team") : "You"} · {timeAgo(new Date(m.createdAt))}
                   </p>
                   <p className="text-sm break-words whitespace-pre-wrap">{m.body}</p>
+                  <MessageAttachments attachments={m.attachments} dropped={0} />
                 </div>
               </li>
             ))}

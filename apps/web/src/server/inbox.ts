@@ -3,10 +3,13 @@
 import { prisma } from "@tuti/db";
 import { z } from "zod";
 
+import { startUpload } from "./attachments";
 import type { FormState } from "./form-state";
+import { getMembership } from "./membership";
 import { OperationError } from "./operations";
 import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
+import { getSession } from "./session";
 import { updateSupportSettings } from "./operations/support";
 
 /** The team's actions in the support inbox (any team role), through the conversations operations. */
@@ -21,10 +24,44 @@ function conversationNumber(value: unknown) {
   return parsed.data;
 }
 
-export async function replyInConversation(projectSlug: string, conversation: number, body: string, note = false): Promise<FormState> {
+export async function replyInConversation(
+  projectSlug: string,
+  conversation: number,
+  body: string,
+  note = false,
+  /** Files uploaded for it (uploadReplyAttachment), sent with it. */
+  attachments: string[] = [],
+): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
-    call(replyToConversation, context, { number: conversationNumber(conversation), body: String(body), note: note === true }),
+    call(replyToConversation, context, {
+      number: conversationNumber(conversation),
+      body: String(body),
+      note: note === true,
+      ...(Array.isArray(attachments) && attachments.length > 0 && { attachments: attachments.map(String) }),
+    }),
   );
+}
+
+const uploadSchema = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() });
+
+/** Starts uploading a file for a reply: where the browser PUTs it, and its id for replyInConversation. */
+export async function uploadReplyAttachment(projectSlug: string, file: { filename: string; contentType: string; size: number }): Promise<{ error: string } | { id: string; contentType: string; uploadUrl: string }> {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  const parsed = uploadSchema.safeParse(file);
+  if (!session || !membership) {
+    return { error: "Only the project's team can attach files" };
+  }
+  if (!parsed.success) {
+    return { error: "That file can't be attached" };
+  }
+  try {
+    return await startUpload(membership.project.id, session.user.id, parsed.data);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
 }
 
 export async function setConversationStatus(projectSlug: string, conversation: number, status: string): Promise<FormState> {

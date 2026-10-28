@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
 
+import { attachmentLinks, checkUploads, claimUploads } from "../attachments";
 import { emitEvent } from "../events";
 import { notifyInbox } from "../live";
 import { upsertProjectUser } from "../project-users";
@@ -190,7 +191,24 @@ export const getConversation = defineOperation({
       orderBy: { createdAt: "asc" },
       select: messageSelect,
     });
-    return { ...view(conversation, await projectSlug(projectId)), messages: messages.map(messageView) };
+    // Each attachment with a link to it, signed for a while: images to show, other files saved under their name.
+    const links = new Map(
+      (
+        await attachmentLinks(
+          await prisma.conversationAttachment.findMany({
+            where: { message: { conversationId: conversation.id } },
+            select: { id: true, key: true, filename: true, contentType: true },
+          }),
+        )
+      ).map((link) => [link.id, link.url]),
+    );
+    return {
+      ...view(conversation, await projectSlug(projectId)),
+      messages: messages.map((message) => {
+        const shown = messageView(message);
+        return { ...shown, attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })) };
+      }),
+    };
   },
 });
 
@@ -411,6 +429,11 @@ export const replyToConversation = defineOperation({
     body,
     author: appUser.pick({ id: true }).optional(),
     note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
+    attachments: z
+      .array(z.string().min(1))
+      .max(10)
+      .optional()
+      .describe("Files uploaded for it in the app (their ids), sent with it: 10 MB each, 25 MB together"),
   }),
   example: { body: "Thanks, Sam! A fix is on its way." },
   run: async ({ actor, projectId }, input) => {
@@ -419,6 +442,10 @@ export const replyToConversation = defineOperation({
     if (input.note && input.author) {
       throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
     }
+    if (input.attachments?.length && (input.author || actor.kind !== "user")) {
+      throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
+    }
+    const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, actor.userId, input.attachments) : [];
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -432,13 +459,18 @@ export const replyToConversation = defineOperation({
       }
       message = await addMessage(conversation.id, projectId, { author: "USER", authorId: identity.userId, channel: "API", body: input.body });
     } else {
-      message = await addMessage(conversation.id, projectId, {
-        author: "TEAM",
-        authorId: teamMemberId(actor),
-        channel: actor.kind === "user" ? "APP" : "API",
-        body: input.body,
-        note: input.note ?? false,
-      });
+      message = await addMessage(
+        conversation.id,
+        projectId,
+        {
+          author: "TEAM",
+          authorId: teamMemberId(actor),
+          channel: actor.kind === "user" ? "APP" : "API",
+          body: input.body,
+          note: input.note ?? false,
+        },
+        uploads.length > 0 ? (tx, messageId) => claimUploads(tx, uploads, messageId) : undefined,
+      );
     }
     return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);
   },

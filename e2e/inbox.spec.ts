@@ -81,7 +81,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now.
-  const messages = owner.getByRole("list", { name: "Messages" }).getByRole("listitem");
+  // The messages themselves (a message's attachments are a list of their own).
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
   await owner.getByRole("textbox", { name: "Reply" }).fill("Thanks, Sam! A fix is on its way.");
   await owner.getByRole("textbox", { name: "Reply" }).press("ControlOrMeta+Enter");
   await expect(messages).toHaveCount(2);
@@ -90,11 +91,28 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("");
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
 
+  // A file that can't start uploading (the server unreachable) says so, and can be removed.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
+  await owner.unroute("**/*");
+  await owner.getByRole("button", { name: "Remove broken.pdf" }).click();
+  await expect(owner.getByRole("list", { name: "Files to send" })).toHaveCount(0);
+
+  // A reply with a file: it uploads as it's attached, then goes with the reply.
+  await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/steps\.pdf\s*1 KB/);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("These are the steps.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages).toHaveCount(3);
+  await expect(messages.last().getByRole("link", { name: "steps.pdf" })).toBeVisible();
+  await expect(owner.getByRole("list", { name: "Files to send" })).toHaveCount(0);
+
   // A note for the team: shown apart, never sent, and it leaves the status alone.
   await owner.getByRole("tab", { name: "Note" }).click();
   await owner.getByRole("textbox", { name: "Note" }).fill("Sam is on the old plan: check with billing.");
   await owner.getByRole("button", { name: "Add note" }).click();
-  await expect(messages).toHaveCount(3);
+  await expect(messages).toHaveCount(4);
   await expect(messages.last()).toContainText("Note · Olive Owner");
   await expect(messages.last()).toContainText("Sam is on the old plan: check with billing.");
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
@@ -110,7 +128,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
-  await expect(messages).toHaveCount(4);
+  await expect(messages).toHaveCount(5);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
   // Closed, it moves to Closed; Mine has nothing left.

@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { visitorHash } from "@/lib/visitor-session";
 
+import { attachmentLinks } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
@@ -90,7 +91,17 @@ async function theirConversation(who: Person, number: number) {
 
 /** One of their conversations' messages, oldest first; the team's are seen now that they're shown (unless the panel is hidden: `markSeen` false). */
 export async function widgetConversation(projectSlug: string, auth: WidgetAuth, number: number, markSeen = true): Promise<
-  Result<{ subject: string; messages: { id: string; fromTeam: boolean; name: string | null; body: string; createdAt: Date }[] }>
+  Result<{
+    subject: string;
+    messages: {
+      id: string;
+      fromTeam: boolean;
+      name: string | null;
+      body: string;
+      attachments: { id: string; filename: string; contentType: string; size: number; image: boolean; url: string | null }[];
+      createdAt: Date;
+    }[];
+  }>
 > {
   const who = await person(projectSlug, auth);
   const conversation = who && (await theirConversation(who, number));
@@ -107,8 +118,17 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
     // The team's notes are theirs alone.
     where: { conversationId: conversation.id, note: false },
     orderBy: { createdAt: "asc" },
-    select: { id: true, author: true, body: true, createdAt: true, authorUser: { select: { name: true } } },
+    select: {
+      id: true,
+      author: true,
+      body: true,
+      createdAt: true,
+      authorUser: { select: { name: true } },
+      attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
+    },
   });
+  // Their files and the team's, with links signed for a while (images shown, other files saved under their name).
+  const links = new Map((await attachmentLinks(messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
   return {
     subject: conversation.subject,
     messages: messages.map((m) => ({
@@ -116,6 +136,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
       fromTeam: m.author !== "USER",
       name: m.author === "USER" ? null : (m.authorUser?.name ?? null),
       body: m.body,
+      attachments: m.attachments.map((a) => links.get(a.id)!),
       createdAt: m.createdAt,
     })),
   };
