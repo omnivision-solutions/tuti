@@ -1,5 +1,5 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused } from "@tuti/jobs";
+import { aiPaused, NEW_PROJECT_EMAILS_PER_DAY, projectEmailAllowance } from "@tuti/jobs";
 import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
@@ -47,6 +47,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     plansEnabled() &&
     !!supportDomain() &&
     !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
+  // In a new project's first week, replies past its daily cap wait for tomorrow.
+  const capped = !waitingForApproval && (await projectEmailAllowance(projectId)) === 0;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
@@ -177,13 +179,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
                       <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} />
-                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitingForApproval) && (
+                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitingForApproval || capped) && (
                         <p className="text-xs text-muted-foreground">
                           {message.seenAt
                             ? "Seen"
                             : message.emailStatus
                               ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                              : "Not emailed until your project is approved (Settings → Support)"}
+                              : capped
+                                ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
+                                : "Not emailed until your project is approved (Settings → Support)"}
                         </p>
                       )}
                       {message.original && (

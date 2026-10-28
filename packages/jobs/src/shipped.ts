@@ -4,6 +4,7 @@ import { type JobInput, planIncludes } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { portalAddress } from "./portal-address";
+import { projectEmailAllowance } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -141,7 +142,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const sentTo = new Set<string>();
   let emailed = 0;
   let failed = 0;
+  // A new project's daily cap: the rest stay due, so the cron sends them once it's tomorrow.
+  let left = await projectEmailAllowance(projectId);
+  let capped = false;
   for (const person of people) {
+    if (left !== null && left <= 0) {
+      capped = true;
+      break;
+    }
     const address =
       person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : person.emailVerified ? person.email : null;
     if (!address || address.endsWith(".invalid") || sentTo.has(address.toLowerCase())) {
@@ -174,9 +182,14 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
       continue;
     }
     emailed++;
+    left = left === null ? null : left - 1;
   }
   if (failed > 0) {
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
+  }
+  if (capped) {
+    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait for the project's daily cap`);
+    return { emailed, waiting: "a new project's daily email cap" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
   await prisma.post.updateMany({
