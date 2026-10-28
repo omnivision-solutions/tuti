@@ -430,12 +430,13 @@ function Composer({
     startTransition(async () => {
       // Offline, or the server failing: say so by the form, and keep what they wrote.
       const sent = text;
-      const result = await send(sent, address, files.ids).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const attached = files.ids;
+      const result = await send(sent, address, attached).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything typed meanwhile stays.
         setText((now) => (now === sent ? "" : now));
-        files.clear();
+        files.sent(attached);
       }
     });
   return (

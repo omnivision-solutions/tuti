@@ -27,11 +27,12 @@ export function ReplyForm({ projectSlug, number }: { projectSlug: string; number
 
   const send = () =>
     startTransition(async () => {
-      const result = await replyInConversation(projectSlug, number, drafts[kind], note, files.ids);
+      const attached = files.ids;
+      const result = await replyInConversation(projectSlug, number, drafts[kind], note, attached);
       setError(result.error);
       if (!result.error) {
         setDrafts((current) => ({ ...current, [kind]: "" }));
-        files.clear();
+        files.sent(attached);
       }
     });
 

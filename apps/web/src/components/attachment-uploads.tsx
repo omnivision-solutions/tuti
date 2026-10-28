@@ -49,7 +49,8 @@ export function useUploads(start: StartUpload) {
     uploads,
     attach,
     remove: (key: string) => setUploads((current) => current.filter((u) => u.key !== key)),
-    clear: () => setUploads([]),
+    /** Once a message is sent: the files that went with it go, and any attached meanwhile stay. */
+    sent: (ids: string[]) => setUploads((current) => current.filter((u) => !u.id || !ids.includes(u.id))),
     /** The uploaded files' ids, to send. */
     ids: uploads.flatMap((u) => (u.id ? [u.id] : [])),
     uploading: uploads.some((u) => !u.id && !u.error),
