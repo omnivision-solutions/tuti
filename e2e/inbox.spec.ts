@@ -3,6 +3,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
+import { useTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
@@ -394,6 +395,15 @@ test("on a server selling plans, the operator approves a project before its repl
 
   await owner.reload();
   await expect(owner.getByText("Your replies reach your users in the widget for now.")).toHaveCount(0);
+
+  // In its first week, a project sends up to 200 emails a day: past that, a reply waits for tomorrow.
+  await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
+  await useTodaysEmails(slug);
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
+  await checkpoint(owner, "reply-waits-for-daily-cap");
 });
 
 test("replies from the team's own address: add it, put SES's records in DNS, check, and a test email comes from it", async ({ browser }, testInfo) => {

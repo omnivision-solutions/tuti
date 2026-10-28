@@ -4,6 +4,7 @@ import { type JobInput, planIncludes } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
 import { portalAddress } from "./portal-address";
+import { claimProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -141,6 +142,7 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   const sentTo = new Set<string>();
   let emailed = 0;
   let failed = 0;
+  let capped = false;
   for (const person of people) {
     const address =
       person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : person.emailVerified ? person.email : null;
@@ -152,6 +154,12 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     const claimedAt = await claim(postId, person.id);
     if (!claimedAt) {
       continue;
+    }
+    // A new project's daily cap, taken once they're ours to email: past it, they're let go and wait for tomorrow.
+    if (!(await claimProjectEmail(projectId))) {
+      await prisma.shippedEmail.deleteMany({ where: { postId, userId: person.id, claimedAt } });
+      capped = true;
+      break;
     }
     const token = encodeURIComponent(person.unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
@@ -177,6 +185,12 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   }
   if (failed > 0) {
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
+  }
+  if (capped) {
+    // Due from now, so the cron keeps bringing it back (it looks back a day) until the cap lets the rest go.
+    await prisma.post.updateMany({ where: { id: postId, shippedEmailsDueAt: { not: null } }, data: { shippedEmailsDueAt: new Date() } });
+    log.info(`post ${postId} shipped: emailed ${emailed}, the rest wait for the project's daily cap`);
+    return { emailed, waiting: "a new project's daily email cap" };
   }
   // Done once nobody's email is left in flight: if another run is still sending one and dies, the cron needs to find this post.
   await prisma.post.updateMany({
