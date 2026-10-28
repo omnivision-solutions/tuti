@@ -231,6 +231,12 @@ export function widgetLoader(portalTemplate: string): string {
         var next = newIcon(launcher.icon, launcher.icon === "image" && typeof launcher.iconUrl === "string" ? launcher.iconUrl : null);
         button.replaceChild(next, icon);
         icon = next;
+        // An image that doesn't load (deleted, offline): the chat bubble, not an empty button.
+        next.onerror = function () {
+          if (icon !== next) return;
+          icon = newIcon("chat", null);
+          button.replaceChild(icon, next);
+        };
       }
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {

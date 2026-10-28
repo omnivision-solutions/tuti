@@ -274,12 +274,15 @@ test("the launcher shows the team's name, colour, corner and icon once the app h
   expect(page.frame!.title).toBe("Help & ideas");
 });
 
-test("the team's own icon is an image; an image without its address, or an unknown icon, is the chat bubble", async () => {
+test("the team's own icon is an image; one that doesn't load, an image without its address, or an unknown icon, is the chat bubble", async () => {
   const launcher = { label: "Help", color: null, position: "bottom-right" };
   const own = loadWidget({ latest: { latest: null, launcher: { ...launcher, icon: "image", iconUrl: "https://app.tuti.example/media/m1/w480.webp?s=x" } } });
   await settled();
   expect(own.button!.icon).toEqual({ src: "https://app.tuti.example/media/m1/w480.webp?s=x" });
   expect((own.button!.children[0] as FakeElement).alt).toBe("");
+  // One that doesn't load is the chat bubble.
+  (own.button!.children[0] as FakeElement & { onerror(): void }).onerror();
+  expect(own.button!.icon).toEqual(WIDGET_ICONS.chat);
   for (const icon of [{ icon: "image", iconUrl: null }, { icon: "toString" }, { icon: "rocket" }]) {
     const page = loadWidget({ latest: { latest: null, launcher: { ...launcher, ...icon } } });
     await settled();
