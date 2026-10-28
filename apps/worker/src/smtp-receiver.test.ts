@@ -55,11 +55,26 @@ async function receiver(
   const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
   /** A raw connection: what the server says first, and when it hangs up. */
   const open = () =>
-    new Promise<{ greeting: string; closed: Promise<void>; write: (line: string) => void; end: () => void }>((resolve) => {
+    new Promise<{
+      greeting: string;
+      closed: Promise<void>;
+      write: (line: string) => void;
+      /** Waits for a reply line starting with `code` (after what was already read). */
+      reply: (code: string) => Promise<void>;
+      end: () => void;
+    }>((resolve) => {
       const socket = connect(port, "127.0.0.1");
       const closed = new Promise<void>((done) => socket.on("close", () => done()));
+      let heard = "";
+      socket.on("data", (data) => (heard += data.toString()));
+      const reply = (code: string) =>
+        vi.waitFor(() => {
+          const at = heard.search(new RegExp(`(^|\r\n)${code} `));
+          expect(at).toBeGreaterThanOrEqual(0);
+          heard = heard.slice(heard.indexOf("\r\n", at + 2) + 2);
+        });
       socket.once("data", (data) =>
-        resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), end: () => socket.destroy() }),
+        resolve({ greeting: data.toString(), closed, write: (line) => socket.write(`${line}\r\n`), reply, end: () => socket.destroy() }),
       );
     });
   return { posts, send, open };
@@ -164,10 +179,18 @@ test("messages still being delivered count, even after their sender hangs up: pa
 test("a sender that hangs up halfway through a message doesn't keep its place among the messages in flight", async () => {
   const { open, send, posts } = await receiver([], { maxInFlight: 1 });
   const quitter = await open();
-  for (const line of ["EHLO quitter.example", "MAIL FROM:<sam@example.org>", "RCPT TO:<support@a.support.test>", "DATA", "Subject: Half"]) {
+  for (const [line, code] of [
+    ["EHLO quitter.example", "250"],
+    ["MAIL FROM:<sam@example.org>", "250"],
+    ["RCPT TO:<support@a.support.test>", "250"],
+    ["DATA", "354"],
+  ] as const) {
     quitter.write(line);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await quitter.reply(code);
   }
+  quitter.write("Subject: Half");
+  // Its message holds the one place: another gets "try again later".
+  await expect(send("sam@example.org", ["support@x.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   quitter.end();
   await quitter.closed;
   await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
