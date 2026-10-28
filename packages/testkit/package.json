@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./postgres": "./src/postgres.ts",
-    "./smtp": "./src/smtp-fake.ts"
+    "./smtp": "./src/smtp-fake.ts",
+    "./ses": "./src/ses-fake.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

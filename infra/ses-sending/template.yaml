@@ -1,0 +1,68 @@
+# Sending support email with Amazon SES (docs/support-email.md, "Amazon SES"): the topic the
+# configuration set's events go to (SES_EVENTS_TOPIC_ARN) and the user whose key the app manages
+# tenants and identities with (SES_ACCESS_KEY_ID). The configuration set and the SMTP user are the
+# account's own. Deployed by deploy.sh.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Tuti support inbox - sending with SES (events topic, API user)
+
+Parameters:
+  ConfigurationSet:
+    Type: String
+    Description: The configuration set support email names (SES_CONFIGURATION_SET).
+
+Resources:
+  Events:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ConfigurationSet}-events"
+
+  EventsPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref Events]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref Events
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+
+  EventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn: EventsPolicy
+    Properties:
+      ConfigurationSetName: !Ref ConfigurationSet
+      EventDestination:
+        Name: tuti-events
+        Enabled: true
+        MatchingEventTypes: [delivery, bounce, complaint, reject]
+        SnsDestination:
+          TopicARN: !Ref Events
+
+  ApiUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: tenants-and-identities
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:CreateTenant
+                  - ses:GetTenant
+                  - ses:CreateTenantResourceAssociation
+                  - ses:DeleteTenantResourceAssociation
+                  - ses:CreateEmailIdentity
+                  - ses:GetEmailIdentity
+                  - ses:DeleteEmailIdentity
+                Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:*"
+
+Outputs:
+  EventsTopic:
+    Value: !Ref Events
+  ApiUser:
+    Value: !Ref ApiUser
