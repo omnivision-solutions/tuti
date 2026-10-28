@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { FAKE_OPENAI_KEY, startCloudflareFake, startDnsFake, startGithubFake, startModelFake, startOpenAIFake, startS3Fake, startSiteFake, startStripeFake } from "@tuti/testkit";
 import { startMigratedPostgres } from "@tuti/testkit/postgres";
+import { startSesFake } from "@tuti/testkit/ses";
 import { startSmtpFake } from "@tuti/testkit/smtp";
 
 import { SCREENSHOTS_DIR } from "./checkpoint";
@@ -61,6 +62,9 @@ export default async function globalSetup() {
   process.env.E2E_SITE_URL = site.origin;
   // Stripe for buying AI credits and plans: its pages post the events Stripe would to the cloud's webhook.
   const stripe = await startStripeFake({ webhookUrl: `${CLOUD_URL}/api/stripe/webhook` });
+  // Amazon SES for teams' own domains; journeys say when SES finds a domain's records through /_fake/verify (e2e/ses.ts).
+  const ses = await startSesFake();
+  process.env.E2E_SES_URL = ses.url;
   const postgres = await startMigratedPostgres("tuti_e2e");
   // Journeys spend a project's AI credits, and grant them with the operator's script (e2e/credits.ts).
   process.env.E2E_DATABASE_URL = postgres.url;
@@ -78,6 +82,7 @@ export default async function globalSetup() {
     ...stripe.env,
     DNS_LOOKUP_URL: dns.url,
     ...cloudflare.env,
+    ...ses.env,
     NODE_ENV: "production",
   };
   const started = await Promise.allSettled([startServer(APP_URL, env), startServer(CLOUD_URL, { ...env, ...cloudEnv })]);
@@ -90,7 +95,7 @@ export default async function globalSetup() {
 
   return async () => {
     servers.forEach((server) => server.kill());
-    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close()]);
+    await Promise.all([postgres.stop(), smtp.close(), openai.close(), model.close(), s3.close(), github.close(), dns.close(), cloudflare.close(), site.close(), stripe.close(), ses.close()]);
     // Every scripted reply was used, and nothing asked the model unscripted.
     model.done();
   };

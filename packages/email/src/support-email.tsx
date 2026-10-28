@@ -144,3 +144,21 @@ export const escalationEmail = (props: EscalationProps) => ({
   subject: props.copy ? `Your question to ${props.projectName}` : `Question from the docs: ${subjectLine(props.question)}`,
   body: <EscalationEmail {...props} />,
 });
+
+type EmailDomainTestProps = { projectName: string; address: string };
+
+/** To an admin who asked for it on Settings → Support: the team's own address sends (docs/plan.md, Support inbox, item 11). */
+export function EmailDomainTestEmail({ projectName, address }: EmailDomainTestProps) {
+  return (
+    <Layout preview={`Replies from ${projectName}'s support inbox now come from ${address}.`}>
+      <Text style={body}>
+        This is a test from {projectName}&apos;s support inbox. It came from <strong>{address}</strong>, as your replies to your users do now.
+      </Text>
+    </Layout>
+  );
+}
+
+export const emailDomainTestEmail = (props: EmailDomainTestProps) => ({
+  subject: `A test from ${props.address}`,
+  body: <EmailDomainTestEmail {...props} />,
+});

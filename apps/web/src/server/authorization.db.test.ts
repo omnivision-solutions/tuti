@@ -21,6 +21,7 @@ import {
   startWebhookReceiver,
   type WebhookReceiver,
 } from "@tuti/testkit";
+import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { hashInvitationToken } from "@/lib/invitations";
@@ -31,6 +32,7 @@ import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
 import { testLicensePrivateKey } from "@/test/license";
+import { mailbox } from "@/test/mailbox";
 import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
@@ -412,6 +414,11 @@ const matrix: Matrix = {
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
+    saveEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.saveEmailDomain(slug, {}, form({ address: `help@${slug}.example.com` }))) },
+    checkEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.checkEmailDomain(slug)) },
+    // To the local SMTP fake.
+    sendEmailDomainTest: { allowed: "ADMIN", call: (slug) => withSes(() => withEnv({ SMTP_HOST: mailbox.host, SMTP_PORT: String(mailbox.port) }, () => inbox.sendEmailDomainTest(slug))) },
+    forgetEmailDomain: { allowed: "ADMIN", call: (slug) => withSes(() => inbox.forgetEmailDomain(slug)) },
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
@@ -617,6 +624,9 @@ const MATRIX_READER = "00000000-0000-4000-8000-00000000000a";
 type Actor = TeamRole | "signed out" | "other project's owner" | "other project's SSO user";
 
 /** Runs `fn` with these env vars, then puts them back. */
+/** With Amazon SES (the fake) on: the fixture's project sends from its own verified domain (see createFixture). */
+const withSes = <T>(fn: () => Promise<T>): Promise<T> => withEnv({ ...ses.env, SUPPORT_EMAIL_DOMAIN: "tuti.email" }, fn);
+
 async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
   const before = Object.keys(vars).map((name) => [name, process.env[name] ?? ""] as const);
   for (const [name, value] of Object.entries(vars)) {
@@ -641,6 +651,8 @@ let stripe: StripeFake;
 let receiver: WebhookReceiver;
 let users: Record<TeamRole | "outsider" | "ssoUser", TestUser>;
 let otherProject: Awaited<ReturnType<typeof createProject>>;
+
+const ses = await startSesFake();
 
 beforeAll(async () => {
   s3 = await startS3Fake();
@@ -673,7 +685,7 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close(), stripe.close()]));
+afterAll(() => Promise.all([s3.close(), receiver.close(), model.close(), openai.close(), dns.close(), site.close(), githubFake.close(), stripe.close(), ses.close()]));
 // Refused calls never reach the model; allowed ones use the reply they scripted.
 afterEach(() => model.done());
 
@@ -688,6 +700,10 @@ async function createFixture(own: "domain" | "site" = "domain") {
   const projectId = project.id;
   // A Stripe customer (it had a plan once), for Manage plan.
   await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}` } });
+  // Replies from its own domain, verified (Settings → Support), which SES (the fake) has for it.
+  const emailDomain = `${project.slug}.example.com`;
+  await prisma.emailDomain.create({ data: { projectId, domain: emailDomain, address: `support@${emailDomain}`, dkimTokens: [], verifiedAt: new Date() } });
+  ses.identities.set(emailDomain, { tags: { "tuti-project": projectId }, tokens: [], configurationSet: "tuti-test", verified: true });
   await prisma.teamMember.createMany({
     data: [
       { projectId, userId: users.ADMIN.id, role: "ADMIN" },

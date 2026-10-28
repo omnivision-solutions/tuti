@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
+import { EmailDomainSettings } from "@/components/inbox/email-domain";
 import { RequestEmailButton } from "@/components/inbox/approve-email";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
+import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { askedRecently } from "@/lib/email-approval";
 import { timeAgo } from "@/lib/format";
@@ -65,6 +67,21 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                 <p className="text-sm text-muted-foreground">Your project gets an address of its own, which it keeps for good.</p>
                 <GetSupportAddressButton projectSlug={project.slug} />
               </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {settings.email?.address && settings.email.ownDomain && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Your own address</CardTitle>
+            <CardDescription>Send replies from your company&apos;s address, like support@yourcompany.com, instead of your support address above.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {settings.email.ownDomain.included || settings.email.ownDomain.address ? (
+              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} />
+            ) : (
+              <PlanNotice feature="emailDomain" projectSlug={project.slug} admin />
             )}
           </CardContent>
         </Card>

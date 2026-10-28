@@ -57,6 +57,14 @@ export async function startSesFake(): Promise<SesFake> {
     req.on("end", () => {
       const path = new URL(req.url ?? "/", "http://fake").pathname;
       const query = new URL(req.url ?? "/", "http://fake").searchParams;
+      // For journeys in other processes: SES finds a domain's DKIM records (POST /_fake/verify?domain=…).
+      if (req.method === "POST" && path === "/_fake/verify") {
+        const identity = identities.get(query.get("domain") ?? "");
+        if (identity) {
+          identity.verified = true;
+        }
+        return res.writeHead(identity ? 204 : 404).end();
+      }
       if (req.method === "GET" && path === "/sns/SimpleNotificationService-fake.pem") {
         return res.writeHead(200).end(key.publicKey.export({ type: "spki", format: "pem" }));
       }
