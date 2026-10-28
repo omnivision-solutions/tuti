@@ -188,8 +188,10 @@ export function widgetLoader(portalTemplate: string): string {
   // (where it covers most of the page); on wider ones the page stays usable beside it.
   var backdrop = document.createElement("div");
   var narrow = sidebar && window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  // Whether the panel is open: it stays on screen a moment after closing, as it animates away.
+  var opened = false;
   function showBackdrop() {
-    backdrop.style.display = narrow && narrow.matches && panel.style.display !== "none" ? "block" : "none";
+    backdrop.style.display = narrow && narrow.matches && opened ? "block" : "none";
   }
   if (sidebar) {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
@@ -199,8 +201,39 @@ export function widgetLoader(portalTemplate: string): string {
   } else {
     css(panel, {
       right: "20px", bottom: hideLauncher ? "20px" : "88px", borderRadius: "14px",
-      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))"
+      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))", transformOrigin: "bottom right"
     });
+  }
+  // Opening, the panel grows out of the launcher's corner (a sidebar slides in from its edge); closing, the
+  // reverse, then it's hidden. Not for visitors who ask for less motion (as they do now), nor where browsers
+  // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
+  var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+  var onLeft = false;
+  var motion = null;
+  function animate(showing) {
+    if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
+    if (!panel.animate || (lessMotion && lessMotion.matches)) {
+      if (motion) motion.cancel();
+      motion = null;
+      if (!showing) panel.style.display = "none";
+      return;
+    }
+    // Turned around halfway: back from where it is, not from the other end.
+    if (motion) {
+      motion.reverse();
+      return;
+    }
+    var away = sidebar
+      ? { transform: "translateX(" + (onLeft ? "-" : "") + "100%)" }
+      : { opacity: 0, transform: "translateY(16px) scale(0.94)" };
+    var here = sidebar ? { transform: "none" } : { opacity: 1, transform: "none" };
+    motion = panel.animate(showing ? [away, here] : [here, away], showing
+      ? { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
+      : { duration: 160, easing: "cubic-bezier(0.4, 0, 1, 1)" });
+    motion.onfinish = function () {
+      motion = null;
+      if (!opened) panel.style.display = "none";
+    };
   }
   whenBody(function () {
     if (sidebar) document.body.appendChild(backdrop);
@@ -241,7 +274,8 @@ export function widgetLoader(portalTemplate: string): string {
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
-        css(panel, { left: sidebar ? "0" : "20px", right: "auto" });
+        css(panel, { left: sidebar ? "0" : "20px", right: "auto", transformOrigin: "bottom left" });
+        onLeft = true;
       }
     }
     showLauncher();
@@ -319,8 +353,12 @@ export function widgetLoader(portalTemplate: string): string {
     } else if (query !== null) {
       frame.src = src;
     }
-    if (panel.style.display === "none") returnFocus = from;
-    panel.style.display = "block";
+    if (!opened) {
+      returnFocus = from;
+      opened = true;
+      panel.style.display = "block";
+      animate(true);
+    }
     tellShown(true);
     showBackdrop();
     button.setAttribute("aria-expanded", "true");
@@ -333,8 +371,9 @@ export function widgetLoader(portalTemplate: string): string {
   }
 
   function close() {
-    if (panel.style.display === "none") return;
-    panel.style.display = "none";
+    if (!opened) return;
+    opened = false;
+    animate(false);
     tellShown(false);
     showBackdrop();
     button.setAttribute("aria-expanded", "false");
@@ -342,7 +381,7 @@ export function widgetLoader(portalTemplate: string): string {
   }
 
   button.addEventListener("click", function () {
-    if (panel.style.display === "none") open(null, button); else close();
+    if (!opened) open(null, button); else close();
   });
   // Contextual help: any element with data-tuti-article, now or added later.
   document.addEventListener("click", function (event) {
@@ -462,7 +501,7 @@ export function widgetLoader(portalTemplate: string): string {
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
       // Closed while it loaded: it couldn't hear that then.
-      if (from === frame) tellShown(panel.style.display !== "none");
+      if (from === frame) tellShown(opened);
     }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
       remember(event.data.at);
