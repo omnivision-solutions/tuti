@@ -25,14 +25,11 @@ export async function GET(request: Request) {
   return inboxStream(request, {
     wants: (change) =>
       change.projectId === projectId && (who.userId ? change.userId === who.userId : change.visitorHash === who.visitorHash),
-    stillAllowed: async () => {
-      if (kind === "Widget") {
-        return widgetUser(projectId, token!) !== null;
-      }
-      if (kind === "Visitor") {
-        return visitorHash(projectId, token!) !== null;
-      }
-      return !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0;
-    },
+    stillAllowed: async () =>
+      kind === "Widget"
+        ? widgetUser(projectId, token!) !== null
+        : kind === "Visitor"
+          ? visitorHash(projectId, token!) !== null
+          : !!session && (await prisma.session.count({ where: { id: session.session.id, expiresAt: { gt: new Date() } } })) > 0,
   });
 }

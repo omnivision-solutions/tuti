@@ -409,7 +409,11 @@ export function widgetLoader(portalTemplate: string): string {
     if (!from) return;
     // Only the floating panel closes; an inline one has nothing to close.
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) { if (from === frame) close(); }
-    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) sendToken(from);
+    else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
+      sendToken(from);
+      // Closed while it loaded: it couldn't hear that then.
+      if (from === frame) tellShown(panel.style.display !== "none");
+    }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_SEEN_MESSAGE)} && typeof event.data.at === "string") {
       remember(event.data.at);
       seenOnServer(event.data.at);

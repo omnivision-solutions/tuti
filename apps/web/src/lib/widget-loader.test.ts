@@ -731,6 +731,17 @@ test("the floating panel hears when it's closed and opened again, so a hidden on
   expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:shown", shown: true }, "https://acme.tuti.example");
 });
 
+test("a floating panel closed while it loaded hears so once it's ready, so it doesn't stay online or see replies", async () => {
+  const page = loadWidget({});
+  await settled();
+  page.Tuti.open({ tab: "messages" });
+  const panel = (page.frame as unknown as { contentWindow: { postMessage: ReturnType<typeof vi.fn> } }).contentWindow;
+  page.Tuti.close();
+  panel.postMessage.mockClear();
+  page.message(panel, { type: "tuti:ready" });
+  expect(panel.postMessage).toHaveBeenCalledWith({ type: "tuti:shown", shown: false }, "https://acme.tuti.example");
+});
+
 test("a slow answer from the server doesn't bring back a count the open panel has since cleared", async () => {
   let answer!: () => void;
   const page = loadWidget({

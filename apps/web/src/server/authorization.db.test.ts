@@ -513,6 +513,7 @@ const matrix: Matrix = {
   // Signed in with tokens, not sessions: anyone holding a valid one may act (see widget.db.test.ts).
   // A widget token is who's writing (widget-inbox.db.test.ts covers refusing others').
   "widget-inbox": {
+    widgetHere: { allowed: "public", call: async (slug) => widgetInbox.widgetHere(slug, await inboxToken(slug)) },
     widgetConversations: { allowed: "public", call: async (slug) => widgetInbox.widgetConversations(slug, await inboxToken(slug)) },
     widgetConversation: {
       allowed: "public",

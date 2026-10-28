@@ -5,12 +5,14 @@ import { notFound } from "next/navigation";
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton } from "@/components/inbox/conversation-controls";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
+import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
+import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
@@ -38,6 +40,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         emailVerified: true,
         assigneeId: true,
         userId: true,
+        visitorHash: true,
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
         messages: {
@@ -56,6 +59,10 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     notFound();
   }
   const person = conversationPerson(conversation);
+  const online =
+    conversation.userId || conversation.visitorHash
+      ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
+      : null;
   const personName = person.name ?? person.email ?? "Unknown";
 
   return (
@@ -65,6 +72,17 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         title={conversation.subject}
         description={
           <>
+            {online && (
+              <>
+                {/* Shown until it runs out; coming online refreshes the page through its live stream. */}
+                <RefreshAt at={online.toISOString()} />
+                <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                  <span aria-hidden className="size-2 rounded-full bg-primary" />
+                  Online
+                </span>{" "}
+                ·{" "}
+              </>
+            )}
             #{conversation.number} · {personName}
             {person.email && person.name && ` (${person.email}${person.verified ? "" : ", not verified"})`}
             {!person.name && person.email && !person.verified && " (not verified)"} · started from {ORIGINS[conversation.origin]}{" "}

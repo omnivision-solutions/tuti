@@ -1,4 +1,4 @@
-import { listen, type Prisma } from "@tuti/db";
+import { listen, type Prisma, prisma } from "@tuti/db";
 
 /**
  * Live updates for the support inbox (docs/plan.md, Support inbox, "Live"): a change commits with a
@@ -21,6 +21,11 @@ export type InboxChange = {
 /** Tells live streams about a change, in the transaction that makes it (sent only once it commits). */
 export async function notifyInbox(tx: Prisma.TransactionClient, change: InboxChange) {
   await tx.$executeRaw`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(change)})`;
+}
+
+/** Tells live streams now, outside any transaction (someone came online: nothing to commit). */
+export async function notifyInboxNow(change: InboxChange) {
+  await prisma.$executeRaw`SELECT pg_notify(${CHANNEL}, ${JSON.stringify(change)})`;
 }
 
 type Subscriber = { wants: (change: InboxChange) => boolean; changed: () => void };

@@ -275,6 +275,7 @@ model Project {
   posts                Post[]
   conversations        Conversation[]
   conversationMessages ConversationMessage[]
+  widgetPresence       WidgetPresence[]
   votes                Vote[]
   comments             Comment[]
   ssoIdentities        SsoIdentity[]
@@ -925,6 +926,20 @@ model Conversation {
   @@index([userId])
   @@index([visitorHash])
   @@map("conversation")
+}
+
+/// When someone was last in the widget's Messages (docs/plan.md, Support inbox, "Live"): online while
+/// it's open, and for 2 minutes after. Written at most once a minute per person.
+model WidgetPresence {
+  projectId  String
+  /// Someone Tuti knows (their user id), or a signed-out visitor ("visitor:" and their token's hash).
+  who        String
+  lastSeenAt DateTime
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, who])
+  @@map("widget_presence")
 }
 
 model ConversationMessage {
