@@ -75,6 +75,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   const panel = (await about.boundingBox())!;
   const name = (await about.getByText("averyveryveryverylongpropertynamewithoutanyspacesatallinit").boundingBox())!;
   expect(name.x + name.width).toBeLessThanOrEqual(panel.x + panel.width);
+  // And they leave the values room: "enterprise" stays on one line, as tall as the email above it.
+  const line = (await about.getByText("e2e-sam@example.com", { exact: true }).boundingBox())!.height;
+  expect((await about.getByRole("definition").filter({ hasText: "enterprise" }).boundingBox())!.height).toBeLessThan(line * 1.5);
   await expect(about.getByRole("region", { name: "Other conversations" })).toContainText("None.");
 
   // The team replies (⌘/Ctrl+Enter sends): it's waiting on the user now.
