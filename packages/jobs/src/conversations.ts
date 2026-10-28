@@ -267,6 +267,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   ]);
   await notify();
   return true;
+}
 
 /** How long a user's message is given to be told about the normal way before the cron steps in. */
 const NOTICE_LATE_MS = 2 * 60 * 1000;
