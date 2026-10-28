@@ -50,7 +50,7 @@ const lastAsked = (turns: Turn[]) => turns.findLast((turn) => turn.answer)?.answ
  * as feedback (`feedbackPath`: the first board's) and, when the team takes questions by email, asking a
  * person (`askAPerson`). The trash clears the conversation; the next question starts a new one.
  * In the widget (`widget`), it takes the panel: questions count as the widget's, sources open in the
- * panel's Docs tab, and "Post this as feedback" opens its Feedback tab (`feedbackPath` "/widget").
+ * panel's Docs tab, and "Post this as feedback" opens its Feedback tab (`feedbackPath` "/widget?tab=feedback").
  */
 export function DocsAssistantProvider({
   projectName,
@@ -349,7 +349,7 @@ function AssistantReply({
     );
   }
   if (answer.status !== "answered") {
-    const feedbackHref = feedbackPath && at(`${feedbackPath}?${new URLSearchParams({ title: turn.question.slice(0, MAX_TITLE) })}`);
+    const feedbackHref = feedbackPath && at(`${feedbackPath}${feedbackPath.includes("?") ? "&" : "?"}${new URLSearchParams({ title: turn.question.slice(0, MAX_TITLE) })}`);
     return (
       <div className="flex flex-col gap-2">
         <p className="font-semibold">

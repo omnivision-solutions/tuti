@@ -253,20 +253,25 @@ export function PortalFooter({ docs = false }: { docs?: boolean }) {
           ))}
         </nav>
       )}
-      {poweredBy && (
-        <a
-          // Tuti's own site on every installation, self-hosted too: it's the badge's whole point.
-          href="https://tuti.so"
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-        >
-          Powered by
-          <TutiMark className="size-4" />
-          <span className="font-heading font-bold text-foreground">tuti</span>
-        </a>
-      )}
+      {poweredBy && <PoweredByTuti />}
     </footer>
+  );
+}
+
+/** "Powered by tuti", linking to tuti.so: under the portal's pages and the widget's tabs (see PortalFooter). */
+export function PoweredByTuti({ className }: { className?: string }) {
+  return (
+    <a
+      // Tuti's own site on every installation, self-hosted too: it's the badge's whole point.
+      href="https://tuti.so"
+      target="_blank"
+      rel="noreferrer"
+      className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground", className)}
+    >
+      Powered by
+      <TutiMark className="size-4" />
+      <span className="font-heading font-bold text-foreground">tuti</span>
+    </a>
   );
 }
 

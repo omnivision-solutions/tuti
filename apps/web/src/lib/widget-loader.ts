@@ -29,7 +29,7 @@ import {
  * a panel above the button), "sidebar" (a full-height drawer on the button's side, over a
  * backdrop on narrow screens) or "inline" (no button). Any element with `data-tuti-inline`
  * gets the panel in it, in every mode: its own iframe, at the tab it names
- * (`data-tuti-inline="docs"`; empty for Feedback), without a close button; elements
+ * (`data-tuti-inline="docs"`; empty for Home), without a close button; elements
  * added later get one too.
  *
  * Signing people in (their account in the customer's app, through the project's
@@ -243,9 +243,9 @@ export function widgetLoader(portalTemplate: string): string {
     });
   }
 
-  var TABS = { feedback: "", "whats-new": "?tab=whats-new", docs: "?tab=docs", messages: "?tab=messages" };
+  var TABS = { home: "", messages: "?tab=messages", docs: "?tab=docs", feedback: "?tab=feedback", "whats-new": "?tab=whats-new" };
   function tabQuery(tab) {
-    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of feedback, whats-new, docs or messages");
+    if (tab && !TABS.hasOwnProperty(tab)) console.error("Tuti widget: tab is one of home, messages, docs, feedback or whats-new");
     return TABS.hasOwnProperty(tab) ? TABS[tab] : null;
   }
   function newFrame(src) {

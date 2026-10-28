@@ -14,6 +14,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
 
   // SSO off: the panel asks to sign in on the portal.
   await launcher.click();
+  await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await expect(panel.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
   // On, the app signs them in to the widget (Tuti.identify), as any app does.
@@ -22,6 +23,7 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await expect(owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" })).toBeVisible();
   await owner.reload();
   await launcher.click();
+  await panel.getByRole("navigation", { name: "Widget" }).getByRole("link", { name: "Feedback" }).click();
   await panel.getByLabel("Title").fill("Export to CSV");
   await panel.getByRole("button", { name: "Submit post" }).click();
   await expect(panel.getByText("Feedback posted")).toBeVisible();

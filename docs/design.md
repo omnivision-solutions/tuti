@@ -100,6 +100,11 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   on wide screens, one on phones). A collection's page: its icon and name, a card of its
   articles (rows with a chevron), then a card per collection in it (its name,
   its articles, and the collections in that as folders opening their pages).
+- **Widget panel** (`/widget` on the portal, framed on customers' sites): a
+  header with the tab's name and Close, the tab scrolling under it, the tabs
+  with icons at the bottom and "Powered by tuti" under them. Home is a
+  greeting in the accent colour, then a card for each part the project has
+  (Messages, a docs search box, Feedback, the latest update) and the quick links.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.
 
 ## Components
