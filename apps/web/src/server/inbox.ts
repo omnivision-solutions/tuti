@@ -80,3 +80,11 @@ export async function setNewConversationEmails(projectSlug: string, on: boolean)
     });
   });
 }
+
+/** Settings → Support: gives the project its support email address (owners and admins). */
+export async function getSupportAddress(projectSlug: string): Promise<FormState> {
+  return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
+    call(updateSupportSettings, context, { email: true }),
+  );
+}
+

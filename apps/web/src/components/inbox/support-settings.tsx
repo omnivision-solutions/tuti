@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { setSupportInbox } from "@/server/inbox";
+import { getSupportAddress, setSupportInbox } from "@/server/inbox";
 
 /** Turns the support inbox on or off. */
 export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; on: boolean }) {
@@ -40,5 +41,26 @@ export function SupportInboxSwitch({ projectSlug, on }: { projectSlug: string; o
         }}
       />
     </div>
+  );
+}
+
+/** Gives the project its support email address (it's its for good). */
+export function GetSupportAddressButton({ projectSlug }: { projectSlug: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="outline"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await getSupportAddress(projectSlug);
+          if (result.error) {
+            toast.error(result.error);
+          }
+        })
+      }
+    >
+      Get a support address
+    </Button>
   );
 }

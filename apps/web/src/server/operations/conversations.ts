@@ -274,6 +274,12 @@ export async function startConversation(
     then?: { author: "AI"; body: string; note?: boolean }[];
     /** Refused (429) when the conversations `where` matches started this many in the last day: checked under the lock, so starts at once can't all pass. */
     perDay?: { where: Prisma.ConversationWhereInput; max: number };
+    /** Mail that failed DMARC: it goes to Spam, and nobody is told. */
+    spam?: boolean;
+    /** The first message came by email. */
+    received?: ReceivedEmail;
+    /** More to write in the same transaction (a received email's status), with the conversation's id. */
+    alongside?: (tx: Prisma.TransactionClient, conversationId: string) => Promise<void>;
   },
 ) {
   const now = new Date();
@@ -301,15 +307,26 @@ export async function startConversation(
         userId: start.userId,
         email: start.email?.toLowerCase() ?? null,
         visitorHash: start.visitorHash ?? null,
+        spam: start.spam ?? false,
         lastMessageAt: now,
         waitingSince: now,
       },
       select: conversationSelect,
     });
     const message = await tx.conversationMessage.create({
-      data: { projectId, conversationId: conversation.id, author: "USER", authorId: start.userId, channel: start.channel, body: start.body, createdAt: now },
+      data: {
+        projectId,
+        conversationId: conversation.id,
+        author: "USER",
+        authorId: start.userId,
+        channel: start.channel,
+        body: start.body,
+        ...start.received,
+        createdAt: now,
+      },
       select: messageSelect,
     });
+    await start.alongside?.(tx, conversation.id);
     // A millisecond apart, so they read in order.
     await tx.conversationMessage.createMany({
       data: (start.then ?? []).map((next, i) => ({
@@ -331,10 +348,15 @@ export async function startConversation(
  * Adds a message and moves the conversation on: the team replying leaves it Waiting (on the user),
  * the user writing opens it again and keeps how long they've been waiting from their oldest unanswered message.
  */
+/** What's kept of a message received by email (see ConversationMessage). */
+export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string | null; original: string | null };
+
 export async function addMessage(
   conversationId: string,
   projectId: string,
-  message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string },
+  message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string } & Partial<ReceivedEmail>,
+  /** More to write in the same transaction (a received email's status), with the new message's id. */
+  alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
 ) {
   const now = new Date();
   return prisma.$transaction(async (tx) => {
@@ -342,6 +364,7 @@ export async function addMessage(
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
     });
+    await alongside?.(tx, created.id);
     const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { userId: true, visitorHash: true } });
     await notifyInbox(tx, { projectId, conversationId, ...whose });
     if (message.author === "TEAM") {

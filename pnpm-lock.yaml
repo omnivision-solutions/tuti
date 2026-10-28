@@ -238,6 +238,9 @@ importers:
       lucide-react:
         specifier: ^1.49.0
         version: 1.49.0(@types/react@19.3.0)(react@19.2.8)
+      mailparser:
+        specifier: ^3.9.40
+        version: 3.9.40
       next:
         specifier: 16.4.2
         version: 16.4.2(@babel/core@7.29.7(supports-color@7.2.0))(@playwright/test@1.64.1)(@types/node@22.20.4)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -269,6 +272,9 @@ importers:
       '@tuti/testkit':
         specifier: workspace:*
         version: link:../../packages/testkit
+      '@types/mailparser':
+        specifier: ^3.9.0
+        version: 3.9.0
       '@types/node':
         specifier: ^22
         version: 22.20.4

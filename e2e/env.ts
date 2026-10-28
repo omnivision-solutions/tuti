@@ -19,6 +19,9 @@ export const cloudPortalUrl = (slug: string) => `http://${slug}.localhost:${CLOU
 export const APP_PORTAL_SLUG = "e2e-app-portal";
 /** The only account that can create it (APP_PORTAL_OWNER), once its address is verified. */
 export const APP_PORTAL_OWNER = "e2e-app-portal-owner@example.com";
+/** Support email in journeys: projects' addresses are on this domain, and journeys sign received mail with this secret. */
+export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
+export const INBOUND_SECRET = "e2e-inbound-secret";
 
 export const serverEnv = {
   PORT: String(PORT),
@@ -53,6 +56,9 @@ export const serverEnv = {
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
   EMAIL_FROM: "Tuti Test <test@example.com>",
+  // Support email on: journeys post received mail to /api/inbound/email, signed like a receiver would.
+  SUPPORT_EMAIL_DOMAIN: SUPPORT_EMAIL_DOMAIN,
+  INBOUND_SECRET: INBOUND_SECRET,
   // Custom domains on: journeys use <name>.<project>.localhost, which Chromium sends to this machine.
   CUSTOM_DOMAIN_TARGET: "customers.example.com",
   // Tuti's own portal on the app's domain: the project app-portal.spec.ts makes.
