@@ -61,8 +61,10 @@ On tuti.so, Amazon SES receives mail for `tuti.email`, and a small Lambda posts 
 - **The Lambda** (`index.mjs`) posts the message once per recipient, with SES's SPF, DKIM and DMARC
   verdicts as `Tuti-Auth`, signed with `INBOUND_SECRET`, and deletes the stored copy once the app
   has it (or has refused it for good). A message SES found a virus in isn't posted.
-- **When the app is down**, Lambda tries again for up to 6 hours, and the app takes a message it
-  already has once. Anything never posted expires from the bucket after 7 days.
+- **When the app is down**, Lambda tries twice more within minutes; then the invocation goes to a retry
+  queue that brings it back every 10 minutes for a day, and after that to a dead-letter queue (kept 14
+  days). The app takes a message it already has once, and one that's no longer stored (an earlier try
+  posted it) is done with. Anything never posted expires from the bucket after 7 days.
 
 To set it up, verify the domain in SES, then run `infra/ses-inbound/deploy.sh` with AWS credentials and
 `SUPPORT_EMAIL_DOMAIN`, `APP_URL` and `INBOUND_SECRET` set. It deploys the stack (`template.yaml`),

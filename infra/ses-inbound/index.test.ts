@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 
 import { inboundSignatureValid } from "@/lib/inbound-signature";
 
-import { deliver, verdict } from "./index.mjs";
+import { deliver, sesRecords, verdict } from "./index.mjs";
 
 const SECRET = "a-test-secret-of-at-least-32-characters";
 const raw = Buffer.from("From: kim@example.com\r\nTo: support@acme.tuti.email\r\nSubject: Help\r\n\r\nHello");
@@ -74,6 +74,12 @@ test("an answer to try again throws, keeping the stored copy; one that won't cha
   expect(unknown.deleted).toEqual(["ses-message-1"]);
 });
 
+test("a message no longer stored (posted by an earlier try) is done with, not tried again", async () => {
+  const { posts, options } = fakes();
+  expect(await deliver(record(), { ...options, getRaw: async () => null })).toEqual({ delivered: 0 });
+  expect(posts).toEqual([]);
+});
+
 test("a message SES found a virus in isn't posted", async () => {
   const { posts, deleted, options } = fakes();
   expect(await deliver(record({ virusVerdict: { status: "FAIL" } }), options)).toEqual({ delivered: 0 });
@@ -89,4 +95,13 @@ test("SES's verdicts read as the app's words", () => {
     "none",
     "none",
   ]);
+});
+
+test("SES's own event and, from the retry queue, a failed invocation's event give the same receipts", () => {
+  const ses = { Records: [{ eventSource: "aws:ses", ...record() }] };
+  // Lambda's failure record for an invocation that ran out of tries, as the queue delivers it.
+  const retried = { Records: [{ eventSource: "aws:sqs", body: JSON.stringify({ requestContext: { condition: "RetriesExhausted" }, requestPayload: ses }) }] };
+  expect(sesRecords(ses)).toEqual(ses.Records);
+  expect(sesRecords(retried)).toEqual(ses.Records);
+  expect(sesRecords({ Records: [{ eventSource: "aws:sqs", body: "{}" }] })).toEqual([]);
 });

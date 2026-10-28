@@ -1,6 +1,8 @@
 # Receiving the support domain's mail with Amazon SES (docs/support-email.md, "On tuti.so"): SES stores
 # each message in a private bucket and invokes the Lambda (index.mjs), which posts it to the app and
-# deletes it. Anything left (the app down for longer than Lambda's retries) expires after 7 days.
+# deletes it. While the app is down, an invocation that fails Lambda's own tries goes to a queue the
+# Lambda takes it back from every 10 minutes, for a day; then to a dead-letter queue (kept 14 days).
+# Anything left in the bucket expires after 7 days.
 # Deployed by deploy.sh, which also uploads the Lambda's code and makes the rule set active.
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tuti support inbox - receiving mail for the support domain with SES
@@ -71,7 +73,15 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole"
       Policies:
+        - PolicyName: send-failed-invocations-to-retry
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt RetryQueue.Arn
         - PolicyName: read-and-delete-stored-mail
           PolicyDocument:
             Version: "2012-10-17"
@@ -81,6 +91,10 @@ Resources:
                   - s3:GetObject
                   - s3:DeleteObject
                 Resource: !Sub "${Bucket.Arn}/inbound/*"
+              # So a message that's gone reads as NoSuchKey (done with), not AccessDenied (tried again).
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt Bucket.Arn
 
   Function:
     Type: AWS::Lambda::Function
@@ -109,14 +123,39 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${Function}"
       RetentionInDays: 30
 
-  # A failed post (the app down or deploying) is tried again by Lambda, for up to 6 hours.
+  # A failed post (the app down or deploying) is tried twice more by Lambda (within minutes), then the
+  # invocation goes to the retry queue, which brings it back every 10 minutes for a day.
   FunctionRetries:
     Type: AWS::Lambda::EventInvokeConfig
     Properties:
       FunctionName: !Ref Function
       Qualifier: $LATEST
       MaximumRetryAttempts: 2
-      MaximumEventAgeInSeconds: 21600
+      DestinationConfig:
+        OnFailure:
+          Destination: !GetAtt RetryQueue.Arn
+
+  RetryQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      # A message the Lambda fails comes back after this long.
+      VisibilityTimeout: 600
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetterQueue.Arn
+        maxReceiveCount: 144
+
+  DeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  RetryQueueTriggersFunction:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt RetryQueue.Arn
+      FunctionName: !Ref Function
+      BatchSize: 1
 
   SesInvokesFunction:
     Type: AWS::Lambda::Permission
@@ -161,6 +200,9 @@ Outputs:
     Value: !Ref Function
   RuleSet:
     Value: !Ref RuleSet
+  DeadLetterQueue:
+    Description: Mail the app never took after a day of tries (the stored copy expires after 7 days).
+    Value: !Ref DeadLetterQueue
   MxTarget:
     Description: Point a wildcard MX record for the domain's subdomains here.
     Value: !Sub "inbound-smtp.${AWS::Region}.amazonaws.com"

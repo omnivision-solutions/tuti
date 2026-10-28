@@ -36,6 +36,11 @@ export async function deliver(record, { appUrl, secret, domain, getRaw, deleteRa
   const recipients = receipt.recipients.map((r) => r.toLowerCase()).filter((r) => r.endsWith(suffix));
   const auth = `spf=${verdict(receipt.spfVerdict)} dkim=${verdict(receipt.dkimVerdict)} dmarc=${verdict(receipt.dmarcVerdict)}`;
   const raw = await getRaw(mail.messageId);
+  if (!raw) {
+    // Gone: an earlier try posted it and deleted it (or it expired). Nothing left to do.
+    log.warn(`${mail.messageId} isn't stored any more`);
+    return { delivered: 0 };
+  }
   let delivered = 0;
   for (const recipient of recipients) {
     const status = await post(new URL("/api/inbound/email", appUrl).toString(), {
@@ -59,19 +64,39 @@ export async function deliver(record, { appUrl, secret, domain, getRaw, deleteRa
   return { delivered };
 }
 
+/**
+ * The SES receipts in an invocation: SES's own, or, from the retry queue, those of an invocation that
+ * failed every try Lambda gave it (the queue holds Lambda's failure record, the original event inside).
+ */
+export function sesRecords(event) {
+  return (event.Records ?? []).flatMap((record) => {
+    if (record.eventSource === "aws:sqs") {
+      return sesRecords(JSON.parse(record.body).requestPayload ?? {});
+    }
+    return record.ses ? [record] : [];
+  });
+}
+
 export async function handler(event) {
   const { DeleteObjectCommand, GetObjectCommand, S3Client } = await import("@aws-sdk/client-s3");
   const s3 = new S3Client({});
   const { APP_URL, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN, BUCKET, PREFIX = "inbound/" } = process.env;
   const key = (messageId) => `${PREFIX}${messageId}`;
-  for (const record of event.Records ?? []) {
+  for (const record of sesRecords(event)) {
     await deliver(record, {
       appUrl: APP_URL,
       secret: INBOUND_SECRET,
       domain: SUPPORT_EMAIL_DOMAIN,
       getRaw: async (messageId) => {
-        const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key(messageId) }));
-        return Buffer.from(await object.Body.transformToByteArray());
+        try {
+          const object = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key(messageId) }));
+          return Buffer.from(await object.Body.transformToByteArray());
+        } catch (error) {
+          if (error.name === "NoSuchKey") {
+            return null;
+          }
+          throw error;
+        }
       },
       deleteRaw: (messageId) => s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key(messageId) })),
       post: async (url, { body, headers }) => {
