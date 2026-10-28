@@ -15,7 +15,7 @@ export default async function ResumeEmailPage(props: PageProps<"/resume-email">)
   const project =
     pause && (await prisma.project.findUnique({ where: { id: pause.projectId }, select: { name: true, slug: true, emailPausedAt: true, emailPausedReason: true } }));
   if (!project) {
-    return <EmptyState title="This link doesn't work any more" description="It's over 30 days old, or the project is gone." />;
+    return <EmptyState title="This link doesn't work any more" description="It's over a year old, or the project is gone." />;
   }
   // The link is for one pause: once that's over, it shows so, even if the project was paused again since.
   if (project.emailPausedAt?.getTime() !== pause.pausedAt.getTime()) {

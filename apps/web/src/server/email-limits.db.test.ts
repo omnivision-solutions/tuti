@@ -4,6 +4,7 @@ import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST } from "@/app/api/email/events/route";
+import { resumeToken } from "@/lib/email-pause";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
@@ -267,4 +268,11 @@ test("on a server that doesn't sell plans, nothing is counted or paused, and a p
   const emailed = await twoReplies(project, team);
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(2);
+});
+
+test("the operator's link still works a month on: it's the only one a pause sends", async () => {
+  const { project } = await setup();
+  const pausedAt = new Date(Date.now() - 40 * 24 * 60 * 60_000);
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
+  expect(await resumeEmailSending(resumeToken(project.id, pausedAt, pausedAt.getTime()))).toEqual({});
 });

@@ -22,7 +22,7 @@ export function EmailPausedEmail({ projectName, reason, portalUrl, url }: Paused
         Review
       </Button>
       <Text style={{ fontSize: 13, color: colors.muted, lineHeight: "20px", marginTop: 24 }}>
-        You get this as this server&apos;s operator (APP_PORTAL_OWNER). The link works for 30 days.
+        You get this as this server&apos;s operator (APP_PORTAL_OWNER). The link works for as long as this pause lasts.
       </Text>
     </Layout>
   );
