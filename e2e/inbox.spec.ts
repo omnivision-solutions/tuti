@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
+import { deflateSync } from "node:zlib";
 
 import { expect, test } from "@playwright/test";
 
@@ -215,6 +216,10 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   for (let i = 2; i <= 20; i++) {
     await api("/conversations/2/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall` });
   }
+  // Someone the team's app knows a lot about: the panel beside the conversation is taller than the screen.
+  const properties = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`property${i}`, `value ${i}`]));
+  await api("/users", { users: [{ id: "user-7", properties }] });
+  await api("/conversations", { user: { id: "user-7", name: "Pat Props", email: "e2e-pat@example.com" }, body: "A short question" });
   await owner.setViewportSize({ width: 1280, height: 720 });
   const reply = owner.getByRole("textbox", { name: "Reply" });
   const send = owner.getByRole("button", { name: "Send", exact: true });
@@ -238,7 +243,65 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await expect(reply).toBeInViewport();
   expect((await send.boundingBox())!.y).toBe(y);
   await checkpoint(owner, "conversation-scrolled-up", { fullPage: false });
+
+  // A tall image in the newest reply loads after the page has scrolled to it: the page follows it.
+  await owner.locator('input[type="file"]').setInputFiles({ name: "tall.png", mimeType: "image/png", buffer: png(100, 600) });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText("tall.png");
+  await reply.fill("Here's where it is.");
+  await send.click();
+  await expect(messages).toHaveCount(21);
+  // As in Safari, which keeps no place in the page as things above it grow (Chrome's scroll anchoring does).
+  await owner.addInitScript(() =>
+    document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "html { overflow-anchor: none }" }))),
+  );
+  await owner.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    await route.fallback();
+  });
+  // Not waiting for the page's load event, which waits for its images.
+  await owner.reload({ waitUntil: "domcontentloaded" });
+  await expect(owner.getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  // Above the reply box, not under it.
+  await expect(async () => {
+    const newest = (await messages.last().boundingBox())!;
+    expect(newest.y + newest.height).toBeLessThanOrEqual((await owner.getByRole("tab", { name: "Reply" }).boundingBox())!.y);
+  }).toPass({ timeout: 5_000 });
+  await owner.unroute("**/*");
+
+  // The tall panel scrolls on its own: the conversation opens at its message, not past it.
+  await owner.goto(`/app/${slug}/inbox/3`);
+  await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("property49");
+  await expect(messages.first()).toBeInViewport();
+  await expect(reply).toBeInViewport();
 });
+
+/** A grey PNG `width` by `height` pixels. */
+function png(width: number, height: number): Buffer {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes: Buffer) => (bytes.reduce((c, byte) => crcTable[(c ^ byte) & 0xff] ^ (c >>> 8), 0xffffffff) ^ 0xffffffff) >>> 0;
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 0, 0, 0, 0], 8); // 8-bit greyscale
+  // Each row: filter byte 0, then a grey pixel per column.
+  const rows = Buffer.alloc((width + 1) * height, 0x88);
+  for (let row = 0; row < height; row++) rows[row * (width + 1)] = 0;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
+}
 
 test("with an address for the project, an email to it lands in the inbox without the part it quotes", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
