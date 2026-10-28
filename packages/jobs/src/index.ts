@@ -5,7 +5,7 @@ import { articleChanged, purgeArticles } from "./articles";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { codeChange } from "./code-changes";
-import { conversationMessage } from "./conversations";
+import { conversationMessage, resubmitConversationNotices } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
@@ -35,6 +35,7 @@ export type JobResult = Record<string, string | number | boolean>;
 export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => Promise<JobResult> } = {
   postCreated,
   conversationMessage,
+  resubmitConversationNotices,
   articleChanged,
   imageUploaded,
   cleanupMedia,

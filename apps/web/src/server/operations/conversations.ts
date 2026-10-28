@@ -236,6 +236,7 @@ async function tellTeam(messageId: string) {
   try {
     await enqueue("conversationMessage", { messageId });
   } catch (error) {
+    // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
     log.error("Enqueueing the team's email about a message failed", { error, messageId });
   }
 }
