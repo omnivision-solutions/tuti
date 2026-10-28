@@ -181,6 +181,9 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
     await expect(header).toHaveCSS("background-image", /rgb\(37, 99, 235\)/);
     await expect(header).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(header).toContainText("How can we help?");
+    // Its close button's focus ring is in the header's text colour, not the header's own blue.
+    await header.getByRole("button", { name: "Close" }).focus();
+    await expect(header.getByRole("button", { name: "Close" })).toHaveCSS("border-color", "rgb(255, 255, 255)");
     await checkpoint(visitor, `branded-widget-${colorScheme}`);
 
     // The docs are the same portal, branded the same way.

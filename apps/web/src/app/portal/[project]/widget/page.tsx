@@ -109,7 +109,11 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         <div className="flex items-center justify-between gap-2">
           {/* Not a heading: an article in Docs has the page's. */}
           <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
-          <WidgetClose inline={display === "inline"} className="text-current hover:bg-current/15 hover:text-current" />
+          {/* In the header's text colour: the page's focus ring is the project's colour, the header's too. */}
+          <WidgetClose
+            inline={display === "inline"}
+            className="text-current hover:bg-current/15 hover:text-current focus-visible:border-current focus-visible:ring-current/50"
+          />
         </div>
         {tab === "home" && (
           <div className="flex flex-col gap-1">
