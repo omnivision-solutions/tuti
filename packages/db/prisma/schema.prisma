@@ -286,6 +286,7 @@ model Project {
   widgetPresence          WidgetPresence[]
   mailSubdomain           MailSubdomain?
   inboundEmails           InboundEmail[]
+  emailBlocks             EmailBlock[]
   votes                   Vote[]
   comments                Comment[]
   ssoIdentities           SsoIdentity[]
@@ -944,6 +945,31 @@ model Conversation {
 enum EmailStatus {
   SENT
   FAILED
+  /// From Amazon SES's events (apps/web/src/server/email-events.ts), forward only: sent → delivered → bounced or complained.
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+}
+
+/// An Amazon SES event, by SNS's message id: SNS may deliver one again, and it counts once. Kept a week.
+model EmailEvent {
+  id        String   @id
+  createdAt DateTime @default(now())
+
+  @@map("email_event")
+}
+
+/// An address that marked a project's email as spam: replies by email stop for it (the widget still works).
+model EmailBlock {
+  projectId String
+  /// Lowercase.
+  email     String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, email])
+  @@map("email_block")
 }
 
 /// Received: kept until it's read into a message (or ignored); a failed one for 30 days.

@@ -1,6 +1,7 @@
 # Sending support email with Amazon SES (docs/support-email.md, "Amazon SES"): the topic the
-# configuration set's events go to (SES_EVENTS_TOPIC_ARN) and the user whose key the app manages
-# tenants and identities with (SES_ACCESS_KEY_ID). The configuration set and the SMTP user are the
+# configuration set's events go to (SES_EVENTS_TOPIC_ARN), subscribed by the app's /api/email/events
+# (which confirms it), and the user whose key the app manages tenants and identities with
+# (SES_ACCESS_KEY_ID). The configuration set and the SMTP user are the
 # account's own. Deployed by deploy.sh.
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Tuti support inbox - sending with SES (events topic, API user)
@@ -9,6 +10,15 @@ Parameters:
   ConfigurationSet:
     Type: String
     Description: The configuration set support email names (SES_CONFIGURATION_SET).
+  AppUrl:
+    Type: String
+    Default: ""
+    Description: >-
+      The app's origin (APP_URL), where /api/email/events is. Empty at first: the app confirms the
+      subscription only once it has the SES_* settings, which come from this stack's outputs.
+
+Conditions:
+  Subscribed: !Not [!Equals [!Ref AppUrl, ""]]
 
 Resources:
   Events:
@@ -29,6 +39,14 @@ Resources:
             Resource: !Ref Events
             Condition:
               StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+
+  EventsSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: Subscribed
+    Properties:
+      TopicArn: !Ref Events
+      Protocol: https
+      Endpoint: !Sub "${AppUrl}/api/email/events"
 
   EventDestination:
     Type: AWS::SES::ConfigurationSetEventDestination

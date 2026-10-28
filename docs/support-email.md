@@ -106,3 +106,12 @@ refuses mail naming a tenant they aren't associated with); every email names bot
 (`X-SES-TENANT`, `X-SES-CONFIGURATION-SET`). `infra/ses-sending/deploy.sh` makes the topic the
 configuration set's events go to (`SES_EVENTS_TOPIC_ARN`) and the user the app's key is for, which
 may only manage tenants and identities.
+
+#### Bounces and complaints
+
+SES's events (deliveries, bounces, complaints) go through SNS to `/api/email/events`, subscribed
+by `infra/ses-sending/deploy.sh` run again with `APP_URL` once the app has the `SES_*` settings (it confirms the subscription). The app
+checks SNS's signature and takes only `SES_EVENTS_TOPIC_ARN`'s messages, each once. A message's
+email shows as delivered, bounced (with the receiving server's reason) or marked as spam, and its
+state only moves forward, so a late delivery never hides a bounce. Someone who marks a project's
+email as spam gets no more email from it; replies still reach them in the widget.

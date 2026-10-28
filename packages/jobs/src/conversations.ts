@@ -115,13 +115,19 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
   throw (failed[0] as PromiseRejectedResult).reason;
 }
 
-/** Raw received emails (support inbox) still unread after 30 days, failed or stuck: their bodies go, the rows stay. */
+/**
+ * Raw received emails (support inbox) still unread after 30 days, failed or stuck: their bodies go, the
+ * rows stay. And SES's events a week on (SNS stops sending one again long before).
+ */
 export async function pruneInboundEmails(): Promise<JobResult> {
-  const { count } = await prisma.inboundEmail.updateMany({
-    where: { raw: { not: null }, createdAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } },
-    data: { raw: null },
-  });
-  return { pruned: count };
+  const [{ count }, events] = await Promise.all([
+    prisma.inboundEmail.updateMany({
+      where: { raw: { not: null }, createdAt: { lt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } },
+      data: { raw: null },
+    }),
+    prisma.emailEvent.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 7 * 24 * 60 * 60_000) } } }),
+  ]);
+  return { pruned: count, events: events.count };
 }
 
 
@@ -227,6 +233,12 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   const subdomain = conversation.project.mailSubdomain?.subdomain;
   if (!to || !subdomain) {
     await settle({ emailStatus: "FAILED", emailError: to ? "The project has no support address" : "They have no email address" });
+    await notify();
+    return false;
+  }
+  // They marked an email from the project as spam (SES's complaint): no more email to them from it.
+  if (await prisma.emailBlock.findUnique({ where: { projectId_email: { projectId: conversation.projectId, email: to.toLowerCase() } } })) {
+    await settle({ emailStatus: "FAILED", emailError: "They marked an email from you as spam, so replies reach them only in the widget" });
     await notify();
     return false;
   }
