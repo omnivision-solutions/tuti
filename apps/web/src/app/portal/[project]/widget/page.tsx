@@ -105,7 +105,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
       <header className="flex items-center justify-between gap-2 border-b px-4 py-2">
-        <h1 className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</h1>
+        {/* Not a heading: an article in Docs has the page's. */}
+        <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
         <WidgetClose inline={display === "inline"} />
       </header>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -213,7 +214,7 @@ async function Home({
       )}
       {docs && (
         // A plain GET form: the Docs tab searches as it opens.
-        <form action="/widget" role="search" aria-label="Docs" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1">
+        <form action="/widget" role="search" aria-label="Docs" className="flex items-center gap-2 rounded-xl border bg-card px-4 py-1 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
           <input type="hidden" name="tab" value="docs" />
           <input
             type="search"
@@ -252,7 +253,7 @@ async function Home({
             {links.map((link, i) => (
               <li key={i}>
                 <a href={link.url} target="_blank" rel="noopener noreferrer" className={cn(row, "break-words first:rounded-t-xl last:rounded-b-xl")}>
-                  <span className="flex-1 font-medium">{link.label}</span>
+                  <span className="min-w-0 flex-1 font-medium">{link.label}</span>
                   <ExternalLinkIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 </a>
               </li>

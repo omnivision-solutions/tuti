@@ -901,6 +901,9 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.getByRole("button", { name: "Add link" }).click();
   await owner.getByLabel("Link 1 label").fill("Status");
   await owner.getByLabel("Link 1 URL").fill("http://status.example.com");
+  await owner.getByRole("button", { name: "Add link" }).click();
+  await owner.getByLabel("Link 2 label").fill("Averyverylongquicklinklabelwithnospaces1");
+  await owner.getByLabel("Link 2 URL").fill("https://example.com/long");
   // The launcher in the preview changes as it's set.
   await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
   await owner.getByRole("button", { name: "Save changes" }).click();
@@ -930,6 +933,12 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(status).toHaveAttribute("href", "https://status.example.com");
   await expect(status).toHaveAttribute("target", "_blank");
   await checkpoint(visitor, "widget-quick-links");
+  // In a narrow panel a long label wraps, its icon inside the panel.
+  await visitor.setViewportSize({ width: 360, height: 720 });
+  const icon = widget.getByRole("link", { name: /Averyverylong/ }).locator("svg");
+  const panel = (await visitor.locator("#tuti-widget").boundingBox())!;
+  expect((await icon.boundingBox())!.x + (await icon.boundingBox())!.width).toBeLessThanOrEqual(panel.x + panel.width);
+  await visitor.setViewportSize({ width: 1280, height: 720 });
   await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
 
   // A contextual help link the page adds later opens its article in the panel, not a new page.
