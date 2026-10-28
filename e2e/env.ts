@@ -19,7 +19,7 @@ export const cloudPortalUrl = (slug: string) => `http://${slug}.localhost:${CLOU
 export const APP_PORTAL_SLUG = "e2e-app-portal";
 /** The only account that can create it (APP_PORTAL_OWNER), once its address is verified. */
 export const APP_PORTAL_OWNER = "e2e-app-portal-owner@example.com";
-/** The project whose widget the cloud's own pages show (APP_WIDGET_PROJECT). */
+/** The project whose widget the cloud's team app shows (APP_WIDGET_PROJECT). */
 export const APP_WIDGET_SLUG = "e2e-app-widget";
 /** Support email in journeys: projects' addresses are on this domain, and journeys sign received mail with this secret. */
 export const SUPPORT_EMAIL_DOMAIN = "tuti.email.example";
@@ -80,6 +80,6 @@ export const cloudEnv = {
   APP_URL: CLOUD_URL,
   PORTAL_URL_TEMPLATE: `http://{project}.localhost:${CLOUD_PORT}`,
   PLANS: "on",
-  // Tuti's own widget on its pages: the project app-widget.spec.ts makes.
+  // Tuti's own widget in its team app: the project app-widget.spec.ts makes.
   APP_WIDGET_PROJECT: APP_WIDGET_SLUG,
 };

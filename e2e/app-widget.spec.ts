@@ -4,23 +4,34 @@ import { checkpoints } from "./checkpoint";
 import { APP_WIDGET_SLUG, CLOUD_URL, cloudPortalUrl } from "./env";
 import { createProject, signUp } from "./helpers";
 
-// On Tuti's cloud, which shows its own project's widget (APP_WIDGET_PROJECT) on its pages.
-test("Tuti's own widget is on its home and the team app, and not on a team's portal", async ({ browser }, testInfo) => {
+// On Tuti's cloud, whose team app shows its own project's widget (APP_WIDGET_PROJECT).
+test("Tuti's own widget in the team app signs people in with their account once SSO is on, and isn't on portals", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Tuti", APP_WIDGET_SLUG, cloudPortalUrl);
-
-  await owner.goto(`/app/${APP_WIDGET_SLUG}`);
   const launcher = owner.getByRole("button", { name: "Feedback" });
+  const panel = owner.frameLocator('iframe[title="Feedback"]');
+
+  // SSO off: the panel asks to sign in on the portal.
   await launcher.click();
-  // The panel is on the project's portal, another host, so it asks to sign in there.
-  await expect(owner.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
-  await checkpoint(owner, "app-widget-team-app");
+  await expect(panel.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
+  // On, the app signs them in to the widget (Tuti.identify), as any app does.
+  await owner.goto(`/app/${APP_WIDGET_SLUG}/settings/sso`);
+  await owner.getByRole("button", { name: "Enable SSO" }).click();
+  await expect(owner.getByRole("alert").filter({ hasText: "Copy your SSO secret now" })).toBeVisible();
+  await owner.reload();
+  await launcher.click();
+  await panel.getByLabel("Title").fill("Export to CSV");
+  await panel.getByRole("button", { name: "Submit post" }).click();
+  await expect(panel.getByText("Feedback posted")).toBeVisible();
+  await checkpoint(owner, "app-widget-signed-in");
+
+  // Not on the marketing pages, nor on a portal.
   await owner.goto("/");
-  await expect(launcher).toBeVisible();
-
+  await expect(owner.getByRole("banner").getByRole("link", { name: "Open app" })).toBeVisible();
+  await expect(launcher).toHaveCount(0);
   await owner.goto(`${cloudPortalUrl(APP_WIDGET_SLUG)}/feedback/feature-requests`);
-  await expect(owner.getByRole("heading", { name: "Feature requests" })).toBeVisible();
+  await expect(owner.getByRole("link", { name: "Export to CSV" })).toBeVisible();
   await expect(launcher).toHaveCount(0);
 });
