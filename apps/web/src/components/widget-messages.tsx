@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
+import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -153,10 +154,11 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
       />
     );
   return (
-    <div className="flex flex-col gap-3">
+    // The panel's height at least, so a conversation's reply box is at its bottom.
+    <div className="flex flex-1 flex-col gap-3">
       {failed}
       {signingIn && <p className="text-sm text-muted-foreground">Loading…</p>}
-      <fieldset disabled={signingIn} className="m-0 min-w-0 border-0 p-0">
+      <fieldset disabled={signingIn} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
         {view}
       </fieldset>
     </div>
@@ -617,15 +619,20 @@ function Conversation({
     [projectSlug, auth, number, shown],
   );
   const reload = usePolling(load, live);
+  // The newest message in view as it opens, as messages come and as their images load (the panel
+  // scrolls, not the customer's page).
+  const list = useRef<HTMLOListElement>(null);
+  const panel = useCallback(() => list.current?.closest("[data-widget-scroll]") ?? null, []);
+  useScrollToEnd(opened?.messages.length ?? 0, panel);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-1 flex-col gap-3">
       <BackButton onBack={onBack} />
       {error && <p className="text-sm text-destructive">{error}</p>}
       {opened && (
         <>
           <h2 className="font-medium break-words">{opened.subject}</h2>
-          <ol className="flex flex-col gap-2" aria-label="Messages">
+          <ol ref={list} className="flex flex-col gap-2" aria-label="Messages">
             {opened.messages.map((m) => (
               <li key={m.id} className={cn("flex", !m.fromTeam && "justify-end")}>
                 <div className={cn("max-w-[85%] rounded-xl border px-3 py-2", !m.fromTeam && "bg-muted")}>
@@ -638,18 +645,21 @@ function Conversation({
               </li>
             ))}
           </ol>
-          <Composer
-            label="Reply"
-            placeholder="Write a reply…"
-            upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
-            send={async (text, _email, attachments) => {
-              const result = await widgetSendMessage(projectSlug, auth, number, text, attachments);
-              if (!("error" in result)) {
-                await reload();
-              }
-              return result;
-            }}
-          />
+          {/* At the bottom of the panel as the messages scroll under it (-mx-4, -mb-4 and -bottom-4: over the panel's padding). */}
+          <div className="sticky -bottom-4 -mx-4 -mb-4 mt-auto border-t bg-background px-4 pt-3 pb-4">
+            <Composer
+              label="Reply"
+              placeholder="Write a reply…"
+              upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
+              send={async (text, _email, attachments) => {
+                const result = await widgetSendMessage(projectSlug, auth, number, text, attachments);
+                if (!("error" in result)) {
+                  await reload();
+                }
+                return result;
+              }}
+            />
+          </div>
         </>
       )}
     </div>
