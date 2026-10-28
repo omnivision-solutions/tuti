@@ -204,6 +204,42 @@ test("on a phone, who the conversation is with opens as a sheet, and a long addr
   await expect(owner.getByRole("dialog", { name: `About ${address}` })).toContainText("Known only by this address.");
 });
 
+test("the reply box stays at the bottom of the screen, and a long conversation opens at its newest message", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/conversations", { email: "e2e-short@example.com", body: "Just one line" });
+  await api("/conversations", { email: "e2e-long@example.com", body: "Message 1" });
+  for (let i = 2; i <= 20; i++) {
+    await api("/conversations/2/messages", { body: `Message ${i}\n\nwith a few lines\nto make it tall` });
+  }
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  const reply = owner.getByRole("textbox", { name: "Reply" });
+  const send = owner.getByRole("button", { name: "Send", exact: true });
+
+  // One message: the reply box is at the bottom of the screen all the same, not under the message.
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await expect(reply).toBeVisible();
+  expect((await send.boundingBox())!.y).toBeGreaterThan(720 - 100);
+
+  // Many: it opens at the newest, with the reply box under it.
+  await owner.goto(`/app/${slug}/inbox/2`);
+  const messages = owner.getByRole("list", { name: "Messages" }).locator(":scope > li");
+  await expect(messages.last()).toBeInViewport();
+  await expect(messages.first()).not.toBeInViewport();
+  await expect(reply).toBeInViewport();
+  await checkpoint(owner, "conversation-newest", { fullPage: false });
+  // Scrolled back to the first message, the reply box is where it was.
+  const y = (await send.boundingBox())!.y;
+  await messages.first().scrollIntoViewIfNeeded();
+  await expect(messages.first()).toBeInViewport();
+  await expect(reply).toBeInViewport();
+  expect((await send.boundingBox())!.y).toBe(y);
+  await checkpoint(owner, "conversation-scrolled-up", { fullPage: false });
+});
+
 test("with an address for the project, an email to it lands in the inbox without the part it quotes", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
