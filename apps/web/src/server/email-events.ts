@@ -64,11 +64,14 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
         return;
       }
       if (count) {
-        // Today's (UTC); nothing for a project that's gone.
+        // On the day (UTC) the email was sent, so a bounce counts against that day's sends however
+        // late it comes; nothing for a project that's gone.
+        const sentAt = Date.parse(event.mail?.timestamp ?? "");
+        const day = new Date(Number.isNaN(sentAt) ? now : sentAt).toISOString().slice(0, 10);
         const column = Prisma.raw(`"${count.column}"`);
         await tx.$executeRaw`
           INSERT INTO "project_email_day" ("projectId", "day", ${column})
-          SELECT "id", ${new Date(now).toISOString().slice(0, 10)}::date, 1 FROM "project" WHERE "id" = ${count.projectId}
+          SELECT "id", ${day}::date, 1 FROM "project" WHERE "id" = ${count.projectId}
           ON CONFLICT ("projectId", "day") DO UPDATE SET ${column} = "project_email_day".${column} + 1`;
       }
       if (change && id && reply) {

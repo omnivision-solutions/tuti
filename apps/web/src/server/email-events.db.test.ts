@@ -146,6 +146,12 @@ test("on a server selling plans, each project's email is counted by day: sent, b
   expect(await post(ses.sns("Notification", event("Complaint", id(11), {}, new Date(), tags)))).toBe(200);
   expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
 
+  // A bounce that comes after midnight counts on the day its email was sent.
+  const yesterday = new Date(Date.now() - 24 * 60 * 60_000);
+  expect(await post(ses.sns("Notification", event("Bounce", id(17), bounce, yesterday, tags)))).toBe(200);
+  expect(await prisma.projectEmailDay.findFirst({ where: { projectId: project.id, day: new Date(yesterday.toISOString().slice(0, 10)) } })).toMatchObject({ bounced: 1 });
+  await prisma.projectEmailDay.deleteMany({ where: { projectId: project.id, bounced: 1, sent: 0 } });
+
   // A project that's gone, or untagged mail (Tuti's own): nothing to count.
   expect(await post(ses.sns("Notification", event("Send", id(12), {}, new Date(), { project: ["gone"] })))).toBe(200);
   expect(await post(ses.sns("Notification", event("Send", id(13))))).toBe(200);
