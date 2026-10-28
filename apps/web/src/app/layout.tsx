@@ -26,7 +26,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
-          <Toaster />
+          {/* Top center: the bottom right is the widget launcher's (components/app-widget.tsx), and the top right has pages' actions. */}
+          <Toaster position="top-center" />
         </ThemeProvider>
       </body>
     </html>

@@ -2,11 +2,13 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { AppHeader } from "@/components/app-header";
+import { AppWidget } from "@/components/app-widget";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PendingInvitations } from "@/components/pending-invitations";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
+import { appWidgetProject } from "@/lib/app-portal";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
@@ -25,6 +27,8 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
   );
   const lastSlug = (await cookies()).get(LAST_PROJECT_COOKIE)?.value;
   const fallbackSlug = projects.find((p) => p.slug === lastSlug)?.slug ?? projects[0]?.slug ?? null;
+  // Tuti's own widget (its help project's, on tuti.so), when the server names its project.
+  const widgetProject = appWidgetProject();
 
   return (
     <AppShell
@@ -44,6 +48,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       }
     >
       {children}
+      {widgetProject && <AppWidget slug={widgetProject} />}
     </AppShell>
   );
 }

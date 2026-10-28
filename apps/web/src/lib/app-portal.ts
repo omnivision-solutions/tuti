@@ -30,6 +30,11 @@ export function appPortalMount(): { slug: string; origin: string; path: string }
   return { slug, origin: appUrl().origin, path: `/${slug}` };
 }
 
+/** The project whose widget the team app shows (APP_WIDGET_PROJECT; components/app-widget.tsx), or null. */
+export function appWidgetProject(): string | null {
+  return process.env.APP_WIDGET_PROJECT?.trim().toLowerCase() || null;
+}
+
 /** Whether `user` may create Tuti's own portal's project: APP_PORTAL_OWNER is their verified address. */
 export function isAppPortalOwner(user: { email: string; emailVerified: boolean }): boolean {
   const owner = process.env.APP_PORTAL_OWNER?.trim().toLowerCase();
