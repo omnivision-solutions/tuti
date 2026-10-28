@@ -22,6 +22,7 @@
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
     "nodemailer": "^10.1.2",
+    "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "^0.35.5",
