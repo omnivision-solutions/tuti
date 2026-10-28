@@ -17,7 +17,7 @@ export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
-export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits } from "./email-limits";
+export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";

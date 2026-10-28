@@ -154,6 +154,7 @@ counts keep it safe for everyone's delivery (`packages/jobs/src/email-limits.ts`
 - Over the last two weeks, more than 1.5% of its emails bouncing (once it has sent 100), or 3
   complaints above 0.03% of its emails (5 at any rate), pauses its email: replies and "it shipped"
   wait, sign-in links still go. Its owners and admins are emailed why, and the operator
-  (`APP_PORTAL_OWNER`) gets a 30-day link that resumes it; its counts start over then.
+  (`APP_PORTAL_OWNER`) gets a 30-day link that resumes that pause; its rates count from the day after.
 
-Self-hosted servers (no plans sold) have neither.
+Self-hosted servers (no plans sold) have neither, and without `APP_PORTAL_OWNER` nothing is paused
+(nobody could resume it).

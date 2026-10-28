@@ -1,6 +1,6 @@
 import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY } from "@tuti/jobs";
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
@@ -44,7 +44,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   // Replies wait to be emailed while the project's email is paused.
   const emailPaused =
-    !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
+    plansEnabled() && !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },

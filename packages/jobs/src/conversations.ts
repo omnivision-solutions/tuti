@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
 import { conversationEmail, conversationReplyEmail, deliveredMessageId, emailConfigured, sendEmail } from "@tuti/email";
-import { type JobInput, planIncludes } from "@tuti/shared";
+import { type JobInput, planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { mediaStorage } from "@tuti/shared/storage";
 
@@ -152,8 +152,8 @@ const unsent = (now: Date) => ({
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
   OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
-  // Not while the project's email is paused (they wait till it's resumed).
-  conversation: { spam: false, project: { emailPausedAt: null } },
+  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed).
+  conversation: { spam: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
 });
 
 /**

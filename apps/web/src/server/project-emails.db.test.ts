@@ -130,9 +130,14 @@ test("without SUPPORT_EMAIL_DOMAIN, all of it comes from EMAIL_FROM as before", 
   expect(sent.reader!.replyTo).toContain(owner.email);
 });
 
-test("while the project's email is paused, shipped emails wait; sign-in links don't", async () => {
+test("on a server selling plans, while the project's email is paused, shipped emails wait; sign-in links don't", async () => {
+  vi.stubEnv("PLANS", "on");
   const { owner, project, team } = await setup();
-  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
+  // A plan with private portals, so readers can be added; a week old, past the new-project cap.
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { plan: "BUSINESS", createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000), emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" },
+  });
   const sent = await sendAll(owner, project, team);
   expect(sent.signIn).toBeDefined();
   expect(sent.reset).toBeDefined();

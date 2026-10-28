@@ -130,25 +130,36 @@ test("a capped project's replies aren't picked, so they can't hold up other proj
   const emailed = await twoReplies(other.project, other.team);
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(1);
+  // Not due for the tests after (the database is the file's).
+  await prisma.conversation.deleteMany({ where: { projectId: project.id } });
 });
 
 let events = 0;
-/** SES's event for one of the project's emails, through SNS. */
-async function sesEvent(projectId: string, eventType: "Bounce" | "Complaint") {
+/** SES's event for one of the project's emails, as SNS posts it. */
+function snsEvent(projectId: string, eventType: "Send" | "Bounce" | "Complaint") {
   for (const [name, value] of Object.entries(ses.env)) {
     vi.stubEnv(name, value);
   }
   const message = JSON.stringify({
     eventType,
     mail: { messageId: `0100-event-${++events}`, timestamp: new Date().toISOString(), tags: { project: [projectId] } },
-    ...(eventType === "Bounce" ? { bounce: { bounceType: "Permanent" } } : { complaint: {} }),
+    ...(eventType === "Bounce" && { bounce: { bounceType: "Permanent" } }),
+    ...(eventType === "Complaint" && { complaint: {} }),
   });
-  const response = await POST(new Request("http://localhost/api/email/events", { method: "POST", body: JSON.stringify(ses.sns("Notification", message)) }));
-  expect(response.status).toBe(200);
+  return ses.sns("Notification", message);
 }
+const postEvent = async (event: Record<string, string>) =>
+  (await POST(new Request("http://localhost/api/email/events", { method: "POST", body: JSON.stringify(event) }))).status;
+async function sesEvent(projectId: string, eventType: "Send" | "Bounce" | "Complaint") {
+  expect(await postEvent(snsEvent(projectId, eventType))).toBe(200);
+}
+const pausedAt = async (projectId: string) => (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
+const linkIn = (text: string) => new URL(text.split(/\s+/).find((word) => word.includes("/resume-email?"))!.replace(/[[\]]/g, "")).searchParams.get("token")!;
 
 test("too many bounces pause the project's email: replies and shipped wait, sign-in links go, the operator and team are told; the operator's link resumes it", async () => {
-  const { owner, project, team } = await setup();
+  const { owner, project, team, aWeekOld } = await setup();
+  // Past its first week, so its cap isn't what holds replies here.
+  await aWeekOld();
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 1 } });
   await sesEvent(project.id, "Bounce");
   const paused = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true, emailPausedReason: true } });
@@ -174,27 +185,70 @@ test("too many bounces pause the project's email: replies and shipped wait, sign
   await emailSignInLink(project.slug, "/", form);
   expect(emailsTo(reader)).toHaveLength(1);
 
-  // The operator's link: its counts start over, and the replies go.
-  const token = new URL(toOperator!.text.split(/\s+/).find((word) => word.includes("/resume-email?"))!.replace(/[[\]]/g, "")).searchParams.get("token")!;
+  // The operator's link resumes it, and the replies go.
+  const token = linkIn(toOperator!.text);
   expect(await resumeEmailSending("not-a-token")).toEqual({ error: "This link doesn't work any more" });
   expect(await resumeEmailSending(token)).toEqual({});
-  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).toEqual({ emailPausedAt: null });
-  expect(await prisma.projectEmailDay.count({ where: { projectId: project.id } })).toBe(0);
+  expect(await pausedAt(project.id)).toBeNull();
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(2);
+
+  // Its rates count from the day after: late bounces for the emails before don't pause it again.
+  await sesEvent(project.id, "Bounce");
+  await sesEvent(project.id, "Complaint");
+  expect(await pausedAt(project.id)).toBeNull();
+  // And the link was for that pause: it can't undo a later one.
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "5 people marked emails as spam in the last 2 weeks" } });
+  expect(await resumeEmailSending(token)).toEqual({ error: "This pause is over" });
+  expect(await pausedAt(project.id)).not.toBeNull();
+});
+
+test("sends that come after the bounces still pause it, once there are 100", async () => {
+  const { project } = await setup();
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 98, bounced: 2 } });
+  await sesEvent(project.id, "Send");
+  expect(await pausedAt(project.id)).toBeNull();
+  await sesEvent(project.id, "Send");
+  expect(await pausedAt(project.id)).not.toBeNull();
+});
+
+test("if telling the operator fails, SNS's next try tells them; a check that didn't run runs then too", async () => {
+  const { project } = await setup();
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 1 } });
+  const told = () => emailsTo(OPERATOR).filter((email) => email.subject === `${project.name}'s email is paused`);
+  mailbox.refuseNext(OPERATOR);
+  const bounce = snsEvent(project.id, "Bounce");
+  await expect(postEvent(bounce)).rejects.toThrow();
+  expect(await pausedAt(project.id)).not.toBeNull();
+  expect(told()).toEqual([]);
+  // SNS tries the same message again: it's counted once, and the operator is told.
+  expect(await postEvent(bounce)).toBe(200);
+  expect(told()).toHaveLength(1);
+  expect((await prisma.projectEmailDay.findFirstOrThrow({ where: { projectId: project.id } })).bounced).toBe(2);
+});
+
+test("a project paused mid-run stops there; without an operator to resume it, nothing is paused", async () => {
+  const { project } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  expect(await claimProjectEmail(project.id)).toBe(false);
+
+  const other = await setup();
+  vi.stubEnv("APP_PORTAL_OWNER", "");
+  await prisma.projectEmailDay.updateMany({ where: { projectId: other.project.id }, data: { sent: 100, bounced: 1 } });
+  await sesEvent(other.project.id, "Bounce");
+  expect(await pausedAt(other.project.id)).toBeNull();
 });
 
 test("not paused under the limits: bounces before 100 sent, or a few complaints in a lot of email; 5 complaints pause it", async () => {
   const { project } = await setup();
-  const pausedAt = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).emailPausedAt;
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 99, bounced: 9 } });
   await sesEvent(project.id, "Bounce");
-  expect(await pausedAt()).toBeNull();
+  expect(await pausedAt(project.id)).toBeNull();
 
   // 3 complaints in 20,000 is under 0.03%.
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 20_000, bounced: 0, complained: 2 } });
   await sesEvent(project.id, "Complaint");
-  expect(await pausedAt()).toBeNull();
+  expect(await pausedAt(project.id)).toBeNull();
   await sesEvent(project.id, "Complaint");
   await sesEvent(project.id, "Complaint");
   expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedReason: true } })).toEqual({
@@ -202,10 +256,15 @@ test("not paused under the limits: bounces before 100 sent, or a few complaints 
   });
 });
 
-test("on a server that doesn't sell plans, nothing is counted or paused", async () => {
+test("on a server that doesn't sell plans, nothing is counted or paused, and a pause from before holds nothing", async () => {
   vi.stubEnv("PLANS", "");
-  const { project } = await setup();
+  const { project, team } = await setup();
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 50 } });
   await sesEvent(project.id, "Bounce");
-  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).toEqual({ emailPausedAt: null });
+  expect(await pausedAt(project.id)).toBeNull();
+
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  const emailed = await twoReplies(project, team);
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(2);
 });

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 
 import { mailSubdomain } from "./mail-subdomain";
@@ -41,6 +41,10 @@ export async function projectSender(projectId: string, replyTo?: string): Promis
  * wait (people need to sign in).
  */
 export async function projectEmailWaits(projectId: string): Promise<boolean> {
+  // Only where projects are paused at all: a server that stops selling plans lets them all go.
+  if (!plansEnabled()) {
+    return false;
+  }
   const { emailPausedAt } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } });
   return !!emailPausedAt;
 }

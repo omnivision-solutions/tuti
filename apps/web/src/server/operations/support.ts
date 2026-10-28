@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { checkEmailDomain, dropEmailDomain, forgetIdentity, withEmailDomainLocks } from "@tuti/jobs";
-import { planIncludes } from "@tuti/shared";
+import { planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { z } from "zod";
 
@@ -26,7 +26,7 @@ export const supportSettings = async (projectId: string) => {
           address: subdomain ? supportAddress(subdomain.subdomain, domain) : null,
           lastReceivedAt: last?.createdAt ?? null,
           // Paused (on a server selling plans, when its bounces or complaints went over): replies wait to be emailed till it's resumed.
-          paused: project.emailPausedAt ? { at: project.emailPausedAt, reason: project.emailPausedReason ?? "" } : null,
+          paused: plansEnabled() && project.emailPausedAt ? { at: project.emailPausedAt, reason: project.emailPausedReason ?? "" } : null,
           // Sending from the team's own domain: offered with Amazon SES (`included`: on the project's plan).
           ownDomain: ses()
             ? {

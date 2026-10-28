@@ -1,6 +1,6 @@
 import { type EmailStatus, Prisma, prisma } from "@tuti/db";
 import { deliveredMessageId, emailConfigured, emailPausedEmail, emailPausedTeamEmail, sendEmail } from "@tuti/email";
-import { pauseIfOverLimits } from "@tuti/jobs";
+import { pauseIfOverLimits, pausing } from "@tuti/jobs";
 import { log, plansEnabled } from "@tuti/shared";
 
 import { resumeToken } from "@/lib/email-pause";
@@ -63,11 +63,10 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
   if (!(change && id && reply) && !count) {
     return true;
   }
-  let added = false;
   try {
     await prisma.$transaction(async (tx) => {
-      added = (await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true })).count > 0;
-      if (!added) {
+      const { count: added } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
+      if (added === 0) {
         return;
       }
       if (count) {
@@ -91,48 +90,71 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
     }
     throw error;
   }
-  if (added && count && count.column !== "sent") {
+  // After every counted event, a repeat too: a check that failed, or telling the operator, is tried
+  // again with SNS's next try. Sends as well: late ones can take a project past the minimum.
+  if (count) {
     await pauseIfOver(count.projectId);
   }
   return true;
 }
 
-/** Pauses the project's email if its rates went over, and tells the operator (with the link that resumes it) and its owners and admins. */
+/** Pauses the project's email if its rates went over, then tells whoever wasn't told yet. */
 async function pauseIfOver(projectId: string) {
   const reason = await pauseIfOverLimits(projectId);
-  if (!reason) {
+  if (reason) {
+    log.warn("Paused a project's email", { projectId, reason });
+  }
+  await tellPaused(projectId);
+}
+
+/**
+ * Tells the operator of a pause, with the link that resumes it, and the project's owners and admins:
+ * once, claimed first. If the operator's email fails, the claim goes back and the error has SNS try
+ * again, since only that email can resume it.
+ */
+async function tellPaused(projectId: string) {
+  if (!pausing() || !emailConfigured()) {
     return;
   }
-  log.warn("Paused a project's email", { projectId, reason });
-  if (!emailConfigured()) {
+  const toldAt = new Date();
+  const { count } = await prisma.project.updateMany({ where: { id: projectId, emailPausedAt: { not: null }, emailPauseToldAt: null }, data: { emailPauseToldAt: toldAt } });
+  if (count === 0) {
     return;
   }
   const project = await prisma.project.findUniqueOrThrow({
     where: { id: projectId },
-    select: { name: true, slug: true, team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } } },
+    select: {
+      name: true,
+      slug: true,
+      emailPausedAt: true,
+      emailPausedReason: true,
+      team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
+    },
   });
-  const operator = process.env.APP_PORTAL_OWNER?.trim();
+  const operator = process.env.APP_PORTAL_OWNER!.trim();
+  const reason = project.emailPausedReason ?? "";
+  try {
+    await sendEmail({
+      to: operator,
+      ...emailPausedEmail({
+        projectName: project.name,
+        reason,
+        portalUrl: await portalAddress(project.slug),
+        url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt!))}`, appUrl()).toString(),
+      }),
+    });
+  } catch (error) {
+    await prisma.project.updateMany({ where: { id: projectId, emailPauseToldAt: toldAt }, data: { emailPauseToldAt: null } });
+    throw error;
+  }
   const settingsUrl = new URL(`/app/${project.slug}/settings/support`, appUrl()).toString();
-  const sent = await Promise.allSettled([
-    ...(operator
-      ? [
-          sendEmail({
-            to: operator,
-            ...emailPausedEmail({
-              projectName: project.name,
-              reason,
-              portalUrl: await portalAddress(project.slug),
-              url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId))}`, appUrl()).toString(),
-            }),
-          }),
-        ]
-      : []),
-    // Their answers go to the operator.
-    ...project.team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: project.name, reason, url: settingsUrl }) })),
-  ]);
+  // Their answers go to the operator.
+  const sent = await Promise.allSettled(
+    project.team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: project.name, reason, url: settingsUrl }) })),
+  );
   for (const result of sent) {
     if (result.status === "rejected") {
-      log.error("Emailing that a project's email is paused failed", { projectId, error: result.reason });
+      log.error("Emailing a team that its project's email is paused failed", { projectId, error: result.reason });
     }
   }
 }

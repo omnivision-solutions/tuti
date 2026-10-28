@@ -386,8 +386,8 @@ const matrix: Matrix = {
     resumeEmailSending: {
       allowed: "public",
       call: async (slug) => {
-        const { id } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
-        return emailPause.resumeEmailSending(resumeToken(id));
+        const { id, emailPausedAt } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true, emailPausedAt: true } });
+        return emailPause.resumeEmailSending(resumeToken(id, emailPausedAt!));
       },
     },
   },
@@ -693,8 +693,8 @@ let installations = 0;
 async function createFixture(own: "domain" | "site" = "domain") {
   const project = await createProject(users.OWNER);
   const projectId = project.id;
-  // A Stripe customer (it had a plan once), for Manage plan.
-  await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}` } });
+  // A Stripe customer (it had a plan once), for Manage plan; its email paused, for the operator's resume link.
+  await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}`, emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
   // Replies from its own domain, verified (Settings → Support), which SES (the fake) has for it.
   const emailDomain = `${project.slug}.example.com`;
   await prisma.emailDomain.create({ data: { projectId, domain: emailDomain, address: `support@${emailDomain}`, dkimTokens: [], verifiedAt: new Date() } });
