@@ -354,7 +354,7 @@ export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string
 export async function addMessage(
   conversationId: string,
   projectId: string,
-  message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string } & Partial<ReceivedEmail>,
+  message: { author: "USER" | "TEAM"; authorId: string | null; channel: "API" | "APP" | "WIDGET" | "EMAIL"; body: string; note?: boolean } & Partial<ReceivedEmail>,
   /** More to write in the same transaction (a received email's status), with the new message's id. */
   alongside?: (tx: Prisma.TransactionClient, messageId: string) => Promise<void>,
 ) {
@@ -367,6 +367,10 @@ export async function addMessage(
     await alongside?.(tx, created.id);
     const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { userId: true, visitorHash: true } });
     await notifyInbox(tx, { projectId, conversationId, ...whose });
+    if (message.note) {
+      // The team's note to itself: nobody replied, and the user mustn't see anything move (their list is by lastMessageAt).
+      return created;
+    }
     if (message.author === "TEAM") {
       await tx.conversation.update({
         where: { id: conversationId },
@@ -382,16 +386,24 @@ export async function addMessage(
 
 export const replyToConversation = defineOperation({
   name: "conversations.reply",
-  summary: "Reply in a conversation as the team, or write as its user (`author`, by their id in your app)",
+  summary: "Reply in a conversation as the team, write an internal note (`note`: only the team sees it, never sent), or write as its user (`author`, by their id in your app)",
   method: "POST",
   path: "/conversations/{number}/messages",
   scope: "write",
   access: "team",
-  input: z.object({ number: conversationNumber, body, author: appUser.pick({ id: true }).optional() }),
+  input: z.object({
+    number: conversationNumber,
+    body,
+    author: appUser.pick({ id: true }).optional(),
+    note: z.boolean().optional().describe("An internal note: only the team sees it; it isn't sent and doesn't change the status"),
+  }),
   example: { body: "Thanks, Sam! A fix is on its way." },
   run: async ({ actor, projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     let message: MessageRow;
+    if (input.note && input.author) {
+      throw new OperationError(400, "invalid_input", "Notes are the team's: write one without an author");
+    }
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");
@@ -410,6 +422,7 @@ export const replyToConversation = defineOperation({
         authorId: teamMemberId(actor),
         channel: actor.kind === "user" ? "APP" : "API",
         body: input.body,
+        note: input.note ?? false,
       });
     }
     return message.author === "USER" ? announceUserMessage(projectId, conversation.number, message) : messageView(message);

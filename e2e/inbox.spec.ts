@@ -90,6 +90,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("");
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
 
+  // A note for the team: shown apart, never sent, and it leaves the status alone.
+  await owner.getByRole("tab", { name: "Note" }).click();
+  await owner.getByRole("textbox", { name: "Note" }).fill("Sam is on the old plan: check with billing.");
+  await owner.getByRole("button", { name: "Add note" }).click();
+  await expect(messages).toHaveCount(3);
+  await expect(messages.last()).toContainText("Note · Olive Owner");
+  await expect(messages.last()).toContainText("Sam is on the old plan: check with billing.");
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
+  await checkpoint(owner, "conversation-note");
+  await owner.getByRole("tab", { name: "Reply" }).click();
+
   // Assigned to themselves.
   await owner.getByRole("combobox", { name: "Assignee" }).click();
   await owner.getByRole("option", { name: "Olive Owner" }).click();
@@ -99,7 +110,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
-  await expect(messages).toHaveCount(3);
+  await expect(messages).toHaveCount(4);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
   // Closed, it moves to Closed; Mine has nothing left.

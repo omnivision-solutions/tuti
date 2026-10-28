@@ -51,6 +51,34 @@ test("someone the page signs in writes to the team, sees replies, and seeing the
   expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ status: "OPEN" });
 });
 
+test("the team's notes are theirs alone: the user never sees one, counts it unseen, or sees their conversation move", async () => {
+  const { project, team, auth } = await setup();
+  await widgetStartConversation(project.slug, auth, "Where's my invoice?");
+  await call(replyToConversation, team, { number: 1, body: "In Billing → Invoices." });
+  await widgetConversation(project.slug, auth, 1);
+  const before = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+
+  const note = await call(replyToConversation, team, { number: 1, body: "They're on the old plan: check with billing.", note: true });
+  expect(note).toMatchObject({ author: "team", note: true });
+  // Nobody replied: the status, how long they've waited and the last message's time stay as they were.
+  expect(await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({
+    status: before.status,
+    waitingSince: before.waitingSince,
+    lastMessageAt: before.lastMessageAt,
+  });
+  expect(await widgetConversations(project.slug, auth)).toMatchObject({ conversations: [{ unseen: 0, lastMessageAt: before.lastMessageAt }], unseen: 0 });
+  expect((await widgetConversation(project.slug, auth, 1)) as { messages: { body: string }[] }).toMatchObject({
+    messages: [{ body: "Where's my invoice?" }, { body: "In Billing → Invoices." }],
+  });
+  expect(((await widgetConversation(project.slug, auth, 1)) as { messages: unknown[] }).messages).toHaveLength(2);
+  // The team still sees it, as a note.
+  expect(await prisma.conversationMessage.count({ where: { projectId: project.id, note: true, author: "TEAM" } })).toBe(1);
+
+  // Only the team writes notes, never on a user's behalf.
+  const key = { actor: { kind: "apiKey" as const, keyId: "key", projectId: project.id, scope: "write" as const, createdById: team.actor.userId }, projectId: project.id };
+  await expect(call(replyToConversation, key, { number: 1, body: "Psst", note: true, author: { id: "user-42" } })).rejects.toMatchObject({ status: 400 });
+});
+
 test("nobody reaches another person's conversations, another project's, or any with the inbox off", async () => {
   const { project, auth } = await setup();
   await widgetStartConversation(project.slug, auth, "Mine");
