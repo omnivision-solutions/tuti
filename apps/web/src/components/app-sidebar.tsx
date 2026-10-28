@@ -50,6 +50,7 @@ import {
   SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -58,7 +59,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { THEME_DEFAULT_KEY } from "@/lib/portal-look";
 
-export type ProjectSummary = { slug: string; name: string; role: TeamRole; portalUrl: string };
+export type ProjectSummary = { slug: string; name: string; role: TeamRole; portalUrl: string; openConversations: number };
 
 /** Shared by every /app page. The current project comes from the URL, else the last one opened. */
 export function AppSidebar({
@@ -75,6 +76,7 @@ export function AppSidebar({
   const { setOpenMobile } = useSidebar();
   // On phones it's a menu over the page: a new page closes it.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
+  useOpenCountInTitle(current?.openConversations ?? 0);
 
   return (
     <Sidebar collapsible="icon">
@@ -96,6 +98,12 @@ export function AppSidebar({
                       <item.icon />
                       <span>{item.title}</span>
                     </SidebarMenuButton>
+                    {"badge" in item && !!item.badge && (
+                      <SidebarMenuBadge>
+                        {item.badge}
+                        <span className="sr-only"> open</span>
+                      </SidebarMenuBadge>
+                    )}
                   </SidebarMenuItem>
                 ))}
                 <SidebarMenuItem>
@@ -129,6 +137,26 @@ function initials(name: string) {
     .toUpperCase();
 }
 
+/** "(3) Inbox": the open conversations before every page's title, kept there as pages change it. */
+function useOpenCountInTitle(count: number) {
+  useEffect(() => {
+    const apply = () => {
+      const base = document.title.replace(/^\(\d+\) /, "");
+      const next = count > 0 ? `(${count}) ${base}` : base;
+      if (document.title !== next) {
+        document.title = next;
+      }
+    };
+    apply();
+    const observer = new MutationObserver(apply);
+    observer.observe(document.head, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      document.title = document.title.replace(/^\(\d+\) /, "");
+    };
+  }, [count]);
+}
+
 export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: string | null) {
   const params = useParams<{ project?: string }>();
   const slug = params.project ?? fallbackSlug;
@@ -139,7 +167,7 @@ function projectNav(project: ProjectSummary) {
   const base = `/app/${project.slug}`;
   return [
     { title: "Home", href: base, icon: HouseIcon },
-    { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon },
+    { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: project.openConversations },
     { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon },
     { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
     { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true },

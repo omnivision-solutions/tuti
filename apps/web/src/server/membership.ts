@@ -29,10 +29,17 @@ export async function getAdminProject(slug: string) {
 export async function listMyProjects(userId: string) {
   const memberships = await prisma.teamMember.findMany({
     where: { userId },
-    select: { role: true, project: { select: { slug: true, name: true } } },
+    select: { role: true, project: { select: { id: true, slug: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
-  return memberships.map((m) => ({ ...m.project, role: m.role }));
+  // Each inbox's open conversations, for the sidebar and the tab's title.
+  const open = await prisma.conversation.groupBy({
+    by: ["projectId"],
+    where: { projectId: { in: memberships.map((m) => m.project.id) }, status: "OPEN", spam: false },
+    _count: true,
+  });
+  const counts = new Map(open.map((row) => [row.projectId, row._count]));
+  return memberships.map(({ role, project: { id, ...project } }) => ({ ...project, role, openConversations: counts.get(id) ?? 0 }));
 }
 
 /**

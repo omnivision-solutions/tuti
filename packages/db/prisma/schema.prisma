@@ -322,11 +322,13 @@ model Project {
 /// The team that manages a project. Users who vote and comment on its portal
 /// are plain `User`s and aren't on the team.
 model TeamMember {
-  id        String   @id @default(cuid())
-  projectId String
-  userId    String
-  role      TeamRole @default(MEMBER)
-  createdAt DateTime @default(now())
+  id                    String   @id @default(cuid())
+  projectId             String
+  userId                String
+  role                  TeamRole @default(MEMBER)
+  /// "Email me new conversations" in the inbox: new ones, and replies on unassigned ones.
+  emailNewConversations Boolean  @default(true)
+  createdAt             DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -907,6 +909,8 @@ model Conversation {
   lastMessageAt DateTime           @default(now())
   /// The user's oldest message the team hasn't answered; null once the team has replied.
   waitingSince  DateTime?
+  /// When the team was last emailed about it: at most once every 10 minutes.
+  notifiedAt    DateTime?
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
 

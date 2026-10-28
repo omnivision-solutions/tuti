@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
+import { countEmailsTo, latestEmailTo } from "./mail";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -20,6 +21,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
 
   // Someone from the team's app, and someone known only by their email address, write in.
   const api = await apiFor(owner, slug);
+  const emailed = countEmailsTo(owner.email);
   await api("/conversations", {
     user: { id: "user-42", name: "Sam Smith", email: "e2e-sam@example.com" },
     subject: "Can't export to CSV",
@@ -30,8 +32,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await api("/users", { users: [{ id: "user-42", properties: { plan: "enterprise", seats: 40, averyveryveryverylongpropertynamewithoutanyspacesatallinit: "x" } }] });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
 
+  // The team hears of each by email.
+  const notice = await latestEmailTo(owner.email, { after: emailed + 1 });
+  expect(notice.subject).toBe("New conversation: Do you have a discount for nonprofits?");
+  expect(notice.text).toContain(`/app/${slug}/inbox/2`);
+
   const views = owner.getByRole("navigation", { name: "Views" });
   await owner.goto(`/app/${slug}/inbox`);
+  // The sidebar and the tab's title count what's open.
+  await expect(owner.getByRole("link", { name: "Inbox", exact: true }).locator("..")).toContainText("2 open");
+  await expect(owner).toHaveTitle(/^\(2\) /);
   await expect(views.getByRole("link", { name: "Open 2" })).toHaveAttribute("aria-current", "page");
   await expect(views.getByRole("link", { name: "Unassigned 2" })).toBeVisible();
   const rows = owner.getByRole("main").getByRole("listitem");
@@ -105,6 +115,12 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Closed 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Can't export to CSV");
+
+  // Nobody's waiting now but the one about to be marked as spam; and the owner turns the emails off.
+  await expect(owner).toHaveTitle(/^\(1\) /);
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Stop emailing me new conversations" }).click();
+  await expect(owner.getByText("You won't be emailed new conversations")).toBeVisible();
 
   // The other one is spam: marked from More actions, it leaves the inbox for Spam.
   await owner.goto(`/app/${slug}/inbox/2`);

@@ -1,4 +1,6 @@
 import { type ConversationOrigin, type ConversationStatus, type MessageChannel, type Prisma, prisma } from "@tuti/db";
+import { enqueue } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { z } from "zod";
 
 import { appUrl } from "@/lib/hosts";
@@ -229,17 +231,29 @@ export const createConversation = defineOperation({
   },
 });
 
-/** A new conversation as the API shows it, told to the project's webhooks. */
+/** Emails the team about the user's message (packages/jobs, conversation-message); never fails or holds up the request. */
+async function tellTeam(messageId: string) {
+  try {
+    await enqueue("conversationMessage", { messageId });
+  } catch (error) {
+    // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
+    log.error("Enqueueing the team's email about a message failed", { error, messageId });
+  }
+}
+
+/** A new conversation as the API shows it, told to the project's webhooks and team. */
 export async function announceConversation(projectId: string, conversation: ConversationRow, message: MessageRow) {
   const result = { ...view(conversation, await projectSlug(projectId)), messages: [messageView(message)] };
   await emitEvent(projectId, "conversation.created", result);
+  await tellTeam(message.id);
   return result;
 }
 
-/** A message from the user, told to the project's webhooks (the team's own replies aren't, so they don't echo back). */
+/** A message from the user, told to the project's webhooks and team (the team's own replies aren't, so they don't echo back). */
 export async function announceUserMessage(projectId: string, number: number, message: MessageRow) {
   const result = messageView(message);
   await emitEvent(projectId, "conversation.message_created", { conversation: number, message: result });
+  await tellTeam(message.id);
   return result;
 }
 
