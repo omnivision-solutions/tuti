@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, type Route, test } from "@playwright/t
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, png, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { modelRequests, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -1128,6 +1128,30 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(reply).toBeInViewport();
   expect((await reply.boundingBox())!.y).toBe(y);
   await checkpoint(visitor, "widget-messages-scrolled-up", { fullPage: false });
+
+  // The team's next reply has a tall image, which loads after the panel has scrolled to it: the panel
+  // follows it. As in Safari, which keeps no place as things above it grow (Chrome's scroll anchoring does).
+  const panelFrame = visitor.frames().find((frame) => frame.url().includes("/widget"))!;
+  await panelFrame.addStyleTag({ content: "[data-widget-scroll] { overflow-anchor: none }" });
+  await visitor.route("**/*", async (route) => {
+    if (route.request().resourceType() === "image") {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    await route.fallback();
+  });
+  await owner.goto(`/app/${slug}/inbox/1`);
+  await owner.locator('input[type="file"]').setInputFiles({ name: "tall.png", mimeType: "image/png", buffer: png(100, 600) });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText("tall.png");
+  await owner.getByRole("textbox", { name: "Reply" }).fill("Here's where it is.");
+  await owner.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(messages).toHaveCount(15);
+  await expect(widget.getByRole("img", { name: "tall.png" })).toHaveJSProperty("complete", true);
+  // Above the reply box, not under it.
+  await expect(async () => {
+    const newest = (await messages.last().boundingBox())!;
+    expect(newest.y + newest.height).toBeLessThanOrEqual((await reply.boundingBox())!.y);
+  }).toPass({ timeout: 5_000 });
+  await visitor.unroute("**/*");
 
   // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
   // signed in, not Sam, whose messages go.

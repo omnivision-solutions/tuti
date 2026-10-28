@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
+import { useScrollToEnd } from "@/components/scroll-to-end";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -618,13 +619,11 @@ function Conversation({
     [projectSlug, auth, number, shown],
   );
   const reload = usePolling(load, live);
-  // The newest message in view as it opens and as messages come (the panel scrolls, not the customer's page).
+  // The newest message in view as it opens, as messages come and as their images load (the panel
+  // scrolls, not the customer's page).
   const list = useRef<HTMLOListElement>(null);
-  const count = opened?.messages.length ?? 0;
-  useEffect(() => {
-    const panel = list.current?.closest("[data-widget-scroll]");
-    panel?.scrollTo({ top: panel.scrollHeight });
-  }, [count]);
+  const panel = useCallback(() => list.current?.closest("[data-widget-scroll]") ?? null, []);
+  useScrollToEnd(opened?.messages.length ?? 0, panel);
 
   return (
     <div className="flex flex-1 flex-col gap-3">
