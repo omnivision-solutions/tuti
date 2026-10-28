@@ -1,6 +1,6 @@
 import { type Prisma, prisma } from "@tuti/db";
 import { emailConfigured, portalReaderEmail, sendEmail } from "@tuti/email";
-import { lockProject } from "@tuti/jobs";
+import { lockProject, projectSender } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { z } from "zod";
 
@@ -161,12 +161,13 @@ export const addPortalReaders = defineOperation({
         select: { name: true, email: true },
       });
       const url = signInUrl;
+      const sender = await projectSender(projectId, inviter?.email);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
         toEmail.map((email) =>
           sendEmail({
             to: email,
-            replyTo: inviter?.email,
+            ...sender,
             ...portalReaderEmail({ inviterName: inviter?.name ?? project.name, projectName: project.name, email, url }),
           }),
         ),

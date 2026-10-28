@@ -124,6 +124,16 @@ on any identity in their region: deploy it in a region whose SES has only Tuti's
 keeps identities, quotas and production access per region), with the support domain and the domain
 Tuti's own mail comes from verified there.
 
+#### The project's other emails
+
+With email on, what a project sends its users (portal sign-in links and password resets, "<name> gave
+you access", "it shipped") comes from the project too: `"<Project>" <updates@<subdomain>.<domain>>`,
+or `updates@` the team's own domain once it's verified, under the project's tenant, with Reply-To
+its support address while the inbox is on, so answers land in the Inbox. On a server selling plans,
+"it shipped" waits for the operator's approval like replies do; sign-in links never wait. Tuti's own
+mail to teams (sign-up, invites, credits) stays on `EMAIL_FROM`, and without `SUPPORT_EMAIL_DOMAIN`
+everything does.
+
 #### Bounces and complaints
 
 SES's events (deliveries, bounces, complaints) go through SNS to `/api/email/events`, subscribed
