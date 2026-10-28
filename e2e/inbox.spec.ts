@@ -100,7 +100,10 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
   // Closed, it moves to Closed; Mine has nothing left.
+  // Waiting isn't theirs to pick: replying sets it.
   await owner.getByRole("combobox", { name: "Status" }).click();
+  await expect(owner.getByRole("option", { name: "Waiting" })).toBeDisabled();
+  await checkpoint(owner, "inbox-status-menu");
   await owner.getByRole("option", { name: "Closed" }).click();
   await expect(owner.getByText("Status: Closed")).toBeVisible();
   await owner.goto(`/app/${slug}/inbox`);

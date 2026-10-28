@@ -268,4 +268,50 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
   ]);
   await notify();
   return true;
+
+/** How long a user's message is given to be told about the normal way before the cron steps in. */
+const NOTICE_LATE_MS = 2 * 60 * 1000;
+/** And how long the cron keeps trying: a notice a day late isn't worth sending. */
+const NOTICE_RESUBMIT_FOR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Users' messages the team should have heard about but didn't, because queueing their notice failed
+ * (the message was saved, the queue was down): each conversation's earliest one, queued again. Should
+ * have: the conversation was last told about more than NOTIFY_EVERY_MS before it (a message inside
+ * that wait is meant to tell nobody), it isn't spam, and someone on the team would get the email.
+ */
+export async function resubmitConversationNotices(_: JobInput<"resubmitConversationNotices">, log: JobLogger): Promise<JobResult> {
+  if (!emailConfigured() || !process.env.APP_URL) {
+    return { skipped: "email isn't set up" };
+  }
+  const now = Date.now();
+  const due = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT DISTINCT ON (m."conversationId") m."id"
+    FROM "conversation_message" m
+    JOIN "conversation" c ON c."id" = m."conversationId"
+    WHERE m."author" = 'USER'
+      AND NOT c."spam"
+      AND m."createdAt" < ${new Date(now - NOTICE_LATE_MS)}
+      AND m."createdAt" > ${new Date(now - NOTICE_RESUBMIT_FOR_MS)}
+      AND (c."notifiedAt" IS NULL OR c."notifiedAt" < m."createdAt" - make_interval(secs => ${NOTIFY_EVERY_MS / 1000}))
+      AND EXISTS (
+        SELECT 1 FROM "team_member" t
+        WHERE t."projectId" = c."projectId"
+          AND (t."userId" = c."assigneeId" OR (c."assigneeId" IS NULL AND t."emailNewConversations"))
+      )
+    ORDER BY m."conversationId", m."createdAt" ASC
+    LIMIT 500`;
+  let queued = 0;
+  for (const { id } of due) {
+    try {
+      await enqueue("conversationMessage", { messageId: id });
+      queued++;
+    } catch (error) {
+      log.warn(`Couldn't queue the team's email about message ${id} again: ${String(error)}`);
+    }
+  }
+  if (due.length > 0) {
+    log.info(`Queued the team's email again for ${queued} of ${due.length} messages`);
+  }
+  return { found: due.length, queued };
 }

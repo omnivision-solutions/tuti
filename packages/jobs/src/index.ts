@@ -5,7 +5,7 @@ import { articleChanged, purgeArticles } from "./articles";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { codeChange } from "./code-changes";
-import { conversationMessage, pruneInboundEmails, sendConversationReplies } from "./conversations";
+import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
@@ -37,6 +37,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationMessage,
   pruneInboundEmails,
   sendConversationReplies,
+
+  resubmitConversationNotices,
   articleChanged,
   imageUploaded,
   cleanupMedia,
