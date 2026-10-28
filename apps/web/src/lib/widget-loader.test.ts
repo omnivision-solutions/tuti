@@ -40,6 +40,9 @@ class FakeElement {
   getAttribute(name: string) {
     return this.attributes.get(name) ?? null;
   }
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
   hasAttribute(name: string) {
     return this.attributes.has(name);
   }
@@ -133,7 +136,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       }
     },
     /** Every animation run, as [keyframes, options, the animation]. */
-    animations: [] as [object[], { duration: number }, { cancelled: boolean; onfinish: (() => void) | null; cancel(): void }][],
+    animations: [] as [object[], { duration: number }, { cancelled: boolean; reversed: number; onfinish: (() => void) | null; cancel(): void; reverse(): void }][],
     /** A key pressed on the page. */
     press(key: string) {
       documentListeners.keydown?.forEach((listener) => listener({ key }));
@@ -159,7 +162,13 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         const element = new FakeElement(tag, page);
         if (motion) {
           element.animate = (keyframes: object[], options: { duration: number }) => {
-            const animation = { cancelled: false, onfinish: null as (() => void) | null, cancel: () => void (animation.cancelled = true) };
+            const animation = {
+              cancelled: false,
+              reversed: 0,
+              onfinish: null as (() => void) | null,
+              cancel: () => void (animation.cancelled = true),
+              reverse: () => void animation.reversed++,
+            };
             page.animations.push([keyframes, options, animation]);
             return animation;
           };
@@ -190,6 +199,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       matchMedia: (query: string) => {
         const list = {
           matches: (narrow && query === "(max-width: 640px)") || (motion === "reduced" && query === "(prefers-reduced-motion: reduce)"),
+          media: query,
           onchange: null as (() => void) | null,
         };
         mediaLists.push(list);
@@ -544,31 +554,35 @@ test("data-display or TutiSettings.display picks the mode, the attribute first; 
   expect(unknown.button!.accessibleName.label).toBe("Feedback");
 });
 
-test("the panel grows out of the launcher's corner as it opens, and shrinks back before it's hidden; opened again meanwhile, it stays", async () => {
+test("the panel grows out of the launcher's corner as it opens, and shrinks back before it's hidden; turned around halfway, it goes back from where it is", async () => {
   const page = loadWidget({ motion: "full", latest: { latest: null, launcher: { position: "bottom-left" } } });
   await settled();
   expect(page.panel.style.transformOrigin).toBe("bottom left");
   page.button!.click();
   expect(page.panel.style.display).toBe("block");
-  const [keyframes, options] = page.animations[0]!;
+  const [keyframes, options, opening] = page.animations[0]!;
   expect(keyframes).toEqual([{ opacity: 0, transform: "translateY(16px) scale(0.94)" }, { opacity: 1, transform: "none" }]);
   expect(options.duration).toBe(260);
+  opening.onfinish!();
 
-  // Closing: still there while it animates away (but closed: focus is back on the button), then hidden.
+  // Closing: still there while it animates away, but closed (focus back on the button) and inert, then hidden.
   page.Tuti.close();
   const [away, , closing] = page.animations[1]!;
   expect(away).toEqual([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(16px) scale(0.94)" }]);
   expect(page.panel.style.display).toBe("block");
+  expect(page.panel.hasAttribute("inert")).toBe(true);
   expect(page.button!.getAttribute("aria-expanded")).toBe("false");
   closing.onfinish!();
   expect(page.panel.style.display).toBe("none");
 
-  // Opened again before it's gone: the closing stops, and the panel stays.
+  // Opened, then closed and opened again before either finishes: the same animation turns around each time.
   page.Tuti.open();
+  expect(page.panel.hasAttribute("inert")).toBe(false);
   page.Tuti.close();
   page.Tuti.open();
-  const stopped = page.animations[3]![2];
-  expect(stopped.cancelled).toBe(true);
+  expect(page.animations).toHaveLength(3);
+  expect(page.animations[2]![2].reversed).toBe(2);
+  page.animations[2]![2].onfinish!();
   expect(page.panel.style.display).toBe("block");
 });
 
@@ -583,6 +597,12 @@ test("a sidebar slides in from its edge; with less motion asked for, the panel j
   calm.Tuti.close();
   expect(calm.panel.style.display).toBe("none");
   expect(calm.animations).toEqual([]);
+
+  // Asked for while the page is open: from then on.
+  const page = loadWidget({ motion: "full" });
+  page.mediaLists.find((list) => (list as { media?: string }).media === "(prefers-reduced-motion: reduce)")!.matches = true;
+  page.Tuti.open();
+  expect(page.animations).toEqual([]);
 });
 
 test("sidebar: a full-height drawer on the launcher's side; Escape closes it and focus goes back to the button", async () => {

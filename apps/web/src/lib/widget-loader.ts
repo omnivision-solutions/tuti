@@ -205,15 +205,22 @@ export function widgetLoader(portalTemplate: string): string {
     });
   }
   // Opening, the panel grows out of the launcher's corner (a sidebar slides in from its edge); closing, the
-  // reverse, then it's hidden. Not for visitors who asked for less motion, nor where browsers can't animate.
-  var calm = !panel.animate || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  // reverse, then it's hidden. Not for visitors who ask for less motion (as they do now), nor where browsers
+  // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
+  var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   var onLeft = false;
   var motion = null;
   function animate(showing) {
-    if (motion) motion.cancel();
-    motion = null;
-    if (calm) {
+    if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
+    if (!panel.animate || (lessMotion && lessMotion.matches)) {
+      if (motion) motion.cancel();
+      motion = null;
       if (!showing) panel.style.display = "none";
+      return;
+    }
+    // Turned around halfway: back from where it is, not from the other end.
+    if (motion) {
+      motion.reverse();
       return;
     }
     var away = sidebar
