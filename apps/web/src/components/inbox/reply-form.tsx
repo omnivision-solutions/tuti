@@ -27,6 +27,8 @@ export function ReplyForm({
   draftWithAi?: "on" | "paused" | "off";
 }) {
   const [kind, setKind] = useState<Kind>("reply");
+  // The tab they're on now, for a draft that finishes after they've moved.
+  const current = useRef<Kind>("reply");
   const [drafts, setDrafts] = useState<Record<Kind, string>>({ reply: "", note: "" });
   const files = useUploads((file) => uploadReplyAttachment(projectSlug, file));
   const [error, setError] = useState<string>();
@@ -47,9 +49,12 @@ export function ReplyForm({
       } else if (result.draft === null) {
         setNotice(result.reason);
       } else {
-        // Into the reply's draft, whichever tab they're on now: they choose what to send.
+        // Into the reply's draft, whichever tab they're on now: they choose what to send (and hear where it went).
         const text = result.draft;
-        setDrafts((current) => ({ ...current, reply: current.reply.trim() ? `${current.reply.trimEnd()}\n\n${text}` : text }));
+        setDrafts((drafts) => ({ ...drafts, reply: drafts.reply.trim() ? `${drafts.reply.trimEnd()}\n\n${text}` : text }));
+        if (current.current !== "reply") {
+          setNotice("Your draft is ready in the Reply tab");
+        }
       }
     });
 
@@ -80,6 +85,7 @@ export function ReplyForm({
         value={kind}
         onValueChange={(value) => {
           setKind(value as Kind);
+          current.current = value as Kind;
           setError(undefined);
         }}
       >
@@ -101,6 +107,8 @@ export function ReplyForm({
             }
           }}
           rows={4}
+          // While it's sending, what's there is what's sent: nothing to add that the send would then clear or repeat.
+          readOnly={pending}
           className={note ? "border-dashed bg-highlight/40" : undefined}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
