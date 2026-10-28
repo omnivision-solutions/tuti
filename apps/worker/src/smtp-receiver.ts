@@ -1,0 +1,186 @@
+import { readFileSync } from "node:fs";
+import { hostname } from "node:os";
+
+import { log } from "@tuti/shared";
+import { signInbound } from "@tuti/shared/inbound-signature";
+import { authenticate } from "mailauth";
+import { SMTPServer, type SMTPServerSession } from "smtp-server";
+
+/**
+ * Receiving the support domain's mail on a self-hosted server (docs/support-email.md, "Your own
+ * server"): an SMTP server in the worker, the MX for the domain's subdomains, that takes mail for those
+ * addresses only, checks SPF, DKIM and DMARC itself (nothing in front of it did) and posts each message
+ * to the app's /api/inbound/email signed with INBOUND_SECRET, like tuti.so's SES Lambda does. What the
+ * app answers is what the sending server hears: taken, refused (no such address, too large), or "try
+ * again later" (the app down), so the sending server's own retries carry it until the app is back.
+ */
+
+/** As the app: bigger messages are refused (it answers 413). */
+export const MAX_BYTES = 25 * 1024 * 1024;
+
+type Post = (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<number>;
+
+export type ReceiverOptions = {
+  domain: string;
+  appUrl: string;
+  secret: string;
+  port: number;
+  host?: string;
+  /** The name the server gives itself (its banner, and the checks' authserv-id). */
+  serverName?: string;
+  /** PEM key and certificate for STARTTLS; without them, STARTTLS isn't offered. */
+  tls?: { key: string | Buffer; cert: string | Buffer };
+  /** DNS for the checks (tests give a fake one). */
+  resolver?: (name: string, type: string) => Promise<unknown>;
+  post?: Post;
+};
+
+const postWithFetch: Post = async (url, { body, headers }) => {
+  const response = await fetch(url, { method: "POST", body: new Uint8Array(body), headers, signal: AbortSignal.timeout(60_000) });
+  return response.status;
+};
+
+/** An SMTP answer as smtp-server sends it: an error carrying its code. */
+const answer = (code: number, message: string) => Object.assign(new Error(message), { responseCode: code });
+
+/** SPF, DKIM and DMARC as the app reads them (`spf=pass dkim=none dmarc=fail`). */
+export async function checkAuth(
+  raw: Buffer,
+  { ip, helo, sender, serverName, resolver }: { ip: string; helo: string; sender: string; serverName: string; resolver?: ReceiverOptions["resolver"] },
+) {
+  try {
+    const { spf, dkim, dmarc } = await authenticate(raw, {
+      ip,
+      helo,
+      sender,
+      mta: serverName,
+      disableArc: true,
+      disableBimi: true,
+      ...(resolver && { resolver: resolver as never }),
+    });
+    const dkimResults = (dkim?.results ?? []).map((result) => result.status?.result);
+    return {
+      spf: (spf && spf.status?.result) || "none",
+      dkim: dkimResults.includes("pass") ? "pass" : (dkimResults[0] ?? "none"),
+      dmarc: (dmarc && dmarc.status?.result) || "none",
+    };
+  } catch (error) {
+    // A check that couldn't run proves nothing: as if nothing was checked (nothing joins a conversation).
+    log.warn("Checking a received email's SPF, DKIM and DMARC failed", { error: String(error) });
+    return { spf: "none", dkim: "none", dmarc: "none" };
+  }
+}
+
+export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer> {
+  const domain = options.domain.toLowerCase();
+  const serverName = options.serverName ?? hostname();
+  const post = options.post ?? postWithFetch;
+  const url = new URL("/api/inbound/email", options.appUrl).toString();
+
+  const server = new SMTPServer({
+    name: serverName,
+    banner: "Tuti support inbox",
+    size: MAX_BYTES,
+    authOptional: true,
+    disabledCommands: options.tls ? ["AUTH"] : ["AUTH", "STARTTLS"],
+    ...(options.tls && { key: options.tls.key, cert: options.tls.cert }),
+    logger: false,
+    onRcptTo(address, _session, callback) {
+      const recipient = address.address.toLowerCase();
+      // Only the projects' addresses, `<anything>@<subdomain>.<domain>`: this server relays nothing.
+      callback(recipient.endsWith(`.${domain}`) ? undefined : answer(550, "No such address here"));
+    },
+    onData(stream, session, callback) {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("error", (error) => callback(error));
+      stream.on("end", () => {
+        if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
+          callback(answer(552, "Message too large"));
+          return;
+        }
+        const raw = Buffer.concat(chunks);
+        deliver(raw, session)
+          .then((code) => callback(code === 250 ? null : answer(code, code === 550 ? "No such address here" : code === 552 ? "Message too large" : "Try again later")))
+          .catch((error: unknown) => {
+            log.error("Posting a received email to the app failed", { error: String(error) });
+            callback(answer(451, "Try again later"));
+          });
+      });
+    },
+  });
+
+  /** The answer for the whole message: taken (250) unless the app refused it everywhere, or needs a retry. */
+  async function deliver(raw: Buffer, session: SMTPServerSession) {
+    const results = await checkAuth(raw, {
+      ip: session.remoteAddress,
+      helo: session.hostNameAppearsAs,
+      sender: session.envelope.mailFrom ? session.envelope.mailFrom.address : "",
+      serverName,
+      resolver: options.resolver,
+    });
+    const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
+    const statuses: number[] = [];
+    for (const { address } of session.envelope.rcptTo) {
+      const recipient = address.toLowerCase();
+      statuses.push(
+        await post(url, {
+          body: raw,
+          headers: {
+            "content-type": "message/rfc822",
+            "tuti-recipient": recipient,
+            "tuti-auth": auth,
+            "tuti-signature": signInbound(options.secret, recipient, auth, raw),
+          },
+        }),
+      );
+    }
+    // Any recipient to try again: the whole message is (the app takes what it already has once).
+    if (statuses.some((status) => status !== 200 && status !== 404 && status !== 401 && status !== 413)) {
+      return 451;
+    }
+    if (statuses.every((status) => status === 413)) {
+      return 552;
+    }
+    if (statuses.every((status) => status === 404)) {
+      return 550;
+    }
+    if (statuses.some((status) => status === 401)) {
+      log.error("The app refused a received email's signature: INBOUND_SECRET differs between the worker and the app");
+    }
+    return 250;
+  }
+
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(options.port, options.host, () => {
+      server.off("error", reject);
+      server.on("error", (error) => log.error("The SMTP receiver had an error", { error: String(error) }));
+      resolve(server);
+    });
+  });
+}
+
+/** The receiver from the environment: off without INBOUND_SMTP_PORT, and needs the rest with it. */
+export function receiverFromEnv(env = process.env): ReceiverOptions | null {
+  const port = env.INBOUND_SMTP_PORT?.trim();
+  if (!port) {
+    return null;
+  }
+  const missing = ["SUPPORT_EMAIL_DOMAIN", "INBOUND_SECRET", "APP_URL"].filter((name) => !env[name]?.trim());
+  if (missing.length > 0) {
+    throw new Error(`INBOUND_SMTP_PORT is set, so these are needed too: ${missing.join(", ")}`);
+  }
+  if (Boolean(env.INBOUND_SMTP_TLS_KEY) !== Boolean(env.INBOUND_SMTP_TLS_CERT)) {
+    throw new Error("Set both INBOUND_SMTP_TLS_KEY and INBOUND_SMTP_TLS_CERT (files with the PEM key and certificate), or neither");
+  }
+  return {
+    domain: env.SUPPORT_EMAIL_DOMAIN!.trim(),
+    secret: env.INBOUND_SECRET!,
+    appUrl: env.APP_URL!.trim(),
+    port: Number(port),
+    host: env.INBOUND_SMTP_HOST?.trim() || undefined,
+    serverName: env.INBOUND_SMTP_NAME?.trim() || undefined,
+    ...(env.INBOUND_SMTP_TLS_KEY && { tls: { key: readFileSync(env.INBOUND_SMTP_TLS_KEY), cert: readFileSync(env.INBOUND_SMTP_TLS_CERT!) } }),
+  };
+}

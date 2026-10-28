@@ -4,6 +4,7 @@ import { assertEnv, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
 
 import { waitForMigration } from "./migrations";
+import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
 
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
@@ -39,5 +40,12 @@ const tasks = (Object.keys(jobs) as JobKey[]).map((key) => {
 });
 
 const worker = await hatchet.worker("tuti-worker", { workflows: tasks, slots: 20 });
+
+// A self-hosted server's own receiver for the support domain's mail (off without INBOUND_SMTP_PORT).
+const receiver = receiverFromEnv();
+if (receiver) {
+  await startSmtpReceiver(receiver);
+  log.info("Receiving the support domain's mail over SMTP", { port: receiver.port, tls: Boolean(receiver.tls) });
+}
 
 await worker.start();

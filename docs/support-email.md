@@ -51,6 +51,21 @@ over a limit: 500 emails an hour per project), `404` for an address no project h
 signature, `413` over 25 MB, and `500` when the receiver should try again (a redelivery of the same
 message is taken once). A project's mail waiting to be read is capped at 1 GB, and the server's at 20 GB.
 
+### Your own server
+
+The worker can receive the mail itself: an SMTP server for the support domain's addresses, off unless
+`INBOUND_SMTP_PORT` is set (see `apps/worker/.env.example`).
+
+- **DNS:** point the domain's subdomains at the worker's host, `*.<domain> MX 10 <host>`, and open
+  port 25 to it (map it to `INBOUND_SMTP_PORT` if the worker listens on another).
+- **Settings:** the worker needs `SUPPORT_EMAIL_DOMAIN` and `INBOUND_SECRET` (the web app's values)
+  and `APP_URL`. Set `INBOUND_SMTP_NAME` to the MX host's name. With `INBOUND_SMTP_TLS_KEY` and
+  `INBOUND_SMTP_TLS_CERT` (PEM files), it offers STARTTLS; without them, mail arrives unencrypted.
+- **What it does:** it takes mail only for `<anything>@<subdomain>.<domain>` (it relays nothing), checks
+  SPF, DKIM and DMARC itself, and posts each message to the app signed with `INBOUND_SECRET`. The
+  sending server hears what the app answered: taken, refused (no project has the address, or the
+  message is over 25 MB), or "try again later" while the app is down, so it retries on its own.
+
 ### Amazon SES (tuti.so)
 
 On tuti.so, Amazon SES receives mail for `tuti.email`, and a small Lambda posts it

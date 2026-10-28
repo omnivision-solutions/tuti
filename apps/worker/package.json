@@ -21,17 +21,20 @@
     "@tuti/jobs": "workspace:*",
     "@tuti/shared": "workspace:*",
     "aws4fetch": "^1.0.20",
+    "mailauth": "^8.0.4",
     "nodemailer": "^10.1.2",
     "pg": "8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sharp": "^0.35.5",
+    "smtp-server": "^3.19.23",
     "undici": "^7.30.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tuti/typescript-config": "workspace:*",
     "@types/node": "^22",
+    "@types/smtp-server": "^3.5.13",
     "tsup": "^8",
     "tsx": "^4",
     "typescript": "^6.0.3"
