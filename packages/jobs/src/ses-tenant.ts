@@ -1,6 +1,8 @@
 import { prisma } from "@tuti/db";
 import { ses } from "@tuti/shared/ses";
 
+import { withEmailDomainLocks } from "./email-domains";
+
 /**
  * The headers that send a project's email under its Amazon SES tenant (docs/plan.md, Support inbox,
  * item 11), set up before its first email: the tenant (so SES pauses only the project whose mail
@@ -19,11 +21,17 @@ export async function sesTenantHeaders(projectId: string, domain: string, teamDo
   // account or region, sets it up again.
   const identities = [domain, ...(teamDomain ? [teamDomain] : [])].map((name) => api.identityArn(name));
   const setUp = [tenant, ...identities].join(" ");
-  const { sesTenant } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } });
-  if (sesTenant !== setUp) {
-    await api.createTenant(tenant);
-    await Promise.all([...identities, api.configurationSetArn].map((arn) => api.associate(tenant, arn)));
-    await prisma.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
+  const current = async () => (await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } })).sesTenant;
+  if ((await current()) !== setUp) {
+    // Not while the team's domain is being removed (SES won't delete an identity a tenant uses).
+    await withEmailDomainLocks([projectId], async () => {
+      if ((await current()) === setUp) {
+        return;
+      }
+      await api.createTenant(tenant);
+      await Promise.all([...identities, api.configurationSetArn].map((arn) => api.associate(tenant, arn)));
+      await prisma.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
+    });
   }
   return { "X-SES-TENANT": tenant, "X-SES-CONFIGURATION-SET": api.configurationSet };
 }

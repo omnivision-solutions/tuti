@@ -175,3 +175,32 @@ test("a domain left in SES by a project since deleted can be taken", async () =>
   await call(setEmailDomain, team, { address: `support@${domain}` });
   expect(ses.identities.get(domain)!.tags).toEqual({ "tuti-project": project.id });
 });
+
+test("a domain that was verified and stopped says why until it's fixed, and is never let go as never verified", async () => {
+  const { project, team } = await setup();
+  const domain = `${project.slug}.example.com`;
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  ses.identities.get(domain)!.verified = true;
+  await handlers.checkEmailDomains({}, log);
+  ses.identities.get(domain)!.verified = false;
+  await prisma.emailDomain.update({ where: { projectId: project.id }, data: { createdAt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } });
+  await handlers.checkEmailDomains({}, log);
+  await handlers.checkEmailDomains({}, log);
+  expect(await prisma.emailDomain.findUniqueOrThrow({ where: { projectId: project.id } })).toMatchObject({
+    verifiedAt: null,
+    error: expect.stringContaining("DKIM records"),
+  });
+  expect(ses.identities.has(domain)).toBe(true);
+});
+
+test("two setups of a project's domain at once: one after the other, and the domain kept", async () => {
+  const { project, team } = await setup();
+  const domain = `${project.slug}.example.com`;
+  const results = await Promise.allSettled([
+    call(setEmailDomain, team, { address: `support@${domain}` }),
+    call(setEmailDomain, team, { address: `help@${domain}` }),
+  ]);
+  expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+  expect(ses.identities.get(domain)!.tags).toEqual({ "tuti-project": project.id });
+  expect(await prisma.emailDomain.count({ where: { projectId: project.id } })).toBe(1);
+});
