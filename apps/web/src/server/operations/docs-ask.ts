@@ -261,7 +261,7 @@ export async function answerQuestion(
  * have been unpublished, hidden or restricted to other readers since), each with its listing
  * now (one made AI only isn't linked).
  */
-async function stillUsable(projectId: string, sections: AnswerSection[], reader: Reader): Promise<AnswerSection[]> {
+export async function stillUsable(projectId: string, sections: AnswerSection[], reader: Reader): Promise<AnswerSection[]> {
   const current = await prisma.article.findMany({
     where: {
       id: { in: sections.map((section) => section.articleId) },

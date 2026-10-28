@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vi
 import { createProject, signUp } from "@/test/helpers";
 
 import { createConversation, getConversation, replyToConversation } from "./operations/conversations";
-import { createArticle, publishArticle } from "./operations/docs";
+import { createArticle, publishArticle, unpublishArticle } from "./operations/docs";
 import { call } from "./operations/run";
 import { suggestReply, summarizeConversation } from "./operations/support-ai";
 
@@ -78,6 +78,15 @@ test("when nothing in the docs is close to what they asked, no draft, and the AI
   openai.setVector(QUESTION, along(1));
   expect(await call(suggestReply, team, { number: 1 })).toEqual({ status: "no_answer", draft: null });
   expect(model.requests).toEqual([]);
+});
+
+test("an article unpublished while the AI wrote isn't in a draft: no draft then", async () => {
+  const { team } = await setup();
+  const slug = await write(team, "Inviting your team", "Owners and admins invite people from the Team page.", 0.8);
+  await call(createConversation, team, { email: "e2e-sam@example.com", body: QUESTION });
+  openai.setVector(QUESTION, along(1));
+  model.reply(JSON.stringify({ answer: "Owners and admins invite people from the Team page.", sources: ["s1"] }), () => call(unpublishArticle, team, { slug }));
+  expect(await call(suggestReply, team, { number: 1 })).toEqual({ status: "no_answer", draft: null });
 });
 
 test("out of AI credits: no draft, and summaries are refused saying so", async () => {

@@ -391,7 +391,10 @@ const matrix: Matrix = {
   inbox: {
     replyInConversation: { allowed: "MEMBER", call: (slug) => inbox.replyInConversation(slug, 1, "Thanks!") },
     // Nothing in the docs is close to what was asked: no draft (and why), and the model isn't asked.
-    draftReplyWithAi: { allowed: "MEMBER", call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY }, () => inbox.draftReplyWithAi(slug, 1)) },
+    draftReplyWithAi: {
+      allowed: "MEMBER",
+      call: (slug) => withEnv({ OPENAI_API_KEY: FAKE_OPENAI_KEY, OPENAI_BASE_URL: openai.url }, () => inbox.draftReplyWithAi(slug, 1)),
+    },
     summarizeWithAi: { allowed: "MEMBER", before: () => model.reply("They want an invoice."), call: (slug) => inbox.summarizeWithAi(slug, 1) },
     uploadReplyAttachment: {
       allowed: "MEMBER",

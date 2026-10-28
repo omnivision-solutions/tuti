@@ -11,7 +11,7 @@ import { readerOf } from "../portal-access";
 import { assistantSettings } from "./assistant";
 import { addMessage, findConversation } from "./conversations";
 import { defineOperation, OperationError } from "./define";
-import { answerPrompt, answersEnabled, readAnswer } from "./docs-ask";
+import { answerPrompt, answersEnabled, readAnswer, stillUsable } from "./docs-ask";
 import { projectSlug } from "./read";
 
 /**
@@ -95,10 +95,15 @@ export const suggestReply = defineOperation({
     if (!answer) {
       return { status: "no_answer" as const, draft: null };
     }
+    // An article unpublished, hidden or restricted from them while the model wrote may be in the draft: no draft then.
+    const cited = await stillUsable(projectId, answer.cited, reader);
+    if (cited.length !== answer.cited.length) {
+      return { status: "no_answer" as const, draft: null };
+    }
     // The articles it used, with their links (none for an AI-only article: it has no page).
     const portal = await portalAddress(await projectSlug(projectId));
     const seen = new Set<string>();
-    const links = answer.cited
+    const links = cited
       .filter((section) => !seen.has(section.articleId) && seen.add(section.articleId))
       .map((section) => (section.listing === "AI_ONLY" ? `- ${section.title}` : `- ${section.title}: ${portal}/docs/${section.slug}`));
     return { status: "suggested" as const, draft: `${answer.answer}\n\n${links.join("\n")}` };
