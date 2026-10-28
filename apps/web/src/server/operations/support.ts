@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { plansEnabled } from "@tuti/shared";
 import { z } from "zod";
 
 import { mailSubdomain, supportAddress, supportDomain } from "../inbound";
@@ -9,7 +10,7 @@ import { defineOperation, OperationError } from "./define";
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailApprovedAt: true, emailRequestedAt: true } }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
@@ -17,7 +18,12 @@ export const supportSettings = async (projectId: string) => {
     inbox: project.supportInbox,
     // Email: whether this server receives it, the project's address (once it has one) and the latest email's time.
     email: domain
-      ? { address: subdomain ? supportAddress(subdomain.subdomain, domain) : null, lastReceivedAt: last?.createdAt ?? null }
+      ? {
+          address: subdomain ? supportAddress(subdomain.subdomain, domain) : null,
+          lastReceivedAt: last?.createdAt ?? null,
+          // On a server selling plans: whether replies are emailed to users yet (the operator approves each project).
+          approval: plansEnabled() ? { approved: !!project.emailApprovedAt, requestedAt: project.emailRequestedAt } : null,
+        }
       : null,
   };
 };

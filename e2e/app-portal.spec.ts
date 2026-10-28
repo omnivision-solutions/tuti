@@ -9,7 +9,7 @@ test("Tuti's own portal under its path on the app's domain: one sign-in for the 
   const checkpoint = checkpoints(testInfo);
   // Only its owner can create the project, once their address is verified.
   const owner = await signUp(browser, APP_URL, "Olive Owner", APP_PORTAL_OWNER);
-  await owner.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER), `${APP_URL}/api/auth/verify-email`));
+  await owner.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { subject: /verify/i }), `${APP_URL}/api/auth/verify-email`));
   await createProject(owner, "Tuti", APP_PORTAL_SLUG);
   const own = `${APP_URL}/${APP_PORTAL_SLUG}`;
 
