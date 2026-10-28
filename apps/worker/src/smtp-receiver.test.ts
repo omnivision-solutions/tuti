@@ -26,7 +26,7 @@ let server: SMTPServer | undefined;
 afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
-async function receiver(answers: number[] = []) {
+async function receiver(answers: { status: number; outcome?: string }[] = [], { maxBytes }: { maxBytes?: number } = {}) {
   const posts: { url: string; body: Buffer; headers: Record<string, string> }[] = [];
   server = await startSmtpReceiver({
     domain: "support.test",
@@ -36,14 +36,15 @@ async function receiver(answers: number[] = []) {
     host: "127.0.0.1",
     serverName: "mx.support.test",
     resolver,
+    maxBytes,
     post: async (url, request) => {
       posts.push({ url, ...request });
-      return answers.shift() ?? 200;
+      return answers.shift() ?? { status: 200, outcome: "conversation" };
     },
   });
   const { port } = server.server.address() as { port: number };
   const transport = nodemailer.createTransport({ host: "127.0.0.1", port, secure: false, ignoreTLS: true });
-  const send = (from: string, to: string[]) => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text: "Hello" });
+  const send = (from: string, to: string[], text = "Hello") => transport.sendMail({ envelope: { from, to }, from, to, subject: "Help", text });
   return { posts, send };
 }
 
@@ -73,18 +74,33 @@ test("only the support domain's subdomain addresses are taken: the server relays
 });
 
 test("what the app answers is what the sender hears: no project there, too large, or try again later", async () => {
-  const unknown = await receiver([404]);
+  const unknown = await receiver([{ status: 404, outcome: "no such address" }]);
   await expect(unknown.send("sam@example.org", ["support@nobody.support.test"])).rejects.toMatchObject({ responseCode: 550 });
   server!.close();
 
-  const down = await receiver([503]);
+  const down = await receiver([{ status: 503 }]);
   await expect(down.send("sam@example.org", ["support@acme.support.test"])).rejects.toMatchObject({ responseCode: 451 });
   server!.close();
 
+  // The app's email switched off (a 404 that isn't "no such address") or a signature it refuses (a
+  // different INBOUND_SECRET): setups to fix, so the sender keeps the mail and tries again.
+  const off = await receiver([{ status: 404 }]);
+  await expect(off.send("sam@example.org", ["support@acme.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  server!.close();
+  const unsigned = await receiver([{ status: 401 }]);
+  await expect(unsigned.send("sam@example.org", ["support@acme.support.test"])).rejects.toMatchObject({ responseCode: 451 });
+  server!.close();
+
   // Two recipients, one without a project: taken, for the one that has.
-  const mixed = await receiver([404, 200]);
+  const mixed = await receiver([{ status: 404, outcome: "no such address" }, { status: 200 }]);
   await mixed.send("sam@example.org", ["support@nobody.support.test", "support@acme.support.test"]);
   expect(mixed.posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@nobody.support.test", "support@acme.support.test"]);
+});
+
+test("a message over the limit is refused (552) and never posted", async () => {
+  const { posts, send } = await receiver([], { maxBytes: 2048 });
+  await expect(send("sam@example.org", ["support@acme.support.test"], "x".repeat(10_000))).rejects.toMatchObject({ responseCode: 552 });
+  expect(posts).toEqual([]);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {

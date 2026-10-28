@@ -64,7 +64,8 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
 - **What it does:** it takes mail only for `<anything>@<subdomain>.<domain>` (it relays nothing), checks
   SPF, DKIM and DMARC itself, and posts each message to the app signed with `INBOUND_SECRET`. The
   sending server hears what the app answered: taken, refused (no project has the address, or the
-  message is over 25 MB), or "try again later" while the app is down, so it retries on its own.
+  message is over 25 MB), or "try again later" while the app is down or set up wrong (its email off,
+  or a different `INBOUND_SECRET`, which the worker logs), so the sending server retries on its own.
 
 ### Amazon SES (tuti.so)
 

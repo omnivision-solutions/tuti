@@ -18,7 +18,9 @@ import { SMTPServer, type SMTPServerSession } from "smtp-server";
 /** As the app: bigger messages are refused (it answers 413). */
 export const MAX_BYTES = 25 * 1024 * 1024;
 
-type Post = (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<number>;
+/** The app's answer: its status, and for a 200 or 404 its `outcome` (`no such address` for a 404 that means it). */
+type Answer = { status: number; outcome?: string };
+type Post = (url: string, request: { body: Buffer; headers: Record<string, string> }) => Promise<Answer>;
 
 export type ReceiverOptions = {
   domain: string;
@@ -30,6 +32,8 @@ export type ReceiverOptions = {
   serverName?: string;
   /** PEM key and certificate for STARTTLS; without them, STARTTLS isn't offered. */
   tls?: { key: string | Buffer; cert: string | Buffer };
+  /** The largest message taken (MAX_BYTES; tests set less). */
+  maxBytes?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: (name: string, type: string) => Promise<unknown>;
   post?: Post;
@@ -37,7 +41,8 @@ export type ReceiverOptions = {
 
 const postWithFetch: Post = async (url, { body, headers }) => {
   const response = await fetch(url, { method: "POST", body: new Uint8Array(body), headers, signal: AbortSignal.timeout(60_000) });
-  return response.status;
+  const json = (await response.json().catch(() => null)) as { outcome?: unknown } | null;
+  return { status: response.status, ...(typeof json?.outcome === "string" && { outcome: json.outcome }) };
 };
 
 /** An SMTP answer as smtp-server sends it: an error carrying its code. */
@@ -80,7 +85,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const server = new SMTPServer({
     name: serverName,
     banner: "Tuti support inbox",
-    size: MAX_BYTES,
+    size: options.maxBytes ?? MAX_BYTES,
     authOptional: true,
     disabledCommands: options.tls ? ["AUTH"] : ["AUTH", "STARTTLS"],
     ...(options.tls && { key: options.tls.key, cert: options.tls.cert }),
@@ -92,7 +97,12 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     },
     onData(stream, session, callback) {
       const chunks: Buffer[] = [];
-      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      // Past the limit, nothing more is kept: it's refused at the end, whatever its size.
+      stream.on("data", (chunk: Buffer) => {
+        if (!(stream as { sizeExceeded?: boolean }).sizeExceeded) {
+          chunks.push(chunk);
+        }
+      });
       stream.on("error", (error) => callback(error));
       stream.on("end", () => {
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
@@ -120,10 +130,10 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       resolver: options.resolver,
     });
     const auth = `spf=${results.spf} dkim=${results.dkim} dmarc=${results.dmarc}`;
-    const statuses: number[] = [];
+    const answers: Answer[] = [];
     for (const { address } of session.envelope.rcptTo) {
       const recipient = address.toLowerCase();
-      statuses.push(
+      answers.push(
         await post(url, {
           body: raw,
           headers: {
@@ -135,18 +145,23 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
         }),
       );
     }
+    const taken = (a: Answer) => a.status === 200;
+    // A 404 is the app saying no project has the address only when it says so; otherwise (its email
+    // switched off, a proxy) it's a setup to fix, as a 401 is (INBOUND_SECRET differs, or the clocks).
+    const noSuchAddress = (a: Answer) => a.status === 404 && a.outcome === "no such address";
+    const tooLarge = (a: Answer) => a.status === 413;
+    if (answers.some((a) => a.status === 401)) {
+      log.error("The app refused a received email's signature: is INBOUND_SECRET the same for the worker and the app, and are their clocks right?");
+    }
     // Any recipient to try again: the whole message is (the app takes what it already has once).
-    if (statuses.some((status) => status !== 200 && status !== 404 && status !== 401 && status !== 413)) {
+    if (!answers.every((a) => taken(a) || noSuchAddress(a) || tooLarge(a))) {
       return 451;
     }
-    if (statuses.every((status) => status === 413)) {
+    if (answers.every(tooLarge)) {
       return 552;
     }
-    if (statuses.every((status) => status === 404)) {
+    if (answers.every(noSuchAddress)) {
       return 550;
-    }
-    if (statuses.some((status) => status === 401)) {
-      log.error("The app refused a received email's signature: INBOUND_SECRET differs between the worker and the app");
     }
     return 250;
   }
