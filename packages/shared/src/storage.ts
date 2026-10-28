@@ -14,8 +14,11 @@ export type MediaStorage = {
   get(key: string): Promise<Uint8Array>;
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   delete(key: string): Promise<void>;
-  /** A URL that reads the file for a while (see SIGNED_WINDOW_SECONDS). */
-  signedUrl(key: string, now?: number): Promise<string>;
+  /**
+   * A URL that reads the file for a while (see SIGNED_WINDOW_SECONDS). With `download`, the browser
+   * saves it under that name instead of showing it (any file someone sent: never rendered on the host).
+   */
+  signedUrl(key: string, now?: number, download?: string): Promise<string>;
 };
 
 const SETTINGS = ["MEDIA_S3_ENDPOINT", "MEDIA_S3_BUCKET", "MEDIA_S3_ACCESS_KEY_ID", "MEDIA_S3_SECRET_ACCESS_KEY"] as const;
@@ -84,10 +87,15 @@ export function mediaStorage(): MediaStorage | null {
     async delete(key) {
       await send(key, { method: "DELETE" }, [200, 204, 404]);
     },
-    async signedUrl(key, now = Date.now()) {
+    async signedUrl(key, now = Date.now(), download) {
       const windowStart = new Date(now - (now % (SIGNED_WINDOW_SECONDS * 1000)));
       const url = new URL(objectUrl(key));
       url.searchParams.set("X-Amz-Expires", String(2 * SIGNED_WINDOW_SECONDS));
+      if (download) {
+        // Signed with the rest, so it can't be changed: saved, as this name, with no type to render as.
+        url.searchParams.set("response-content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(download)}`);
+        url.searchParams.set("response-content-type", "application/octet-stream");
+      }
       // 20261022T130000Z
       const datetime = windowStart.toISOString().replace(/[:-]|\.\d{3}/g, "");
       return (await client.sign(url.href, { method: "GET", aws: { signQuery: true, datetime } })).url;

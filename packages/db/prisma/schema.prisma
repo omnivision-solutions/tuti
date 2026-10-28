@@ -274,54 +274,55 @@ model Project {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  team                 TeamMember[]
-  boards               Board[]
-  posts                Post[]
-  conversations        Conversation[]
-  conversationMessages ConversationMessage[]
-  widgetPresence       WidgetPresence[]
-  mailSubdomain        MailSubdomain?
-  inboundEmails        InboundEmail[]
-  votes                Vote[]
-  comments             Comment[]
-  ssoIdentities        SsoIdentity[]
-  ssoTokenUses         SsoTokenUse[]
-  portalHandoffs       PortalHandoff[]
-  signInLinks          SignInLink[]
-  apiKeys              ApiKey[]
-  githubInstallation   GithubInstallation?
-  postLinks            PostLink[]
-  webhooks             Webhook[]
-  media                Media[]               @relation("projectMedia")
-  brandLogo            Media?                @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
-  brandLogoDark        Media?                @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
-  brandFavicon         Media?                @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
-  seoImage             Media?                @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
-  invitations          Invitation[]
-  boardRedirects       BoardRedirect[]
-  postEmbeddings       PostEmbedding[]
-  duplicateSuggestions DuplicateSuggestion[]
-  emailOptOuts         EmailOptOut[]
-  changelogEntries     ChangelogEntry[]
-  articles             Article[]
-  articleChunks        ArticleChunk[]
-  collections          Collection[]
-  docsTabs             DocsTab[]
-  readerGroups         ReaderGroup[]
-  docsRedirects        DocsRedirect[]
-  portalReaders        PortalReader[]
-  portalReaderEmails   PortalReaderEmail[]
-  customDomain         CustomDomain?
-  siteMount            SiteMount?
-  portalRedirects      PortalRedirect[]
-  docsSearchDays       DocsSearchDay[]
-  docsFailedSearchDays DocsFailedSearchDay[]
-  docsQuestions        DocsQuestion[]
-  docsGapDismissals    DocsGapDismissal[]
-  changelogSeen        ChangelogSeen[]
-  codeChanges          CodeChange[]
-  aiUsage              AiUsage[]
-  aiCreditGrants       AiCreditGrant[]
+  team                    TeamMember[]
+  boards                  Board[]
+  posts                   Post[]
+  conversations           Conversation[]
+  conversationMessages    ConversationMessage[]
+  conversationAttachments ConversationAttachment[]
+  widgetPresence          WidgetPresence[]
+  mailSubdomain           MailSubdomain?
+  inboundEmails           InboundEmail[]
+  votes                   Vote[]
+  comments                Comment[]
+  ssoIdentities           SsoIdentity[]
+  ssoTokenUses            SsoTokenUse[]
+  portalHandoffs          PortalHandoff[]
+  signInLinks             SignInLink[]
+  apiKeys                 ApiKey[]
+  githubInstallation      GithubInstallation?
+  postLinks               PostLink[]
+  webhooks                Webhook[]
+  media                   Media[]                  @relation("projectMedia")
+  brandLogo               Media?                   @relation("brandLogo", fields: [brandLogoId], references: [id], onDelete: SetNull)
+  brandLogoDark           Media?                   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
+  brandFavicon            Media?                   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
+  seoImage                Media?                   @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+  invitations             Invitation[]
+  boardRedirects          BoardRedirect[]
+  postEmbeddings          PostEmbedding[]
+  duplicateSuggestions    DuplicateSuggestion[]
+  emailOptOuts            EmailOptOut[]
+  changelogEntries        ChangelogEntry[]
+  articles                Article[]
+  articleChunks           ArticleChunk[]
+  collections             Collection[]
+  docsTabs                DocsTab[]
+  readerGroups            ReaderGroup[]
+  docsRedirects           DocsRedirect[]
+  portalReaders           PortalReader[]
+  portalReaderEmails      PortalReaderEmail[]
+  customDomain            CustomDomain?
+  siteMount               SiteMount?
+  portalRedirects         PortalRedirect[]
+  docsSearchDays          DocsSearchDay[]
+  docsFailedSearchDays    DocsFailedSearchDay[]
+  docsQuestions           DocsQuestion[]
+  docsGapDismissals       DocsGapDismissal[]
+  changelogSeen           ChangelogSeen[]
+  codeChanges             CodeChange[]
+  aiUsage                 AiUsage[]
+  aiCreditGrants          AiCreditGrant[]
 
   @@map("project")
 }
@@ -1039,14 +1040,38 @@ model ConversationMessage {
   deliveredMessageId String?        @unique
   /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
   seenAt             DateTime?
+  /// Attachments it came with that couldn't be kept (the server has no media storage); shown on the message.
+  attachmentsDropped Int            @default(0)
   createdAt          DateTime       @default(now())
 
-  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  authorUser   User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  project      Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  conversation Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  authorUser   User?                    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  attachments  ConversationAttachment[]
 
   @@index([conversationId, createdAt])
   @@map("conversation_message")
+}
+
+/// A file that came with a message (docs/plan.md, Support inbox, item 9), kept as it was in the media
+/// storage under `key` (private: read with signed links). Not a `media` row: those are images an
+/// account uploaded, processed for the web; an attachment may be any file, from anyone, kept whole.
+model ConversationAttachment {
+  id          String   @id @default(cuid())
+  projectId   String
+  messageId   String
+  key         String
+  filename    String
+  contentType String
+  size        Int
+  createdAt   DateTime @default(now())
+
+  project Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  message ConversationMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([projectId])
+  @@map("conversation_attachment")
 }
 
 model Vote {

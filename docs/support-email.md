@@ -22,6 +22,10 @@ users keep writing to the address they know.
 Mailing lists (like Google Groups) don't work for forwarding: their mail is list mail, which the inbox
 ignores along with auto-replies and bounces.
 
+Attachments come with the email: images show in the conversation, other files download under their
+name. They're kept in the server's file storage (`MEDIA_S3_*`); without it, the message says how many
+weren't kept.
+
 A reply from someone comes back into its conversation when it's sent to the conversation's own
 address (replies by email set it as Reply-To) by its person, and their mail passed DMARC; anything
 else starts a new conversation. Mail that failed DMARC goes to Spam.

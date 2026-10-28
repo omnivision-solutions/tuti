@@ -197,6 +197,19 @@ test("with an address for the project, an email to it lands in the inbox without
   await expect(messages).toHaveText([/I can't find my October invoice\.\s*Show the whole email/]);
   await owner.getByText("Show the whole email").click();
   await expect(messages.first()).toContainText("> earlier");
+
+  // Another email with a screenshot and a PDF: the image shows, the PDF downloads under its name.
+  await receive(address, emailWithAttachments("Kim Lee <e2e-kim@example.com>", "Screenshot of the billing page"));
+  await owner.goto(`/app/${slug}/inbox`);
+  await owner.getByRole("link", { name: "Screenshot of the billing page" }).click();
+  await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
+  const pdf = owner.getByRole("list", { name: "Attachments" }).getByRole("link", { name: "Invoice Oct.pdf" });
+  await expect(pdf).toBeVisible();
+  expect(new URL((await pdf.getAttribute("href"))!).searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''Invoice%20Oct.pdf");
+  const download = await owner.request.get((await pdf.getAttribute("href"))!);
+  expect(await download.text()).toBe("%PDF-1.4 the invoice");
+  await checkpoint(owner, "email-attachments");
+
   await owner.goto(`/app/${slug}/settings/support`);
   await expect(owner.getByText(/^Last email received/)).toBeVisible();
 });
@@ -204,6 +217,39 @@ test("with an address for the project, an email to it lands in the inbox without
 /** A raw email as a mail provider delivers it. */
 function rawEmail(from: string, subject: string, body: string) {
   return [`From: ${from}`, `Subject: ${subject}`, `Message-ID: <${randomUUID()}@mail.example.com>`, "Content-Type: text/plain; charset=utf-8", "", body].join("\r\n");
+}
+
+/** A small PNG (160×90, a gradient), so the screenshot shows a real image. */
+const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAKAAAABaCAIAAACwpMoFAAAJvUlEQVR42u3RWRKCgGEA0BysKiIgggoqoCguyHWa7m3SvU3SJl2SNlvbc3Ci/jnvDA4z7wbvB3/wh+PHDHMsEGCJECtEiJFgjRQbZMixxQ57FChxwBEnVKjR4IwLWlxxQ4c7HnjihR5vDPjBFPztwT8cP2aYY4EAS4RYIUKMBGuk2CBDji122KNAiQOOOKFCjQZnXNDiihs63PHAEy/0eGPAFPz1wX80fswwxwIBlgixQoQYCdZIsUGGHFvssEeBEgcccUKFGg3OuKDFFTd0uOOBJ17o8caAKfjrg/94/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB//J+DHDHAsEWCLEChFiJFgjxQYZcmyxwx4FShxwxAkVajQ444IWV9zQ4Y4HnnihxxsDpuCvD/7T8WOGORYIsESIFSLESLBGig0y5Nhihz0KlDjgiBMq1GhwxgUtrrihwx0PPPFCjzcGTMFfH/xn48cMcywQYIkQK0SIkWCNFBtkyLHFDnsUKHHAESdUqNHgjAtaXHFDhzseeOKFHm8MmIK/PvjPx48Z5lggwBIhVogQI8EaKTbIkGOLHfYoUOKAI06oUKPBGRe0uOKGDnc88MQLPd4YMAV/ffBfjB8zzLFAgCVCrBAhRoI1UmyQIccWO+xRoMQBR5xQoUaDMy5occUNHe544IkXerwxYAr++uC/HD9mmGOBAEuEWCFCjARrpNggQ44tdtijQIkDjjihQo0GZ1zQ4oobOtzxwBMv9HhjwBT89cF/NX7MMMcCAZYIsUKEGAnWSLFBhhxb7LBHgRIHHHFChRoNzrigxRU3dLjjgSde6PHGgCn464N/NH7MMMcCAZYIsUKEGAnWSLFBhhxb7LBHgRIHHHFChRoNzrigxRU3dLjjgSde6PHGgCn464N/PH7MMMcCAZYIsUKEGAnWSLFBhhxb7LBHgRIHHHFChRoNzrigxRU3dLjjgSde6PHGgCn464P/evyYYY4FAiwRYoUIMRKskWKDDDm22GGPAiUOOOKECjUanHFBiytu6HDHA0+80OONAVPw1wf/zfgxwxwLBFgixAoRYiRYI8UGGXJsscMeBUoccMQJFWo0OOOCFlfc0OGOB554occbA6bgrw/+2/FjhjkWCLBEiBUixEiwRooNMuTYYoc9CpQ44IgTKtRocMYFLa64ocMdDzzxQo83BkzBXx/8d+PHDHMsEGCJECtEiJFgjRQbZMixxQ57FChxwBEnVKjR4IwLWlxxQ4c7HnjihR5vDJiCvz7478ePGeZYIMASIVaIECPBGik2yJBjix32KFDigCNOqFCjwRkXtLjihg53PPDECz3eGDAFf33wP4wfM8yxQIAlQqwQIUaCNVJskCHHFjvsUaDEAUecUKFGgzMuaHHFDR3ueOCJF3q8MWAK/vrgfxw/ZphjgQBLhFghQowEa6TYIEOOLXbYo0CJA444oUKNBmdc0OKKGzrc8cATL/R4Y8AU/PXB/zR+zDDHAgGWCLFChBgJ1kixQYYcW+ywR4ESBxxxQoUaDc64oMUVN3S444EnXujxxoAp+OuD/3n8mGGOBQIsEWKFCDESrJFigww5tthhjwIlDjjihAo1GpxxQYsrbuhwxwNPvNDjjQFT8NcH/2T8mGGOBQIsEWKFCDESrJFigww5tthhjwIlDjjihAo1GpxxQYsrbuhwxwNPvNDjjQFT8NcH/3T8mGGOBQIsEWKFCDESrJFigww5tthhjwIlDjjihAo1GpxxQYsrbuhwxwNPvNDjjQFT8NcH/2z8mGGOBQIsEWKFCDESrJFigww5tthhjwIlDjjihAo1GpxxQYsrbuhwxwNPvNDjjQFT8NcH/8v4McMcCwRYIsQKEWIkWCPFBhlybLHDHgVKHHDECRVqNDjjghZX3NDhjgeeeKHHGwOm4K8P/tfxY4Y5FgiwRIgVIsRIsEaKDTLk2GKHPQqUOOCIEyrUaHDGBS2uuKHDHQ888UKPNwZMwV8f/PPxY4Y5FgiwRIgVIsRIsEaKDTLk2GKHPQqUOOCIEyrUaHDGBS2uuKHDHQ888UKPNwZMwV8f/IvxY4Y5FgiwRIgVIsRIsEaKDTLk2GKHPQqUOOCIEyrUaHDGBS2uuKHDHQ888UKPNwZMwV8f/G/jxwxzLBBgiRArRIiRYI0UG2TIscUOexQoccARJ1So0eCMC1pccUOHOx544oUebwyYgr8++N/HjxnmWCDAEiFWiBAjwRopNsiQY4sd9ihQ4oAjTqhQo8EZF7S44oYOdzzwxAs93hgwBX998H+MHzPMsUCAJUKsECFGgjVSbJAhxxY77FGgxAFHnFChRoMzLmhxxQ0d7njgiRd6vDFgCv764P8cP2aYY4EAS4RYIUKMBGuk2CBDji122KNAiQOOOKFCjQZnXNDiihs63PHAEy/0eGPAFPz1wb8cP2aYY4EAS4RYIUKMBGuk2CBDji122KNAiQOOOKFCjQZnXNDiihs63PHAEy/0eGPAFPz1wb8aP2aYY4EAS4RYIUKMBGuk2CBDji122KNAiQOOOKFCjQZnXNDiihs63PHAEy/0eGPAFPz1wf81fswwxwIBlgixQoQYCdZIsUGGHFvssEeBEgcccUKFGg3OuKDFFTd0uOOBJ17o8caAKfjrg/97/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB/96/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB/9m/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB/92/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB/9u/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB/9+/JhhjgUCLBFihQgxEqyRYoMMObbYYY8CJQ444oQKNRqccUGLK27ocMcDT7zQ440BU/DXB//P+DHDHAsEWCLEChFiJFgjxQYZcmyxwx4FShxwxAkVajQ444IWV9zQ4Y4HnnihxxsDpuCvD/7f8WOGORYIsESIFSLESLBGig0y5Nhihz0KlDjgiBMq1GhwxgUtrrihwx0PPPFCjzcGTMFfH/x/48cMcywQYIkQK0SIkWCNFBtkyLHFDnsUKHHAESdUqNHgjAtaXHFDhzseeOKFHm8MmIK/PPj/AV4JOq5KOkoPAAAAAElFTkSuQmCC";
+
+/** An email with a screenshot and a PDF attached. */
+function emailWithAttachments(from: string, subject: string) {
+  return [
+    `From: ${from}`,
+    `Subject: ${subject}`,
+    `Message-ID: <${randomUUID()}@mail.example.com>`,
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="mixed"',
+    "",
+    "--mixed",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Here's what I see, and the invoice I do have.",
+    "--mixed",
+    'Content-Type: image/png; name="screenshot.png"',
+    'Content-Disposition: attachment; filename="screenshot.png"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    PIXEL,
+    "--mixed",
+    'Content-Type: application/pdf; name="Invoice Oct.pdf"',
+    'Content-Disposition: attachment; filename="Invoice Oct.pdf"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    Buffer.from("%PDF-1.4 the invoice").toString("base64"),
+    "--mixed--",
+    "",
+  ].join("\r\n");
 }
 
 /** Posts `raw` to /api/inbound/email as the receiver does, signed, with DMARC passed. */
