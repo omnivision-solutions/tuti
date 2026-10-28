@@ -6,6 +6,7 @@ import { z } from "zod";
 import { appUrl } from "@/lib/hosts";
 
 import { emitEvent } from "../events";
+import { notifyInbox } from "../live";
 import { upsertProjectUser } from "../project-users";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
@@ -321,6 +322,7 @@ export async function startConversation(
         createdAt: new Date(now.getTime() + i + 1),
       })),
     });
+    await notifyInbox(tx, { projectId, conversationId: conversation.id, userId: start.userId, visitorHash: start.visitorHash ?? null });
     return { conversation, message };
   });
 }
@@ -340,6 +342,8 @@ export async function addMessage(
       data: { projectId, conversationId, ...message, createdAt: now },
       select: messageSelect,
     });
+    const whose = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { userId: true, visitorHash: true } });
+    await notifyInbox(tx, { projectId, conversationId, ...whose });
     if (message.author === "TEAM") {
       await tx.conversation.update({
         where: { id: conversationId },
@@ -409,14 +413,18 @@ export const updateConversation = defineOperation({
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
     const assigneeId = input.assignee ? await teamMemberByEmail(projectId, input.assignee) : input.assignee;
-    const updated = await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
-        ...(assigneeId !== undefined && { assigneeId }),
-        ...(input.spam !== undefined && { spam: input.spam }),
-      },
-      select: conversationSelect,
+    const updated = await prisma.$transaction(async (tx) => {
+      const row = await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          ...(input.status && { status: input.status.toUpperCase() as ConversationStatus }),
+          ...(assigneeId !== undefined && { assigneeId }),
+          ...(input.spam !== undefined && { spam: input.spam }),
+        },
+        select: { ...conversationSelect, userId: true, visitorHash: true },
+      });
+      await notifyInbox(tx, { projectId, conversationId: row.id, userId: row.userId, visitorHash: row.visitorHash });
+      return row;
     });
     return view(updated, await projectSlug(projectId));
   },

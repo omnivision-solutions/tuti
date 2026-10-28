@@ -1048,25 +1048,31 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 
-  // The reply shows in the open widget within a few seconds (it checks every 10).
+  // The reply shows in the open widget as it's sent (live: well before its 10-second fallback check).
   const messages = widget.getByRole("list", { name: "Messages" }).getByRole("listitem");
-  await expect(messages).toHaveCount(2, { timeout: 15_000 });
+  await expect(messages).toHaveCount(2, { timeout: 4_000 });
   await expect(messages.last()).toContainText("Olive Owner");
   await expect(messages.last()).toContainText("Settings → Export, then Download.");
   await checkpoint(visitor, "widget-messages");
+
+  // And Sam's answer shows on the team's open page without reloading it.
+  await widget.getByRole("textbox", { name: "Reply" }).fill("Perfect, found it.");
+  await widget.getByRole("button", { name: "Send" }).click();
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3, { timeout: 4_000 });
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
   // Another reply while the panel's closed: the launcher's dot, until it's seen.
   await closeWithEscape(visitor, visitor.locator("#tuti-widget"));
   await owner.getByRole("textbox", { name: "Reply" }).fill("Did that work?");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
-  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(3);
+  await expect(owner.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(4);
   await visitor.reload();
   await expect(visitor.getByRole("button", { name: "Feedback, new updates" })).toBeVisible();
   await visitor.getByRole("button", { name: "Feedback, new updates" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
   await expect(widget.getByRole("list", { name: "Conversations" }).getByText("New reply")).toBeAttached();
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
-  await expect(messages).toHaveCount(3);
+  await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
 
   // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
