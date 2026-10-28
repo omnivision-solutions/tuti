@@ -210,23 +210,28 @@ async function receive(recipient: string, raw: string) {
   expect(response.status).toBe(200);
 }
 
-test("on a server selling plans, the operator approves a project before its replies are emailed", async ({ browser }) => {
+test("on a server selling plans, the operator approves a project before its replies are emailed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
   await expect(owner.getByText("Your replies reach your users in the widget for now.")).toBeVisible();
+  await checkpoint(owner, "support-email-approval-needed");
   const asked = countEmailsTo(APP_PORTAL_OWNER);
   await owner.getByRole("button", { name: "Request email sending" }).click();
   await expect(owner.getByText("Asked just now. It shows here once it's approved.")).toBeVisible();
+  await checkpoint(owner, "support-email-requested");
 
   // The operator's email: its link shows what's asked, and its button approves.
   const operator = await (await browser.newContext()).newPage();
   await operator.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { after: asked, subject: /asks to email its users$/ }), `${CLOUD_URL}/approve-email?`));
   await expect(operator.getByText("Let Acme email its users?")).toBeVisible();
+  await checkpoint(operator, "operator-approve-email");
   await operator.getByRole("button", { name: "Approve" }).click();
   await expect(operator.getByText("Acme is approved")).toBeVisible();
+  await checkpoint(operator, "operator-approved");
 
   await owner.reload();
   await expect(owner.getByText("Your replies reach your users in the widget for now.")).toHaveCount(0);
