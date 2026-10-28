@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { checkEmailDomain } from "@tuti/jobs";
+import { checkEmailDomain, dropEmailDomain, forgetIdentity } from "@tuti/jobs";
 import { planIncludes, plansEnabled } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 import { z } from "zod";
@@ -81,19 +81,40 @@ export const setEmailDomain = defineOperation({
       if (await prisma.emailDomain.findUnique({ where: { domain } })) {
         throw new OperationError(409, "domain_taken", "Another project sends from this domain");
       }
-      // SES has one identity per domain, and a domain sends as its parents allow: none of them may be someone else's.
+      // SES has one identity per domain, and a domain sends as a verified domain above it allows.
       for (const name of domainAndParents(domain)) {
         const identity = await api.identity(name);
-        if (identity && identity.projectId !== projectId) {
+        if (!identity || identity.projectId === projectId) {
+          continue;
+        }
+        // Left by a project since deleted: free again.
+        if (identity.projectId && !(await prisma.project.findUnique({ where: { id: identity.projectId }, select: { id: true } }))) {
+          await forgetIdentity(identity.projectId, name);
+          continue;
+        }
+        // The server's own (no project), the domain itself, or a domain above it that sends.
+        if (!identity.projectId || name === domain || identity.verified) {
           throw new OperationError(409, "domain_taken", "This domain is set up for sending elsewhere");
         }
       }
-      const added = (await api.addDomain(domain, projectId)) ?? (await api.identity(domain));
+      const created = await api.addDomain(domain, projectId);
+      const existing = created ? null : await api.identity(domain);
+      // Another project added it meanwhile: it's theirs.
+      if (!created && existing?.projectId !== projectId) {
+        throw new OperationError(409, "domain_taken", "Another project sends from this domain");
+      }
+      const added = created ?? existing;
       try {
         await prisma.emailDomain.create({ data: { projectId, domain, address, dkimTokens: added?.tokens ?? [] } });
       } catch (error) {
-        // Another project took it meanwhile: the identity is theirs to keep.
-        throw (error as { code?: string }).code === "P2002" ? new OperationError(409, "domain_taken", "Another project sends from this domain") : error;
+        if ((error as { code?: string }).code !== "P2002") {
+          throw error;
+        }
+        // Another request saved a domain first: SES forgets the one this one added.
+        if (created) {
+          await api.removeDomain(domain);
+        }
+        throw new OperationError(409, "domain_taken", "Another project sends from this domain");
       }
     } else {
       await prisma.emailDomain.update({ where: { projectId }, data: { address } });
@@ -127,16 +148,7 @@ export const removeEmailDomain = defineOperation({
   access: "admin",
   input: z.object({}),
   run: async ({ projectId }) => {
-    const own = await prisma.emailDomain.findUnique({ where: { projectId } });
-    if (own) {
-      const api = ses();
-      // Only an identity added for this project (another might have it since, if SES lost ours).
-      if (api && (await api.identity(own.domain))?.projectId === projectId) {
-        await api.dissociate(api.tenant(projectId), api.identityArn(own.domain));
-        await api.removeDomain(own.domain);
-      }
-      await prisma.emailDomain.delete({ where: { projectId } });
-    }
+    await dropEmailDomain(projectId);
     return supportSettings(projectId);
   },
 });

@@ -128,3 +128,50 @@ test("on a server selling plans, it needs Pro; without SES it isn't offered", as
   expect((await call(getSupportSettings, team, {})).email!.ownDomain).toBeNull();
   await expect(call(setEmailDomain, team, { address: "support@no-ses.example.com" })).rejects.toMatchObject({ status: 409 });
 });
+
+test("removed and added back, the same domain is associated with the tenant again before its next email", async () => {
+  const { project, team, reply } = await setup();
+  const domain = `${project.slug}.example.com`;
+  const tenant = `tuti-test-${project.id}`;
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  ses.identities.get(domain)!.verified = true;
+  await call(checkEmailDomainOperation, team, {});
+  await reply("Before");
+  await call(removeEmailDomain, team, {});
+  expect(ses.tenants.get(tenant)!.resources).not.toContain(`arn:aws:ses:us-east-1:000000000000:identity/${domain}`);
+
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  ses.identities.get(domain)!.verified = true;
+  await call(checkEmailDomainOperation, team, {});
+  expect((await reply("Again")).from).toContain(`<support@${domain}>`);
+  expect(ses.tenants.get(tenant)!.resources).toContain(`arn:aws:ses:us-east-1:000000000000:identity/${domain}`);
+});
+
+test("nobody can hold a domain they don't own: unverified for a week it's let go, and an unverified one above doesn't block", async () => {
+  const { project, team } = await setup();
+  const other = await setup();
+  const domain = `${project.slug}.example.com`;
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  // Someone else's subdomain of it: fine while it doesn't send.
+  await call(setEmailDomain, other.team, { address: `help@help.${domain}` });
+  await call(removeEmailDomain, other.team, {});
+
+  await handlers.checkEmailDomains({}, log);
+  expect(await prisma.emailDomain.count({ where: { projectId: project.id } })).toBe(1);
+  await prisma.emailDomain.update({ where: { projectId: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
+  await handlers.checkEmailDomains({}, log);
+  expect(await prisma.emailDomain.count({ where: { projectId: project.id } })).toBe(0);
+  expect(ses.identities.has(domain)).toBe(false);
+  await call(setEmailDomain, other.team, { address: `help@${domain}` });
+});
+
+test("a domain left in SES by a project since deleted can be taken", async () => {
+  const gone = await setup();
+  const { team, project } = await setup();
+  const domain = `${gone.project.slug}.example.com`;
+  await call(setEmailDomain, gone.team, { address: `support@${domain}` });
+  await prisma.project.delete({ where: { id: gone.project.id } });
+
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  expect(ses.identities.get(domain)!.tags).toEqual({ "tuti-project": project.id });
+});

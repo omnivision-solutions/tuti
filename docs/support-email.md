@@ -115,8 +115,9 @@ address, the app adds its domain to SES (Easy DKIM, tagged with the project) and
 SES gives. Once SES finds them ("Check", and a daily check), replies come from that address under
 the project's tenant, with the domain associated with it; Reply-To stays the conversation's own
 address, so replies still come back. If SES stops finding them, replies come from the project's
-support address again, with the reason on Settings → Support. A domain is one project's alone, and
-one SES already has for anything else (or a domain above it) is refused. Removing it has SES forget it.
+support address again, with the reason on Settings → Support. A domain is one project's alone; one
+SES already has for anything else, or under a domain that sends for anyone else, is refused, and one
+nobody verifies within a week is let go. Removing it has SES forget it.
 
 Teams' domains can be anything, so the API user and the SMTP user `infra/ses-sending` makes may act
 on any identity in their region: deploy it in a region whose SES has only Tuti's identities (SES
