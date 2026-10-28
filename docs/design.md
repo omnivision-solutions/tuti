@@ -101,8 +101,8 @@ Planned / In progress = soft, Completed = solid primary, Closed = secondary.
   articles (rows with a chevron), then a card per collection in it (its name,
   its articles, and the collections in that as folders opening their pages).
 - **Widget panel** (`/widget` on the portal, framed on customers' sites): a
-  header in the project's colour (a gradient with a soft light in its corner,
-  text that reads on it) with the tab's name and Close, the tab scrolling under
+  header in the project's colour (a gradient shading it away from the text
+  on it, black or white, so that reads everywhere) with the tab's name and Close, the tab scrolling under
   it, the tabs with icons at the bottom and "Powered by tuti" under them. On
   Home the header holds the greeting too, then a card for each part the project
   has (Messages, a docs search box, Feedback, the latest update) and the quick links.

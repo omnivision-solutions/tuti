@@ -16,7 +16,7 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
 import { WidgetMessages } from "@/components/widget-messages";
-import { textColorOn } from "@/lib/colors";
+import { widgetHeaderStyle } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/docs-queries";
@@ -105,7 +105,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <WithAssistant assistant={assistant}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
-      <header style={headerStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && "pb-6")}>
+      <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && "pb-6")}>
         <div className="flex items-center justify-between gap-2">
           {/* Not a heading: an article in Docs has the page's. */}
           <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
@@ -171,19 +171,6 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       </WithAssistant>
     </PortalBaseProvider>
   );
-}
-
-/**
- * The panel's header in the project's colour, as a gradient with a soft light in its corner, and text that
- * reads on it. The team's own colour even where the page's accent falls back to the text colour (brandCss:
- * too little contrast with the page doesn't matter here); else the brand green.
- */
-function headerStyle(color: string | null): React.CSSProperties {
-  const base = color ?? "var(--primary)";
-  return {
-    background: `radial-gradient(circle at 0 0, oklch(1 0 0 / 0.18), transparent 60%), linear-gradient(135deg, ${base}, color-mix(in oklch, ${base}, black 18%))`,
-    color: color ? textColorOn(color) : "var(--primary-foreground)",
-  };
 }
 
 /** The panel inside the docs' assistant (widget mode), where the server has AI answers. */
