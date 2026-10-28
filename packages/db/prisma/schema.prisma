@@ -292,6 +292,7 @@ model Project {
   mailSubdomain           MailSubdomain?
   inboundEmails           InboundEmail[]
   emailBlocks             EmailBlock[]
+  emailDays               ProjectEmailDay[]
   emailDomain             EmailDomain?
   votes                   Vote[]
   comments                Comment[]
@@ -984,6 +985,21 @@ model EmailEvent {
   createdAt DateTime @default(now())
 
   @@map("email_event")
+}
+
+/// A project's email on a server selling plans, by day (UTC), from SES's events: what it sent, what
+/// bounced for good and what drew complaints, for its rates (packages/jobs/src/email-limits.ts).
+model ProjectEmailDay {
+  projectId  String
+  day        DateTime @db.Date
+  sent       Int      @default(0)
+  bounced    Int      @default(0)
+  complained Int      @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, day])
+  @@map("project_email_day")
 }
 
 /// An address that marked a project's email as spam: replies by email stop for it (the widget still works).

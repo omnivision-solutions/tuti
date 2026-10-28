@@ -58,7 +58,7 @@ Resources:
       EventDestination:
         Name: tuti-events
         Enabled: true
-        MatchingEventTypes: [delivery, bounce, complaint, reject]
+        MatchingEventTypes: [send, delivery, bounce, complaint, reject]
         SnsDestination:
           TopicARN: !Ref Events
 

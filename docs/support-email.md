@@ -136,9 +136,14 @@ everything does.
 
 #### Bounces and complaints
 
-SES's events (deliveries, bounces, complaints) go through SNS to `/api/email/events`, subscribed
+SES's events (sends, deliveries, bounces, complaints) go through SNS to `/api/email/events`, subscribed
 by `infra/ses-sending/deploy.sh` run again with `APP_URL` once the app has the `SES_*` settings (it confirms the subscription). The app
 checks SNS's signature and takes only `SES_EVENTS_TOPIC_ARN`'s messages, each once. A message's
 email shows as delivered, bounced (with the receiving server's reason) or marked as spam, and its
 state only moves forward, so a late delivery never hides a bounce. Someone who marks a project's
 email as spam gets no more email from it; replies still reach them in the widget.
+
+On a server selling plans, every email a project sends (replies, "shipped", sign-in links, …) is
+tagged with the project (`X-SES-MESSAGE-TAGS`), and its events add up per project and day: sent,
+bounced for good, and complaints, kept a month. Updating the stack from before send events
+(`infra/ses-sending/deploy.sh` again) adds them.
