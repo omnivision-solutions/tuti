@@ -161,6 +161,19 @@ test("messages still being delivered count, even after their sender hangs up: pa
   expect(posts).toHaveLength(2);
 });
 
+test("a sender that hangs up halfway through a message doesn't keep its place among the messages in flight", async () => {
+  const { open, send, posts } = await receiver([], { maxInFlight: 1 });
+  const quitter = await open();
+  for (const line of ["EHLO quitter.example", "MAIL FROM:<sam@example.org>", "RCPT TO:<support@a.support.test>", "DATA", "Subject: Half"]) {
+    quitter.write(line);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+  quitter.end();
+  await quitter.closed;
+  await vi.waitFor(() => expect(send("sam@example.org", ["support@b.support.test"])).resolves.toBeDefined());
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@b.support.test"]);
+});
+
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {
   expect(receiverFromEnv({})).toBeNull();
   expect(() => receiverFromEnv({ INBOUND_SMTP_PORT: "25" })).toThrow("SUPPORT_EMAIL_DOMAIN, INBOUND_SECRET, APP_URL");

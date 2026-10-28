@@ -106,6 +106,8 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
   const perSource = new Map<string, number>();
   const started = new Map<string, number>();
   let inFlight = 0;
+  /** Messages still arriving, by session: a sender that hangs up mid-DATA never ends its stream, so its slot goes when it closes. */
+  const arriving = new Map<string, () => void>();
 
   const server = new SMTPServer({
     name: serverName,
@@ -129,6 +131,7 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       callback();
     },
     onClose(session) {
+      arriving.get(session.id)?.();
       // Only sessions it let in (a refused one closes too).
       if (started.delete(session.id)) {
         const count = (perSource.get(session.remoteAddress) ?? 1) - 1;
@@ -158,12 +161,14 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       inFlight++;
       let settled = false;
       const done: typeof callback = (...args) => {
+        arriving.delete(session.id);
         if (!settled) {
           settled = true;
           inFlight--;
           callback(...args);
         }
       };
+      arriving.set(session.id, () => done(answer(451, "Try again later")));
       const chunks: Buffer[] = [];
       // Past the limit, nothing more is kept: it's refused at the end, whatever its size.
       stream.on("data", (chunk: Buffer) => {
@@ -173,6 +178,8 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
       });
       stream.on("error", (error) => done(error));
       stream.on("end", () => {
+        // All here: it stays counted until it's delivered, even if the sender hangs up now.
+        arriving.delete(session.id);
         if ((stream as { sizeExceeded?: boolean }).sizeExceeded) {
           done(answer(552, "Message too large"));
           return;
