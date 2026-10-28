@@ -254,6 +254,7 @@ const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("the launcher shows the team's name, colour, corner and icon once the app has said what they are", async () => {
   const page = loadWidget({
+    before: (page) => void inlineMount(page),
     latest: { latest: null, launcher: { label: "Help & ideas", color: "#5b21b6", textColor: "#ffffff", position: "bottom-left", icon: "megaphone", iconUrl: null } },
   });
   expect(page.window.fetch).toHaveBeenCalledWith("https://app.tuti.example/api/widget/latest?project=acme");
@@ -267,6 +268,10 @@ test("the launcher shows the team's name, colour, corner and icon once the app h
   expect((button.children[0] as FakeElement).getAttribute("stroke")).toBe("currentColor");
   expect(button.style).toMatchObject({ width: "56px", height: "56px", borderRadius: "999px", background: "#5b21b6", color: "#ffffff", left: "20px", right: "auto" });
   expect(page.panel.style).toMatchObject({ left: "20px", right: "auto" });
+  // The panel is named after the button that opens it, and so is one already in the page.
+  expect(page.inlineFrames[0]!.title).toBe("Help & ideas");
+  page.Tuti.open();
+  expect(page.frame!.title).toBe("Help & ideas");
 });
 
 test("the team's own icon is an image; an image without its address, or an unknown icon, is the chat bubble", async () => {

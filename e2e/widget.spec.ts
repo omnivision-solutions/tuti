@@ -935,7 +935,8 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(launcher.locator("path").first()).toHaveAttribute("d", /^M11 6a13 13/);
   await checkpoint(visitor, "widget-custom-launcher");
   await launcher.click();
-  const widget = visitor.frameLocator('iframe[title="Feedback"]');
+  // The panel is named after its button.
+  const widget = visitor.frameLocator('iframe[title="Help & ideas"]');
   const status = widget.getByRole("navigation", { name: "Quick links" }).getByRole("link", { name: "Status" });
   await expect(status).toHaveAttribute("href", "https://status.example.com");
   await expect(status).toHaveAttribute("target", "_blank");

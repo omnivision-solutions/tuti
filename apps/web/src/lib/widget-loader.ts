@@ -222,6 +222,10 @@ export function widgetLoader(portalTemplate: string): string {
         label = launcher.label;
         button.title = label;
         button.setAttribute("aria-label", label);
+        // The panels are named after the button that opens them, ones already on the page too.
+        if (frame) frame.title = label;
+        var mounted = document.querySelectorAll("[data-tuti-inline]");
+        for (var m = 0; m < mounted.length; m++) if (mounted[m].__tutiFrame) mounted[m].__tutiFrame.title = label;
       }
       if (typeof launcher.icon === "string") {
         var next = newIcon(launcher.icon, launcher.icon === "image" && typeof launcher.iconUrl === "string" ? launcher.iconUrl : null);
@@ -291,7 +295,7 @@ export function widgetLoader(portalTemplate: string): string {
   function newFrame(src) {
     var element = document.createElement("iframe");
     element.src = src;
-    element.title = "Feedback";
+    element.title = label;
     css(element, { width: "100%", height: "100%", border: "0", display: "block" });
     return element;
   }

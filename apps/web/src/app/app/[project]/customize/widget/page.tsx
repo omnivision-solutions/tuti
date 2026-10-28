@@ -57,7 +57,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
       <Card>
         <CardHeader>
           <CardTitle>Launcher</CardTitle>
-          <CardDescription>The round button&apos;s name, colour, corner and icon, and quick links at the top of the panel.</CardDescription>
+          <CardDescription>The round button&apos;s name, colour, corner and icon, and quick links on the panel&apos;s Home.</CardDescription>
         </CardHeader>
         <CardContent>
           <WidgetSettings

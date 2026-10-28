@@ -145,7 +145,7 @@ export function WidgetSettings({
           name="link"
           item="Link"
           legend="Quick links"
-          description={`Up to ${MAX_LINKS} links at the top of the widget, such as your status page or docs.`}
+          description={`Up to ${MAX_LINKS} links on the widget's Home, such as your status page or docs.`}
           links={links}
         />
         {state.error && <FieldError>{state.error}</FieldError>}

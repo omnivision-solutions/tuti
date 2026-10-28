@@ -20,7 +20,7 @@ The launcher is a round button with an icon. In the Tuti app, your project's
 **Customize → Widget** (owners and admins) sets:
 
 - **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
-  the button's tooltip. It isn't shown on the button.
+  the button's tooltip; the panel it opens has the same name. It isn't shown on the button.
 - **Colour** (default the Tuti green; the icon on it is black or white, whichever reads better).
 - **Position**: bottom right or bottom left.
 - **Icon**: a chat bubble (the default), a question mark, a megaphone, a light bulb, or an
