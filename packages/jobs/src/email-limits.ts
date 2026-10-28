@@ -70,7 +70,8 @@ export const pausing = () => plansEnabled() && !!process.env.APP_PORTAL_OWNER?.t
  * On a server selling plans, pauses a project's email to its users when its bounces or complaints
  * over the last two weeks pass the limits above, before they hurt everyone's delivery: its replies
  * and "shipped" emails wait (sign-in links still go) until the operator resumes it. Counted from the
- * day after it was last resumed, so late events for emails sent before don't pause it again. The
+ * day it was last resumed (resuming clears that day's counts so far, and bounces and complaints for
+ * emails sent before it aren't counted: apps/web/src/server/email-events.ts). The
  * project's row is locked meanwhile, so a resume and other checks wait, and the totals read here are
  * the ones the pause is set on. The reason, when this call paused it; null otherwise.
  */
@@ -86,7 +87,7 @@ export async function pauseIfOverLimits(projectId: string, now = new Date()): Pr
     }
     const since = Math.max(
       Date.parse(now.toISOString().slice(0, 10)) - (RATE_DAYS - 1) * DAY_MS,
-      project.emailResumedAt ? Date.parse(project.emailResumedAt.toISOString().slice(0, 10)) + DAY_MS : 0,
+      project.emailResumedAt ? Date.parse(project.emailResumedAt.toISOString().slice(0, 10)) : 0,
     );
     const { _sum } = await tx.projectEmailDay.aggregate({
       where: { projectId, day: { gte: new Date(since) } },

@@ -16,7 +16,7 @@ export function ResumeEmailButton({ token, projectName, reason, portalUrl }: { t
   return (
     <EmptyState
       title={`Resume ${projectName}'s email?`}
-      description={`Paused: ${reason}. Look at its portal first: ${portalUrl}. Once resumed, its rates count from tomorrow.`}
+      description={`Paused: ${reason}. Look at its portal first: ${portalUrl}. Once resumed, its rates count afresh.`}
       action={
         <Button
           disabled={pending}

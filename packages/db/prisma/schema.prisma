@@ -147,7 +147,7 @@ model Project {
   emailPausedAt         DateTime?
   emailPausedReason     String?
   /// When the operator was told of the pause (null until it's sent, so a failed send is tried again),
-  /// and when it was last resumed (its rates count from the day after).
+  /// and when it was last resumed (its rates count from then).
   emailPauseToldAt      DateTime?
   emailResumedAt        DateTime?
   /// Its Amazon SES tenant and the support domain's identity associated with it (`<tenant> <identity ARN>`), once set up for its

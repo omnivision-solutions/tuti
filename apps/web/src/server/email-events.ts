@@ -71,13 +71,15 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
       }
       if (count) {
         // On the day (UTC) the email was sent, so a bounce counts against that day's sends however
-        // late it comes; nothing for a project that's gone.
-        const sentAt = Date.parse(event.mail?.timestamp ?? "");
-        const day = new Date(Number.isNaN(sentAt) ? now : sentAt).toISOString().slice(0, 10);
+        // late it comes; nothing for a project that's gone, and no bounce or complaint for an email
+        // sent before its email was last resumed (packages/jobs/src/email-limits.ts).
+        const parsed = Date.parse(event.mail?.timestamp ?? "");
+        const sentAt = new Date(Number.isNaN(parsed) ? now : parsed);
         const column = Prisma.raw(`"${count.column}"`);
+        const before = count.column === "sent" ? Prisma.empty : Prisma.sql`AND ("emailResumedAt" IS NULL OR "emailResumedAt" <= ${sentAt})`;
         await tx.$executeRaw`
           INSERT INTO "project_email_day" ("projectId", "day", ${column})
-          SELECT "id", ${day}::date, 1 FROM "project" WHERE "id" = ${count.projectId}
+          SELECT "id", ${sentAt.toISOString().slice(0, 10)}::date, 1 FROM "project" WHERE "id" = ${count.projectId} ${before}
           ON CONFLICT ("projectId", "day") DO UPDATE SET ${column} = "project_email_day".${column} + 1`;
       }
       if (change && id && reply) {
@@ -108,49 +110,54 @@ async function pauseIfOver(projectId: string) {
 }
 
 /**
- * Tells the operator of a pause, with the link that resumes it, and the project's owners and admins:
- * once, claimed first. If the operator's email fails, the claim goes back and the error has SNS try
- * again, since only that email can resume it.
+ * Tells the operator of a pause, with the link that resumes it, and the project's owners and admins,
+ * once. The operator's email goes out with the project's row locked and is marked sent in the same
+ * transaction: if anything fails (or the process dies) it rolls back, and SNS's next try sends it,
+ * since only that email can resume the project. The team's are best-effort, after.
  */
 async function tellPaused(projectId: string) {
   if (!pausing() || !emailConfigured()) {
     return;
   }
-  const toldAt = new Date();
-  const { count } = await prisma.project.updateMany({ where: { id: projectId, emailPausedAt: { not: null }, emailPauseToldAt: null }, data: { emailPauseToldAt: toldAt } });
-  if (count === 0) {
+  const state = await prisma.project.findUnique({ where: { id: projectId }, select: { emailPausedAt: true, emailPauseToldAt: true } });
+  if (!state?.emailPausedAt || state.emailPauseToldAt) {
     return;
   }
-  const project = await prisma.project.findUniqueOrThrow({
-    where: { id: projectId },
-    select: {
-      name: true,
-      slug: true,
-      emailPausedAt: true,
-      emailPausedReason: true,
-      team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } },
-    },
-  });
   const operator = process.env.APP_PORTAL_OWNER!.trim();
-  const reason = project.emailPausedReason ?? "";
-  try {
-    await sendEmail({
-      to: operator,
-      ...emailPausedEmail({
-        projectName: project.name,
-        reason,
-        portalUrl: await portalAddress(project.slug),
-        url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt!))}`, appUrl()).toString(),
-      }),
-    });
-  } catch (error) {
-    await prisma.project.updateMany({ where: { id: projectId, emailPauseToldAt: toldAt }, data: { emailPauseToldAt: null } });
-    throw error;
+  const told = await prisma.$transaction(
+    async (tx) => {
+      const [project] = await tx.$queryRaw<{ name: string; slug: string; emailPausedAt: Date | null; emailPausedReason: string | null; emailPauseToldAt: Date | null }[]>`
+        SELECT "name", "slug", "emailPausedAt", "emailPausedReason", "emailPauseToldAt" FROM "project" WHERE "id" = ${projectId} FOR UPDATE`;
+      if (!project?.emailPausedAt || project.emailPauseToldAt) {
+        return null;
+      }
+      const reason = project.emailPausedReason ?? "";
+      await sendEmail({
+        to: operator,
+        ...emailPausedEmail({
+          projectName: project.name,
+          reason,
+          portalUrl: await portalAddress(project.slug),
+          url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt))}`, appUrl()).toString(),
+        }),
+      });
+      await tx.project.update({ where: { id: projectId }, data: { emailPauseToldAt: new Date() } });
+      return { name: project.name, slug: project.slug, reason };
+    },
+    // Long enough for an SMTP send.
+    { timeout: 30_000 },
+  );
+  if (!told) {
+    return;
   }
-  const settingsUrl = new URL(`/app/${project.slug}/settings/support`, appUrl()).toString();
+  const team = await prisma.teamMember.findMany({
+    where: { projectId, role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } },
+    select: { user: { select: { email: true } } },
+  });
+  const settingsUrl = new URL(`/app/${told.slug}/settings/support`, appUrl()).toString();
   // Their answers go to the operator.
   const sent = await Promise.allSettled(
-    project.team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: project.name, reason, url: settingsUrl }) })),
+    team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: told.name, reason: told.reason, url: settingsUrl }) })),
   );
   for (const result of sent) {
     if (result.status === "rejected") {
