@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { type Prisma, prisma } from "@tuti/db";
 import { lockProject } from "@tuti/jobs";
 import { log } from "@tuti/shared";
+import { convert as htmlToText } from "html-to-text";
 import { simpleParser } from "mailparser";
 
 import { REPLY_PREFIXES, stripQuotes } from "@/lib/email-quotes";
@@ -243,7 +244,9 @@ async function readEmail(id: string, projectId: string, token: string | null, au
     return ignore("from_own_address");
   }
 
-  const { text, stripped } = stripQuotes(mail.text ?? "", subject);
+  // Its plain text, or, for mail sent as HTML only, the HTML as text (links kept, quotes as "> ").
+  const plain = mail.text ?? (typeof mail.html === "string" ? htmlToText(mail.html, { wordwrap: false, selectors: [{ selector: "img", format: "skip" }] }) : "");
+  const { text, stripped } = stripQuotes(plain, subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
   // What came with it (not the images its HTML shows inline: logos, signatures), kept before its
   // message is written, and removed again if it isn't.
@@ -256,7 +259,7 @@ async function readEmail(id: string, projectId: string, token: string | null, au
   };
   const received = {
     emailMessageId: mail.messageId ?? null,
-    original: stripped ? (mail.text ?? "").slice(0, 200_000) : null,
+    original: stripped ? plain.slice(0, 200_000) : null,
     attachmentsDropped: attachments.dropped,
   };
   try {
