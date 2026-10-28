@@ -13,8 +13,7 @@ export async function sesTenantHeaders(projectId: string, domain: string, teamDo
   if (!api) {
     return null;
   }
-  // Named after the configuration set too, so two servers on one SES account keep apart.
-  const tenant = `${api.configurationSet}-${projectId}`;
+  const tenant = api.tenant(projectId);
   // The support domain's identity, and the team's own domain's once it sends from it. Kept with the
   // identities it has (their ARNs name the account and region too): another domain, or another SES
   // account or region, sets it up again.

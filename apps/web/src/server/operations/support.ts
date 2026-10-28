@@ -132,6 +132,7 @@ export const removeEmailDomain = defineOperation({
       const api = ses();
       // Only an identity added for this project (another might have it since, if SES lost ours).
       if (api && (await api.identity(own.domain))?.projectId === projectId) {
+        await api.dissociate(api.tenant(projectId), api.identityArn(own.domain));
         await api.removeDomain(own.domain);
       }
       await prisma.emailDomain.delete({ where: { projectId } });

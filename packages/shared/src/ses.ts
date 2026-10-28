@@ -27,10 +27,14 @@ export type Ses = {
   /** The ARNs of an identity (a domain verified in SES) and of the configuration set, for tenants. */
   identityArn(domain: string): string;
   configurationSetArn: string;
+  /** A project's tenant: named after the configuration set too, so two servers on one SES account keep apart. */
+  tenant(projectId: string): string;
   /** Creates a tenant, with its own suppression list (nothing if it's there). */
   createTenant(name: string): Promise<void>;
   /** Lets a tenant's mail use a resource (SES refuses mail naming a tenant that a resource it uses isn't associated with). */
   associate(tenant: string, resourceArn: string): Promise<void>;
+  /** Undoes that (nothing if it isn't): SES won't delete an identity a tenant still uses. */
+  dissociate(tenant: string, resourceArn: string): Promise<void>;
   /**
    * Adds a team's domain (Easy DKIM, its mail naming the configuration set), tagged with the project
    * it's for; null if SES already has it (see `identity` for whose it is).
@@ -83,6 +87,7 @@ export function ses(): Ses | null {
     configurationSet: env.SES_CONFIGURATION_SET!,
     identityArn: (domain) => arn(`identity/${domain}`),
     configurationSetArn: arn(`configuration-set/${env.SES_CONFIGURATION_SET}`),
+    tenant: (projectId) => `${env.SES_CONFIGURATION_SET}-${projectId}`,
     createTenant: async (name) => {
       await call("POST", "/tenants", {
         TenantName: name,
@@ -92,6 +97,9 @@ export function ses(): Ses | null {
     },
     associate: async (tenant, resourceArn) => {
       await call("POST", "/tenants/resources", { TenantName: tenant, ResourceArn: resourceArn });
+    },
+    dissociate: async (tenant, resourceArn) => {
+      await call("POST", "/tenants/resources/delete", { TenantName: tenant, ResourceArn: resourceArn });
     },
     addDomain: async (domain, projectId) => {
       const answer = await call("POST", "/identities", {

@@ -109,6 +109,8 @@ test("removing it has SES forget the domain, and replies come from the support a
   await call(setEmailDomain, team, { address: `support@${domain}` });
   ses.identities.get(domain)!.verified = true;
   await call(checkEmailDomainOperation, team, {});
+  // Sent from it: the project's tenant uses it, which SES won't delete it from under.
+  expect((await reply("Before")).from).toContain(`<support@${domain}>`);
 
   expect((await call(removeEmailDomain, team, {})).email!.ownDomain).toMatchObject({ address: null, records: [] });
   expect(ses.identities.has(domain)).toBe(false);

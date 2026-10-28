@@ -97,6 +97,13 @@ export async function startSesFake(): Promise<SesFake> {
         tenant.resources.add(arn);
         return answer(200);
       }
+      if (req.method === "POST" && path === "/v2/email/tenants/resources/delete") {
+        const tenant = tenants.get(String(body.TenantName));
+        if (!tenant?.resources.delete(String(body.ResourceArn))) {
+          return answer(404, { message: "Resource association not found" }, "NotFoundException");
+        }
+        return answer(200);
+      }
       if (req.method === "POST" && path === "/v2/email/identities") {
         const domain = String(body.EmailIdentity);
         if (identities.has(domain)) {
@@ -121,7 +128,12 @@ export async function startSesFake(): Promise<SesFake> {
         });
       }
       if (identity && req.method === "DELETE") {
-        identities.delete(decodeURIComponent(identityPath![1]!));
+        const domain = decodeURIComponent(identityPath![1]!);
+        // Like SES: not while a tenant uses it.
+        if ([...tenants.values()].some((t) => [...t.resources].some((arn) => arn.endsWith(`:identity/${domain}`)))) {
+          return answer(400, { message: `Cannot delete ${domain} because it has tenant associations` }, "BadRequestException");
+        }
+        identities.delete(domain);
         return answer(200);
       }
       answer(404, { message: "Not found" }, "NotFoundException");
