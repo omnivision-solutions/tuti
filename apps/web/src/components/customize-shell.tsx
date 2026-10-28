@@ -20,10 +20,11 @@ import { keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
+import type { WidgetIcon } from "@/lib/widget-icons";
 import type { FormState } from "@/server/form-state";
 
 /** The widget's launcher as the team is setting it, for Widget's preview. */
-export type WidgetDraft = { label: string; color: string; position: "bottom-right" | "bottom-left" };
+export type WidgetDraft = { label: string; color: string; position: "bottom-right" | "bottom-left"; icon: WidgetIcon; iconUrl: string | null };
 
 /** The portal's search listing as the team is setting it, for SEO's preview (`image`: its address). */
 export type SeoDraft = { title: string; description: string; image: string | null };

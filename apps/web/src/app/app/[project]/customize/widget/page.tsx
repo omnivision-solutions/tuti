@@ -1,12 +1,15 @@
+import { prisma } from "@tuti/db";
+import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { CustomizeShell } from "@/components/customize-shell";
+import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { WidgetPreview } from "@/components/widget-preview";
 import { WidgetSettings } from "@/components/widget-settings";
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
-import { DEFAULT_WIDGET_COLOR, widgetSettings } from "@/server/operations/widget";
+import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
 
 import { sectionTitle } from "../sections";
 
@@ -17,13 +20,28 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
   if (!project) {
     notFound();
   }
-  const widget = (await widgetSettings({ id: project.id }))!;
+  const [settings, { plan }] = await Promise.all([
+    widgetSettings({ id: project.id }),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+  ]);
+  const widget = settings!;
   const color = widget.color ?? DEFAULT_WIDGET_COLOR;
+  // Set before the plan dropped: kept, but the launcher shows the chat bubble.
+  const kept = widget.icon !== "chat";
+  const iconLocked = !planIncludes(plan, "launcherIcon") && (
+    <PlanNotice feature="launcherIcon" projectSlug={slug} admin>
+      {kept && "Until it's back, the launcher shows the chat bubble; the icon you picked is kept."}
+    </PlanNotice>
+  );
   return (
     <CustomizeShell
       backHref={`/app/${slug}/customize`}
       title={sectionTitle("widget")}
-      preview={{ custom: <WidgetPreview src={`${portalUrl(slug)}/widget`} label={widget.label} color={color} position={widget.position} /> }}
+      preview={{
+        custom: (
+          <WidgetPreview src={`${portalUrl(slug)}/widget`} label={widget.label} color={color} position={widget.position} {...servedIcon(widget, plan)} />
+        ),
+      }}
     >
       <Card>
         <CardHeader>
@@ -39,7 +57,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
       <Card>
         <CardHeader>
           <CardTitle>Launcher</CardTitle>
-          <CardDescription>The button&apos;s label, colour and corner, and quick links at the top of the panel.</CardDescription>
+          <CardDescription>The round button&apos;s name, colour, corner and icon, and quick links at the top of the panel.</CardDescription>
         </CardHeader>
         <CardContent>
           <WidgetSettings
@@ -49,6 +67,9 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
             defaultColor={DEFAULT_WIDGET_COLOR}
             position={widget.position}
             links={widget.links}
+            icon={widget.icon}
+            iconImage={widget.iconImage}
+            iconLocked={iconLocked}
           />
         </CardContent>
       </Card>

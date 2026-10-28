@@ -28,11 +28,11 @@ test("the widget learns when the latest announcement was: recent, announced and 
   expect(OPTIONS().headers.get("access-control-allow-origin")).toBe("*");
 });
 
-test("the widget learns how its launcher looks (label, colour with readable text, and corner; not the quick links) and whether the inbox is on", async () => {
+test("the widget learns how its launcher looks (name, colour with readable text, corner and icon; not the quick links) and whether the inbox is on", async () => {
   const project = await createProject(await signUp());
   const ask = async () =>
     (await (await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`))).json()) as object;
-  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right" }, inbox: false });
+  expect(await ask()).toEqual({ latest: null, launcher: { label: "Feedback", color: null, textColor: null, position: "bottom-right", icon: "chat", iconUrl: null }, inbox: false });
 
   await prisma.project.update({
     where: { id: project.id },
@@ -40,6 +40,7 @@ test("the widget learns how its launcher looks (label, colour with readable text
       widgetLabel: "Help & ideas",
       widgetColor: "#facc15",
       widgetPosition: "bottom-left",
+      widgetIcon: "megaphone",
       widgetLinks: [{ label: "Status", url: "https://status.example.com" }],
       // The support inbox: the script then asks about the team's messages to whoever the page signs in.
       supportInbox: true,
@@ -47,7 +48,7 @@ test("the widget learns how its launcher looks (label, colour with readable text
   });
   expect(await ask()).toEqual({
     latest: null,
-    launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left" },
+    launcher: { label: "Help & ideas", color: "#facc15", textColor: "#000000", position: "bottom-left", icon: "megaphone", iconUrl: null },
     inbox: true,
   });
 });

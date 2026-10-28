@@ -892,20 +892,23 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const article = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
   await api(`/articles/${article.slug}/publish`, {});
 
-  // Customize → Widget: a label, a colour, the left corner and a quick link (https only), beside the widget open on a stand-in for the site.
+  // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside the widget open on a stand-in for the site.
   await owner.goto(`/app/${slug}/customize/widget`);
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
-  await owner.getByLabel("Button label").fill("Help & ideas");
+  const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("img", { name: `Launcher: ${name}` });
+  await expect(previewLauncher("Feedback")).toBeVisible();
+  await owner.getByLabel("Button name").fill("Help & ideas");
   await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByLabel("Bottom left").check();
+  await owner.getByText("Megaphone", { exact: true }).click();
   await owner.getByRole("button", { name: "Add link" }).click();
   await owner.getByLabel("Link 1 label").fill("Status");
   await owner.getByLabel("Link 1 URL").fill("http://status.example.com");
   await owner.getByRole("button", { name: "Add link" }).click();
   await owner.getByLabel("Link 2 label").fill("Averyverylongquicklinklabelwithnospaces1");
   await owner.getByLabel("Link 2 URL").fill("https://example.com/long");
-  // The launcher in the preview changes as it's set.
-  await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
+  // The launcher in the preview changes as it's set: a round button with the megaphone.
+  await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Links need a full https:// address")).toBeVisible();
   await owner.getByLabel("Link 1 URL").fill("https://status.example.com");
@@ -913,19 +916,23 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect(owner.getByText("Widget saved")).toBeVisible();
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Status" })).toBeVisible();
   // Saved, the launcher in the preview is the new one.
-  await expect(owner.getByRole("figure", { name: "Widget preview" }).getByText("Help & ideas", { exact: true })).toBeVisible();
+  await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await checkpoint(owner, "widget-settings");
   await owner.reload();
-  await expect(owner.getByLabel("Button label")).toHaveValue("Help & ideas");
+  await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
+  await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();
   await expect(owner.getByLabel("Link 1 URL")).toHaveValue("https://status.example.com");
 
-  // On the customer's site: the team's launcher, and the quick link at the top of the panel.
+  // On the customer's site: the team's launcher, a round button with their icon, named for screen readers and its tooltip; and the quick link at the top of the panel.
   const visitor = await (await browser.newContext()).newPage();
   const site = sitePage("customer.localhost", slug);
   await visitor.goto(site);
   const launcher = visitor.getByRole("button", { name: "Help & ideas" });
   await expect(launcher).toHaveCSS("background-color", "rgb(91, 33, 182)");
   await expect(launcher).toHaveCSS("left", "20px");
+  await expect(launcher).toHaveCSS("width", "56px");
+  await expect(launcher).toHaveAttribute("title", "Help & ideas");
+  await expect(launcher.locator("path").first()).toHaveAttribute("d", /^M11 6a13 13/);
   await checkpoint(visitor, "widget-custom-launcher");
   await launcher.click();
   const widget = visitor.frameLocator('iframe[title="Feedback"]');

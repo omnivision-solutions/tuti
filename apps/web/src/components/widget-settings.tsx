@@ -1,18 +1,28 @@
 "use client";
 
-import { PlusIcon, XIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { ImageIcon, PlusIcon, XIcon } from "lucide-react";
+import { type ReactNode, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { ImageField } from "@/components/branding-settings";
 import { useCustomizeForm, useFieldChanged, usePreview } from "@/components/customize-shell";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { LauncherIcon } from "@/components/widget-preview";
+import { cn } from "@/lib/utils";
+import { WIDGET_ICON_CHOICES, type WidgetIcon } from "@/lib/widget-icons";
 import { saveWidgetSettings } from "@/server/widget";
 
 const MAX_LINKS = 5;
 
-/** Customize → Widget (saved with the panel's "Save changes"): the launcher on customers' sites: label, colour, corner and quick links (see widget.update). */
+const ICON_NAMES: Record<WidgetIcon, string> = { chat: "Chat", help: "Help", megaphone: "Megaphone", lightbulb: "Light bulb", image: "Your own" };
+
+/**
+ * Customize → Widget (saved with the panel's "Save changes"): the launcher on customers' sites, a round
+ * button: its name, colour, corner, icon and quick links (see widget.update). `iconLocked` (the plan
+ * notice) locks the icon where the plan doesn't include picking one; it isn't sent then, so it stays as set.
+ */
 export function WidgetSettings({
   projectSlug,
   label,
@@ -20,6 +30,9 @@ export function WidgetSettings({
   defaultColor,
   position,
   links,
+  icon: initialIcon,
+  iconImage,
+  iconLocked,
 }: {
   projectSlug: string;
   label: string;
@@ -28,10 +41,15 @@ export function WidgetSettings({
   defaultColor: string;
   position: "bottom-right" | "bottom-left";
   links: { label: string; url: string }[];
+  icon: WidgetIcon;
+  iconImage: { id: string; url: string } | null;
+  iconLocked: ReactNode;
 }) {
   const [picked, setPicked] = useState(color);
   const colorField = useRef<HTMLInputElement>(null);
   useFieldChanged(colorField, picked);
+  const [icon, setIcon] = useState(initialIcon);
+  const [uploading, setUploading] = useState(0);
   const preview = usePreview();
   const { state, form } = useCustomizeForm({
     save: (prev, formData) => saveWidgetSettings(projectSlug, prev, formData),
@@ -44,16 +62,21 @@ export function WidgetSettings({
         label: String(data.get("label") ?? "") || label,
         color: String(data.get("color") ?? color),
         position: data.get("position") === "bottom-left" ? "bottom-left" : "bottom-right",
+        // Locked, it isn't sent: the launcher shows the chat bubble.
+        icon: (WIDGET_ICON_CHOICES as readonly unknown[]).includes(data.get("icon")) ? (data.get("icon") as WidgetIcon) : "chat",
+        iconUrl: String(data.get("iconImageUrl") ?? "") || null,
       },
     }),
+    busy: uploading > 0,
   });
 
   return (
     <form {...form}>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="widget-label">Button label</FieldLabel>
+          <FieldLabel htmlFor="widget-label">Button name</FieldLabel>
           <Input id="widget-label" name="label" defaultValue={label} required maxLength={30} autoComplete="off" />
+          <FieldDescription>The button shows an icon: screen readers read its name, and it&apos;s the tooltip.</FieldDescription>
         </Field>
         <Field>
           <FieldLabel htmlFor="widget-color">Colour</FieldLabel>
@@ -88,6 +111,34 @@ export function WidgetSettings({
                 {name}
               </label>
             ))}
+          </div>
+        </fieldset>
+        <fieldset disabled={Boolean(iconLocked)} className="flex flex-col gap-2">
+          <legend className="mb-2 text-sm font-medium">Icon</legend>
+          {iconLocked}
+          <div className="flex flex-wrap gap-2">
+            {WIDGET_ICON_CHOICES.map((value) => (
+              <label
+                key={value}
+                className="flex w-20 cursor-pointer flex-col items-center gap-1 rounded-lg border p-2 text-xs has-checked:border-primary has-checked:bg-accent has-focus-visible:ring-2 has-focus-visible:ring-ring has-disabled:cursor-not-allowed has-disabled:opacity-50"
+              >
+                <input type="radio" name="icon" value={value} checked={icon === value} onChange={() => setIcon(value)} className="sr-only" />
+                {value === "image" ? <ImageIcon aria-hidden className="size-6" /> : <LauncherIcon name={value} className="size-6" />}
+                {ICON_NAMES[value]}
+              </label>
+            ))}
+          </div>
+          {/* Kept while another icon is picked, so going back to it before saving keeps the upload. */}
+          <div className={cn(icon !== "image" && "hidden")}>
+            <ImageField
+              projectSlug={projectSlug}
+              name="iconImage"
+              label="Your icon"
+              description="A square image with a transparent background works best. It shows at 28 pixels."
+              image={iconImage}
+              look="light"
+              onBusy={(delta) => setUploading((count) => count + delta)}
+            />
           </div>
         </fieldset>
         <LinkRows

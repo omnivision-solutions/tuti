@@ -162,6 +162,11 @@ model Project {
   widgetColor           String?
   widgetPosition        String       @default("bottom-right")
   widgetLinks           Json         @default("[]")
+  /// The launcher's icon (where plans are sold, on Pro: see planIncludes): "chat" (the default), "help",
+  /// "megaphone", "lightbulb", or "image" for an upload (widgetIconImageId, attached while it's used).
+  /// Kept on a lower plan, which shows "chat" until the plan is back.
+  widgetIcon            String       @default("chat")
+  widgetIconImageId     String?
   /// Branding for the portal and its docs (see the branding.* operations): a logo,
   /// one for dark mode and a favicon (uploads, attached while they're used), the accent
   /// colour (`#rrggbb`; null is the brand green), up to 5 links each in the header and the
@@ -303,6 +308,7 @@ model Project {
   brandLogoDark           Media?                   @relation("brandLogoDark", fields: [brandLogoDarkId], references: [id], onDelete: SetNull)
   brandFavicon            Media?                   @relation("brandFavicon", fields: [brandFaviconId], references: [id], onDelete: SetNull)
   seoImage                Media?                   @relation("seoImage", fields: [seoImageId], references: [id], onDelete: SetNull)
+  widgetIconImage         Media?                   @relation("widgetIconImage", fields: [widgetIconImageId], references: [id], onDelete: SetNull)
   invitations             Invitation[]
   boardRedirects          BoardRedirect[]
   postEmbeddings          PostEmbedding[]
@@ -426,13 +432,14 @@ model Media {
   attachedAt DateTime?
   createdAt  DateTime    @default(now())
 
-  project    Project   @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
-  uploader   User      @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  project      Project   @relation("projectMedia", fields: [projectId], references: [id], onDelete: Cascade)
+  uploader     User      @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
   /// Projects whose branding uses it (see Project.brandLogoId).
-  logoOf     Project[] @relation("brandLogo")
-  logoDarkOf Project[] @relation("brandLogoDark")
-  faviconOf  Project[] @relation("brandFavicon")
-  seoImageOf Project[] @relation("seoImage")
+  logoOf       Project[] @relation("brandLogo")
+  logoDarkOf   Project[] @relation("brandLogoDark")
+  faviconOf    Project[] @relation("brandFavicon")
+  seoImageOf   Project[] @relation("seoImage")
+  widgetIconOf Project[] @relation("widgetIconImage")
 
   @@index([projectId])
   @@index([uploaderId, createdAt])

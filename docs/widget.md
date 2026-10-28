@@ -16,11 +16,18 @@ an iframe, so your site's styles can't reach it and it needs no API key.
 
 ## Launcher
 
-In the Tuti app, your project's **Customize → Widget** (owners and admins) sets:
+The launcher is a round button with an icon. In the Tuti app, your project's
+**Customize → Widget** (owners and admins) sets:
 
-- **Button label** (default "Feedback", up to 30 characters).
-- **Colour** (default the Tuti green; the text on it is black or white, whichever reads better).
+- **Button name** (default "Feedback", up to 30 characters): what screen readers say, and
+  the button's tooltip. It isn't shown on the button.
+- **Colour** (default the Tuti green; the icon on it is black or white, whichever reads better).
 - **Position**: bottom right or bottom left.
+- **Icon**: a chat bubble (the default), a question mark, a megaphone, a light bulb, or an
+  image you upload (a square one with a transparent background works best; it shows at 28
+  pixels). On tuti.so, picking one other than the chat bubble needs the Pro plan; a project
+  that moves to the free plan keeps its choice, and the launcher shows the chat bubble until
+  the plan is back. Self-hosted, every project can pick one.
 - **Quick links**: up to 5 links (a label and an `https://` address) on the panel's Home,
   such as your status page or docs. They open in a new tab.
 

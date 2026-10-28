@@ -2,13 +2,14 @@ import { prisma } from "@tuti/db";
 
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
-import { textColorOn, widgetSettings } from "@/server/operations/widget";
+import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
 /**
  * For the widget script on customers' sites, read once per page view: when the
  * project's latest announced changelog entry was published (within 30 days), so
  * the launcher can show it's new to this visitor, and how the launcher looks (its
- * label, colour and corner; the quick links are the panel's, which reads them itself).
+ * name, colour, corner and icon: the chat bubble unless the plan includes picking one;
+ * the quick links are the panel's, which reads them itself).
  * Public and the same for everyone, so any site may read it, without cookies; what
  * a signed-in visitor has seen on other devices comes from /api/widget/seen. A private
  * portal says nothing about its changelog here (no latest), since anyone may ask.
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
     color: settings.color,
     textColor: settings.color && textColorOn(settings.color),
     position: settings.position,
+    // Built-in icons by name; an image by its lasting link.
+    ...(project && servedIcon(settings, project.plan)),
   };
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
   return Response.json({ latest: latest?.toISOString() ?? null, launcher, inbox: project?.supportInbox ?? false }, { headers });

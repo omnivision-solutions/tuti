@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { cookies } from "next/headers";
 
 import { linksFrom } from "@/lib/forms";
+import type { WidgetIcon } from "@/lib/widget-icons";
 import { widgetToken, widgetUser } from "@/lib/widget-session";
 import { verifySsoToken } from "@/lib/sso";
 
@@ -82,7 +83,10 @@ export async function widgetCreatePost(projectSlug: string, token: string, _prev
   return {};
 }
 
-/** Saves the launcher settings form: label, colour, corner and quick links (see widget.update). Empty link rows are skipped. */
+/**
+ * Saves the launcher settings form: name, colour, corner, quick links and icon (see widget.update). Empty
+ * link rows are skipped; without the icon's fields (locked for want of the plan), the icon stays as it is.
+ */
 export async function saveWidgetSettings(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const text = (field: FormDataEntryValue | null | undefined) => (typeof field === "string" ? field : "");
   const input = {
@@ -90,6 +94,7 @@ export async function saveWidgetSettings(projectSlug: string, _state: FormState,
     color: text(formData.get("color")),
     position: text(formData.get("position")) as "bottom-right" | "bottom-left",
     links: linksFrom(formData, "link"),
+    ...(formData.has("icon") && { icon: text(formData.get("icon")) as WidgetIcon, iconImage: text(formData.get("iconImage")) || null }),
   };
   return asAdmin(projectSlug, "Only project owners and admins can change the widget", (context) =>
     call(updateWidgetSettings, context, input),

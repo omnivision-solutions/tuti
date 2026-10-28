@@ -50,6 +50,7 @@ export default function PricingPage() {
         "Unlimited team members",
         "Your own domain",
         "Code changes from GitHub",
+        "Your own widget launcher icon",
         ...monthly(planCredits("PRO")),
         `Hide “Powered by tuti” for $${BADGE_PRICE} a month`,
       ],
