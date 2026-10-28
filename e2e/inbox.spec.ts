@@ -91,6 +91,14 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("");
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
 
+  // A file that can't start uploading (the server unreachable) says so, and can be removed.
+  await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await owner.locator('input[type="file"]').setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") });
+  await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/broken\.pdf\s*Couldn't upload it/);
+  await owner.unroute("**/*");
+  await owner.getByRole("button", { name: "Remove broken.pdf" }).click();
+  await expect(owner.getByRole("list", { name: "Files to send" })).toHaveCount(0);
+
   // A reply with a file: it uploads as it's attached, then goes with the reply.
   await owner.locator('input[type="file"]').setInputFiles({ name: "steps.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 the steps") });
   await expect(owner.getByRole("list", { name: "Files to send" })).toContainText(/steps\.pdf\s*1 KB/);

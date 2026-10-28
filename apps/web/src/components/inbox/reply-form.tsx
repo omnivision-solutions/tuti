@@ -42,13 +42,18 @@ export function ReplyForm({ projectSlug, number }: { projectSlug: string; number
         continue;
       }
       void (async () => {
-        const started = await uploadReplyAttachment(projectSlug, { filename: file.name, contentType: file.type || "application/octet-stream", size: file.size });
-        if ("error" in started) {
-          update(key, { error: started.error });
-          return;
+        // However it fails (the network, the server), the file says so, rather than uploading for ever.
+        try {
+          const started = await uploadReplyAttachment(projectSlug, { filename: file.name, contentType: file.type || "application/octet-stream", size: file.size });
+          if ("error" in started) {
+            update(key, { error: started.error });
+            return;
+          }
+          const put = await fetch(started.uploadUrl, { method: "PUT", body: file, headers: { "content-type": started.contentType } });
+          update(key, put.ok ? { id: started.id } : { error: "Couldn't upload it" });
+        } catch {
+          update(key, { error: "Couldn't upload it" });
         }
-        const put = await fetch(started.uploadUrl, { method: "PUT", body: file, headers: { "content-type": started.contentType } }).catch(() => null);
-        update(key, put?.ok ? { id: started.id } : { error: "Couldn't upload it" });
       })();
     }
     if (picker.current) {
