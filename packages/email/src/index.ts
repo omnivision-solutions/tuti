@@ -9,5 +9,5 @@ export { portalReaderEmail } from "./portal-reader-email";
 export { deliveredMessageId, emailConfigured, sendEmail } from "./send";
 export { shippedEmail } from "./shipped-email";
 export { signInLinkEmail } from "./sign-in-link-email";
-export { escalationEmail, supportEmailConfirmEmail } from "./support-email";
+export { emailDomainTestEmail, escalationEmail, supportEmailConfirmEmail } from "./support-email";
 export { verifyEmail } from "./verify-email";

@@ -1,6 +1,8 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { emailDomainTestEmail, sendEmail } from "@tuti/email";
+import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
 
 import { startUpload } from "./attachments";
@@ -10,7 +12,8 @@ import { OperationError } from "./operations";
 import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
-import { updateSupportSettings } from "./operations/support";
+import { supportDomain } from "./inbound";
+import { checkEmailDomainOperation, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./operations/support";
 import { suggestReply, summarizeConversation } from "./operations/support-ai";
 
 /** The team's actions in the support inbox (any team role), through the conversations operations. */
@@ -124,6 +127,49 @@ export async function getSupportAddress(projectSlug: string): Promise<FormState>
   return asAdmin(projectSlug, "Only project owners and admins can change support settings", async (context) =>
     call(updateSupportSettings, context, { email: true }),
   );
+}
+
+const SUPPORT_DENIED = "Only project owners and admins can change support settings";
+
+/** Settings → Support → Your own address (support.setEmailDomain): replies from the team's own address. */
+export async function saveEmailDomain(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  return asAdmin(projectSlug, SUPPORT_DENIED, (context) => call(setEmailDomain, context, { address: String(formData.get("address") ?? "").trim() }));
+}
+
+export async function checkEmailDomain(projectSlug: string): Promise<{ error?: string; verified?: boolean }> {
+  let verified = false;
+  const result = await asAdmin(projectSlug, SUPPORT_DENIED, async (context) => {
+    verified = !!(await call(checkEmailDomainOperation, context, {})).email?.ownDomain?.verified;
+  });
+  return result.error ? result : { verified };
+}
+
+export async function forgetEmailDomain(projectSlug: string): Promise<FormState> {
+  return asAdmin(projectSlug, SUPPORT_DENIED, (context) => call(removeEmailDomain, context, {}));
+}
+
+/** Emails the admin a test from the team's verified address, under the project's tenant, as replies go. */
+export async function sendEmailDomainTest(projectSlug: string): Promise<FormState> {
+  return asAdmin(projectSlug, SUPPORT_DENIED, async ({ actor, projectId }) => {
+    const domain = supportDomain();
+    const [own, project, user] = await Promise.all([
+      prisma.emailDomain.findUnique({ where: { projectId } }),
+      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } }),
+      actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
+    ]);
+    if (!own?.verifiedAt || !domain) {
+      throw new OperationError(409, "not_verified", "Your address isn't verified yet: check it first");
+    }
+    if (!user) {
+      return;
+    }
+    await sendEmail({
+      to: user.email,
+      from: `"${project.name.replace(/["\\\r\n]/g, "")}" <${own.address}>`,
+      headers: (await sesTenantHeaders(projectId, domain, own.domain)) ?? {},
+      ...emailDomainTestEmail({ projectName: project.name, address: own.address }),
+    });
+  });
 }
 
 

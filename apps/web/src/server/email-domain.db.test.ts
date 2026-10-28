@@ -3,13 +3,14 @@ import { handlers } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp } from "@/test/helpers";
+import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
 import { mailSubdomain, supportAddress } from "./inbound";
 import { replyToConversation } from "./operations/conversations";
 import { call } from "./operations/run";
+import { sendEmailDomainTest } from "./inbox";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain } from "./operations/support";
 
 /** Replies by email from the team's own domain (docs/plan.md, Support inbox, item 11; Pro), verified by Amazon SES. */
@@ -41,7 +42,7 @@ async function setup() {
     await handlers.sendConversationReplies({}, log);
     return mailbox.emails.filter((email) => email.to.includes(kim)).at(-1)!;
   };
-  return { project, subdomain, team, reply };
+  return { owner, project, subdomain, team, reply };
 }
 
 test("replies come from the team's address once SES finds its DKIM records, under the project's tenant", async () => {
@@ -203,4 +204,19 @@ test("two setups of a project's domain at once: one after the other, and the dom
   expect(results.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
   expect(ses.identities.get(domain)!.tags).toEqual({ "tuti-project": project.id });
   expect(await prisma.emailDomain.count({ where: { projectId: project.id } })).toBe(1);
+});
+
+test("Send a test email: from the verified address, to the admin who asked, under the project's tenant", async () => {
+  const { owner, project, team } = await setup();
+  const domain = `${project.slug}.example.com`;
+  actAs(owner);
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  expect(await sendEmailDomainTest(project.slug)).toEqual({ error: "Your address isn't verified yet: check it first" });
+
+  ses.identities.get(domain)!.verified = true;
+  await call(checkEmailDomainOperation, team, {});
+  expect(await sendEmailDomainTest(project.slug)).toEqual({});
+  const email = mailbox.emails.filter((e) => e.to.includes(owner.email)).at(-1)!;
+  expect(email).toMatchObject({ from: `"${project.name}" <support@${domain}>`, subject: `A test from support@${domain}` });
+  expect(email.headers["x-ses-tenant"]).toBe(`tuti-test-${project.id}`);
 });

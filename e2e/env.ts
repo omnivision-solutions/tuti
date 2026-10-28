@@ -58,7 +58,7 @@ export const serverEnv = {
   HATCHET_CLIENT_TOKEN: "",
   SMTP_USERNAME: "",
   SMTP_PASSWORD: "",
-  // No Amazon SES: journeys never create real tenants.
+  // Amazon SES: the global setup points it at the fake, never a real account.
   SES_REGION: "",
   SES_ACCESS_KEY_ID: "",
   SES_SECRET_ACCESS_KEY: "",

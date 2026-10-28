@@ -8,6 +8,7 @@ import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, S
 import { apiFor, createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
+import { verifySesDomain } from "./ses";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -420,4 +421,42 @@ test("on a server selling plans, the operator approves a project before its repl
 
   await owner.reload();
   await expect(owner.getByText("Your replies reach your users in the widget for now.")).toHaveCount(0);
+});
+
+test("replies from the team's own address: add it, put SES's records in DNS, check, and a test email comes from it", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const domain = `${slug}.example.com`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  await owner.goto(`/app/${slug}/settings/support`);
+  await owner.getByRole("button", { name: "Get a support address" }).click();
+  const supportAddress = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
+  await expect(owner.getByText(supportAddress).first()).toBeVisible();
+
+  await owner.getByLabel("Your company's address").fill(`support@${domain}`);
+  await owner.getByRole("button", { name: "Use this address" }).click();
+  await expect(owner.getByText("Waiting for DNS")).toBeVisible();
+  for (const n of [1, 2, 3]) {
+    await expect(owner.getByRole("region", { name: `CNAME record ${n}` })).toContainText(`._domainkey.${domain}`);
+  }
+  await checkpoint(owner, "own-address-records");
+  // Not in DNS yet.
+  await owner.getByRole("button", { name: "Check DNS" }).click();
+  await expect(owner.getByText(/Not found yet/)).toBeVisible();
+
+  await verifySesDomain(domain);
+  await owner.getByRole("button", { name: "Check DNS" }).click();
+  await expect(owner.getByText(`support@${domain} is verified`)).toBeVisible();
+  await expect(owner.getByText(`Replies to your users come from support@${domain}.`, { exact: false })).toBeVisible();
+  await owner.getByRole("button", { name: "Send a test email" }).click();
+  await expect(owner.getByText("Test email sent to you")).toBeVisible();
+  const test = await latestEmailTo(owner.email, { subject: /A test from/ });
+  expect(test.from).toBe(`"Acme" <support@${domain}>`);
+  await checkpoint(owner, "own-address-verified");
+
+  await owner.getByRole("button", { name: "Remove address" }).click();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
+  await expect(owner.getByText(`support@${domain} removed`)).toBeVisible();
+  await expect(owner.getByLabel("Your company's address")).toBeVisible();
 });
