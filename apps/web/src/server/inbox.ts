@@ -55,7 +55,7 @@ export async function uploadReplyAttachment(projectSlug: string, file: { filenam
     return { error: "That file can't be attached" };
   }
   try {
-    return await startUpload(membership.project.id, session.user.id, parsed.data);
+    return await startUpload(membership.project.id, { userId: session.user.id }, parsed.data);
   } catch (error) {
     if (error instanceof OperationError) {
       return { error: error.message };

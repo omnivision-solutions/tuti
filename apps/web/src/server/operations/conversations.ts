@@ -445,7 +445,7 @@ export const replyToConversation = defineOperation({
     if (input.attachments?.length && (input.author || actor.kind !== "user")) {
       throw new OperationError(400, "invalid_input", "Attachments are uploaded and sent by a teammate in the app");
     }
-    const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, actor.userId, input.attachments) : [];
+    const uploads = input.attachments?.length && actor.kind === "user" ? await checkUploads(projectId, { userId: actor.userId }, input.attachments) : [];
     if (input.author) {
       if (actor.kind === "user") {
         throw new OperationError(403, "forbidden", "Only API keys can write on someone's behalf");

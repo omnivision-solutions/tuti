@@ -1036,13 +1036,19 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(widget.getByText("No messages yet")).toBeVisible();
   await widget.getByRole("button", { name: "New message" }).click();
   await widget.getByRole("textbox", { name: "Message" }).fill("How do I export my data?");
+  // With a screenshot: it uploads as it's attached, and goes with the message.
+  const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await widget.locator('input[type="file"]').setInputFiles({ name: "screenshot.png", mimeType: "image/png", buffer: pixel });
+  await expect(widget.getByRole("list", { name: "Files to send" })).toContainText(/screenshot\.png\s*1 KB/);
   await widget.getByRole("button", { name: "Send" }).click();
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(1);
   await expect(widget.getByRole("list", { name: "Messages" })).toContainText("You");
+  await expect(widget.getByRole("img", { name: "screenshot.png" })).toBeVisible();
 
   // It's in the team's inbox, from the widget; they reply.
   await owner.goto(`/app/${slug}/inbox`);
   await owner.getByRole("link", { name: "How do I export my data?" }).click();
+  await expect(owner.getByRole("img", { name: "screenshot.png" })).toBeVisible();
   await expect(owner.getByText(/Sam from Acme \(e2e-sam-.*\) · started from the widget/)).toBeVisible();
   // Sam has the widget open: they're online.
   await expect(owner.getByText("Online", { exact: true })).toBeVisible();
