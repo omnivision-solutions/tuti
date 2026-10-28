@@ -220,3 +220,19 @@ test("Send a test email: from the verified address, to the admin who asked, unde
   expect(email).toMatchObject({ from: `"${project.name}" <support@${domain}>`, subject: `A test from support@${domain}` });
   expect(email.headers["x-ses-tenant"]).toBe(`tuti-test-${project.id}`);
 });
+
+test("Send a test email only when replies do come from it: not on a plan without it; a failed send says why", async () => {
+  const { owner, project, team } = await setup();
+  const domain = `${project.slug}.example.com`;
+  actAs(owner);
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  ses.identities.get(domain)!.verified = true;
+  await call(checkEmailDomainOperation, team, {});
+
+  ses.failing.add("/v2/email/tenants/resources");
+  expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("The test email couldn't be sent") });
+  ses.failing.clear();
+
+  vi.stubEnv("PLANS", "on");
+  expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("Pro plan") });
+});

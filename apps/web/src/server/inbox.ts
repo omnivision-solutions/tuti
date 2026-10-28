@@ -1,6 +1,8 @@
 "use server";
 
 import { prisma } from "@tuti/db";
+import { log } from "@tuti/shared";
+import { ses } from "@tuti/shared/ses";
 import { emailDomainTestEmail, sendEmail } from "@tuti/email";
 import { sesTenantHeaders } from "@tuti/jobs";
 import { z } from "zod";
@@ -13,6 +15,7 @@ import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./op
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
+import { requirePlan } from "./operations/plan";
 import { checkEmailDomainOperation, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./operations/support";
 import { suggestReply, summarizeConversation } from "./operations/support-ai";
 
@@ -148,27 +151,36 @@ export async function forgetEmailDomain(projectSlug: string): Promise<FormState>
   return asAdmin(projectSlug, SUPPORT_DENIED, (context) => call(removeEmailDomain, context, {}));
 }
 
-/** Emails the admin a test from the team's verified address, under the project's tenant, as replies go. */
+/** Emails the admin a test from the team's verified address, under the project's tenant, as replies go (only when they do). */
 export async function sendEmailDomainTest(projectSlug: string): Promise<FormState> {
   return asAdmin(projectSlug, SUPPORT_DENIED, async ({ actor, projectId }) => {
     const domain = supportDomain();
+    if (!ses() || !domain) {
+      throw new OperationError(409, "ses_off", "This server doesn't send email from teams' own domains");
+    }
+    await requirePlan(projectId, "emailDomain");
     const [own, project, user] = await Promise.all([
       prisma.emailDomain.findUnique({ where: { projectId } }),
       prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } }),
       actor.kind === "user" ? prisma.user.findUnique({ where: { id: actor.userId }, select: { email: true } }) : null,
     ]);
-    if (!own?.verifiedAt || !domain) {
+    if (!own?.verifiedAt) {
       throw new OperationError(409, "not_verified", "Your address isn't verified yet: check it first");
     }
     if (!user) {
-      return;
+      throw new OperationError(400, "no_address", "There's no address to send the test to");
     }
-    await sendEmail({
-      to: user.email,
-      from: `"${project.name.replace(/["\\\r\n]/g, "")}" <${own.address}>`,
-      headers: (await sesTenantHeaders(projectId, domain, own.domain)) ?? {},
-      ...emailDomainTestEmail({ projectName: project.name, address: own.address }),
-    });
+    try {
+      await sendEmail({
+        to: user.email,
+        from: `"${project.name.replace(/["\\\r\n]/g, "")}" <${own.address}>`,
+        headers: (await sesTenantHeaders(projectId, domain, own.domain)) ?? {},
+        ...emailDomainTestEmail({ projectName: project.name, address: own.address }),
+      });
+    } catch (error) {
+      log.warn("A test email from a team's own address failed", { projectId, error });
+      throw new OperationError(502, "email_failed", `The test email couldn't be sent: ${String(error).slice(0, 200)}`);
+    }
   });
 }
 

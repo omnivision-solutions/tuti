@@ -24,6 +24,8 @@ import type { FormState } from "@/server/form-state";
 import { checkEmailDomain, forgetEmailDomain, saveEmailDomain, sendEmailDomainTest } from "@/server/inbox";
 
 type OwnDomain = {
+  /** On the project's plan: once downgraded, a verified address waits, and replies come from the support address. */
+  included: boolean;
   address: string | null;
   records: { type: "CNAME"; name: string; value: string }[];
   verified: boolean;
@@ -39,6 +41,7 @@ export function EmailDomainSettings({ projectSlug, own, supportAddress }: { proj
   if (!own.address) {
     return <AddAddressForm projectSlug={projectSlug} />;
   }
+  const sending = own.verified && own.included;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -46,9 +49,11 @@ export function EmailDomainSettings({ projectSlug, own, supportAddress }: { proj
         <Badge variant={own.verified ? "default" : own.error ? "destructive" : "secondary"}>{own.verified ? "Verified" : own.error ? "Not verified" : "Waiting for DNS"}</Badge>
       </div>
       <p className="text-sm text-muted-foreground">
-        {own.verified
+        {sending
           ? `Replies to your users come from ${own.address}. Keep these records at your DNS provider:`
-          : own.error
+          : !own.included
+            ? `Your plan doesn't include sending from your own address any more: replies come from ${supportAddress} until it does.`
+            : own.error
             ? `${own.error}. Replies come from ${supportAddress} until it's verified again.`
             : `Add these 3 records at your domain's DNS provider, then check. Until then, replies come from ${supportAddress}.`}
       </p>
@@ -59,7 +64,7 @@ export function EmailDomainSettings({ projectSlug, own, supportAddress }: { proj
         </section>
       ))}
       <div className="flex flex-wrap justify-end gap-2">
-        {own.verified ? <TestButton projectSlug={projectSlug} /> : <CheckButton projectSlug={projectSlug} address={own.address} />}
+        {sending ? <TestButton projectSlug={projectSlug} /> : !own.verified && <CheckButton projectSlug={projectSlug} address={own.address} />}
         <RemoveButton projectSlug={projectSlug} address={own.address} supportAddress={supportAddress} />
       </div>
     </div>
