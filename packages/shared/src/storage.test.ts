@@ -47,3 +47,16 @@ test("read URLs are signed per window: the same all window long, good for two", 
   expect(await storage.signedUrl("m/abc/480.webp", start + hour)).not.toBe(url.href);
   expect(await storage.signedUrl("m/abc/960.webp", start + 1000)).not.toBe(url.href);
 });
+
+test("a download URL saves the file under its name, as plain bytes, and is signed with it", async () => {
+  for (const [name, value] of Object.entries(env)) {
+    vi.stubEnv(name, value);
+  }
+  const storage = mediaStorage()!;
+  const start = Date.UTC(2026, 9, 22, 13);
+  const shown = await storage.signedUrl("attachments/p/a", start);
+  const download = new URL(await storage.signedUrl("attachments/p/a", start, "Invoice Oct (2).pdf"));
+  expect(download.searchParams.get("response-content-disposition")).toBe("attachment; filename*=UTF-8''Invoice%20Oct%20(2).pdf");
+  expect(download.searchParams.get("response-content-type")).toBe("application/octet-stream");
+  expect(download.searchParams.get("X-Amz-Signature")).not.toBe(new URL(shown).searchParams.get("X-Amz-Signature"));
+});

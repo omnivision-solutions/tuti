@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { notFound } from "next/navigation";
 
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton } from "@/components/inbox/conversation-controls";
+import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
@@ -12,6 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
+import { attachmentLinks } from "@/server/attachments";
 import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { onlineUntil, presenceKey } from "@/server/presence";
@@ -64,6 +66,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             emailError: true,
             createdAt: true,
             authorUser: { select: { name: true } },
+            attachments: { orderBy: { createdAt: "asc" }, select: { id: true, key: true, filename: true, contentType: true, size: true } },
+            attachmentsDropped: true,
           },
         },
       },
@@ -77,6 +81,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   if (!conversation) {
     notFound();
   }
+  // Signed as the page renders: an image is shown, any other file is saved under its name.
+  const links = new Map((await attachmentLinks(conversation.messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
+
   const person = conversationPerson(conversation);
   const online =
     conversation.userId || conversation.visitorHash
@@ -150,6 +157,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                         <span className="font-medium text-foreground">{name}</span> · {timeAgo(message.createdAt)}
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
+                      <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} />
                       {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitingForApproval) && (
                         <p className="text-xs text-muted-foreground">
                           {message.seenAt

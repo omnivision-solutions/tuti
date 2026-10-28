@@ -57,6 +57,8 @@ const messageSelect = {
   note: true,
   createdAt: true,
   authorUser: { select: { name: true } },
+  attachments: { orderBy: { createdAt: "asc" }, select: { id: true, filename: true, contentType: true, size: true } },
+  attachmentsDropped: true,
 } satisfies Prisma.ConversationMessageSelect;
 
 type MessageRow = Prisma.ConversationMessageGetPayload<{ select: typeof messageSelect }>;
@@ -97,6 +99,9 @@ function messageView(row: MessageRow) {
     channel: row.channel.toLowerCase(),
     body: row.body,
     note: row.note,
+    /** The files it came with (kept in the media storage), and how many couldn't be kept (no storage). */
+    attachments: row.attachments,
+    attachmentsDropped: row.attachmentsDropped,
     createdAt: row.createdAt,
   };
 }
@@ -278,8 +283,8 @@ export async function startConversation(
     spam?: boolean;
     /** The first message came by email. */
     received?: ReceivedEmail;
-    /** More to write in the same transaction (a received email's status), with the conversation's id. */
-    alongside?: (tx: Prisma.TransactionClient, conversationId: string) => Promise<void>;
+    /** More to write in the same transaction (a received email's status, its attachments), with the conversation's and its first message's ids. */
+    alongside?: (tx: Prisma.TransactionClient, conversationId: string, messageId: string) => Promise<void>;
   },
 ) {
   const now = new Date();
@@ -326,7 +331,7 @@ export async function startConversation(
       },
       select: messageSelect,
     });
-    await start.alongside?.(tx, conversation.id);
+    await start.alongside?.(tx, conversation.id, message.id);
     // A millisecond apart, so they read in order.
     await tx.conversationMessage.createMany({
       data: (start.then ?? []).map((next, i) => ({
@@ -349,7 +354,7 @@ export async function startConversation(
  * the user writing opens it again and keeps how long they've been waiting from their oldest unanswered message.
  */
 /** What's kept of a message received by email (see ConversationMessage). */
-export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string | null; original: string | null };
+export type ReceivedEmail = { emailMessageId: string | null; fromAddress: string | null; original: string | null; attachmentsDropped?: number };
 
 export async function addMessage(
   conversationId: string,

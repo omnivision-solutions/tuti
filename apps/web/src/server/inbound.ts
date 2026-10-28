@@ -16,6 +16,7 @@ import {
   MAX_MESSAGE_LENGTH,
   startConversation,
 } from "./operations/conversations";
+import { storeAttachments } from "./attachments";
 
 /**
  * Receiving email in the support inbox (docs/plan.md, Support inbox, "Receiving email"): each project
@@ -244,76 +245,99 @@ async function readEmail(id: string, projectId: string, token: string | null, au
 
   const { text, stripped } = stripQuotes(mail.text ?? "", subject);
   const body = (text || "(No text)").slice(0, MAX_MESSAGE_LENGTH);
+  // What came with it (not the images its HTML shows inline: logos, signatures), kept before its
+  // message is written, and removed again if it isn't.
+  const files = (mail.attachments ?? []).filter((a) => !a.related).map((a) => ({ filename: a.filename ?? "", contentType: a.contentType, content: a.content }));
+  const attachments = await storeAttachments(projectId, files);
+  const keepAttachments = async (tx: Prisma.TransactionClient, messageId: string) => {
+    if (attachments.stored.length > 0) {
+      await tx.conversationAttachment.createMany({ data: attachments.stored.map((file) => ({ ...file, projectId, messageId })) });
+    }
+  };
   const received = {
     emailMessageId: mail.messageId ?? null,
     original: stripped ? (mail.text ?? "").slice(0, 200_000) : null,
+    attachmentsDropped: attachments.dropped,
   };
-  const dmarcPassed = auth.dmarc === "pass";
-
-  // A reply: the token in its address, else a Message-ID we sent that it names (In-Reply-To,
-  // References), finds the conversation; but only its people, with DMARC passed, join it (the token
-  // and our Message-IDs are random secrets sent only to them; DMARC proves the domain, not the mailbox).
-  // The Message-IDs of mail we received never count: their senders chose them, and others have copies.
-  const select = { id: true, number: true, userId: true } as const;
-  const named = [mail.inReplyTo, ...(Array.isArray(mail.references) ? mail.references : mail.references ? [mail.references] : [])].filter(
-    (id): id is string => !!id,
-  );
-  const conversation =
-    (token ? await prisma.conversation.findFirst({ where: { projectId, replyToken: token }, select }) : null) ??
-    (named.length > 0
-      ? ((
-          await prisma.conversationMessage.findFirst({
-            where: {
-              projectId,
-              OR: [{ sentMessageId: { in: named.slice(-50) } }, { deliveredMessageId: { in: named.slice(-50) } }],
-            },
-            orderBy: { createdAt: "desc" },
-            select: { conversation: { select } },
-          })
-        )?.conversation ?? null)
-      : null);
-  if (conversation && dmarcPassed) {
-    const { person, others } = await conversationAddresses(conversation.id);
-    if (sender === person || others.includes(sender)) {
-      const message = await addMessage(
-        conversation.id,
-        projectId,
-        {
-          author: "USER",
-          authorId: sender === person ? conversation.userId : null,
-          channel: "EMAIL",
-          body,
-          ...received,
-          fromAddress: sender === person ? null : sender,
-        },
-        async (tx) => void (await finish(tx, { status: "ADDED", conversationId: conversation.id })),
-      );
-      await announceUserMessage(projectId, conversation.number, message);
-      return "added";
-    }
+  try {
+    return await place();
+  } catch (error) {
+    await attachments.discard();
+    throw error;
   }
 
-  // Anything else starts a conversation: with the project's user who has this address when DMARC
-  // passed, else with the address alone; mail that failed DMARC goes to Spam.
-  const userId = dmarcPassed ? await userWithAddress(projectId, sender) : null;
-  const started = await startConversation(projectId, {
-    userId,
-    email: userId ? null : sender,
-    subject: subject.replace(REPLY_PREFIXES, "").trim().slice(0, 200) || undefined,
-    body,
-    origin: "EMAIL",
-    channel: "EMAIL",
-    spam: auth.dmarc === "fail",
-    received: { ...received, fromAddress: null },
-    alongside: async (tx, conversationId) => {
-      if (!userId) {
-        await tx.conversation.update({ where: { id: conversationId }, data: { emailVerified: dmarcPassed } });
+  async function place(): Promise<string> {
+    const dmarcPassed = auth.dmarc === "pass";
+
+    // A reply: the token in its address, else a Message-ID we sent that it names (In-Reply-To,
+    // References), finds the conversation; but only its people, with DMARC passed, join it (the token
+    // and our Message-IDs are random secrets sent only to them; DMARC proves the domain, not the mailbox).
+    // The Message-IDs of mail we received never count: their senders chose them, and others have copies.
+    const select = { id: true, number: true, userId: true } as const;
+    const named = [mail.inReplyTo, ...(Array.isArray(mail.references) ? mail.references : mail.references ? [mail.references] : [])].filter(
+      (id): id is string => !!id,
+    );
+    const conversation =
+      (token ? await prisma.conversation.findFirst({ where: { projectId, replyToken: token }, select }) : null) ??
+      (named.length > 0
+        ? ((
+            await prisma.conversationMessage.findFirst({
+              where: {
+                projectId,
+                OR: [{ sentMessageId: { in: named.slice(-50) } }, { deliveredMessageId: { in: named.slice(-50) } }],
+              },
+              orderBy: { createdAt: "desc" },
+              select: { conversation: { select } },
+            })
+          )?.conversation ?? null)
+        : null);
+    if (conversation && dmarcPassed) {
+      const { person, others } = await conversationAddresses(conversation.id);
+      if (sender === person || others.includes(sender)) {
+        const message = await addMessage(
+          conversation.id,
+          projectId,
+          {
+            author: "USER",
+            authorId: sender === person ? conversation.userId : null,
+            channel: "EMAIL",
+            body,
+            ...received,
+            fromAddress: sender === person ? null : sender,
+          },
+          async (tx, messageId) => {
+            await keepAttachments(tx, messageId);
+            await finish(tx, { status: "ADDED", conversationId: conversation.id });
+          },
+        );
+        await announceUserMessage(projectId, conversation.number, message);
+        return "added";
       }
-      await finish(tx, { status: "ADDED", conversationId });
-    },
-  });
-  if (auth.dmarc !== "fail") {
-    await announceConversation(projectId, started.conversation, started.message);
+    }
+
+    // Anything else starts a conversation: with the project's user who has this address when DMARC
+    // passed, else with the address alone; mail that failed DMARC goes to Spam.
+    const userId = dmarcPassed ? await userWithAddress(projectId, sender) : null;
+    const started = await startConversation(projectId, {
+      userId,
+      email: userId ? null : sender,
+      subject: subject.replace(REPLY_PREFIXES, "").trim().slice(0, 200) || undefined,
+      body,
+      origin: "EMAIL",
+      channel: "EMAIL",
+      spam: auth.dmarc === "fail",
+      received: { ...received, fromAddress: null },
+      alongside: async (tx, conversationId, messageId) => {
+        if (!userId) {
+          await tx.conversation.update({ where: { id: conversationId }, data: { emailVerified: dmarcPassed } });
+        }
+        await keepAttachments(tx, messageId);
+        await finish(tx, { status: "ADDED", conversationId });
+      },
+    });
+    if (auth.dmarc !== "fail") {
+      await announceConversation(projectId, started.conversation, started.message);
+    }
+    return "added";
   }
-  return "added";
 }
