@@ -161,13 +161,14 @@ export const addPortalReaders = defineOperation({
         select: { name: true, email: true },
       });
       const url = signInUrl;
-      const sender = await projectSender(projectId, inviter?.email);
+      // Inside each send: setting up the project's sender failing is a failed email, never a failed add.
+      const sender = projectSender(projectId, inviter?.email);
       // Never fails the add: they're readers either way, and the team can tell them.
       const sent = await Promise.allSettled(
-        toEmail.map((email) =>
+        toEmail.map(async (email) =>
           sendEmail({
             to: email,
-            ...sender,
+            ...(await sender),
             ...portalReaderEmail({ inviterName: inviter?.name ?? project.name, projectName: project.name, email, url }),
           }),
         ),

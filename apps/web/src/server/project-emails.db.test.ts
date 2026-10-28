@@ -141,3 +141,13 @@ test("on a server selling plans, shipped emails wait for the project's approval;
   // Still due: the cron brings it back once the project is approved.
   expect(await prisma.post.findFirst({ where: { projectId: project.id, shippedEmailsDueAt: { not: null } } })).not.toBeNull();
 });
+
+test("readers are added even when the project's sender can't be set up; the email is what fails", async () => {
+  const { owner, project, team } = await setup();
+  await prisma.project.update({ where: { id: project.id }, data: { portalAccess: "PRIVATE" } });
+  ses.failing.add("/v2/email/tenants/resources");
+  actAs(owner);
+  const reader = newAddress();
+  expect(await call(addPortalReaders, team, { emails: [reader] })).toEqual({ added: [reader], emailed: 0 });
+  ses.failing.clear();
+});
