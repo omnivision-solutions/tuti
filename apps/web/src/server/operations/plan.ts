@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type Prisma, prisma } from "@tuti/db";
 import { badgePrice, isBadgePrice, log, planIncludes, planNeeded, type PlanFeature, planPrice, planSalesEnabled, plansEnabled } from "@tuti/shared";
 import { z } from "zod";
 
@@ -10,9 +10,12 @@ import { defineOperation, OperationError } from "./define";
 import { projectSlug } from "./read";
 
 /** The project's Billing page, where Stripe sends the team back. */
-/** Refuses (402) what the project's plan doesn't include (see planIncludes), saying which plan does. */
-export async function requirePlan(projectId: string, feature: PlanFeature): Promise<void> {
-  const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
+/**
+ * Refuses (402) what the project's plan doesn't include (see planIncludes), saying which plan does. In
+ * `db`, a transaction that holds the project's row, a plan ending meanwhile counts.
+ */
+export async function requirePlan(projectId: string, feature: PlanFeature, db: Prisma.TransactionClient = prisma): Promise<void> {
+  const { plan } = await db.project.findUniqueOrThrow({ where: { id: projectId }, select: { plan: true } });
   if (!planIncludes(plan, feature)) {
     throw new OperationError(402, "plan_required", `${planNeeded(feature)} See Settings → Billing.`);
   }

@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { imageKeysIn } from "@tuti/content";
-import type { MediaUrls } from "@tuti/content/media";
+import { imageKey, imageWidths, type MediaUrls } from "@tuti/content/media";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { appUrl } from "@/lib/hosts";
@@ -42,4 +42,13 @@ export function lastingMediaUrls(...docs: Docs): MediaUrls | null {
   }
   const keys = docs.flatMap((doc) => (doc ? imageKeysIn(doc) : []));
   return Object.fromEntries(keys.map((key) => [key, lastingMediaUrl(key)]));
+}
+
+export type LastingImage = { id: string; url: string; width: number; height: number };
+
+/** A lasting link to an uploaded image's smallest stored size (at most 480px wide), once it's processed; null without uploads. */
+export function lastingImage(media: { id: string; status: string; width: number | null; height: number | null } | null): LastingImage | null {
+  return mediaStorage() && media?.status === "READY" && media.width && media.height
+    ? { id: media.id, url: lastingMediaUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
+    : null;
 }

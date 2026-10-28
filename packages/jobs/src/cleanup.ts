@@ -102,8 +102,8 @@ export async function releaseMedia(_input: JobInput<"releaseMedia">, log: JobLog
       ),
       used AS (
         SELECT jsonb_path_query(content, '$.**.mediaId') #>> '{}' AS id FROM content WHERE content IS NOT NULL
-        -- The project's branding images (logos, favicon, share image).
-        UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId"]) FROM project WHERE id = ${projectId}
+        -- The project's branding images (logos, favicon, share image) and the widget launcher's icon.
+        UNION ALL SELECT unnest(ARRAY["brandLogoId", "brandLogoDarkId", "brandFaviconId", "seoImageId", "widgetIconImageId"]) FROM project WHERE id = ${projectId}
       )
       UPDATE media SET "attachedAt" = NULL
       WHERE "projectId" = ${projectId}

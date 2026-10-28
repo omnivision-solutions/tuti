@@ -122,3 +122,19 @@ test("on the free plan, a project has up to 3 team members, invites included, an
   await expect(owner.getByText("A private portal and reader groups need the Business plan. See Settings → Billing.", { exact: true })).toBeVisible();
   await checkpoint(owner, "settings-access-free-plan");
 });
+
+test("on Tuti's cloud, the widget launcher's icon is locked on the free plan, its colour isn't", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug, cloudPortalUrl);
+
+  await owner.goto(`/app/${slug}/customize/widget`);
+  await expect(owner.getByText("Choosing the launcher's icon needs the Pro plan.")).toBeVisible();
+  await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeDisabled();
+  await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await checkpoint(owner, "widget-settings-icon-locked");
+});

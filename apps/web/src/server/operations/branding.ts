@@ -1,11 +1,11 @@
-import { EMAIL_IMAGE_WIDTH, emailImageKey, imageKey, imageWidths } from "@tuti/content/media";
+import { EMAIL_IMAGE_WIDTH, emailImageKey } from "@tuti/content/media";
 import { prisma } from "@tuti/db";
 import { mediaStorage } from "@tuti/shared/storage";
 import { z } from "zod";
 
 import { attachMedia, MEDIA_GONE } from "../content";
 import { badgeLicensed, installation as thisInstallation } from "../license";
-import { lastingMediaUrl } from "../media-urls";
+import { type LastingImage, lastingImage, lastingMediaUrl } from "../media-urls";
 import { isPortalFont, PORTAL_FONTS, type PortalFont } from "@/lib/portal-fonts";
 import {
   COLOR_SCHEMES,
@@ -40,7 +40,7 @@ export const MAX_BRAND_LINKS = 5;
 const IMAGES = { logo: "brandLogoId", logoDark: "brandLogoDarkId", favicon: "brandFaviconId", seoImage: "seoImageId" } as const;
 type ImageName = keyof typeof IMAGES;
 
-export type BrandImage = { id: string; url: string; width: number; height: number };
+export type BrandImage = LastingImage;
 export type Branding = {
   logo: BrandImage | null;
   /** Shown instead of `logo` in dark mode; without it the logo shows in both. */
@@ -123,10 +123,7 @@ export async function branding(where: { id: string } | { slug: string }): Promis
   }
   // Lasting links: link cards are fetched long after the page, and API clients keep what they read.
   const storage = mediaStorage();
-  const url = (media: { id: string; status: string; width: number | null; height: number | null } | null): BrandImage | null =>
-    storage && media?.status === "READY" && media.width && media.height
-      ? { id: media.id, url: lastingMediaUrl(imageKey(media.id, imageWidths(media.width)[0]!)), width: media.width, height: media.height }
-      : null;
+  const url = lastingImage;
   // Link cards want a JPEG about 1200 pixels wide: every image has one (made for emails).
   const shareImage = (media: Parameters<typeof url>[0]): BrandImage | null => {
     const image = url(media);

@@ -1,4 +1,5 @@
 import { SLUG_PATTERN } from "./project-slugs";
+import { WIDGET_ICONS } from "./widget-icons";
 import {
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
@@ -14,13 +15,13 @@ import {
  *
  *   <script src="https://tuti.so/widget.js" data-project="acme" async></script>
  *
- * Adds a launcher button that opens the project's portal /widget page in an
- * iframe. Plain ES5 without dependencies, and it never puts data into HTML: the
- * slug is checked against SLUG_PATTERN before it becomes part of a URL. The SDK
- * is documented in docs/widget.md.
+ * Adds a launcher, a round button with an icon, that opens the project's portal /widget
+ * page in an iframe. Plain ES5 without dependencies, and it never puts data into HTML: the
+ * slug is checked against SLUG_PATTERN before it becomes part of a URL, and icons are built
+ * as SVG elements (an uploaded one is an image's src). The SDK is documented in docs/widget.md.
  *
- * The launcher's label, colour and corner come from /api/widget/latest (set in the
- * app), along with the latest announcement; the button appears once that's read (or
+ * The launcher's name (its aria-label and tooltip), colour, corner and icon come from
+ * /api/widget/latest (set in the app), along with the latest announcement; the button appears once that's read (or
  * after 3 seconds without it), so it doesn't change under the visitor's pointer.
  * `data-hide-launcher` (or `TutiSettings.hideLauncher`) leaves it out, for sites with
  * their own button.
@@ -75,7 +76,6 @@ export function widgetLoader(portalTemplate: string): string {
   var api = new URL(script.src).origin;
   var seenKey = "tuti:seen:" + slug;
   var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  var font = "600 14px/1 system-ui, -apple-system, 'Segoe UI', sans-serif";
   // Brand colours from globals.css: the host page has none of our CSS.
 
   function css(el, styles) {
@@ -85,24 +85,55 @@ export function widgetLoader(portalTemplate: string): string {
     if (document.body) fn(); else document.addEventListener("DOMContentLoaded", fn);
   }
 
+  // The launcher: a round button with an icon; its name is for screen readers and its tooltip.
+  var label = "Feedback";
   var button = document.createElement("button");
-  var label = document.createTextNode("Feedback");
-  button.appendChild(label);
   button.type = "button";
+  button.title = label;
+  button.setAttribute("aria-label", label);
   button.setAttribute("aria-expanded", "false");
   button.setAttribute("aria-controls", "tuti-widget");
   css(button, {
     position: "fixed", right: "20px", bottom: "20px", zIndex: "2147483000",
-    padding: "12px 18px", border: "0", borderRadius: "999px", cursor: "pointer", font: font,
+    width: "56px", height: "56px", padding: "0", border: "0", borderRadius: "999px", cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
     background: dark ? "oklch(0.759 0.168 154.6)" : "oklch(0.529 0.125 155)",
     color: dark ? "oklch(0.221 0.048 151.7)" : "#fff",
     boxShadow: "0 4px 14px rgba(0, 0, 0, 0.2)"
   });
 
+  var ICONS = ${JSON.stringify(WIDGET_ICONS)};
+  // A built-in icon (the chat bubble for any other name), drawn in the button's text colour; or the team's image.
+  function newIcon(name, url) {
+    var element;
+    if (url) {
+      element = document.createElement("img");
+      element.src = url;
+      element.alt = "";
+      css(element, { width: "28px", height: "28px", objectFit: "contain" });
+      return element;
+    }
+    var svg = "http://www.w3.org/2000/svg";
+    var attributes = {
+      viewBox: "0 0 24 24", width: "28", height: "28", fill: "none", stroke: "currentColor",
+      "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true"
+    };
+    element = document.createElementNS(svg, "svg");
+    for (var key in attributes) element.setAttribute(key, attributes[key]);
+    var paths = ICONS.hasOwnProperty(name) ? ICONS[name] : ICONS.chat;
+    for (var i = 0; i < paths.length; i++) {
+      var path = document.createElementNS(svg, "path");
+      path.setAttribute("d", paths[i]);
+      element.appendChild(path);
+    }
+    return element;
+  }
+  var icon = button.appendChild(newIcon("chat"));
+
   // "New" dot, for an announcement this browser hasn't seen.
   var dot = document.createElement("span");
   css(dot, {
-    position: "absolute", top: "-2px", right: "-2px", width: "12px", height: "12px", borderRadius: "999px",
+    position: "absolute", top: "0", right: "0", width: "12px", height: "12px", borderRadius: "999px",
     background: "oklch(0.705 0.187 47.6)", border: "2px solid #fff", display: "none"
   });
   button.appendChild(dot);
@@ -143,7 +174,7 @@ export function widgetLoader(portalTemplate: string): string {
     known = true;
     unseen = value;
     dot.style.display = value ? "block" : "none";
-    button.setAttribute("aria-label", label.nodeValue + (value ? ", new updates" : ""));
+    button.setAttribute("aria-label", label + (value ? ", new updates" : ""));
     if (changed) for (var i = 0; i < listeners.length; i++) notify(listeners[i]);
   }
 
@@ -167,8 +198,8 @@ export function widgetLoader(portalTemplate: string): string {
     if (narrow) narrow.onchange = showBackdrop;
   } else {
     css(panel, {
-      right: "20px", bottom: hideLauncher ? "20px" : "76px", borderRadius: "14px",
-      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 100px))"
+      right: "20px", bottom: hideLauncher ? "20px" : "88px", borderRadius: "14px",
+      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))"
     });
   }
   whenBody(function () {
@@ -187,7 +218,26 @@ export function widgetLoader(portalTemplate: string): string {
   setTimeout(showLauncher, 3000);
   function setUp(launcher) {
     if (launcher) {
-      if (typeof launcher.label === "string" && launcher.label) label.nodeValue = launcher.label;
+      if (typeof launcher.label === "string" && launcher.label) {
+        label = launcher.label;
+        button.title = label;
+        button.setAttribute("aria-label", label);
+        // The panels are named after the button that opens them, ones already on the page too.
+        if (frame) frame.title = label;
+        var mounted = document.querySelectorAll("[data-tuti-inline]");
+        for (var m = 0; m < mounted.length; m++) if (mounted[m].__tutiFrame) mounted[m].__tutiFrame.title = label;
+      }
+      if (typeof launcher.icon === "string") {
+        var next = newIcon(launcher.icon, launcher.icon === "image" && typeof launcher.iconUrl === "string" ? launcher.iconUrl : null);
+        button.replaceChild(next, icon);
+        icon = next;
+        // An image that doesn't load (deleted, offline): the chat bubble, not an empty button.
+        next.onerror = function () {
+          if (icon !== next) return;
+          icon = newIcon("chat", null);
+          button.replaceChild(icon, next);
+        };
+      }
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
@@ -251,7 +301,7 @@ export function widgetLoader(portalTemplate: string): string {
   function newFrame(src) {
     var element = document.createElement("iframe");
     element.src = src;
-    element.title = "Feedback";
+    element.title = label;
     css(element, { width: "100%", height: "100%", border: "0", display: "block" });
     return element;
   }

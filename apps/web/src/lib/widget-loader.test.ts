@@ -1,5 +1,6 @@
 import { expect, test, vi } from "vitest";
 
+import { WIDGET_ICONS } from "./widget-icons";
 import { widgetLoader } from "./widget-loader";
 
 test("the loader is valid JavaScript with the portal template and the slug check built in", () => {
@@ -47,6 +48,11 @@ class FakeElement {
     this.children.push(child);
     return child;
   }
+  replaceChild(child: FakeElement, old: FakeElement) {
+    child.parent = this;
+    this.children[this.children.indexOf(old)] = child;
+    return old;
+  }
   addEventListener(type: string, listener: (event: object) => void) {
     (this.listeners[type] ??= []).push(listener);
   }
@@ -61,8 +67,14 @@ class FakeElement {
   ancestors(): FakeElement[] {
     return [this, ...(this.parent?.ancestors() ?? [])];
   }
-  get text() {
-    return this.children.map((child) => (child as { nodeValue?: string }).nodeValue ?? "").join("");
+  /** The launcher's name: what screen readers say, and its tooltip. */
+  get accessibleName() {
+    return { label: this.getAttribute("aria-label"), title: this.title };
+  }
+  /** The launcher's icon: a built-in one's paths, or an image's address. */
+  get icon() {
+    const icon = this.children[0] as FakeElement;
+    return icon.tagName === "img" ? { src: icon.src } : (icon.children as FakeElement[]).map((path) => path.getAttribute("d"));
   }
   /** A click that bubbles up to the document (with modifier keys, or already cancelled, from `init`); says whether the default was prevented. */
   click(init: { metaKey?: boolean; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; defaultPrevented?: boolean } = {}) {
@@ -144,6 +156,10 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         // An iframe's window, for messages to and from it.
         if (tag === "iframe") element.contentWindow = { postMessage: vi.fn() };
         return element;
+      },
+      createElementNS: (namespace: string, tag: string) => {
+        expect(namespace).toBe("http://www.w3.org/2000/svg");
+        return new FakeElement(tag, page);
       },
       createTextNode: (text: string) => ({ nodeValue: text }),
       querySelectorAll: (selector: string) => {
@@ -236,26 +252,50 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
 
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("the launcher shows the team's label, colour and corner once the app has said what they are", async () => {
+test("the launcher shows the team's name, colour, corner and icon once the app has said what they are", async () => {
   const page = loadWidget({
-    latest: { latest: null, launcher: { label: "Help & ideas", color: "#5b21b6", textColor: "#ffffff", position: "bottom-left" } },
+    before: (page) => void inlineMount(page),
+    latest: { latest: null, launcher: { label: "Help & ideas", color: "#5b21b6", textColor: "#ffffff", position: "bottom-left", icon: "megaphone", iconUrl: null } },
   });
   expect(page.window.fetch).toHaveBeenCalledWith("https://app.tuti.example/api/widget/latest?project=acme");
   // Not before, so it doesn't change under the visitor's pointer.
   expect(page.button).toBeUndefined();
   await settled();
   const button = page.button!;
-  expect(button.text).toBe("Help & ideas");
-  expect(button.getAttribute("aria-label")).toBe("Help & ideas");
-  expect(button.style).toMatchObject({ background: "#5b21b6", color: "#ffffff", left: "20px", right: "auto" });
+  // A round button with an icon in its text colour; the name is for screen readers and the tooltip.
+  expect(button.accessibleName).toEqual({ label: "Help & ideas", title: "Help & ideas" });
+  expect(button.icon).toEqual(WIDGET_ICONS.megaphone);
+  expect((button.children[0] as FakeElement).getAttribute("stroke")).toBe("currentColor");
+  expect(button.style).toMatchObject({ width: "56px", height: "56px", borderRadius: "999px", background: "#5b21b6", color: "#ffffff", left: "20px", right: "auto" });
   expect(page.panel.style).toMatchObject({ left: "20px", right: "auto" });
+  // The panel is named after the button that opens it, and so is one already in the page.
+  expect(page.inlineFrames[0]!.title).toBe("Help & ideas");
+  page.Tuti.open();
+  expect(page.frame!.title).toBe("Help & ideas");
 });
 
-test("without settings (or without an answer) the launcher is the green Feedback button, bottom right", async () => {
+test("the team's own icon is an image; one that doesn't load, an image without its address, or an unknown icon, is the chat bubble", async () => {
+  const launcher = { label: "Help", color: null, position: "bottom-right" };
+  const own = loadWidget({ latest: { latest: null, launcher: { ...launcher, icon: "image", iconUrl: "https://app.tuti.example/media/m1/w480.webp?s=x" } } });
+  await settled();
+  expect(own.button!.icon).toEqual({ src: "https://app.tuti.example/media/m1/w480.webp?s=x" });
+  expect((own.button!.children[0] as FakeElement).alt).toBe("");
+  // One that doesn't load is the chat bubble.
+  (own.button!.children[0] as FakeElement & { onerror(): void }).onerror();
+  expect(own.button!.icon).toEqual(WIDGET_ICONS.chat);
+  for (const icon of [{ icon: "image", iconUrl: null }, { icon: "toString" }, { icon: "rocket" }]) {
+    const page = loadWidget({ latest: { latest: null, launcher: { ...launcher, ...icon } } });
+    await settled();
+    expect(page.button!.icon).toEqual(WIDGET_ICONS.chat);
+  }
+});
+
+test("without settings (or without an answer) the launcher is the green chat bubble named Feedback, bottom right", async () => {
   for (const latest of [{ latest: null, launcher: null }, null]) {
     const page = loadWidget({ latest });
     await settled();
-    expect(page.button!.text).toBe("Feedback");
+    expect(page.button!.accessibleName).toEqual({ label: "Feedback", title: "Feedback" });
+    expect(page.button!.icon).toEqual(WIDGET_ICONS.chat);
     expect(page.button!.style).toMatchObject({ right: "20px", background: "oklch(0.529 0.125 155)" });
     expect(page.Tuti.unseen()).toBe(false);
   }
@@ -268,7 +308,7 @@ test("if the app doesn't answer, the button shows up after 3 seconds anyway", ()
     vi.advanceTimersByTime(2999);
     expect(page.button).toBeUndefined();
     vi.advanceTimersByTime(1);
-    expect(page.button!.text).toBe("Feedback");
+    expect(page.button!.accessibleName.label).toBe("Feedback");
   } finally {
     vi.useRealTimers();
   }
@@ -469,7 +509,7 @@ test("by default the panel opens above the launcher, as before: no drawer, no ba
   const page = loadWidget({ narrow: true });
   await settled();
   page.button!.click();
-  expect(page.panel.style).toMatchObject({ display: "block", right: "20px", bottom: "76px", borderRadius: "14px" });
+  expect(page.panel.style).toMatchObject({ display: "block", right: "20px", bottom: "88px", borderRadius: "14px" });
   expect(page.panel.style.top).toBeUndefined();
   expect(page.backdrop).toBeUndefined();
   expect(page.inlineFrames).toEqual([]);
@@ -487,7 +527,7 @@ test("data-display or TutiSettings.display picks the mode, the attribute first; 
   error.mockRestore();
   await settled();
   expect(sidebar(unknown)).toBe(false);
-  expect(unknown.button!.text).toBe("Feedback");
+  expect(unknown.button!.accessibleName.label).toBe("Feedback");
 });
 
 test("sidebar: a full-height drawer on the launcher's side; Escape closes it and focus goes back to the button", async () => {
@@ -580,7 +620,7 @@ test("inline: each data-tuti-inline element gets its own panel, at the tab it na
 test("inline mounts work in every mode, also ones added later, each mounted once; an unknown tab is reported, and it's the default", async () => {
   const page = loadWidget({ before: (page) => void inlineMount(page, "whats-new") });
   await settled();
-  expect(page.button!.text).toBe("Feedback");
+  expect(page.button!.accessibleName.label).toBe("Feedback");
   expect(page.inlineFrames.map((frame) => frame.src)).toEqual(["https://acme.tuti.example/widget?tab=whats-new&display=inline"]);
 
   // A single-page app shows one later.
