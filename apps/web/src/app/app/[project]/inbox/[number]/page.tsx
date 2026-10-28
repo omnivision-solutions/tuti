@@ -1,5 +1,5 @@
 import { type EmailStatus, prisma } from "@tuti/db";
-import { aiPaused, NEW_PROJECT_EMAILS_PER_DAY, projectEmailAllowance } from "@tuti/jobs";
+import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY } from "@tuti/jobs";
 import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
@@ -47,8 +47,6 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     plansEnabled() &&
     !!supportDomain() &&
     !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
-  // In a new project's first week, replies past its daily cap wait for tomorrow.
-  const capped = !waitingForApproval && (await projectEmailAllowance(projectId)) === 0;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
@@ -100,6 +98,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   const links = new Map((await attachmentLinks(conversation.messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
 
   const person = conversationPerson(conversation);
+  // In a new project's first week, replies past its daily cap wait for tomorrow (where they'd be emailed at all).
+  const capped = !waitingForApproval && !conversation.spam && !!person.email && (await cappedProjects()).includes(projectId);
   const online =
     conversation.userId || conversation.visitorHash
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))

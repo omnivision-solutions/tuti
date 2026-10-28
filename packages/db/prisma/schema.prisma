@@ -995,6 +995,8 @@ model ProjectEmailDay {
   sent       Int      @default(0)
   bounced    Int      @default(0)
   complained Int      @default(0)
+  /// Taken from a new project's daily cap as its emails are sent (packages/jobs/src/email-limits.ts).
+  claimed    Int      @default(0)
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 

@@ -7,7 +7,7 @@ import { ses } from "@tuti/shared/ses";
 import { mediaStorage } from "@tuti/shared/storage";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
-import { projectEmailAllowance } from "./email-limits";
+import { cappedProjects, claimProjectEmail } from "./email-limits";
 import { sesTenantHeaders } from "./ses-tenant";
 
 /** Tuti's loop header (apps/web lib/email-noise.ts): mail that comes back with it is known as ours. */
@@ -169,27 +169,22 @@ export async function sendConversationReplies(_: JobInput<"sendConversationRepli
   if (!domain || !emailConfigured()) {
     return { skipped: "support email isn't set up" };
   }
+  // New projects past their daily cap wait for tomorrow, and aren't picked, so they can't crowd out the rest.
+  const capped = await cappedProjects(now);
   const due = await prisma.conversationMessage.findMany({
-    where: unsent(now),
+    where: { ...unsent(now), ...(capped.length > 0 && { projectId: { notIn: capped } }) },
     distinct: ["conversationId"],
+    orderBy: { createdAt: "asc" },
     select: { conversationId: true, projectId: true },
     take: 100,
   });
   let sent = 0;
-  // A new project's daily cap: its replies past it wait for tomorrow.
-  const left = new Map<string, number | null>();
   for (const { conversationId, projectId } of due) {
-    if (!left.has(projectId)) {
-      left.set(projectId, await projectEmailAllowance(projectId, now));
-    }
-    const allowance = left.get(projectId)!;
-    if (allowance !== null && allowance <= 0) {
+    // A send that then doesn't happen keeps its slot: the cap errs low.
+    if (!(await claimProjectEmail(projectId, now))) {
       continue;
     }
-    if (await sendReplies(conversationId, domain, now, log)) {
-      sent++;
-      left.set(projectId, allowance === null ? null : allowance - 1);
-    }
+    sent += (await sendReplies(conversationId, domain, now, log)) ? 1 : 0;
   }
   return { emails: sent };
 }
