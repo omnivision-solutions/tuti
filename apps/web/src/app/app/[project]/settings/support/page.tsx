@@ -4,6 +4,7 @@ import { CopyField } from "@/components/copy-button";
 import { RequestEmailButton } from "@/components/inbox/approve-email";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { askedRecently } from "@/lib/email-approval";
 import { timeAgo } from "@/lib/format";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
@@ -51,7 +52,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                       Your replies reach your users in the widget for now. Before they&apos;re emailed too, we check each new project,
                       so no one&apos;s spam hurts everyone&apos;s email.
                     </p>
-                    {settings.email.approval.requestedAt ? (
+                    {settings.email.approval.requestedAt && askedRecently(settings.email.approval.requestedAt) ? (
                       <p className="text-sm text-muted-foreground">Asked {timeAgo(settings.email.approval.requestedAt)}. It shows here once it&apos;s approved.</p>
                     ) : (
                       <RequestEmailButton projectSlug={project.slug} />

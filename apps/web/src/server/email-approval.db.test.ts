@@ -53,6 +53,25 @@ test("replies wait until the operator approves the project from the link they're
   expect(toKim()).toHaveLength(1);
 });
 
+test("asks at once email the operator once; a failed send can be asked again at once, and a day on, they may ask again", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const toOperator = () => mailbox.emails.filter((email) => email.to.includes(OPERATOR) && email.subject.startsWith(project.name)).length;
+
+  const results = await Promise.all([requestEmailSending(project.slug), requestEmailSending(project.slug), requestEmailSending(project.slug)]);
+  expect(results.filter((result) => !result.error)).toHaveLength(1);
+  expect(toOperator()).toBe(1);
+
+  // A day on, without an answer: they may ask again (the settings page offers it again too).
+  await prisma.project.update({ where: { id: project.id }, data: { emailRequestedAt: new Date(Date.now() - 25 * 60 * 60_000) } });
+  mailbox.refuseNext(OPERATOR);
+  expect(await requestEmailSending(project.slug)).toEqual({ error: expect.stringContaining("Couldn't send") });
+  expect(toOperator()).toBe(1);
+  expect(await requestEmailSending(project.slug)).toEqual({});
+  expect(toOperator()).toBe(2);
+});
+
 test("a server without plans approves nothing: replies go from the start", async () => {
   vi.stubEnv("PLANS", "");
   const owner = await signUp("Olive Owner");

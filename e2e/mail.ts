@@ -19,12 +19,15 @@ export const countEmailsTo = (address: string) => emailsTo(address).length;
 
 /**
  * The latest email to `address`, waiting up to 10 seconds for one. With `after`
- * (a count from countEmailsTo), waits for an email newer than those.
+ * (a count from countEmailsTo), waits for an email newer than those; with `subject`, for one whose
+ * subject matches (another journey may be emailing the same address at once).
  */
-export async function latestEmailTo(address: string, { after = 0 } = {}): Promise<CapturedEmail> {
+export async function latestEmailTo(address: string, { after = 0, subject }: { after?: number; subject?: RegExp } = {}): Promise<CapturedEmail> {
   for (let i = 0; i < 100; i++) {
-    const emails = emailsTo(address);
-    if (emails.length > after) {
+    const emails = emailsTo(address)
+      .slice(after)
+      .filter((email) => !subject || subject.test(email.subject));
+    if (emails.length > 0) {
       return emails.at(-1)!;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));

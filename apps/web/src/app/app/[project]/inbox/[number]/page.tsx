@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
+import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
@@ -28,9 +29,11 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   }
   const projectId = membership.project.id;
 
-  // On a server selling plans, replies wait to be emailed until the operator approves the project.
+  // On a server selling plans (and emailing replies at all), replies wait to be emailed until the operator approves the project.
   const waitingForApproval =
-    plansEnabled() && !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
+    plansEnabled() &&
+    !!supportDomain() &&
+    !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },

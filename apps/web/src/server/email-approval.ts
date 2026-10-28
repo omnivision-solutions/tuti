@@ -5,7 +5,7 @@ import { emailApprovalEmail, emailConfigured, sendEmail } from "@tuti/email";
 import { plansEnabled } from "@tuti/shared";
 import { refresh } from "next/cache";
 
-import { approvalProject, approvalToken } from "@/lib/email-approval";
+import { approvalProject, approvalToken, REQUEST_EVERY_MS } from "@/lib/email-approval";
 import { appUrl } from "@/lib/hosts";
 
 import { portalAddress } from "./custom-domains";
@@ -29,24 +29,38 @@ export async function requestEmailSending(projectSlug: string): Promise<FormStat
   if (!plansEnabled() || !operator || !emailConfigured()) {
     return { error: "This server doesn't need its projects approved" };
   }
+  // Once a day at most (REQUEST_EVERY_MS), claimed before sending: asks at once email the operator once.
   const state = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailApprovedAt: true, emailRequestedAt: true } });
   if (state.emailApprovedAt) {
     return {};
   }
-  // Once a day at most, so nobody can flood the operator's inbox.
-  if (state.emailRequestedAt && Date.now() - state.emailRequestedAt.getTime() < 24 * 60 * 60_000) {
+  const claimedAt = new Date();
+  const { count } = await prisma.project.updateMany({
+    where: {
+      id: project.id,
+      emailApprovedAt: null,
+      OR: [{ emailRequestedAt: null }, { emailRequestedAt: { lt: new Date(claimedAt.getTime() - REQUEST_EVERY_MS) } }],
+    },
+    data: { emailRequestedAt: claimedAt },
+  });
+  if (count === 0) {
     return { error: "You've asked already. We'll look at it soon." };
   }
-  await sendEmail({
-    to: operator,
-    ...emailApprovalEmail({
-      projectName: project.name,
-      portalUrl: await portalAddress(project.slug),
-      requestedBy: `${session.user.name} (${session.user.email})`,
-      url: new URL(`/approve-email?token=${encodeURIComponent(approvalToken(project.id))}`, appUrl()).toString(),
-    }),
-  });
-  await prisma.project.update({ where: { id: project.id }, data: { emailRequestedAt: new Date() } });
+  try {
+    await sendEmail({
+      to: operator,
+      ...emailApprovalEmail({
+        projectName: project.name,
+        portalUrl: await portalAddress(project.slug),
+        requestedBy: `${session.user.name} (${session.user.email})`,
+        url: new URL(`/approve-email?token=${encodeURIComponent(approvalToken(project.id))}`, appUrl()).toString(),
+      }),
+    });
+  } catch {
+    // Not sent (as far as we know): the claim goes back, so they can ask again now.
+    await prisma.project.updateMany({ where: { id: project.id, emailRequestedAt: claimedAt }, data: { emailRequestedAt: state.emailRequestedAt } });
+    return { error: "Couldn't send your request. Try again in a moment." };
+  }
   refresh();
   return {};
 }

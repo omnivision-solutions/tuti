@@ -9,9 +9,9 @@ import { approveEmailSending, requestEmailSending } from "@/server/email-approva
 /** The operator's approval page: what's asked, and the button that approves it. */
 export function ApproveEmailButton({ token, projectName, portalUrl }: { token: string; projectName: string; portalUrl: string }) {
   const [pending, startTransition] = useTransition();
-  const [done, setDone] = useState<string>();
+  const [done, setDone] = useState<{ title: string; approved: boolean }>();
   if (done) {
-    return <EmptyState title={done} description="Its replies are emailed to its users from now on." />;
+    return <EmptyState title={done.title} description={done.approved ? "Its replies are emailed to its users from now on." : undefined} />;
   }
   return (
     <EmptyState
@@ -23,7 +23,7 @@ export function ApproveEmailButton({ token, projectName, portalUrl }: { token: s
           onClick={() =>
             startTransition(async () => {
               const result = await approveEmailSending(token);
-              setDone(result.error ?? `${projectName} is approved`);
+              setDone(result.error ? { title: result.error, approved: false } : { title: `${projectName} is approved`, approved: true });
             })
           }
         >
