@@ -12,7 +12,13 @@ Parameters:
     Description: The configuration set support email names (SES_CONFIGURATION_SET).
   AppUrl:
     Type: String
-    Description: The app's origin (APP_URL), where /api/email/events is.
+    Default: ""
+    Description: >-
+      The app's origin (APP_URL), where /api/email/events is. Empty at first: the app confirms the
+      subscription only once it has the SES_* settings, which come from this stack's outputs.
+
+Conditions:
+  Subscribed: !Not [!Equals [!Ref AppUrl, ""]]
 
 Resources:
   Events:
@@ -36,6 +42,7 @@ Resources:
 
   EventsSubscription:
     Type: AWS::SNS::Subscription
+    Condition: Subscribed
     Properties:
       TopicArn: !Ref Events
       Protocol: https

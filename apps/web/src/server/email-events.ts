@@ -1,4 +1,4 @@
-import { type EmailStatus, prisma } from "@tuti/db";
+import { type EmailStatus, type Prisma, prisma } from "@tuti/db";
 import { deliveredMessageId } from "@tuti/email";
 
 import { notifyInbox } from "./live";
@@ -12,7 +12,7 @@ import { notifyInbox } from "./live";
  */
 type SesEvent = {
   eventType?: string;
-  mail?: { messageId?: string };
+  mail?: { messageId?: string; timestamp?: string };
   bounce?: { bounceType?: string; bouncedRecipients?: { diagnosticCode?: string }[] };
   complaint?: { complainedRecipients?: { emailAddress?: string }[] };
 };
@@ -24,39 +24,73 @@ const FORWARD: Partial<Record<string, { status: EmailStatus; after: EmailStatus[
   Complaint: { status: "COMPLAINED", after: ["SENT", "DELIVERED", "BOUNCED"] },
 };
 
-export async function recordEmailEvent(snsMessageId: string, event: SesEvent) {
+/** An event for an email we can't find yet, this recent, is tried again: the send may not have saved SES's id yet. */
+const UNSAVED_FOR_MS = 5 * 60_000;
+
+class NotSavedYet extends Error {}
+
+/** False when SNS should try again later. */
+export async function recordEmailEvent(snsMessageId: string, event: SesEvent, now = Date.now()): Promise<boolean> {
   const change = FORWARD[event.eventType ?? ""];
   const id = deliveredMessageId(`250 Ok ${event.mail?.messageId ?? ""}`);
   if (!change || !id) {
+    return true;
+  }
+  try {
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
+      if (count === 0) {
+        return;
+      }
+      await apply(tx, id, change, event, now);
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof NotSavedYet) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function apply(tx: Prisma.TransactionClient, id: string, change: { status: EmailStatus; after: EmailStatus[] }, event: SesEvent, now: number) {
+  // One message per email carries its id: the email's last.
+  const message = await tx.conversationMessage.findUnique({
+    where: { deliveredMessageId: id },
+    select: { id: true, projectId: true, conversationId: true, createdAt: true, conversation: { select: { userId: true, visitorHash: true } } },
+  });
+  if (!message) {
+    // Rolled back, so SNS's next try counts.
+    if (now - Date.parse(event.mail?.timestamp ?? "") < UNSAVED_FOR_MS) {
+      throw new NotSavedYet();
+    }
     return;
   }
-  await prisma.$transaction(async (tx) => {
-    const { count } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
-    if (count === 0) {
-      return;
-    }
-    // One message per email carries its id: the email's last.
-    const message = await tx.conversationMessage.findUnique({
-      where: { deliveredMessageId: id },
-      select: { id: true, projectId: true, conversation: { select: { id: true, userId: true, visitorHash: true } } },
-    });
-    if (!message) {
-      return;
-    }
-    const diagnostic = event.bounce?.bouncedRecipients?.[0]?.diagnosticCode;
-    await tx.conversationMessage.updateMany({
-      where: { id: message.id, emailStatus: { in: change.after } },
-      data: {
-        emailStatus: change.status,
-        ...(change.status === "BOUNCED" && {
-          emailError: `${event.bounce?.bounceType === "Permanent" ? "The address doesn't take email" : "Their mail server didn't take it"}${diagnostic ? ` (${diagnostic.slice(0, 300)})` : ""}`,
-        }),
-      },
-    });
-    const complained = (event.complaint?.complainedRecipients ?? []).flatMap((r) => (r.emailAddress ? [r.emailAddress.toLowerCase()] : []));
-    if (complained.length > 0) {
-      await tx.emailBlock.createMany({ data: complained.map((email) => ({ projectId: message.projectId, email })), skipDuplicates: true });
-    }
-    await notifyInbox(tx, { projectId: message.projectId, conversationId: message.conversation.id, userId: message.conversation.userId, visitorHash: message.conversation.visitorHash });
+  // The email had the team's messages since the previous email's last one.
+  const previous = await tx.conversationMessage.findFirst({
+    where: { conversationId: message.conversationId, sentMessageId: { not: null }, createdAt: { lt: message.createdAt } },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
   });
+  const diagnostic = event.bounce?.bouncedRecipients?.[0]?.diagnosticCode;
+  await tx.conversationMessage.updateMany({
+    where: {
+      conversationId: message.conversationId,
+      author: "TEAM",
+      note: false,
+      createdAt: { lte: message.createdAt, ...(previous && { gt: previous.createdAt }) },
+      emailStatus: { in: change.after },
+    },
+    data: {
+      emailStatus: change.status,
+      ...(change.status === "BOUNCED" && {
+        emailError: `${event.bounce?.bounceType === "Permanent" ? "The address doesn't take email" : "Their mail server didn't take it"}${diagnostic ? ` (${diagnostic.slice(0, 300)})` : ""}`,
+      }),
+    },
+  });
+  const complained = (event.complaint?.complainedRecipients ?? []).flatMap((r) => (r.emailAddress ? [r.emailAddress.toLowerCase()] : []));
+  if (complained.length > 0) {
+    await tx.emailBlock.createMany({ data: complained.map((email) => ({ projectId: message.projectId, email })), skipDuplicates: true });
+  }
+  await notifyInbox(tx, { projectId: message.projectId, conversationId: message.conversationId, userId: message.conversation.userId, visitorHash: message.conversation.visitorHash });
 }

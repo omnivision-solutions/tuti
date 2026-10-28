@@ -28,7 +28,8 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 const post = async (body: unknown) => (await POST(new Request("http://localhost/api/email/events", { method: "POST", body: JSON.stringify(body) }))).status;
-const event = (eventType: string, sesId: string, extra: object = {}) => JSON.stringify({ eventType, mail: { messageId: sesId }, ...extra });
+const event = (eventType: string, sesId: string, extra: object = {}, sentAt = new Date()) =>
+  JSON.stringify({ eventType, mail: { messageId: sesId, timestamp: sentAt.toISOString() }, ...extra });
 const bounce = { bounce: { bounceType: "Permanent", bouncedRecipients: [{ emailAddress: "x", diagnosticCode: "smtp; 550 5.1.1 user unknown" }] } };
 
 /** A conversation by email with one reply emailed, which SES gave `sesId`. */
@@ -98,4 +99,32 @@ test("the subscription is confirmed for this server's topic only; without SES, t
 
   vi.stubEnv("SES_REGION", "");
   expect(await post(ses.sns("Notification", event("Delivery", id(4))))).toBe(404);
+});
+
+test("an email with several replies: all of them are marked, not the previous email's", async () => {
+  const { project, team, status } = await emailed(id(5));
+  // The previous email (its last message carries our Message-ID), then two replies in one email.
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "TEAM" }, data: { sentMessageId: `<earlier-${project.slug}@tuti.email>`, deliveredMessageId: null } });
+  await call(replyToConversation, team, { number: 1, body: "One more thing" });
+  await call(replyToConversation, team, { number: 1, body: "And another" });
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, body: { in: ["One more thing", "And another"] } }, data: { emailStatus: "SENT" } });
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, body: "And another" }, data: { deliveredMessageId: `<${id(6)}@email.amazonses.com>` } });
+
+  expect(await post(ses.sns("Notification", event("Bounce", id(6), bounce)))).toBe(200);
+  const statuses = await prisma.conversationMessage.findMany({ where: { projectId: project.id, author: "TEAM" }, orderBy: { createdAt: "asc" }, select: { emailStatus: true } });
+  expect(statuses.map((m) => m.emailStatus)).toEqual(["SENT", "BOUNCED", "BOUNCED"]);
+  expect((await status()).emailStatus).toBe("SENT");
+});
+
+test("an event that comes before the send saved SES's id is tried again by SNS; an old one for no email is dropped", async () => {
+  const { project, status } = await emailed(id(7));
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "TEAM" }, data: { deliveredMessageId: null } });
+  const early = ses.sns("Notification", event("Delivery", id(7)));
+  expect(await post(early)).toBe(503);
+  // The send saves it: SNS's next try counts.
+  await prisma.conversationMessage.updateMany({ where: { projectId: project.id, author: "TEAM" }, data: { deliveredMessageId: `<${id(7)}@email.amazonses.com>` } });
+  expect(await post(early)).toBe(200);
+  expect((await status()).emailStatus).toBe("DELIVERED");
+
+  expect(await post(ses.sns("Notification", event("Delivery", id(8), {}, new Date(Date.now() - 60 * 60_000))))).toBe(200);
 });

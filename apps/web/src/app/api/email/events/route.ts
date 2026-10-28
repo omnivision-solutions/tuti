@@ -45,7 +45,9 @@ export async function POST(request: Request) {
     } catch {
       return Response.json({ error: "Not an SES event" }, { status: 400 });
     }
-    await recordEmailEvent(message.MessageId, event);
+    if (!(await recordEmailEvent(message.MessageId, event))) {
+      return Response.json({ error: "Not saved yet: try again" }, { status: 503 });
+    }
   }
   return Response.json({});
 }
