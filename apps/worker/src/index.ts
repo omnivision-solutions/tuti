@@ -2,12 +2,14 @@ import { ConcurrencyLimitStrategy } from "@hatchet-dev/typescript-sdk";
 import { handlers } from "@tuti/jobs";
 import { assertEnv, jobs, log, type JobKey } from "@tuti/shared";
 import { getHatchet, withRunLogs } from "@tuti/shared/hatchet";
+import { assertSesSettings } from "@tuti/shared/ses";
 
 import { waitForMigration } from "./migrations";
 import { receiverFromEnv, startSmtpReceiver } from "./smtp-receiver";
 
 // HATCHET_CLIENT_TOKEN is checked by the Hatchet client itself when tasks are declared.
 assertEnv(["DATABASE_URL", "PORTAL_URL_TEMPLATE"]);
+assertSesSettings();
 
 // Set in builds (tsup.config.ts); when run from source, the developer migrates.
 if (process.env.TUTI_SCHEMA_MIGRATION) {

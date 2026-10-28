@@ -143,6 +143,9 @@ model Project {
   /// users (one project's spam mustn't hurt everyone's delivery): when it asked, and when it was approved.
   emailRequestedAt      DateTime?
   emailApprovedAt       DateTime?
+  /// Its Amazon SES tenant and the support domain's identity associated with it (`<tenant> <identity ARN>`), once set up for its
+  /// email (packages/jobs/src/ses-tenant.ts); null on a server without SES.
+  sesTenant             String?
   /// How the team's changelog reads, for AI drafts: tone notes, and up to 3
   /// published entries as examples (ids; deleted or unpublished ones are skipped).
   changelogTone         String       @default("")

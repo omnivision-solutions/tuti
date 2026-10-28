@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { handlers } from "@tuti/jobs";
-import { beforeEach, expect, test, vi } from "vitest";
+import { startSesFake } from "@tuti/testkit/ses";
+import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
@@ -17,10 +18,13 @@ const DOMAIN = "tuti.email";
 const log = { info: () => {}, warn: () => {} };
 const run = () => handlers.sendConversationReplies({}, log);
 
+const ses = await startSesFake();
+afterAll(() => ses.close());
 beforeEach(() => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
 });
+afterEach(() => vi.unstubAllEnvs());
 
 async function setup() {
   const owner = await signUp("Olive Owner");
@@ -59,6 +63,8 @@ test("a reply they haven't seen a minute on is emailed from the project's addres
   expect(email!.text).toContain("It's under Billing → Invoices.");
   expect(email!.headers["in-reply-to"]).toBe(`<first-${project.slug}@example.com>`);
   expect(email!.headers["x-tuti-loop"]).toBe(subdomain);
+  // No SES on this server: no tenant.
+  expect(email!.headers["x-ses-tenant"]).toBeUndefined();
   const sent = await prisma.conversationMessage.findFirstOrThrow({ where: { projectId: project.id, author: "TEAM" } });
   expect(sent).toMatchObject({ emailStatus: "SENT", emailClaimedAt: null, sentMessageId: email!.headers["message-id"] });
 
@@ -183,4 +189,55 @@ test("a send that fails is tried again by the next runs, three times, then shown
   });
   await run();
   expect(emailsTo(kim)).toHaveLength(1);
+});
+
+test("with Amazon SES, sent under the project's own tenant, set up once before its first email", async () => {
+  for (const [name, value] of Object.entries(ses.env)) {
+    vi.stubEnv(name, value);
+  }
+  const { project, team, kim } = await setup();
+  await call(replyToConversation, team, { number: 1, body: "Hello?" });
+  await aMinuteOn(project.id);
+  // SES failed halfway through the setup: nothing sent, and the next run finishes it.
+  ses.failing.add("/v2/email/tenants/resources");
+  await run();
+  expect(emailsTo(kim)).toEqual([]);
+  ses.failing.clear();
+  await run();
+
+  const tenant = `tuti-test-${project.id}`;
+  const [email] = emailsTo(kim);
+  expect(email!.headers["x-ses-tenant"]).toBe(tenant);
+  expect(email!.headers["x-ses-configuration-set"]).toBe("tuti-test");
+  // Its own suppression list, and what its mail uses associated with it (SES refuses the mail otherwise).
+  expect(ses.tenants.get(tenant)).toEqual({
+    suppression: { SuppressedReasons: ["BOUNCE", "COMPLAINT"], SuppressionScope: "TENANT" },
+    resources: new Set([`arn:aws:ses:us-east-1:000000000000:identity/${DOMAIN}`, "arn:aws:ses:us-east-1:000000000000:configuration-set/tuti-test"]),
+  });
+
+  // Set up once: the next email doesn't ask SES again.
+  const calls = ses.calls.length;
+  await call(replyToConversation, team, { number: 1, body: "Still there?" });
+  await aMinuteOn(project.id);
+  await run();
+  expect(emailsTo(kim)).toHaveLength(2);
+  expect(emailsTo(kim)[1]!.headers["x-ses-tenant"]).toBe(tenant);
+  expect(ses.calls).toHaveLength(calls);
+
+  // Another support domain: its identity is associated too, before the next email.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "help.example.com");
+  await call(replyToConversation, team, { number: 1, body: "Anything else?" });
+  await aMinuteOn(project.id);
+  await run();
+  expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:000000000000:identity/help.example.com");
+  expect(emailsTo(kim)).toHaveLength(3);
+
+  // Another SES account (or region), same configuration set: the tenant is made there too.
+  ses.tenants.clear();
+  vi.stubEnv("SES_EVENTS_TOPIC_ARN", "arn:aws:sns:us-east-1:111111111111:tuti-test-events");
+  await call(replyToConversation, team, { number: 1, body: "Last one." });
+  await aMinuteOn(project.id);
+  await run();
+  expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:111111111111:configuration-set/tuti-test");
+  expect(emailsTo(kim)).toHaveLength(4);
 });

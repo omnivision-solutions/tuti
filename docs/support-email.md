@@ -94,3 +94,15 @@ To set it up, verify the domain in SES, then run `infra/ses-inbound/deploy.sh` w
 uploads the Lambda's code and makes the rule set the active one: SES has one active rule set per
 region. Then add a wildcard MX record, `*.<domain> MX 10 inbound-smtp.<region>.amazonaws.com`. Replies
 go out through SES's SMTP too, so its SMTP user may send from `*@*.<domain>`.
+
+#### Sending under a tenant per project
+
+With the `SES_*` settings (see `apps/web/.env.example`), each project's email goes out under an SES
+tenant of its own (`<configuration set>-<project id>`), so SES pauses only a project whose mail
+draws bounces or complaints, and an address that complains about one project isn't suppressed for
+another (each tenant has its own suppression list). Before a project's first email, the app creates
+its tenant and associates the support domain's identity and the configuration set with it (SES
+refuses mail naming a tenant they aren't associated with); every email names both
+(`X-SES-TENANT`, `X-SES-CONFIGURATION-SET`). `infra/ses-sending/deploy.sh` makes the topic the
+configuration set's events go to (`SES_EVENTS_TOPIC_ARN`) and the user the app's key is for, which
+may only manage tenants and identities.

@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./hatchet": "./src/hatchet.ts",
     "./storage": "./src/storage.ts",
+    "./ses": "./src/ses.ts",
     "./webhook-url": "./src/webhook-url.ts",
     "./post-urls": "./src/post-urls.ts",
     "./inbound-signature": "./src/inbound-signature.ts"
