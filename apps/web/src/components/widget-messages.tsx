@@ -90,9 +90,21 @@ export function useVisitor(projectSlug: string): Visitor | null {
  * email to write, and the panel keeps a visitor token to show them their conversations.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
-  const { signedIn, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const { signedIn, error, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
+  // The page signed out whoever was here: the team's messages to them aren't anyone's now (their
+  // counts stopped with their Messages, so this is the page's last word; a visitor's own come after).
+  // Not when this frame's own exchange failed: another panel may have the page's person, and their count.
+  const wasSignedIn = useRef(false);
+  useEffect(() => {
+    if (signedIn) {
+      wasSignedIn.current = true;
+    } else if (wasSignedIn.current && !portalSignedIn && !error) {
+      wasSignedIn.current = false;
+      tellPage(0);
+    }
+  }, [signedIn, portalSignedIn, error]);
   // Signed in on the portal in another tab since this panel loaded: the server knows them by its cookie now.
   const [signedInSince, setSignedInSince] = useState(false);
   const known = portalSignedIn || !!signedIn || signedInSince;
@@ -107,12 +119,12 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   }, [known, visitor, projectSlug]);
 
   const auth = useMemo<WidgetAuth>(() => (known ? { token } : { visitor: visitor?.token ?? null }), [known, token, visitor?.token]);
+  // Until the page says who's here, nobody writes as a visitor, new or returning: someone it's about
+  // to sign in would write in a conversation they'd lose sight of once it does.
+  if (!known && !pageAnswered) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
+  }
   if (!known && !visitor) {
-    // Until the page says who's here, nobody writes as a visitor: someone it's about to sign in would
-    // start a conversation they'd lose sight of once it does.
-    if (!pageAnswered) {
-      return <p className="text-sm text-muted-foreground">Loading…</p>;
-    }
     return (
       <FirstMessage
         projectSlug={projectSlug}

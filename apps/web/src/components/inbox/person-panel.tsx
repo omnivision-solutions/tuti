@@ -152,7 +152,7 @@ export async function PersonPanel({
         {view && <p className="text-xs break-all text-muted-foreground">id {view.id}</p>}
         {!user && <p className="text-xs text-muted-foreground">Known only by this address.</p>}
         {lookalike && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs break-words text-muted-foreground">
             Maybe {lookalike.name} (not signed in){lookalike.id && <span className="break-all">, id {lookalike.id}</span>}
           </p>
         )}

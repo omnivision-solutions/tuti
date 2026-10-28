@@ -45,7 +45,8 @@ function onIdentify(event: MessageEvent) {
   tell({ pending: true });
   const token = data.token;
   exchange(
-    () => widgetSignIn(projectSlug, token),
+    // A failed exchange (the network, the server) signs nobody in, not whoever was before.
+    () => widgetSignIn(projectSlug, token).catch(() => ({ error: "Couldn't sign you in" })),
     (result) => tell("error" in result ? { error: result.error } : { signedIn: result }),
   );
 }

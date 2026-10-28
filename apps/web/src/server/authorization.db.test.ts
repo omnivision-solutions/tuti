@@ -134,6 +134,15 @@ async function inboxToken(slug: string) {
   return { token: widgetToken(project.id, await upsertProjectUser(project.id, "matrix-user", { name: "Matrix user" })) };
 }
 
+/** A conversation started with that token, for actions on one; a start that fails is the setup's failure. */
+async function startedNumber(slug: string, token: Awaited<ReturnType<typeof inboxToken>>) {
+  const started = await widgetInbox.widgetStartConversation(slug, token, "Help");
+  if (!("number" in started)) {
+    throw new Error(`Couldn't start a conversation: ${started.error}`);
+  }
+  return started.number;
+}
+
 const matrix: Matrix = {
   "api-keys": {
     createApiKey: { allowed: "ADMIN", call: (slug) => apiKeys.createApiKey(slug, "Zapier", "READ") },
@@ -515,8 +524,7 @@ const matrix: Matrix = {
       allowed: "public",
       call: async (slug) => {
         const token = await inboxToken(slug);
-        const started = await widgetInbox.widgetStartConversation(slug, token, "Help");
-        return widgetInbox.widgetConversation(slug, token, "number" in started ? started.number : 0);
+        return widgetInbox.widgetConversation(slug, token, await startedNumber(slug, token));
       },
     },
     widgetStartConversation: { allowed: "public", call: async (slug) => widgetInbox.widgetStartConversation(slug, await inboxToken(slug), "Help") },
@@ -524,8 +532,7 @@ const matrix: Matrix = {
       allowed: "public",
       call: async (slug) => {
         const token = await inboxToken(slug);
-        const started = await widgetInbox.widgetStartConversation(slug, token, "Help");
-        return widgetInbox.widgetSendMessage(slug, token, "number" in started ? started.number : 0, "More");
+        return widgetInbox.widgetSendMessage(slug, token, await startedNumber(slug, token), "More");
       },
     },
   },
