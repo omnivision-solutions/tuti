@@ -983,6 +983,29 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await visitor.evaluate(() => (window as unknown as { Tuti: TutiSdk }).Tuti.close());
   await expect(visitor.locator("#tuti-widget")).toBeHidden();
   await expect(visitor.getByRole("button", { name: "Our feedback button" })).toBeFocused();
+
+  // The team's own icon: uploaded and saved, then removed, which picks the chat bubble again; later saves still work.
+  await owner.getByText("Your own", { exact: true }).click();
+  const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await owner.getByLabel("Your icon").setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: pixel });
+  await expect(owner.getByRole("img", { name: "Your icon preview" })).toBeVisible();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await expect(owner.getByText("Widget saved")).toBeVisible();
+  await owner.getByRole("button", { name: "Remove", exact: true }).click();
+  await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
+  // Each save's answer before the next change (one made meanwhile would count as saved).
+  const saved = () => owner.waitForResponse((response) => response.request().method() === "POST" && !!response.request().headers()["next-action"]);
+  let answered = saved();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await answered;
+  await expect(owner.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  await owner.getByLabel("Colour", { exact: true }).fill("#0f766e");
+  answered = saved();
+  await owner.getByRole("button", { name: "Save changes" }).click();
+  await answered;
+  await owner.reload();
+  await expect(owner.getByRole("radio", { name: "Chat" })).toBeChecked();
+  await expect(owner.getByLabel("Colour", { exact: true })).toHaveValue("#0f766e");
 });
 
 test("a customer's site shows the widget inline in its page, and as a sidebar", async ({ browser }, testInfo) => {

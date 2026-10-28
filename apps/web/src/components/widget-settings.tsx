@@ -138,6 +138,8 @@ export function WidgetSettings({
               image={iconImage}
               look="light"
               onBusy={(delta) => setUploading((count) => count + delta)}
+              // Without its image, the launcher shows the chat bubble: so does the picker (and what's saved).
+              onRemove={() => setIcon("chat")}
             />
           </div>
         </fieldset>

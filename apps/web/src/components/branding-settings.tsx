@@ -310,6 +310,7 @@ export function ImageField({
   image: initial,
   look,
   onBusy,
+  onRemove,
 }: {
   projectSlug: string;
   name: string;
@@ -318,6 +319,8 @@ export function ImageField({
   image: Image;
   look: "light" | "dark";
   onBusy: (delta: number) => void;
+  /** After "Remove", for a form whose other fields depend on there being an image. */
+  onRemove?: () => void;
 }) {
   const id = useId();
   const [image, setImage] = useState(initial);
@@ -368,7 +371,15 @@ export function ImageField({
           }}
         />
         {image && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => setImage(null)}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setImage(null);
+              onRemove?.();
+            }}
+          >
             Remove
           </Button>
         )}
