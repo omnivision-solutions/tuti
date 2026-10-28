@@ -31,6 +31,12 @@ export const jobs = {
     // `only`: the addresses a first run couldn't reach, tried again on their own (no claim: the first run made it).
     input: z.object({ messageId: z.string(), only: z.array(z.string()).optional() }),
   },
+  /** Queues conversation-message again for users' messages the team should have heard about but didn't (queueing failed). */
+  resubmitConversationNotices: {
+    name: "conversation-notices-resubmit",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** A docs article was published or changed: embed its sections for search (or remove them if it's no longer published). */
   articleChanged: {
     name: "article-changed",

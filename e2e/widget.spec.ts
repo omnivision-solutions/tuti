@@ -1074,6 +1074,13 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await widget.getByRole("button", { name: /How do I export my data\?/ }).click();
   await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
+
+  // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
+  // signed in, not Sam, whose messages go.
+  await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
+  await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "someone-else"));
+  await expect(widget.getByText("Leave your email so the team can get back to you.")).toBeVisible();
+  await expect(messages).toHaveCount(0);
 });
 
 test("signed out, a visitor leaves their email to message the team, and their browser keeps the conversation", async ({ browser }, testInfo) => {
@@ -1116,10 +1123,16 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(messages).toHaveCount(2, { timeout: 15_000 });
   await expect(messages.last()).toContainText("Yes: 50% off for registered charities.");
 
-  // Back later in the same browser: their conversation is still there.
+  // Back later in the same browser: their conversation is still there. But not before the page says
+  // who's here (this time its sign-in never answers, so after 3 seconds): someone it's about to sign in
+  // mustn't write as the visitor and lose sight of it.
+  await visitor.context().addInitScript(() => {
+    (window as unknown as { TutiSettings: unknown }).TutiSettings = { identify: () => new Promise(() => {}) };
+  });
   await visitor.reload();
   await visitor.getByRole("button", { name: "Feedback" }).click();
   await widget.getByRole("link", { name: "Messages" }).click();
+  await expect(widget.getByText("Loading…")).toBeVisible();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
 
   // Another browser has none of it.
@@ -1203,6 +1216,6 @@ test("with the support inbox on, “Ask a person” in the widget starts a conve
   await checkpoint(owner, "escalated-conversation");
 
   // In the widget, the note isn't there.
-  await widget.getByRole("button", { name: new RegExp(question.replace(/[?]/g, "\\?")) }).click();
+  await widget.getByRole("button", { name: question }).click();
   await expect(widget.getByRole("list", { name: "Messages" }).getByRole("listitem")).toHaveCount(2);
 });
