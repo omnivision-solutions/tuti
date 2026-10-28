@@ -132,8 +132,9 @@ export const updateWidgetSettings = defineOperation({
         // One save at a time per project, so two saves can't each keep an image the other replaced.
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true } });
-        // Removing the image of an image icon goes back to the chat bubble.
-        const icon = input.icon ?? (input.iconImage === null && current.widgetIcon === "image" ? "chat" : current.widgetIcon);
+        // Removing the image of an image icon (the form still says "image") goes back to the chat bubble.
+        const removed = input.iconImage === null && current.widgetIcon === "image" && (input.icon ?? "image") === "image";
+        const icon = removed ? "chat" : (input.icon ?? current.widgetIcon);
         // Only an image icon keeps its image; a replaced one is released by the daily release-media job.
         const image = icon === "image" ? (input.iconImage !== undefined ? input.iconImage : current.widgetIconImageId) : null;
         if (icon === "image" && !image) {

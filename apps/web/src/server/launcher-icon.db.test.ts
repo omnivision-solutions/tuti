@@ -103,6 +103,9 @@ test("removing an image icon's image goes back to the chat bubble", async () => 
   const image = await uploaded();
   await update({ icon: "image", iconImage: image.id });
   expect(await update({ iconImage: null })).toMatchObject({ icon: "chat", iconImage: null });
+  // As the form sends it: "Your own" still picked, its image removed.
+  await update({ icon: "image", iconImage: image.id });
+  expect(await update({ icon: "image", iconImage: null })).toMatchObject({ icon: "chat", iconImage: null });
   // Picking the image icon without an image is still refused.
   await expect(update({ icon: "image", iconImage: null })).rejects.toMatchObject({ status: 400, message: "Upload an image for the icon" });
 });
