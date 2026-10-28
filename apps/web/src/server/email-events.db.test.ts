@@ -134,32 +134,34 @@ test("on a server selling plans, each project's email is counted by day: sent, b
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   const tags = { project: [project.id], "ses:configuration-set": ["tuti-test"] };
+  // One time for every email here, so the test's days hold across midnight.
+  const at = new Date();
   const days = () => prisma.projectEmailDay.findMany({ where: { projectId: project.id }, select: { sent: true, bounced: true, complained: true } });
 
-  const sent = ses.sns("Notification", event("Send", id(10), {}, new Date(), tags));
+  const sent = ses.sns("Notification", event("Send", id(10), {}, at, tags));
   expect(await post(sent)).toBe(200);
   expect(await post(sent)).toBe(200);
-  expect(await post(ses.sns("Notification", event("Send", id(11), {}, new Date(), tags)))).toBe(200);
-  expect(await post(ses.sns("Notification", event("Bounce", id(10), bounce, new Date(), tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Send", id(11), {}, at, tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Bounce", id(10), bounce, at, tags)))).toBe(200);
   // A soft bounce isn't the sender's doing.
-  expect(await post(ses.sns("Notification", event("Bounce", id(11), { bounce: { bounceType: "Transient" } }, new Date(), tags)))).toBe(200);
-  expect(await post(ses.sns("Notification", event("Complaint", id(11), {}, new Date(), tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Bounce", id(11), { bounce: { bounceType: "Transient" } }, at, tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Complaint", id(11), {}, at, tags)))).toBe(200);
   expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
 
   // A bounce that comes after midnight counts on the day its email was sent.
-  const yesterday = new Date(Date.now() - 24 * 60 * 60_000);
+  const yesterday = new Date(at.getTime() - 24 * 60 * 60_000);
   expect(await post(ses.sns("Notification", event("Bounce", id(17), bounce, yesterday, tags)))).toBe(200);
   expect(await prisma.projectEmailDay.findFirst({ where: { projectId: project.id, day: new Date(yesterday.toISOString().slice(0, 10)) } })).toMatchObject({ bounced: 1 });
   await prisma.projectEmailDay.deleteMany({ where: { projectId: project.id, bounced: 1, sent: 0 } });
 
   // A project that's gone, or untagged mail (Tuti's own): nothing to count.
-  expect(await post(ses.sns("Notification", event("Send", id(12), {}, new Date(), { project: ["gone"] })))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Send", id(12), {}, at, { project: ["gone"] })))).toBe(200);
   expect(await post(ses.sns("Notification", event("Send", id(13))))).toBe(200);
   expect(await prisma.projectEmailDay.count({ where: { projectId: { not: project.id } } })).toBe(0);
 
   // Self-hosted (no plans sold): not counted.
   vi.stubEnv("PLANS", "");
-  expect(await post(ses.sns("Notification", event("Send", id(14), {}, new Date(), tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Send", id(14), {}, at, tags)))).toBe(200);
   expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
 });
 
