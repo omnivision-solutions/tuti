@@ -72,10 +72,11 @@ export async function widgetConversations(projectSlug: string, auth: WidgetAuth)
         number: true,
         subject: true,
         lastMessageAt: true,
-        _count: { select: { messages: { where: { author: "TEAM", seenAt: null } } } },
+        _count: { select: { messages: { where: { author: "TEAM", note: false, seenAt: null } } } },
       },
     }),
-    prisma.conversationMessage.count({ where: { author: "TEAM", seenAt: null, conversation: { projectId: who.projectId, ...who.where } } }),
+    // The team's notes are theirs alone: never unseen by the user.
+    prisma.conversationMessage.count({ where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: who.projectId, ...who.where } } }),
   ]);
   return { conversations: rows.map(({ _count, ...row }) => ({ ...row, unseen: _count.messages })), unseen };
 }
@@ -98,7 +99,7 @@ export async function widgetConversation(projectSlug: string, auth: WidgetAuth, 
   }
   if (markSeen !== false) {
     await prisma.conversationMessage.updateMany({
-      where: { conversationId: conversation.id, author: "TEAM", seenAt: null },
+      where: { conversationId: conversation.id, author: "TEAM", note: false, seenAt: null },
       data: { seenAt: new Date() },
     });
   }

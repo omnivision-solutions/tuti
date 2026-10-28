@@ -148,6 +148,8 @@ test("with the support inbox on, it also says how many of the team's messages th
       { projectId: project.id, conversationId: conversation.id, author: "USER", authorId: sam.userId, channel: "WIDGET", body: "Help" },
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Seen", seenAt: new Date() },
       { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Not yet" },
+      // The team's note isn't theirs to see, so it isn't unseen either.
+      { projectId: project.id, conversationId: conversation.id, author: "TEAM", channel: "APP", body: "Check billing", note: true },
     ],
   });
   expect((await ask(await ssoToken("app-user-1"))).body).toMatchObject({ messages: 0 });

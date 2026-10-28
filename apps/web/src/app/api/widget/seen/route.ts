@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     changelogSeenAt(context.projectId, context.actor.userId),
     context.inbox
       ? prisma.conversationMessage.count({
-          where: { author: "TEAM", seenAt: null, conversation: { projectId: context.projectId, userId: context.actor.userId } },
+          where: { author: "TEAM", note: false, seenAt: null, conversation: { projectId: context.projectId, userId: context.actor.userId } },
         })
       : 0,
   ]);

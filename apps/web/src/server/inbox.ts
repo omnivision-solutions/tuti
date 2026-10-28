@@ -21,9 +21,9 @@ function conversationNumber(value: unknown) {
   return parsed.data;
 }
 
-export async function replyInConversation(projectSlug: string, conversation: number, body: string): Promise<FormState> {
+export async function replyInConversation(projectSlug: string, conversation: number, body: string, note = false): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can reply", async (context) =>
-    call(replyToConversation, context, { number: conversationNumber(conversation), body: String(body) }),
+    call(replyToConversation, context, { number: conversationNumber(conversation), body: String(body), note: note === true }),
   );
 }
 
