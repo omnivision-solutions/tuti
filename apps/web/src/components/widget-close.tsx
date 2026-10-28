@@ -17,7 +17,7 @@ const noSubscription = () => () => {};
  * `display=inline` (`inline`), and names its iframe, which keeps that name on the pages
  * it goes to next.
  */
-export function WidgetClose({ inline }: { inline: boolean }) {
+export function WidgetClose({ inline, className }: { inline: boolean; className?: string }) {
   const hidden = useSyncExternalStore(
     noSubscription,
     () => inline || window.name === WIDGET_INLINE_NAME,
@@ -40,7 +40,7 @@ export function WidgetClose({ inline }: { inline: boolean }) {
     return null;
   }
   return (
-    <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close">
+    <Button variant="ghost" size="icon-sm" onClick={close} aria-label="Close" className={className}>
       <XIcon />
     </Button>
   );
