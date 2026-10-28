@@ -62,6 +62,8 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
   // Whether it's known who's here: the page answered (someone, or nobody), or didn't within 3 seconds
   // (a panel opened on its own, or a page with an older script, which only ever sends tokens).
   const [known, setKnown] = useState(false);
+  // A token from the page is being traded.
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -70,10 +72,13 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     const subscriber = {
       projectSlug,
       tell: (result: SignInResult) => {
+        // Someone's signing in: until it's traded (even after the 3 seconds), they may not be who's shown.
         if ("pending" in result) {
           clearTimeout(giveUp);
+          setPending(true);
           return;
         }
+        setPending(false);
         setKnown(true);
         // A token that doesn't check out: nobody's signed in, not whoever was before it.
         if ("error" in result) {
@@ -105,7 +110,7 @@ export function useWidgetSignIn(projectSlug: string, enabled = true) {
     };
   }, [projectSlug, enabled]);
 
-  return { signedIn, error, known: !enabled || known };
+  return { signedIn, error, known: !enabled || known, pending: enabled && pending };
 }
 
 /**
