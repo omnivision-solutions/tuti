@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused } from "@tuti/jobs";
 import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
@@ -22,6 +22,14 @@ import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 
 const ORIGINS = { WIDGET: "the widget", EMAIL: "email", ESCALATION: "an AI answer", API: "the API" } as const;
+/** A team message's email, as its page says it (bounces and complaints from Amazon SES's events). */
+const EMAIL_STATUS: Record<EmailStatus, (error: string | null) => string> = {
+  SENT: () => "Emailed",
+  DELIVERED: () => "Emailed and delivered",
+  BOUNCED: (error) => `The email bounced${error ? `: ${error}` : ""}`,
+  COMPLAINED: () => "They marked the email as spam: replies reach them only in the widget now",
+  FAILED: (error) => `Couldn't email it${error ? `: ${error}` : ""}`,
+};
 
 /** One conversation: its messages, the reply box, status, assignee and spam. */
 export default async function ConversationPage(props: PageProps<"/app/[project]/inbox/[number]">) {
@@ -171,11 +179,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                         <p className="text-xs text-muted-foreground">
                           {message.seenAt
                             ? "Seen"
-                            : message.emailStatus === "SENT"
-                              ? "Emailed"
-                              : message.emailStatus === "FAILED"
-                                ? `Couldn't email it${message.emailError ? `: ${message.emailError}` : ""}`
-                                : "Not emailed until your project is approved (Settings → Support)"}
+                            : message.emailStatus
+                              ? EMAIL_STATUS[message.emailStatus](message.emailError)
+                              : "Not emailed until your project is approved (Settings → Support)"}
                         </p>
                       )}
                       {message.original && (

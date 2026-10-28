@@ -1,3 +1,4 @@
+import { createSign, generateKeyPairSync, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
@@ -13,24 +14,49 @@ export type SesFake = {
   calls: string[];
   /** Paths that answer 500 while they're in it, to test failures. */
   failing: Set<string>;
+  /**
+   * A message as SNS posts it for the events topic, signed with the fake's key (its certificate is on
+   * the fake): a Notification carries an SES event, a SubscriptionConfirmation a link to confirm.
+   * `signed: false` gives it another key's signature.
+   */
+  sns(type: "Notification" | "SubscriptionConfirmation", message: string, options?: { messageId?: string; topicArn?: string; signed?: boolean }): Record<string, string>;
+  /** How many times the subscription was confirmed. */
+  confirmations: number;
   close(): Promise<void>;
+};
+
+/** What SNS signs for each type, in this order. */
+const SNS_SIGNED = {
+  Notification: ["Message", "MessageId", "Subject", "Timestamp", "TopicArn", "Type"],
+  SubscriptionConfirmation: ["Message", "MessageId", "SubscribeURL", "Timestamp", "Token", "TopicArn", "Type"],
 };
 
 /**
  * A local stand-in for Amazon SES's API (v2): the calls Tuti makes. Tenants, created with their own
  * suppression list, and resources associated with them. A repeated create answers SES's
- * `AlreadyExistsException`. Requests must be signed; signatures themselves aren't checked.
+ * `AlreadyExistsException`. Requests must be signed; signatures themselves aren't checked. And SNS's
+ * side of the events: signed messages, the certificate, and the link that confirms a subscription.
  */
 export async function startSesFake(): Promise<SesFake> {
   const tenants = new Map<string, SesFakeTenant>();
   const calls: string[] = [];
   const failing = new Set<string>();
+  const key = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const otherKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  let confirmations = 0;
 
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => {
       const path = new URL(req.url ?? "/", "http://fake").pathname;
+      if (req.method === "GET" && path === "/sns/cert.pem") {
+        return res.writeHead(200).end(key.publicKey.export({ type: "spki", format: "pem" }));
+      }
+      if (req.method === "GET" && path === "/sns/confirm") {
+        confirmations++;
+        return res.writeHead(200).end("<ConfirmSubscriptionResponse/>");
+      }
       calls.push(`${req.method} ${path}`);
       const answer = (status: number, body: unknown = {}, errorType?: string) =>
         res.writeHead(status, { "content-type": "application/json", ...(errorType && { "x-amzn-errortype": `${errorType}:http://internal.amazon.com/` }) }).end(JSON.stringify(body));
@@ -66,6 +92,7 @@ export async function startSesFake(): Promise<SesFake> {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const topicArn = "arn:aws:sns:us-east-1:000000000000:tuti-test-events";
   return {
     url,
     env: {
@@ -74,11 +101,31 @@ export async function startSesFake(): Promise<SesFake> {
       SES_ACCESS_KEY_ID: "fake-ses-key",
       SES_SECRET_ACCESS_KEY: "fake-ses-secret",
       SES_CONFIGURATION_SET: "tuti-test",
-      SES_EVENTS_TOPIC_ARN: "arn:aws:sns:us-east-1:000000000000:tuti-test-events",
+      SES_EVENTS_TOPIC_ARN: topicArn,
     },
     tenants,
     calls,
     failing,
+    sns(type, message, { messageId = randomUUID(), topicArn: topic = topicArn, signed = true } = {}) {
+      const fields: Record<string, string> = {
+        Type: type,
+        MessageId: messageId,
+        TopicArn: topic,
+        Message: message,
+        Timestamp: new Date().toISOString(),
+        SignatureVersion: "2",
+        SigningCertURL: `${url}/sns/cert.pem`,
+        ...(type === "SubscriptionConfirmation" && { Token: "fake-token", SubscribeURL: `${url}/sns/confirm?Token=fake-token` }),
+      };
+      const text = SNS_SIGNED[type]
+        .filter((field) => field in fields)
+        .map((field) => `${field}\n${fields[field]}\n`)
+        .join("");
+      return { ...fields, Signature: createSign("RSA-SHA256").update(text).sign((signed ? key : otherKey).privateKey, "base64") };
+    },
+    get confirmations() {
+      return confirmations;
+    },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }
