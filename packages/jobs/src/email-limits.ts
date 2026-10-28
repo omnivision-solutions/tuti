@@ -70,8 +70,8 @@ export const pausing = () => plansEnabled() && !!process.env.APP_PORTAL_OWNER?.t
  * On a server selling plans, pauses a project's email to its users when its bounces or complaints
  * over the last two weeks pass the limits above, before they hurt everyone's delivery: its replies
  * and "shipped" emails wait (sign-in links still go) until the operator resumes it. Counted from the
- * day it was last resumed (resuming clears that day's counts so far, and bounces and complaints for
- * emails sent before it aren't counted: apps/web/src/server/email-events.ts). The
+ * day it was last resumed (resuming clears that day's counts so far, and nothing about emails sent
+ * before it is counted: apps/web/src/server/email-events.ts). The
  * project's row is locked meanwhile, so a resume and other checks wait, and the totals read here are
  * the ones the pause is set on. The reason, when this call paused it; null otherwise.
  */

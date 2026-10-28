@@ -71,15 +71,15 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
       }
       if (count) {
         // On the day (UTC) the email was sent, so a bounce counts against that day's sends however
-        // late it comes; nothing for a project that's gone, and no bounce or complaint for an email
-        // sent before its email was last resumed (packages/jobs/src/email-limits.ts).
+        // late it comes; nothing for a project that's gone, nor for an email sent before its email was
+        // last resumed (packages/jobs/src/email-limits.ts).
         const parsed = Date.parse(event.mail?.timestamp ?? "");
         const sentAt = new Date(Number.isNaN(parsed) ? now : parsed);
         const column = Prisma.raw(`"${count.column}"`);
-        const before = count.column === "sent" ? Prisma.empty : Prisma.sql`AND ("emailResumedAt" IS NULL OR "emailResumedAt" <= ${sentAt})`;
         await tx.$executeRaw`
           INSERT INTO "project_email_day" ("projectId", "day", ${column})
-          SELECT "id", ${sentAt.toISOString().slice(0, 10)}::date, 1 FROM "project" WHERE "id" = ${count.projectId} ${before}
+          SELECT "id", ${sentAt.toISOString().slice(0, 10)}::date, 1 FROM "project"
+          WHERE "id" = ${count.projectId} AND ("emailResumedAt" IS NULL OR "emailResumedAt" <= ${sentAt})
           ON CONFLICT ("projectId", "day") DO UPDATE SET ${column} = "project_email_day".${column} + 1`;
       }
       if (change && id && reply) {

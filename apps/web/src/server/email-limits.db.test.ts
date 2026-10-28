@@ -201,6 +201,9 @@ test("too many bounces pause the project's email: replies and shipped wait, sign
   }
   await sesEvent(project.id, "Bounce", beforeResume);
   expect(await pausedAt(project.id)).toBeNull();
+  // Nor do their late sends, which would water down the rate since.
+  await sesEvent(project.id, "Send", beforeResume);
+  expect(await prisma.projectEmailDay.findFirstOrThrow({ where: { projectId: project.id } })).toMatchObject({ sent: 0, bounced: 0, complained: 0 });
   // But the day it's resumed counts, from then: 2 of 100 sent since bounce again.
   await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 1 } });
   await sesEvent(project.id, "Bounce");
