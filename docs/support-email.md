@@ -107,6 +107,22 @@ refuses mail naming a tenant they aren't associated with); every email names bot
 configuration set's events go to (`SES_EVENTS_TOPIC_ARN`) and the user the app's key is for, which
 may only manage tenants and identities.
 
+#### Sending from the team's own domain
+
+On a Pro plan, with the `SES_*` settings, a team can have replies come from its own address
+(`support@acme.com`) instead of the project's support address: Settings → Support takes the
+address, the app adds its domain to SES (Easy DKIM, tagged with the project) and shows the 3 CNAMEs
+SES gives. Once SES finds them ("Check", and a daily check), replies come from that address under
+the project's tenant, with the domain associated with it; Reply-To stays the conversation's own
+address, so replies still come back. If SES stops finding them, replies come from the project's
+support address again, with the reason on Settings → Support. A domain is one project's alone, and
+one SES already has for anything else (or a domain above it) is refused. Removing it has SES forget it.
+
+Teams' domains can be anything, so the API user and the SMTP user `infra/ses-sending` makes may act
+on any identity in their region: deploy it in a region whose SES has only Tuti's identities (SES
+keeps identities, quotas and production access per region), with the support domain and the domain
+Tuti's own mail comes from verified there.
+
 #### Bounces and complaints
 
 SES's events (deliveries, bounces, complaints) go through SNS to `/api/email/events`, subscribed

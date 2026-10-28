@@ -1,18 +1,22 @@
 import { prisma } from "@tuti/db";
-import { plansEnabled } from "@tuti/shared";
+import { checkEmailDomain } from "@tuti/jobs";
+import { planIncludes, plansEnabled } from "@tuti/shared";
+import { ses } from "@tuti/shared/ses";
 import { z } from "zod";
 
 import { mailSubdomain, supportAddress, supportDomain } from "../inbound";
 import { defineOperation, OperationError } from "./define";
+import { requirePlan } from "./plan";
 
 /** The support inbox's settings (Settings → Support; docs/plan.md, Support inbox). */
 
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
-  const [project, subdomain, last] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailApprovedAt: true, emailRequestedAt: true } }),
+  const [project, subdomain, last, own] = await Promise.all([
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailApprovedAt: true, emailRequestedAt: true, plan: true } }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.emailDomain.findUnique({ where: { projectId } }),
   ]);
   return {
     inbox: project.supportInbox,
@@ -23,10 +27,118 @@ export const supportSettings = async (projectId: string) => {
           lastReceivedAt: last?.createdAt ?? null,
           // On a server selling plans: whether replies are emailed to users yet (the operator approves each project).
           approval: plansEnabled() ? { approved: !!project.emailApprovedAt, requestedAt: project.emailRequestedAt } : null,
+          // Sending from the team's own domain: offered with Amazon SES (`included`: on the project's plan).
+          ownDomain: ses()
+            ? {
+                included: planIncludes(project.plan, "emailDomain"),
+                address: own?.address ?? null,
+                // The CNAMEs to add (Easy DKIM), SES's verification and when it last checked; replies come from it once verified.
+                records: (own?.dkimTokens ?? []).map((token) => ({ type: "CNAME" as const, name: `${token}._domainkey.${own!.domain}`, value: `${token}.dkim.amazonses.com` })),
+                verified: !!own?.verifiedAt,
+                checkedAt: own?.checkedAt ?? null,
+                error: own?.error ?? null,
+              }
+            : null,
         }
       : null,
   };
 };
+
+/** Every domain a domain is under, itself first (help.acme.com: help.acme.com, acme.com). */
+const domainAndParents = (domain: string) =>
+  domain
+    .split(".")
+    .slice(0, -1)
+    .map((_, i, labels) => domain.split(".").slice(i).join("."));
+
+export const setEmailDomain = defineOperation({
+  name: "support.setEmailDomain",
+  summary:
+    "Send replies by email from your own address (`support@yourcompany.com`): adds its domain to Amazon SES, whose 3 DKIM CNAMEs (`support.get`, `email.ownDomain.records`) go in your DNS. Replies come from it once SES finds them (`support.checkEmailDomain`); until then, from the project's support address. A domain is one project's alone. Pro plan",
+  method: "POST",
+  path: "/support/email-domain",
+  scope: "write",
+  access: "admin",
+  input: z.object({ address: z.email().max(254) }),
+  example: { address: "support@example.com" },
+  run: async ({ projectId }, { address: given }) => {
+    const api = ses();
+    const support = supportDomain();
+    if (!api || !support) {
+      throw new OperationError(409, "ses_off", "This server doesn't send email from teams' own domains");
+    }
+    await requirePlan(projectId, "emailDomain");
+    const address = given.toLowerCase();
+    const domain = address.slice(address.lastIndexOf("@") + 1);
+    if (!domain.includes(".") || domain === support || domain.endsWith(`.${support}`)) {
+      throw new OperationError(400, "invalid_domain", "Use an address on your own domain");
+    }
+    const current = await prisma.emailDomain.findUnique({ where: { projectId } });
+    if (current && current.domain !== domain) {
+      throw new OperationError(409, "domain_set", `Remove ${current.domain} first`);
+    }
+    if (!current) {
+      if (await prisma.emailDomain.findUnique({ where: { domain } })) {
+        throw new OperationError(409, "domain_taken", "Another project sends from this domain");
+      }
+      // SES has one identity per domain, and a domain sends as its parents allow: none of them may be someone else's.
+      for (const name of domainAndParents(domain)) {
+        const identity = await api.identity(name);
+        if (identity && identity.projectId !== projectId) {
+          throw new OperationError(409, "domain_taken", "This domain is set up for sending elsewhere");
+        }
+      }
+      const added = (await api.addDomain(domain, projectId)) ?? (await api.identity(domain));
+      try {
+        await prisma.emailDomain.create({ data: { projectId, domain, address, dkimTokens: added?.tokens ?? [] } });
+      } catch (error) {
+        // Another project took it meanwhile: the identity is theirs to keep.
+        throw (error as { code?: string }).code === "P2002" ? new OperationError(409, "domain_taken", "Another project sends from this domain") : error;
+      }
+    } else {
+      await prisma.emailDomain.update({ where: { projectId }, data: { address } });
+    }
+    return supportSettings(projectId);
+  },
+});
+
+export const checkEmailDomainOperation = defineOperation({
+  name: "support.checkEmailDomain",
+  summary: "Ask Amazon SES now whether your domain's DKIM records are in place (it checks again daily on its own)",
+  method: "POST",
+  path: "/support/email-domain/check",
+  scope: "write",
+  access: "admin",
+  input: z.object({}),
+  run: async ({ projectId }) => {
+    if (!(await checkEmailDomain(projectId))) {
+      throw new OperationError(404, "not_found", "No domain to check");
+    }
+    return supportSettings(projectId);
+  },
+});
+
+export const removeEmailDomain = defineOperation({
+  name: "support.removeEmailDomain",
+  summary: "Stop sending from your own domain: replies come from the project's support address again, and Amazon SES forgets the domain",
+  method: "DELETE",
+  path: "/support/email-domain",
+  scope: "write",
+  access: "admin",
+  input: z.object({}),
+  run: async ({ projectId }) => {
+    const own = await prisma.emailDomain.findUnique({ where: { projectId } });
+    if (own) {
+      const api = ses();
+      // Only an identity added for this project (another might have it since, if SES lost ours).
+      if (api && (await api.identity(own.domain))?.projectId === projectId) {
+        await api.removeDomain(own.domain);
+      }
+      await prisma.emailDomain.delete({ where: { projectId } });
+    }
+    return supportSettings(projectId);
+  },
+});
 
 export const getSupportSettings = defineOperation({
   name: "support.get",

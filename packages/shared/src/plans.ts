@@ -66,13 +66,13 @@ export function planCredits(plan: PaidPlan): number {
   return process.env[name] && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
-/** What a plan may include beyond Free: a custom domain, the portal under a path of the team's site, a private portal (with reader groups and readers by email), code changes from GitHub. */
-export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges";
+/** What a plan may include beyond Free: a custom domain, the portal under a path of the team's site, a private portal (with reader groups and readers by email), code changes from GitHub, support email from the team's own domain. */
+export type PlanFeature = "customDomain" | "sitePath" | "privatePortal" | "codeChanges" | "emailDomain";
 
 const INCLUDES: Record<"FREE" | PaidPlan, readonly PlanFeature[]> = {
   FREE: [],
-  PRO: ["customDomain", "codeChanges"],
-  BUSINESS: ["customDomain", "codeChanges", "privatePortal", "sitePath"],
+  PRO: ["customDomain", "codeChanges", "emailDomain"],
+  BUSINESS: ["customDomain", "codeChanges", "emailDomain", "privatePortal", "sitePath"],
 };
 
 /** The plans that include `feature`, for filtering projects by it; null without plans (every project has it). */
@@ -97,6 +97,7 @@ const NEEDS: Record<PlanFeature, string> = {
   sitePath: "A portal under a path of your site needs",
   privatePortal: "A private portal and reader groups need",
   codeChanges: "Code changes need",
+  emailDomain: "Emailing from your own domain needs",
 };
 
 /** What a project is told when its plan doesn't include `feature`: "Code changes need the Pro plan." */

@@ -287,6 +287,7 @@ model Project {
   mailSubdomain           MailSubdomain?
   inboundEmails           InboundEmail[]
   emailBlocks             EmailBlock[]
+  emailDomain             EmailDomain?
   votes                   Vote[]
   comments                Comment[]
   ssoIdentities           SsoIdentity[]
@@ -949,6 +950,25 @@ enum EmailStatus {
   DELIVERED
   BOUNCED
   COMPLAINED
+}
+
+/// A team's own domain its support email comes from (docs/plan.md, Support inbox, item 11; Pro): the
+/// address replies come from, the domain (one project's alone: SES has one identity per domain), its
+/// 3 DKIM tokens from SES (the CNAMEs the team adds), and when SES last had it verified: null until
+/// then, or since SES stopped, with why in `error`, and replies come from the project's support address meanwhile.
+model EmailDomain {
+  projectId  String    @id
+  domain     String    @unique
+  address    String
+  dkimTokens String[]
+  verifiedAt DateTime?
+  checkedAt  DateTime?
+  error      String?
+  createdAt  DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("email_domain")
 }
 
 /// An Amazon SES event, by SNS's message id: SNS may deliver one again, and it counts once. Kept a week.

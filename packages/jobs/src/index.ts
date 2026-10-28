@@ -4,6 +4,7 @@ import { getHatchet } from "@tuti/shared/hatchet";
 import { articleChanged, purgeArticles } from "./articles";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
+import { checkEmailDomains } from "./email-domains";
 import { codeChange } from "./code-changes";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
@@ -13,6 +14,7 @@ import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
 export { signWebhook } from "./webhooks";
+export { checkEmailDomain } from "./email-domains";
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
@@ -36,6 +38,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   postCreated,
   conversationMessage,
   pruneInboundEmails,
+  checkEmailDomains,
   sendConversationReplies,
   resubmitConversationNotices,
   articleChanged,
