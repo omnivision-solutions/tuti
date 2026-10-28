@@ -1057,17 +1057,19 @@ model ConversationMessage {
 /// storage under `key` (private: read with signed links). Not a `media` row: those are images an
 /// account uploaded, processed for the web; an attachment may be any file, from anyone, kept whole.
 model ConversationAttachment {
-  id           String   @id @default(cuid())
-  projectId    String
+  id                String   @id @default(cuid())
+  projectId         String
   /// Null while it's an upload not sent yet (a teammate's, for a reply): removed after a day if never sent.
-  messageId    String?
-  /// Who uploaded it, while it's waiting to be sent: only they can send it.
-  uploadedById String?
-  key          String
-  filename     String
-  contentType  String
-  size         Int
-  createdAt    DateTime @default(now())
+  messageId         String?
+  /// Who uploaded it, while it's waiting to be sent: only they can send it (someone with an account, or a
+  /// signed-out visitor in the widget, by their token's hash).
+  uploadedById      String?
+  uploadedByVisitor String?
+  key               String
+  filename          String
+  contentType       String
+  size              Int
+  createdAt         DateTime @default(now())
 
   project Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
   message ConversationMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)

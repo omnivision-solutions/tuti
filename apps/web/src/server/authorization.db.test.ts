@@ -546,6 +546,10 @@ const matrix: Matrix = {
       },
     },
     widgetStartConversation: { allowed: "public", call: async (slug) => widgetInbox.widgetStartConversation(slug, await inboxToken(slug), "Help") },
+    widgetUploadAttachment: {
+      allowed: "public",
+      call: async (slug) => widgetInbox.widgetUploadAttachment(slug, await inboxToken(slug), { filename: "error.png", contentType: "image/png", size: 1000 }),
+    },
     widgetSendMessage: {
       allowed: "public",
       call: async (slug) => {

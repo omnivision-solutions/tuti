@@ -4,6 +4,7 @@ import { cn } from "cn";
 import { ChevronLeftIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 
+import { AttachButton, type StartUpload, UploadList, useUploads } from "@/components/attachment-uploads";
 import { EmptyState } from "@/components/empty-state";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import {
   widgetHere,
   widgetSendMessage,
   widgetStartConversation,
+  widgetUploadAttachment,
 } from "@/server/widget-inbox";
 import type { WidgetAuth } from "@/server/widget-person";
 
@@ -402,17 +404,24 @@ function ConversationList({
 }
 
 /** A message box (⌘/Ctrl+Enter sends), with an email field first when `email` is given (someone signed out). */
+/** No attachments here: someone new isn't anyone yet (their visitor token comes with their first message). */
+const noUploads: StartUpload = async () => ({ error: "Send your first message, then attach files" });
+
 function Composer({
   placeholder,
   label,
   email,
   send,
+  upload,
 }: {
   placeholder: string;
   label: string;
   email?: string;
-  send: (text: string, email: string) => Promise<{ error?: string }>;
+  send: (text: string, email: string, attachments: string[]) => Promise<{ error?: string }>;
+  /** Where files they attach upload (with "Attach files"); without it, there's no attaching. */
+  upload?: StartUpload;
 }) {
+  const files = useUploads(upload ?? noUploads);
   const [text, setText] = useState("");
   const [address, setAddress] = useState(email ?? "");
   const [error, setError] = useState<string>();
@@ -421,11 +430,12 @@ function Composer({
     startTransition(async () => {
       // Offline, or the server failing: say so by the form, and keep what they wrote.
       const sent = text;
-      const result = await send(sent, address).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
+      const result = await send(sent, address, files.ids).catch(() => ({ error: "Couldn't send it. Check your connection and try again." }));
       setError(result.error);
       if (!result.error) {
         // Only what was sent: anything typed meanwhile stays.
         setText((now) => (now === sent ? "" : now));
+        files.clear();
       }
     });
   return (
@@ -454,16 +464,20 @@ function Composer({
         rows={3}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending) {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !files.uploading) {
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
           }
         }}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending} className="self-end">
-        {pending ? "Sending…" : "Send"}
-      </Button>
+      {upload && <UploadList uploads={files.uploads} remove={files.remove} />}
+      <div className={upload ? "flex items-center justify-between gap-2" : "flex justify-end"}>
+        {upload && <AttachButton attach={files.attach} />}
+        <Button type="submit" disabled={pending || files.uploading}>
+          {pending ? "Sending…" : "Send"}
+        </Button>
+      </div>
     </form>
   );
 }
@@ -541,8 +555,9 @@ function NewConversation({
         label="Message"
         placeholder="How can we help?"
         email={visitorEmail ?? undefined}
-        send={async (text, email) => {
-          const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email);
+        upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
+        send={async (text, email, attachments) => {
+          const result = await widgetStartConversation(projectSlug, auth, text, visitorEmail === null ? undefined : email, attachments);
           if ("error" in result) {
             return result;
           }
@@ -625,8 +640,9 @@ function Conversation({
           <Composer
             label="Reply"
             placeholder="Write a reply…"
-            send={async (text) => {
-              const result = await widgetSendMessage(projectSlug, auth, number, text);
+            upload={(file) => widgetUploadAttachment(projectSlug, auth, file)}
+            send={async (text, _email, attachments) => {
+              const result = await widgetSendMessage(projectSlug, auth, number, text, attachments);
               if (!("error" in result)) {
                 await reload();
               }
