@@ -12,7 +12,8 @@ export function PersonDetails({ name, children }: { name: string; children: Reac
   return (
     <>
       <aside aria-label="About them" className="hidden lg:block">
-        <Card size="sm" className="sticky top-16">
+        {/* Scrolls on its own when taller than the screen, so it never makes the messages' column taller. */}
+        <Card size="sm" className="sticky top-16 max-h-[calc(100svh-5.5rem)] overflow-y-auto">
           <CardContent>{children}</CardContent>
         </Card>
       </aside>

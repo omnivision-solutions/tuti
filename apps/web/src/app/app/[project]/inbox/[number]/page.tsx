@@ -10,6 +10,7 @@ import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
 import { RefreshAt } from "@/components/inbox/refresh-at";
 import { ReplyForm } from "@/components/inbox/reply-form";
+import { ScrollToEnd } from "@/components/scroll-to-end";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -152,11 +153,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
       {conversation.spam && <Badge variant="outline">Spam</Badge>}
 
-      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start lg:gap-6">
+      {/* The page's height at least, so the reply box is at the bottom of the screen with few messages too. */}
+      <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-6">
         <PersonDetails name={personName}>
           <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
         </PersonDetails>
-        <div className="flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1">
+        <div className="flex min-w-0 flex-1 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <ol className="flex flex-col gap-3" aria-label="Messages">
             {conversation.messages.map((message) => {
               const fromTeam = message.author !== "USER";
@@ -197,7 +199,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             })}
           </ol>
 
-          <ReplyForm projectSlug={slug} number={conversation.number} draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"} />
+          {/* Opens at the newest message, and follows new ones. */}
+          <ScrollToEnd count={conversation.messages.length} />
+          {/* Stays at the bottom of the screen as the messages scroll under it (-mb-6 and pb-6: over the page's own padding). */}
+          <div className="sticky bottom-0 -mb-6 mt-auto bg-background pt-2 pb-6">
+            <ReplyForm projectSlug={slug} number={conversation.number} draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"} />
+          </div>
         </div>
       </div>
     </>
