@@ -35,6 +35,7 @@ import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
+import * as appWidget from "./app-widget";
 import * as assistant from "./assistant";
 import * as boards from "./boards";
 import * as branding from "./branding";
@@ -81,6 +82,7 @@ const modules = {
   credits,
   "ai-models": aiModels,
   "api-keys": apiKeys,
+  "app-widget": appWidget,
   assistant,
   boards,
   branding,
@@ -147,6 +149,10 @@ async function startedNumber(slug: string, token: Awaited<ReturnType<typeof inbo
 }
 
 const matrix: Matrix = {
+  // A token for the account itself (none while APP_WIDGET_PROJECT has SSO off; see app-widget.db.test.ts).
+  "app-widget": {
+    appWidgetToken: { allowed: "signed in", refusesSsoUsers: true, call: () => appWidget.appWidgetToken() },
+  },
   "api-keys": {
     createApiKey: { allowed: "ADMIN", call: (slug) => apiKeys.createApiKey(slug, "Zapier", "READ") },
     revokeApiKey: { allowed: "ADMIN", takesIds: true, call: (slug, f) => apiKeys.revokeApiKey(slug, f.apiKeyId) },
@@ -552,6 +558,10 @@ const matrix: Matrix = {
       },
     },
     widgetStartConversation: { allowed: "public", call: async (slug) => widgetInbox.widgetStartConversation(slug, await inboxToken(slug), "Help") },
+    widgetUploadAttachment: {
+      allowed: "public",
+      call: async (slug) => widgetInbox.widgetUploadAttachment(slug, await inboxToken(slug), { filename: "error.png", contentType: "image/png", size: 1000 }),
+    },
     widgetSendMessage: {
       allowed: "public",
       call: async (slug) => {

@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { visitorHash } from "@/lib/visitor-session";
 
-import { attachmentLinks } from "./attachments";
+import { attachmentLinks, checkUploads, claimUploads, startUpload, type Uploader } from "./attachments";
 import { countEmailedLink } from "./email-link-limits";
 import { OperationError } from "./operations/define";
 import { addMessage, announceConversation, announceUserMessage, MAX_MESSAGE_LENGTH, startConversation } from "./operations/conversations";
@@ -167,6 +167,8 @@ export async function widgetStartConversation(
   auth: WidgetAuth,
   text: string,
   address?: string,
+  /** Files they uploaded for it (someone already known here: a new visitor gets their token with this message). */
+  attachments: string[] = [],
 ): Promise<Result<{ number: number; visitor?: string }>> {
   const parsed = body.safeParse(text);
   let who = await person(projectSlug, auth);
@@ -195,6 +197,10 @@ export async function widgetStartConversation(
   if (limited) {
     return limited;
   }
+  const files = visitor ? { uploads: [] } : await theirUploads(who, attachments);
+  if ("error" in files) {
+    return { error: files.error! };
+  }
   if (signedOutEmail) {
     // Counted like emailed links (per address, per visitor's IP and per project), as replies go to it by email.
     const counted = await countEmailedLink(who.projectId, signedOutEmail, await headers());
@@ -213,6 +219,7 @@ export async function widgetStartConversation(
       channel: "WIDGET",
       // Checked again under the project's lock: starts at once can't all pass the check above.
       perDay: { where: who.where, max: NEW_CONVERSATIONS_PER_DAY },
+      ...(files.uploads.length > 0 && { alongside: (tx, _conversationId, messageId) => claimUploads(tx, files.uploads, messageId) }),
     });
   } catch (error) {
     if (error instanceof OperationError) {
@@ -226,7 +233,50 @@ export async function widgetStartConversation(
 }
 
 /** Adds their message to one of their conversations (opening it again if it was waiting or closed). */
-export async function widgetSendMessage(projectSlug: string, auth: WidgetAuth, number: number, text: string): Promise<Result<object>> {
+/** Whose their uploads are: their account's, or (signed out) their visitor token's. */
+const uploader = (who: Person): Uploader => (who.userId ? { userId: who.userId } : { visitorHash: who.visitorHash! });
+
+/** Checks the files they're sending (theirs, uploaded, within the limits); an error to show if not. */
+async function theirUploads(who: Person, attachments: unknown) {
+  const ids = Array.isArray(attachments) ? attachments.map(String).slice(0, 50) : [];
+  if (ids.length === 0) {
+    return { uploads: [] };
+  }
+  try {
+    return { uploads: await checkUploads(who.projectId, uploader(who), ids) };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Starts uploading a file they're attaching: where the panel PUTs it, and its id to send with their message. */
+export async function widgetUploadAttachment(
+  projectSlug: string,
+  auth: WidgetAuth,
+  file: { filename: string; contentType: string; size: number },
+): Promise<Result<{ id: string; contentType: string; uploadUrl: string }>> {
+  const who = await person(projectSlug, auth);
+  if (!who) {
+    return signInFirst;
+  }
+  const parsed = z.object({ filename: z.string().max(1000), contentType: z.string().max(200), size: z.number().int() }).safeParse(file);
+  if (!parsed.success) {
+    return { error: "That file can't be attached" };
+  }
+  try {
+    return await startUpload(who.projectId, uploader(who), parsed.data);
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+export async function widgetSendMessage(projectSlug: string, auth: WidgetAuth, number: number, text: string, attachments: string[] = []): Promise<Result<object>> {
   const who = await person(projectSlug, auth);
   const conversation = who && (await theirConversation(who, number));
   if (!who || !conversation) {
@@ -240,7 +290,24 @@ export async function widgetSendMessage(projectSlug: string, auth: WidgetAuth, n
   if (limited) {
     return limited;
   }
-  const message = await addMessage(conversation.id, who.projectId, { author: "USER", authorId: who.userId, channel: "WIDGET", body: parsed.data });
+  const files = await theirUploads(who, attachments);
+  if ("error" in files) {
+    return { error: files.error! };
+  }
+  let message;
+  try {
+    message = await addMessage(
+      conversation.id,
+      who.projectId,
+      { author: "USER", authorId: who.userId, channel: "WIDGET", body: parsed.data },
+      files.uploads.length > 0 ? (tx, messageId) => claimUploads(tx, files.uploads, messageId) : undefined,
+    );
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
   await announceUserMessage(who.projectId, conversation.number, message);
   return {};
 }

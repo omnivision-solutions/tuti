@@ -76,11 +76,15 @@ export async function attachmentLinks<T extends { id: string; key: string; filen
   );
 }
 
+/** Whose an upload is until it's sent: someone with an account (a teammate, someone signed in in the widget) or a signed-out visitor. */
+export type Uploader = { userId: string } | { visitorHash: string };
+const owner = (uploader: Uploader) => ("userId" in uploader ? { uploadedById: uploader.userId } : { uploadedByVisitor: uploader.visitorHash });
+
 /**
- * A teammate's upload for a reply, before it's sent: its row (no message yet, theirs) and a URL the
+ * An upload for a message, before it's sent: its row (no message yet, its uploader's) and a URL the
  * browser PUTs exactly this file to. Never sent, it's removed after a day (cleanup-media).
  */
-export async function startUpload(projectId: string, uploadedById: string, file: { filename: string; contentType: string; size: number }) {
+export async function startUpload(projectId: string, uploader: Uploader, file: { filename: string; contentType: string; size: number }) {
   const storage = mediaStorage();
   if (!storage) {
     throw new OperationError(400, "invalid_input", "Attachments aren't set up on this server");
@@ -89,14 +93,14 @@ export async function startUpload(projectId: string, uploadedById: string, file:
     throw new OperationError(400, "invalid_input", `Attachments can be up to ${MAX_FILE_BYTES / MB} MB each`);
   }
   const recent = await prisma.conversationAttachment.count({
-    where: { projectId, uploadedById, createdAt: { gt: new Date(Date.now() - 60 * 60_000) } },
+    where: { projectId, ...owner(uploader), createdAt: { gt: new Date(Date.now() - 60 * 60_000) } },
   });
   if (recent >= UPLOADS_PER_HOUR) {
     throw new OperationError(429, "rate_limited", "That's a lot of uploads: try again in a while");
   }
   const contentType = attachmentType(file.contentType);
   const row = await prisma.conversationAttachment.create({
-    data: { projectId, uploadedById, key: `attachments/${projectId}/${randomUUID()}`, filename: attachmentName(file.filename), contentType, size: file.size },
+    data: { projectId, ...owner(uploader), key: `attachments/${projectId}/${randomUUID()}`, filename: attachmentName(file.filename), contentType, size: file.size },
     select: { id: true, key: true },
   });
   // The browser PUTs it with this type: the one signed.
@@ -107,13 +111,13 @@ export async function startUpload(projectId: string, uploadedById: string, file:
  * The uploads a reply sends, checked: theirs, not sent yet, really in the storage, and within the
  * limits (sizes from the storage, not what the browser said).
  */
-export async function checkUploads(projectId: string, uploadedById: string, ids: string[]) {
+export async function checkUploads(projectId: string, uploader: Uploader, ids: string[]) {
   const unique = [...new Set(ids)];
   if (unique.length > MAX_FILES) {
     throw new OperationError(400, "invalid_input", `Send up to ${MAX_FILES} attachments at a time`);
   }
   const rows = await prisma.conversationAttachment.findMany({
-    where: { id: { in: unique }, projectId, uploadedById, messageId: null },
+    where: { id: { in: unique }, projectId, ...owner(uploader), messageId: null },
     select: { id: true, key: true },
   });
   if (rows.length !== unique.length) {
