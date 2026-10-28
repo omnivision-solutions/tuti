@@ -89,7 +89,7 @@ function useVisitor(projectSlug: string): Visitor | null {
  * email to write, and the panel keeps a visitor token to show them their conversations.
  */
 export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: string; portalSignedIn: boolean }) {
-  const { signedIn, error, known: pageAnswered } = useWidgetSignIn(projectSlug, !portalSignedIn);
+  const { signedIn, error, known: pageAnswered, pending: pageSigningIn } = useWidgetSignIn(projectSlug, !portalSignedIn);
   const visitor = useVisitor(projectSlug);
   const token = signedIn?.token ?? null;
   // The page signed out whoever was here: the team's messages to them aren't anyone's now (their
@@ -123,6 +123,8 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
   if (!known && !pageAnswered) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
+  // A sign-in that came later, still being traded: what's on screen stays (with anything typed), but can't be sent.
+  const signingIn = !known && pageSigningIn;
   // The page signed someone in but their token didn't trade: say so, or they'd write as a visitor not knowing why.
   const failed = error && !known && <p className="text-sm text-destructive">{error}</p>;
   const view =
@@ -146,13 +148,14 @@ export function WidgetMessages({ projectSlug, portalSignedIn }: { projectSlug: s
         onNewVisitor={setStarted}
       />
     );
-  return failed ? (
+  return (
     <div className="flex flex-col gap-3">
       {failed}
-      {view}
+      {signingIn && <p className="text-sm text-muted-foreground">Loading…</p>}
+      <fieldset disabled={signingIn} className="m-0 min-w-0 border-0 p-0">
+        {view}
+      </fieldset>
     </div>
-  ) : (
-    view
   );
 }
 

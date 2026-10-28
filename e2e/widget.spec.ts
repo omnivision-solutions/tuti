@@ -1130,11 +1130,14 @@ test("signed out, a visitor leaves their email to message the team, and their br
   await expect(widget.getByText("Loading…")).toBeVisible();
   await expect(widget.getByRole("list", { name: "Conversations" })).toContainText("Is there a nonprofit discount?");
   // The page signs someone in after all, later than that: while their token's traded, the visitor
-  // can't write either (here Tuti never answers, so it stays that way).
+  // can't send (here Tuti never answers, so it stays that way), and what they'd typed stays.
+  await widget.getByRole("button", { name: /Is there a nonprofit discount\?/ }).click();
+  await widget.getByRole("textbox", { name: "Reply" }).fill("And for schools?");
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? undefined : route.fallback()));
   await visitor.evaluate(() => (window as unknown as { Tuti: { identify(getToken: () => string): void } }).Tuti.identify(() => "late-token"));
   await expect(widget.getByText("Loading…")).toBeVisible();
-  await expect(widget.getByRole("list", { name: "Conversations" })).toHaveCount(0);
+  await expect(widget.getByRole("textbox", { name: "Reply" })).toBeDisabled();
+  await expect(widget.getByRole("textbox", { name: "Reply" })).toHaveValue("And for schools?");
 
   // Another browser has none of it.
   const stranger = await (await browser.newContext()).newPage();
