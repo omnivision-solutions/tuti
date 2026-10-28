@@ -15,11 +15,13 @@ export async function sesTenantHeaders(projectId: string, domain: string): Promi
   }
   // Named after the configuration set too, so two servers on one SES account keep apart.
   const tenant = `${api.configurationSet}-${projectId}`;
+  // Kept with the domain whose identity it has: another support domain needs associating too.
+  const setUp = `${tenant} ${domain}`;
   const { sesTenant } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { sesTenant: true } });
-  if (sesTenant !== tenant) {
+  if (sesTenant !== setUp) {
     await api.createTenant(tenant);
     await Promise.all([api.associate(tenant, api.identityArn(domain)), api.associate(tenant, api.configurationSetArn)]);
-    await prisma.project.update({ where: { id: projectId }, data: { sesTenant: tenant } });
+    await prisma.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
   }
   return { "X-SES-TENANT": tenant, "X-SES-CONFIGURATION-SET": api.configurationSet };
 }

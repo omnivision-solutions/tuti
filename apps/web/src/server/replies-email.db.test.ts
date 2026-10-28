@@ -223,4 +223,12 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   expect(emailsTo(kim)).toHaveLength(2);
   expect(emailsTo(kim)[1]!.headers["x-ses-tenant"]).toBe(tenant);
   expect(ses.calls).toHaveLength(calls);
+
+  // Another support domain: its identity is associated too, before the next email.
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "help.example.com");
+  await call(replyToConversation, team, { number: 1, body: "Anything else?" });
+  await aMinuteOn(project.id);
+  await run();
+  expect(ses.tenants.get(tenant)!.resources).toContain("arn:aws:ses:us-east-1:000000000000:identity/help.example.com");
+  expect(emailsTo(kim)).toHaveLength(3);
 });

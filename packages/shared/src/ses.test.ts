@@ -33,3 +33,13 @@ test("SES is on with all five settings, off with none, and some but not all stop
   expect(() => assertSesSettings()).toThrow("missing SES_SECRET_ACCESS_KEY, SES_EVENTS_TOPIC_ARN");
   expect(ses()).toBeNull();
 });
+
+test("a configuration set too long to name tenants after stops the server", () => {
+  for (const [name, value] of Object.entries(ALL)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("SES_CONFIGURATION_SET", "c".repeat(38));
+  expect(() => assertSesSettings()).not.toThrow();
+  vi.stubEnv("SES_CONFIGURATION_SET", "c".repeat(39));
+  expect(() => assertSesSettings()).toThrow("38 characters at most");
+});

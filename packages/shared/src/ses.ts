@@ -7,11 +7,17 @@ import { AwsClient } from "aws4fetch";
  */
 const SETTINGS = ["SES_REGION", "SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "SES_CONFIGURATION_SET", "SES_EVENTS_TOPIC_ARN"] as const;
 
+/** Tenants are named `<configuration set>-<project id>` (25 characters), and SES allows 64. */
+const MAX_CONFIGURATION_SET_LENGTH = 38;
+
 /** On startup: some SES settings but not all is a mistake, not "off". */
 export function assertSesSettings() {
   const missing = SETTINGS.filter((name) => !process.env[name]);
   if (missing.length > 0 && missing.length < SETTINGS.length) {
     throw new Error(`Amazon SES needs all of ${SETTINGS.join(", ")}: missing ${missing.join(", ")}`);
+  }
+  if ((process.env.SES_CONFIGURATION_SET?.length ?? 0) > MAX_CONFIGURATION_SET_LENGTH) {
+    throw new Error(`SES_CONFIGURATION_SET can be ${MAX_CONFIGURATION_SET_LENGTH} characters at most: projects' tenants are named after it`);
   }
 }
 
