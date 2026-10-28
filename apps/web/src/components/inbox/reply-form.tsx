@@ -47,19 +47,22 @@ export function ReplyForm({
       } else if (result.draft === null) {
         setNotice(result.reason);
       } else {
+        // Into the reply's draft, whichever tab they're on now: they choose what to send.
         const text = result.draft;
-        setKind("reply");
         setDrafts((current) => ({ ...current, reply: current.reply.trim() ? `${current.reply.trimEnd()}\n\n${text}` : text }));
       }
     });
 
   const send = () =>
     startTransition(async () => {
+      const sending = kind;
+      const text = drafts[sending];
       const attached = files.ids;
-      const result = await replyInConversation(projectSlug, number, drafts[kind], note, attached);
+      const result = await replyInConversation(projectSlug, number, text, sending === "note", attached);
       setError(result.error);
       if (!result.error) {
-        setDrafts((current) => ({ ...current, [kind]: "" }));
+        // Only what was sent: anything added meanwhile stays.
+        setDrafts((current) => ({ ...current, [sending]: current[sending] === text ? "" : current[sending] }));
         files.sent(attached);
       }
     });
@@ -92,7 +95,7 @@ export function ReplyForm({
           value={drafts[kind]}
           onChange={(event) => setDrafts((current) => ({ ...current, [kind]: event.target.value }))}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !files.uploading) {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !pending && !drafting && !files.uploading) {
               event.preventDefault();
               form.current?.requestSubmit();
             }
@@ -114,7 +117,7 @@ export function ReplyForm({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={drafting || draftWithAi === "paused"}
+              disabled={drafting || pending || draftWithAi === "paused"}
               title={draftWithAi === "paused" ? "This project is out of AI credits" : undefined}
               onClick={draft}
             >
@@ -123,7 +126,7 @@ export function ReplyForm({
             </Button>
           )}
         </div>
-        <Button type="submit" disabled={pending || files.uploading}>
+        <Button type="submit" disabled={pending || drafting || files.uploading}>
           {pending ? "Sending…" : note ? "Add note" : "Send"}
         </Button>
       </div>
