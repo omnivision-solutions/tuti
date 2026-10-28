@@ -109,7 +109,8 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
         <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
         <WidgetClose inline={display === "inline"} />
       </header>
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      {/* What scrolls (a conversation scrolls itself to its newest message here). */}
+      <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         {tab === "home" && (
           <Home
             slug={slug}

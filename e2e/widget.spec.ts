@@ -1111,6 +1111,24 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(messages).toHaveCount(4);
   await expect(visitor.getByRole("button", { name: "Feedback", exact: true })).toBeAttached();
 
+  // A long conversation: it follows the newest message, and the reply box stays at the bottom of the
+  // panel, where it is when they scroll back up.
+  const api = await apiFor(owner, slug);
+  for (let i = 1; i <= 10; i++) {
+    await api("/conversations/1/messages", { body: `Step ${i}\n\nwith a few lines\nto make it tall` });
+  }
+  await expect(messages).toHaveCount(14);
+  await expect(messages.last()).toBeInViewport();
+  const reply = widget.getByRole("textbox", { name: "Reply" });
+  await expect(reply).toBeInViewport();
+  await checkpoint(visitor, "widget-messages-long", { fullPage: false });
+  const y = (await reply.boundingBox())!.y;
+  await messages.first().scrollIntoViewIfNeeded();
+  await expect(messages.first()).toBeInViewport();
+  await expect(reply).toBeInViewport();
+  expect((await reply.boundingBox())!.y).toBe(y);
+  await checkpoint(visitor, "widget-messages-scrolled-up", { fullPage: false });
+
   // The page signs someone else in, but the widget can't reach Tuti to trade their token: nobody's
   // signed in, not Sam, whose messages go.
   await visitor.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
