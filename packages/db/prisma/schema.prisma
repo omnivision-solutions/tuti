@@ -932,6 +932,12 @@ model Conversation {
   @@map("conversation")
 }
 
+/// A team message's email to the user: sent, or failed after its tries.
+enum EmailStatus {
+  SENT
+  FAILED
+}
+
 /// Received: kept until it's read into a message (or ignored); a failed one for 30 days.
 enum InboundStatus {
   RECEIVED
@@ -1001,25 +1007,35 @@ model WidgetPresence {
 }
 
 model ConversationMessage {
-  id             String         @id @default(cuid())
-  projectId      String
-  conversationId String
-  author         MessageAuthor
+  id                 String         @id @default(cuid())
+  projectId          String
+  conversationId     String
+  author             MessageAuthor
   /// The team member or the user who wrote it; null for the AI, Tuti and email-only people.
-  authorId       String?
-  channel        MessageChannel
+  authorId           String?
+  channel            MessageChannel
   /// Plain text (links kept).
-  body           String
+  body               String
   /// An internal note: the team's only, never shown to the user or sent.
-  note           Boolean        @default(false)
+  note               Boolean        @default(false)
   /// Received by email: its Message-ID (to show the thread; it never joins anything), who sent it,
   /// and the whole text when quoted replies were cut from `body`.
-  emailMessageId String?
-  fromAddress    String?
-  original       String?
+  emailMessageId     String?
+  fromAddress        String?
+  original           String?
+  /// The team's messages the user hasn't seen a minute on are emailed to them (docs/plan.md, Support
+  /// inbox, "Reaching the user"): how that went, how many tries, and the claim a sending run holds.
+  emailStatus        EmailStatus?
+  emailAttempts      Int            @default(0)
+  emailClaimedAt     DateTime?
+  emailError         String?
+  /// The Message-ID it was emailed with (ours, random): replies that name it in In-Reply-To or References belong here.
+  sentMessageId      String?        @unique
+  /// The Message-ID it was delivered with, when the SMTP server replaced ours (Amazon SES does): replies name this one.
+  deliveredMessageId String?        @unique
   /// When the user saw it (the team's messages, shown in the open widget); unseen ones make the launcher's dot.
-  seenAt         DateTime?
-  createdAt      DateTime       @default(now())
+  seenAt             DateTime?
+  createdAt          DateTime       @default(now())
 
   project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

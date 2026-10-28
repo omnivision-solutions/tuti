@@ -139,6 +139,12 @@ export const jobs = {
     input: z.object({}),
     cron: "43 * * * *",
   },
+  /** Emails users the team's replies they haven't seen a minute on (support inbox), each conversation's in one email. */
+  sendConversationReplies: {
+    name: "send-conversation-replies",
+    input: z.object({}),
+    cron: "* * * * *",
+  },
   /** Lets go of raw received emails that couldn't be read in 30 days (read ones go as they're read). */
   pruneInboundEmails: {
     name: "prune-inbound-emails",

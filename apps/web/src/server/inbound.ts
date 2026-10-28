@@ -250,11 +250,28 @@ async function readEmail(id: string, projectId: string, token: string | null, au
   };
   const dmarcPassed = auth.dmarc === "pass";
 
-  // A reply: the token in its address names the conversation, but only its people, with DMARC
-  // passed, join it (the token is a bearer secret; DMARC proves the domain, not the mailbox).
-  const conversation = token
-    ? await prisma.conversation.findFirst({ where: { projectId, replyToken: token }, select: { id: true, number: true, userId: true } })
-    : null;
+  // A reply: the token in its address, else a Message-ID we sent that it names (In-Reply-To,
+  // References), finds the conversation; but only its people, with DMARC passed, join it (the token
+  // and our Message-IDs are random secrets sent only to them; DMARC proves the domain, not the mailbox).
+  // The Message-IDs of mail we received never count: their senders chose them, and others have copies.
+  const select = { id: true, number: true, userId: true } as const;
+  const named = [mail.inReplyTo, ...(Array.isArray(mail.references) ? mail.references : mail.references ? [mail.references] : [])].filter(
+    (id): id is string => !!id,
+  );
+  const conversation =
+    (token ? await prisma.conversation.findFirst({ where: { projectId, replyToken: token }, select }) : null) ??
+    (named.length > 0
+      ? ((
+          await prisma.conversationMessage.findFirst({
+            where: {
+              projectId,
+              OR: [{ sentMessageId: { in: named.slice(-50) } }, { deliveredMessageId: { in: named.slice(-50) } }],
+            },
+            orderBy: { createdAt: "desc" },
+            select: { conversation: { select } },
+          })
+        )?.conversation ?? null)
+      : null);
   if (conversation && dmarcPassed) {
     const { person, others } = await conversationAddresses(conversation.id);
     if (sender === person || others.includes(sender)) {

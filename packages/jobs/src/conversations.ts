@@ -1,8 +1,13 @@
-import { prisma } from "@tuti/db";
-import { conversationEmail, emailConfigured, sendEmail } from "@tuti/email";
+import { randomUUID } from "node:crypto";
+
+import { INBOX_CHANNEL, prisma } from "@tuti/db";
+import { conversationEmail, conversationReplyEmail, deliveredMessageId, emailConfigured, sendEmail } from "@tuti/email";
 import type { JobInput } from "@tuti/shared";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
+
+/** Tuti's loop header (apps/web lib/email-noise.ts): mail that comes back with it is known as ours. */
+const LOOP_HEADER = "X-Tuti-Loop";
 
 /** The team hears about a conversation at most this often, however many messages the user sends. */
 export const NOTIFY_EVERY_MS = 10 * 60 * 1000;
@@ -115,6 +120,153 @@ export async function pruneInboundEmails(): Promise<JobResult> {
     data: { raw: null },
   });
   return { pruned: count };
+}
+
+
+/** A team message is emailed if it's still unseen this long after it was written. */
+export const EMAIL_UNSEEN_AFTER_MS = 60_000;
+/** A run that died holds its claim this long before another run takes the messages again. */
+const CLAIM_FOR_MS = 10 * 60_000;
+const MAX_TRIES = 3;
+/** References keeps the thread's latest Message-IDs, as many as this. */
+const MAX_REFERENCES = 20;
+
+/** The team's messages still to email: unseen a minute on, not notes, not sent, with tries left, and nobody else sending them. */
+const unsent = (now: Date) => ({
+  author: "TEAM" as const,
+  note: false,
+  seenAt: null,
+  emailStatus: null,
+  emailAttempts: { lt: MAX_TRIES },
+  createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
+  OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
+  conversation: { spam: false },
+});
+
+/**
+ * Emails users the team's replies they haven't seen a minute after they were written (docs/plan.md,
+ * Support inbox, "Reaching the user"): someone chatting in the widget sees them there and gets no
+ * email; someone who wrote by email gets every reply. A conversation's unseen replies go in one email,
+ * from its project's support address with the teammate's name, Reply-To the conversation's own
+ * address. Each message is claimed before it's sent, so two runs send it once; a claim a run didn't
+ * finish (it died) is taken again after 10 minutes, so a reply may rarely go twice but is never lost.
+ */
+export async function sendConversationReplies(_: JobInput<"sendConversationReplies">, log: JobLogger, now = new Date()): Promise<JobResult> {
+  const domain = process.env.SUPPORT_EMAIL_DOMAIN?.trim().toLowerCase();
+  if (!domain || !emailConfigured()) {
+    return { skipped: "support email isn't set up" };
+  }
+  const due = await prisma.conversationMessage.findMany({
+    where: unsent(now),
+    distinct: ["conversationId"],
+    select: { conversationId: true },
+    take: 100,
+  });
+  let sent = 0;
+  for (const { conversationId } of due) {
+    sent += (await sendReplies(conversationId, domain, now, log)) ? 1 : 0;
+  }
+  return { emails: sent };
+}
+
+async function sendReplies(conversationId: string, domain: string, now: Date, log: JobLogger): Promise<boolean> {
+  const claimedAt = new Date();
+  const { count } = await prisma.conversationMessage.updateMany({ where: { conversationId, ...unsent(now) }, data: { emailClaimedAt: claimedAt } });
+  if (count === 0) {
+    return false;
+  }
+  const [conversation, messages, thread] = await Promise.all([
+    prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      select: {
+        projectId: true,
+        userId: true,
+        visitorHash: true,
+        subject: true,
+        replyToken: true,
+        email: true,
+        user: { select: { email: true, ssoIdentity: { select: { email: true } } } },
+        project: { select: { name: true, mailSubdomain: { select: { subdomain: true } } } },
+      },
+    }),
+    prisma.conversationMessage.findMany({
+      where: { conversationId, emailClaimedAt: claimedAt },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, body: true, authorUser: { select: { name: true } } },
+    }),
+    // The thread so far, for In-Reply-To and References: what they sent, and what we did.
+    prisma.conversationMessage.findMany({
+      where: { conversationId, OR: [{ emailMessageId: { not: null } }, { sentMessageId: { not: null } }] },
+      orderBy: { createdAt: "desc" },
+      take: MAX_REFERENCES,
+      select: { emailMessageId: true, sentMessageId: true, deliveredMessageId: true },
+    }),
+  ]);
+  const ids = messages.map((m) => m.id);
+  // Open inbox pages show each message's delivery: tell them it changed (apps/web/src/server/live.ts).
+  const notify = () =>
+    prisma.$executeRaw`SELECT pg_notify(${INBOX_CHANNEL}, ${JSON.stringify({
+      projectId: conversation.projectId,
+      conversationId,
+      userId: conversation.userId,
+      visitorHash: conversation.visitorHash,
+    })})`;
+  const settle = (data: { emailStatus?: "SENT" | "FAILED"; emailError?: string | null; emailAttempts?: { increment: number } }) =>
+    prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailClaimedAt: claimedAt }, data: { ...data, emailClaimedAt: null } });
+
+  // Someone from the project's app has a placeholder account address: theirs is what the app gave.
+  const to = conversation.user ? (conversation.user.ssoIdentity ? conversation.user.ssoIdentity.email : conversation.user.email) : conversation.email;
+  const subdomain = conversation.project.mailSubdomain?.subdomain;
+  if (!to || !subdomain) {
+    await settle({ emailStatus: "FAILED", emailError: to ? "The project has no support address" : "They have no email address" });
+    await notify();
+    return false;
+  }
+  const address = (token?: string) => `support${token ? `+${token}` : ""}@${subdomain}.${domain}`;
+  const teammate = messages.at(-1)!.authorUser?.name;
+  const from = `"${(teammate ? `${teammate} at ${conversation.project.name}` : conversation.project.name).replace(/["\\\r\n]/g, "")}" <${address()}>`;
+  const messageId = `<${randomUUID()}@${subdomain}.${domain}>`;
+  const references = thread
+    .map((m) => m.deliveredMessageId ?? m.sentMessageId ?? m.emailMessageId)
+    .filter((id): id is string => !!id)
+    .reverse();
+  let response: string | null;
+  try {
+    response = await sendEmail({
+      to,
+      from,
+      replyTo: address(conversation.replyToken),
+      messageId,
+      headers: {
+        [LOOP_HEADER]: subdomain,
+        ...(references.length > 0 && { "In-Reply-To": references.at(-1)!, References: references.join(" ") }),
+      },
+      ...conversationReplyEmail({
+        projectName: conversation.project.name,
+        subject: conversation.subject,
+        messages: messages.map((m) => ({ name: m.authorUser?.name ?? conversation.project.name, body: m.body })),
+      }),
+    });
+  } catch (error) {
+    log.warn(`Emailing replies in a conversation failed: ${String(error)}`);
+    await prisma.$transaction([
+      settle({ emailAttempts: { increment: 1 }, emailError: String(error).slice(0, 500) }),
+      // Out of tries: failed for good, shown on the message.
+      prisma.conversationMessage.updateMany({ where: { id: { in: ids }, emailAttempts: { gte: MAX_TRIES } }, data: { emailStatus: "FAILED" } }),
+    ]);
+    await notify();
+    return false;
+  }
+  await prisma.$transaction([
+    settle({ emailStatus: "SENT", emailError: null }),
+    // One Message-ID per email: the last message carries it, for replies that name it.
+    prisma.conversationMessage.update({
+      where: { id: ids.at(-1)! },
+      data: { sentMessageId: messageId, deliveredMessageId: deliveredMessageId(response) },
+    }),
+  ]);
+  await notify();
+  return true;
 }
 
 /** How long a user's message is given to be told about the normal way before the cron steps in. */
