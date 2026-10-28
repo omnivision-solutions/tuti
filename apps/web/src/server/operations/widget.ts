@@ -127,20 +127,22 @@ export const updateWidgetSettings = defineOperation({
   }),
   example: { label: "Help & feedback", color: "#5b21b6", position: "bottom-left", links: [{ label: "Status", url: "https://status.example.com" }], icon: "help" },
   run: async ({ projectId }, input) => {
-    // Going back to the chat bubble (or removing the image) always works; anything else needs the plan.
-    if ((input.icon !== undefined && input.icon !== "chat") || input.iconImage) {
-      await requirePlan(projectId, "launcherIcon");
-    }
     await saving(() =>
       prisma.$transaction(async (tx) => {
         // One save at a time per project, so two saves can't each keep an image the other replaced.
         await tx.$executeRaw`SELECT 1 FROM project WHERE id = ${projectId} FOR UPDATE`;
         const current = await tx.project.findUniqueOrThrow({ where: { id: projectId }, select: { widgetIcon: true, widgetIconImageId: true } });
-        const icon = input.icon ?? current.widgetIcon;
+        // Removing the image of an image icon goes back to the chat bubble.
+        const icon = input.icon ?? (input.iconImage === null && current.widgetIcon === "image" ? "chat" : current.widgetIcon);
         // Only an image icon keeps its image; a replaced one is released by the daily release-media job.
         const image = icon === "image" ? (input.iconImage !== undefined ? input.iconImage : current.widgetIconImageId) : null;
         if (icon === "image" && !image) {
           throw new OperationError(400, "invalid_input", "Upload an image for the icon");
+        }
+        // A new icon other than the chat bubble needs the plan (going back to it always works, and one kept
+        // from a plan that ended stays); checked under the lock, so a plan ending meanwhile counts.
+        if (icon !== "chat" && (icon !== current.widgetIcon || image !== current.widgetIconImageId)) {
+          await requirePlan(projectId, "launcherIcon", tx);
         }
         if (image && image !== current.widgetIconImageId) {
           // Before the project points at it, so the cleanup can't take it meanwhile.

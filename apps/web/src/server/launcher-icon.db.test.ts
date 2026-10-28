@@ -86,9 +86,25 @@ test("a project that drops to Free keeps its icon, but the launcher shows the ch
   expect(await served()).toEqual({ icon: "chat", iconUrl: null });
   // Other settings still save, and the icon stays as it was.
   expect(await update({ label: "Ideas", color: "#5b21b6" })).toMatchObject({ label: "Ideas", icon: "image", iconImage: { id: image.id } });
+  // So does sending the icon it has: only a new one needs the plan.
+  expect(await update({ icon: "image", iconImage: image.id, label: "Help" })).toMatchObject({ label: "Help", icon: "image" });
 
   await onPlan("PRO");
   expect(await served()).toEqual({ icon: "image", iconUrl: url });
+
+  // On Free again, back to the chat bubble, with the form's image field still holding the old upload: the image goes.
+  await onPlan("FREE");
+  // Back to the chat bubble, with the form's image field still holding the old upload: the image goes.
+  expect(await update({ icon: "chat", iconImage: image.id })).toMatchObject({ icon: "chat", iconImage: null });
+});
+
+test("removing an image icon's image goes back to the chat bubble", async () => {
+  await onPlan("PRO");
+  const image = await uploaded();
+  await update({ icon: "image", iconImage: image.id });
+  expect(await update({ iconImage: null })).toMatchObject({ icon: "chat", iconImage: null });
+  // Picking the image icon without an image is still refused.
+  await expect(update({ icon: "image", iconImage: null })).rejects.toMatchObject({ status: 400, message: "Upload an image for the icon" });
 });
 
 test("without plans (self-hosted), every project picks its icon", async () => {
