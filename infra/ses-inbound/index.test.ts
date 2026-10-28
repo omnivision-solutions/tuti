@@ -22,7 +22,7 @@ const record = (receipt: Record<string, unknown> = {}) => ({
   },
 });
 
-function fakes(answers: number[] = []) {
+function fakes(answers: { status: number; outcome?: string }[] = []) {
   const posts: { url: string; headers: Record<string, string>; body: Buffer }[] = [];
   const deleted: string[] = [];
   return {
@@ -36,7 +36,7 @@ function fakes(answers: number[] = []) {
       deleteRaw: async (id: string) => void deleted.push(id),
       post: async (url: string, request: { headers: Record<string, string>; body: Buffer }) => {
         posts.push({ url, ...request });
-        return answers.shift() ?? 200;
+        return answers.shift() ?? { status: 200, outcome: "conversation" };
       },
       log: { warn: () => {} },
     },
@@ -65,13 +65,21 @@ test("only the support domain's addresses are posted, each on its own", async ()
 });
 
 test("an answer to try again throws, keeping the stored copy; one that won't change is done with", async () => {
-  const retry = fakes([500]);
+  const retry = fakes([{ status: 500 }]);
   await expect(deliver(record(), retry.options)).rejects.toThrow("trying again");
   expect(retry.deleted).toEqual([]);
 
-  const unknown = fakes([404]);
+  const unknown = fakes([{ status: 404, outcome: "no such address" }]);
   expect(await deliver(record(), unknown.options)).toEqual({ delivered: 0 });
   expect(unknown.deleted).toEqual(["ses-message-1"]);
+
+  // The app set up wrong (its email off: a 404 without that outcome; a different INBOUND_SECRET: 401)
+  // keeps the mail for another try, until the operator fixes it.
+  for (const answer of [{ status: 404 }, { status: 401 }]) {
+    const misconfigured = fakes([answer]);
+    await expect(deliver(record(), misconfigured.options)).rejects.toThrow("trying again");
+    expect(misconfigured.deleted).toEqual([]);
+  }
 });
 
 test("a message no longer stored (posted by an earlier try) is done with, not tried again", async () => {

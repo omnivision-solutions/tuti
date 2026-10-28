@@ -19,11 +19,12 @@ export function sign(secret, recipient, auth, raw, now = Date.now()) {
 }
 
 /**
- * Posts one SES receipt's message to the app, once per recipient on the support domain. The app says
- * 200 once it has it (or ignores it), 404 for an address no project has, 401 or 413 for what trying
- * again won't fix: all of those are done with. Anything else throws, so Lambda tries the whole event
- * again (the app takes a message it already has once). The stored copy goes once every recipient is
- * done with; what's left expires with the bucket's lifecycle rule.
+ * Posts one SES receipt's message to the app, once per recipient on the support domain. Done with
+ * once the app has it (200, or ignored), no project has the address (a 404 saying `no such address`),
+ * or it's too large (413). Anything else throws, so it's tried again: the app down, but also set up
+ * wrong (its email switched off, a 404 without that outcome; a refused signature, 401, when
+ * INBOUND_SECRET differs), which is for the operator to fix, not a reason to lose the mail. The app
+ * takes a message it already has once. The stored copy goes once every recipient is done with.
  */
 export async function deliver(record, { appUrl, secret, domain, getRaw, deleteRaw, post, log = console }) {
   const { mail, receipt } = record.ses;
@@ -43,7 +44,7 @@ export async function deliver(record, { appUrl, secret, domain, getRaw, deleteRa
   }
   let delivered = 0;
   for (const recipient of recipients) {
-    const status = await post(new URL("/api/inbound/email", appUrl).toString(), {
+    const { status, outcome } = await post(new URL("/api/inbound/email", appUrl).toString(), {
       body: raw,
       headers: {
         "content-type": "message/rfc822",
@@ -54,7 +55,7 @@ export async function deliver(record, { appUrl, secret, domain, getRaw, deleteRa
     });
     if (status === 200) {
       delivered++;
-    } else if (status === 404 || status === 401 || status === 413) {
+    } else if ((status === 404 && outcome === "no such address") || status === 413) {
       log.warn(`The app refused ${mail.messageId} for ${recipient}: ${status}`);
     } else {
       throw new Error(`The app answered ${status} for ${mail.messageId} (${recipient}): trying again`);
@@ -101,7 +102,8 @@ export async function handler(event) {
       deleteRaw: (messageId) => s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key(messageId) })),
       post: async (url, { body, headers }) => {
         const response = await fetch(url, { method: "POST", body, headers, signal: AbortSignal.timeout(50_000) });
-        return response.status;
+        const json = await response.json().catch(() => null);
+        return { status: response.status, outcome: typeof json?.outcome === "string" ? json.outcome : undefined };
       },
     });
   }
