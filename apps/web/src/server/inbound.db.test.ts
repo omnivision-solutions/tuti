@@ -208,7 +208,7 @@ test("over the hourly limit, mail is refused before its body is stored, and the 
   expect(await conversations(project.id)).toEqual([]);
 });
 
-test("raw bodies that couldn't be read go after 30 days; the rows stay", async () => {
+test("raw bodies that couldn't be read go after 30 days; the rows stay. Projects' email counts go after 30 days", async () => {
   const { project, address } = await setup();
   const make = (days: number) =>
     prisma.inboundEmail.create({
@@ -224,7 +224,10 @@ test("raw bodies that couldn't be read go after 30 days; the rows stay", async (
       },
     });
   const [old, recent] = [await make(31), await make(29)];
+  const day = (days: number) => new Date(new Date(Date.now() - days * 24 * 60 * 60_000).toISOString().slice(0, 10));
+  await prisma.projectEmailDay.createMany({ data: [31, 29].map((days) => ({ projectId: project.id, day: day(days), sent: 1 })) });
   await handlers.pruneInboundEmails({}, { info: () => {}, warn: () => {} });
+  expect(await prisma.projectEmailDay.findMany({ where: { projectId: project.id }, select: { day: true } })).toEqual([{ day: day(29) }]);
   expect((await prisma.inboundEmail.findUniqueOrThrow({ where: { id: old.id } })).raw).toBeNull();
   expect((await prisma.inboundEmail.findUniqueOrThrow({ where: { id: recent.id } })).raw).not.toBeNull();
 });

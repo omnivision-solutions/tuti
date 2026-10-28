@@ -1,5 +1,6 @@
-import { type EmailStatus, type Prisma, prisma } from "@tuti/db";
+import { type EmailStatus, Prisma, prisma } from "@tuti/db";
 import { deliveredMessageId } from "@tuti/email";
+import { plansEnabled } from "@tuti/shared";
 
 import { notifyInbox } from "./live";
 
@@ -9,10 +10,13 @@ import { notifyInbox } from "./live";
  * when it was sent (kept as its Message-ID), and its status only moves forward: sent → delivered →
  * bounced or complained, so a late delivery never hides a bounce. A complaint also stops replies by
  * email to that address for the project. Each SNS message counts once.
+ *
+ * On a server selling plans, each project's email is counted too, by the project its tags name
+ * (packages/jobs/src/ses-tenant.ts): what it sent, what bounced for good and what drew complaints.
  */
 type SesEvent = {
   eventType?: string;
-  mail?: { messageId?: string; timestamp?: string };
+  mail?: { messageId?: string; timestamp?: string; tags?: Record<string, string[] | undefined> };
   bounce?: { bounceType?: string; bouncedRecipients?: { diagnosticCode?: string }[] };
   complaint?: { complainedRecipients?: { emailAddress?: string }[] };
 };
@@ -29,20 +33,47 @@ const UNSAVED_FOR_MS = 5 * 60_000;
 
 class NotSavedYet extends Error {}
 
+/** The project's count an event adds to, if any. */
+function counted(event: SesEvent): { projectId: string; column: "sent" | "bounced" | "complained" } | null {
+  const projectId = event.mail?.tags?.project?.[0];
+  const column =
+    event.eventType === "Send"
+      ? "sent"
+      : event.eventType === "Bounce" && event.bounce?.bounceType === "Permanent"
+        ? "bounced"
+        : event.eventType === "Complaint"
+          ? "complained"
+          : null;
+  return plansEnabled() && projectId && column ? { projectId, column } : null;
+}
+
 /** False when SNS should try again later. */
 export async function recordEmailEvent(snsMessageId: string, event: SesEvent, now = Date.now()): Promise<boolean> {
   const change = FORWARD[event.eventType ?? ""];
   const id = deliveredMessageId(`250 Ok ${event.mail?.messageId ?? ""}`);
-  if (!change || !id) {
+  const count = counted(event);
+  // Another of a project's emails (not a reply) never has a message to mark.
+  const reply = !event.mail?.tags?.project || event.mail.tags.email?.[0] === "reply";
+  if (!(change && id && reply) && !count) {
     return true;
   }
   try {
     await prisma.$transaction(async (tx) => {
-      const { count } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
-      if (count === 0) {
+      const { count: added } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
+      if (added === 0) {
         return;
       }
-      await apply(tx, id, change, event, now);
+      if (count) {
+        // Today's (UTC); nothing for a project that's gone.
+        const column = Prisma.raw(`"${count.column}"`);
+        await tx.$executeRaw`
+          INSERT INTO "project_email_day" ("projectId", "day", ${column})
+          SELECT "id", ${new Date(now).toISOString().slice(0, 10)}::date, 1 FROM "project" WHERE "id" = ${count.projectId}
+          ON CONFLICT ("projectId", "day") DO UPDATE SET ${column} = "project_email_day".${column} + 1`;
+      }
+      if (change && id && reply) {
+        await apply(tx, id, change, event, now);
+      }
     });
     return true;
   } catch (error) {

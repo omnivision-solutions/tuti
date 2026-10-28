@@ -209,6 +209,8 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   const [email] = emailsTo(kim);
   expect(email!.headers["x-ses-tenant"]).toBe(tenant);
   expect(email!.headers["x-ses-configuration-set"]).toBe("tuti-test");
+  // Its events name the project and that it's a reply (apps/web/src/server/email-events.ts).
+  expect(email!.headers["x-ses-message-tags"]).toBe(`project=${project.id}, email=reply`);
   // Its own suppression list, and what its mail uses associated with it (SES refuses the mail otherwise).
   expect(ses.tenants.get(tenant)).toEqual({
     suppression: { SuppressedReasons: ["BOUNCE", "COMPLAINT"], SuppressionScope: "TENANT" },

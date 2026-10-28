@@ -28,8 +28,8 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 const post = async (body: unknown) => (await POST(new Request("http://localhost/api/email/events", { method: "POST", body: JSON.stringify(body) }))).status;
-const event = (eventType: string, sesId: string, extra: object = {}, sentAt = new Date()) =>
-  JSON.stringify({ eventType, mail: { messageId: sesId, timestamp: sentAt.toISOString() }, ...extra });
+const event = (eventType: string, sesId: string, extra: object = {}, sentAt = new Date(), tags?: Record<string, string[]>) =>
+  JSON.stringify({ eventType, mail: { messageId: sesId, timestamp: sentAt.toISOString(), ...(tags && { tags }) }, ...extra });
 const bounce = { bounce: { bounceType: "Permanent", bouncedRecipients: [{ emailAddress: "x", diagnosticCode: "smtp; 550 5.1.1 user unknown" }] } };
 
 /** A conversation by email with one reply emailed, which SES gave `sesId`. */
@@ -127,4 +127,40 @@ test("an event that comes before the send saved SES's id is tried again by SNS; 
   expect((await status()).emailStatus).toBe("DELIVERED");
 
   expect(await post(ses.sns("Notification", event("Delivery", id(8), {}, new Date(Date.now() - 60 * 60_000))))).toBe(200);
+});
+
+test("on a server selling plans, each project's email is counted by day: sent, bounced for good, complaints; each event once", async () => {
+  vi.stubEnv("PLANS", "on");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const tags = { project: [project.id], "ses:configuration-set": ["tuti-test"] };
+  const days = () => prisma.projectEmailDay.findMany({ where: { projectId: project.id }, select: { sent: true, bounced: true, complained: true } });
+
+  const sent = ses.sns("Notification", event("Send", id(10), {}, new Date(), tags));
+  expect(await post(sent)).toBe(200);
+  expect(await post(sent)).toBe(200);
+  expect(await post(ses.sns("Notification", event("Send", id(11), {}, new Date(), tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Bounce", id(10), bounce, new Date(), tags)))).toBe(200);
+  // A soft bounce isn't the sender's doing.
+  expect(await post(ses.sns("Notification", event("Bounce", id(11), { bounce: { bounceType: "Transient" } }, new Date(), tags)))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Complaint", id(11), {}, new Date(), tags)))).toBe(200);
+  expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
+
+  // A project that's gone, or untagged mail (Tuti's own): nothing to count.
+  expect(await post(ses.sns("Notification", event("Send", id(12), {}, new Date(), { project: ["gone"] })))).toBe(200);
+  expect(await post(ses.sns("Notification", event("Send", id(13))))).toBe(200);
+  expect(await prisma.projectEmailDay.count({ where: { projectId: { not: project.id } } })).toBe(0);
+
+  // Self-hosted (no plans sold): not counted.
+  vi.stubEnv("PLANS", "");
+  expect(await post(ses.sns("Notification", event("Send", id(14), {}, new Date(), tags)))).toBe(200);
+  expect(await days()).toEqual([{ sent: 2, bounced: 1, complained: 1 }]);
+});
+
+test("an event for a project's other email (a sign-in link, not a reply) isn't tried again: there's no message to wait for", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  expect(await post(ses.sns("Notification", event("Delivery", id(15), {}, new Date(), { project: [project.id] })))).toBe(200);
+  // A reply's is, until the send has saved SES's id.
+  expect(await post(ses.sns("Notification", event("Delivery", id(16), {}, new Date(), { project: [project.id], email: ["reply"] })))).toBe(503);
 });

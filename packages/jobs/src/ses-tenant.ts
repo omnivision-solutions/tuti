@@ -9,8 +9,15 @@ import { withEmailDomainLocks } from "./email-domains";
  * draws bounces or complaints), with the support domain's identity and the configuration set
  * associated, since SES refuses mail naming a tenant they aren't associated with. Null on a server
  * without SES. Each step is safe to repeat, so a setup that failed halfway is finished by the next email.
+ * Its tags come back on SES's events: the project (for its rates, apps/web/src/server/email-events.ts)
+ * and, on a reply from the support inbox, `email=reply` (the events that mark the reply's message).
  */
-export async function sesTenantHeaders(projectId: string, domain: string, teamDomain?: string | null): Promise<Record<string, string> | null> {
+export async function sesTenantHeaders(
+  projectId: string,
+  domain: string,
+  teamDomain?: string | null,
+  email: "reply" | "other" = "other",
+): Promise<Record<string, string> | null> {
   const api = ses();
   if (!api) {
     return null;
@@ -33,5 +40,9 @@ export async function sesTenantHeaders(projectId: string, domain: string, teamDo
       await tx.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
     });
   }
-  return { "X-SES-TENANT": tenant, "X-SES-CONFIGURATION-SET": api.configurationSet };
+  return {
+    "X-SES-TENANT": tenant,
+    "X-SES-CONFIGURATION-SET": api.configurationSet,
+    "X-SES-MESSAGE-TAGS": `project=${projectId}${email === "reply" ? ", email=reply" : ""}`,
+  };
 }

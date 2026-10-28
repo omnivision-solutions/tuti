@@ -91,6 +91,7 @@ test("from the project's updates@ address under its tenant; Reply-To its support
   for (const email of Object.values(before)) {
     expect(email).toMatchObject({ from });
     expect(email!.headers["x-ses-tenant"]).toBe(`tuti-test-${project.id}`);
+    expect(email!.headers["x-ses-message-tags"]).toBe(`project=${project.id}`);
   }
   // Inbox off: as before (the reader's goes back to who added them; the rest have none).
   expect(before.reader!.replyTo).toContain(owner.email);

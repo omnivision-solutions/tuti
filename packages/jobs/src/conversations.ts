@@ -118,7 +118,8 @@ export async function conversationMessage({ messageId, only }: JobInput<"convers
 
 /**
  * Raw received emails (support inbox) still unread after 30 days, failed or stuck: their bodies go, the
- * rows stay. And SES's events a week on (SNS stops sending one again long before).
+ * rows stay. SES's events a week on (SNS stops sending one again long before), and projects' email
+ * counts a month on (their rates look back two weeks).
  */
 export async function pruneInboundEmails(): Promise<JobResult> {
   const [{ count }, events] = await Promise.all([
@@ -127,6 +128,7 @@ export async function pruneInboundEmails(): Promise<JobResult> {
       data: { raw: null },
     }),
     prisma.emailEvent.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 7 * 24 * 60 * 60_000) } } }),
+    prisma.projectEmailDay.deleteMany({ where: { day: { lt: new Date(Date.now() - 30 * 24 * 60 * 60_000) } } }),
   ]);
   return { pruned: count, events: events.count };
 }
@@ -263,7 +265,7 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
       throw new Error("Its attachments can't be read: this server has no file storage");
     }
     const attachments = await Promise.all(files.map(async (f) => ({ filename: f.filename, contentType: f.contentType, content: await storage!.get(f.key) })));
-    const tenant = await sesTenantHeaders(conversation.projectId, domain, teamDomain?.domain);
+    const tenant = await sesTenantHeaders(conversation.projectId, domain, teamDomain?.domain, "reply");
     response = await sendEmail({
       to,
       from,
