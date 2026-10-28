@@ -26,12 +26,20 @@ test("Tuti's own widget in the team app signs people in with their account once 
   await panel.getByRole("button", { name: "Submit post" }).click();
   await expect(panel.getByText("Feedback posted")).toBeVisible();
   await checkpoint(owner, "app-widget-signed-in");
+  await expect(owner.locator('script[src$="/widget.js"]')).toHaveCount(1);
+
+  // Signing out goes home without a reload, so the launcher stays: its panel is signed out too.
+  await launcher.click();
+  await owner.getByRole("button", { name: /Olive Owner/ }).click();
+  await owner.getByRole("menuitem", { name: "Sign out" }).press("Enter");
+  await owner.waitForURL(`${CLOUD_URL}/`);
+  await launcher.click();
+  await expect(panel.getByRole("link", { name: "Sign in to post feedback" })).toBeVisible();
 
   // Not on the marketing pages, nor on a portal: no script (the launcher would only come after it loads).
   const script = owner.locator('script[src$="/widget.js"]');
-  await expect(script).toHaveCount(1);
   await owner.goto("/");
-  await expect(owner.getByRole("banner").getByRole("link", { name: "Open app" })).toBeVisible();
+  await expect(owner.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(script).toHaveCount(0);
   await expect(launcher).toHaveCount(0);
   await owner.goto(`${cloudPortalUrl(APP_WIDGET_SLUG)}/feedback/feature-requests`);
