@@ -26,7 +26,7 @@ let server: SMTPServer | undefined;
 afterEach(() => new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve())));
 
 /** A receiver for support.test, posting to a fake app that answers `answers` in turn (then 200). */
-async function receiver(answers: { status: number; outcome?: string }[] = [], { maxBytes }: { maxBytes?: number } = {}) {
+async function receiver(answers: { status: number; outcome?: string }[] = [], { maxBytes, maxRecipients }: { maxBytes?: number; maxRecipients?: number } = {}) {
   const posts: { url: string; body: Buffer; headers: Record<string, string> }[] = [];
   server = await startSmtpReceiver({
     domain: "support.test",
@@ -37,6 +37,7 @@ async function receiver(answers: { status: number; outcome?: string }[] = [], { 
     serverName: "mx.support.test",
     resolver,
     maxBytes,
+    maxRecipients,
     post: async (url, request) => {
       posts.push({ url, ...request });
       return answers.shift() ?? { status: 200, outcome: "conversation" };
@@ -101,6 +102,13 @@ test("a message over the limit is refused (552) and never posted", async () => {
   const { posts, send } = await receiver([], { maxBytes: 2048 });
   await expect(send("sam@example.org", ["support@acme.support.test"], "x".repeat(10_000))).rejects.toMatchObject({ responseCode: 552 });
   expect(posts).toEqual([]);
+});
+
+test("recipients past the limit are told to come separately (452), and only the others are posted", async () => {
+  const { posts, send } = await receiver([], { maxRecipients: 2 });
+  const sent = await send("sam@example.org", ["support@a.support.test", "support@b.support.test", "support@c.support.test"]);
+  expect(posts.map((post) => post.headers["tuti-recipient"])).toEqual(["support@a.support.test", "support@b.support.test"]);
+  expect(sent.rejected).toEqual(["support@c.support.test"]);
 });
 
 test("off without INBOUND_SMTP_PORT; with it, the rest is needed", () => {

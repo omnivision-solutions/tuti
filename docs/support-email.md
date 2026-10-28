@@ -66,6 +66,8 @@ The worker can receive the mail itself: an SMTP server for the support domain's 
   sending server hears what the app answered: taken, refused (no project has the address, or the
   message is over 25 MB), or "try again later" while the app is down or set up wrong (its email off,
   or a different `INBOUND_SECRET`, which the worker logs), so the sending server retries on its own.
+- **Limits:** 10 senders connected at once and 20 recipients per message; past them, senders are told
+  to come back later or to send the rest separately, as SMTP expects.
 
 ### Amazon SES (tuti.so)
 

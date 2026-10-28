@@ -17,6 +17,13 @@ import { SMTPServer, type SMTPServerSession } from "smtp-server";
 
 /** As the app: bigger messages are refused (it answers 413). */
 export const MAX_BYTES = 25 * 1024 * 1024;
+/**
+ * Senders connected at once, and recipients per message (each one a post of the whole message to the
+ * app): what one unauthenticated client can make the worker hold and send. Over them, senders are
+ * told to come back (421) or to send the rest separately (452), as SMTP expects.
+ */
+export const MAX_CLIENTS = 10;
+export const MAX_RECIPIENTS = 20;
 
 /** The app's answer: its status, and for a 200 or 404 its `outcome` (`no such address` for a 404 that means it). */
 type Answer = { status: number; outcome?: string };
@@ -32,8 +39,9 @@ export type ReceiverOptions = {
   serverName?: string;
   /** PEM key and certificate for STARTTLS; without them, STARTTLS isn't offered. */
   tls?: { key: string | Buffer; cert: string | Buffer };
-  /** The largest message taken (MAX_BYTES; tests set less). */
+  /** The largest message taken (MAX_BYTES), and the most recipients per message (MAX_RECIPIENTS); tests set less. */
   maxBytes?: number;
+  maxRecipients?: number;
   /** DNS for the checks (tests give a fake one). */
   resolver?: (name: string, type: string) => Promise<unknown>;
   post?: Post;
@@ -86,11 +94,16 @@ export function startSmtpReceiver(options: ReceiverOptions): Promise<SMTPServer>
     name: serverName,
     banner: "Tuti support inbox",
     size: options.maxBytes ?? MAX_BYTES,
+    maxClients: MAX_CLIENTS,
     authOptional: true,
     disabledCommands: options.tls ? ["AUTH"] : ["AUTH", "STARTTLS"],
     ...(options.tls && { key: options.tls.key, cert: options.tls.cert }),
     logger: false,
-    onRcptTo(address, _session, callback) {
+    onRcptTo(address, session, callback) {
+      if (session.envelope.rcptTo.length >= (options.maxRecipients ?? MAX_RECIPIENTS)) {
+        callback(answer(452, "Too many recipients: send the rest separately"));
+        return;
+      }
       const recipient = address.address.toLowerCase();
       // Only the projects' addresses, `<anything>@<subdomain>.<domain>`: this server relays nothing.
       callback(recipient.endsWith(`.${domain}`) ? undefined : answer(550, "No such address here"));
