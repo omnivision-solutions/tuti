@@ -1,0 +1,166 @@
+# Receiving the support domain's mail with Amazon SES (docs/support-email.md, "On tuti.so"): SES stores
+# each message in a private bucket and invokes the Lambda (index.mjs), which posts it to the app and
+# deletes it. Anything left (the app down for longer than Lambda's retries) expires after 7 days.
+# Deployed by deploy.sh, which also uploads the Lambda's code and makes the rule set active.
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Tuti support inbox - receiving mail for the support domain with SES
+
+Parameters:
+  Domain:
+    Type: String
+    Description: The support domain (SUPPORT_EMAIL_DOMAIN); mail to any of its subdomains is received.
+  AppUrl:
+    Type: String
+    Description: The app's origin (APP_URL), where /api/inbound/email is.
+  InboundSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 32
+    Description: The app's INBOUND_SECRET, which signs each message.
+  RuleSetName:
+    Type: String
+    Default: tuti-inbound
+
+Resources:
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-unposted-mail
+            Status: Enabled
+            ExpirationInDays: 7
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: SesStoresMail
+            Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${Bucket.Arn}/inbound/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:receipt-rule-set/${RuleSetName}:receipt-rule/*"
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: read-and-delete-stored-mail
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub "${Bucket.Arn}/inbound/*"
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Posts mail SES received for the support domain to the app
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt FunctionRole.Arn
+      # A message is up to 25 MB, read whole and posted once per recipient.
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          APP_URL: !Ref AppUrl
+          INBOUND_SECRET: !Ref InboundSecret
+          SUPPORT_EMAIL_DOMAIN: !Ref Domain
+          BUCKET: !Ref Bucket
+          PREFIX: inbound/
+      Code:
+        # deploy.sh uploads index.mjs right after the stack is deployed.
+        ZipFile: "exports.handler = async () => { throw new Error('Run deploy.sh to upload the code'); };"
+
+  FunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${Function}"
+      RetentionInDays: 30
+
+  # A failed post (the app down or deploying) is tried again by Lambda, for up to 6 hours.
+  FunctionRetries:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref Function
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 2
+      MaximumEventAgeInSeconds: 21600
+
+  SesInvokesFunction:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt Function.Arn
+      Action: lambda:InvokeFunction
+      Principal: ses.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  RuleSet:
+    Type: AWS::SES::ReceiptRuleSet
+    Properties:
+      RuleSetName: !Ref RuleSetName
+
+  Rule:
+    Type: AWS::SES::ReceiptRule
+    DependsOn:
+      - BucketPolicy
+      - SesInvokesFunction
+    Properties:
+      RuleSetName: !Ref RuleSet
+      Rule:
+        Name: support-domain
+        Enabled: true
+        ScanEnabled: true
+        TlsPolicy: Optional
+        # A leading dot: every subdomain of the support domain (projects' addresses are <subdomain>.<domain>).
+        Recipients:
+          - !Sub ".${Domain}"
+        Actions:
+          - S3Action:
+              BucketName: !Ref Bucket
+              ObjectKeyPrefix: inbound/
+          - LambdaAction:
+              FunctionArn: !GetAtt Function.Arn
+              InvocationType: Event
+
+Outputs:
+  Bucket:
+    Value: !Ref Bucket
+  Function:
+    Value: !Ref Function
+  RuleSet:
+    Value: !Ref RuleSet
+  MxTarget:
+    Description: Point a wildcard MX record for the domain's subdomains here.
+    Value: !Sub "inbound-smtp.${AWS::Region}.amazonaws.com"
