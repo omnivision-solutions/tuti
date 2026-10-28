@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { handlers } from "@tuti/jobs";
 import { expect, test } from "vitest";
 
 import { addMember, actAs, createProject, signUp } from "@/test/helpers";
@@ -73,4 +74,38 @@ test("one address that's refused doesn't keep the rest of the team from hearing,
   // The owner heard once; the member, refused at first, heard from the retry, once.
   expect(to(owner.email)).toEqual(["New conversation: Refund"]);
   expect(to(member.email)).toEqual(["New conversation: Refund"]);
+});
+
+test("a message whose email couldn't be queued is found by the cron and emailed; told, spam or nobody to tell, it isn't", async () => {
+  const { owner, project, key } = await setup();
+  const log = { info: () => {}, warn: () => {} };
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+  const resubmit = () => handlers.resubmitConversationNotices({}, log);
+  await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export", body: "Hi" });
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { projectId: project.id } });
+  await prisma.conversationMessage.updateMany({ where: { conversationId: conversation.id }, data: { createdAt: minutesAgo(30) } });
+  // Told about it, then a reply saved 3 minutes ago whose email never got queued (the queue was down).
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: minutesAgo(20) } });
+  const lost = () =>
+    prisma.conversationMessage.create({
+      data: { projectId: project.id, conversationId: conversation.id, author: "USER", channel: "API", body: "Hello?", createdAt: minutesAgo(3) },
+    });
+  await lost();
+
+  expect(await resubmit()).toEqual({ found: 1, queued: 1 });
+  expect(to(owner.email)).toEqual(["New conversation: Export", "Sam replied: Export"]);
+  // Told now: nothing left.
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  // One inside the 10 minutes after the team was told is meant to tell nobody, so the cron leaves it too.
+  await lost();
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+
+  // Nor is one in spam, or one nobody on the team would hear about, found.
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { notifiedAt: minutesAgo(20), spam: true } });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+  await prisma.conversation.update({ where: { id: conversation.id }, data: { spam: false } });
+  await prisma.teamMember.updateMany({ where: { projectId: project.id }, data: { emailNewConversations: false } });
+  expect(await resubmit()).toEqual({ found: 0, queued: 0 });
+  expect(to(owner.email)).toHaveLength(2);
 });
