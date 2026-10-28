@@ -37,7 +37,6 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationMessage,
   pruneInboundEmails,
   sendConversationReplies,
-
   resubmitConversationNotices,
   articleChanged,
   imageUploaded,
