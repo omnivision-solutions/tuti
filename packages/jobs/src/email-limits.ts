@@ -45,3 +45,45 @@ export async function cappedProjects(now = new Date()): Promise<string[]> {
   });
   return days.map((d) => d.projectId);
 }
+
+const DAY_MS = 24 * 60 * 60_000;
+/** Rates look back this many days, by the day each email was sent. */
+const RATE_DAYS = 14;
+/**
+ * SES reviews an account at 5% bounces or 0.1% complaints: a project is paused at 30% of those. Bounces
+ * once it has sent 100 (2 of 10 says little); complaints at 3 above the rate, or 5 at any rate.
+ */
+const MAX_BOUNCE_RATE = 0.015;
+const MIN_SENT = 100;
+const MAX_COMPLAINT_RATE = 0.0003;
+const MIN_COMPLAINTS = 3;
+const MAX_COMPLAINTS = 5;
+
+/**
+ * On a server selling plans, pauses a project's email to its users when its bounces or complaints
+ * over the last two weeks pass the limits above, before they hurt everyone's delivery: its replies
+ * and "shipped" emails wait (sign-in links still go) until the operator resumes it. The reason, when
+ * this call paused it; null otherwise (fine, or paused already).
+ */
+export async function pauseIfOverLimits(projectId: string, now = new Date()): Promise<string | null> {
+  if (!plansEnabled()) {
+    return null;
+  }
+  const since = new Date(Date.parse(now.toISOString().slice(0, 10)) - (RATE_DAYS - 1) * DAY_MS);
+  const { _sum } = await prisma.projectEmailDay.aggregate({
+    where: { projectId, day: { gte: since } },
+    _sum: { sent: true, bounced: true, complained: true },
+  });
+  const [sent, bounced, complained] = [_sum.sent ?? 0, _sum.bounced ?? 0, _sum.complained ?? 0];
+  const reason =
+    sent >= MIN_SENT && bounced / sent > MAX_BOUNCE_RATE
+      ? `${((bounced / sent) * 100).toFixed(1)}% of emails bounced in the last 2 weeks (${bounced} of ${sent})`
+      : complained >= MAX_COMPLAINTS || (complained >= MIN_COMPLAINTS && complained / Math.max(sent, 1) > MAX_COMPLAINT_RATE)
+        ? `${complained} people marked emails as spam in the last 2 weeks`
+        : null;
+  if (!reason) {
+    return null;
+  }
+  const { count } = await prisma.project.updateMany({ where: { id: projectId, emailPausedAt: null }, data: { emailPausedAt: now, emailPausedReason: reason } });
+  return count === 1 ? reason : null;
+}

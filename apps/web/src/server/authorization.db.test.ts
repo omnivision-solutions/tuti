@@ -27,7 +27,7 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@/lib/invitations";
 import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
-import { approvalToken } from "@/lib/email-approval";
+import { resumeToken } from "@/lib/email-pause";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
@@ -48,7 +48,7 @@ import * as credits from "./credits";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
-import * as emailApproval from "./email-approval";
+import * as emailPause from "./email-pause";
 import * as groups from "./groups";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -91,7 +91,7 @@ const modules = {
   github,
   docs,
   "docs-readers": docsReaders,
-  "email-approval": emailApproval,
+  "email-pause": emailPause,
   groups,
   inbox,
   invitations,
@@ -381,18 +381,13 @@ const matrix: Matrix = {
       call: (_slug, f) => invitations.declineInvitation(f.emailInvitationId),
     },
   },
-  // On a server selling plans (on for these calls), with an operator address and email set up.
-  "email-approval": {
-    requestEmailSending: {
-      allowed: "ADMIN",
-      call: (slug) => withEnv({ PLANS: "on", APP_PORTAL_OWNER: "e2e-operator@example.com" }, () => emailApproval.requestEmailSending(slug)),
-    },
+  "email-pause": {
     // The operator's signed link is what allows it.
-    approveEmailSending: {
+    resumeEmailSending: {
       allowed: "public",
       call: async (slug) => {
         const { id } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
-        return emailApproval.approveEmailSending(approvalToken(id));
+        return emailPause.resumeEmailSending(resumeToken(id));
       },
     },
   },

@@ -1,8 +1,10 @@
 import { prisma } from "@tuti/db";
 import { claimProjectEmail, handlers } from "@tuti/jobs";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { startSesFake } from "@tuti/testkit/ses";
+import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { createProject, signUp } from "@/test/helpers";
+import { POST } from "@/app/api/email/events/route";
+import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
 
@@ -12,20 +14,27 @@ import { createPost } from "./operations/create";
 import { updatePost } from "./operations/manage";
 import { setVote } from "./operations/more";
 import { call } from "./operations/run";
+import { resumeEmailSending } from "./email-pause";
+import { emailSignInLink } from "./sign-in-link";
 
 /**
- * A new project's daily cap (packages/jobs/src/email-limits.ts): in its first week on a server
- * selling plans, its replies and "shipped" emails stop at 200 a day, taken as they're sent; the rest
- * wait for tomorrow.
+ * Watching projects' email on a server selling plans (packages/jobs/src/email-limits.ts): in a
+ * project's first week its replies and "shipped" emails stop at 200 a day, taken as they're sent,
+ * the rest waiting for tomorrow; and a project whose bounces or complaints go over is paused until
+ * the operator resumes it.
  */
 
 const DOMAIN = "tuti.email";
 const log = { info: () => {}, warn: () => {} };
 
+const OPERATOR = "e2e-operator@example.com";
+const ses = await startSesFake();
+afterAll(() => ses.close());
 beforeEach(() => {
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", DOMAIN);
   vi.stubEnv("INBOUND_SECRET", "test-inbound-secret");
   vi.stubEnv("PLANS", "on");
+  vi.stubEnv("APP_PORTAL_OWNER", OPERATOR);
 });
 afterEach(() => vi.unstubAllEnvs());
 
@@ -35,12 +44,12 @@ const emailsTo = (address: string) => mailbox.emails.filter((email) => email.to.
 async function setup() {
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
-  await prisma.project.update({ where: { id: project.id }, data: { emailApprovedAt: new Date() } });
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
   // 199 taken today: room for one more.
   await prisma.projectEmailDay.create({ data: { projectId: project.id, day: today(), claimed: 199 } });
   const aWeekOld = () => prisma.project.update({ where: { id: project.id }, data: { createdAt: new Date(Date.now() - 8 * 24 * 60 * 60_000) } });
-  return { project, team, aWeekOld };
+  return { owner, project, team, aWeekOld };
 }
 
 /** Two conversations by email, each with a reply a minute old. */
@@ -121,4 +130,80 @@ test("a capped project's replies aren't picked, so they can't hold up other proj
   const emailed = await twoReplies(other.project, other.team);
   await handlers.sendConversationReplies({}, log);
   expect(emailed()).toBe(1);
+let events = 0;
+/** SES's event for one of the project's emails, through SNS. */
+async function sesEvent(projectId: string, eventType: "Bounce" | "Complaint") {
+  for (const [name, value] of Object.entries(ses.env)) {
+    vi.stubEnv(name, value);
+  }
+  const message = JSON.stringify({
+    eventType,
+    mail: { messageId: `0100-event-${++events}`, timestamp: new Date().toISOString(), tags: { project: [projectId] } },
+    ...(eventType === "Bounce" ? { bounce: { bounceType: "Permanent" } } : { complaint: {} }),
+  });
+  const response = await POST(new Request("http://localhost/api/email/events", { method: "POST", body: JSON.stringify(ses.sns("Notification", message)) }));
+  expect(response.status).toBe(200);
+}
+
+test("too many bounces pause the project's email: replies and shipped wait, sign-in links go, the operator and team are told; the operator's link resumes it", async () => {
+  const { owner, project, team } = await setup();
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 1 } });
+  await sesEvent(project.id, "Bounce");
+  const paused = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true, emailPausedReason: true } });
+  expect(paused).toEqual({ emailPausedAt: expect.any(Date), emailPausedReason: "2.0% of emails bounced in the last 2 weeks (2 of 100)" });
+
+  const [toOperator] = emailsTo(OPERATOR);
+  expect(toOperator).toMatchObject({ subject: `${project.name}'s email is paused` });
+  expect(toOperator!.text).toContain("2.0% of emails bounced in the last 2 weeks (2 of 100)");
+  const [toTeam] = emailsTo(owner.email).filter((email) => email.subject.endsWith("is paused"));
+  expect(toTeam).toMatchObject({ subject: `${project.name}'s email is paused` });
+  expect(toTeam!.replyTo).toContain(OPERATOR);
+  // Once: another bounce while it's paused tells nobody again.
+  await sesEvent(project.id, "Bounce");
+  expect(emailsTo(OPERATOR)).toHaveLength(1);
+
+  const emailed = await twoReplies(project, team);
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(0);
+  actAs(null);
+  const reader = `e2e-signin-${project.slug}@example.com`;
+  const form = new FormData();
+  form.set("email", reader);
+  await emailSignInLink(project.slug, "/", form);
+  expect(emailsTo(reader)).toHaveLength(1);
+
+  // The operator's link: its counts start over, and the replies go.
+  const token = new URL(toOperator!.text.split(/\s+/).find((word) => word.includes("/resume-email?"))!.replace(/[[\]]/g, "")).searchParams.get("token")!;
+  expect(await resumeEmailSending("not-a-token")).toEqual({ error: "This link doesn't work any more" });
+  expect(await resumeEmailSending(token)).toEqual({});
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).toEqual({ emailPausedAt: null });
+  expect(await prisma.projectEmailDay.count({ where: { projectId: project.id } })).toBe(0);
+  await handlers.sendConversationReplies({}, log);
+  expect(emailed()).toBe(2);
+});
+
+test("not paused under the limits: bounces before 100 sent, or a few complaints in a lot of email; 5 complaints pause it", async () => {
+  const { project } = await setup();
+  const pausedAt = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).emailPausedAt;
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 99, bounced: 9 } });
+  await sesEvent(project.id, "Bounce");
+  expect(await pausedAt()).toBeNull();
+
+  // 3 complaints in 20,000 is under 0.03%.
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 20_000, bounced: 0, complained: 2 } });
+  await sesEvent(project.id, "Complaint");
+  expect(await pausedAt()).toBeNull();
+  await sesEvent(project.id, "Complaint");
+  await sesEvent(project.id, "Complaint");
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedReason: true } })).toEqual({
+    emailPausedReason: "5 people marked emails as spam in the last 2 weeks",
+  });
+});
+
+test("on a server that doesn't sell plans, nothing is counted or paused", async () => {
+  vi.stubEnv("PLANS", "");
+  const { project } = await setup();
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 50 } });
+  await sesEvent(project.id, "Bounce");
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { emailPausedAt: true } })).toEqual({ emailPausedAt: null });
 });

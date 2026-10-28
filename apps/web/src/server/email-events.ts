@@ -1,7 +1,12 @@
 import { type EmailStatus, Prisma, prisma } from "@tuti/db";
-import { deliveredMessageId } from "@tuti/email";
-import { plansEnabled } from "@tuti/shared";
+import { deliveredMessageId, emailConfigured, emailPausedEmail, emailPausedTeamEmail, sendEmail } from "@tuti/email";
+import { pauseIfOverLimits } from "@tuti/jobs";
+import { log, plansEnabled } from "@tuti/shared";
 
+import { resumeToken } from "@/lib/email-pause";
+import { appUrl } from "@/lib/hosts";
+
+import { portalAddress } from "./custom-domains";
 import { notifyInbox } from "./live";
 
 /**
@@ -12,7 +17,8 @@ import { notifyInbox } from "./live";
  * email to that address for the project. Each SNS message counts once.
  *
  * On a server selling plans, each project's email is counted too, by the project its tags name
- * (packages/jobs/src/ses-tenant.ts): what it sent, what bounced for good and what drew complaints.
+ * (packages/jobs/src/ses-tenant.ts): what it sent, what bounced for good and what drew complaints;
+ * a bounce or complaint that takes it over the limits pauses its email (packages/jobs/src/email-limits.ts).
  */
 type SesEvent = {
   eventType?: string;
@@ -57,10 +63,11 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
   if (!(change && id && reply) && !count) {
     return true;
   }
+  let added = false;
   try {
     await prisma.$transaction(async (tx) => {
-      const { count: added } = await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true });
-      if (added === 0) {
+      added = (await tx.emailEvent.createMany({ data: [{ id: snsMessageId }], skipDuplicates: true })).count > 0;
+      if (!added) {
         return;
       }
       if (count) {
@@ -78,12 +85,55 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
         await apply(tx, id, change, event, now);
       }
     });
-    return true;
   } catch (error) {
     if (error instanceof NotSavedYet) {
       return false;
     }
     throw error;
+  }
+  if (added && count && count.column !== "sent") {
+    await pauseIfOver(count.projectId);
+  }
+  return true;
+}
+
+/** Pauses the project's email if its rates went over, and tells the operator (with the link that resumes it) and its owners and admins. */
+async function pauseIfOver(projectId: string) {
+  const reason = await pauseIfOverLimits(projectId);
+  if (!reason) {
+    return;
+  }
+  log.warn("Paused a project's email", { projectId, reason });
+  if (!emailConfigured()) {
+    return;
+  }
+  const project = await prisma.project.findUniqueOrThrow({
+    where: { id: projectId },
+    select: { name: true, slug: true, team: { where: { role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } }, select: { user: { select: { email: true } } } } },
+  });
+  const operator = process.env.APP_PORTAL_OWNER?.trim();
+  const settingsUrl = new URL(`/app/${project.slug}/settings/support`, appUrl()).toString();
+  const sent = await Promise.allSettled([
+    ...(operator
+      ? [
+          sendEmail({
+            to: operator,
+            ...emailPausedEmail({
+              projectName: project.name,
+              reason,
+              portalUrl: await portalAddress(project.slug),
+              url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId))}`, appUrl()).toString(),
+            }),
+          }),
+        ]
+      : []),
+    // Their answers go to the operator.
+    ...project.team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: project.name, reason, url: settingsUrl }) })),
+  ]);
+  for (const result of sent) {
+    if (result.status === "rejected") {
+      log.error("Emailing that a project's email is paused failed", { projectId, error: result.reason });
+    }
   }
 }
 

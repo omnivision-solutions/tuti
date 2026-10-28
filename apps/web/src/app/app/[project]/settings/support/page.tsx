@@ -2,11 +2,9 @@ import { notFound } from "next/navigation";
 
 import { CopyField } from "@/components/copy-button";
 import { EmailDomainSettings } from "@/components/inbox/email-domain";
-import { RequestEmailButton } from "@/components/inbox/approve-email";
 import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/support-settings";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { askedRecently } from "@/lib/email-approval";
 import { timeAgo } from "@/lib/format";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
@@ -48,17 +46,12 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
                     ? `Last email received ${timeAgo(settings.email.lastReceivedAt)}.`
                     : "No email received yet."}
                 </p>
-                {settings.email.approval && !settings.email.approval.approved && (
-                  <div className="flex flex-col gap-2 rounded-lg border p-3">
+                {settings.email.paused && (
+                  <div className="rounded-lg border border-destructive/40 p-3">
                     <p className="text-sm">
-                      Your replies reach your users in the widget for now. Before they&apos;re emailed too, we check each new project,
-                      so no one&apos;s spam hurts everyone&apos;s email.
+                      Your email to your users is paused: {settings.email.paused.reason}. Replies reach your users in the widget and
+                      are emailed once it&apos;s back on; sign-in links still go. We&apos;re looking at it.
                     </p>
-                    {settings.email.approval.requestedAt && askedRecently(settings.email.approval.requestedAt) ? (
-                      <p className="text-sm text-muted-foreground">Asked {timeAgo(settings.email.approval.requestedAt)}. It shows here once it&apos;s approved.</p>
-                    ) : (
-                      <RequestEmailButton projectSlug={project.slug} />
-                    )}
                   </div>
                 )}
               </>

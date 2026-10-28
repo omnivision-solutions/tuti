@@ -101,9 +101,9 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     return { skipped: true };
   }
   const { projectId, project } = post;
-  // Waiting for the operator's approval: still due, so the cron brings it back (for a day) once approved.
+  // The project's email is paused: still due, so the cron brings it back (for a day) once it's resumed.
   if (await projectEmailWaits(projectId)) {
-    return { waiting: "the project isn't approved to email its users yet" };
+    return { waiting: "the project's email is paused" };
   }
   // On a plan without private portals, a private portal is its team's only: nobody past it to tell.
   const teamOnly = project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal");

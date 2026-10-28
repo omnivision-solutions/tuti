@@ -130,16 +130,14 @@ test("without SUPPORT_EMAIL_DOMAIN, all of it comes from EMAIL_FROM as before", 
   expect(sent.reader!.replyTo).toContain(owner.email);
 });
 
-test("on a server selling plans, shipped emails wait for the project's approval; sign-in links don't", async () => {
-  vi.stubEnv("PLANS", "on");
+test("while the project's email is paused, shipped emails wait; sign-in links don't", async () => {
   const { owner, project, team } = await setup();
-  // A plan with private portals, so readers can be added.
-  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
   const sent = await sendAll(owner, project, team);
   expect(sent.signIn).toBeDefined();
   expect(sent.reset).toBeDefined();
   expect(sent.shipped).toBeUndefined();
-  // Still due: the cron brings it back once the project is approved.
+  // Still due: the cron brings it back once it's resumed.
   expect(await prisma.post.findFirst({ where: { projectId: project.id, shippedEmailsDueAt: { not: null } } })).not.toBeNull();
 });
 

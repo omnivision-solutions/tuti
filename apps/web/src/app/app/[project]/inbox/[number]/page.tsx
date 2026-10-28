@@ -1,6 +1,6 @@
 import { type EmailStatus, prisma } from "@tuti/db";
 import { aiPaused, cappedProjects, NEW_PROJECT_EMAILS_PER_DAY } from "@tuti/jobs";
-import { aiEnabled, plansEnabled } from "@tuti/shared";
+import { aiEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
@@ -42,11 +42,9 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
   }
   const projectId = membership.project.id;
 
-  // On a server selling plans (and emailing replies at all), replies wait to be emailed until the operator approves the project.
-  const waitingForApproval =
-    plansEnabled() &&
-    !!supportDomain() &&
-    !(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } })).emailApprovedAt;
+  // Replies wait to be emailed while the project's email is paused.
+  const emailPaused =
+    !!supportDomain() && !!(await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } })).emailPausedAt;
   const [conversation, team] = await Promise.all([
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
@@ -99,7 +97,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
   const person = conversationPerson(conversation);
   // In a new project's first week, replies past its daily cap wait for tomorrow (where they'd be emailed at all).
-  const capped = !waitingForApproval && !conversation.spam && !!person.email && (await cappedProjects()).includes(projectId);
+  const capped = !emailPaused && !conversation.spam && !!person.email && (await cappedProjects()).includes(projectId);
   const online =
     conversation.userId || conversation.visitorHash
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
@@ -179,15 +177,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                       </p>
                       <p className="text-sm break-words whitespace-pre-wrap">{message.body}</p>
                       <MessageAttachments attachments={message.attachments.map((a) => links.get(a.id)!)} dropped={message.attachmentsDropped} />
-                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || waitingForApproval || capped) && (
+                      {message.author === "TEAM" && !message.note && (message.seenAt || message.emailStatus || emailPaused || capped) && (
                         <p className="text-xs text-muted-foreground">
                           {message.seenAt
                             ? "Seen"
                             : message.emailStatus
                               ? EMAIL_STATUS[message.emailStatus](message.emailError)
-                              : capped
-                                ? `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`
-                                : "Not emailed until your project is approved (Settings → Support)"}
+                              : emailPaused
+                                ? "Not emailed while your project's email is paused (Settings → Support)"
+                                : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
                         </p>
                       )}
                       {message.original && (

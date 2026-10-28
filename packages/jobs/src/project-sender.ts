@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { planIncludes, plansEnabled } from "@tuti/shared";
+import { planIncludes } from "@tuti/shared";
 import { ses } from "@tuti/shared/ses";
 
 import { mailSubdomain } from "./mail-subdomain";
@@ -36,14 +36,11 @@ export async function projectSender(projectId: string, replyTo?: string): Promis
 }
 
 /**
- * Whether a project's news (its "shipped" emails) waits: on a server selling plans, with the support
- * domain, until the operator approves the project to email its users, as its replies do. Sign-in
- * links never wait (people need to sign in).
+ * Whether a project's news (its "shipped" emails) waits: while its email is paused (its bounces or
+ * complaints went over, packages/jobs/src/email-limits.ts), as its replies do. Sign-in links never
+ * wait (people need to sign in).
  */
 export async function projectEmailWaits(projectId: string): Promise<boolean> {
-  if (!plansEnabled() || !process.env.SUPPORT_EMAIL_DOMAIN?.trim()) {
-    return false;
-  }
-  const { emailApprovedAt } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } });
-  return !emailApprovedAt;
+  const { emailPausedAt } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } });
+  return !!emailPausedAt;
 }

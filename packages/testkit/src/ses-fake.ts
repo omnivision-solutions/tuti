@@ -50,6 +50,24 @@ export async function startSesFake(): Promise<SesFake> {
   const otherKey = generateKeyPairSync("rsa", { modulusLength: 2048 });
   let confirmations = 0;
   const topicArn = "arn:aws:sns:us-east-1:000000000000:tuti-test-events";
+  let url = "";
+  const sns: SesFake["sns"] = (type, message, { messageId = randomUUID(), topicArn: topic = topicArn, signed = true } = {}) => {
+    const fields: Record<string, string> = {
+      Type: type,
+      MessageId: messageId,
+      TopicArn: topic,
+      Message: message,
+      Timestamp: new Date().toISOString(),
+      SignatureVersion: "2",
+      SigningCertURL: `${url}/sns/SimpleNotificationService-fake.pem`,
+      ...(type === "SubscriptionConfirmation" && { Token: "fake-token", SubscribeURL: `${url}/sns/?Action=ConfirmSubscription&TopicArn=${encodeURIComponent(topic)}&Token=fake-token` }),
+    };
+    const text = SNS_SIGNED[type]
+      .filter((field) => field in fields)
+      .map((field) => `${field}\n${fields[field]}\n`)
+      .join("");
+    return { ...fields, Signature: createSign("RSA-SHA256").update(text).sign((signed ? key : otherKey).privateKey, "base64") };
+  };
 
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -64,6 +82,10 @@ export async function startSesFake(): Promise<SesFake> {
           identity.verified = true;
         }
         return res.writeHead(identity ? 204 : 404).end();
+      }
+      // For journeys in other processes: an SES event (the body) signed as SNS posts it, to post to /api/email/events.
+      if (req.method === "POST" && path === "/_fake/sns") {
+        return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(sns("Notification", Buffer.concat(chunks).toString())));
       }
       if (req.method === "GET" && path === "/sns/SimpleNotificationService-fake.pem") {
         return res.writeHead(200).end(key.publicKey.export({ type: "spki", format: "pem" }));
@@ -148,7 +170,7 @@ export async function startSesFake(): Promise<SesFake> {
     });
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   return {
     url,
     env: {
@@ -163,23 +185,7 @@ export async function startSesFake(): Promise<SesFake> {
     identities,
     calls,
     failing,
-    sns(type, message, { messageId = randomUUID(), topicArn: topic = topicArn, signed = true } = {}) {
-      const fields: Record<string, string> = {
-        Type: type,
-        MessageId: messageId,
-        TopicArn: topic,
-        Message: message,
-        Timestamp: new Date().toISOString(),
-        SignatureVersion: "2",
-        SigningCertURL: `${url}/sns/SimpleNotificationService-fake.pem`,
-        ...(type === "SubscriptionConfirmation" && { Token: "fake-token", SubscribeURL: `${url}/sns/?Action=ConfirmSubscription&TopicArn=${encodeURIComponent(topic)}&Token=fake-token` }),
-      };
-      const text = SNS_SIGNED[type]
-        .filter((field) => field in fields)
-        .map((field) => `${field}\n${fields[field]}\n`)
-        .join("");
-      return { ...fields, Signature: createSign("RSA-SHA256").update(text).sign((signed ? key : otherKey).privateKey, "base64") };
-    },
+    sns,
     get confirmations() {
       return confirmations;
     },
