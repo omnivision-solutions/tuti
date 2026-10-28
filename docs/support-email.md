@@ -51,4 +51,23 @@ over a limit: 500 emails an hour per project), `404` for an address no project h
 signature, `413` over 25 MB, and `500` when the receiver should try again (a redelivery of the same
 message is taken once). A project's mail waiting to be read is capped at 1 GB, and the server's at 20 GB.
 
-On tuti.so, Amazon SES receives mail for `tuti.email` and a small Lambda posts it.
+### Amazon SES (tuti.so)
+
+On tuti.so, Amazon SES receives mail for `tuti.email`, and a small Lambda posts it
+(`infra/ses-inbound`, which works for any domain verified in SES):
+
+- **The receipt rule** matches every subdomain of the domain, scans for spam and viruses, stores each
+  message in a private S3 bucket and invokes the Lambda.
+- **The Lambda** (`index.mjs`) posts the message once per recipient, with SES's SPF, DKIM and DMARC
+  verdicts as `Tuti-Auth`, signed with `INBOUND_SECRET`, and deletes the stored copy once the app
+  has it (or has refused it for good). A message SES found a virus in isn't posted.
+- **When the app is down**, Lambda tries twice more within minutes; then the invocation goes to a retry
+  queue that brings it back every 10 minutes for a day, and after that to a dead-letter queue (kept 14
+  days). The app takes a message it already has once, and one that's no longer stored (an earlier try
+  posted it) is done with. Anything never posted expires from the bucket after 7 days.
+
+To set it up, verify the domain in SES, then run `infra/ses-inbound/deploy.sh` with AWS credentials and
+`SUPPORT_EMAIL_DOMAIN`, `APP_URL` and `INBOUND_SECRET` set. It deploys the stack (`template.yaml`),
+uploads the Lambda's code and makes the rule set the active one: SES has one active rule set per
+region. Then add a wildcard MX record, `*.<domain> MX 10 inbound-smtp.<region>.amazonaws.com`. Replies
+go out through SES's SMTP too, so its SMTP user may send from `*@*.<domain>`.
