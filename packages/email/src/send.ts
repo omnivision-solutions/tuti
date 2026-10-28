@@ -35,6 +35,7 @@ export async function sendEmail({
   headers,
   from: sender,
   messageId,
+  attachments,
 }: {
   to: string;
   subject: string;
@@ -44,6 +45,8 @@ export async function sendEmail({
   from?: string;
   /** Its Message-ID (`<random@domain>`), when replies to it must be recognised; otherwise one is made. */
   messageId?: string;
+  /** Files sent with it, as attachments. */
+  attachments?: { filename: string; contentType: string; content: Uint8Array }[];
 }): Promise<string | null> {
   const [html, text] = await Promise.all([render(body), render(body, { plainText: true })]);
   if (!emailConfigured()) {
@@ -55,7 +58,17 @@ export async function sendEmail({
   if (!from) {
     throw new Error('EMAIL_FROM is not set (e.g. "Acme Feedback <feedback@example.com>")');
   }
-  const info = (await smtp().sendMail({ from, to, subject, html, text, replyTo, headers, messageId })) as { response?: string };
+  const info = (await smtp().sendMail({
+    from,
+    to,
+    subject,
+    html,
+    text,
+    replyTo,
+    headers,
+    messageId,
+    ...(attachments?.length && { attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, content: Buffer.from(a.content) })) }),
+  })) as { response?: string };
   return info.response ?? null;
 }
 

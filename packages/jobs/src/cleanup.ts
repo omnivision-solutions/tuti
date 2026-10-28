@@ -43,8 +43,24 @@ export async function cleanupMedia(_input: JobInput<"cleanupMedia">, log: JobLog
       }
     }
   }
-  log.info(`deleted ${claimed.length} unused upload(s); ${failed} file(s) couldn't be deleted`);
-  return { deleted: claimed.length, failedFiles: failed };
+  // The team's uploads for replies never sent: the same way, claimed only while still no message has them.
+  const unsent = await prisma.$queryRaw<{ key: string }[]>`
+    DELETE FROM conversation_attachment
+    WHERE id IN (
+      SELECT id FROM conversation_attachment WHERE "messageId" IS NULL AND "createdAt" < ${cutoff} LIMIT ${BATCH} FOR UPDATE SKIP LOCKED
+    )
+    AND "messageId" IS NULL
+    RETURNING key`;
+  for (const { key } of unsent) {
+    try {
+      await storage.delete(key);
+    } catch (error) {
+      failed++;
+      log.warn(`couldn't delete ${key}: ${(error as Error).message}`);
+    }
+  }
+  log.info(`deleted ${claimed.length} unused upload(s) and ${unsent.length} unsent attachment(s); ${failed} file(s) couldn't be deleted`);
+  return { deleted: claimed.length, unsentAttachments: unsent.length, failedFiles: failed };
 }
 
 /** An upload stays attached for this long after the last save of content that uses it. */

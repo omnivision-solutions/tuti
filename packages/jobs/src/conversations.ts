@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { INBOX_CHANNEL, prisma } from "@tuti/db";
 import { conversationEmail, conversationReplyEmail, deliveredMessageId, emailConfigured, sendEmail } from "@tuti/email";
 import { type JobInput, plansEnabled } from "@tuti/shared";
+import { mediaStorage } from "@tuti/shared/storage";
 
 import { enqueue, type JobLogger, type JobResult } from "./index";
 
@@ -193,7 +194,12 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
     prisma.conversationMessage.findMany({
       where: { conversationId, emailClaimedAt: claimedAt },
       orderBy: { createdAt: "asc" },
-      select: { id: true, body: true, authorUser: { select: { name: true } } },
+      select: {
+        id: true,
+        body: true,
+        authorUser: { select: { name: true } },
+        attachments: { orderBy: { createdAt: "asc" }, select: { key: true, filename: true, contentType: true } },
+      },
     }),
     // The thread so far, for In-Reply-To and References: what they sent, and what we did.
     prisma.conversationMessage.findMany({
@@ -231,13 +237,21 @@ async function sendReplies(conversationId: string, domain: string, now: Date, lo
     .map((m) => m.deliveredMessageId ?? m.sentMessageId ?? m.emailMessageId)
     .filter((id): id is string => !!id)
     .reverse();
+  const files = messages.flatMap((m) => m.attachments);
   let response: string | null;
   try {
+    // The files go with it, as attachments (read here, so a storage failure is a try like any other).
+    const storage = files.length > 0 ? mediaStorage() : null;
+    if (files.length > 0 && !storage) {
+      throw new Error("Its attachments can't be read: this server has no file storage");
+    }
+    const attachments = await Promise.all(files.map(async (f) => ({ filename: f.filename, contentType: f.contentType, content: await storage!.get(f.key) })));
     response = await sendEmail({
       to,
       from,
       replyTo: address(conversation.replyToken),
       messageId,
+      attachments,
       headers: {
         [LOOP_HEADER]: subdomain,
         ...(references.length > 0 && { "In-Reply-To": references.at(-1)!, References: references.join(" ") }),

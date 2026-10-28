@@ -12,6 +12,8 @@ export type CapturedEmail = {
   html: string;
   /** Header values by lowercase name. */
   headers: Record<string, string>;
+  /** Files attached to it. */
+  attachments: { filename: string; contentType: string; content: Buffer }[];
 };
 
 export type SmtpFake = {
@@ -56,6 +58,7 @@ export async function startSmtpFake({
           text: mail.text ?? "",
           html: typeof mail.html === "string" ? mail.html : "",
           headers: Object.fromEntries(mail.headerLines.map((h) => [h.key, h.line.slice(h.line.indexOf(":") + 1).trim()])),
+          attachments: mail.attachments.map((a) => ({ filename: a.filename ?? "", contentType: a.contentType, content: a.content })),
         };
         const refused = to.find((address) => refusing.has(address));
         if (refused) {

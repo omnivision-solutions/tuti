@@ -219,7 +219,7 @@ describe("cleanup", () => {
     }
 
     const log = { info: () => {}, warn: () => {} };
-    expect(await handlers.cleanupMedia({}, log)).toEqual({ deleted: 1, failedFiles: 0 });
+    expect(await handlers.cleanupMedia({}, log)).toEqual({ deleted: 1, unsentAttachments: 0, failedFiles: 0 });
 
     const left = await prisma.media.findMany({ where: { projectId: project.id }, select: { id: true } });
     expect(left.map((m) => m.id).sort()).toEqual([used.id, recent.id].sort());
@@ -240,7 +240,7 @@ describe("cleanup", () => {
     }
     s3.failDeletes.add(imageKey(stuck.id, 480));
 
-    expect(await handlers.cleanupMedia({}, { info: () => {}, warn: () => {} })).toEqual({ deleted: 2, failedFiles: 1 });
+    expect(await handlers.cleanupMedia({}, { info: () => {}, warn: () => {} })).toEqual({ deleted: 2, unsentAttachments: 0, failedFiles: 1 });
     expect(mediaKeys(fine).filter((key) => s3.objects.has(key))).toEqual([]);
     expect(await prisma.media.count({ where: { id: { in: [stuck.id, fine.id] } } })).toBe(0);
   });
