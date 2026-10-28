@@ -1,9 +1,10 @@
 import { prisma } from "@tuti/db";
-import { plansEnabled } from "@tuti/shared";
+import { aiPaused } from "@tuti/jobs";
+import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
-import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton } from "@/components/inbox/conversation-controls";
+import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
 import { PersonPanel } from "@/components/inbox/person-panel";
@@ -16,6 +17,7 @@ import { timeAgo } from "@/lib/format";
 import { attachmentLinks } from "@/server/attachments";
 import { supportDomain } from "@/server/inbound";
 import { getMembership } from "@/server/membership";
+import { answersEnabled } from "@/server/operations/docs-ask";
 import { onlineUntil, presenceKey } from "@/server/presence";
 import { conversationPerson } from "@/server/operations/conversations";
 
@@ -82,6 +84,8 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     notFound();
   }
   // Signed as the page renders: an image is shown, any other file is saved under its name.
+  // Out of AI credits: the AI's buttons show, disabled (the layout says why).
+  const paused = aiEnabled() && (await aiPaused(projectId));
   const links = new Map((await attachmentLinks(conversation.messages.flatMap((m) => m.attachments))).map((a) => [a.id, a]));
 
   const person = conversationPerson(conversation);
@@ -130,7 +134,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             />
           </>
         }
-        more={<SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />}
+        more={
+          <>
+            {aiEnabled() && <SummarizeButton projectSlug={slug} number={conversation.number} paused={paused} />}
+            <SpamButton projectSlug={slug} number={conversation.number} spam={conversation.spam} />
+          </>
+        }
       />
 
       {conversation.spam && <Badge variant="outline">Spam</Badge>}
@@ -182,7 +191,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
             })}
           </ol>
 
-          <ReplyForm projectSlug={slug} number={conversation.number} />
+          <ReplyForm projectSlug={slug} number={conversation.number} draftWithAi={answersEnabled() ? (paused ? "paused" : "on") : "off"} />
         </div>
       </div>
     </>

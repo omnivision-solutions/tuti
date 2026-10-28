@@ -106,6 +106,9 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
+  // Nothing in the fixture's docs is close to what was asked: no draft, and the model isn't asked.
+  "conversations.suggestReply": () => ({ number: 1 }),
+  "conversations.summarize": () => ({ number: 1 }),
   // Like widget.update: admins only in the app (Settings → Support).
   "support.get": () => ({}),
   "support.update": () => ({ inbox: true }),
@@ -433,12 +436,16 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   const own = operation.name.startsWith("site.") ? "site" : "domain";
   let fixture = await createFixture(own);
   // AI answers and code changes need embeddings: on for docs.ask (nothing is close to its question, so the model isn't asked) and for analysing and resuming code changes.
-  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
+  vi.stubEnv("OPENAI_API_KEY", ["docs.ask", "codeChanges.analyse", "codeChanges.resume", "conversations.suggestReply"].includes(operation.name) ? FAKE_OPENAI_KEY : "");
   // AI credits on for buying them only: elsewhere a project with none would be refused its AI.
   vi.stubEnv("AI_CREDITS", operation.name === "credits.topUp" ? "on" : "");
   vi.stubEnv("PLANS", operation.name === "plan.subscribe" ? "on" : "");
 
   // Another project's key: nothing of this project comes back, and nothing changes.
+  if (operation.name === "conversations.summarize") {
+    // The other project has a conversation #1 too: its own is summarized.
+    model.reply("Their own conversation.");
+  }
   const before = await snapshot();
   const other = await call(operation, input(), keys.otherWrite);
   expect(other.text).not.toContain(fixture.marker);
@@ -461,6 +468,9 @@ test.each(operations.map((operation) => ({ name: operation.name, operation })))(
   }
   if (operation.name === "docs.escalate") {
     model.reply("They want to pay with crypto.");
+  }
+  if (operation.name === "conversations.summarize") {
+    model.reply("They want an invoice for October.");
   }
   expect(await call(operation, input(), keys.write)).toMatchObject({ status: 200 });
 });

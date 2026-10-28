@@ -11,6 +11,7 @@ import {
   updateConversation,
 } from "./conversations";
 import { getSupportSettings, updateSupportSettings } from "./support";
+import { suggestReply, summarizeConversation } from "./support-ai";
 import { removeLink } from "./links";
 import { mergePost, updatePost } from "./manage";
 import { dismissDuplicate, getProject, listDuplicates, listTeam, setVote } from "./more";
@@ -81,6 +82,8 @@ const all = [
   createConversation,
   replyToConversation,
   updateConversation,
+  suggestReply,
+  summarizeConversation,
   getSupportSettings,
   updateSupportSettings,
   listBoards,

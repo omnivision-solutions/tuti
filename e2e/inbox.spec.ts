@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
+import { nextModelReply } from "./model";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -119,6 +120,16 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await checkpoint(owner, "conversation-note");
   await owner.getByRole("tab", { name: "Reply" }).click();
 
+  // The AI: a reply drafted from the docs is offered, and a summary of the conversation is added as its note.
+  await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeVisible();
+  await nextModelReply("Sam's CSV export fails; a fix is on its way, and billing needs checking.", "Can't export to CSV");
+  await owner.getByRole("button", { name: "More actions" }).click();
+  await owner.getByRole("button", { name: "Summarize with AI" }).click();
+  await expect(owner.getByText("Summary added as a note")).toBeVisible();
+  await expect(messages).toHaveCount(5);
+  await expect(messages.last()).toContainText("Note · AI");
+  await expect(messages.last()).toContainText("Summary: Sam's CSV export fails");
+
   // Assigned to themselves.
   await owner.getByRole("combobox", { name: "Assignee" }).click();
   await owner.getByRole("option", { name: "Olive Owner" }).click();
@@ -128,7 +139,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
-  await expect(messages).toHaveCount(5);
+  await expect(messages).toHaveCount(6);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Open");
 
   // Closed, it moves to Closed; Mine has nothing left.

@@ -33,7 +33,7 @@ export function codeChangesEnabled(): boolean {
 }
 
 /** What an AI request is for: each feature has its own default model, and a project can pick another. */
-export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes"] as const;
+export const AI_FEATURES = ["answers", "escalations", "changelog", "code_changes", "support"] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 /** A feature's model for every project: AI_MODEL_<FEATURE> (e.g. AI_MODEL_ANSWERS, a model id), else AI_MODEL, else Tuti's default. */

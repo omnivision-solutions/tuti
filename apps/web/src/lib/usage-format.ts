@@ -4,6 +4,7 @@
 export const AI_FEATURE_NAMES: Record<string, string> = {
   answers: "AI answers",
   escalations: "Ask a person (summaries)",
+  support: "Support inbox (drafts and summaries)",
   changelog: "Changelog drafts and edits",
   code_changes: "Code changes",
 };

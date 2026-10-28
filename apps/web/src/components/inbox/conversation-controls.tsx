@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CONVERSATION_STATUS_LABELS, type ConversationStatusName as Status } from "@/lib/conversation-statuses";
-import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails } from "@/server/inbox";
+import { assignConversation, markConversationSpam, setConversationStatus, setNewConversationEmails, summarizeWithAi } from "@/server/inbox";
 
 type Props = { projectSlug: string; number: number };
 
@@ -131,6 +131,31 @@ export function NewConversationEmailsButton({ projectSlug, on }: { projectSlug: 
       }
     >
       {on ? "Stop emailing me new conversations" : "Email me new conversations"}
+    </Button>
+  );
+}
+
+/** "Summarize": the AI's summary of the conversation, added as a note (disabled while the project is out of AI credits). */
+export function SummarizeButton({ projectSlug, number, paused }: Props & { paused: boolean }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={pending || paused}
+      title={paused ? "This project is out of AI credits" : undefined}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await summarizeWithAi(projectSlug, number);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success("Summary added as a note");
+          }
+        })
+      }
+    >
+      {pending ? "Summarizing…" : "Summarize with AI"}
     </Button>
   );
 }

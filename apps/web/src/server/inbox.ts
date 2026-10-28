@@ -11,6 +11,7 @@ import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./op
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { updateSupportSettings } from "./operations/support";
+import { suggestReply, summarizeConversation } from "./operations/support-ai";
 
 /** The team's actions in the support inbox (any team role), through the conversations operations. */
 
@@ -125,3 +126,44 @@ export async function getSupportAddress(projectSlug: string): Promise<FormState>
   );
 }
 
+
+/**
+ * A reply drafted from the docs for the reply box (conversations.suggestReply): the draft, or why there
+ * isn't one (the docs don't cover it, the project is out of AI credits, the AI failed).
+ */
+export async function draftReplyWithAi(
+  projectSlug: string,
+  conversation: number,
+): Promise<{ error: string } | { draft: string } | { draft: null; reason: string }> {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  if (!session || !membership) {
+    return { error: "Only the project's team can draft replies" };
+  }
+  try {
+    const suggested = await call(suggestReply, { actor: { kind: "user", userId: session.user.id }, projectId: membership.project.id }, { number: conversationNumber(conversation) });
+    if (suggested.status === "suggested") {
+      return { draft: suggested.draft };
+    }
+    return {
+      draft: null,
+      reason:
+        suggested.status === "no_answer"
+          ? "Your docs don't cover what they asked, so there's no draft"
+          : suggested.status === "unavailable"
+            ? "This project is out of AI credits"
+            : "The AI couldn't draft a reply: try again",
+    };
+  } catch (error) {
+    if (error instanceof OperationError) {
+      return { error: error.message };
+    }
+    throw error;
+  }
+}
+
+/** Adds the AI's summary of the conversation as a note (conversations.summarize). */
+export async function summarizeWithAi(projectSlug: string, conversation: number): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can summarize conversations", async (context) =>
+    call(summarizeConversation, context, { number: conversationNumber(conversation) }),
+  );
+}
