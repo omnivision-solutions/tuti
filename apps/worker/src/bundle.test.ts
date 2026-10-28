@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 
@@ -12,7 +13,7 @@ import { expect, test } from "vitest";
  * fails before it starts ("Dynamic require of "events" is not supported").
  */
 test("the built worker loads, and stops only for its missing settings", () => {
-  const app = new URL("..", import.meta.url).pathname;
+  const app = fileURLToPath(new URL("..", import.meta.url));
   // Inside the app, so the bundle finds its external packages in the app's node_modules.
   const out = mkdtempSync(join(app, ".bundle-test-"));
   try {
