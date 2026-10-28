@@ -14,6 +14,8 @@ import { projectSlug } from "./read";
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
 export const CONVERSATION_STATUSES = ["open", "waiting", "closed"] as const;
+/** The statuses the team sets by hand; waiting is set by replying (the team spoke last). */
+export const SETTABLE_STATUSES = ["open", "closed"] as const;
 const toApiStatus = (status: ConversationStatus) => status.toLowerCase() as (typeof CONVERSATION_STATUSES)[number];
 
 export const MAX_MESSAGE_LENGTH = 10_000;
@@ -235,6 +237,7 @@ async function tellTeam(messageId: string) {
   try {
     await enqueue("conversationMessage", { messageId });
   } catch (error) {
+    // The message is saved: the conversation-notices-resubmit cron finds it and queues it again.
     log.error("Enqueueing the team's email about a message failed", { error, messageId });
   }
 }
@@ -400,7 +403,7 @@ export const updateConversation = defineOperation({
   input: z
     .object({
       number: conversationNumber,
-      status: z.enum(CONVERSATION_STATUSES).optional(),
+      status: z.enum(SETTABLE_STATUSES).optional(),
       assignee: z.email().nullable().optional(),
       spam: z.boolean().optional(),
     })
