@@ -13,7 +13,7 @@ import { requirePlan } from "./plan";
 export const supportSettings = async (projectId: string) => {
   const domain = supportDomain();
   const [project, subdomain, last, own] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailApprovedAt: true, emailRequestedAt: true, plan: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { supportInbox: true, emailPausedAt: true, emailPausedReason: true, plan: true } }),
     prisma.mailSubdomain.findUnique({ where: { projectId }, select: { subdomain: true } }),
     prisma.inboundEmail.findFirst({ where: { projectId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
     prisma.emailDomain.findUnique({ where: { projectId } }),
@@ -25,8 +25,8 @@ export const supportSettings = async (projectId: string) => {
       ? {
           address: subdomain ? supportAddress(subdomain.subdomain, domain) : null,
           lastReceivedAt: last?.createdAt ?? null,
-          // On a server selling plans: whether replies are emailed to users yet (the operator approves each project).
-          approval: plansEnabled() ? { approved: !!project.emailApprovedAt, requestedAt: project.emailRequestedAt } : null,
+          // Paused (on a server selling plans, when its bounces or complaints went over): replies wait to be emailed till it's resumed.
+          paused: plansEnabled() && project.emailPausedAt ? { at: project.emailPausedAt, reason: project.emailPausedReason ?? "" } : null,
           // Sending from the team's own domain: offered with Amazon SES (`included`: on the project's plan).
           ownDomain: ses()
             ? {

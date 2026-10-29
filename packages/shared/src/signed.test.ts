@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { signForever, verifyForever } from "./signed";
+import { signForever, signValue, verifyForever } from "./signed";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -21,4 +21,9 @@ test("without one, they're keyed with the auth secret", () => {
   expect(verifyForever("media", "m/x/email.jpg", signature)).toBe(true);
   vi.stubEnv("BETTER_AUTH_SECRET", "auth-two");
   expect(verifyForever("media", "m/x/email.jpg", signature)).toBe(false);
+});
+
+test("nothing is signed without a secret", () => {
+  vi.stubEnv("BETTER_AUTH_SECRET", "");
+  expect(() => signValue("test", ["a"], 60)).toThrow("BETTER_AUTH_SECRET");
 });

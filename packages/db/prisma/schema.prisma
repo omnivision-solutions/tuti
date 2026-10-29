@@ -139,10 +139,17 @@ model Project {
   conversationCount     Int          @default(0)
   /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
   supportInbox          Boolean      @default(false)
-  /// On a server selling plans, the operator approves a project before its replies are emailed to its
-  /// users (one project's spam mustn't hurt everyone's delivery): when it asked, and when it was approved.
+  /// No longer used (projects were approved before emailing their users): drop in a later release.
   emailRequestedAt      DateTime?
   emailApprovedAt       DateTime?
+  /// On a server selling plans, its email to its users is paused (its bounces or complaints went over,
+  /// packages/jobs/src/email-limits.ts) until the operator resumes it: when, and why.
+  emailPausedAt         DateTime?
+  emailPausedReason     String?
+  /// When the operator was told of the pause (null until it's sent, so a failed send is tried again),
+  /// and when it was last resumed (its rates count from then).
+  emailPauseToldAt      DateTime?
+  emailResumedAt        DateTime?
   /// Its Amazon SES tenant and the support domain's identity associated with it (`<tenant> <identity ARN>`), once set up for its
   /// email (packages/jobs/src/ses-tenant.ts); null on a server without SES.
   sesTenant             String?

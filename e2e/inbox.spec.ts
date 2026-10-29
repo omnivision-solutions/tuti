@@ -3,12 +3,12 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
-import { useTodaysEmails } from "./email-days";
+import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 import { nextModelReply } from "./model";
-import { verifySesDomain } from "./ses";
+import { sesBounce, verifySesDomain } from "./ses";
 
 test("conversations from the API land in the inbox, where the team replies, assigns, closes and marks spam", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
@@ -370,40 +370,47 @@ async function receive(recipient: string, raw: string) {
   expect(response.status).toBe(200);
 }
 
-test("on a server selling plans, the operator approves a project before its replies are emailed", async ({ browser }, testInfo) => {
+test("on a server selling plans, a new project's email is capped in its first week, and paused when too much bounces till the operator resumes it", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
   await createProject(owner, "Acme", slug, cloudPortalUrl);
   await owner.goto(`/app/${slug}/settings/support`);
   await owner.getByRole("button", { name: "Get a support address" }).click();
-  await expect(owner.getByText("Your replies reach your users in the widget for now.")).toBeVisible();
-  await checkpoint(owner, "support-email-approval-needed");
-  const asked = countEmailsTo(APP_PORTAL_OWNER);
-  await owner.getByRole("button", { name: "Request email sending" }).click();
-  await expect(owner.getByText("Asked just now. It shows here once it's approved.")).toBeVisible();
-  await checkpoint(owner, "support-email-requested");
-
-  // The operator's email: its link shows what's asked, and its button approves.
-  const operator = await (await browser.newContext()).newPage();
-  await operator.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { after: asked, subject: /asks to email its users$/ }), `${CLOUD_URL}/approve-email?`));
-  await expect(operator.getByText("Let Acme email its users?")).toBeVisible();
-  await checkpoint(operator, "operator-approve-email");
-  await operator.getByRole("button", { name: "Approve" }).click();
-  await expect(operator.getByText("Acme is approved")).toBeVisible();
-  await checkpoint(operator, "operator-approved");
-
-  await owner.reload();
-  await expect(owner.getByText("Your replies reach your users in the widget for now.")).toHaveCount(0);
+  await expect(owner.getByText("No email received yet.")).toBeVisible();
 
   // In its first week, a project sends up to 200 emails a day: past that, a reply waits for tomorrow.
   await receive(`support@${slug}.${SUPPORT_EMAIL_DOMAIN}`, rawEmail("Kim Lee <e2e-kim@example.com>", "Invoice missing", "Where's my October invoice?"));
-  await useTodaysEmails(slug);
+  await setTodaysEmails(slug, { claimed: 200 });
   await owner.goto(`/app/${slug}/inbox/1`);
   await owner.getByRole("textbox", { name: "Reply" }).fill("It's under Billing.");
   await owner.getByRole("button", { name: "Send", exact: true }).click();
   await expect(owner.getByText("Emailed tomorrow: in its first week, a project sends up to 200 emails a day")).toBeVisible();
   await checkpoint(owner, "reply-waits-for-daily-cap");
+
+  // 2 of 100 bounced: paused, and the operator is told.
+  const projectId = await setTodaysEmails(slug, { sent: 100, bounced: 1 });
+  const told = countEmailsTo(APP_PORTAL_OWNER);
+  await sesBounce(CLOUD_URL, projectId);
+  await owner.reload();
+  await expect(owner.getByText("Not emailed while your project's email is paused (Settings → Support)")).toBeVisible();
+  await checkpoint(owner, "reply-waits-while-paused");
+  await owner.goto(`/app/${slug}/settings/support`);
+  const paused = owner.getByText("Your email to your users is paused: 2.0% of emails bounced in the last 2 weeks (2 of 100).");
+  await expect(paused).toBeVisible();
+  await checkpoint(owner, "support-email-paused");
+
+  // The operator's email: its link shows why, and its button resumes it.
+  const operator = await (await browser.newContext()).newPage();
+  await operator.goto(linkIn(await latestEmailTo(APP_PORTAL_OWNER, { after: told, subject: /email is paused$/ }), `${CLOUD_URL}/resume-email?`));
+  await expect(operator.getByText("Resume Acme's email?")).toBeVisible();
+  await checkpoint(operator, "operator-resume-email");
+  await operator.getByRole("button", { name: "Resume" }).click();
+  await expect(operator.getByText("Acme's email is on again")).toBeVisible();
+
+  await owner.reload();
+  await expect(owner.getByText("No email received yet.").or(owner.getByText(/^Last email received/))).toBeVisible();
+  await expect(paused).toHaveCount(0);
 });
 
 test("replies from the team's own address: add it, put SES's records in DNS, check, and a test email comes from it", async ({ browser }, testInfo) => {

@@ -151,6 +151,12 @@ export const jobs = {
     input: z.object({}),
     cron: "37 * * * *",
   },
+  /** Tells the operator of projects' email pauses they weren't told of yet (telling them failed). */
+  tellEmailPauses: {
+    name: "tell-email-pauses",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** Asks Amazon SES again whether each team's own email domain may send (support inbox). */
   checkEmailDomains: {
     name: "check-email-domains",

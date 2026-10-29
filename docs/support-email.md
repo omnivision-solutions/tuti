@@ -129,8 +129,8 @@ Tuti's own mail comes from verified there.
 With email on, what a project sends its users (portal sign-in links and password resets, "<name> gave
 you access", "it shipped") comes from the project too: `"<Project>" <updates@<subdomain>.<domain>>`,
 or `updates@` the team's own domain once it's verified, under the project's tenant, with Reply-To
-its support address while the inbox is on, so answers land in the Inbox. On a server selling plans,
-"it shipped" waits for the operator's approval like replies do; sign-in links never wait. Tuti's own
+its support address while the inbox is on, so answers land in the Inbox. "It shipped" waits while
+the project's email is paused, like replies do; sign-in links never wait. Tuti's own
 mail to teams (sign-up, invites, credits) stays on `EMAIL_FROM`, and without `SUPPORT_EMAIL_DOMAIN`
 everything does.
 
@@ -146,4 +146,15 @@ email as spam gets no more email from it; replies still reach them in the widget
 On a server selling plans, every email a project sends (replies, "shipped", sign-in links, …) is
 tagged with the project (`X-SES-MESSAGE-TAGS`), and its events add up per project and day: sent,
 bounced for good, and complaints, kept a month. Updating the stack from before send events
-(`infra/ses-sending/deploy.sh` again) adds them.
+(`infra/ses-sending/deploy.sh` again) adds them. Projects email their users from the start, and those
+counts keep it safe for everyone's delivery (`packages/jobs/src/email-limits.ts`):
+
+- In its first week, a project sends up to 200 emails a day (replies and "it shipped"); the rest wait
+  for tomorrow.
+- Over the last two weeks, more than 1.5% of its emails bouncing (once it has sent 100), or 3
+  complaints above 0.03% of its emails (5 at any rate), pauses its email: replies and "it shipped"
+  wait, sign-in links still go. Its owners and admins are emailed why, and the operator
+  (`APP_PORTAL_OWNER`) gets a link that resumes that pause (it lasts as long as the pause); its rates count afresh from then.
+
+Self-hosted servers (no plans sold) have neither, and without `APP_PORTAL_OWNER` nothing is paused
+(nobody could resume it).

@@ -36,14 +36,15 @@ export async function projectSender(projectId: string, replyTo?: string): Promis
 }
 
 /**
- * Whether a project's news (its "shipped" emails) waits: on a server selling plans, with the support
- * domain, until the operator approves the project to email its users, as its replies do. Sign-in
- * links never wait (people need to sign in).
+ * Whether a project's news (its "shipped" emails) waits: while its email is paused (its bounces or
+ * complaints went over, packages/jobs/src/email-limits.ts), as its replies do. Sign-in links never
+ * wait (people need to sign in).
  */
 export async function projectEmailWaits(projectId: string): Promise<boolean> {
-  if (!plansEnabled() || !process.env.SUPPORT_EMAIL_DOMAIN?.trim()) {
+  // Only where projects are paused at all: a server that stops selling plans lets them all go.
+  if (!plansEnabled()) {
     return false;
   }
-  const { emailApprovedAt } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailApprovedAt: true } });
-  return !emailApprovedAt;
+  const { emailPausedAt } = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { emailPausedAt: true } });
+  return !!emailPausedAt;
 }

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
+import { resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
 import {
   type DnsFake,
@@ -27,7 +28,6 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@/lib/invitations";
 import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
-import { approvalToken } from "@/lib/email-approval";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";
@@ -48,7 +48,7 @@ import * as credits from "./credits";
 import * as github from "./github";
 import * as docs from "./docs";
 import * as docsReaders from "./docs-readers";
-import * as emailApproval from "./email-approval";
+import * as emailPause from "./email-pause";
 import * as groups from "./groups";
 import * as inbox from "./inbox";
 import * as invitations from "./invitations";
@@ -91,7 +91,7 @@ const modules = {
   github,
   docs,
   "docs-readers": docsReaders,
-  "email-approval": emailApproval,
+  "email-pause": emailPause,
   groups,
   inbox,
   invitations,
@@ -381,18 +381,13 @@ const matrix: Matrix = {
       call: (_slug, f) => invitations.declineInvitation(f.emailInvitationId),
     },
   },
-  // On a server selling plans (on for these calls), with an operator address and email set up.
-  "email-approval": {
-    requestEmailSending: {
-      allowed: "ADMIN",
-      call: (slug) => withEnv({ PLANS: "on", APP_PORTAL_OWNER: "e2e-operator@example.com" }, () => emailApproval.requestEmailSending(slug)),
-    },
+  "email-pause": {
     // The operator's signed link is what allows it.
-    approveEmailSending: {
+    resumeEmailSending: {
       allowed: "public",
       call: async (slug) => {
-        const { id } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true } });
-        return emailApproval.approveEmailSending(approvalToken(id));
+        const { id, emailPausedAt } = await prisma.project.findUniqueOrThrow({ where: { slug }, select: { id: true, emailPausedAt: true } });
+        return emailPause.resumeEmailSending(resumeToken(id, emailPausedAt!));
       },
     },
   },
@@ -698,8 +693,8 @@ let installations = 0;
 async function createFixture(own: "domain" | "site" = "domain") {
   const project = await createProject(users.OWNER);
   const projectId = project.id;
-  // A Stripe customer (it had a plan once), for Manage plan.
-  await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}` } });
+  // A Stripe customer (it had a plan once), for Manage plan; its email paused, for the operator's resume link.
+  await prisma.project.update({ where: { id: projectId }, data: { stripeCustomerId: `cus_matrix_${projectId}`, emailPausedAt: new Date(), emailPausedReason: "2.0% of emails bounced" } });
   // Replies from its own domain, verified (Settings → Support), which SES (the fake) has for it.
   const emailDomain = `${project.slug}.example.com`;
   await prisma.emailDomain.create({ data: { projectId, domain: emailDomain, address: `support@${emailDomain}`, dkimTokens: [], verifiedAt: new Date() } });

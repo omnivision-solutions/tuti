@@ -152,8 +152,8 @@ const unsent = (now: Date) => ({
   emailAttempts: { lt: MAX_TRIES },
   createdAt: { lte: new Date(now.getTime() - EMAIL_UNSEEN_AFTER_MS) },
   OR: [{ emailClaimedAt: null }, { emailClaimedAt: { lt: new Date(now.getTime() - CLAIM_FOR_MS) } }],
-  // On a server selling plans, only once the operator has approved the project (they wait till then).
-  conversation: { spam: false, ...(plansEnabled() && { project: { emailApprovedAt: { not: null } } }) },
+  // Not while the project's email is paused, where projects are paused at all (they wait till it's resumed).
+  conversation: { spam: false, ...(plansEnabled() && { project: { emailPausedAt: null } }) },
 });
 
 /**

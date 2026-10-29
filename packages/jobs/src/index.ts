@@ -5,6 +5,7 @@ import { articleChanged, purgeArticles } from "./articles";
 import { cleanupMedia, releaseMedia } from "./cleanup";
 import { pruneDocsSearches } from "./docs-searches";
 import { checkEmailDomains } from "./email-domains";
+import { tellEmailPauses } from "./email-pause";
 import { codeChange } from "./code-changes";
 import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, sendConversationReplies } from "./conversations";
 import { githubPullRequest, githubRelease } from "./github";
@@ -17,7 +18,8 @@ export { signWebhook } from "./webhooks";
 export { sesTenantHeaders } from "./ses-tenant";
 export { mailSubdomain } from "./mail-subdomain";
 export { projectEmailWaits, projectSender } from "./project-sender";
-export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY } from "./email-limits";
+export { resumePause, resumeToken, tellPaused } from "./email-pause";
+export { cappedProjects, claimProjectEmail, NEW_PROJECT_EMAILS_PER_DAY, pauseIfOverLimits, pausing } from "./email-limits";
 export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, withEmailDomainLocks } from "./email-domains";
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
@@ -43,6 +45,7 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   conversationMessage,
   pruneInboundEmails,
   checkEmailDomains,
+  tellEmailPauses,
   sendConversationReplies,
   resubmitConversationNotices,
   articleChanged,
