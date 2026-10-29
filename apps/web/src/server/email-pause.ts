@@ -1,8 +1,7 @@
 "use server";
 
 import { prisma } from "@tuti/db";
-
-import { resumePause } from "@/lib/email-pause";
+import { resumePause } from "@tuti/jobs";
 
 import type { FormState } from "./form-state";
 

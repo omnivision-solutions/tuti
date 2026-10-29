@@ -1,10 +1,9 @@
 import { prisma } from "@tuti/db";
-import { claimProjectEmail, handlers } from "@tuti/jobs";
+import { claimProjectEmail, handlers, resumeToken } from "@tuti/jobs";
 import { startSesFake } from "@tuti/testkit/ses";
 import { afterAll, afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { POST } from "@/app/api/email/events/route";
-import { resumeToken } from "@/lib/email-pause";
 import { actAs, createProject, signUp } from "@/test/helpers";
 import { postEmail, rawEmail } from "@/test/inbound";
 import { mailbox } from "@/test/mailbox";
@@ -286,4 +285,18 @@ test("the operator's link still works a month on: it's the only one a pause send
   const pausedAt = new Date(Date.now() - 40 * 24 * 60 * 60_000);
   await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: pausedAt, emailPausedReason: "2.0% of emails bounced" } });
   expect(await resumeEmailSending(resumeToken(project.id, pausedAt, pausedAt.getTime()))).toEqual({});
+});
+
+test("if SNS stops trying before the operator is told, the tell-email-pauses job tells them", async () => {
+  const { project } = await setup();
+  await prisma.projectEmailDay.updateMany({ where: { projectId: project.id }, data: { sent: 100, bounced: 1 } });
+  const told = () => emailsTo(OPERATOR).filter((email) => email.subject === `${project.name}'s email is paused`);
+  mailbox.refuseNext(OPERATOR);
+  await expect(postEvent(snsEvent(project.id, "Bounce"))).rejects.toThrow();
+  expect(told()).toEqual([]);
+  await handlers.tellEmailPauses({}, log);
+  expect(told()).toHaveLength(1);
+  // Once.
+  await handlers.tellEmailPauses({}, log);
+  expect(told()).toHaveLength(1);
 });

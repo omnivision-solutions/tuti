@@ -1,12 +1,8 @@
 import { type EmailStatus, Prisma, prisma } from "@tuti/db";
-import { deliveredMessageId, emailConfigured, emailPausedEmail, emailPausedTeamEmail, sendEmail } from "@tuti/email";
-import { pauseIfOverLimits, pausing } from "@tuti/jobs";
+import { deliveredMessageId } from "@tuti/email";
+import { pauseIfOverLimits, tellPaused } from "@tuti/jobs";
 import { log, plansEnabled } from "@tuti/shared";
 
-import { resumeToken } from "@/lib/email-pause";
-import { appUrl } from "@/lib/hosts";
-
-import { portalAddress } from "./custom-domains";
 import { notifyInbox } from "./live";
 
 /**
@@ -107,63 +103,6 @@ async function pauseIfOver(projectId: string) {
     log.warn("Paused a project's email", { projectId, reason });
   }
   await tellPaused(projectId);
-}
-
-/**
- * Tells the operator of a pause, with the link that resumes it, and the project's owners and admins,
- * once. The operator's email goes out with the project's row locked and is marked sent in the same
- * transaction: if anything fails (or the process dies) it rolls back, and SNS's next try sends it,
- * since only that email can resume the project. The team's are best-effort, after.
- */
-async function tellPaused(projectId: string) {
-  if (!pausing() || !emailConfigured()) {
-    return;
-  }
-  const state = await prisma.project.findUnique({ where: { id: projectId }, select: { emailPausedAt: true, emailPauseToldAt: true } });
-  if (!state?.emailPausedAt || state.emailPauseToldAt) {
-    return;
-  }
-  const operator = process.env.APP_PORTAL_OWNER!.trim();
-  const told = await prisma.$transaction(
-    async (tx) => {
-      const [project] = await tx.$queryRaw<{ name: string; slug: string; emailPausedAt: Date | null; emailPausedReason: string | null; emailPauseToldAt: Date | null }[]>`
-        SELECT "name", "slug", "emailPausedAt", "emailPausedReason", "emailPauseToldAt" FROM "project" WHERE "id" = ${projectId} FOR UPDATE`;
-      if (!project?.emailPausedAt || project.emailPauseToldAt) {
-        return null;
-      }
-      const reason = project.emailPausedReason ?? "";
-      await sendEmail({
-        to: operator,
-        ...emailPausedEmail({
-          projectName: project.name,
-          reason,
-          portalUrl: await portalAddress(project.slug),
-          url: new URL(`/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt))}`, appUrl()).toString(),
-        }),
-      });
-      await tx.project.update({ where: { id: projectId }, data: { emailPauseToldAt: new Date() } });
-      return { name: project.name, slug: project.slug, reason };
-    },
-    // Long enough for an SMTP send.
-    { timeout: 30_000 },
-  );
-  if (!told) {
-    return;
-  }
-  const team = await prisma.teamMember.findMany({
-    where: { projectId, role: { in: ["OWNER", "ADMIN"] }, user: { emailVerified: true } },
-    select: { user: { select: { email: true } } },
-  });
-  const settingsUrl = new URL(`/app/${told.slug}/settings/support`, appUrl()).toString();
-  // Their answers go to the operator.
-  const sent = await Promise.allSettled(
-    team.map(({ user }) => sendEmail({ to: user.email, replyTo: operator, ...emailPausedTeamEmail({ projectName: told.name, reason: told.reason, url: settingsUrl }) })),
-  );
-  for (const result of sent) {
-    if (result.status === "rejected") {
-      log.error("Emailing a team that its project's email is paused failed", { projectId, error: result.reason });
-    }
-  }
 }
 
 async function apply(tx: Prisma.TransactionClient, id: string, change: { status: EmailStatus; after: EmailStatus[] }, event: SesEvent, now: number) {

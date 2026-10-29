@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 
 import { type TeamRole, prisma } from "@tuti/db";
+import { resumeToken } from "@tuti/jobs";
 import { SignJWT } from "jose";
 import {
   type DnsFake,
@@ -27,7 +28,6 @@ import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { hashInvitationToken } from "@/lib/invitations";
 import { hashSecret } from "@/lib/portal-handoff";
 import { generateSsoSecret } from "@/lib/sso";
-import { resumeToken } from "@/lib/email-pause";
 import { widgetToken } from "@/lib/widget-session";
 import { upsertProjectUser } from "@/server/project-users";
 import { actAs, createProject, inGroupNamed, signUp, type TestUser } from "@/test/helpers";

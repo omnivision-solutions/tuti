@@ -1,9 +1,9 @@
 import { prisma } from "@tuti/db";
+import { resumePause } from "@tuti/jobs";
 import type { Metadata } from "next";
 
 import { EmptyState } from "@/components/empty-state";
 import { ResumeEmailButton } from "@/components/inbox/resume-email";
-import { resumePause } from "@/lib/email-pause";
 import { portalAddress } from "@/server/custom-domains";
 
 export const metadata: Metadata = { title: "Resume email", robots: { index: false } };
