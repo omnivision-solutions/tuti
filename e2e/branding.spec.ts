@@ -175,6 +175,17 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
     await visitor.getByRole("button", { name: "Submit post" }).focus();
     await checkpoint(visitor, `branded-portal-${colorScheme}`);
 
+    // The widget's panel: its header in the team's colour, with text that reads on it.
+    await visitor.goto("/widget");
+    const header = visitor.locator("main > header");
+    await expect(header).toHaveCSS("background-image", /rgb\(37, 99, 235\)/);
+    await expect(header).toHaveCSS("color", "rgb(255, 255, 255)");
+    await expect(header).toContainText("How can we help?");
+    // Its close button's focus ring is in the header's text colour, not the header's own blue.
+    await header.getByRole("button", { name: "Close" }).focus();
+    await expect(header.getByRole("button", { name: "Close" })).toHaveCSS("border-color", "rgb(255, 255, 255)");
+    await checkpoint(visitor, `branded-widget-${colorScheme}`);
+
     // The docs are the same portal, branded the same way.
     await visitor.goto("/docs");
     await expect(visitor.getByRole("navigation", { name: "Footer" })).toBeVisible();

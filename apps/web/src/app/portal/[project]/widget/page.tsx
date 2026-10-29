@@ -16,6 +16,7 @@ import { WidgetFeedback } from "@/components/widget-feedback";
 import { WidgetDocs } from "@/components/widget-docs";
 import { WidgetLocked } from "@/components/widget-locked";
 import { WidgetMessages } from "@/components/widget-messages";
+import { widgetHeaderStyle } from "@/lib/colors";
 import { cn } from "@/lib/utils";
 import { publishedEntries } from "@/server/changelog-queries";
 import { listedArticle } from "@/server/docs-queries";
@@ -104,10 +105,22 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       <WithAssistant assistant={assistant}>
     <main className="flex h-dvh flex-col">
       {css && <style>{css}</style>}
-      <header className="flex items-center justify-between gap-2 border-b px-4 py-2">
-        {/* Not a heading: an article in Docs has the page's. */}
-        <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
-        <WidgetClose inline={display === "inline"} />
+      <header style={widgetHeaderStyle(brand.color)} className={cn("flex flex-col gap-5 px-4 py-2", tab === "home" && "pb-6")}>
+        <div className="flex items-center justify-between gap-2">
+          {/* Not a heading: an article in Docs has the page's. */}
+          <p className="truncate font-heading text-base font-semibold">{tab === "home" ? project.name : TABS.find(({ tab: key }) => key === tab)!.name}</p>
+          {/* In the header's text colour: the page's focus ring is the project's colour, the header's too. */}
+          <WidgetClose
+            inline={display === "inline"}
+            className="text-current hover:bg-current/15 hover:text-current focus-visible:border-current focus-visible:ring-current/50"
+          />
+        </div>
+        {tab === "home" && (
+          <div className="flex flex-col gap-1">
+            <p className="text-lg opacity-90">Hi there 👋</p>
+            <p className="font-heading text-2xl font-bold">How can we help?</p>
+          </div>
+        )}
       </header>
       {/* What scrolls (a conversation scrolls itself to its newest message here). */}
       <div data-widget-scroll className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
@@ -200,10 +213,6 @@ async function Home({
   const row = "flex items-center gap-3 px-4 py-3 text-left hover:bg-accent";
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1 rounded-xl bg-primary p-5 text-primary-foreground">
-        <p className="text-lg">Hi there 👋</p>
-        <p className="font-heading text-2xl font-bold">How can we help?</p>
-      </div>
       {messages && (
         <Link href="/widget?tab=messages" className={cn(row, "rounded-xl border bg-card")}>
           <span className="flex flex-1 flex-col">

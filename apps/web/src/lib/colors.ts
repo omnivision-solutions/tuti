@@ -40,3 +40,20 @@ export function brandCss(color: string | null): string | null {
   // html:not(.dark) and html.dark outrank globals.css's :root and .dark wherever this lands.
   return `html:not(.dark){${accent(SURFACES.light)}}html.dark{${accent(SURFACES.dark)}}`;
 }
+
+/**
+ * The widget panel's header: the team's colour (`#rrggbb`; null for the brand green, with its
+ * foreground) as a gradient, with black or white text on it. The colour picked even where the page's
+ * accent falls back to the text colour (brandCss: too little contrast with the page doesn't matter on a
+ * band with its own text). The gradient only shades away from the text colour, so the text reads at
+ * least as well everywhere as on the colour itself.
+ */
+export function widgetHeaderStyle(color: string | null): { backgroundColor: string; backgroundImage: string; color: string } {
+  const base = color ?? "var(--primary)";
+  const text = color ? textColorOn(color) : "var(--primary-foreground)";
+  // The text colour's opposite (for the brand green, worked out in CSS: its foreground differs by mode),
+  // mixed in oklab: oklch would turn the hue toward the opposite's (red, for its hue 0) on the way.
+  const away = color ? (text === "#ffffff" ? "#000000" : "#ffffff") : "oklch(from var(--primary-foreground) calc(1 - l) 0 0)";
+  // The colour on its own too: a browser without color-mix or relative colours drops only the gradient.
+  return { backgroundColor: base, backgroundImage: `linear-gradient(135deg, ${base}, color-mix(in oklab, ${base}, ${away} 22%))`, color: text };
+}
