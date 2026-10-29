@@ -27,13 +27,15 @@ export function resumePause(token: string, now = Date.now()): { projectId: strin
 
 /**
  * Tells the operator of a pause, with the link that resumes it, and the project's owners and admins,
- * once. The operator's email goes out with the project's row locked and is marked sent in the same
- * transaction: if anything fails (or the process dies) it rolls back and throws, and it's sent next
- * time (SNS's next try of the event, or the tell-email-pauses job), since only that email can resume
- * the project. The team's are best-effort, after.
+ * once. The operator's email goes out under a lock of its own (not the project's row, which the
+ * project's other writes need meanwhile) and is marked sent in the same transaction: if anything
+ * fails (or the process dies) it rolls back and throws, and it's sent next time (SNS's next try of
+ * the event, or the tell-email-pauses job), since only that email can resume the project. A resume
+ * meanwhile leaves a link to a pause that's over, which says so. The team's are best-effort, after.
  */
 export async function tellPaused(projectId: string) {
-  if (!pausing() || !emailConfigured() || !process.env.APP_URL) {
+  // Without the auth secret (the web app's, which checks the link), the link wouldn't work: wait for it.
+  if (!pausing() || !emailConfigured() || !process.env.APP_URL || !process.env.BETTER_AUTH_SECRET) {
     return;
   }
   const state = await prisma.project.findUnique({ where: { id: projectId }, select: { emailPausedAt: true, emailPauseToldAt: true } });
@@ -44,8 +46,11 @@ export async function tellPaused(projectId: string) {
   const app = new URL(process.env.APP_URL).origin;
   const told = await prisma.$transaction(
     async (tx) => {
-      const [project] = await tx.$queryRaw<{ name: string; slug: string; emailPausedAt: Date | null; emailPausedReason: string | null; emailPauseToldAt: Date | null }[]>`
-        SELECT "name", "slug", "emailPausedAt", "emailPausedReason", "emailPauseToldAt" FROM "project" WHERE "id" = ${projectId} FOR UPDATE`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`email-pause:${projectId}`}))`;
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        select: { name: true, slug: true, emailPausedAt: true, emailPausedReason: true, emailPauseToldAt: true },
+      });
       if (!project?.emailPausedAt || project.emailPauseToldAt) {
         return null;
       }
@@ -59,7 +64,7 @@ export async function tellPaused(projectId: string) {
           url: `${app}/resume-email?token=${encodeURIComponent(resumeToken(projectId, project.emailPausedAt))}`,
         }),
       });
-      await tx.project.update({ where: { id: projectId }, data: { emailPauseToldAt: new Date() } });
+      await tx.project.updateMany({ where: { id: projectId, emailPausedAt: project.emailPausedAt }, data: { emailPauseToldAt: new Date() } });
       return { name: project.name, slug: project.slug, reason };
     },
     // Long enough for an SMTP send.

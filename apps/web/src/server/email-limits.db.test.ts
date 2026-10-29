@@ -294,6 +294,12 @@ test("if SNS stops trying before the operator is told, the tell-email-pauses job
   mailbox.refuseNext(OPERATOR);
   await expect(postEvent(snsEvent(project.id, "Bounce"))).rejects.toThrow();
   expect(told()).toEqual([]);
+  // A worker without the web app's auth secret can't sign a working link: it waits for it.
+  const secret = process.env.BETTER_AUTH_SECRET!;
+  vi.stubEnv("BETTER_AUTH_SECRET", "");
+  await handlers.tellEmailPauses({}, log);
+  expect(told()).toEqual([]);
+  vi.stubEnv("BETTER_AUTH_SECRET", secret);
   await handlers.tellEmailPauses({}, log);
   expect(told()).toHaveLength(1);
   // Once.

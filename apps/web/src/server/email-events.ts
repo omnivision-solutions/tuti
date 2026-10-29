@@ -76,6 +76,8 @@ export async function recordEmailEvent(snsMessageId: string, event: SesEvent, no
           INSERT INTO "project_email_day" ("projectId", "day", ${column})
           SELECT "id", ${sentAt.toISOString().slice(0, 10)}::date, 1 FROM "project"
           WHERE "id" = ${count.projectId} AND ("emailResumedAt" IS NULL OR "emailResumedAt" <= ${sentAt})
+          -- Waits for a resume under way, so it reads the resume time that resume sets.
+          FOR SHARE
           ON CONFLICT ("projectId", "day") DO UPDATE SET ${column} = "project_email_day".${column} + 1`;
       }
       if (change && id && reply) {
