@@ -1,6 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-const signingKey = (purpose: string, secret = process.env.BETTER_AUTH_SECRET) => `tuti:${purpose}:${secret}`;
+/** Never without a secret: a key with none would make links anyone can forge, or no server can check. */
+const signingKey = (purpose: string, secret = process.env.BETTER_AUTH_SECRET) => {
+  if (!secret) {
+    throw new Error("Signing needs BETTER_AUTH_SECRET");
+  }
+  return `tuti:${purpose}:${secret}`;
+};
 const mac = (purpose: string, payload: string, secret?: string) =>
   createHmac("sha256", signingKey(purpose, secret)).update(payload).digest("base64url");
 
