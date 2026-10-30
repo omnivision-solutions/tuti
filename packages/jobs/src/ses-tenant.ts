@@ -36,7 +36,12 @@ export async function sesTenantHeaders(
         return;
       }
       await api.createTenant(tenant);
-      await Promise.all([...identities, api.configurationSetArn].map((arn) => api.associate(tenant, arn)));
+      // Every call settled before failing: a failed one mustn't leave the others retrying after the job is done.
+      const associated = await Promise.allSettled([...identities, api.configurationSetArn].map((arn) => api.associate(tenant, arn)));
+      const failed = associated.find((result) => result.status === "rejected");
+      if (failed) {
+        throw failed.reason;
+      }
       await tx.project.update({ where: { id: projectId }, data: { sesTenant: setUp } });
     });
   }

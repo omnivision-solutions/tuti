@@ -202,6 +202,10 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   ses.failing.add("/v2/email/tenants/resources");
   await run();
   expect(emailsTo(kim)).toEqual([]);
+  // Once the run is over, nothing of it still calls SES (a failed call's siblings retried on in the background).
+  const afterFailure = ses.calls.length;
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  expect(ses.calls).toHaveLength(afterFailure);
   ses.failing.clear();
   await run();
 
