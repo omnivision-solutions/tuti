@@ -160,7 +160,7 @@ function fromSite(request: NextRequest, mount: { origin: string; path: string })
  * `pathname` is the portal's own path; `mount`, where it is on the team's site, when the request came through it.
  */
 async function servePortal(request: NextRequest, slug: string, origin: string, pathname = request.nextUrl.pathname, mount?: { origin: string; path: string }) {
-  // The team's redirects (Customize → Redirects) first: an old address goes on, whoever's asking.
+  // The team's redirects (Settings → Domain → Redirects) first: an old address goes on, whoever's asking.
   if (request.method === "GET" || request.method === "HEAD") {
     const to = await redirectFor(slug, pathname);
     if (to) {

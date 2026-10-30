@@ -15,7 +15,7 @@ type Site = ComponentProps<typeof SiteMountSettings>["site"];
 type Choice = "tuti" | "domain" | "site";
 
 /**
- * Customize → Address: where the portal goes live. Its Tuti address (every portal has one), a domain
+ * Settings → Domain: where the portal goes live. Its Tuti address (every portal has one), a domain
  * of the team's own, or a path of their site: one of the last two at most (domain.set and site.set
  * each refuse while the other is set). Once one is connected, it's picked and the others say to
  * remove it first.

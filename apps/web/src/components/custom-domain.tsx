@@ -33,7 +33,7 @@ type Domain = {
 };
 
 /**
- * Customize → Address → Custom domain (see the domain.* operations): the portal at a domain of the
+ * Settings → Domain → Custom domain (see the domain.* operations): the portal at a domain of the
  * team's own. They connect it, add the DNS records it shows (each with Copy), and check; once verified
  * the portal answers there.
  */

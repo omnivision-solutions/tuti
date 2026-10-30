@@ -5,13 +5,13 @@ Your portal and docs can live under a path of your own site, like
 `example.com/portal/sign-in`. Your site keeps everything else; Tuti only answers under
 that path.
 
-In the Tuti app, your project's **Customize → Address** (owners and admins): pick
+In the Tuti app, your project's **Settings → Domain** (owners and admins): pick
 **Sub-folder**, enter your site and the path, make your site forward two paths to Tuti (pick
 your platform there for its rules, written out for your portal), then **Check setup**. Until it's checked, your portal stays at its own address.
 
 ## What your site forwards
 
-Two rules, each to your portal's Tuti address (shown in Customize → Address, e.g.
+Two rules, each to your portal's Tuti address (shown in Settings → Domain, e.g.
 `https://acme.tuti.so`), **with the path kept as it is**:
 
 | From | To |
@@ -121,5 +121,5 @@ export default {
   portal. Signing in with your app (SSO) and "Continue with your Tuti account" work there too.
 - **The path** can't start with one of the portal's own pages (`/docs`, `/feedback`,
   `/sign-in`, …), since the portal answers those at its own address.
-- **Removing it** in Customize → Address puts the portal back at its own address; remove the rules
+- **Removing it** in Settings → Domain puts the portal back at its own address; remove the rules
   from your site too.

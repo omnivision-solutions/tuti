@@ -4,7 +4,7 @@ import { ASSET_PATH } from "@/lib/portal-base";
 export type SiteGuide = { id: string; name: string; where: string; language: string; code: string };
 
 /**
- * Customize → Address → Sub-folder: for each platform, the rules that forward `path` (e.g. /help)
+ * Settings → Domain → Sub-folder: for each platform, the rules that forward `path` (e.g. /help)
  * and /_tuti to the portal's Tuti address (`tuti`, e.g. https://acme.tuti.so), paths and all, as
  * docs/site-path.md explains them, written out with the team's own path and address.
  */

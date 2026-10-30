@@ -15,7 +15,7 @@ import { removeRedirect, saveRedirect } from "@/server/portal-settings";
 
 type Redirect = { id: string; from: string; to: string };
 
-/** Customize → Redirects (see the redirects.* operations): old addresses on the portal, and where they now go. */
+/** Settings → Domain → Redirects (see the redirects.* operations): old addresses on the portal, and where they now go. */
 export function RedirectsSettings({ projectSlug, redirects, max }: { projectSlug: string; redirects: Redirect[]; max: number }) {
   const preview = usePreview();
   const form = useRef<HTMLFormElement>(null);

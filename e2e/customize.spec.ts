@@ -105,7 +105,10 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
+  // Redirects are in Settings → Domain now; Customize's old address lands there.
   await owner.goto(`/app/${slug}/customize/redirects`);
+  await owner.waitForURL(`**/app/${slug}/settings/domain`);
+  await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Domain" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText("No redirects yet")).toBeVisible();
   // Pasted from the old site: its path is what's matched.
   await owner.getByLabel("Old address").fill("https://help.acme.example/hc/en-us/articles/123-Billing");
@@ -138,7 +141,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded here and on Docs: opened to go there, it's folded again when Docs opens.
+  // The sidebar is folded in Customize and on Docs: opened to go there, it's folded again when Docs opens.
+  await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
   await owner.locator("header").getByRole("button", { name: "Toggle Sidebar" }).click();

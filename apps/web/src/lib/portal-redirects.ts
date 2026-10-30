@@ -1,5 +1,5 @@
 /**
- * Customize → Redirects: old addresses on a portal (an old help center's, say) sent on to new ones.
+ * Settings → Domain → Redirects: old addresses on a portal (an old help center's, say) sent on to new ones.
  * A rule's `from` is a path of the portal, kept lowercase without a trailing slash and matched that
  * way (whatever the query); its `to` is a path of the portal or a whole https address.
  */
