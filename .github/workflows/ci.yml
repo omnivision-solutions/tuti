@@ -133,7 +133,8 @@ jobs:
   e2e:
     name: E2E tests
     needs: e2e-shard
-    if: ${{ !cancelled() }}
+    # Always, so a cancelled run fails the check: a skipped required check counts as passed.
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
