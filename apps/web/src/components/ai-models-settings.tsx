@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
-import { choiceOf, costLabel, costPerUse, type ListedModel, TIER_NAMES, tiersFor } from "@/lib/model-tiers";
+import { choiceOf, costLabel, costPerUse, type ListedModel, pickedModel, TIER_NAMES, tiersFor } from "@/lib/model-tiers";
 import { AI_FEATURE_NAMES } from "@/lib/usage-format";
 import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
@@ -101,9 +101,13 @@ function FeatureModel({
   creditsPerDollar: number | null;
 }) {
   const tiers = tiersFor(model.default, listed);
-  const [choice, setChoice] = useState(choiceOf(model.model, tiers));
-  const [custom, setCustom] = useState(choice === "custom" ? (model.model ?? "") : "");
-  const value = choice === "custom" ? custom : choice === "fast" ? "" : tiers.find((option) => option.tier === choice)!.model;
+  const [picked, setChoice] = useState(choiceOf(model.model, tiers));
+  const [typed, setCustom] = useState(picked === "custom" ? (model.model ?? "") : "");
+  // A tier the endpoint no longer lists (after a refresh) shows as what was saved, a custom id.
+  const gone = picked !== "fast" && picked !== "custom" && !tiers.some((option) => option.tier === picked);
+  const choice = gone ? "custom" : picked;
+  const custom = gone && !typed ? (model.model ?? "") : typed;
+  const value = pickedModel(choice, custom, tiers, model.model);
   const byId = new Map(listed.map((listing) => [listing.id, listing]));
   const priced = (id: string) => costLabel(costPerUse(feature, byId.get(id)), creditsPerDollar);
   const name = useId();

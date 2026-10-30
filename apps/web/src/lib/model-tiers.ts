@@ -19,7 +19,8 @@ const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: strin
   escalations: { input: 3000, output: 300, per: "summary" },
   support: { input: 6000, output: 500, per: "reply" },
   changelog: { input: 4000, output: 800, per: "draft" },
-  code_changes: { input: 15000, output: 1500, per: "code change" },
+  // Its writing only: deciding what a change affects is the decision model's, billed apart.
+  code_changes: { input: 15000, output: 1500, per: "code change (writing)" },
 };
 
 /** What one use of `feature` costs with `model`, in dollars, or null without prices. */
@@ -61,4 +62,18 @@ export function costLabel(cost: { dollars: number; per: string } | null, credits
     return `About ${credits} ${credits === 1 ? "credit" : "credits"} per ${cost.per}`;
   }
   return `About $${round(cost.dollars)} per ${cost.per}`;
+}
+
+/**
+ * The model id a feature's choice saves: "" for Fast (the default), the tier's model, or the custom id.
+ * A tier no longer offered (the endpoint stopped listing its model) keeps what was saved, as a custom id.
+ */
+export function pickedModel(choice: Tier | "custom", custom: string, tiers: { tier: Tier; model: string }[], saved: string | null): string {
+  if (choice === "fast") {
+    return "";
+  }
+  if (choice === "custom") {
+    return custom;
+  }
+  return tiers.find((option) => option.tier === choice)?.model ?? saved ?? "";
 }
