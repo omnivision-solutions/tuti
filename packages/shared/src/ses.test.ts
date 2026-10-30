@@ -61,3 +61,23 @@ test("an answer cut off partway (by the deadline) fails the call, not reads as a
     vi.unstubAllGlobals();
   }
 });
+
+test("a call SES never answers ends at the deadline", async () => {
+  for (const [name, value] of Object.entries(ALL)) {
+    vi.stubEnv(name, value);
+  }
+  // The deadline, short for the test; SES never answering, until the request is aborted.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(10));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((request: Request) => new Promise((_, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason)))),
+  );
+  try {
+    await expect(ses()!.createTenant("tuti-support-project-1")).rejects.toThrow(/timeout/);
+    expect(deadline).toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+    deadline.mockRestore();
+  }
+});
