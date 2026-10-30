@@ -12,8 +12,9 @@ Each PR gets one review bot, so their rate limits last (`.github/workflows/revie
 Before opening the PR, run the Claude review on your commits yourself: the same prompt and model CI uses. It takes a minute for a small change and several for a large one, and prints nothing until it's done: give the Bash tool its longest timeout (10 minutes) or run it in the background. Fix what holds up and commit before pushing; every finding caught here is a review round saved. It loads none of your settings, plugins, MCP servers, skills or memory, and can only read, close to CI's fresh reviewer. It reads your working tree, so it refuses to run until everything is committed. Set `BASE` to the lower branch when stacking.
 
 ```sh
-cd "$(git rev-parse --show-toplevel)"
-if [ -n "$(git status --porcelain)" ]; then
+if ! root=$(git rev-parse --show-toplevel) || ! cd "$root" || [ ! -f .github/prompts/claude-review.md ]; then
+  echo "Run it inside a Tuti checkout: nothing reviewed." >&2
+elif [ -n "$(git status --porcelain)" ]; then
   echo "Commit first: the review reads the working tree." >&2
 elif ! git fetch -q origin || ! base=$(git merge-base "${BASE:-origin/main}" HEAD); then
   echo "Couldn't fetch or find the base: nothing reviewed." >&2
