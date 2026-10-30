@@ -78,7 +78,8 @@ function greptileGone({ head, runs, conversation, reviews, now }) {
   // Asked again, or reviewing or commenting again: it may have credits now.
   const back = Math.max(mentioned, latest(greptile.filter((c) => !lockouts.includes(c))));
   if (lockouts.some((c) => at(c) > back)) return "it can't review (out of credits)";
-  const starts = runs.map((r) => Date.parse(r.started_at));
+  // A queued run may not have started yet.
+  const starts = runs.map((r) => Date.parse(r.started_at)).filter(Number.isFinite);
   const asked = Math.max(mentioned, starts.length ? Math.min(...starts) : -Infinity);
   // A late review of an earlier commit doesn't answer for the head.
   const answered = greptile.some((c) => (c.commit_id ?? head) === head && at(c) > asked);

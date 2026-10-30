@@ -133,6 +133,8 @@ describe("pr-digest", () => {
         const result = observe({ ...greptile, runs: [], conversation: [mention], now: Date.parse("2026-01-01T00:21:00Z") });
         expect(result.verdict).toBe("no-bot");
         expect(observe({ ...greptile, runs: [], now: Date.parse("2026-01-01T09:00:00Z") }).verdict).toBe("pending");
+        const queued = { ...run("Lint", null), started_at: null };
+        expect(observe({ ...greptile, runs: [queued], conversation: [mention], now: Date.parse("2026-01-01T00:21:00Z") }).verdict).toBe("no-bot");
       });
 
       it("doesn't take a finding that quotes the notice for the notice", () => {

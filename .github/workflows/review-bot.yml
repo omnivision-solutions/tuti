@@ -43,11 +43,10 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [[ "$EVENT" != pull_request_target ]]; then
-            # Already moved (by hand, an earlier notice or a rerun): nothing to do. A run that
-            # stopped between removing Greptile's label and adding CodeRabbit's carries on.
-            if ! gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent; then
-              gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name' | grep -qx review:coderabbit && exit 0
-            fi
+            # Already moved (by hand, an earlier notice or a rerun): nothing to do. Greptile's
+            # label comes off last, so a rerun finishes a run that stopped partway.
+            labels=$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')
+            grep -qx review:greptile <<<"$labels" || exit 0
             bot=coderabbit
           elif (( PR % 2 )); then
             bot=coderabbit
@@ -60,4 +59,5 @@ jobs:
             gh api "repos/$REPO/issues/$PR/comments" -f body="@greptileai" --silent
           elif [[ "$EVENT" != pull_request_target ]]; then
             gh api "repos/$REPO/issues/$PR/comments" -f body="@coderabbitai review" --silent
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent
           fi
