@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { usePreview } from "@/components/customize-shell";
 import { textColorOn } from "@/lib/colors";
 import { cn } from "@/lib/utils";
+import { WIDGET_CLOSE_MESSAGE } from "@/lib/widget-messages";
 import { WIDGET_ICONS, type WidgetIcon, type WidgetIconName } from "@/lib/widget-icons";
 
 /** A built-in launcher icon, drawn as the loader draws it (in the text colour). */
@@ -49,6 +50,20 @@ export function WidgetPreview({
   const { label, color, position, icon, iconUrl } = draft.widget ?? saved;
   const left = position === "bottom-left";
   const [open, setOpen] = useState(false);
+  // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
+  const panel = useRef<HTMLIFrameElement>(null);
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onMessage = (event: MessageEvent) => {
+      if (event.source === panel.current?.contentWindow && event.data === WIDGET_CLOSE_MESSAGE) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [open]);
   return (
     <div aria-label="Widget preview" role="figure" className="relative flex flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
       {/* The team's site, sketched. */}
@@ -62,6 +77,7 @@ export function WidgetPreview({
       <div className={cn("absolute bottom-5 flex flex-col gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
         {open && (
           <iframe
+            ref={panel}
             key={version}
             title="Widget panel preview"
             src={src}

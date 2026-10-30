@@ -926,6 +926,11 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // Clicked again, it closes.
   await previewLauncher("Help & ideas").click();
   await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
+  // So does the panel's own Close.
+  await previewLauncher("Help & ideas").click();
+  await owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("button", { name: "Close" }).click();
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
+  await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
   await owner.reload();
   await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();
