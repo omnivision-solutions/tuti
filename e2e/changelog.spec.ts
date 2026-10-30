@@ -196,6 +196,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await styleDialog.getByLabel("Tone").fill(`${tone} Updated.`);
   await styleDialog.getByRole("button", { name: "Save style" }).click();
   await expect(styleDialog).toBeHidden();
+  await expect(team.getByText("Style saved").first()).toBeVisible();
+  // Saved, not just left in the form: it's there after a reload.
+  await team.reload();
   await team.getByRole("button", { name: "Writing style" }).click();
   await expect(styleDialog.getByLabel("Tone")).toHaveValue(`${tone} Updated.`);
   await styleDialog.getByLabel("Tone").fill(tone);
