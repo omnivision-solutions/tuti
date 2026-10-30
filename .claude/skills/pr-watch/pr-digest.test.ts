@@ -99,8 +99,10 @@ describe("pr-digest", () => {
         const now = Date.parse("2026-01-01T00:30:00Z");
         const mention = comment(50, viewer, "@greptileai review the latest", "2026-01-01T00:15:00Z");
         expect(observe({ ...greptile, now, conversation: [mention] }).verdict).toBe("pending");
-        const reply = review(52, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:12:00Z");
+        const reply = { ...review(52, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: head };
         expect(observe({ ...greptile, now: Date.parse("2026-01-01T00:25:00Z"), reviews: [reply] }).verdict).toBe("pending");
+        // A late review of the previous commit isn't a reply about the head.
+        expect(observe({ ...greptile, now: Date.parse("2026-01-01T00:25:00Z"), reviews: [{ ...reply, commit_id: reviewed }] }).verdict).toBe("no-bot");
       });
 
       it("says to move the PR right away when Greptile says it ran out of credits", () => {
@@ -111,6 +113,15 @@ describe("pr-digest", () => {
         // Asked again after the notice: it may have credits now.
         const asked = comment(54, viewer, "@greptileai", "2026-01-01T00:05:00Z");
         expect(observe({ ...greptile, conversation: [notice, asked] }).verdict).toBe("pending");
+        // An earlier review that still counts needs no swap.
+        const counted = observe({ ...greptile, conversation: [notice], earlier: { sha: reviewed, files: files("docs/plan.md") } });
+        expect(counted.verdict).toBe("green");
+        expect(bot(counted)).toContain("only tests and docs changed since");
+      });
+
+      it("doesn't take a finding that quotes the notice for the notice", () => {
+        const finding = review(55, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:05:00Z", "LOCKOUT misses the text 'run out of review credits' when it wraps");
+        expect(observe({ ...greptile, reviews: [{ ...finding, commit_id: head }] }).verdict).toBe("open-comments");
       });
     });
 

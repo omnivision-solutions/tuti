@@ -43,7 +43,8 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           if [[ "$EVENT" != pull_request_target ]]; then
-            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent || true
+            # Already moved (by hand, an earlier notice or a rerun): nothing to do.
+            gh api -X DELETE "repos/$REPO/issues/$PR/labels/review:greptile" --silent || exit 0
             bot=coderabbit
           elif (( PR % 2 )); then
             bot=coderabbit

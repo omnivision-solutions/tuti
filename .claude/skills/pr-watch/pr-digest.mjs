@@ -17,7 +17,7 @@ const BOTS = { "review:coderabbit": "CodeRabbit", "review:greptile": "Greptile R
 const TESTS_OR_DOCS = /\.md$|^docs\/|^e2e\/|\.test\.tsx?$/;
 const PASSED = ["success", "neutral", "skipped"];
 // Greptile out of credits says so, or posts nothing at all: either way, move the PR to CodeRabbit.
-const LOCKOUT = /Reactivate Greptile|run out of review credits/;
+const LOCKOUT = /Reactivate Greptile|^Your organization has run out of review credits/;
 const SILENT_AFTER = 20 * 60_000;
 const EXIT = { green: 0, failures: 10, "open-comments": 11, pending: 12, "no-bot": 13, "out-of-sync": 20 };
 
@@ -66,9 +66,10 @@ function clean(body, keepDetails = false) {
 const paths = (earlier) => earlier.files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean));
 
 /** Why Greptile won't review the head: a lockout notice since the latest @greptileai, or silence since that or the push (its checks' start). */
-function greptileGone({ runs, conversation, reviews, now }) {
+function greptileGone({ head, runs, conversation, reviews, now }) {
   const at = (c) => Date.parse(c.submitted_at ?? c.created_at);
-  const greptile = [...conversation, ...reviews].filter((c) => c.user.login === "greptile-apps[bot]");
+  // A late review of an earlier commit doesn't answer for the head.
+  const greptile = [...conversation, ...reviews.filter((r) => r.commit_id === head)].filter((c) => c.user.login === "greptile-apps[bot]");
   const mentioned = Math.max(-Infinity, ...conversation.filter((c) => /^@greptileai\b/.test(c.body)).map(at));
   if (greptile.some((c) => at(c) > mentioned && LOCKOUT.test(c.body ?? ""))) return "it can't review (out of credits)";
   const asked = Math.max(mentioned, Math.min(...runs.map((r) => Date.parse(r.started_at))));
@@ -111,11 +112,12 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
   const state = bot && botState(bot, runs, statuses);
-  const gone = bot === BOTS["review:greptile"] && state === "missing" && greptileGone({ runs, conversation, reviews, now });
+  const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
+  const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && greptileGone({ head, runs, conversation, reviews, now });
   if (!bot) lines.push("BOT none: no review:coderabbit or review:greptile label, so no bot reviews this PR. Add one");
   else if (state === "success") lines.push(`BOT ${bot}: passed on the head`);
   else if (state !== "pending" && state !== "missing") lines.push(`BOT ${bot}: ${state} on the head`);
-  else if (earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f))) {
+  else if (reviewed) {
     // The earlier review counts, so a review running on the head isn't waited for.
     if (pending.includes(bot)) pending.splice(pending.indexOf(bot), 1);
     lines.push(`BOT ${bot}: passed on ${earlier.sha.slice(0, 8)}; only tests and docs changed since`);
