@@ -17,7 +17,8 @@ export default async function WritingStyleSettingsPage(props: PageProps<"/app/[p
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { changelogTone: true, changelogExampleIds: true } }),
     prisma.changelogEntry.findMany({
       where: { projectId: project.id, publishedAt: { not: null } },
-      orderBy: { publishedAt: "desc" },
+      // As the changelog lists them; ties in one order, so the examples saved are always in the same one.
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
       select: { id: true, number: true, title: true },
     }),
   ]);
