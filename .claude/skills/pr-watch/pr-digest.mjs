@@ -30,8 +30,10 @@ export function botState(name, runs, statuses) {
 
 // Status chrome, not findings: CodeRabbit's walkthrough and review headers (unless
 // they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
-// the mentions review-bot.yml posts to start a bot.
+// bare requests for a review (review-bot.yml's or a person's).
 function isNoise({ user, body }) {
+  // A bare request for a review, by anyone: the bot's review answers it.
+  if (["@greptileai", "@coderabbitai review"].includes(body.trim())) return true;
   if (user.type !== "Bot") return false;
   if (user.login === "coderabbitai[bot]")
     return (
@@ -41,7 +43,7 @@ function isNoise({ user, body }) {
   if (user.login === "greptile-apps[bot]")
     return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || LOCKOUT.test(body);
   if (user.login === "github-actions[bot]")
-    return body.startsWith("<!-- tuti-e2e-screenshots -->") || ["@greptileai", "@coderabbitai review"].includes(body.trim());
+    return body.startsWith("<!-- tuti-e2e-screenshots -->");
   return false;
 }
 
@@ -65,15 +67,21 @@ function clean(body, keepDetails = false) {
 // A renamed file counts at both paths: moving code into docs/ still changes the code.
 const paths = (earlier) => earlier.files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean));
 
-/** Why Greptile won't review the head: a lockout notice since the latest @greptileai, or silence since that or the push (its checks' start). */
+/** Why Greptile won't review the head: a lockout notice since it was last asked or reviewed, or silence since the push (its checks' start) or the latest @greptileai. */
 function greptileGone({ head, runs, conversation, reviews, now }) {
   const at = (c) => Date.parse(c.submitted_at ?? c.created_at);
+  const latest = (items) => Math.max(-Infinity, ...items.map(at));
+  const greptile = [...conversation, ...reviews].filter((c) => c.user.login === "greptile-apps[bot]");
+  const lockouts = greptile.filter((c) => LOCKOUT.test(c.body ?? ""));
+  const mentioned = latest(conversation.filter((c) => /^@greptileai\b/.test(c.body)));
+  // Asked again, or reviewing again: it may have credits now.
+  const back = Math.max(mentioned, latest(greptile.filter((c) => c.submitted_at && !lockouts.includes(c))));
+  if (lockouts.some((c) => at(c) > back)) return "it can't review (out of credits)";
+  const starts = runs.map((r) => Date.parse(r.started_at));
+  const asked = Math.max(mentioned, starts.length ? Math.min(...starts) : -Infinity);
   // A late review of an earlier commit doesn't answer for the head.
-  const greptile = [...conversation, ...reviews.filter((r) => r.commit_id === head)].filter((c) => c.user.login === "greptile-apps[bot]");
-  const mentioned = Math.max(-Infinity, ...conversation.filter((c) => /^@greptileai\b/.test(c.body)).map(at));
-  if (greptile.some((c) => at(c) > mentioned && LOCKOUT.test(c.body ?? ""))) return "it can't review (out of credits)";
-  const asked = Math.max(mentioned, Math.min(...runs.map((r) => Date.parse(r.started_at))));
-  if (now - asked > SILENT_AFTER && !greptile.some((c) => at(c) > asked))
+  const answered = greptile.some((c) => (c.commit_id ?? head) === head && at(c) > asked);
+  if (Number.isFinite(asked) && now - asked > SILENT_AFTER && !answered)
     return `silent for ${Math.round((now - asked) / 60_000)} minutes since the push or @greptileai`;
 }
 const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((url) => url.replace(/[.,;:!?]+$/, ""));
