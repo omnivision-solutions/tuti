@@ -1212,9 +1212,11 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
-  await team.getByLabel("Off-limits topics").fill("refund\nlegal advice");
+  await team.getByLabel("Off-limits topics").fill("refund\n  legal advice  ");
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("AI answers saved")).toBeVisible();
+  // The form shows what was saved: each topic trimmed.
+  await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
   await team.reload();
   await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
   await checkpoint(team, "team-ai-answers-settings");

@@ -22,7 +22,8 @@ export default async function AiAnswersSettingsPage(props: PageProps<"/app/[proj
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <AssistantSettings projectSlug={slug} settings={assistant} />
+        {/* A new form once saved, showing what was saved (trimmed), not what was typed. */}
+        <AssistantSettings key={JSON.stringify(assistant)} projectSlug={slug} settings={assistant} />
       </CardContent>
     </Card>
   );
