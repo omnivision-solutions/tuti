@@ -9,8 +9,8 @@ name: Claude review
 # skips pull requests from forks and Dependabot, which get no secrets. Claude runs
 # as an unprivileged user holding only that token, with Claude Code's default
 # permissions: read-only commands, only inside the checkout. It loads no settings
-# or hooks from the checkout, and only the PR's text and comments from people with
-# write access reach its prompt: anyone can comment on a public PR. The GitHub token is only in the steps that read its earlier
+# or hooks from the checkout, and only the PR author's text and replies reach its
+# prompt: anyone can comment on a public PR. The GitHub token is only in the steps that read its earlier
 # findings and post new ones. Actions are pinned by SHA because this workflow
 # holds secrets.
 on:
@@ -52,6 +52,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: ${{ github.event.pull_request.title }}
+          # Has write access: the PR's branch is in this repository.
+          AUTHOR: ${{ github.event.pull_request.user.login }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
@@ -60,22 +62,22 @@ jobs:
           sudo cp -a "$GITHUB_WORKSPACE" /home/claude-reviewer/tuti
           sudo chown -R claude-reviewer:claude-reviewer /home/claude-reviewer/tuti
           # The prompt's last part: this pull request, and its earlier findings with the
-          # replies from people with write access, so Claude doesn't raise them again.
+          # author's replies, so Claude doesn't raise them again.
           {
             printf '\n## This pull request\n\nBase %s, head %s.\n\nTitle: %s\n\nDescription:\n\n%s\n\n' "$BASE" "$HEAD" "$TITLE" "$BODY"
             echo '## Your earlier findings and the replies to them'
             echo
-            gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" | jq 'add // []
+            gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" | jq --arg author "$AUTHOR" 'add // []
               | (map(select(.user.login == "github-actions[bot]" and .in_reply_to_id == null) | .id)) as $mine
-              | map(select((.in_reply_to_id // .id | IN($mine[])) and ((.id | IN($mine[])) or (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"))))
+              | map(select((.in_reply_to_id // .id | IN($mine[])) and ((.id | IN($mine[])) or .user.login == $author))
                 | {thread: (.in_reply_to_id // .id), author: .user.login, path, line: (.line // .original_line), body})'
             # Findings that went in a review's text, and the comments quoting that review.
             texts=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -c 'add // []
               | map(select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- tuti-claude-review -->\n")))
                 | {review: .html_url, body})')
-            gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" | jq --argjson texts "$texts" '(add // []) as $comments
+            gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" | jq --arg author "$AUTHOR" --argjson texts "$texts" '(add // []) as $comments
               | $texts | map(.review as $url
-                | . + {replies: [$comments[] | select((.body | contains($url)) and (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")))
+                | . + {replies: [$comments[] | select((.body | contains($url)) and .user.login == $author)
                   | {author: .user.login, body}]})'
           } > "$RUNNER_TEMP/pull-request.md"
       - name: Review with Claude Code
