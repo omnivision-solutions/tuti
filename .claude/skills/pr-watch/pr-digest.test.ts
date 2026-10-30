@@ -241,6 +241,10 @@ describe("pr-digest", () => {
       expect(observe({ reviews: [collapsed] }).verdict).toBe("open-comments");
       const approval = review(6, "greptile-apps[bot]", "APPROVED", "2026-01-01T00:00:00Z", '<!-- greptile-auto-approve {"headSha":"a"} -->\n');
       expect(observe({ reviews: [approval] }).verdict).toBe("green");
+      // Claude review's findings are its inline comments; its review text is a marker, or the findings when one isn't in the diff.
+      const claude = review(9, "github-actions[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "<!-- tuti-claude-review -->");
+      expect(observe({ reviews: [claude] }).verdict).toBe("green");
+      expect(observe({ reviews: [{ ...claude, body: "<!-- tuti-claude-review -->\n**`a.ts:3`**\n\nThe retry drops the error." }] }).verdict).toBe("open-comments");
     });
 
     it.each([
