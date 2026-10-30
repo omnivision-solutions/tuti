@@ -26,7 +26,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     {
       title: "Billing",
       pages: [
-        ...(creditsEnabled() || plansEnabled() ? [{ title: "Plan and credits", href: at("billing") }] : []),
+        ...(creditsEnabled() || plansEnabled() ? [{ title: "Billing", href: at("billing") }] : []),
         { title: "Usage", href: at("usage") },
       ],
     },
