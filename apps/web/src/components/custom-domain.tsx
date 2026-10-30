@@ -16,11 +16,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { CopyField } from "@/components/copy-button";
+import { OneClickDnsButton } from "@/components/one-click-dns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
+import type { OneClickDns } from "@/server/domain-connect";
 import { removeCustomDomain, saveCustomDomain, verifyCustomDomain } from "@/server/portal-settings";
 import type { FormState } from "@/server/form-state";
 
@@ -37,7 +39,20 @@ type Domain = {
  * team's own. They connect it, add the DNS records it shows (each with Copy), and check; once verified
  * the portal answers there.
  */
-export function CustomDomainSettings({ projectSlug, domain, portalAddress, protocol }: { projectSlug: string; domain: Domain | null; portalAddress: string; protocol: string }) {
+export function CustomDomainSettings({
+  projectSlug,
+  domain,
+  portalAddress,
+  protocol,
+  oneClick,
+}: {
+  projectSlug: string;
+  domain: Domain | null;
+  portalAddress: string;
+  protocol: string;
+  /** Where the domain's DNS provider can add the records itself, while they're needed. */
+  oneClick?: Promise<OneClickDns | null> | null;
+}) {
   if (!domain) {
     return <AddDomainForm projectSlug={projectSlug} portalAddress={portalAddress} />;
   }
@@ -73,6 +88,7 @@ export function CustomDomainSettings({ projectSlug, domain, portalAddress, proto
           "Add these records at your domain's DNS provider, then check. DNS changes can take a few minutes to show."
         )}
       </p>
+      {!verified && <OneClickDnsButton link={oneClick} />}
       {domain.records.map((record) => (
         <section key={record.type} aria-label={`${record.type} record`} className="flex flex-col gap-2">
           <div className="flex items-center justify-between text-sm">

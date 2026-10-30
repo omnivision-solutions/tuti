@@ -18,7 +18,8 @@
     "INBOUND_*",
     "SUPPORT_EMAIL_DOMAIN",
     "EMAIL_FROM",
-    "LICENSE_PRIVATE_KEY"
+    "LICENSE_PRIVATE_KEY",
+    "DOMAIN_CONNECT_KEY"
   ],
   "tasks": {
     "db:generate": {

@@ -15,11 +15,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { CopyField } from "@/components/copy-button";
+import { OneClickDnsButton } from "@/components/one-click-dns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
+import type { OneClickDns } from "@/server/domain-connect";
 import type { FormState } from "@/server/form-state";
 import { checkEmailDomain, forgetEmailDomain, saveEmailDomain, sendEmailDomainTest } from "@/server/inbox";
 
@@ -37,7 +39,18 @@ type OwnDomain = {
  * address. They add it, put the 3 CNAMEs it shows in their DNS (each with Copy), and check; once
  * verified, replies come from it, and a test email shows it working.
  */
-export function EmailDomainSettings({ projectSlug, own, supportAddress }: { projectSlug: string; own: OwnDomain; supportAddress: string }) {
+export function EmailDomainSettings({
+  projectSlug,
+  own,
+  supportAddress,
+  oneClick,
+}: {
+  projectSlug: string;
+  own: OwnDomain;
+  supportAddress: string;
+  /** Where the domain's DNS provider can add the records itself, while they're needed. */
+  oneClick?: Promise<OneClickDns | null> | null;
+}) {
   if (!own.address) {
     return <AddAddressForm projectSlug={projectSlug} />;
   }
@@ -57,6 +70,7 @@ export function EmailDomainSettings({ projectSlug, own, supportAddress }: { proj
             ? `${own.error}. Replies come from ${supportAddress} until it's verified again.`
             : `Add these 3 records at your domain's DNS provider, then check. Until then, replies come from ${supportAddress}.`}
       </p>
+      <OneClickDnsButton link={oneClick} />
       {own.records.map((record, i) => (
         <section key={record.name} aria-label={`CNAME record ${i + 1}`} className="flex flex-col gap-2">
           <CopyField label="Host" name={`CNAME ${i + 1} host`} value={record.name} />

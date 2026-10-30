@@ -6,8 +6,9 @@ import { OwnAddressSettings } from "@/components/own-address";
 import { PlanNotice } from "@/components/plan-notice";
 import { RedirectsSettings } from "@/components/redirects-settings";
 import { customDomainTarget } from "@/lib/custom-domains";
-import { portalUrl } from "@/lib/hosts";
+import { appUrl, portalUrl } from "@/lib/hosts";
 import { MAX_REDIRECTS } from "@/lib/portal-redirects";
+import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { customDomain } from "@/server/operations/domain";
 import { siteMountView } from "@/server/operations/site";
@@ -31,6 +32,14 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
   // Set up before the plan dropped: kept, but not served.
   const unpaid = domain && !planIncludes(plan, "customDomain") ? "customDomain" : site && !planIncludes(plan, "sitePath") ? "sitePath" : null;
   const portal = new URL(portalUrl(slug));
+  // Its records added by its DNS provider in one click while it waits for them. Not awaited: the
+  // button shows once its lookup is in.
+  const target = domain?.records.find((record) => record.type === "CNAME")?.value;
+  const token = domain?.records.find((record) => record.type === "TXT")?.value.replace(/^tuti-verify=/, "");
+  const oneClick =
+    domain?.status === "pending" && target && token
+      ? oneClickDns(domain.hostname, "custom-domain", { target, token }, new URL(`/app/${slug}/settings/domain`, appUrl()).href)
+      : null;
   return (
     <>
       {unpaid && (
@@ -53,6 +62,7 @@ export default async function DomainSettingsPage(props: PageProps<"/app/[project
         }}
         portalAddress={portal.host}
         protocol={portal.protocol}
+        oneClick={oneClick}
       />
       <RedirectsSettings projectSlug={slug} redirects={redirects} max={MAX_REDIRECTS} />
     </>
