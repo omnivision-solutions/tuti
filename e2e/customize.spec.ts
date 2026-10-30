@@ -19,10 +19,28 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await api("/articles/inviting-your-team", { body: "Owners and admins send invites from the Team page. Invites last a week." }, "PATCH");
   await api("/articles/inviting-your-team/publish-changes", {});
 
-  // Customize → Content actions, beside one of the docs' articles.
+  // Customize opens on its first section (Branding); its rail goes between them, the preview staying beside them.
   await owner.goto(`/app/${slug}/customize`);
-  await owner.getByRole("link", { name: /^Content actions/ }).click();
+  await owner.waitForURL(`**/app/${slug}/customize/branding`);
+  const rail = owner.getByRole("navigation", { name: "Customize" });
+  await expect(rail.getByRole("link")).toHaveText(["Branding", "Navigation", "Docs home", "Content actions", "Widget", "SEO", "Custom code"]);
+  await expect(owner.getByRole("link", { name: "Back to Customize" })).toHaveCount(0);
+  // The preview as a phone in dark mode stays so in the next section.
+  const size = owner.getByRole("group", { name: "Preview size" });
+  const mode = owner.getByRole("group", { name: "Preview mode" });
+  await size.getByRole("button", { name: "Phone" }).click();
+  await mode.getByRole("button", { name: "Dark mode" }).click();
+  // Customize → Content actions, beside one of the docs' articles.
+  await rail.getByRole("link", { name: "Content actions" }).click();
+  await expect(owner.getByRole("heading", { name: "Content actions", level: 1 })).toBeVisible();
+  await expect(size.getByRole("button", { name: "Phone" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
+  // And so does the preview itself: laid out at a phone's width, dark.
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
+  await expect(owner.locator('iframe[title="Portal preview"]')).toHaveCSS("width", "390px");
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
+  await size.getByRole("button", { name: "Desktop" }).click();
+  await mode.getByRole("button", { name: "Light mode" }).click();
   await expect(preview.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Copy page" })).toBeVisible();
   await expect(preview.getByText(/^Updated /)).toBeVisible();
@@ -54,8 +72,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("button", { name: "Page actions" })).toHaveCount(0);
 
   // Customize → Docs home: the heading above the search box.
-  await owner.getByRole("link", { name: "Back to Customize" }).click();
-  await owner.getByRole("link", { name: /^Docs home/ }).click();
+  await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
   await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");
   await owner.getByLabel("Subtitle").fill("Answers to everything about Acme.");

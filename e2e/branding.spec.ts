@@ -31,8 +31,8 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
 
   // Customize → Branding: the settings beside a preview of the portal (on a clock the journey can move on).
   await owner.clock.install();
-  await owner.goto(`/app/${slug}/customize`);
-  await owner.getByRole("link", { name: /^Branding/ }).click();
+  await owner.goto(`/app/${slug}/customize/branding`);
+  const rail = owner.getByRole("navigation", { name: "Customize" });
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
   // The top bar names the section, not the project.
   await expect(owner.locator("header").first()).toContainText("Customize · Branding");
@@ -44,7 +44,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // "Save changes" waits for a change.
   const save = owner.getByRole("button", { name: "Save changes" });
   await expect(save).toBeDisabled();
-  const card = owner.locator("form");
+  const card = owner.locator("form").first();
   // Uploads go through the image pipeline (the S3 fake, processed inline); each shows a preview when ready.
   await card.getByLabel("Logo", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: light });
   await expect(card.getByRole("img", { name: "Logo preview" })).toBeVisible();
@@ -101,8 +101,7 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await checkpoint(owner, "branding-settings");
 
   // Customize → Navigation: the header's and footer's links.
-  await owner.getByRole("link", { name: "Back to Customize" }).click();
-  await owner.getByRole("link", { name: /^Navigation/ }).click();
+  await rail.getByRole("link", { name: "Navigation" }).click();
   const links = owner.locator("form");
   await links.getByRole("button", { name: "Add header link" }).click();
   await links.getByLabel("Header link 1 label").fill("Docs");
@@ -115,22 +114,27 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await links.getByLabel("Goes to").fill("mailto:help@acme.example");
   await links.getByLabel("Label", { exact: true }).fill("Talk to us");
   await expect(preview.getByRole("banner").getByRole("link", { name: "Talk to us" })).toHaveAttribute("href", "mailto:help@acme.example");
-  // Leaving with changes not saved asks first.
-  await owner.getByRole("link", { name: "Back to Customize" }).click();
+  // Leaving with changes not saved (for another section, say) asks first.
+  await rail.getByRole("link", { name: "Branding" }).click();
   const leave = owner.getByRole("alertdialog", { name: "Leave without saving?" });
   await expect(leave).toBeVisible();
   await checkpoint(owner, "customize-leave-unsaved", { fullPage: false });
   await leave.getByRole("button", { name: "Keep editing" }).click();
   await expect(leave).toBeHidden();
+  // Its own section in the rail isn't leaving: nothing to ask, the changes stay.
+  await rail.getByRole("link", { name: "Navigation" }).click();
+  await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Navigation saved")).toBeVisible();
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
   await owner.reload();
   await expect(owner.getByLabel("Header link 1 URL")).toHaveValue("https://docs.example.com");
 
-  // Customize → Powered by: hiding the badge needs a licence for the project; unticking it asks about one instead.
+  // "Powered by tuti" (in Branding now; its old address lands there): hiding the badge needs a licence for the
+  // project; unticking it asks about one instead.
   await owner.goto(`/app/${slug}/customize/powered-by`);
-  const badge = owner.locator("form");
+  await owner.waitForURL(`**/app/${slug}/customize/branding#powered-by`);
+  const badge = owner.locator("form").filter({ has: owner.getByLabel('Show "Powered by tuti" in the footer') });
   const poweredBy = badge.getByLabel('Show "Powered by tuti" in the footer');
   await expect(badge.getByText("Hiding it needs a licence for this project.")).toBeVisible();
   await poweredBy.click();

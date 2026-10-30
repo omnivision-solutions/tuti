@@ -8,8 +8,6 @@ import { listedArticle } from "@/server/docs-queries";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 
-import { sectionTitle } from "../sections";
-
 /** Customize → Content actions: what readers can do with an article, beside one of the docs' articles. */
 export default async function ContentActionsPage(props: PageProps<"/app/[project]/customize/content-actions">) {
   const { project: slug } = await props.params;
@@ -23,8 +21,7 @@ export default async function ContentActionsPage(props: PageProps<"/app/[project
   ]);
   return (
     <CustomizeShell
-      backHref={`/app/${slug}/customize`}
-      title={sectionTitle("content-actions")}
+      projectSlug={slug} section="content-actions"
       preview={await portalPreview(slug, article ? `/docs/${article.slug}` : "/docs")}
     >
       <ContentActionsSettings projectSlug={slug} actions={brand!.contentActions} />
