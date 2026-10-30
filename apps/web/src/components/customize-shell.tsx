@@ -164,6 +164,16 @@ const THEMES = {
 } as const;
 type Theme = keyof typeof THEMES;
 
+type Choices = { device: Device; setDevice: (device: Device) => void; theme: Theme | null; setTheme: (theme: Theme) => void };
+const ChoicesContext = createContext<Choices | null>(null);
+
+/** The preview's size and light or dark mode, kept as you move between Customize's sections (its layout holds them). */
+export function PreviewChoices({ children }: { children: ReactNode }) {
+  const [device, setDevice] = useState<Device>("desktop");
+  const [theme, setTheme] = useState<Theme | null>(null);
+  return <ChoicesContext value={{ device, setDevice, theme, setTheme }}>{children}</ChoicesContext>;
+}
+
 /**
  * A Customize section: Customize's sections in a rail on the far left (the preview stays as you move
  * between them), the section's settings in a panel beside it (its title, "Save changes"),
@@ -232,7 +242,8 @@ export function CustomizeShell({
         return;
       }
       const url = new URL(link.href);
-      if (url.origin !== window.location.origin) {
+      // Another site, or this very page (its section in the rail): not leaving.
+      if (url.origin !== window.location.origin || (url.pathname === window.location.pathname && url.search === window.location.search)) {
         return;
       }
       event.preventDefault();
@@ -313,8 +324,7 @@ function PortalPreview({
   /** Reads the portal as the team member looking (the portal keeps it as a cookie). */
   token?: string;
 }) {
-  const [device, setDevice] = useState<Device>("desktop");
-  const [theme, setTheme] = useState<Theme | null>(null);
+  const { device, setDevice, theme, setTheme } = useContext(ChoicesContext)!;
   // The page open in the frame (for the address bar); a new frame (after a save) opens it again.
   // The token is a frame's too: each render of the page signs a new one, and a new address would reload the frame.
   // It lasts an hour (it's the portal's cookie for the frame): half way, the page is refreshed for a new one, and the

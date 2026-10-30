@@ -25,8 +25,18 @@ test("the team sets what readers can do with an article and the docs' home, seei
   const rail = owner.getByRole("navigation", { name: "Customize" });
   await expect(rail.getByRole("link")).toHaveText(["Branding", "Navigation", "Docs home", "Content actions", "Widget", "SEO", "Custom code"]);
   await expect(owner.getByRole("link", { name: "Back to Customize" })).toHaveCount(0);
+  // The preview as a phone in dark mode stays so in the next section.
+  const size = owner.getByRole("group", { name: "Preview size" });
+  const mode = owner.getByRole("group", { name: "Preview mode" });
+  await size.getByRole("button", { name: "Phone" }).click();
+  await mode.getByRole("button", { name: "Dark mode" }).click();
   // Customize → Content actions, beside one of the docs' articles.
   await rail.getByRole("link", { name: "Content actions" }).click();
+  await expect(owner.getByRole("heading", { name: "Content actions", level: 1 })).toBeVisible();
+  await expect(size.getByRole("button", { name: "Phone" })).toHaveAttribute("aria-pressed", "true");
+  await expect(mode.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
+  await size.getByRole("button", { name: "Desktop" }).click();
+  await mode.getByRole("button", { name: "Light mode" }).click();
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Copy page" })).toBeVisible();

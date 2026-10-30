@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { PreviewChoices } from "@/components/customize-shell";
 import { getAdminProject } from "@/server/membership";
 
 /** Customize: how the portal looks, each part beside a preview of it. Owners and admins only, like Settings. */
@@ -7,5 +8,5 @@ export default async function CustomizeLayout({ children, params }: LayoutProps<
   if (!(await getAdminProject((await params).project))) {
     notFound();
   }
-  return children;
+  return <PreviewChoices>{children}</PreviewChoices>;
 }

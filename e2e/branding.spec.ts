@@ -121,6 +121,9 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await checkpoint(owner, "customize-leave-unsaved", { fullPage: false });
   await leave.getByRole("button", { name: "Keep editing" }).click();
   await expect(leave).toBeHidden();
+  // Its own section in the rail isn't leaving: nothing to ask, the changes stay.
+  await rail.getByRole("link", { name: "Navigation" }).click();
+  await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Navigation saved")).toBeVisible();
   await expect(preview.getByRole("navigation", { name: "Footer" }).getByRole("link", { name: "Privacy" })).toBeVisible();
