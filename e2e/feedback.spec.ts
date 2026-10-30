@@ -191,6 +191,13 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").fill("Dark theme");
   await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
   await checkpoint(visitor, "portal-board-share-idea");
+  // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
+  await visitor.goto("/feedback/feature-requests?sort=new");
+  await main.getByLabel("Title").fill("Dark theme");
+  await main.getByLabel("Title").press("Enter");
+  await visitor.waitForURL(/\/sign-in\?next=/);
+  expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
+  await visitor.goto("/feedback/feature-requests");
   // All statuses lists the completed one too.
   await visitor.getByRole("combobox", { name: "Status" }).click();
   await visitor.getByRole("option", { name: "All statuses" }).click();

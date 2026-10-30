@@ -2,6 +2,7 @@
 
 import type { MediaUrls } from "@tuti/content";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -77,6 +78,8 @@ export function NewPostForm({
 }) {
   const at = usePortalHref();
   const path = usePortalPath();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);
   const [typed, setTyped] = useState(defaultTitle ?? "");
   const formRef = useRef<HTMLFormElement>(null);
@@ -85,6 +88,14 @@ export function NewPostForm({
   const [similar, setSimilar] = useState<SimilarPost[]>([]);
   const latestQuery = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Back to this page after signing in, its filters kept and the typed title in the box.
+  const back = new URLSearchParams(searchParams);
+  back.delete("title");
+  if (typed.trim()) {
+    back.set("title", typed.trim());
+  }
+  const signInHref = at(`/sign-in?${new URLSearchParams({ next: back.size ? `${path}?${back}` : path })}`);
 
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await (submit ?? createPost)(prev, formData);
@@ -130,7 +141,18 @@ export function NewPostForm({
   };
 
   return (
-    <form ref={formRef} {...keepingFields(action)}>
+    <form
+      ref={formRef}
+      // Signed out, Enter in the title signs in too, rather than posting.
+      {...(signedOut
+        ? {
+            onSubmit: (event: React.FormEvent) => {
+              event.preventDefault();
+              router.push(signInHref);
+            },
+          }
+        : keepingFields(action))}
+    >
       <input type="hidden" name="projectSlug" value={projectSlug} />
       <input type="hidden" name="boardSlug" value={boardSlug} />
       <FieldGroup>
@@ -181,7 +203,7 @@ export function NewPostForm({
 
         {signedOut ? (
           <Link
-            href={at(`/sign-in?${new URLSearchParams({ next: typed.trim() ? `${path}?${new URLSearchParams({ title: typed.trim() })}` : path })}`)}
+            href={signInHref}
             className={buttonVariants({ className: "self-end" })}
           >
             Sign in to post
