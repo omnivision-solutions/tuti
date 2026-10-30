@@ -57,6 +57,8 @@ export function WidgetPreview({
     if (!open) {
       return;
     }
+    // Opened, focus goes into the panel, as the loader puts it there on the site.
+    panel.current?.focus();
     const onMessage = (event: MessageEvent) => {
       if (event.source === panel.current?.contentWindow && event.data === WIDGET_CLOSE_MESSAGE) {
         setOpen(false);
