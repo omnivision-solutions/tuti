@@ -81,7 +81,6 @@ export function NewPostForm({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);
-  const [typed, setTyped] = useState(defaultTitle ?? "");
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
@@ -89,16 +88,17 @@ export function NewPostForm({
   const latestQuery = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Back to this page after signing in, its filters kept and the typed title in the box (before the
-  // page's script runs, sign-in adds the title it's sent).
+  // Back to this page after signing in, its filters kept and the title in the box (read when it's sent,
+  // so one typed before the page's script ran counts too; without the script, sign-in adds it).
   const withoutTitle = new URLSearchParams(searchParams);
   withoutTitle.delete("title");
-  const back = new URLSearchParams(searchParams);
-  back.delete("title");
-  if (typed.trim()) {
-    back.set("title", typed.trim());
-  }
-  const signInHref = at(`/sign-in?${new URLSearchParams({ next: back.size ? `${path}?${back}` : path })}`);
+  const signInFor = (title: string) => {
+    const back = new URLSearchParams(withoutTitle);
+    if (title) {
+      back.set("title", title);
+    }
+    return at(`/sign-in?${new URLSearchParams({ next: back.size ? `${path}?${back}` : path })}`);
+  };
 
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await (submit ?? createPost)(prev, formData);
@@ -146,15 +146,15 @@ export function NewPostForm({
   return (
     <form
       ref={formRef}
-      // Signed out, Enter in the title signs in too, rather than posting; before the page's script runs,
-      // as a plain GET to sign-in that comes back to this board (the typed title is lost then).
+      // Signed out, sending it (Enter, or "Sign in to post") signs in rather than posting; before the page's
+      // script runs, as a plain GET to sign-in, which brings the title back to this board.
       {...(signedOut
         ? {
             action: at("/sign-in"),
             method: "get",
-            onSubmit: (event: React.FormEvent) => {
+            onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
               event.preventDefault();
-              router.push(signInHref);
+              router.push(signInFor(String(new FormData(event.currentTarget).get("title") ?? "").trim()));
             },
           }
         : keepingFields(action))}
@@ -180,10 +180,7 @@ export function NewPostForm({
             required
             autoComplete="off"
             onFocus={() => setExpanded(true)}
-            onChange={(e) => {
-              setTyped(e.target.value);
-              suggest(e.target.value);
-            }}
+            onChange={(e) => suggest(e.target.value)}
             aria-invalid={state.error ? true : undefined}
             className={`${BARE_TITLE} text-xl`}
           />

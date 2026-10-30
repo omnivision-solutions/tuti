@@ -197,6 +197,12 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").press("Enter");
   await visitor.waitForURL(/\/sign-in\?next=/);
   expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
+  // A title typed before the page's script ran (no input event reached it) goes along too.
+  await visitor.goto("/feedback/feature-requests");
+  await main.getByLabel("Title").evaluate((input: HTMLInputElement) => (input.value = "Typed early"));
+  await main.getByRole("button", { name: "Sign in to post" }).click();
+  await visitor.waitForURL(/\/sign-in\?next=/);
+  expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?title=Typed+early");
   // Before the page's script runs (here, without JavaScript), "Sign in to post" still goes to sign-in, back to the board as it was.
   const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false });
   const early = await noScript.newPage();
