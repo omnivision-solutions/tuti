@@ -12,7 +12,7 @@ import { groupsWithReaders, propertyNames } from "@/server/operations/groups";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 
 /** Settings → Access: who can read the portal, and the groups single sign-on puts readers in. */
-export default async function AccessSettingsPage(props: PageProps<"/app/[project]/settings">) {
+export default async function AccessSettingsPage(props: PageProps<"/app/[project]/settings/access">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
   if (!project) {

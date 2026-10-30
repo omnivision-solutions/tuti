@@ -20,7 +20,6 @@ import {
   SettingsIcon,
   SunIcon,
   UserIcon,
-  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
