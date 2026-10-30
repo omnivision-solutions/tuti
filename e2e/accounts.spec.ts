@@ -153,7 +153,7 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await vera.goto("/feedback/feature-requests");
   const box = vera.getByRole("main").locator("form");
   await box.getByLabel("Title").fill(title);
-  await box.getByRole("link", { name: "Sign in to post" }).click();
+  await box.getByRole("button", { name: "Sign in to post" }).click();
   await vera.waitForURL(/\/sign-in\?next=/);
   const email = `e2e-${randomUUID()}@example.com`;
   await vera.getByLabel("Email").fill(email);

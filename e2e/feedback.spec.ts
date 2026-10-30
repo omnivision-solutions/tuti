@@ -197,12 +197,12 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").press("Enter");
   await visitor.waitForURL(/\/sign-in\?next=/);
   expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
-  // Before the page's script runs (here, without JavaScript), Enter still goes to sign-in, back to the board as it was.
+  // Before the page's script runs (here, without JavaScript), "Sign in to post" still goes to sign-in, back to the board as it was.
   const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false });
   const early = await noScript.newPage();
   await early.goto("/feedback/feature-requests?sort=new");
   await early.getByRole("main").getByLabel("Title").fill("Dark theme");
-  await early.getByRole("main").getByLabel("Title").press("Enter");
+  await early.getByRole("main").getByRole("button", { name: "Sign in to post" }).click();
   await early.waitForURL(/\/sign-in\?/);
   expect(new URL(early.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new");
   // Signing in there comes back with the title too (the "Continue" link carries where it goes).

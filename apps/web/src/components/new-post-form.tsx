@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
@@ -214,12 +214,11 @@ export function NewPostForm({
         )}
 
         {signedOut ? (
-          <Link
-            href={signInHref}
-            className={buttonVariants({ className: "self-end" })}
-          >
+          // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
+          // an empty title may sign in as well.
+          <Button type="submit" formNoValidate className="self-end">
             Sign in to post
-          </Link>
+          </Button>
         ) : (
           <>
             {expanded && (
