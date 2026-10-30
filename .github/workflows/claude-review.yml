@@ -7,9 +7,10 @@ name: Claude review
 #
 # It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
 # skips pull requests from forks and Dependabot, which get no secrets. Claude runs
-# as an unprivileged user holding only that token, with read-only tools: it can
-# read the code and git history, nothing else, and it loads no settings or hooks
-# from the checkout. The GitHub token is only in the steps that read its earlier
+# as an unprivileged user holding only that token, with Claude Code's default
+# permissions: read-only commands, only inside the checkout. It loads no settings
+# or hooks from the checkout, and only the PR's text and comments from people with
+# write access reach its prompt: anyone can comment on a public PR. The GitHub token is only in the steps that read its earlier
 # findings and post new ones. Actions are pinned by SHA because this workflow
 # holds secrets.
 on:
@@ -58,15 +59,15 @@ jobs:
           sudo useradd --create-home --shell /bin/bash claude-reviewer
           sudo cp -a "$GITHUB_WORKSPACE" /home/claude-reviewer/tuti
           sudo chown -R claude-reviewer:claude-reviewer /home/claude-reviewer/tuti
-          # The prompt's last part: this pull request, and its earlier findings with their
-          # replies, so Claude doesn't raise them again.
+          # The prompt's last part: this pull request, and its earlier findings with the
+          # replies from people with write access, so Claude doesn't raise them again.
           {
             printf '\n## This pull request\n\nBase %s, head %s.\n\nTitle: %s\n\nDescription:\n\n%s\n\n' "$BASE" "$HEAD" "$TITLE" "$BODY"
             echo '## Your earlier findings and the replies to them'
             echo
             gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" | jq 'add // []
               | (map(select(.user.login == "github-actions[bot]" and .in_reply_to_id == null) | .id)) as $mine
-              | map(select(.in_reply_to_id // .id | IN($mine[]))
+              | map(select((.in_reply_to_id // .id | IN($mine[])) and ((.id | IN($mine[])) or (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"))))
                 | {thread: (.in_reply_to_id // .id), author: .user.login, path, line: (.line // .original_line), body})'
             # Findings that went in a review's text, and the comments quoting that review.
             texts=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -c 'add // []
@@ -74,7 +75,8 @@ jobs:
                 | {review: .html_url, body})')
             gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" | jq --argjson texts "$texts" '(add // []) as $comments
               | $texts | map(.review as $url
-                | . + {replies: [$comments[] | select(.body | contains($url)) | {author: .user.login, body}]})'
+                | . + {replies: [$comments[] | select((.body | contains($url)) and (.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")))
+                  | {author: .user.login, body}]})'
           } > "$RUNNER_TEMP/pull-request.md"
       - name: Review with Claude Code
         env:
@@ -88,12 +90,16 @@ jobs:
           sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-reviewer/tuti PATH="$PATH" \
             claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
             --setting-sources user \
-            --allowedTools Read Grep Glob 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' \
             --json-schema "$SCHEMA" \
             < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json" \
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
           jq -e '.structured_output.findings' "$RUNNER_TEMP/result.json" > "$RUNNER_TEMP/findings.json" \
             || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
+          # Findings are public: never post the token, whatever the prompt talked Claude into.
+          if grep -qF "$CLAUDE_CODE_OAUTH_TOKEN" "$RUNNER_TEMP/findings.json"; then
+            echo "A finding contains the Claude token; not posting." >&2
+            exit 1
+          fi
       - name: Post the findings
         env:
           GH_TOKEN: ${{ github.token }}
