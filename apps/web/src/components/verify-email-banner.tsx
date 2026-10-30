@@ -10,24 +10,12 @@ import { verifyEmailDismissedCookie } from "@/lib/verify-email";
 
 /** A slim strip in /app until the signed-in account's email is verified, or it's dismissed (in this browser). */
 export function VerifyEmailBanner({ userId, email }: { userId: string; email: string }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   const [dismissed, setDismissed] = useState(false);
   // Rendered by the server while unverified; the session refreshes when the tab
   // regains focus, so verifying in another tab hides it here too.
   const { data } = authClient.useSession();
   if (data?.user.emailVerified || dismissed) {
     return null;
-  }
-
-  async function resend() {
-    setState("sending");
-    const { error } = await authClient.sendVerificationEmail({ email, callbackURL: "/app" });
-    if (error) {
-      setState("idle");
-      toast.error(error.message ?? "Couldn't send the email. Try again in a minute.");
-      return;
-    }
-    setState("sent");
   }
 
   function dismiss() {
@@ -42,12 +30,32 @@ export function VerifyEmailBanner({ userId, email }: { userId: string; email: st
         <span className="font-medium">Verify your email.</span>{" "}
         <span className="text-muted-foreground">We sent a link to {email}.</span>
       </p>
-      <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"}>
-        {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
-      </Button>
+      <ResendVerificationButton email={email} />
       <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={dismiss}>
         <XIcon />
       </Button>
     </div>
+  );
+}
+
+/** "Resend email": the verification email again (on the strip, and on Account settings while unverified). */
+export function ResendVerificationButton({ email }: { email: string }) {
+  const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+
+  async function resend() {
+    setState("sending");
+    const { error } = await authClient.sendVerificationEmail({ email, callbackURL: "/app" });
+    if (error) {
+      setState("idle");
+      toast.error(error.message ?? "Couldn't send the email. Try again in a minute.");
+      return;
+    }
+    setState("sent");
+  }
+
+  return (
+    <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"}>
+      {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
+    </Button>
   );
 }

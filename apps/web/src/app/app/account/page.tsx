@@ -1,9 +1,6 @@
-import { cookies } from "next/headers";
-
 import { AccountForms } from "@/components/account-forms";
 import { PageHeader } from "@/components/page-header";
-import { VerifyEmailBanner } from "@/components/verify-email-banner";
-import { verifyEmailDismissedCookie } from "@/lib/verify-email";
+import { ResendVerificationButton } from "@/components/verify-email-banner";
 import { getSession } from "@/server/session";
 
 export default async function AccountPage() {
@@ -12,13 +9,23 @@ export default async function AccountPage() {
     return null;
   }
 
-  // Dismissed elsewhere (where the layout leaves it out), it's still here, with its "Resend email".
-  const dismissed = (await cookies()).has(verifyEmailDismissedCookie(session.user.id));
-
   return (
     <>
-      {!session.user.emailVerified && dismissed && <VerifyEmailBanner userId={session.user.id} email={session.user.email} />}
-      <PageHeader title="Account settings" description={session.user.email} />
+      <PageHeader
+        title="Account settings"
+        description={
+          <>
+            {session.user.email}
+            {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}
+            {!session.user.emailVerified && (
+              <>
+                {" · Not verified "}
+                <ResendVerificationButton email={session.user.email} />
+              </>
+            )}
+          </>
+        }
+      />
       <AccountForms name={session.user.name} />
     </>
   );

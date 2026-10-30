@@ -74,9 +74,10 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await olive.goto(`/app/${slug}/feedback`);
   await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
   await expect(strip).toHaveCount(0);
-  // Account settings still has it, to send the email again.
+  // Account settings still offers to send the email again.
   await olive.goto("/app/account");
-  await expect(strip.getByRole("button", { name: "Resend email" })).toBeVisible();
+  await expect(olive.getByText("Not verified")).toBeVisible();
+  await expect(olive.getByRole("main").getByRole("button", { name: "Resend email" })).toBeVisible();
   // Another account on the same browser has its own.
   await olive.context().clearCookies({ name: /^tuti\./ });
   await olive.goto("/sign-up");
