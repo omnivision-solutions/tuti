@@ -1,6 +1,6 @@
 ---
 name: pr-watch
-description: Stay with a pull request after opening or updating it until CI and review bots have finished on its latest commit and every finding is answered, then merge. Use after creating a PR, after pushing to one, or when asked to watch, babysit or land a PR.
+description: Stay with a pull request after opening or updating it until CI and review bots have finished on its latest commit and every finding is answered, then merge. Use before opening a PR (to run the Claude review locally), after creating one, after pushing to one, or when asked to watch, babysit or land a PR.
 ---
 
 # Watch a pull request until it can land
