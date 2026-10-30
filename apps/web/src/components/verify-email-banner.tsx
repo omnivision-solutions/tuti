@@ -9,7 +9,7 @@ import { authClient } from "@/lib/auth-client";
 import { VERIFY_EMAIL_DISMISSED_COOKIE } from "@/lib/verify-email";
 
 /** A slim strip in /app until the signed-in account's email is verified, or it's dismissed (in this browser). */
-export function VerifyEmailBanner({ email }: { email: string }) {
+export function VerifyEmailBanner({ userId, email }: { userId: string; email: string }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
   const [dismissed, setDismissed] = useState(false);
   // Rendered by the server while unverified; the session refreshes when the tab
@@ -31,7 +31,7 @@ export function VerifyEmailBanner({ email }: { email: string }) {
   }
 
   function dismiss() {
-    document.cookie = `${VERIFY_EMAIL_DISMISSED_COOKIE}=1; path=/app; max-age=31536000; samesite=lax`;
+    document.cookie = `${VERIFY_EMAIL_DISMISSED_COOKIE}=${encodeURIComponent(userId)}; path=/app; max-age=31536000; samesite=lax`;
     setDismissed(true);
   }
 

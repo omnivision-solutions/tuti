@@ -44,8 +44,8 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}
       banners={
         <>
-          {!session.user.emailVerified && !cookieStore.has(VERIFY_EMAIL_DISMISSED_COOKIE) && (
-            <VerifyEmailBanner email={session.user.email} />
+          {!session.user.emailVerified && cookieStore.get(VERIFY_EMAIL_DISMISSED_COOKIE)?.value !== session.user.id && (
+            <VerifyEmailBanner userId={session.user.id} email={session.user.email} />
           )}
           <PendingInvitations invitations={invitations} />
         </>

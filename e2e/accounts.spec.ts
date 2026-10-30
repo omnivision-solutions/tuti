@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { createProject, fillSignUp, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
@@ -74,6 +74,16 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await olive.goto(`/app/${slug}/feedback`);
   await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
   await expect(strip).toHaveCount(0);
+  // Account settings still has it, to send the email again.
+  await olive.goto("/app/account");
+  await expect(strip.getByRole("button", { name: "Resend email" })).toBeVisible();
+  // Another account on the same browser has its own.
+  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.goto("/sign-up");
+  await fillSignUp(olive, "Otto Other", `e2e-${randomUUID()}@example.com`);
+  await olive.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
+  await olive.goto("/app/new");
+  await expect(strip).toBeVisible();
 });
 
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {
