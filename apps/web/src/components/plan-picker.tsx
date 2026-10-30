@@ -30,19 +30,17 @@ export function PlanPicker({ projectSlug, features }: { projectSlug: string; fea
   const [interval, setBilled] = useState<"month" | "year">("month");
   const { upgrade, pending, error } = useUpgrade(projectSlug);
   return (
-    <div className="flex flex-col gap-4">
+    <div id="plans" className="flex scroll-mt-20 flex-col gap-4">
+      {/* Native radios: arrow keys move between them. */}
       <div role="radiogroup" aria-label="Billed" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
         {(["month", "year"] as const).map((each) => (
-          <button
+          <label
             key={each}
-            type="button"
-            role="radio"
-            aria-checked={interval === each}
-            onClick={() => setBilled(each)}
-            className="rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm"
+            className="cursor-pointer rounded-md px-3 py-1 text-sm text-muted-foreground transition-colors has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-focus-visible:ring-2 has-focus-visible:ring-ring"
           >
+            <input type="radio" name="billed" value={each} checked={interval === each} onChange={() => setBilled(each)} className="sr-only" />
             {each === "month" ? "Monthly" : "Yearly"}
-          </button>
+          </label>
         ))}
       </div>
       <div className="grid gap-4 md:grid-cols-3">
@@ -86,21 +84,6 @@ function useUpgrade(projectSlug: string) {
       }
     });
   return { upgrade, pending, error };
-}
-
-/** On the free plan, the "Powered by tuti" card's way to the add-on: Pro first (monthly), then hide it from this card. */
-export function UpgradeForBadge({ projectSlug }: { projectSlug: string }) {
-  const { upgrade, pending, error } = useUpgrade(projectSlug);
-  return (
-    <div className="flex flex-col gap-2">
-      <div>
-        <Button type="button" variant="outline" disabled={pending} onClick={() => upgrade("pro", "month")}>
-          Upgrade to {PLAN_PRICES.PRO.name}
-        </Button>
-      </div>
-      {error && <FieldError>{error}</FieldError>}
-    </div>
-  );
 }
 
 /** "Manage plan": Stripe's customer portal (change or cancel the plan, the card, invoices). */

@@ -4,9 +4,10 @@ import { creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, 
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
-import { BadgeAddOn, ManagePlan, PlanPicker, UpgradeForBadge } from "@/components/plan-picker";
+import { BadgeAddOn, ManagePlan, PlanPicker } from "@/components/plan-picker";
 import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
 import { pricingPlans } from "@/lib/pricing-plans";
@@ -97,7 +98,14 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </CardHeader>
           {(plan.badgeAddOn || planSalesEnabled()) && (
             <CardContent>
-              {plan.plan === "FREE" ? <UpgradeForBadge projectSlug={slug} /> : <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />}
+              {plan.plan === "FREE" ? (
+                // To the plans above, monthly or yearly as picked there.
+                <a href="#plans" className={buttonVariants({ variant: "outline" })}>
+                  Choose a plan
+                </a>
+              ) : (
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+              )}
             </CardContent>
           )}
         </Card>

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { buyCredits } from "@/server/credits";
@@ -41,26 +41,31 @@ export function BuyCredits({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* An amount: one of the presets, or Other for any other. */}
+      {/* An amount: one of the presets, or Other for any other. Native radios: arrow keys move between them. */}
       <div role="radiogroup" aria-label="Amount" className="flex flex-wrap gap-2">
-        {AMOUNTS.map((amount) => (
-          <Button
+        {[...AMOUNTS, "other" as const].map((amount) => (
+          <label
             key={amount}
-            type="button"
-            role="radio"
-            aria-checked={!other && dollars === amount}
-            variant={!other && dollars === amount ? "secondary" : "outline"}
-            onClick={() => {
-              setOther(false);
-              setDollars(amount);
-            }}
+            className={buttonVariants({
+              variant: "outline",
+              className: "cursor-pointer has-checked:border-primary has-checked:bg-soft has-checked:text-soft-foreground has-focus-visible:ring-3 has-focus-visible:ring-ring/50",
+            })}
           >
-            ${amount}
-          </Button>
+            <input
+              type="radio"
+              name="amount"
+              className="sr-only"
+              checked={amount === "other" ? other : !other && dollars === amount}
+              onChange={() => {
+                setOther(amount === "other");
+                if (amount !== "other") {
+                  setDollars(amount);
+                }
+              }}
+            />
+            {amount === "other" ? "Other amount" : `$${amount}`}
+          </label>
         ))}
-        <Button type="button" role="radio" aria-checked={other} variant={other ? "secondary" : "outline"} onClick={() => setOther(true)}>
-          Other amount
-        </Button>
       </div>
       <Field data-invalid={error ? true : undefined}>
         {other && <FieldLabel htmlFor="topup-dollars">Amount in US dollars</FieldLabel>}

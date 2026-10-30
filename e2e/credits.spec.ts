@@ -108,10 +108,10 @@ test("an owner buys AI credits on Stripe; they're added once it's paid", async (
   await expect(owner.getByText(/^0 AI credits$/)).toBeVisible();
   // An amount from the presets, or Other for one of its own (not both at once).
   await expect(owner.getByLabel("Amount in US dollars")).toHaveCount(0);
-  await owner.getByRole("radio", { name: "Other amount" }).click();
+  await owner.getByText("Other amount", { exact: true }).click();
   await owner.getByLabel("Amount in US dollars").fill("12");
   await expect(owner.getByText("1,200 AI credits, lasting 365 days. You pay on Stripe.")).toBeVisible();
-  await owner.getByRole("radio", { name: "$10", exact: true }).click();
+  await owner.getByText("$10", { exact: true }).click();
   await expect(owner.getByLabel("Amount in US dollars")).toHaveCount(0);
   // The journeys' rate: 100 credits a dollar, for a year.
   await expect(owner.getByText("1,000 AI credits, lasting 365 days. You pay on Stripe.")).toBeVisible();
