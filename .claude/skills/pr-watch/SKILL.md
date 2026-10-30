@@ -12,13 +12,14 @@ Each PR gets one review bot, so their rate limits last (`.github/workflows/revie
 Before opening the PR, run the Claude review on your commits yourself: the same prompt and model CI uses, about a minute. Fix what holds up and commit before pushing; every finding caught here is a review round saved. It loads none of your settings, plugins, MCP servers, skills or memory, and can only read, close to CI's fresh reviewer. It reads your working tree, so it refuses to run until everything is committed. Set `BASE` to the lower branch when stacking.
 
 ```sh
-git fetch -q origin
 if [ -n "$(git status --porcelain)" ]; then
   echo "Commit first: the review reads the working tree." >&2
+elif ! git fetch -q origin || ! base=$(git merge-base "${BASE:-origin/main}" HEAD); then
+  echo "Couldn't fetch or find the base: nothing reviewed." >&2
 else
   { cat .github/prompts/claude-review.md
     printf '\n## This pull request\n\nBase %s, head %s. No title or description yet: judge the change by its commits.\n\n## Your earlier findings and the replies to them\n\nNone.\n' \
-      "$(git merge-base "${BASE:-origin/main}" HEAD)" "$(git rev-parse HEAD)"
+      "$base" "$(git rev-parse HEAD)"
   } | claude -p --model claude-opus-5-5 --setting-sources "" --settings '{"autoMemoryEnabled": false}' \
       --permission-mode default --strict-mcp-config --disable-slash-commands --no-session-persistence
 fi
