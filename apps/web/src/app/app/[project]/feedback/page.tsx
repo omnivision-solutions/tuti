@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { ExternalLinkIcon } from "lucide-react";
+import { ExternalLinkIcon, LayoutListIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
@@ -33,15 +33,21 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       <PageHeader
         title="Feedback"
         actions={
-          <a
-            href={portal}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({ variant: "outline", size: "sm", className: "max-w-full" })}
-          >
-            <ExternalLinkIcon />
-            <span className="truncate">{new URL(portal).host}</span>
-          </a>
+          <>
+            <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <LayoutListIcon />
+              Boards
+            </Link>
+            <a
+              href={portal}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants({ variant: "outline", size: "sm", className: "max-w-full" })}
+            >
+              <ExternalLinkIcon />
+              <span className="truncate">{new URL(portal).host}</span>
+            </a>
+          </>
         }
       />
 

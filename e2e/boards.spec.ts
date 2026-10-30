@@ -12,17 +12,26 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // A new project starts with one board, which can't be deleted while it's the only one.
+  // Boards are in Feedback (its header's Boards button); the old address lands there too.
+  await owner.goto(`/app/${slug}/feedback`);
+  await owner.getByRole("link", { name: "Boards" }).click();
+  await owner.waitForURL(`**/app/${slug}/feedback/boards`);
   await owner.goto(`/app/${slug}/boards`);
+  await owner.waitForURL(`**/app/${slug}/feedback/boards`);
+  // A new project starts with one board, which can't be deleted while it's the only one.
   const row = (name: string) => owner.getByRole("listitem").filter({ hasText: name });
   await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 0 posts");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
-  // Add a board; its URL follows the name.
-  await owner.getByLabel("Name").fill("Bug reports");
-  await expect(owner.getByLabel("URL")).toHaveValue("bug-reports");
-  await owner.getByLabel("Description").fill("Something broken? Tell us here.");
-  await owner.getByRole("button", { name: "Create board" }).click();
+  // Add a board ("New board", in a dialog); its URL follows the name.
+  await owner.getByRole("button", { name: "New board" }).click();
+  const newBoard = owner.getByRole("dialog", { name: "New board" });
+  await newBoard.getByLabel("Name").fill("Bug reports");
+  await expect(newBoard.getByLabel("URL")).toHaveValue("bug-reports");
+  await newBoard.getByLabel("Description").fill("Something broken? Tell us here.");
+  await newBoard.getByRole("button", { name: "Create board" }).click();
+  await expect(owner.getByText("Board created")).toBeVisible();
+  await expect(newBoard).toBeHidden();
   await expect(row("Bug reports")).toContainText("/feedback/bug-reports · 0 posts · Something broken? Tell us here.");
   await checkpoint(owner, "team-boards");
 
@@ -88,7 +97,7 @@ test("a board's own words for posting: the team sees them in a preview as they t
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  await owner.goto(`/app/${slug}/boards`);
+  await owner.goto(`/app/${slug}/feedback/boards`);
   await owner.getByRole("listitem").filter({ hasText: "Feature requests" }).getByRole("button", { name: "Edit" }).click();
   const dialog = owner.getByRole("dialog", { name: "Edit board" });
   const preview = dialog.getByRole("region", { name: "Preview" });

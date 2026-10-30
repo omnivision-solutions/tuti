@@ -9,7 +9,6 @@ import {
   GitPullRequestIcon,
   HouseIcon,
   InboxIcon,
-  LayoutListIcon,
   type LucideIcon,
   LogOutIcon,
   MegaphoneIcon,
@@ -188,8 +187,8 @@ function projectNav(project: ProjectSummary): NavItem[][] {
     [
       { title: "Home", href: base, icon: HouseIcon },
       { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open") },
-      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, badge: waits(project.toTriage, "to triage") },
-      { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
+      // Its Boards (/feedback/boards) too.
+      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, section: true, badge: waits(project.toTriage, "to triage") },
       { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
       { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
       { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "waiting") },

@@ -42,7 +42,24 @@ function slugify(value: string) {
     .slice(0, 40);
 }
 
-export function CreateBoardForm({ projectSlug }: { projectSlug: string }) {
+/** "New board" on Feedback → Boards: its form in a dialog, closed once the board is made. */
+export function NewBoardDialog({ projectSlug }: { projectSlug: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button />}>New board</DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>New board</DialogTitle>
+          <DialogDescription>Boards can be renamed or moved to a new URL any time; only empty boards can be deleted.</DialogDescription>
+        </DialogHeader>
+        <CreateBoardForm projectSlug={projectSlug} onCreated={() => setOpen(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateBoardForm({ projectSlug, onCreated }: { projectSlug: string; onCreated: () => void }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
@@ -53,6 +70,7 @@ export function CreateBoardForm({ projectSlug }: { projectSlug: string }) {
       setSlug("");
       setSlugEdited(false);
       toast.success("Board created");
+      onCreated();
     }
     return result;
   }, {});
@@ -90,7 +108,7 @@ export function CreateBoardForm({ projectSlug }: { projectSlug: string }) {
           <FieldLabel htmlFor="board-description">Description</FieldLabel>
           <Textarea id="board-description" name="description" rows={2} placeholder="Optional, shown on the board" />
         </Field>
-        <Button type="submit" disabled={pending} className="self-start">
+        <Button type="submit" disabled={pending} className="self-end">
           {pending ? "Creating…" : "Create board"}
         </Button>
       </FieldGroup>
