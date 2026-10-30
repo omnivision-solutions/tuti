@@ -67,6 +67,13 @@ jobs:
               | (map(select(.user.login == "github-actions[bot]" and .in_reply_to_id == null) | .id)) as $mine
               | map(select(.in_reply_to_id // .id | IN($mine[]))
                 | {thread: (.in_reply_to_id // .id), author: .user.login, path, line: (.line // .original_line), body})'
+            # Findings that went in a review's text, and the comments quoting that review.
+            texts=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" | jq -c 'add // []
+              | map(select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- tuti-claude-review -->\n")))
+                | {review: .html_url, body})')
+            gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" | jq --argjson texts "$texts" '(add // []) as $comments
+              | $texts | map(.review as $url
+                | . + {replies: [$comments[] | select(.body | contains($url)) | {author: .user.login, body}]})'
           } > "$RUNNER_TEMP/pull-request.md"
       - name: Review with Claude Code
         env:
