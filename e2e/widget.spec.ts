@@ -923,15 +923,19 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // Saved, the launcher in the preview is the new one.
   await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await checkpoint(owner, "widget-settings");
-  // Clicked again, it closes.
+  // Clicked again, it closes; opened again, it's where it was left (Feedback here), as on the site.
+  const panelPage = owner.frameLocator('iframe[title="Widget panel preview"]');
+  await panelPage.getByRole("link", { name: "Feedback", exact: true }).click();
+  await expect(panelPage.getByRole("link", { name: "Feedback", exact: true })).toHaveAttribute("aria-current", "page");
   await previewLauncher("Help & ideas").click();
-  await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
-  // So does the panel's own Close.
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).toBeHidden();
   await previewLauncher("Help & ideas").click();
+  await expect(panelPage.getByRole("link", { name: "Feedback", exact: true })).toHaveAttribute("aria-current", "page");
+  // The panel's own Close closes it too.
   // Retried with its check: a click before the panel's page is ready does nothing.
   await expect(async () => {
     await owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("button", { name: "Close" }).click({ timeout: 2_000 });
-    await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0, { timeout: 1_000 });
+    await expect(owner.locator('iframe[title="Widget panel preview"]')).toBeHidden({ timeout: 1_000 });
   }).toPass();
   await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
   await expect(previewLauncher("Help & ideas")).toBeFocused();
@@ -941,7 +945,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // And Escape there closes it, back on the launcher.
   await expect(async () => {
     await owner.keyboard.press("Escape");
-    await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0, { timeout: 1_000 });
+    await expect(owner.locator('iframe[title="Widget panel preview"]')).toBeHidden({ timeout: 1_000 });
   }).toPass();
   await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
   await expect(previewLauncher("Help & ideas")).toBeFocused();
