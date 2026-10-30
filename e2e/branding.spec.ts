@@ -34,6 +34,8 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await owner.goto(`/app/${slug}/customize`);
   await owner.getByRole("link", { name: /^Branding/ }).click();
   await expect(owner.getByRole("heading", { name: "Branding", level: 1 })).toBeVisible();
+  // The top bar names the section, not the project.
+  await expect(owner.locator("header").first()).toContainText("Customize · Branding");
   const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("banner")).toBeVisible();
   // Changes go to the open page: the preview stays where it is until a save (uploads refresh the page around it).
@@ -48,7 +50,15 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await expect(card.getByRole("img", { name: "Logo preview" })).toBeVisible();
   await card.getByLabel("Logo for dark mode").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: dark });
   await expect(card.getByRole("img", { name: "Logo for dark mode preview" })).toBeVisible();
-  await card.getByLabel("Favicon").setInputFiles({ name: "favicon.png", mimeType: "image/png", buffer: light });
+  // An image can be dropped on its field too.
+  const favicon = card.getByLabel("Favicon");
+  await expect(favicon).toHaveAttribute("tabindex", "-1"); // "Upload" is the way in from the keyboard
+  const dropped = await owner.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File([new Uint8Array(bytes)], "favicon.png", { type: "image/png" }));
+    return transfer;
+  }, [...light]);
+  await favicon.locator("..").dispatchEvent("drop", { dataTransfer: dropped });
   await expect(card.getByRole("img", { name: "Favicon preview" })).toBeVisible();
   await card.getByLabel("Accent colour").fill("#2563eb");
   // The preview shows each change before it's saved: the logo, and the colour as the portal's accent.

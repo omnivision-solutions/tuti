@@ -1,7 +1,7 @@
 "use client";
 
 import { UPLOAD_IMAGE_TYPES } from "@tuti/content/media";
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, SunIcon, UploadIcon } from "lucide-react";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -326,6 +326,8 @@ export function ImageField({
   const [image, setImage] = useState(initial);
   const [status, setStatus] = useState<{ uploading: true } | { error: string } | null>(null);
   const field = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
 
   const upload = async (file: File) => {
@@ -347,7 +349,26 @@ export function ImageField({
       <input ref={field} type="hidden" name={name} value={image?.id ?? ""} />
       {/* For the preview only (saveBranding reads the id). */}
       <input type="hidden" name={`${name}Url`} value={image?.url ?? ""} />
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Dropped here, or picked with "Upload" (the file input itself stays out of sight and out of the tab order). */}
+      <div
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          const file = event.dataTransfer.files[0];
+          if (file) {
+            void upload(file);
+          }
+        }}
+        className={cn(
+          "flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3 transition-colors",
+          dragging && "border-primary bg-soft",
+        )}
+      >
         {/* `light` / `dark` give the preview that mode's background (globals.css). */}
         <div className={cn(look, "flex h-14 w-32 items-center justify-center rounded-lg border bg-background p-2")}>
           {image ? (
@@ -357,11 +378,35 @@ export function ImageField({
             <span className="text-xs text-muted-foreground">None</span>
           )}
         </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => picker.current?.click()}>
+              <UploadIcon />
+              Upload
+            </Button>
+            {image && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setImage(null);
+                  onRemove?.();
+                }}
+              >
+                Remove
+              </Button>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">or drop an image here</span>
+        </div>
         <input
+          ref={picker}
           id={id}
           type="file"
+          tabIndex={-1}
           accept={UPLOAD_IMAGE_TYPES.join(",")}
-          className="max-w-full text-sm file:mr-3 file:rounded-md file:border file:bg-transparent file:px-3 file:py-1 file:text-sm file:font-medium"
+          className="sr-only"
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
@@ -370,19 +415,6 @@ export function ImageField({
             }
           }}
         />
-        {image && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setImage(null);
-              onRemove?.();
-            }}
-          >
-            Remove
-          </Button>
-        )}
       </div>
       <FieldDescription>{description}</FieldDescription>
       {status && "uploading" in status && (
