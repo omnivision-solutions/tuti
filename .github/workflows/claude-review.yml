@@ -8,9 +8,10 @@ name: Claude review
 # It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
 # skips pull requests from forks and Dependabot, which get no secrets. Claude runs
 # as an unprivileged user holding only that token, with read-only tools: it can
-# read the code and git history, nothing else. The GitHub token is only in the
-# steps that read its earlier findings and post new ones. Actions are pinned by SHA because this
-# workflow holds secrets.
+# read the code and git history, nothing else, and it loads no settings or hooks
+# from the checkout. The GitHub token is only in the steps that read its earlier
+# findings and post new ones. Actions are pinned by SHA because this workflow
+# holds secrets.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -86,6 +87,7 @@ jobs:
           set -euo pipefail
           sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-reviewer/tuti PATH="$PATH" \
             claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
+            --setting-sources user \
             --allowedTools Read Grep Glob 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' \
             --json-schema "$SCHEMA" \
             < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json" \
