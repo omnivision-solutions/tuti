@@ -26,6 +26,7 @@ export function BuyCredits({
   max: number;
 }) {
   const [dollars, setDollars] = useState(25);
+  const [other, setOther] = useState(false);
   const [error, setError] = useState<string>();
   const [pending, startTransition] = useTransition();
   const buy = () =>
@@ -40,27 +41,42 @@ export function BuyCredits({
 
   return (
     <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-wrap gap-2">
-        <legend className="sr-only">Amount</legend>
+      {/* An amount: one of the presets, or Other for any other. */}
+      <div role="radiogroup" aria-label="Amount" className="flex flex-wrap gap-2">
         {AMOUNTS.map((amount) => (
-          <Button key={amount} type="button" variant={dollars === amount ? "default" : "outline"} aria-pressed={dollars === amount} onClick={() => setDollars(amount)}>
+          <Button
+            key={amount}
+            type="button"
+            role="radio"
+            aria-checked={!other && dollars === amount}
+            variant={!other && dollars === amount ? "secondary" : "outline"}
+            onClick={() => {
+              setOther(false);
+              setDollars(amount);
+            }}
+          >
             ${amount}
           </Button>
         ))}
-      </fieldset>
+        <Button type="button" role="radio" aria-checked={other} variant={other ? "secondary" : "outline"} onClick={() => setOther(true)}>
+          Other amount
+        </Button>
+      </div>
       <Field data-invalid={error ? true : undefined}>
-        <FieldLabel htmlFor="topup-dollars">Amount in US dollars</FieldLabel>
-        <Input
-          id="topup-dollars"
-          type="number"
-          inputMode="numeric"
-          min={min}
-          max={max}
-          step={1}
-          value={Number.isNaN(dollars) ? "" : dollars}
-          onChange={(event) => setDollars(event.target.valueAsNumber)}
-          className="w-40"
-        />
+        {other && <FieldLabel htmlFor="topup-dollars">Amount in US dollars</FieldLabel>}
+        {other && (
+          <Input
+            id="topup-dollars"
+            type="number"
+            inputMode="numeric"
+            min={min}
+            max={max}
+            step={1}
+            value={Number.isNaN(dollars) ? "" : dollars}
+            onChange={(event) => setDollars(event.target.valueAsNumber)}
+            className="w-40"
+          />
+        )}
         <FieldDescription>
           {valid ? `${(dollars * perDollar).toLocaleString("en")} AI credits` : `From $${min} to $${max.toLocaleString("en")}`}
           {days === null ? ", for good." : `, lasting ${days.toLocaleString("en")} days.`} You pay on Stripe.
@@ -68,7 +84,7 @@ export function BuyCredits({
         {error && <FieldError>{error}</FieldError>}
       </Field>
       <div>
-        <Button type="button" disabled={pending || !valid} onClick={buy}>
+        <Button type="button" variant="outline" disabled={pending || !valid} onClick={buy}>
           {pending ? "Opening Stripe…" : "Buy credits"}
         </Button>
       </div>
