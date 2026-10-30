@@ -74,7 +74,13 @@ export function ses(): Ses | null {
       signal: AbortSignal.timeout(SES_TIMEOUT_MS),
     });
     if (response.ok) {
-      return ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+      // Read in full first: a body cut off by the deadline fails the call rather than reading as empty.
+      const text = await response.text();
+      try {
+        return (JSON.parse(text) ?? {}) as Record<string, unknown>;
+      } catch {
+        return {};
+      }
     }
     const error = response.headers.get("x-amzn-errortype") ?? "";
     if (error.startsWith("AlreadyExistsException")) {

@@ -43,3 +43,21 @@ test("a configuration set too long to name tenants after stops the server", () =
   vi.stubEnv("SES_CONFIGURATION_SET", "c".repeat(39));
   expect(() => assertSesSettings()).toThrow("38 characters at most");
 });
+
+test("an answer cut off partway (by the deadline) fails the call, not reads as an empty answer", async () => {
+  for (const [name, value] of Object.entries(ALL)) {
+    vi.stubEnv(name, value);
+  }
+  const cutOff = () =>
+    new Response(new ReadableStream({ start: (controller) => controller.error(new DOMException("The operation timed out.", "TimeoutError")) }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  vi.stubGlobal("fetch", vi.fn(async () => cutOff()));
+  try {
+    // Read as empty, it would save a domain with no DKIM records to publish.
+    await expect(ses()!.addDomain("help.example.com", "project-1")).rejects.toThrow("timed out");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
