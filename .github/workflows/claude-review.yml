@@ -1,0 +1,103 @@
+name: Claude review
+
+# Claude Code reviews every push to a pull request from this repository, beside the
+# review bots, while we compare them (prompt: .github/prompts/claude-review.md).
+# Findings arrive as one review from github-actions[bot]: inline comments, or all
+# in the review's text when one isn't on a line of the diff.
+#
+# It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
+# skips pull requests from forks and Dependabot, which get no secrets. Claude runs
+# as an unprivileged user holding only that token, with read-only tools: it can
+# read the code and git history, nothing else. The GitHub token is only in the
+# steps that read its earlier findings and post new ones. Actions are pinned by SHA because this
+# workflow holds secrets.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Claude review
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Prepare an unprivileged user for Claude Code
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          npm install --global @anthropic-ai/claude-code@2.1.311
+          sudo useradd --create-home --shell /bin/bash claude-reviewer
+          sudo cp -a "$GITHUB_WORKSPACE" /home/claude-reviewer/tuti
+          sudo chown -R claude-reviewer:claude-reviewer /home/claude-reviewer/tuti
+          # The prompt's last part: this pull request, and its earlier findings with their
+          # replies, so Claude doesn't raise them again.
+          {
+            printf '\n## This pull request\n\nBase %s, head %s.\n\nTitle: %s\n\nDescription:\n\n%s\n\n' "$BASE" "$HEAD" "$TITLE" "$BODY"
+            echo '## Your earlier findings and the replies to them'
+            echo
+            gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" | jq 'add // []
+              | (map(select(.user.login == "github-actions[bot]" and .in_reply_to_id == null) | .id)) as $mine
+              | map(select(.in_reply_to_id // .id | IN($mine[]))
+                | {thread: (.in_reply_to_id // .id), author: .user.login, path, line: (.line // .original_line), body})'
+          } > "$RUNNER_TEMP/pull-request.md"
+      - name: Review with Claude Code
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          SCHEMA: >-
+            {"type": "object", "required": ["findings"], "properties": {"findings": {"type": "array", "items": {
+              "type": "object", "required": ["path", "line", "body"], "properties": {
+                "path": {"type": "string"}, "line": {"type": "integer"}, "body": {"type": "string"}}}}}}
+        run: |
+          set -euo pipefail
+          sudo -n -H -u claude-reviewer --preserve-env=CLAUDE_CODE_OAUTH_TOKEN env -C /home/claude-reviewer/tuti PATH="$PATH" \
+            claude -p --model claude-opus-5-5 --no-session-persistence --output-format json \
+            --allowedTools Read Grep Glob 'Bash(git diff:*)' 'Bash(git log:*)' 'Bash(git show:*)' \
+            --json-schema "$SCHEMA" \
+            < <(cat .github/prompts/claude-review.md "$RUNNER_TEMP/pull-request.md") > "$RUNNER_TEMP/result.json" \
+            || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
+          jq -e '.structured_output.findings' "$RUNNER_TEMP/result.json" > "$RUNNER_TEMP/findings.json" \
+            || { tail -c 4000 "$RUNNER_TEMP/result.json"; exit 1; }
+      - name: Post the findings
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(jq length "$RUNNER_TEMP/findings.json")
+          echo "Claude found $count issue(s) on ${HEAD:0:8}." >> "$GITHUB_STEP_SUMMARY"
+          (( count )) || exit 0
+          # The marker alone is no finding for pr-watch's digest; the inline comments are.
+          jq --arg sha "$HEAD" '{commit_id: $sha, event: "COMMENT", body: "<!-- tuti-claude-review -->",
+            comments: map({path, line, side: "RIGHT", body})}' "$RUNNER_TEMP/findings.json" \
+            | gh api "repos/$REPO/pulls/$PR/reviews" --input - --silent && exit 0
+          # GitHub rejects the whole review if one line isn't in the diff: put them all in its text.
+          jq --arg sha "$HEAD" '{commit_id: $sha, event: "COMMENT",
+            body: ("<!-- tuti-claude-review -->\n" + (map("**`\(.path):\(.line)`**\n\n\(.body)") | join("\n\n---\n\n")))}' \
+            "$RUNNER_TEMP/findings.json" | gh api "repos/$REPO/pulls/$PR/reviews" --input - --silent
