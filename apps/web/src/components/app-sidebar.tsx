@@ -10,6 +10,7 @@ import {
   HouseIcon,
   InboxIcon,
   LayoutListIcon,
+  type LucideIcon,
   LogOutIcon,
   MegaphoneIcon,
   MessagesSquareIcon,
@@ -56,9 +57,20 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { authClient } from "@/lib/auth-client";
+import { cn } from "@/lib/utils";
 import { THEME_DEFAULT_KEY } from "@/lib/portal-look";
 
-export type ProjectSummary = { slug: string; name: string; role: TeamRole; portalUrl: string; openConversations: number };
+export type ProjectSummary = {
+  slug: string;
+  name: string;
+  role: TeamRole;
+  portalUrl: string;
+  openConversations: number;
+  /** Posts waiting for triage (Open). */
+  toTriage: number;
+  /** Code changes with updates waiting for the team. */
+  changesWaiting: number;
+};
 
 /** Shared by every /app page. The current project comes from the URL, else the last one opened. */
 export function AppSidebar({
@@ -83,41 +95,35 @@ export function AppSidebar({
         <ProjectSwitcher projects={projects} current={current} />
       </SidebarHeader>
       <SidebarContent>
-        {current && (
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {projectNav(current).map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      isActive={pathname === item.href || ("section" in item && pathname.startsWith(`${item.href}/`))}
-                      tooltip={item.title}
-                      render={<Link href={item.href} />}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                    {"badge" in item && !!item.badge && (
-                      <SidebarMenuBadge>
-                        {item.badge}
-                        <span className="sr-only"> open</span>
-                      </SidebarMenuBadge>
-                    )}
-                  </SidebarMenuItem>
-                ))}
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    tooltip="View portal"
-                    render={<a href={current.portalUrl} target="_blank" rel="noreferrer" />}
-                  >
-                    <ExternalLinkIcon />
-                    <span>View portal</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+        {current &&
+          projectNav(current).map((group, i) => (
+            // The last group (Customize, Settings) sits at the bottom.
+            <SidebarGroup key={i} className={cn(i === 2 && "mt-auto")}>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {group.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        isActive={pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`))}
+                        tooltip={item.title}
+                        // Its count is read with it ("Feedback, 2 to triage").
+                        render={<Link href={item.href} aria-describedby={item.badge ? countId(item.title) : undefined} />}
+                      >
+                        <item.icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                      {!!item.badge && (
+                        <SidebarMenuBadge id={countId(item.title)}>
+                          {item.badge.count}
+                          <span className="sr-only"> {item.badge.label}</span>
+                        </SidebarMenuBadge>
+                      )}
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={user} />
@@ -162,22 +168,38 @@ export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: stri
   return projects.find((p) => p.slug === slug) ?? null;
 }
 
-function projectNav(project: ProjectSummary) {
+/** A portal's address without its scheme: its host, and its path where it's under a site's (acme.com/portal). */
+const portalLabel = (url: string) => {
+  const { host, pathname } = new URL(url);
+  return `${host}${pathname.replace(/\/$/, "")}`;
+};
+
+const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+/g, "-")}`;
+
+type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string } | false };
+
+/** The project's pages, in groups by how often each is used: the daily ones, then Users, then Customize and Settings. */
+function projectNav(project: ProjectSummary): NavItem[][] {
   const base = `/app/${project.slug}`;
+  const admin = project.role === "OWNER" || project.role === "ADMIN";
+  // Counts where work waits.
+  const waits = (count: number, label: string) => count > 0 && { count, label };
   return [
-    { title: "Home", href: base, icon: HouseIcon },
-    { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: project.openConversations },
-    { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon },
-    { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
-    { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true },
-    { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
-    { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
-    { title: "Users", href: `${base}/users`, icon: ContactRoundIcon },
-    ...(project.role === "OWNER" || project.role === "ADMIN"
-      ? [{ title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true }]
-      : []),
-    // Every member's: Team & roles is in it.
-    { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: !(project.role === "OWNER" || project.role === "ADMIN") },
+    [
+      { title: "Home", href: base, icon: HouseIcon },
+      { title: "Inbox", href: `${base}/inbox`, icon: MessagesSquareIcon, section: true, badge: waits(project.openConversations, "open") },
+      { title: "Feedback", href: `${base}/feedback`, icon: InboxIcon, badge: waits(project.toTriage, "to triage") },
+      { title: "Boards", href: `${base}/boards`, icon: LayoutListIcon },
+      { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
+      { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
+      { title: "Code changes", href: `${base}/code-changes`, icon: GitPullRequestIcon, section: true, badge: waits(project.changesWaiting, "waiting") },
+    ],
+    [{ title: "Users", href: `${base}/users`, icon: ContactRoundIcon }],
+    [
+      ...(admin ? [{ title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true }] : []),
+      // Every member's: Team & roles is in it.
+      { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: true },
+    ],
   ];
 }
 
@@ -211,7 +233,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{current.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{new URL(current.portalUrl).host}</span>
+              <span className="truncate text-xs text-muted-foreground">{portalLabel(current.portalUrl)}</span>
             </div>
             <ChevronsUpDownIcon className="ml-auto" />
           </DropdownMenuTrigger>
@@ -221,6 +243,14 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
             side={isMobile ? "bottom" : "right"}
             sideOffset={4}
           >
+            <DropdownMenuItem render={<a href={current.portalUrl} target="_blank" rel="noreferrer" />}>
+              <ExternalLinkIcon />
+              <span className="flex min-w-0 flex-col">
+                View portal
+                <span className="truncate text-xs text-muted-foreground">{portalLabel(current.portalUrl)}</span>
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel className="text-xs text-muted-foreground">Projects</DropdownMenuLabel>
               {projects.map((project) => (
