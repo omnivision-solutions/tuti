@@ -11,7 +11,7 @@ import { call } from "@/server/operations/run";
 import { disconnectGithub, refreshGithubRepositories, setGithubRepository } from "@/server/github";
 import { accountsFromCookie } from "@/server/github-connect";
 
-import GithubIntegrationPage from "@/app/app/[project]/settings/integrations/github/page";
+import GithubIntegrationPage from "@/app/app/[project]/settings/(admin)/integrations/github/page";
 
 import { GET as callback } from "./callback/route";
 import { GET as install } from "./install/route";

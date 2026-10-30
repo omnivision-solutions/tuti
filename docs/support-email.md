@@ -8,7 +8,7 @@ users keep writing to the address they know.
 
 ## For teams
 
-1. In Settings → Support, under Email, choose **Get a support address** and copy it.
+1. In Settings → Inbox and email, under Email, choose **Get a support address** and copy it.
 2. In your email provider, forward your support address to it:
    - Google Workspace or Gmail: Settings → Forwarding and POP/IMAP → Add a forwarding address. Gmail
      sends a confirmation email to the address; it lands in your Inbox in Tuti, with the code or link
@@ -16,7 +16,7 @@ users keep writing to the address they know.
    - Microsoft 365: a mail flow rule or the mailbox's forwarding settings (your admin may need to allow
      forwarding outside your organisation).
    - Others: their forwarding settings, or a rule that redirects every message.
-3. Send your support address a test email: it shows in the Inbox, and Settings → Support says when
+3. Send your support address a test email: it shows in the Inbox, and Settings → Inbox and email says when
    the last email came in.
 
 Mailing lists (like Google Groups) don't work for forwarding: their mail is list mail, which the inbox
@@ -110,12 +110,12 @@ may only manage tenants and identities.
 #### Sending from the team's own domain
 
 On a Pro plan, with the `SES_*` settings, a team can have replies come from its own address
-(`support@acme.com`) instead of the project's support address: Settings → Support takes the
+(`support@acme.com`) instead of the project's support address: Settings → Inbox and email takes the
 address, the app adds its domain to SES (Easy DKIM, tagged with the project) and shows the 3 CNAMEs
 SES gives. Once SES finds them ("Check", and a daily check), replies come from that address under
 the project's tenant, with the domain associated with it; Reply-To stays the conversation's own
 address, so replies still come back. If SES stops finding them, replies come from the project's
-support address again, with the reason on Settings → Support. A domain is one project's alone; one
+support address again, with the reason on Settings → Inbox and email. A domain is one project's alone; one
 SES already has for anything else, or under a domain that sends for anyone else, is refused, and one
 nobody verifies within a week is let go. Removing it has SES forget it.
 

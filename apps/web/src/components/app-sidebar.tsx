@@ -20,7 +20,6 @@ import {
   SettingsIcon,
   SunIcon,
   UserIcon,
-  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
@@ -174,13 +173,11 @@ function projectNav(project: ProjectSummary) {
     { title: "Changelog", href: `${base}/changelog`, icon: MegaphoneIcon },
     { title: "Docs", href: `${base}/docs`, icon: BookOpenIcon },
     { title: "Users", href: `${base}/users`, icon: ContactRoundIcon },
-    { title: "Team", href: `${base}/team`, icon: UsersIcon },
     ...(project.role === "OWNER" || project.role === "ADMIN"
-      ? [
-          { title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true },
-          { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: true },
-        ]
+      ? [{ title: "Customize", href: `${base}/customize`, icon: PaintbrushIcon, section: true }]
       : []),
+    // Every member's: Team & roles is in it.
+    { title: "Settings", href: `${base}/settings`, icon: SettingsIcon, section: !(project.role === "OWNER" || project.role === "ADMIN") },
   ];
 }
 

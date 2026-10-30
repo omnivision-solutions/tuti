@@ -1,38 +1,29 @@
-import { aiEnabled, creditsEnabled, plansEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { PageHeader } from "@/components/page-header";
-import { SubNav } from "@/components/sub-nav";
-import { getAdminProject } from "@/server/membership";
+import { SettingsMenu } from "@/components/settings-menu";
+import { isAdminRole } from "@/lib/roles";
+import { settingsGroups } from "@/lib/settings-pages";
+import { getMembership } from "@/server/membership";
 
 /**
- * Settings that don't change how the portal looks (those are in Customize): who can read it,
- * single sign-on, integrations, the API and webhooks, exporting, AI usage and models. Owners and admins only.
+ * Settings: everything that isn't how the portal looks (that's Customize), in one menu of groups on
+ * the left. Team & roles is every team member's (to see the team, or leave); the rest is owners' and
+ * admins' (the `(admin)` group checks).
  */
 export default async function SettingsLayout({ children, params }: LayoutProps<"/app/[project]/settings">) {
   const { project: slug } = await params;
-  if (!(await getAdminProject(slug))) {
-    // Team members who aren't owners/admins get the same response as outsiders.
+  const membership = await getMembership(slug);
+  if (!membership) {
     notFound();
   }
-  const base = `/app/${slug}/settings`;
   return (
     <>
       <PageHeader title="Settings" />
-      <SubNav
-        label="Settings"
-        items={[
-          { title: "Access", href: base },
-          { title: "Single sign-on", href: `${base}/sso` },
-          { title: "Support", href: `${base}/support` },
-          { title: "Integrations", href: `${base}/integrations` },
-          { title: "Developers", href: `${base}/developers` },
-          { title: "Usage", href: `${base}/usage` },
-          ...(aiEnabled() ? [{ title: "AI models", href: `${base}/ai-models` }] : []),
-          ...(creditsEnabled() || plansEnabled() ? [{ title: "Billing", href: `${base}/billing` }] : []),
-        ]}
-      />
-      {children}
+      <div className="flex flex-col gap-6 md:grid md:grid-cols-[11rem_minmax(0,1fr)] md:items-start md:gap-8">
+        <SettingsMenu groups={settingsGroups(slug, isAdminRole(membership.role))} />
+        <div className="flex min-w-0 flex-col gap-6">{children}</div>
+      </div>
     </>
   );
 }

@@ -187,7 +187,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
                             : message.emailStatus
                               ? EMAIL_STATUS[message.emailStatus](message.emailError)
                               : waitsForPause
-                                ? "Not emailed while your project's email is paused (Settings → Support)"
+                                ? "Not emailed while your project's email is paused (Settings → Inbox and email)"
                                 : `Emailed tomorrow: in its first week, a project sends up to ${NEW_PROJECT_EMAILS_PER_DAY} emails a day`}
                         </p>
                       )}

@@ -1,7 +1,8 @@
 "use client";
 
 import type { TeamRole } from "@tuti/db";
-import { useTransition } from "react";
+import { MoreHorizontalIcon } from "lucide-react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -16,84 +17,102 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ROLE_LABELS } from "@/lib/roles";
 import { changeTeamRole, leaveProject, removeMember } from "@/server/team";
 
-export function RoleSelect({
+/** A member's ••• menu: Change role (the roles you may give) and Remove, which asks first. */
+export function MemberActions({
   projectSlug,
   memberId,
+  name,
   role,
   assignable,
 }: {
   projectSlug: string;
   memberId: string;
+  name: string;
   role: TeamRole;
   assignable: TeamRole[];
 }) {
   const [pending, startTransition] = useTransition();
+  const [removing, setRemoving] = useState(false);
 
   return (
-    <Select
-      items={ROLE_LABELS}
-      value={role}
-      disabled={pending}
-      onValueChange={(value) =>
-        startTransition(async () => {
-          const result = await changeTeamRole(projectSlug, memberId, String(value));
-          if (result.error) {
-            toast.error(result.error);
-          } else {
-            toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}`);
-          }
-        })
-      }
-    >
-      <SelectTrigger size="sm" className="w-28" aria-label="Role">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {assignable.map((r) => (
-          <SelectItem key={r} value={r}>
-            {ROLE_LABELS[r]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-export function RemoveMemberButton({ projectSlug, memberId, name }: { projectSlug: string; memberId: string; name: string }) {
-  const [pending, startTransition] = useTransition();
-
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger render={<Button variant="ghost" size="sm" disabled={pending} />}>Remove</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-          <AlertDialogDescription>They lose access to this project right away. You can invite them again later.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            variant="destructive"
-            onClick={() =>
-              startTransition(async () => {
-                const result = await removeMember(projectSlug, memberId);
-                if (result.error) {
-                  toast.error(result.error);
-                } else {
-                  toast.success(`${name} removed`);
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" disabled={pending} aria-label={`Actions for ${name}`} />}>
+          <MoreHorizontalIcon />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto min-w-40">
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Change role</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuRadioGroup
+                value={role}
+                onValueChange={(value) =>
+                  startTransition(async () => {
+                    const result = await changeTeamRole(projectSlug, memberId, String(value));
+                    if (result.error) {
+                      toast.error(result.error);
+                    } else {
+                      toast.success(`Role changed to ${ROLE_LABELS[value as TeamRole]}`);
+                    }
+                  })
                 }
-              })
-            }
-          >
+              >
+                {assignable.map((r) => (
+                  <DropdownMenuRadioItem key={r} value={r} closeOnClick>
+                    {ROLE_LABELS[r]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={() => setRemoving(true)}>
             Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AlertDialog open={removing} onOpenChange={setRemoving}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
+            <AlertDialogDescription>They lose access to this project right away. You can invite them again later.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await removeMember(projectSlug, memberId);
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`${name} removed`);
+                  }
+                })
+              }
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

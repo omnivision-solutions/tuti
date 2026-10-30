@@ -142,7 +142,7 @@ Before the script loads, `window.TutiSettings` takes `identify`, `hideLauncher` 
 
 ## Messages
 
-With Settings → Support → Messages in the widget on, the panel has a Messages tab where
+With Settings → Inbox and email → Messages in the widget on, the panel has a Messages tab where
 the people you sign in with `identify` (or on your portal) write to your team and read
 its replies; your team answers them from the Inbox in Tuti. The tab checks for replies
 every 10 seconds while it's open, and Tuti's button shows a dot (and `Tuti.unseen()` is
