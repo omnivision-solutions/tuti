@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/card";
 import { BADGE_PRICE, PLAN_PRICES } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 
+import { REPO_URL } from "../links";
+
 export const metadata: Metadata = {
   title: "Pricing · Tuti",
   description: "Plans per project, never per seat or per voter. Readers are always unlimited, and self-hosting is free with every feature.",
@@ -17,7 +19,6 @@ export const metadata: Metadata = {
 // Plans and prices are the server's settings, read when the page is asked for, not when it's built.
 export const dynamic = "force-dynamic";
 
-const REPO_URL = "https://github.com/omnivision-solutions/tuti";
 const SALES_EMAIL = "hello@tuti.so";
 
 /** "1,000 AI credits a month", only where AI is paid with credits. */
@@ -109,7 +110,14 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href={plan.cta.href} className={buttonVariants({ variant: plan.featured ? "default" : "outline" })}>
+              {/* Outline in the brand's colour: a plain outline on a card reads as disabled. */}
+              <Link
+                href={plan.cta.href}
+                className={cn(
+                  buttonVariants({ variant: plan.featured ? "default" : "outline" }),
+                  !plan.featured && "border-primary/60 text-primary hover:text-primary dark:border-primary/60",
+                )}
+              >
                 {plan.cta.label}
               </Link>
             </Card>
