@@ -85,16 +85,14 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
           </>
         }
       />
-      {entries.length > 0 && (
-        <SubNav
-          label="Entries"
-          current={`${base}?tab=${tab}`}
-          items={[
-            { href: `${base}?tab=drafts`, title: <>Drafts <span className="text-muted-foreground tabular-nums">{drafts.length}</span></> },
-            { href: `${base}?tab=published`, title: <>Published <span className="text-muted-foreground tabular-nums">{published.length}</span></> },
-          ]}
-        />
-      )}
+      <SubNav
+        label="Entries"
+        current={`${base}?tab=${tab}`}
+        items={[
+          { href: `${base}?tab=drafts`, title: <>Drafts <span className="text-muted-foreground tabular-nums">{drafts.length}</span></> },
+          { href: `${base}?tab=published`, title: <>Published <span className="text-muted-foreground tabular-nums">{published.length}</span></> },
+        ]}
+      />
       {listed.length === 0 ? (
         <EmptyState
           title={entries.length === 0 ? "No entries yet" : tab === "drafts" ? "No drafts" : "Nothing published yet"}

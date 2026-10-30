@@ -27,6 +27,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 
   // A draft: title, tag, text with a heading, and the post it completes.
   await team.getByRole("link", { name: "Changelog" }).click();
+  // Nothing written yet: both tabs, empty.
+  await expect(team.getByRole("navigation", { name: "Entries" })).toContainText("Drafts 0Published 0");
+  await expect(team.getByText("No entries yet")).toBeVisible();
   await team.getByRole("link", { name: "New entry" }).click();
   await team.getByLabel("Title").fill("Dark mode is here");
   await team.getByRole("checkbox", { name: "New" }).check();
@@ -324,6 +327,16 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await team.reload();
   await expect(text).toContainText("Search looks at post titles and comments.");
   await expect(text).not.toContainText("Plain words only.");
+
+  // With a draft and a published entry, the list opens on Drafts; each tab lists its own.
+  await team.goto(`/app/${slug}/changelog`);
+  const entryTabs = team.getByRole("navigation", { name: "Entries" });
+  await expect(entryTabs.getByRole("link", { name: "Drafts 1" })).toHaveAttribute("aria-current", "page");
+  await expect(team.getByRole("link", { name: "Faster search" })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toHaveCount(0);
+  await entryTabs.getByRole("link", { name: "Published 1" }).click();
+  await expect(team.getByRole("link", { name: "Dark mode is here" })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Faster search" })).toHaveCount(0);
 
   // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
   await ada.goto("/changelog/1");
