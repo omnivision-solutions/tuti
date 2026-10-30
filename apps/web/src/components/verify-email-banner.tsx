@@ -59,3 +59,17 @@ export function ResendVerificationButton({ email }: { email: string }) {
     </Button>
   );
 }
+
+/** Account settings' " · Not verified" with "Resend email", gone once the email is verified (here or in another tab). */
+export function NotVerified({ email }: { email: string }) {
+  const { data } = authClient.useSession();
+  if (data?.user.emailVerified) {
+    return null;
+  }
+  return (
+    <>
+      {" · Not verified "}
+      <ResendVerificationButton email={email} />
+    </>
+  );
+}

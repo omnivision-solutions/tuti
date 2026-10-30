@@ -95,6 +95,18 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await olive.waitForURL(`**/app/${slug}`);
   await expect(olive.getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
   await expect(strip).toHaveCount(0);
+  // Verified in another tab, Account settings stops asking once this tab is back in focus.
+  await olive.goto("/app/account");
+  await expect(olive.getByText("Not verified")).toBeVisible();
+  const otherTab = await olive.context().newPage();
+  await otherTab.goto(linkIn(await latestEmailTo(olive.email), `${APP_URL}/api/auth/verify-email`));
+  await otherTab.close();
+  await olive.bringToFront();
+  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
+  await expect(async () => {
+    await olive.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(olive.getByText("Not verified")).toHaveCount(0, { timeout: 500 });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {

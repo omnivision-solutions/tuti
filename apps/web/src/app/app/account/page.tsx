@@ -1,6 +1,6 @@
 import { AccountForms } from "@/components/account-forms";
 import { PageHeader } from "@/components/page-header";
-import { ResendVerificationButton } from "@/components/verify-email-banner";
+import { NotVerified } from "@/components/verify-email-banner";
 import { getSession } from "@/server/session";
 
 export default async function AccountPage() {
@@ -17,12 +17,7 @@ export default async function AccountPage() {
           <>
             {session.user.email}
             {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}
-            {!session.user.emailVerified && (
-              <>
-                {" · Not verified "}
-                <ResendVerificationButton email={session.user.email} />
-              </>
-            )}
+            {!session.user.emailVerified && <NotVerified email={session.user.email} />}
           </>
         }
       />
