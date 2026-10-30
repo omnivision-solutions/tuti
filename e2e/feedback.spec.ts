@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -112,4 +112,38 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.goto(`/app/${slug}/feedback`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
   await checkpoint(team, "team-feedback-list");
+});
+
+test("long lists load 50 posts at a time, keeping the place in the address", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // 51 posts, "Idea 1" the oldest: with one vote each, the newest come first and it's the one on page two.
+  await api("/posts", { board: "feature-requests", title: "Idea 1" });
+  for (let start = 2; start <= 51; start += 10) {
+    const numbers = Array.from({ length: 10 }, (_, i) => start + i);
+    await Promise.all(numbers.map((n) => api("/posts", { board: "feature-requests", title: `Idea ${n}` })));
+  }
+
+  const portal = await signUp(browser, portalUrl(slug), "Ada");
+  for (const [page, list] of [
+    [portal, "/feedback/feature-requests"],
+    [team, `/app/${slug}/feedback`],
+  ] as const) {
+    await page.goto(list);
+    await expect(page.getByRole("link", { name: "Idea 51", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toHaveCount(0);
+    await page.getByRole("link", { name: "Load more" }).click();
+    await page.waitForURL(/\?page=2$/);
+    await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Load more" })).toHaveCount(0);
+    await checkpoint(page, page === portal ? "portal-board-page-two" : "team-feedback-page-two");
+    // Back from a post on page two comes back to the whole list.
+    await page.getByRole("link", { name: "Idea 1", exact: true }).click();
+    await page.waitForURL((url) => !url.search.includes("page"));
+    await page.goBack();
+    await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
+  }
 });

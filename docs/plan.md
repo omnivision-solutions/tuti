@@ -578,7 +578,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 
 ### 1. Bugs and quick wins
 
-- [ ] Only the first 100 posts are ever listed: the team's Feedback and the portal's boards stop at 100 (`take: 100`) with nothing to see the rest. Pages of 50 with "Load more", the place kept in the URL so filters and Back keep it. Tests: a database test with 120 posts reads them all across pages; the journeys page through
+- [x] Only the first 100 posts are ever listed: the team's Feedback and the portal's boards stop at 100 (`take: 100`) with nothing to see the rest. Pages of 50 with "Load more", the place kept in the URL so filters and Back keep it. Tests: a database test with 120 posts reads them all across pages; the journeys page through
 - [ ] Inbox: "Waiting" is both the view of conversations waiting on the user and the badge on rows waiting on the team. The view becomes "Waiting on user"; a row's badge "Needs reply · 2h", in the highlight colour
 - [ ] The docs' search box says "Ctrl K" off a Mac (it always says ⌘K)
 - [ ] Feedback's rows: the status as its badge with its dot, clicked to change (a menu), and the board as muted text (changed on the post, or in bulk once there is bulk); no dropdowns in rows, on phones too

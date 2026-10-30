@@ -13,10 +13,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { portalAddress } from "@/server/custom-domains";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
-import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
-
-/** Pending suggestions that this post duplicates an older post that's still listed. */
-const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
+import { nextPageHref, parsePostFilters } from "@/lib/post-filters";
+import { teamPosts } from "@/server/post-lists";
 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
@@ -25,31 +23,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const duplicatesOnly = searchParams.show === "duplicates";
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
-    select: {
-      boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
-      posts: {
-        where: {
-          duplicateOfId: null,
-          ...(filters.status && { status: filters.status }),
-          ...(filters.board && { board: { slug: filters.board } }),
-          ...(duplicatesOnly && { duplicateSuggestions: { some: possibleDuplicateOf } }),
-        },
-        orderBy: postOrderBy(filters.sort),
-        take: 100,
-        select: {
-          id: true,
-          number: true,
-          title: true,
-          status: true,
-          voteCount: true,
-          commentCount: true,
-          board: { select: { slug: true } },
-          author: { select: { name: true } },
-          _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
-        },
-      },
-    },
+    select: { id: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
   });
+  const { posts, more } = await teamPosts(project.id, filters, duplicatesOnly);
   const portal = await portalAddress(slug);
   const filtered = Boolean(filters.status || filters.board || duplicatesOnly);
 
@@ -93,7 +69,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         ]}
       />
 
-      {project.posts.length === 0 ? (
+      {posts.length === 0 ? (
         <EmptyState
           title={filtered ? "No posts match these filters" : "No feedback yet"}
           description={
@@ -106,7 +82,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         <Card size="sm">
           <CardContent>
             <ItemList>
-              {project.posts.map((post) => (
+              {posts.map((post) => (
                 <ItemRow
                   key={post.id}
                   wideActions
@@ -148,6 +124,15 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             </ItemList>
           </CardContent>
         </Card>
+      )}
+      {more && (
+        <Link
+          href={nextPageHref(searchParams, filters)}
+          scroll={false}
+          className={buttonVariants({ variant: "outline", className: "self-center" })}
+        >
+          Load more
+        </Link>
       )}
     </>
   );

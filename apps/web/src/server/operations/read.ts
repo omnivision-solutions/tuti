@@ -2,6 +2,7 @@ import { prisma, type PostStatus } from "@tuti/db";
 import { postSummary, postSummarySelect } from "@tuti/jobs";
 import { z } from "zod";
 
+import { postOrderBy } from "@/lib/post-filters";
 
 import { displayDoc } from "../content";
 import { portalAddress } from "../custom-domains";
@@ -68,7 +69,7 @@ export const listPosts = defineOperation({
         ...(input.board && { board: { slug: input.board } }),
         ...(input.status && { status: fromApiStatus(input.status) }),
       },
-      orderBy: input.sort === "new" ? [{ createdAt: "desc" }] : [{ voteCount: "desc" }, { createdAt: "desc" }],
+      orderBy: postOrderBy(input.sort),
       skip: input.cursor,
       take: input.limit + 1,
       select: postSummarySelect,
