@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -166,4 +166,35 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
+});
+
+test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts", { board: "feature-requests", title: "Export to CSV" });
+  await api("/posts/2", { status: "completed" }, "PATCH");
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/feedback/feature-requests");
+  const main = visitor.getByRole("main");
+  // The list has what's not done yet; what shipped is in its own card.
+  await expect(main.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  const shipped = main.getByRole("region", { name: "Recently shipped" });
+  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(shipped).toContainText("Completed");
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
+  // Signed out, the box takes an idea and shows the similar ones as it's typed.
+  await main.getByLabel("Title").fill("Dark theme");
+  await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
+  await checkpoint(visitor, "portal-board-share-idea");
+  // All statuses lists the completed one too.
+  await visitor.getByRole("combobox", { name: "Status" }).click();
+  await visitor.getByRole("option", { name: "All statuses" }).click();
+  await visitor.waitForURL(/\?status=all$/);
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
+  await expect(shipped).toHaveCount(0);
 });

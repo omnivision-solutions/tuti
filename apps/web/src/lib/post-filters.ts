@@ -13,6 +13,15 @@ export const STATUS_PARAMS: Record<string, PostStatus> = {
 /** Lists show this many posts, and this many more with each "Load more" (`?page=`). */
 export const POSTS_PER_PAGE = 50;
 
+/** What a portal board lists unless asked for a status, or for all of them: the ideas not done yet. */
+export const ACTIVE_STATUSES: PostStatus[] = ["OPEN", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS"];
+
+/** The statuses a portal board lists: the one asked for, every one with `?status=all`, else the active ones. */
+export function boardStatuses(searchParams: Record<string, string | string[] | undefined>): PostStatus[] | undefined {
+  const { status } = parsePostFilters(searchParams);
+  return status ? [status] : first(searchParams.status) === "all" ? undefined : ACTIVE_STATUSES;
+}
+
 export const SORTS = { top: "Most votes", new: "Newest" } as const;
 export type Sort = keyof typeof SORTS;
 

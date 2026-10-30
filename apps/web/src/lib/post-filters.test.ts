@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { nextPageHref, parsePostFilters, postOrderBy } from "./post-filters";
+import { ACTIVE_STATUSES, boardStatuses, nextPageHref, parsePostFilters, postOrderBy } from "./post-filters";
 
 test("defaults to all statuses, most votes, every board", () => {
   expect(parsePostFilters({})).toEqual({ statusParam: "all", status: undefined, sort: "top", board: undefined, page: 1 });
@@ -45,4 +45,12 @@ test("Load more keeps the filters and shows a page more", () => {
   const searchParams = { status: "open", sort: "new", page: "2" };
   expect(nextPageHref(searchParams, parsePostFilters(searchParams))).toBe("?status=open&sort=new&page=3");
   expect(nextPageHref({}, parsePostFilters({}))).toBe("?page=2");
+});
+
+test("a board lists the ideas not done yet unless asked for a status, or for all of them", () => {
+  expect(boardStatuses({})).toEqual(ACTIVE_STATUSES);
+  expect(ACTIVE_STATUSES).toEqual(["OPEN", "UNDER_REVIEW", "PLANNED", "IN_PROGRESS"]);
+  expect(boardStatuses({ status: "completed" })).toEqual(["COMPLETED"]);
+  expect(boardStatuses({ status: "all" })).toBeUndefined();
+  expect(boardStatuses({ status: "bogus" })).toEqual(ACTIVE_STATUSES);
 });

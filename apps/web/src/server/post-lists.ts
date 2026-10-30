@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type PostStatus, prisma } from "@tuti/db";
 
 import { POSTS_PER_PAGE, type PostFilters, postOrderBy } from "@/lib/post-filters";
 
@@ -47,12 +47,12 @@ export function teamPosts(projectId: string, filters: PostFilters, duplicatesOnl
   );
 }
 
-/** A portal board's posts, with whether `userId` voted for each. */
-export function boardPosts(boardId: string, filters: PostFilters, userId: string | undefined) {
+/** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */
+export function boardPosts(boardId: string, filters: PostFilters, userId: string | undefined, statuses?: PostStatus[]) {
   return upToPage(filters, (page) =>
     prisma.post.findMany({
       ...page,
-      where: { boardId, duplicateOfId: null, ...(filters.status && { status: filters.status }) },
+      where: { boardId, duplicateOfId: null, ...(statuses && { status: { in: statuses } }) },
       orderBy: postOrderBy(filters.sort),
       select: {
         id: true,
@@ -67,4 +67,15 @@ export function boardPosts(boardId: string, filters: PostFilters, userId: string
       },
     }),
   );
+}
+
+/** A board's completed posts, the latest changed first, for its "Recently shipped" card. */
+export function recentlyShipped(boardId: string) {
+  // ponytail: updatedAt stands in for when it shipped (votes and edits move it too); post_event (step 3) has the real time.
+  return prisma.post.findMany({
+    where: { boardId, duplicateOfId: null, status: "COMPLETED" },
+    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+    take: 5,
+    select: { id: true, number: true, title: true, voteCount: true },
+  });
 }
