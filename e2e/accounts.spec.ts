@@ -147,11 +147,13 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   const owner = await signUp(browser, APP_URL, "Olive Owner");
   await createProject(owner, "Acme", slug);
 
-  // Signed out, with a post started (as "Post this as feedback" from the docs does it).
+  // Signed out, they type their idea in the board's box first, then sign in to post it.
   const title = "Can I pay with crypto?";
   const vera = await newPerson(browser, portalUrl(slug));
-  await vera.goto(`/feedback/feature-requests?${new URLSearchParams({ title })}`);
-  await vera.getByRole("main").getByRole("link", { name: "Sign in" }).click();
+  await vera.goto("/feedback/feature-requests");
+  const box = vera.getByRole("main").locator("form");
+  await box.getByLabel("Title").fill(title);
+  await box.getByRole("button", { name: "Sign in to post" }).click();
   await vera.waitForURL(/\/sign-in\?next=/);
   const email = `e2e-${randomUUID()}@example.com`;
   await vera.getByLabel("Email").fill(email);
@@ -171,12 +173,11 @@ test("a visitor signs in to a portal with an emailed link and comes back to the 
   await checkpoint(vera, "portal-sign-in-link-confirm");
   await vera.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await vera.waitForURL(/\/feedback\/feature-requests\?title=/);
-  // The post they started is open, ready to send.
-  const form = vera.getByRole("dialog", { name: "Submit post" });
-  await expect(form.getByLabel("Title")).toHaveValue(title);
+  // The idea they started is in the box, ready to send.
+  await expect(box.getByLabel("Title")).toHaveValue(title);
   await checkpoint(vera, "portal-signed-in-with-link");
-  await vera.keyboard.press("Escape");
-  await expect(form).toHaveCount(0);
+  await box.getByRole("button", { name: "Submit post" }).click();
+  await expect(vera.getByRole("main").getByRole("link", { name: title })).toBeVisible();
   await expect(vera.getByRole("button", { name: "Account" })).toBeVisible();
 
   // A new account is named after the address; they can change it.

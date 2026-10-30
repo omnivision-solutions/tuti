@@ -2,41 +2,43 @@
 
 import type { MediaUrls } from "@tuti/content";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldError, FieldGroup } from "@/components/ui/field";
 import { BOARD_TEXT_DEFAULTS } from "@/lib/board-texts";
 import { postPath } from "@/lib/post-urls";
 import type { FormState } from "@/server/form-state";
 import { createPost } from "@/server/posts";
 import { findSimilarPosts, type SimilarPost } from "@/server/similar-posts";
-import { usePortalHref } from "@/components/portal-base";
+import { usePortalHref, usePortalPath } from "@/components/portal-base";
 
 const SUGGEST_DELAY_MS = 300;
 
 type Placeholders = { titlePlaceholder?: string; detailsPlaceholder?: string };
 
-/** A board's button that opens its post form in a dialog; open already when there's a title to start with. */
-export function NewPostDialog({
-  label,
-  ...form
-}: { label: string } & Omit<React.ComponentProps<typeof NewPostForm>, "onPosted">) {
-  const [open, setOpen] = useState(!!form.defaultTitle);
+/**
+ * "Share your idea" at the top of a board, for everyone: the title first, the details once it's
+ * clicked or typed in. Signed out, the similar ideas show as they type, and "Sign in to post"
+ * brings them back to the board with the title they typed.
+ */
+export function ShareIdeaBox({ signedIn, ...form }: { signedIn: boolean } & Omit<React.ComponentProps<typeof NewPostForm>, "collapsible" | "signedOut">) {
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>{label}</DialogTrigger>
-      {/* Room to write, and it scrolls when the text is longer than the screen. Closed, it keeps what was
-          written (posting clears it), and the starting title is only the first post's. */}
-      <DialogContent keepMounted className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:max-w-2xl">
-        <DialogTitle className="sr-only">{label}</DialogTitle>
-        <NewPostForm {...form} onPosted={() => setOpen(false)} />
-      </DialogContent>
-    </Dialog>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2>Share your idea</h2>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <NewPostForm {...form} collapsible signedOut={!signedIn} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -50,6 +52,9 @@ export function NewPostForm({
   defaultTitle,
   titlePlaceholder = BOARD_TEXT_DEFAULTS.titlePlaceholder,
   detailsPlaceholder = BOARD_TEXT_DEFAULTS.detailsPlaceholder,
+  postButton = BOARD_TEXT_DEFAULTS.postButton,
+  collapsible = false,
+  signedOut = false,
   onPosted,
 }: Placeholders & {
   projectSlug: string;
@@ -62,16 +67,38 @@ export function NewPostForm({
   submit?: (prev: FormState, formData: FormData) => Promise<FormState>;
   /** A title to start the first post with (the question from the docs' "Post this as feedback"). */
   defaultTitle?: string;
-  /** After each post (the dialog closes). */
+  /** The submit button's words (the board's own). */
+  postButton?: string;
+  /** Just the title until it's clicked or typed in (a board's box). */
+  collapsible?: boolean;
+  /** No details or posting: "Sign in to post" instead, coming back with the title. */
+  signedOut?: boolean;
+  /** After each post. */
   onPosted?: () => void;
 }) {
   const at = usePortalHref();
+  const path = usePortalPath();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [expanded, setExpanded] = useState(!collapsible || !!defaultTitle);
   const formRef = useRef<HTMLFormElement>(null);
   // Bumped after each post, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
   const [similar, setSimilar] = useState<SimilarPost[]>([]);
   const latestQuery = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Back to this page after signing in, its filters kept and the title in the box (read when it's sent,
+  // so one typed before the page's script ran counts too; without the script, sign-in adds it).
+  const withoutTitle = new URLSearchParams(searchParams);
+  withoutTitle.delete("title");
+  const signInFor = (title: string) => {
+    const back = new URLSearchParams(withoutTitle);
+    if (title) {
+      back.set("title", title);
+    }
+    return at(`/sign-in?${new URLSearchParams({ next: back.size ? `${path}?${back}` : path })}`);
+  };
 
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await (submit ?? createPost)(prev, formData);
@@ -117,9 +144,29 @@ export function NewPostForm({
   };
 
   return (
-    <form ref={formRef} {...keepingFields(action)}>
-      <input type="hidden" name="projectSlug" value={projectSlug} />
-      <input type="hidden" name="boardSlug" value={boardSlug} />
+    <form
+      ref={formRef}
+      // Signed out, sending it (Enter, or "Sign in to post") signs in rather than posting; before the page's
+      // script runs, as a plain GET to sign-in, which brings the title back to this board.
+      {...(signedOut
+        ? {
+            action: at("/sign-in"),
+            method: "get",
+            onSubmit: (event: React.FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              router.push(signInFor(String(new FormData(event.currentTarget).get("title") ?? "").trim()));
+            },
+          }
+        : keepingFields(action))}
+    >
+      {signedOut ? (
+        <input type="hidden" name="next" value={withoutTitle.size ? `${path}?${withoutTitle}` : path} />
+      ) : (
+        <>
+          <input type="hidden" name="projectSlug" value={projectSlug} />
+          <input type="hidden" name="boardSlug" value={boardSlug} />
+        </>
+      )}
       <FieldGroup>
         {/* No boxes: a title and the details, as they're published. */}
         <Field data-invalid={state.error ? true : undefined}>
@@ -132,6 +179,7 @@ export function NewPostForm({
             placeholder={titlePlaceholder}
             required
             autoComplete="off"
+            onFocus={() => setExpanded(true)}
             onChange={(e) => suggest(e.target.value)}
             aria-invalid={state.error ? true : undefined}
             className={`${BARE_TITLE} text-xl`}
@@ -162,18 +210,30 @@ export function NewPostForm({
           </div>
         )}
 
-        <RichEditor
-          key={submitted}
-          bare
-          profile="post"
-          name="content"
-          label="Details"
-          placeholder={detailsPlaceholder}
-          uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
-        />
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Posting…" : "Submit post"}
-        </Button>
+        {signedOut ? (
+          // Submits the form (its sign-in GET, or the push above), so a title typed before the script ran goes too;
+          // an empty title may sign in as well.
+          <Button type="submit" formNoValidate className="self-end">
+            Sign in to post
+          </Button>
+        ) : (
+          <>
+            {expanded && (
+              <RichEditor
+                key={submitted}
+                bare
+                profile="post"
+                name="content"
+                label="Details"
+                placeholder={detailsPlaceholder}
+                uploads={mediaUrls ? { projectSlug, mediaUrls } : undefined}
+              />
+            )}
+            <Button type="submit" disabled={pending} className="self-end">
+              {pending ? "Posting…" : postButton}
+            </Button>
+          </>
+        )}
       </FieldGroup>
     </form>
   );

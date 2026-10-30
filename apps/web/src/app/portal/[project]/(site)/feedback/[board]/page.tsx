@@ -5,22 +5,21 @@ import { notFound, permanentRedirect } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
 import { ListFilters } from "@/components/list-filters";
-import { NewPostDialog } from "@/components/new-post-form";
+import { ShareIdeaBox } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
-import { SignInLink } from "@/components/sign-in-link";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { VoteButton } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
-import { sortFilter, statusFilter } from "@/lib/post-filter-options";
-import { nextPageHref, parsePostFilters } from "@/lib/post-filters";
+import { boardStatusFilter, sortFilter } from "@/lib/post-filter-options";
+import { boardStatuses, nextPageHref, parsePostFilters } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { portalAddress } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
-import { boardPosts } from "@/server/post-lists";
+import { boardPosts, recentlyShipped } from "@/server/post-lists";
 
 /** Sorted or filtered (`?sort=`, `?status=`), it's still the board: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]">): Promise<Metadata> {
@@ -53,37 +52,27 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     notFound();
   }
 
-  const { posts, more } = await boardPosts(board.id, filters, userId);
-  const { postButton, ...placeholders } = boardTexts(board);
+  const statuses = boardStatuses(searchParams);
+  const [{ posts, more }, shipped] = await Promise.all([
+    boardPosts(board.id, filters, userId, statuses),
+    // Beside the default list (however it's asked for), which leaves completed ideas out.
+    statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
+  ]);
+  const texts = boardTexts(board);
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title={board.name}
-        description={board.description}
-        actions={
-          session && (
-            <NewPostDialog
-              label={postButton}
-              projectSlug={projectSlug}
-              boardSlug={boardSlug}
-              mediaUrls={await mediaUrls()}
-              defaultTitle={title}
-              {...placeholders}
-            />
-          )
-        }
+      <PageHeader title={board.name} description={board.description} />
+
+      <ShareIdeaBox
+        signedIn={!!session}
+        projectSlug={projectSlug}
+        boardSlug={boardSlug}
+        mediaUrls={await mediaUrls()}
+        defaultTitle={title}
+        {...texts}
       />
 
-      {!session && (
-        <p className="text-sm text-muted-foreground">
-          <SignInLink className="text-foreground underline underline-offset-4">
-            Sign in
-          </SignInLink>{" "}
-          to post feedback and vote.
-        </p>
-      )}
-
-      <ListFilters filters={[sortFilter(filters.sort), statusFilter(filters.statusParam)]} />
+      <ListFilters filters={[sortFilter(filters.sort), boardStatusFilter(searchParams)]} />
 
       <div className="flex flex-col gap-3">
         {posts.map((post) => (
@@ -117,8 +106,10 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         ))}
         {posts.length === 0 && (
           <EmptyState
-            title={filters.status ? "No posts with this status yet" : "No feedback yet"}
-            description={filters.status ? "Try another status." : "Be the first to share an idea."}
+            title={statuses?.length === 1 ? "No posts with this status yet" : statuses ? "No ideas waiting" : "No feedback yet"}
+            description={
+              statuses?.length === 1 ? "Try another status." : statuses ? "Share one in the box above." : "Be the first to share an idea."
+            }
           />
         )}
         {more && (
@@ -131,6 +122,31 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           </Link>
         )}
       </div>
+
+      {shipped.length > 0 && (
+        <Card role="region" aria-labelledby="recently-shipped">
+          <CardHeader>
+            <CardTitle>
+              <h2 id="recently-shipped">Recently shipped</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2">
+              {shipped.map((post) => (
+                <li key={post.id} className="flex items-center gap-3 text-sm">
+                  <PostStatusBadge status="COMPLETED" />
+                  <Link href={at(postPath({ ...post, board }))} className="min-w-0 flex-1 break-words hover:underline">
+                    {post.title}
+                  </Link>
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

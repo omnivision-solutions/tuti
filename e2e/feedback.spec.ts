@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { apiFor, createProject, postFeedback, signUp } from "./helpers";
+import { apiFor, createProject, newPerson, postFeedback, signUp } from "./helpers";
 import { countEmailsTo, latestEmailTo, linkIn } from "./mail";
 
 test("a team collects feedback, merges a duplicate and plans it", async ({ browser }, testInfo) => {
@@ -166,4 +166,65 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
+});
+
+test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts", { board: "feature-requests", title: "Export to CSV" });
+  await api("/posts/2", { status: "completed" }, "PATCH");
+
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/feedback/feature-requests");
+  const main = visitor.getByRole("main");
+  // The list has what's not done yet; what shipped is in its own card.
+  await expect(main.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  const shipped = main.getByRole("region", { name: "Recently shipped" });
+  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
+  await expect(shipped).toContainText("Completed");
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
+  // Signed out, the box takes an idea and shows the similar ones as it's typed.
+  await main.getByLabel("Title").fill("Dark theme");
+  await expect(main.getByRole("status").filter({ hasText: "Already posted? Vote on it instead:" })).toContainText("Dark mode");
+  await checkpoint(visitor, "portal-board-share-idea");
+  // Signing in to post (Enter does it too) comes back to the board as it was: its sort, and the idea in the box.
+  await visitor.goto("/feedback/feature-requests?sort=new");
+  await main.getByLabel("Title").fill("Dark theme");
+  await main.getByLabel("Title").press("Enter");
+  await visitor.waitForURL(/\/sign-in\?next=/);
+  expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
+  // A title typed before the page's script ran (no input event reached it) goes along too.
+  await visitor.goto("/feedback/feature-requests");
+  await main.getByLabel("Title").evaluate((input: HTMLInputElement) => (input.value = "Typed early"));
+  await main.getByRole("button", { name: "Sign in to post" }).click();
+  await visitor.waitForURL(/\/sign-in\?next=/);
+  expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?title=Typed+early");
+  // Before the page's script runs (here, without JavaScript), "Sign in to post" still goes to sign-in, back to the board as it was.
+  const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false });
+  const early = await noScript.newPage();
+  await early.goto("/feedback/feature-requests?sort=new");
+  await early.getByRole("main").getByLabel("Title").fill("Dark theme");
+  await early.getByRole("main").getByRole("button", { name: "Sign in to post" }).click();
+  await early.waitForURL(/\/sign-in\?/);
+  expect(new URL(early.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new");
+  // Signing in there comes back with the title too (the "Continue" link carries where it goes).
+  await expect(early.getByRole("link", { name: "Continue with your Tuti account" })).toHaveAttribute(
+    "href",
+    `/continue?${new URLSearchParams({ redirect: "/feedback/feature-requests?sort=new&title=Dark+theme" })}`,
+  );
+  await noScript.close();
+  await visitor.goto("/feedback/feature-requests");
+  // All statuses lists the completed one too.
+  await visitor.getByRole("combobox", { name: "Status" }).click();
+  await visitor.getByRole("option", { name: "All statuses" }).click();
+  await visitor.waitForURL(/\?status=all$/);
+  await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
+  await expect(shipped).toHaveCount(0);
+  // The default list asked for by name (or with a status it doesn't know) has the card too.
+  await visitor.goto("/feedback/feature-requests?status=active");
+  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
 });
