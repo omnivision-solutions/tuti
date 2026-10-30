@@ -16,6 +16,9 @@ const BOTS = { "review:coderabbit": "CodeRabbit", "review:greptile": "Greptile R
 // Paths SKILL.md's reviewed-commit exception lets change after the bot's review.
 const TESTS_OR_DOCS = /\.md$|^docs\/|^e2e\/|\.test\.tsx?$/;
 const PASSED = ["success", "neutral", "skipped"];
+// Greptile out of credits says so, or posts nothing at all: either way, move the PR to CodeRabbit.
+const LOCKOUT = /Reactivate Greptile|^Your organization has run out of review credits/;
+const SILENT_AFTER = 20 * 60_000;
 const EXIT = { green: 0, failures: 10, "open-comments": 11, pending: 12, "no-bot": 13, "out-of-sync": 20 };
 
 /** The bot's result on one commit: success, pending, missing, or the failing conclusion. */
@@ -25,19 +28,23 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
-// Status chrome, not findings: CodeRabbit's walkthrough and review headers (unless
+// Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
 // they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
-// the @greptileai mention review-bot.yml posts to start Greptile.
+// bare requests for a review (review-bot.yml's or a person's).
 function isNoise({ user, body }) {
+  // A bare request for a review, by anyone: the bot's review answers it.
+  if (["@greptileai", "@coderabbitai review"].includes(body.trim())) return true;
   if (user.type !== "Bot") return false;
   if (user.login === "coderabbitai[bot]")
     return (
       /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body) ||
-      (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body))
+      (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body)) ||
+      /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated reply by CodeRabbit -->\s*<!-- CodeRabbit review command invocation:/.test(body)
     );
   if (user.login === "greptile-apps[bot]")
-    return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || body.includes("Reactivate Greptile");
-  if (user.login === "github-actions[bot]") return body.startsWith("<!-- tuti-e2e-screenshots -->") || body.trim() === "@greptileai";
+    return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || LOCKOUT.test(body);
+  if (user.login === "github-actions[bot]")
+    return body.startsWith("<!-- tuti-e2e-screenshots -->");
   return false;
 }
 
@@ -60,6 +67,25 @@ function clean(body, keepDetails = false) {
 
 // A renamed file counts at both paths: moving code into docs/ still changes the code.
 const paths = (earlier) => earlier.files.flatMap((f) => [f.filename, f.previous_filename].filter(Boolean));
+
+/** Why Greptile won't review the head: a lockout notice since it was last asked or reviewed, or silence since the push (its checks' start) or the latest @greptileai. */
+function greptileGone({ head, runs, conversation, reviews, now }) {
+  const at = (c) => Date.parse(c.submitted_at ?? c.created_at);
+  const latest = (items) => Math.max(-Infinity, ...items.map(at));
+  const greptile = [...conversation, ...reviews].filter((c) => c.user.login === "greptile-apps[bot]");
+  const lockouts = greptile.filter((c) => LOCKOUT.test(c.body ?? ""));
+  const mentioned = latest(conversation.filter((c) => /^@greptileai\b/.test(c.body)));
+  // Asked again, or reviewing or commenting again: it may have credits now.
+  const back = Math.max(mentioned, latest(greptile.filter((c) => !lockouts.includes(c))));
+  if (lockouts.some((c) => at(c) > back)) return "it can't review (out of credits)";
+  // Until a check on the head has started, the push time is unknown: an older @greptileai can't time it.
+  const starts = runs.map((r) => Date.parse(r.started_at)).filter(Number.isFinite);
+  const asked = starts.length ? Math.max(mentioned, Math.min(...starts)) : NaN;
+  // A late review of an earlier commit doesn't answer for the head.
+  const answered = greptile.some((c) => (c.commit_id ?? head) === head && at(c) > asked);
+  if (Number.isFinite(asked) && now - asked > SILENT_AFTER && !answered)
+    return `silent for ${Math.round((now - asked) / 60_000)} minutes since the push or @greptileai`;
+}
 const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((url) => url.replace(/[.,;:!?]+$/, ""));
 
 /**
@@ -67,7 +93,7 @@ const links = (body) => (body.match(/https?:\/\/[^\s<>"()[\]]+/g) ?? []).map((ur
  * newest earlier commit the bot passed on ({ sha, files }: the compare API's files
  * changed since), given only when the bot hasn't passed on the head.
  */
-export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier }) {
+export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier, now }) {
   const head = pr.headRefOid;
   const lines = [`PR #${pr.number} · ${pr.headRefName} · ${pr.mergeable} · head ${head.slice(0, 8)}`];
   if (pr.state !== "OPEN") return { lines: [...lines, `VERDICT ${pr.state.toLowerCase()}`], verdict: pr.state.toLowerCase(), keys: [], pending: 0 };
@@ -96,13 +122,20 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
   const label = pr.labels.map((l) => l.name).find((name) => name in BOTS);
   const bot = BOTS[label];
   const state = bot && botState(bot, runs, statuses);
+  const reviewed = earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f));
+  const gone = bot === BOTS["review:greptile"] && state === "missing" && !reviewed && greptileGone({ head, runs, conversation, reviews, now });
   if (!bot) lines.push("BOT none: no review:coderabbit or review:greptile label, so no bot reviews this PR. Add one");
   else if (state === "success") lines.push(`BOT ${bot}: passed on the head`);
   else if (state !== "pending" && state !== "missing") lines.push(`BOT ${bot}: ${state} on the head`);
-  else if (earlier && paths(earlier).every((f) => TESTS_OR_DOCS.test(f))) {
+  else if (reviewed) {
     // The earlier review counts, so a review running on the head isn't waited for.
     if (pending.includes(bot)) pending.splice(pending.indexOf(bot), 1);
     lines.push(`BOT ${bot}: passed on ${earlier.sha.slice(0, 8)}; only tests and docs changed since`);
+  } else if (gone) {
+    lines.push(
+      `BOT ${bot}: ${gone}. Don't wait: move the PR to CodeRabbit with ` +
+        `gh pr edit ${pr.number} --remove-label review:greptile --add-label review:coderabbit && gh pr comment ${pr.number} --body '@coderabbitai review'`,
+    );
   } else {
     if (!pending.includes(bot)) pending.push(bot);
     const code = earlier && paths(earlier).filter((f) => !TESTS_OR_DOCS.test(f));
@@ -154,14 +187,14 @@ export function digest({ pr, viewer, local, headMoved, runs, statuses, threads, 
     if (r.state === "CHANGES_REQUESTED") findings.push({ key: `review ${r.id}`, title: `review ${r.id} ${r.user.login} requested changes`, body: r.body });
   for (const f of findings) lines.push("", `[${f.title}]`, `  ${clean(f.body, f.review)}`);
 
-  const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : !bot ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
+  const verdict = sync.length ? "out-of-sync" : failed.length ? "failures" : !bot || gone ? "no-bot" : findings.length ? "open-comments" : pending.length ? "pending" : "green";
   lines.push(`VERDICT ${verdict}`);
   return { lines, verdict, keys: [...failed.map((f) => `${head} ${f}`), ...findings.map((f) => f.key)], pending: pending.length };
 }
 
 /** --watch keeps waiting while something is pending and nothing new needs an answer. */
 export function keepWaiting(result, seen) {
-  return result.pending > 0 && result.verdict !== "out-of-sync" && result.keys.every((key) => seen.has(key));
+  return result.pending > 0 && !["out-of-sync", "no-bot"].includes(result.verdict) && result.keys.every((key) => seen.has(key));
 }
 
 const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 28 }));
@@ -211,7 +244,7 @@ function observe(repo, viewer, number) {
   const local = git("branch", "--show-current") === pr.headRefName ? { sha: git("rev-parse", "HEAD"), upstream: git("rev-parse", "@{upstream}") } : undefined;
   // A verdict describes one commit: if the head moved while reading, it's stale.
   const headMoved = gh("pr", "view", number, "--repo", repo, "--json", "headRefOid").headRefOid !== head;
-  return digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier });
+  return digest({ pr, viewer, local, headMoved, runs, statuses, threads, inline, conversation, reviews, earlier, now: Date.now() });
 }
 
 function main(args) {

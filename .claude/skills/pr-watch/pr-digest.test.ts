@@ -8,6 +8,7 @@ const run = (name: string, conclusion: string | null = "success") => ({
   name,
   status: conclusion ? "completed" : "in_progress",
   conclusion,
+  started_at: "2026-01-01T00:00:00Z",
   html_url: `https://github.com/example/project/actions/runs/1/job/${name.length}`,
 });
 const user = (login: string) => ({ login, type: login.endsWith("[bot]") ? "Bot" : "User" });
@@ -47,6 +48,7 @@ function observe(changes: Record<string, unknown> = {}) {
     inline: [],
     conversation: [],
     reviews: [],
+    now: Date.parse("2026-01-01T00:10:00Z"),
     ...changes,
   });
 }
@@ -78,6 +80,67 @@ describe("pr-digest", () => {
 
     it("waits while the bot reviews", () => {
       expect(observe({ runs: [run("Unit tests"), run("CodeRabbit", null)] }).verdict).toBe("pending");
+    });
+
+    describe("Greptile out of credits", () => {
+      const greptile = { ...withLabel("review:greptile"), runs: [run("Unit tests")] };
+      const swap = "gh pr edit 1 --remove-label review:greptile --add-label review:coderabbit && gh pr comment 1 --body '@coderabbitai review'";
+      const bot = (result: { lines: string[] }) => result.lines.find((l) => l.startsWith("BOT"));
+
+      it("waits 20 minutes for its review, then says to move the PR to CodeRabbit", () => {
+        expect(observe(greptile).verdict).toBe("pending");
+        const silent = observe({ ...greptile, now: Date.parse("2026-01-01T00:21:00Z") });
+        expect(silent.verdict).toBe("no-bot");
+        expect(bot(silent)).toBe(`BOT Greptile Review: silent for 21 minutes since the push or @greptileai. Don't wait: move the PR to CodeRabbit with ${swap}`);
+        expect(keepWaiting({ ...silent, pending: 1 }, new Set(silent.keys))).toBe(false);
+      });
+
+      it("counts the 20 minutes from the latest @greptileai, and any reply since as an answer", () => {
+        const now = Date.parse("2026-01-01T00:30:00Z");
+        const mention = comment(50, viewer, "@greptileai review the latest", "2026-01-01T00:15:00Z");
+        expect(observe({ ...greptile, now, conversation: [mention] }).verdict).toBe("pending");
+        const reply = { ...review(52, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:12:00Z"), commit_id: head };
+        expect(observe({ ...greptile, now: Date.parse("2026-01-01T00:25:00Z"), reviews: [reply] }).verdict).toBe("pending");
+        // A late review of the previous commit isn't a reply about the head.
+        expect(observe({ ...greptile, now: Date.parse("2026-01-01T00:25:00Z"), reviews: [{ ...reply, commit_id: reviewed }] }).verdict).toBe("no-bot");
+      });
+
+      it("says to move the PR right away when Greptile says it ran out of credits", () => {
+        const notice = comment(53, "greptile-apps[bot]", "Your organization has run out of review credits. [Add credits](https://example.com) to resume code reviews.");
+        const result = observe({ ...greptile, conversation: [notice] });
+        expect(result.verdict).toBe("no-bot");
+        expect(bot(result)).toBe(`BOT Greptile Review: it can't review (out of credits). Don't wait: move the PR to CodeRabbit with ${swap}`);
+        // Asked again after the notice: it may have credits now.
+        const asked = comment(54, viewer, "@greptileai", "2026-01-01T00:05:00Z");
+        expect(observe({ ...greptile, conversation: [notice, asked] }).verdict).toBe("pending");
+        // An earlier review that still counts needs no swap.
+        const counted = observe({ ...greptile, conversation: [notice], earlier: { sha: reviewed, files: files("docs/plan.md") } });
+        expect(counted.verdict).toBe("green");
+        expect(bot(counted)).toContain("only tests and docs changed since");
+      });
+
+      it("expires a notice once Greptile reviews or comments again, and reads one posted as a review on an earlier commit", () => {
+        const notice = review(56, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:01:00Z", "To keep reviewing, [Reactivate Greptile](https://example.com)");
+        expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }] }).verdict).toBe("no-bot");
+        const later = { ...review(57, "greptile-apps[bot]", "APPROVED", "2026-01-01T00:02:00Z"), commit_id: reviewed };
+        expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }, later] }).verdict).toBe("pending");
+        const summary = comment(59, "greptile-apps[bot]", "<h3>Greptile Summary</h3>", "2026-01-01T00:02:00Z");
+        expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }], conversation: [summary] }).verdict).toBe("pending");
+      });
+
+      it("doesn't time silence until a check on the head has started", () => {
+        const mention = comment(58, viewer, "@greptileai", "2026-01-01T00:00:00Z");
+        const now = Date.parse("2026-01-01T09:00:00Z");
+        const queued = { ...run("Lint", null), started_at: null };
+        expect(observe({ ...greptile, runs: [], conversation: [mention], now }).verdict).toBe("pending");
+        expect(observe({ ...greptile, runs: [queued], conversation: [mention], now }).verdict).toBe("pending");
+        expect(observe({ ...greptile, runs: [queued, run("Unit tests")], conversation: [mention], now }).verdict).toBe("no-bot");
+      });
+
+      it("doesn't take a finding that quotes the notice for the notice", () => {
+        const finding = review(55, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:05:00Z", "LOCKOUT misses the text 'run out of review credits' when it wraps");
+        expect(observe({ ...greptile, reviews: [{ ...finding, commit_id: head }] }).verdict).toBe("open-comments");
+      });
     });
 
     it("reports an unlabelled PR as having no bot", () => {
@@ -182,10 +245,14 @@ describe("pr-digest", () => {
 
     it.each([
       ["coderabbitai[bot]", "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"],
+      ["coderabbitai[bot]", "<!-- This is an auto-generated reply by CodeRabbit -->\n<!-- CodeRabbit review command invocation: v2:0 -->\n<details><summary>Action performed</summary>Review triggered.</details>"],
       ["greptile-apps[bot]", "To keep reviewing, [Reactivate Greptile](https://example.com)"],
+      ["greptile-apps[bot]", "Your organization has run out of review credits. [Add credits](https://example.com) to resume code reviews."],
       ["greptile-apps[bot]", "<h3>Greptile Summary</h3>"],
       ["github-actions[bot]", "<!-- tuti-e2e-screenshots -->\n### Screenshots"],
       ["github-actions[bot]", "@greptileai"],
+      ["github-actions[bot]", "@coderabbitai review"],
+      ["reviewer", "@coderabbitai review"],
     ])("skips %s chrome", (login, body) => {
       expect(observe({ conversation: [comment(30, login, body)] }).verdict).toBe("green");
     });
@@ -194,6 +261,8 @@ describe("pr-digest", () => {
       expect(observe({ conversation: [comment(30, "reviewer", "<!-- tuti-e2e-screenshots -->\n### Screenshots")] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [comment(30, "coderabbitai[bot]", "Please fix this")] }).verdict).toBe("open-comments");
       expect(observe({ conversation: [comment(30, "github-actions[bot]", "@greptileai the deploy step failed")] }).verdict).toBe("open-comments");
+      const quoting = review(31, "coderabbitai[bot]", "COMMENTED", "2026-01-01T00:00:00Z", "The `<!-- CodeRabbit review command invocation:` match also skips this review");
+      expect(observe({ reviews: [quoting] }).verdict).toBe("open-comments");
     });
 
     it("blocks a change request until that reviewer approves", () => {
