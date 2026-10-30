@@ -35,18 +35,23 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   // "#12" or "12": a number as posts and conversations have them (a 32-bit integer).
   const asNumber = /^#?\d{1,10}$/.test(query) ? Number(query.replace("#", "")) : null;
   const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;
-  const [posts, conversations, articles, { users }] = await Promise.all([
+  const postSelect = { number: true, title: true, voteCount: true };
+  const conversationSelect = { number: true, subject: true, status: true };
+  // The post and conversation with the number typed come first, then those with it in their title.
+  const [numberedPost, numberedConversation, titled, subjects, articles, { users }] = await Promise.all([
+    number === null ? null : prisma.post.findFirst({ where: { projectId, number, duplicateOfId: null }, select: postSelect }),
+    number === null ? null : prisma.conversation.findFirst({ where: { projectId, number, spam: false }, select: conversationSelect }),
     prisma.post.findMany({
-      where: { projectId, duplicateOfId: null, OR: [{ title: has }, ...(number ? [{ number }] : [])] },
+      where: { projectId, duplicateOfId: null, title: has, ...(number !== null && { NOT: { number } }) },
       orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
       take: EACH,
-      select: { number: true, title: true, voteCount: true },
+      select: postSelect,
     }),
     prisma.conversation.findMany({
-      where: { projectId, spam: false, OR: [{ subject: has }, ...(number ? [{ number }] : [])] },
+      where: { projectId, spam: false, subject: has, ...(number !== null && { NOT: { number } }) },
       orderBy: { lastMessageAt: "desc" },
       take: EACH,
-      select: { number: true, subject: true, status: true },
+      select: conversationSelect,
     }),
     prisma.article.findMany({
       where: { projectId, deletedAt: null, title: has },
@@ -56,6 +61,8 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
     }),
     call(listUsers, { actor: { kind: "user", userId: session.user.id }, projectId }, { q: query, limit: EACH }),
   ]);
+  const posts = [numberedPost, ...titled].filter((post) => post !== null).slice(0, EACH);
+  const conversations = [numberedConversation, ...subjects].filter((c) => c !== null).slice(0, EACH);
   return {
     results: [
       ...posts.map((post) => ({
@@ -70,7 +77,7 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
         kind: "user" as const,
         title: user.name ?? user.email ?? user.id,
         meta: user.email ?? user.id,
-        // Their id in the team's app: Users finds exactly them by it.
+        // Their id in the team's app: Users lists whoever has it first.
         href: `${base}/users?${new URLSearchParams({ q: user.id })}`,
       })),
     ],

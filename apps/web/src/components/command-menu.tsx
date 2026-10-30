@@ -26,7 +26,7 @@ type Option = { key: string; group: string; title: string; meta?: string; href: 
 
 /**
  * ⌘K in the app: jump to a page, a settings page, a post, a conversation, an article or a user by name, or
- * run an action (New article, Draft release notes, New post). `items` are this person's (Settings pages by
+ * run an action (New article, New changelog entry, New post). `items` are this person's (Settings pages by
  * their role); posts and the rest come from `searchApp`, which finds only what the project's team sees.
  */
 export function CommandMenu({ projectSlug, items }: { projectSlug: string; items: CommandItem[] }) {

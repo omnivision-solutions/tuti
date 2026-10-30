@@ -253,8 +253,14 @@ export function CustomizeShell({
     };
     // And on ⌘K's.
     const onNavigate = (event: Event) => {
+      const href = (event as CustomEvent<string>).detail;
+      const url = new URL(href, window.location.origin);
+      // This very section: not leaving.
+      if (url.pathname === window.location.pathname && url.search === window.location.search) {
+        return;
+      }
       event.preventDefault();
-      setLeaving((event as CustomEvent<string>).detail);
+      setLeaving(href);
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     document.addEventListener("click", onClick, true);

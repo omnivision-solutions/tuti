@@ -33,7 +33,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
     ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, href: `${base}/customize/${section.slug}` })) : []),
     ...settingsGroups(project, admin).flatMap((group) => group.pages.map((page) => ({ title: page.title, group: "Settings" as const, href: page.href }))),
     { title: "New article", group: "Actions", href: `${base}/docs/new` },
-    { title: "Draft release notes", group: "Actions", href: `${base}/changelog/new` },
+    { title: "New changelog entry", group: "Actions", href: `${base}/changelog/new` },
     // Posts are written on the portal, where users write theirs.
     { title: "New post (on your portal)", group: "Actions", href: `${await portalAddress(project)}/feedback`, external: true },
   ];

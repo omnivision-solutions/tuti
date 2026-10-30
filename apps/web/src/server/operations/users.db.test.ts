@@ -147,6 +147,9 @@ test("listed by name, with the groups they're in; found by name, email or id, or
   const first = await list({ limit: 2 });
   expect([first.users.map((user) => user.id), first.nextCursor]).toEqual([["user-a", "user-b"], "2"]);
   expect((await list({ limit: 2, cursor: 2 })).users.map((user) => user.id)).toEqual(["user-c"]);
+  // Whoever has the id searched for comes first, whatever their name.
+  await sync([{ id: "acme", name: "Zed", email: "e2e-zed@zed.example" }]);
+  expect((await list({ q: "acme" })).users.map((user) => user.id)).toEqual(["acme", "user-b", "user-c"]);
 });
 
 test("a synced user who signs in through the project's SSO is the same user, and keeps what the API set", async () => {

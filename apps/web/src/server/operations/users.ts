@@ -62,7 +62,7 @@ export async function viewsOf(projectId: string, users: { externalId: string; em
 export const listUsers = defineOperation({
   name: "users.list",
   summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties and the reader groups they're in now; `q` finds them by name, email or id, and `group` (a key) keeps those in that group",
+    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties and the reader groups they're in now; `q` finds them by name, email or id (whoever has that id first), and `group` (a key) keeps those in that group",
   method: "GET",
   path: "/users",
   scope: "read",
@@ -91,7 +91,7 @@ export const listUsers = defineOperation({
     const page = await prisma.$queryRaw<{ id: string }[]>`
       SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId"
       WHERE ${Prisma.join(filters, " AND ")}
-      ORDER BY u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+      ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
     const ids = page.slice(0, input.limit).map((row) => row.id);
     const users = await prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } });
     const byId = new Map(users.map((user) => [user.id, user]));

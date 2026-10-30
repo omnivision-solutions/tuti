@@ -36,6 +36,11 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     ["user", `${base}/users?q=u-1`], // by their id in the project's product; not the other project's u-2
   ]);
   expect((await searchApp(project.slug, "#7")).results!.map((r) => r.href)).toEqual([`${base}/p/7`]);
+  // The number typed comes first, even when more popular posts have it in their title.
+  for (let n = 20; n < 26; n++) {
+    await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: n, title: `Plan #7 idea ${n}`, voteCount: 10 } });
+  }
+  expect((await searchApp(project.slug, "#7")).results!.filter((r) => r.kind === "post")[0]!.href).toBe(`${base}/p/7`);
   // "_" and "%" are themselves, not LIKE's wildcards.
   expect((await searchApp(project.slug, "__")).results).toEqual([]);
   expect((await searchApp(project.slug, "%%")).results).toEqual([]);
