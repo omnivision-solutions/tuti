@@ -48,7 +48,7 @@ export function NewBoardDialog({ projectSlug }: { projectSlug: string }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>New board</DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New board</DialogTitle>
           <DialogDescription>Boards can be renamed or moved to a new URL any time; only empty boards can be deleted.</DialogDescription>

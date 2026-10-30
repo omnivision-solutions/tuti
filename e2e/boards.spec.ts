@@ -23,7 +23,8 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await expect(row("Feature requests")).toContainText("/feedback/feature-requests · 0 posts");
   await expect(row("Feature requests").getByRole("button", { name: "Delete" })).toHaveCount(0);
 
-  // Add a board ("New board", in a dialog); its URL follows the name.
+  // Add a board ("New board", in a dialog); its URL follows the name. On a short screen the dialog scrolls to its button.
+  await owner.setViewportSize({ width: 1280, height: 320 });
   await owner.getByRole("button", { name: "New board" }).click();
   const newBoard = owner.getByRole("dialog", { name: "New board" });
   await newBoard.getByLabel("Name").fill("Bug reports");
@@ -32,6 +33,7 @@ test("a team adds, renames and deletes boards; old board links keep working", as
   await newBoard.getByRole("button", { name: "Create board" }).click();
   await expect(owner.getByText("Board created")).toBeVisible();
   await expect(newBoard).toBeHidden();
+  await owner.setViewportSize({ width: 1280, height: 720 });
   await expect(row("Bug reports")).toContainText("/feedback/bug-reports · 0 posts · Something broken? Tell us here.");
   await checkpoint(owner, "team-boards");
 
