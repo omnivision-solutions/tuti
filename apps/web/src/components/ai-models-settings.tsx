@@ -142,8 +142,10 @@ function FeatureModel({
         <>
           <Input
             aria-label={`${AI_FEATURE_NAMES[feature]}: model id`}
-            // Empty would save as the default (Fast): pick Fast for that.
+            // Empty (or only spaces, trimmed when saved) would save as the default (Fast): pick Fast for that.
             required
+            pattern=".*\S.*"
+            title="A model id, such as provider/model"
             list="ai-models"
             value={custom}
             onChange={(event) => setCustom(event.target.value)}

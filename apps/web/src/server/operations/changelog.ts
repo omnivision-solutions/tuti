@@ -537,7 +537,7 @@ export const updateChangelogStyle = defineOperation({
   method: "PATCH",
   path: "/changelog-style",
   scope: "write",
-  access: "team",
+  access: "admin",
   input: z.object({
     tone: z.string().trim().max(MAX_TONE_LENGTH, "Keep the tone notes under 1,000 characters").optional(),
     examples: z.array(entryNumber).max(MAX_STYLE_EXAMPLES, `Pick up to ${MAX_STYLE_EXAMPLES} examples`).optional(),
