@@ -143,9 +143,12 @@ export function NewPostForm({
   return (
     <form
       ref={formRef}
-      // Signed out, Enter in the title signs in too, rather than posting.
+      // Signed out, Enter in the title signs in too, rather than posting; before the page's script runs,
+      // as a plain GET to sign-in that comes back to this board (the typed title is lost then).
       {...(signedOut
         ? {
+            action: at("/sign-in"),
+            method: "get",
             onSubmit: (event: React.FormEvent) => {
               event.preventDefault();
               router.push(signInHref);
@@ -153,8 +156,14 @@ export function NewPostForm({
           }
         : keepingFields(action))}
     >
-      <input type="hidden" name="projectSlug" value={projectSlug} />
-      <input type="hidden" name="boardSlug" value={boardSlug} />
+      {signedOut ? (
+        <input type="hidden" name="next" value={path} />
+      ) : (
+        <>
+          <input type="hidden" name="projectSlug" value={projectSlug} />
+          <input type="hidden" name="boardSlug" value={boardSlug} />
+        </>
+      )}
       <FieldGroup>
         {/* No boxes: a title and the details, as they're published. */}
         <Field data-invalid={state.error ? true : undefined}>

@@ -197,6 +197,15 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await main.getByLabel("Title").press("Enter");
   await visitor.waitForURL(/\/sign-in\?next=/);
   expect(new URL(visitor.url()).searchParams.get("next")).toBe("/feedback/feature-requests?sort=new&title=Dark+theme");
+  // Before the page's script runs (here, without JavaScript), Enter still goes to sign-in, back to the board.
+  const noScript = await browser.newContext({ baseURL: portalUrl(slug), javaScriptEnabled: false });
+  const early = await noScript.newPage();
+  await early.goto("/feedback/feature-requests");
+  await early.getByRole("main").getByLabel("Title").fill("Dark theme");
+  await early.getByRole("main").getByLabel("Title").press("Enter");
+  await early.waitForURL(/\/sign-in\?/);
+  expect(new URL(early.url()).searchParams.get("next")).toBe("/feedback/feature-requests");
+  await noScript.close();
   await visitor.goto("/feedback/feature-requests");
   // All statuses lists the completed one too.
   await visitor.getByRole("combobox", { name: "Status" }).click();
