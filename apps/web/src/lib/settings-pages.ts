@@ -12,6 +12,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "Team & roles", href: at("team") },
         { title: "Access", href: at("access") },
         { title: "Single sign-on", href: at("sso") },
+        { title: "Domain", href: at("domain") },
       ],
     },
     { title: "Support", pages: [{ title: "Inbox and email", href: at("support") }] },

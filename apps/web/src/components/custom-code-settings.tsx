@@ -61,7 +61,7 @@ export function CustomCodeSettings({
               ) : (
                 <>
                   Your portal isn&apos;t on one yet:{" "}
-                  <Link href={`/app/${projectSlug}/customize/address`} className="text-primary underline underline-offset-4">
+                  <Link href={`/app/${projectSlug}/settings/domain`} className="text-primary underline underline-offset-4">
                     add a domain or a sub-folder
                   </Link>
                   .
