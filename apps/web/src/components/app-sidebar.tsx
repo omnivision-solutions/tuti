@@ -17,6 +17,7 @@ import {
   MoonIcon,
   PaintbrushIcon,
   PlusIcon,
+  SearchIcon,
   SettingsIcon,
   SunIcon,
   UserIcon,
@@ -55,7 +56,9 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { OPEN_COMMAND_MENU } from "@/components/command-menu";
 import { authClient } from "@/lib/auth-client";
+import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { cn } from "@/lib/utils";
 import { THEME_DEFAULT_KEY } from "@/lib/portal-look";
 
@@ -92,6 +95,7 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <ProjectSwitcher projects={projects} current={current} />
+        {current && <SearchButton />}
       </SidebarHeader>
       <SidebarContent>
         {current &&
@@ -129,6 +133,24 @@ export function AppSidebar({
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/** Opens ⌘K (components/command-menu.tsx), saying its shortcut as this platform writes it. */
+function SearchButton() {
+  const shortcut = useShortcutLabel("K");
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <SidebarMenuButton tooltip={`Search (${shortcut})`} onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_MENU))}>
+          <SearchIcon />
+          <span className="flex-1">Search</span>
+          <kbd aria-hidden className="rounded border bg-background px-1.5 font-sans text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+            {shortcut}
+          </kbd>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
 
