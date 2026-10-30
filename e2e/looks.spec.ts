@@ -53,7 +53,7 @@ test("every main screen fits a phone and works in dark mode", async ({ browser }
       [`/app/${slug}/settings`, "team-settings"],
       [`/app/${slug}/customize`, "team-customize"],
       [`/app/${slug}/customize/branding`, "team-customize-branding"],
-      [`/app/${slug}/team`, "team-members"],
+      [`/app/${slug}/settings/team`, "team-members"],
     ] as const) {
       await teamPage.goto(path);
       await expect(teamPage.getByRole("main")).toBeVisible();

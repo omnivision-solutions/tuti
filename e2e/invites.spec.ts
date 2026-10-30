@@ -46,10 +46,44 @@ test("an owner invites someone by email, who signs up from the email and joins",
   await expect(invitee.getByText("Verify your email")).toHaveCount(0);
   await checkpoint(invitee, "invitee-joined");
 
+  // Team is in Settings now, as Team & roles; its old address still lands there.
   await owner.goto(`/app/${slug}/team`);
+  await owner.waitForURL(`**/app/${slug}/settings/team`);
+  await expect(owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Team & roles" })).toHaveAttribute("aria-current", "page");
   await expect(owner.getByText(inviteeEmail)).toBeVisible();
   await expect(owner.getByText(`${inviteeEmail} · Member`)).toHaveCount(0);
+  // Each role is a badge; changing it and removing are in the member's ••• menu.
+  const row = owner.getByRole("main").getByRole("listitem").filter({ hasText: inviteeEmail });
+  await expect(row.getByText("Member", { exact: true })).toBeVisible();
+  await expect(row.getByRole("combobox")).toHaveCount(0);
+  await row.getByRole("button", { name: /^Actions for / }).click();
+  await owner.getByRole("menuitem", { name: "Change role" }).click();
+  await checkpoint(owner, "team-member-menu", { fullPage: false });
+  await owner.getByRole("menuitemradio", { name: "Admin" }).click();
+  await expect(owner.getByText("Role changed to Admin")).toBeVisible();
+  await expect(row.getByText("Admin", { exact: true })).toBeVisible();
   await checkpoint(owner, "team-with-invitee");
+
+  // The new admin sees all of Settings; made a member again, only Team & roles (Access is the owners' and admins').
+  await owner.getByRole("button", { name: /^Actions for / }).click();
+  await owner.getByRole("menuitem", { name: "Change role" }).click();
+  await owner.getByRole("menuitemradio", { name: "Member" }).click();
+  await expect(owner.getByText("Role changed to Member")).toBeVisible();
+  await invitee.goto(`/app/${slug}/settings`);
+  await invitee.waitForURL(`**/app/${slug}/settings/team`);
+  await expect(invitee.getByRole("navigation", { name: "Settings" }).getByRole("link")).toHaveText(["Team & roles"]);
+  const access = await invitee.goto(`/app/${slug}/settings/access`);
+  expect(access?.status()).toBe(404);
+  await expect(invitee.getByRole("button", { name: "Leave project" })).toHaveCount(0); // not on a 404
+  await invitee.goto(`/app/${slug}/settings/team`);
+  await expect(invitee.getByRole("button", { name: "Leave project" })).toBeVisible();
+
+  // Removing asks first.
+  await owner.getByRole("button", { name: /^Actions for / }).click();
+  await owner.getByRole("menuitem", { name: "Remove" }).click();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Remove" }).click();
+  await expect(owner.getByText(/ removed$/)).toBeVisible();
+  await expect(owner.getByText(inviteeEmail)).toHaveCount(0);
 });
 
 test("an invite for someone else says so", async ({ browser }, testInfo) => {

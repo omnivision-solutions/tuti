@@ -62,7 +62,9 @@ green, In progress orange, Completed green, Closed light grey.
   A conversation's page (Inbox) opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   A page with sections of its own lists them under its header with `SubNav`
-  (Settings → Access, Single sign-on, …). The Docs home shows every tab
+  (Inbox's views). Settings has one menu of its own on the left, in groups
+  (`SettingsMenu`: Project, Support, AI, Connections, Billing; folded into
+  one button above the page on phones). The Docs home shows every tab
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu

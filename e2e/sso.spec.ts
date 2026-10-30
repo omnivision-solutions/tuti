@@ -86,7 +86,7 @@ test("a collection for one reader group: people the app signs in with that group
   await expect(dialog.getByRole("group", { name: "Who can read" })).toContainText("You don't have any groups yet. Create one");
   await checkpoint(owner, "team-docs-collection-no-groups", { fullPage: false });
   await dialog.getByRole("link", { name: "Create one" }).click();
-  await expect(owner).toHaveURL(/\/settings#groups$/);
+  await expect(owner).toHaveURL(/\/settings\/access#groups$/);
 
   // A group in Settings → Groups: a name, who's in it (the people whose token's `groups` has "enterprise") and a description.
   const groups = owner.getByRole("region", { name: "Groups" });

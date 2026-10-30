@@ -1082,7 +1082,7 @@ test("with the support inbox on, someone the page signs in messages the team fro
   await expect(before.frameLocator('iframe[title="Feedback"]').getByRole("link", { name: "Messages" })).toHaveCount(0);
 
   await owner.goto(`/app/${slug}/settings`);
-  await owner.getByRole("link", { name: "Support" }).click();
+  await owner.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Inbox and email" }).click();
   await owner.getByRole("switch", { name: "Messages in the widget" }).click();
   await expect(owner.getByText("Messages on")).toBeVisible();
 

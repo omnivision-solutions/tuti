@@ -75,7 +75,7 @@ export function WhoCanRead({
           ) : (
             <p className="text-sm text-muted-foreground">
               You don&apos;t have any groups yet.{" "}
-              <Link href={`/app/${projectSlug}/settings#groups`} className="text-primary underline underline-offset-4">
+              <Link href={`/app/${projectSlug}/settings/access#groups`} className="text-primary underline underline-offset-4">
                 Create one
               </Link>
             </p>

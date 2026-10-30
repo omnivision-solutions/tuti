@@ -1319,8 +1319,8 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(spent.getByRole("columnheader", { name: "Credits" })).toBeVisible();
   await expect(spent.getByRole("row", { name: /AI answers/ })).toBeVisible();
   await checkpoint(team, "team-settings-usage");
-  // …taken from the free credits every project starts with (Settings → Billing).
-  await team.getByRole("link", { name: "Billing" }).click();
+  // …taken from the free credits every project starts with (Settings → Billing → Plan and credits).
+  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Plan and credits" }).click();
   await expect(team.getByText(/^[\d,.]+ AI credits$/)).toBeVisible();
   await expect(team.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Free credits/ })).toBeVisible();
   await checkpoint(team, "team-settings-billing");
