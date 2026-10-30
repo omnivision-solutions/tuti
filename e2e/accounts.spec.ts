@@ -116,7 +116,7 @@ test("an owner renames the project in Settings → General, and the app and its 
   await createProject(olive, "Acme", slug);
   await olive.goto(`/app/${slug}/settings/general`);
   await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
-  await olive.getByLabel("Project name").fill("A "); // two characters, one once trimmed
+  await olive.getByLabel("Project name").fill("A");
   await olive.getByRole("button", { name: "Save" }).click();
   await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
   await olive.getByLabel("Project name").fill("  Acme Help  ");

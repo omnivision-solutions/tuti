@@ -24,8 +24,9 @@ export function ProjectNameForm({ projectSlug, name }: { projectSlug: string; na
       <FieldGroup>
         <Field data-invalid={state.error ? true : undefined}>
           <FieldLabel htmlFor="project-name">Project name</FieldLabel>
-          {/* A new key once saved: the field shows the name as saved (trimmed), not as typed. */}
-          <Input key={name} id="project-name" name="name" defaultValue={name} required minLength={2} maxLength={60} aria-invalid={state.error ? true : undefined} />
+          {/* A new key once saved: the field shows the name as saved (trimmed), not as typed. Its length is
+              the server's to check, after trimming (a limit here would count the spaces). */}
+          <Input key={name} id="project-name" name="name" defaultValue={name} required aria-invalid={state.error ? true : undefined} />
           <FieldDescription>Shown on your portal, in its emails and in the app.</FieldDescription>
           {state.error && <FieldError>{state.error}</FieldError>}
         </Field>
