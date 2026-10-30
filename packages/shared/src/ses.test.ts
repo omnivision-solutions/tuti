@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
+import { startSesFake } from "@tuti/testkit/ses";
+
 import { assertSesSettings, ses } from "./ses";
 
 const ALL = {
@@ -44,40 +46,37 @@ test("a configuration set too long to name tenants after stops the server", () =
   expect(() => assertSesSettings()).toThrow("38 characters at most");
 });
 
-test("an answer cut off partway (by the deadline) fails the call, not reads as an empty answer", async () => {
-  for (const [name, value] of Object.entries(ALL)) {
-    vi.stubEnv(name, value);
-  }
-  const cutOff = () =>
-    new Response(new ReadableStream({ start: (controller) => controller.error(new DOMException("The operation timed out.", "TimeoutError")) }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  vi.stubGlobal("fetch", vi.fn(async () => cutOff()));
+test("an answer cut off partway fails the call, not reads as an empty answer", async () => {
+  const fake = await startSesFake();
   try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    fake.respond = () => "cut-off";
     // Read as empty, it would save a domain with no DKIM records to publish.
-    await expect(ses()!.addDomain("help.example.com", "project-1")).rejects.toThrow("timed out");
+    await expect(ses()!.addDomain("help.example.com", "project-1")).rejects.toThrow();
   } finally {
-    vi.unstubAllGlobals();
+    await fake.close();
   }
 });
 
 test("a call SES never answers ends at the deadline", async () => {
-  for (const [name, value] of Object.entries(ALL)) {
-    vi.stubEnv(name, value);
-  }
-  // The deadline, short for the test; SES never answering, until the request is aborted.
+  const fake = await startSesFake();
+  // The deadline, short for the test; SES holding its answer until the test is over.
   const timeout = AbortSignal.timeout.bind(AbortSignal);
-  const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(10));
-  vi.stubGlobal(
-    "fetch",
-    vi.fn((request: Request) => new Promise((_, reject) => request.signal.addEventListener("abort", () => reject(request.signal.reason)))),
-  );
+  const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(50));
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
   try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    fake.respond = () => held;
     await expect(ses()!.createTenant("tuti-support-project-1")).rejects.toThrow(/timeout/);
     expect(deadline).toHaveBeenCalled();
   } finally {
-    vi.unstubAllGlobals();
+    release();
     deadline.mockRestore();
+    await fake.close();
   }
 });

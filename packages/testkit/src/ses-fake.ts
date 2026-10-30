@@ -19,9 +19,10 @@ export type SesFake = {
   failing: Set<string>;
   /**
    * Called with each SES call before it's answered: it may wait (to hold the answer back), and a status
-   * it returns is the answer instead (500: a failure of that call alone).
+   * it returns is the answer instead (500: a failure of that call alone); "cut-off" starts a 200 and
+   * drops the connection partway through its body.
    */
-  respond?: (path: string, body: Record<string, unknown>) => Promise<number | void> | number | void;
+  respond?: (path: string, body: Record<string, unknown>) => Promise<number | "cut-off" | void> | number | "cut-off" | void;
   /**
    * A message as SNS posts it for the events topic, signed with the fake's key (its certificate is on
    * the fake): a Notification carries an SES event, a SubscriptionConfirmation a link to confirm.
@@ -112,7 +113,13 @@ export async function startSesFake(): Promise<SesFake> {
         return answer(500, { message: "Internal failure" }, "InternalFailure");
       }
       const body = (chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}) as Record<string, unknown>;
-      const status = await fake.respond?.(path, body);
+      // A hook that throws answers 500, rather than leaving the call waiting for its deadline.
+      const status = await Promise.resolve(fake.respond?.(path, body)).catch(() => 500 as const);
+      if (status === "cut-off") {
+        res.writeHead(200, { "content-type": "application/json", "content-length": "1000" });
+        // Dropped once that much has gone out, so the client has its headers and part of the body.
+        return res.write('{"DkimAttributes": {"Tok', () => setTimeout(() => res.socket?.destroy(), 20));
+      }
       if (status) {
         return answer(status, { message: "Internal failure" }, "InternalFailure");
       }
