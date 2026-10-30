@@ -9,7 +9,6 @@ import {
   NavigationIcon,
   PaletteIcon,
   SearchIcon,
-  SparklesIcon,
 } from "lucide-react";
 
 /** Customize's sections, by group, in the menu's order. `slug` is the section's path under /customize. */
@@ -27,7 +26,6 @@ export const CUSTOMIZE_GROUPS: { title: string; sections: { slug: string; title:
     title: "Features",
     sections: [
       { slug: "content-actions", title: "Content actions", description: "What readers can do with an article: copy it, or ask an AI about it", icon: ListIcon },
-      { slug: "ai-answers", title: "AI answers", description: "How the AI answers questions in your docs", icon: SparklesIcon },
       { slug: "widget", title: "Widget", description: "The button on your site that opens feedback and docs", icon: MessageSquareIcon },
     ],
   },

@@ -1206,13 +1206,14 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await createProject(team, "Acme", slug);
   const api = await apiFor(team, slug);
 
-  // How the AI answers (Customize → AI answers): a tone, short answers, and a topic it doesn't touch.
+  // How the AI answers (Settings → AI answers; Customize's old address lands there): a tone, short answers, and a topic it doesn't touch.
   await team.goto(`/app/${slug}/customize/ai-answers`);
+  await team.waitForURL(`**/app/${slug}/settings/ai-answers`);
   await team.getByLabel("Tone", { exact: true }).fill("Friendly and plain");
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
   await team.getByLabel("Off-limits topics").fill("refund\nlegal advice");
-  await team.getByRole("button", { name: "Save changes" }).click();
+  await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("AI answers saved")).toBeVisible();
   await team.reload();
   await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
@@ -1415,8 +1416,10 @@ test("the team confirms a support email; a visitor the AI couldn't help asks a p
   const team = await signUp(browser, APP_URL, "Tess Team");
   await createProject(team, "Acme", slug);
 
-  // The support email takes questions only once it opens the link we email it.
-  await team.goto(`/app/${slug}/customize/ai-answers`);
+  // The support email (Settings → Support → Ask a person) takes questions only once it opens the link we email it.
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Ask a person" }).click();
+  await team.waitForURL(`**/app/${slug}/settings/ask-a-person`);
   await team.getByLabel("Support email").fill(support);
   await team.getByRole("button", { name: "Save support email" }).click();
   await expect(team.getByText("Support email saved")).toBeVisible();

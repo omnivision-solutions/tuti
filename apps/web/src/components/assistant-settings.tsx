@@ -1,12 +1,15 @@
 "use client";
 
+import { useActionState } from "react";
 import { toast } from "sonner";
 
-import { useCustomizeForm } from "@/components/customize-shell";
+import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { keepingFields } from "@/lib/forms";
 import { saveAssistantSettings } from "@/server/assistant";
+import type { FormState } from "@/server/form-state";
 import type { AssistantSettings as Settings } from "@/server/operations/assistant";
 
 const LENGTHS = [
@@ -15,15 +18,18 @@ const LENGTHS = [
   ["detailed", "Detailed"],
 ] as const;
 
-/** Customize → AI answers (saved with the panel's "Save changes"): how the docs' AI answers: tone, length, standing instructions and off-limits topics (see assistant.update). */
+/** Settings → AI answers: how the docs' AI answers: tone, length, standing instructions and off-limits topics (see assistant.update). */
 export function AssistantSettings({ projectSlug, settings }: { projectSlug: string; settings: Settings }) {
-  const { state, form } = useCustomizeForm({
-    save: (prev, formData) => saveAssistantSettings(projectSlug, prev, formData),
-    onSaved: () => toast.success("AI answers saved"),
-  });
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveAssistantSettings(projectSlug, prev, formData);
+    if (!result.error) {
+      toast.success("AI answers saved");
+    }
+    return result;
+  }, {});
 
   return (
-    <form {...form}>
+    <form {...keepingFields(action)}>
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="assistant-tone">Tone</FieldLabel>
@@ -61,6 +67,9 @@ export function AssistantSettings({ projectSlug, settings }: { projectSlug: stri
           <Textarea id="assistant-off-limits" name="offLimits" defaultValue={settings.offLimits.join("\n")} rows={3} placeholder={"refund\nlegal advice"} />
         </Field>
         {state.error && <FieldError>{state.error}</FieldError>}
+        <Button type="submit" disabled={pending} className="self-end">
+          {pending ? "Saving…" : "Save"}
+        </Button>
       </FieldGroup>
     </form>
   );
