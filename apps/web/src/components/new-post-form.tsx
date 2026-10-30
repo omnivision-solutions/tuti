@@ -89,7 +89,10 @@ export function NewPostForm({
   const latestQuery = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Back to this page after signing in, its filters kept and the typed title in the box.
+  // Back to this page after signing in, its filters kept and the typed title in the box (before the
+  // page's script runs, sign-in adds the title it's sent).
+  const withoutTitle = new URLSearchParams(searchParams);
+  withoutTitle.delete("title");
   const back = new URLSearchParams(searchParams);
   back.delete("title");
   if (typed.trim()) {
@@ -157,7 +160,7 @@ export function NewPostForm({
         : keepingFields(action))}
     >
       {signedOut ? (
-        <input type="hidden" name="next" value={path} />
+        <input type="hidden" name="next" value={withoutTitle.size ? `${path}?${withoutTitle}` : path} />
       ) : (
         <>
           <input type="hidden" name="projectSlug" value={projectSlug} />

@@ -14,9 +14,11 @@ import { portalLinks } from "@/server/portal-base";
 
 export default async function PortalSignInPage(props: PageProps<"/portal/[project]/sign-in">) {
   const at = await portalLinks();
-  const [{ project }, { continue: handoff, link, next, reset }] = await Promise.all([props.params, props.searchParams]);
+  const [{ project }, { continue: handoff, link, next, reset, title }] = await Promise.all([props.params, props.searchParams]);
   // Where they were (e.g. a board with a prefilled post), to go back to afterwards.
-  const nextPath = typeof next === "string" ? safeRedirectPath(next, "") : "";
+  // A board's "Share your idea" posted here before its script ran: the title typed comes along, for the way back.
+  const back = typeof next === "string" && typeof title === "string" && title.trim() ? withTitle(next, title.trim().slice(0, 200)) : next;
+  const nextPath = typeof back === "string" ? safeRedirectPath(back, "") : "";
   const [portal, session] = await Promise.all([
     prisma.project.findUnique({ where: { slug: project }, select: { id: true, name: true, portalAccess: true } }),
     getSession(),
@@ -72,4 +74,11 @@ export default async function PortalSignInPage(props: PageProps<"/portal/[projec
       />
     </div>
   );
+}
+
+function withTitle(path: string, title: string): string {
+  const [pathname = "", query = ""] = path.split("?", 2);
+  const params = new URLSearchParams(query);
+  params.set("title", title);
+  return `${pathname}?${params}`;
 }
