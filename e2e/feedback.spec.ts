@@ -120,6 +120,17 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("link", { name: /Dark mode/ })).toHaveCount(0);
   await team.goto(`/app/${slug}/feedback`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
+  // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.
+  const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
+  await expect(row).toContainText("#1 · Feature requests · Ada");
+  await expect(row.getByRole("combobox")).toHaveCount(0);
+  await row.getByRole("button", { name: "Status: Planned" }).click();
+  await checkpoint(team, "team-feedback-status-menu");
+  await team.getByRole("menuitemradio", { name: "In progress" }).click();
+  // Picked, the menu closes.
+  await expect(team.getByRole("menu")).toHaveCount(0);
+  await expect(team.getByText("Status: In progress")).toBeVisible();
+  await expect(row.getByRole("button", { name: "Status: In progress" })).toBeVisible();
   await checkpoint(team, "team-feedback-list");
 });
 

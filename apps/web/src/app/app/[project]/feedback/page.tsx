@@ -5,9 +5,8 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
-import { MovePostSelect } from "@/components/move-post-select";
 import { PageHeader } from "@/components/page-header";
-import { PostStatusSelect } from "@/components/post-status-select";
+import { PostStatusMenu } from "@/components/post-status-select";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -85,7 +84,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               {posts.map((post) => (
                 <ItemRow
                   key={post.id}
-                  wideActions
                   leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>}
                   title={
                     <Link href={`/app/${slug}/p/${post.number}`} className="hover:underline">
@@ -97,28 +95,12 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                   }
                   meta={
                     <>
-                      #{post.number} · {post.author.name}
+                      #{post.number} · {post.board.name} · {post.author.name}
                       {post.commentCount > 0 &&
                         ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
                     </>
                   }
-                  actions={
-                    <>
-                      <MovePostSelect
-                        projectSlug={slug}
-                        postId={post.id}
-                        boardSlug={post.board.slug}
-                        boards={project.boards}
-                        className="w-full max-w-none sm:w-auto sm:max-w-40"
-                      />
-                      <PostStatusSelect
-                        projectSlug={slug}
-                        postId={post.id}
-                        status={post.status}
-                        className="w-full sm:w-36"
-                      />
-                    </>
-                  }
+                  actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}
                 />
               ))}
             </ItemList>

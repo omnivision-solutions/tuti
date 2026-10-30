@@ -39,7 +39,7 @@ export function teamPosts(projectId: string, filters: PostFilters, duplicatesOnl
         status: true,
         voteCount: true,
         commentCount: true,
-        board: { select: { slug: true } },
+        board: { select: { slug: true, name: true } },
         author: { select: { name: true } },
         _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
       },

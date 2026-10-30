@@ -581,7 +581,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 - [x] Only the first 100 posts are ever listed: the team's Feedback and the portal's boards stop at 100 (`take: 100`) with nothing to see the rest. Pages of 50 with "Load more", the place kept in the URL so filters and Back keep it. Tests: a database test with 120 posts reads them all across pages; the journeys page through
 - [x] Inbox: "Waiting" is both the view of conversations waiting on the user and the badge on rows waiting on the team. The view becomes "Waiting on user"; a row's badge "Needs reply · 2h", in the highlight colour
 - [x] The docs' search box says "Ctrl K" off a Mac (it always says ⌘K)
-- [ ] Feedback's rows: the status as its badge with its dot, clicked to change (a menu), and the board as muted text (changed on the post, or in bulk once there is bulk); no dropdowns in rows, on phones too
+- [x] Feedback's rows: the status as its badge with its dot, clicked to change (a menu), and the board as muted text (changed on the post, or in bulk once there is bulk); no dropdowns in rows, on phones too
 - [ ] Portal boards: a "Share your idea" box at the top for everyone (a signed-out visitor types first and signs in to post; similar ideas as they type, as the widget shows them), and open by default on Open, Under review, Planned and In progress, with completed ideas in a "Recently shipped" card
 - [ ] Changelog (team): Writing style moves out of the list into a dialog from the header (into Settings → AI with step 2); Drafts and Published tabs on the list
 - [x] Portal changelog: a reaction shows its count only once it has one (no row of zeros under every entry)
