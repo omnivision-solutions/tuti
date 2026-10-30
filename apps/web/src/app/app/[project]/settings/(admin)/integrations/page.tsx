@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { aiProvider, codeChangesEnabled } from "@tuti/shared";
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, GitMergeIcon, HashIcon, SquareKanbanIcon, TicketIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,11 +9,20 @@ import { GithubAccountChoice } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { formatDate, timeAgo } from "@/lib/format";
 import { githubConfig } from "@/lib/github";
 import { accountsFromCookie, ACCOUNTS_COOKIE } from "@/server/github-connect";
 import { getAdminProject } from "@/server/membership";
+
+/** What's on the way (docs/plan.md, Later), so a team sees it's coming. */
+const COMING_SOON = [
+  { name: "GitLab", icon: GitMergeIcon, text: "Merge requests in the changelog and Autopilot, like GitHub's pull requests." },
+  { name: "Linear", icon: SquareKanbanIcon, text: "Issues linked to feedback, their progress shown on the post." },
+  { name: "Jira", icon: TicketIcon, text: "Issues linked to feedback, their progress shown on the post." },
+  { name: "Slack", icon: HashIcon, text: "New feedback, conversations and Autopilot's updates in a channel." },
+];
 
 const GITHUB_RESULTS: Record<string, string> = {
   disconnected: "GitHub disconnected.",
@@ -21,7 +30,7 @@ const GITHUB_RESULTS: Record<string, string> = {
   unconfirmed: "GitHub couldn't confirm that you can use that installation. Try connecting again.",
 };
 
-/** Settings → Integrations: the tools connected to the project (each with Manage), and the ones to connect. */
+/** Settings → Integrations: the tools connected to the project (each with Manage), the ones to connect, and the ones on the way. */
 export default async function IntegrationsSettingsPage(props: PageProps<"/app/[project]/settings/integrations">) {
   const { project: slug } = await props.params;
   const { github: githubResult } = await props.searchParams;
@@ -75,8 +84,8 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           <h2 id="connect-heading" className="font-heading text-base font-medium">
             Connect a tool
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:col-span-2 lg:col-span-3 [&:not(:has([data-choice]))]:sm:col-span-1">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:col-span-2 [&:not(:has([data-choice]))]:sm:col-span-1">
               <IntegrationLogo>
                 <GithubMark className="size-6" />
               </IntegrationLogo>
@@ -108,6 +117,27 @@ export default async function IntegrationsSettingsPage(props: PageProps<"/app/[p
           </div>
         </section>
       )}
+      <section aria-labelledby="soon-heading" className="flex flex-col gap-3">
+        <h2 id="soon-heading" className="font-heading text-base font-medium">
+          Coming soon
+        </h2>
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {COMING_SOON.map(({ name, icon: Icon, text }) => (
+            <li key={name} className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <IntegrationLogo>
+                  <Icon aria-hidden className="size-5" />
+                </IntegrationLogo>
+                <Badge variant="secondary">Coming soon</Badge>
+              </div>
+              <div className="flex flex-col gap-1">
+                <h3 className="font-medium">{name}</h3>
+                <p className="text-sm text-muted-foreground">{text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
