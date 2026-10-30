@@ -23,6 +23,21 @@ export const getProject = defineOperation({
   },
 });
 
+export const updateProject = defineOperation({
+  name: "project.update",
+  summary: "Rename the project: the name its portal, emails and the app show (its address stays the same)",
+  method: "PATCH",
+  path: "/project",
+  scope: "write",
+  access: "admin",
+  input: z.object({ name: z.string().trim().min(2, "Give the project a name of 2 characters or more").max(60, "Keep the name under 60 characters") }),
+  example: { name: "Acme" },
+  run: async ({ projectId }, input) => {
+    const project = await prisma.project.update({ where: { id: projectId }, data: { name: input.name }, select: { slug: true, name: true } });
+    return { ...project, portalUrl: await portalAddress(project.slug) };
+  },
+});
+
 export const listTeam = defineOperation({
   name: "team.list",
   summary: "List the project's team: names and roles",

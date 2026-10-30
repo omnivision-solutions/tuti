@@ -9,6 +9,7 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     {
       title: "Project",
       pages: [
+        { title: "General", href: at("general") },
         { title: "Team & roles", href: at("team") },
         { title: "Access", href: at("access") },
         { title: "Single sign-on", href: at("sso") },
