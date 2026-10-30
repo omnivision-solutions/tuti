@@ -33,7 +33,7 @@ const STATUS_DOTS: Record<PostStatus, string> = {
 };
 
 export function StatusDot({ status }: { status: PostStatus }) {
-  return <span aria-hidden data-status-dot className={`size-2 shrink-0 rounded-full ${STATUS_DOTS[status]}`} />;
+  return <span aria-hidden data-status-dot className={`inline-block size-2 shrink-0 rounded-full ${STATUS_DOTS[status]}`} />;
 }
 
 /** The status's badge with its colour dot beside it. */
