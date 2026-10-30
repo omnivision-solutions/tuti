@@ -58,7 +58,7 @@ green, In progress orange, Completed green, Closed light grey.
   (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
   The top bar stays at the top as the page scrolls; from tablet width up it
   holds the page's title and actions (`PageHeader` puts them there), its
-  description staying on the page.
+  meta line staying on the page.
   A conversation's page (Inbox) opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   A page with sections of its own lists them under its header with `SubNav`
