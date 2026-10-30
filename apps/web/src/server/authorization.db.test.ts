@@ -59,6 +59,7 @@ import * as portalHandoff from "./portal-handoff";
 import * as passwordReset from "./password-reset";
 import * as portalSettings from "./portal-settings";
 import * as posts from "./posts";
+import * as projectSettings from "./project-settings";
 import * as projects from "./projects";
 import * as signInLink from "./sign-in-link";
 import * as similarPosts from "./similar-posts";
@@ -102,6 +103,7 @@ const modules = {
   "portal-handoff": portalHandoff,
   "portal-settings": portalSettings,
   posts,
+  "project-settings": projectSettings,
   projects,
   "similar-posts": similarPosts,
   "sign-in-link": signInLink,
@@ -485,6 +487,9 @@ const matrix: Matrix = {
       refusesSsoUsers: true,
       call: (_slug, f) => posts.addComment({}, form({ postId: f.postId, body: "Me too" })),
     },
+  },
+  "project-settings": {
+    renameProject: { allowed: "ADMIN", call: (slug) => projectSettings.renameProject(slug, {}, form({ name: "Renamed by the matrix" })) },
   },
   projects: {
     createProject: {

@@ -36,6 +36,7 @@ type Fixture = Awaited<ReturnType<typeof createFixture>>;
 /** A valid call: path values and the rest of the input. */
 const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "project.get": () => ({}),
+  "project.update": () => ({ name: "Renamed by the matrix" }),
   "team.list": () => ({}),
   "votes.set": () => ({ number: 1, voted: true }),
   "duplicates.list": () => ({}),

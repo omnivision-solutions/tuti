@@ -109,6 +109,26 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   }).toPass({ timeout: 15_000 });
 });
 
+test("an owner renames the project in Settings → General, and the app and its portal show the new name", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const olive = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(olive, "Acme", slug);
+  await olive.goto(`/app/${slug}/settings/general`);
+  await expect(olive.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "General" })).toHaveAttribute("aria-current", "page");
+  await olive.getByLabel("Project name").fill("A "); // two characters, one once trimmed
+  await olive.getByRole("button", { name: "Save" }).click();
+  await expect(olive.getByText("Give the project a name of 2 characters or more")).toBeVisible();
+  await olive.getByLabel("Project name").fill("Acme Help");
+  await olive.getByRole("button", { name: "Save" }).click();
+  await expect(olive.getByText("Project renamed")).toBeVisible();
+  await expect(olive.getByRole("button", { name: /Acme Help/ }).first()).toBeVisible(); // the sidebar's project switcher
+  await checkpoint(olive, "settings-general");
+  const visitor = await newPerson(browser, portalUrl(slug));
+  await visitor.goto("/");
+  await expect(visitor.getByRole("banner")).toContainText("Acme Help");
+});
+
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
