@@ -931,6 +931,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("button", { name: "Close" }).click();
   await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
   await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
+  await expect(previewLauncher("Help & ideas")).toBeFocused();
   await owner.reload();
   await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();

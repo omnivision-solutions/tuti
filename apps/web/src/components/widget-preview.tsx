@@ -52,6 +52,7 @@ export function WidgetPreview({
   const [open, setOpen] = useState(false);
   // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
   const panel = useRef<HTMLIFrameElement>(null);
+  const launcher = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) {
       return;
@@ -59,6 +60,8 @@ export function WidgetPreview({
     const onMessage = (event: MessageEvent) => {
       if (event.source === panel.current?.contentWindow && event.data === WIDGET_CLOSE_MESSAGE) {
         setOpen(false);
+        // Focus was in the panel: back to the launcher, as on the site.
+        launcher.current?.focus();
       }
     };
     window.addEventListener("message", onMessage);
@@ -85,6 +88,7 @@ export function WidgetPreview({
           />
         )}
         <button
+          ref={launcher}
           type="button"
           aria-label={`Launcher: ${label}`}
           aria-expanded={open}
