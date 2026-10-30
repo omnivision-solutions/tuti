@@ -39,7 +39,7 @@ function isNoise({ user, body }) {
     return (
       /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body) ||
       (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body)) ||
-      body.includes("<!-- CodeRabbit review command invocation:")
+      /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated reply by CodeRabbit -->\s*<!-- CodeRabbit review command invocation:/.test(body)
     );
   if (user.login === "greptile-apps[bot]")
     return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || LOCKOUT.test(body);
@@ -78,9 +78,9 @@ function greptileGone({ head, runs, conversation, reviews, now }) {
   // Asked again, or reviewing or commenting again: it may have credits now.
   const back = Math.max(mentioned, latest(greptile.filter((c) => !lockouts.includes(c))));
   if (lockouts.some((c) => at(c) > back)) return "it can't review (out of credits)";
-  // A queued run may not have started yet.
+  // Until a check on the head has started, the push time is unknown: an older @greptileai can't time it.
   const starts = runs.map((r) => Date.parse(r.started_at)).filter(Number.isFinite);
-  const asked = Math.max(mentioned, starts.length ? Math.min(...starts) : -Infinity);
+  const asked = starts.length ? Math.max(mentioned, Math.min(...starts)) : NaN;
   // A late review of an earlier commit doesn't answer for the head.
   const answered = greptile.some((c) => (c.commit_id ?? head) === head && at(c) > asked);
   if (Number.isFinite(asked) && now - asked > SILENT_AFTER && !answered)
