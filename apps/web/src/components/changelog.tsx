@@ -22,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -347,11 +347,31 @@ function AiHelpers({
 }
 
 /** The team's writing style for AI drafts: tone notes, and up to 3 published entries as examples. */
+/** "Writing style" in the changelog's header: the style form in a dialog, closed once it's saved. */
+export function ChangelogStyleDialog(props: Omit<Parameters<typeof ChangelogStyleForm>[0], "onSaved">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>Writing style</DialogTrigger>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Writing style</DialogTitle>
+          <DialogDescription>
+            Draft with AI writes like this. It takes facts only from the entry it drafts, never from the examples.
+          </DialogDescription>
+        </DialogHeader>
+        <ChangelogStyleForm {...props} onSaved={() => setOpen(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ChangelogStyleForm({
   projectSlug,
   tone,
   examples,
   published,
+  onSaved,
 }: {
   projectSlug: string;
   tone: string;
@@ -359,12 +379,14 @@ export function ChangelogStyleForm({
   examples: number[];
   /** Published entries, newest first. */
   published: { number: number; title: string }[];
+  onSaved?: () => void;
 }) {
   const [picked, setPicked] = useState(examples);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogStyle(projectSlug, prev, formData);
     if (!result.error) {
       toast.success("Style saved");
+      onSaved?.();
     }
     return result;
   }, {});

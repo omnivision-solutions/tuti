@@ -150,15 +150,25 @@ test("the team writes what shipped, publishes it, and people see it on the porta
 
   // The team's writing style: tone notes, and the published entry as an example.
   const tone = `Friendly, short sentences, no jargon (${slug}).`;
+  // The list opens on Published while there are no drafts; Writing style is a dialog from its header.
   await team.goto(`/app/${slug}/changelog`);
-  await team.getByLabel("Tone").fill(tone);
-  await team.getByRole("checkbox", { name: "Dark mode is here" }).check();
-  await checkpoint(team, "team-changelog-style");
-  await team.getByRole("button", { name: "Save style" }).click();
+  const tabs = team.getByRole("navigation", { name: "Entries" });
+  await expect(tabs.getByRole("link", { name: "Published 1" })).toHaveAttribute("aria-current", "page");
+  await tabs.getByRole("link", { name: "Drafts 0" }).click();
+  await expect(team.getByText("No drafts")).toBeVisible();
+  await team.getByRole("button", { name: "Writing style" }).click();
+  const styleDialog = team.getByRole("dialog", { name: "Writing style" });
+  await styleDialog.getByLabel("Tone").fill(tone);
+  await styleDialog.getByRole("checkbox", { name: "Dark mode is here" }).check();
+  await checkpoint(team, "team-changelog-style", { fullPage: false });
+  await styleDialog.getByRole("button", { name: "Save style" }).click();
   await expect(team.getByText("Style saved")).toBeVisible();
+  await expect(styleDialog).toBeHidden();
   await team.reload();
-  await expect(team.getByLabel("Tone")).toHaveValue(tone);
-  await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
+  await team.getByRole("button", { name: "Writing style" }).click();
+  await expect(styleDialog.getByLabel("Tone")).toHaveValue(tone);
+  await expect(styleDialog.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
+  await team.keyboard.press("Escape");
 
   // The team picks a bigger model for changelog drafts (Settings → AI models).
   await team.goto(`/app/${slug}/settings/ai-models`);
