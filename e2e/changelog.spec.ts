@@ -172,22 +172,21 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // While it saves, the fields are locked (an edit then wouldn't be saved).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-  await team.route(
-    `**/app/${slug}/changelog**`,
-    async (route) => {
-      if (route.request().method() !== "POST") {
-        return route.fallback();
-      }
-      const response = await route.fetch();
-      await saveHeld;
-      await route.fulfill({ response });
-    },
-    { times: 1 },
-  );
+  // No `times`: a prefetch GET would use it up before the POST.
+  const saving = `**/app/${slug}/changelog**`;
+  await team.route(saving, async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
   await styleDialog.getByRole("button", { name: "Save style" }).click();
   await expect(styleDialog.getByLabel("Tone")).toBeDisabled();
   releaseSave();
   await expect(team.getByText("Style saved")).toBeVisible();
+  await team.unroute(saving);
   await expect(styleDialog).toBeHidden();
   await team.reload();
   await team.getByRole("button", { name: "Writing style" }).click();
