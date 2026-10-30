@@ -6,13 +6,14 @@ name: Claude review
 # in the review's text when one isn't on a line of the diff.
 #
 # It needs the CLAUDE_CODE_OAUTH_TOKEN secret (.github/DEPENDENCY_UPDATES.md), so it
-# skips pull requests from forks and Dependabot, which get no secrets. Claude runs
-# as an unprivileged user holding only that token, with Claude Code's default
-# permissions: read-only commands, only inside the checkout. It loads no settings
-# or hooks from the checkout, and only the PR author's text and replies reach its
-# prompt: anyone can comment on a public PR. The GitHub token is only in the steps that read its earlier
-# findings and post new ones. Actions are pinned by SHA because this workflow
-# holds secrets.
+# skips pull requests from forks and Dependabot, which get no secrets, and from
+# authors without write access: anyone can open a PR between two of this
+# repository's branches. Claude runs as an unprivileged user holding only that
+# token, with Claude Code's default permissions: read-only commands, only inside
+# the checkout. It loads no settings or hooks from the checkout, and only the PR
+# author's text and replies reach its prompt: anyone can comment on a public PR.
+# The GitHub token is only in the steps that read its earlier findings and post
+# new ones. Actions are pinned by SHA because this workflow holds secrets.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -24,11 +25,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  review:
-    name: Claude review
+  author:
+    name: Claude review author check
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      write: ${{ steps.check.outputs.write }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          # admin, write (maintainers too), read or none.
+          permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission)
+          if [[ "$permission" == admin || "$permission" == write ]]; then
+            echo "write=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$AUTHOR has $permission access: no Claude review." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  review:
+    name: Claude review
+    needs: author
+    if: needs.author.outputs.write == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -52,7 +79,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TITLE: ${{ github.event.pull_request.title }}
-          # Has write access: the PR's branch is in this repository.
+          # Has write access (the author job).
           AUTHOR: ${{ github.event.pull_request.user.login }}
           BODY: ${{ github.event.pull_request.body }}
         run: |
