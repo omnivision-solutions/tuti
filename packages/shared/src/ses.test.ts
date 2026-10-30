@@ -1,5 +1,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 
+import { startSesFake } from "@tuti/testkit/ses";
+
 import { assertSesSettings, ses } from "./ses";
 
 const ALL = {
@@ -42,4 +44,39 @@ test("a configuration set too long to name tenants after stops the server", () =
   expect(() => assertSesSettings()).not.toThrow();
   vi.stubEnv("SES_CONFIGURATION_SET", "c".repeat(39));
   expect(() => assertSesSettings()).toThrow("38 characters at most");
+});
+
+test("an answer cut off partway fails the call, not reads as an empty answer", async () => {
+  const fake = await startSesFake();
+  try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    fake.respond = () => "cut-off";
+    // Read as empty, it would save a domain with no DKIM records to publish.
+    await expect(ses()!.addDomain("help.example.com", "project-1")).rejects.toThrow();
+  } finally {
+    await fake.close();
+  }
+});
+
+test("a call SES never answers ends at the deadline", async () => {
+  const fake = await startSesFake();
+  // The deadline, short for the test; SES holding its answer until the test is over.
+  const timeout = AbortSignal.timeout.bind(AbortSignal);
+  const deadline = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => timeout(50));
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  try {
+    for (const [name, value] of Object.entries(fake.env)) {
+      vi.stubEnv(name, value);
+    }
+    fake.respond = () => held;
+    await expect(ses()!.createTenant("tuti-support-project-1")).rejects.toThrow(/timeout/);
+    expect(deadline).toHaveBeenCalled();
+  } finally {
+    release();
+    deadline.mockRestore();
+    await fake.close();
+  }
 });

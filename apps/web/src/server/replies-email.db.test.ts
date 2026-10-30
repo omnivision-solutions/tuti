@@ -203,6 +203,30 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
   await run();
   expect(emailsTo(kim)).toEqual([]);
   ses.failing.clear();
+  // One association failing while the other is still on its way: the run waits for it rather than leaving
+  // it calling SES after the run (the failing call's retries are over in under half a second).
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  ses.respond = async (path, body) => {
+    if (path === "/v2/email/tenants/resources") {
+      if (String(body.ResourceArn).includes(":configuration-set/")) {
+        await held;
+      } else {
+        return 500;
+      }
+    }
+  };
+  const running = run();
+  try {
+    const early = await Promise.race([running.then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 1000))]);
+    expect(early).toBe("waiting");
+  } finally {
+    // Answered whatever happened above, so a failure doesn't leave the call open until its deadline.
+    release();
+    await running;
+    ses.respond = undefined;
+  }
+  expect(emailsTo(kim)).toEqual([]);
   await run();
 
   const tenant = `tuti-test-${project.id}`;
