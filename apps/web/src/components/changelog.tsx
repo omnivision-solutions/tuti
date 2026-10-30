@@ -353,7 +353,8 @@ export function ChangelogStyleDialog(props: Omit<Parameters<typeof ChangelogStyl
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" />}>Writing style</DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+      {/* Closed without saving, it keeps what was changed. */}
+      <DialogContent keepMounted className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Writing style</DialogTitle>
           <DialogDescription>

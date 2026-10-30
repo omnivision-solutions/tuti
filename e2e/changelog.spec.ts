@@ -158,6 +158,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("No drafts")).toBeVisible();
   await team.getByRole("button", { name: "Writing style" }).click();
   const styleDialog = team.getByRole("dialog", { name: "Writing style" });
+  // Closed without saving, it keeps what was typed.
+  await styleDialog.getByLabel("Tone").fill("Half a thought");
+  await team.keyboard.press("Escape");
+  await team.getByRole("button", { name: "Writing style" }).click();
+  await expect(styleDialog.getByLabel("Tone")).toHaveValue("Half a thought");
   await styleDialog.getByLabel("Tone").fill(tone);
   await styleDialog.getByRole("checkbox", { name: "Dark mode is here" }).check();
   await checkpoint(team, "team-changelog-style", { fullPage: false });
