@@ -23,6 +23,8 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   const soon = owner.getByRole("region", { name: "Coming soon" });
   await expect(soon.getByRole("heading", { level: 3 })).toHaveText(["GitLab", "Linear", "Jira", "Slack"]);
   await expect(soon.getByRole("listitem").getByText("Coming soon", { exact: true })).toHaveCount(4);
+  await expect(soon.getByRole("link")).toHaveCount(0);
+  await expect(soon.getByRole("button")).toHaveCount(0);
   await checkpoint(owner, "settings-integrations");
   // The GitHub fake's authorize page sends the browser straight back, like GitHub once the app is authorized.
   await connectGithub(owner, web, account);
