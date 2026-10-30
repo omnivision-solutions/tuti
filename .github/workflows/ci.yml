@@ -88,10 +88,16 @@ jobs:
       # Testcontainers starts Postgres with the runner's Docker.
       - run: pnpm test:db
 
-  e2e:
-    name: E2E tests
+  # The journeys split three ways, each on its own runner with its own build and
+  # database: one runner is CPU-bound well before its tests run out.
+  e2e-shard:
+    name: E2E tests (${{ matrix.shard }}/3)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -104,7 +110,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       # Placeholders only: the tests start the app with their own settings and database.
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --shard=${{ matrix.shard }}/3
         env:
           APP_URL: https://tuti.example
           PORTAL_URL_TEMPLATE: https://{project}.tuti.example
@@ -112,10 +118,35 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report
           retention-days: 14
-      # Posted on the pull request by .github/workflows/screenshots.yml.
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-screenshots-${{ matrix.shard }}
+          path: e2e-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The required check: passes only when every shard did.
+  e2e:
+    name: E2E tests
+    needs: e2e-shard
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.e2e-shard.result }}
+      # One artifact, posted on the pull request by .github/workflows/screenshots.yml.
+      - uses: actions/download-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          pattern: e2e-screenshots-*
+          path: e2e-screenshots
+          merge-multiple: true
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
