@@ -394,56 +394,59 @@ export function ChangelogStyleForm({
 
   return (
     <form {...keepingFields(action)}>
-      <FieldGroup>
-        <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="style-tone">Tone</FieldLabel>
-          <Textarea
-            id="style-tone"
-            name="tone"
-            defaultValue={tone}
-            maxLength={1000}
-            placeholder="Friendly, short sentences, no jargon. Address the reader as you."
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? "style-error" : undefined}
-          />
-          {state.error && <FieldError id="style-error">{state.error}</FieldError>}
-        </Field>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Examples</legend>
-          {published.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Publish an entry to use it as an example.</p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">Pick up to 3 published entries that read the way you like.</p>
-              <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
-                {published.map((entry) => (
-                  <li key={entry.number}>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        name="examples"
-                        value={entry.number}
-                        checked={picked.includes(entry.number)}
-                        disabled={!picked.includes(entry.number) && picked.length >= 3}
-                        onChange={(event) =>
-                          setPicked(
-                            event.target.checked ? [...picked, entry.number] : picked.filter((n) => n !== entry.number),
-                          )
-                        }
-                        className="size-4 accent-primary"
-                      />
-                      <span className="min-w-0 flex-1 break-words">{entry.title}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </fieldset>
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : "Save style"}
-        </Button>
-      </FieldGroup>
+      {/* Locked while saving: an edit made then wouldn't be in what's saved, and the dialog closes after it. */}
+      <fieldset disabled={pending} className="contents">
+        <FieldGroup>
+          <Field data-invalid={state.error ? true : undefined}>
+            <FieldLabel htmlFor="style-tone">Tone</FieldLabel>
+            <Textarea
+              id="style-tone"
+              name="tone"
+              defaultValue={tone}
+              maxLength={1000}
+              placeholder="Friendly, short sentences, no jargon. Address the reader as you."
+              aria-invalid={state.error ? true : undefined}
+              aria-describedby={state.error ? "style-error" : undefined}
+            />
+            {state.error && <FieldError id="style-error">{state.error}</FieldError>}
+          </Field>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">Examples</legend>
+            {published.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Publish an entry to use it as an example.</p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">Pick up to 3 published entries that read the way you like.</p>
+                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
+                  {published.map((entry) => (
+                    <li key={entry.number}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="examples"
+                          value={entry.number}
+                          checked={picked.includes(entry.number)}
+                          disabled={!picked.includes(entry.number) && picked.length >= 3}
+                          onChange={(event) =>
+                            setPicked(
+                              event.target.checked ? [...picked, entry.number] : picked.filter((n) => n !== entry.number),
+                            )
+                          }
+                          className="size-4 accent-primary"
+                        />
+                        <span className="min-w-0 flex-1 break-words">{entry.title}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </fieldset>
+          <Button type="submit" disabled={pending} className="self-end">
+            {pending ? "Saving…" : "Save style"}
+          </Button>
+        </FieldGroup>
+      </fieldset>
     </form>
   );
 }

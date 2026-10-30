@@ -169,7 +169,24 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await styleDialog.getByLabel("Tone").fill(tone);
   await styleDialog.getByRole("checkbox", { name: "Dark mode is here" }).check();
   await checkpoint(team, "team-changelog-style", { fullPage: false });
+  // While it saves, the fields are locked (an edit then wouldn't be saved).
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  await team.route(
+    `**/app/${slug}/changelog**`,
+    async (route) => {
+      if (route.request().method() !== "POST") {
+        return route.fallback();
+      }
+      const response = await route.fetch();
+      await saveHeld;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
   await styleDialog.getByRole("button", { name: "Save style" }).click();
+  await expect(styleDialog.getByLabel("Tone")).toBeDisabled();
+  releaseSave();
   await expect(team.getByText("Style saved")).toBeVisible();
   await expect(styleDialog).toBeHidden();
   await team.reload();
