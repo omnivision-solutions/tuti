@@ -48,11 +48,13 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   // Uploads go through the image pipeline (the S3 fake, processed inline); each shows a preview when ready.
   await card.getByLabel("Logo", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: light });
   await expect(card.getByRole("img", { name: "Logo preview" })).toBeVisible();
-  await card.getByLabel("Logo for dark mode").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: dark });
+  await card.getByLabel("Logo for dark mode", { exact: true }).setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: dark });
   await expect(card.getByRole("img", { name: "Logo for dark mode preview" })).toBeVisible();
   // An image can be dropped on its field too.
-  const favicon = card.getByLabel("Favicon");
-  await expect(favicon).toHaveAttribute("tabindex", "-1"); // "Upload" is the way in from the keyboard
+  const favicon = card.getByLabel("Favicon", { exact: true });
+  // "Upload" is the way in from the keyboard, named for its image.
+  await expect(favicon).toHaveAttribute("tabindex", "-1");
+  await expect(card.getByRole("button", { name: "Upload favicon" })).toBeVisible();
   const dropped = await owner.evaluateHandle((bytes) => {
     const transfer = new DataTransfer();
     transfer.items.add(new File([new Uint8Array(bytes)], "favicon.png", { type: "image/png" }));

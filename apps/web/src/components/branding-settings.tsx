@@ -330,11 +330,17 @@ export function ImageField({
   const [dragging, setDragging] = useState(false);
   useFieldChanged(field, image);
 
+  // Two picked or dropped one after the other: the last one wins, whichever finishes first.
+  const latest = useRef(0);
   const upload = async (file: File) => {
+    const mine = ++latest.current;
     setStatus({ uploading: true });
     onBusy(1);
     const result = await uploadImage(projectSlug, file);
     onBusy(-1);
+    if (mine !== latest.current) {
+      return;
+    }
     if ("error" in result) {
       setStatus(result);
       return;
@@ -380,7 +386,13 @@ export function ImageField({
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => picker.current?.click()}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Upload ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+              onClick={() => picker.current?.click()}
+            >
               <UploadIcon />
               Upload
             </Button>

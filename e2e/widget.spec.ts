@@ -987,7 +987,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // The team's own icon: uploaded and saved, then removed, which picks the chat bubble again; later saves still work.
   await owner.getByText("Your own", { exact: true }).click();
   const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-  await owner.getByLabel("Your icon").setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: pixel });
+  await owner.getByLabel("Your icon", { exact: true }).setInputFiles({ name: "icon.png", mimeType: "image/png", buffer: pixel });
   await expect(owner.getByRole("img", { name: "Your icon preview" })).toBeVisible();
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Widget saved")).toBeVisible();
