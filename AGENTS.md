@@ -41,7 +41,7 @@ CI runs all of them on every PR. Run the ones your change touches before pushing
 - New user-facing text: quote it in the description and say why it's needed.
 - UI changes: include a screenshot of the changed screen.
 - A failing check you believe is unrelated: prove it by restoring the touched files to `main` and rerunning that test; say so in the PR.
-- Before opening a PR, run the local Claude review in `.claude/skills/pr-watch/SKILL.md` and fix what it finds. After opening it, follow that skill: stay with it until checks and review bots finish and every finding is answered. One exception, spelled out there: once the PR's review bot (CodeRabbit on odd-numbered PRs, Greptile on even ones) has passed the PR's code, pushes that only change tests, docs or comments (or rebase without changing the PR's code) can merge on green checks without waiting for its next review.
+- Before opening a PR, if you have Claude Code, run the local Claude review in `.claude/skills/pr-watch/SKILL.md` and fix what holds up; without it, skip that step. After opening it, follow that skill: stay with it until checks and review bots finish and every finding is answered. One exception, spelled out there: once the PR's review bot (CodeRabbit on odd-numbered PRs, Greptile on even ones) has passed the PR's code, pushes that only change tests, docs or comments (or rebase without changing the PR's code) can merge on green checks without waiting for its next review.
 
 ## Public repository
 
