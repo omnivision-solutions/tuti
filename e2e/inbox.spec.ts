@@ -53,7 +53,9 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(rows.first()).toContainText("Do you have a discount for nonprofits?");
   await expect(rows.first()).toContainText("#2 · e2e-asker@example.com");
   await expect(rows.last()).toContainText("#1 · Sam Smith");
-  await expect(rows.first().getByText(/^Waiting \d+m$/)).toBeVisible();
+  // Waiting on the team says so; "Waiting on user" is the view of those the team answered.
+  await expect(rows.first().getByText(/^Needs reply · \d+m$/)).toBeVisible();
+  await expect(views.getByRole("link", { name: "Waiting on user 0" })).toBeVisible();
   await checkpoint(owner, "inbox");
 
   // j and k move through the list; Enter opens one.
@@ -92,7 +94,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages.last()).toContainText("Olive Owner");
   await expect(messages.last()).toContainText("Thanks, Sam! A fix is on its way.");
   await expect(owner.getByRole("textbox", { name: "Reply" })).toHaveValue("");
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
 
   // A file that can't start uploading (the server unreachable) says so, and can be removed.
   await owner.route("**/*", (route) => (route.request().headers()["next-action"] ? route.abort() : route.fallback()));
@@ -118,7 +120,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(messages).toHaveCount(4);
   await expect(messages.last()).toContainText("Note · Olive Owner");
   await expect(messages.last()).toContainText("Sam is on the old plan: check with billing.");
-  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting");
+  await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Waiting on user");
   await checkpoint(owner, "conversation-note");
   await owner.getByRole("tab", { name: "Reply" }).click();
 
@@ -147,7 +149,7 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Closed, it moves to Closed; Mine has nothing left.
   // Waiting isn't theirs to pick: replying sets it.
   await owner.getByRole("combobox", { name: "Status" }).click();
-  await expect(owner.getByRole("option", { name: "Waiting" })).toBeDisabled();
+  await expect(owner.getByRole("option", { name: "Waiting on user" })).toBeDisabled();
   await checkpoint(owner, "inbox-status-menu");
   await owner.getByRole("option", { name: "Closed" }).click();
   await expect(owner.getByText("Status: Closed")).toBeVisible();
@@ -177,6 +179,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Spam 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
+  // Still open, but not a reply the team owes.
+  await expect(rows.getByText(/^Needs reply/)).toHaveCount(0);
 
   // A view name the page doesn't know (even one every object has) is the Open view, of this project only:
   // another project's open conversation stays out of it.
