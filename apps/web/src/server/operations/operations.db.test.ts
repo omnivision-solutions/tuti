@@ -407,6 +407,7 @@ const snapshot = () =>
     prisma.project.findUnique({
       where: { id: project.id },
       select: {
+        name: true,
         changelogTone: true,
         changelogExampleIds: true,
         widgetLabel: true,
