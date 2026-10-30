@@ -60,7 +60,6 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
     <>
       <PageHeader
         title="Code changes"
-        description="Every pull request merged on your repositories, with what Tuti proposes: the feedback it resolves and the docs it changes. Nothing changes for your users until you apply it."
       />
       {!included && (
         <PlanNotice feature="codeChanges" projectSlug={slug} admin={membership.role !== "MEMBER"}>
@@ -79,7 +78,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/c
                 ? "Connect GitHub and add your repositories: each pull request merged there shows up here."
                 : !connection.project.analyseCodeChanges
                   ? "Code changes are off for this project. Turn them on in GitHub's settings."
-                  : "Each pull request merged on your repositories shows up here."
+                  : "Each pull request merged on your repositories shows up here, with the feedback it resolves and the docs it changes."
           }
           action={
             codeChangesEnabled() && included && (!connection || !connection.project.analyseCodeChanges) && membership.role !== "MEMBER" ? (

@@ -16,7 +16,7 @@ export default async function NewChangelogEntryPage(props: PageProps<"/app/[proj
   const posts = await completablePosts(membership.project.id);
   return (
     <>
-      <PageHeader title="New changelog entry" description="It stays a draft until you publish it." />
+      <PageHeader title="New changelog entry" />
       <ChangelogForm
         projectSlug={slug}
         entry={null}

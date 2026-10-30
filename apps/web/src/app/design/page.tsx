@@ -151,7 +151,7 @@ function Gallery({ mode }: { mode: "light" | "dark" }) {
             <BackLink href="/design">Feedback</BackLink>
             <PageHeader
               title="Dark mode for the dashboard"
-              description="#12 · Alexandra · 2 hours ago · 42 votes"
+              meta="#12 · Alexandra · 2 hours ago · 42 votes"
               actions={
                 <a href="#" className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <ExternalLinkIcon />

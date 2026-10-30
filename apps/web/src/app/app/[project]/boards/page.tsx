@@ -38,7 +38,6 @@ export default async function BoardsPage(props: PageProps<"/app/[project]/boards
     <>
       <PageHeader
         title="Boards"
-        description="Each board is a separate list on your portal, e.g. feature requests, bugs or integrations."
       />
 
       <Card>

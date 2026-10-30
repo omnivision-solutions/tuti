@@ -85,7 +85,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       <PageHeader
         back={{ href: `/app/${slug}/feedback`, label: "Feedback" }}
         title={post.title}
-        description={
+        meta={
           <>
             #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
             {post.voteCount === 1 ? "vote" : "votes"}

@@ -13,7 +13,7 @@ export default async function AccountPage() {
     <>
       <PageHeader
         title="Account settings"
-        description={
+        meta={
           <>
             {session.user.email}
             {/* Always here while unverified, so the email can be sent again after the strip is dismissed. */}

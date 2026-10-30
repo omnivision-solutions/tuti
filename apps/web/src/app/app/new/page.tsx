@@ -6,7 +6,7 @@ import { portalTemplate } from "@/lib/hosts";
 export default function NewProjectPage() {
   return (
     <>
-      <PageHeader title="New project" description="Each project has its own public portal, boards and team." />
+      <PageHeader title="New project" />
       <Card className="max-w-xl">
         <CardContent>
           <CreateProjectForm portalTemplate={portalTemplate()} />

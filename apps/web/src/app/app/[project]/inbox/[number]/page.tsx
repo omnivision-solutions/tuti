@@ -112,7 +112,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       <PageHeader
         back={{ href: `/app/${slug}/inbox`, label: "Inbox" }}
         title={conversation.subject}
-        description={
+        meta={
           <>
             {online && (
               <>

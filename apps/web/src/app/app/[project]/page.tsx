@@ -40,7 +40,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
 
   return (
     <>
-      <PageHeader title="Home" description={`What's waiting for the ${membership.project.name} team.`} />
+      <PageHeader title="Home" />
       <Card>
         <CardHeader>
           <CardTitle>Catch up</CardTitle>

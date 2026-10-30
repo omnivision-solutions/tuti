@@ -53,7 +53,7 @@ export default async function CollectionPage(props: PageProps<"/app/[project]/do
             {collection.name}
           </span>
         }
-        description={parent ? `Collection in ${docs.pathOf(parent.id)}` : tab ? `Collection in ${tab.name}` : "Collection"}
+        meta={parent ? `Collection in ${docs.pathOf(parent.id)}` : tab ? `Collection in ${tab.name}` : "Collection"}
         actions={<DocsFilter />}
         more={<DeleteCollectionButton projectSlug={slug} slug={collection.slug} name={collection.name} hasChildren={inside.length > 0} />}
       />

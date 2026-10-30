@@ -45,7 +45,7 @@ export default async function TeamPage(props: PageProps<"/app/[project]/team">) 
 
   return (
     <>
-      <PageHeader title="Team" description={`People who manage feedback in ${project.name}.`} />
+      <PageHeader title="Team" />
 
       <Card>
         <CardHeader>

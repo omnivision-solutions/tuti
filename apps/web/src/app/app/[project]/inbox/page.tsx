@@ -82,7 +82,6 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
     <>
       <PageHeader
         title="Inbox"
-        description="Your users' conversations with your team."
         more={<NewConversationEmailsButton projectSlug={slug} on={member.emailNewConversations} />}
       />
       <SubNav

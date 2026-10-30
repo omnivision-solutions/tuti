@@ -120,6 +120,8 @@ test("a merged pull request becomes a code change; the team completes the post i
 
   // The changelog's draft has the line the team wrote, and not the pull request users don't see.
   await owner.goto(`/app/${slug}/changelog/1`);
+  // A fact under its title (no sentence): what the draft is doing.
+  await expect(owner.getByText("Draft · collecting merged pull requests until a release or you publish it")).toBeVisible();
   await expect(owner.getByText("A dark theme, in Settings")).toBeVisible();
   await expect(owner.getByText(chore)).toHaveCount(0);
 });

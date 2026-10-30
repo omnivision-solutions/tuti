@@ -70,7 +70,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/co
       <PageHeader
         back={{ href: `/app/${slug}/code-changes`, label: "Code changes" }}
         title={change.title}
-        description={
+        meta={
           <>
             <a href={change.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">
               {change.repo}#{change.number}

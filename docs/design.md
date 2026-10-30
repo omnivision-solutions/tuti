@@ -58,7 +58,7 @@ green, In progress orange, Completed green, Closed light grey.
   (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
   The top bar stays at the top as the page scrolls; from tablet width up it
   holds the page's title and actions (`PageHeader` puts them there), its
-  description staying on the page.
+  meta line staying on the page.
   A conversation's page (Inbox) opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   A page with sections of its own lists them under its header with `SubNav`
@@ -119,7 +119,10 @@ green, In progress orange, Completed green, Closed light grey.
 
 Use these instead of hand-rolling layout:
 
-- **`PageHeader`** (`title`, `description`, `actions`, `more`): the top of every page;
+- **`PageHeader`** (`title`, `meta`, `actions`, `more`): the top of every page;
+  no sentence under the title in the app: what a page is for goes in its
+  empty state, or a tooltip. `meta` is facts about the thing shown ("#12 ·
+  Ada · 3 votes"); `description` is for portals, where it's the team's own words.
   `more` is the actions used less often, behind the top bar's "More actions".
   Actions sit right on wide screens and under the title on phones; in the
   app from tablet width up, title and actions go in the top bar, and on phones

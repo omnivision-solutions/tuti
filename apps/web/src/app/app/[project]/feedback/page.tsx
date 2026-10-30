@@ -32,7 +32,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     <>
       <PageHeader
         title="Feedback"
-        description="Everything your users have posted."
         actions={
           <a
             href={portal}

@@ -47,11 +47,11 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     <>
       <PageHeader
         title={entry.title}
-        description={
+        meta={
           entry.publishedAt
             ? `Published ${formatDate(entry.publishedAt)}`
             : entry.collecting
-              ? "Draft · merged pull requests are added here until a release closes it, or you publish it"
+              ? "Draft · collecting merged pull requests until a release or you publish it"
               : "Draft"
         }
         actions={

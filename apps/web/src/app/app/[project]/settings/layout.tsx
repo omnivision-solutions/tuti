@@ -18,7 +18,7 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
   const base = `/app/${slug}/settings`;
   return (
     <>
-      <PageHeader title="Settings" description="Owners and admins only. How your portal looks is in Customize." />
+      <PageHeader title="Settings" />
       <SubNav
         label="Settings"
         items={[

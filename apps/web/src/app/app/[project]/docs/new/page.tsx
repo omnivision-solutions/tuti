@@ -17,7 +17,7 @@ export default async function NewArticlePage(props: PageProps<"/app/[project]/do
   const collections = await collectionOptions(membership.project.id);
   return (
     <>
-      <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" description="It stays a draft until you publish it." />
+      <PageHeader back={{ href: `/app/${slug}/docs`, label: "Docs" }} title="New article" />
       <ArticleForm
         // Another "+" starts it afresh in its collection.
         key={String(collection ?? "")}

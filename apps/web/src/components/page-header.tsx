@@ -5,7 +5,7 @@ import { BackLink } from "@/components/back-link";
 import { PageActions } from "@/components/page-actions";
 
 /**
- * The top of every page: title, optional one-line description, optional
+ * The top of every page: title, optional meta line (or, on portals, a description), optional
  * actions. Actions sit on the right on wide screens and under the title on
  * phones. In the app from tablet width up, the title (on one line, cut short
  * with "…") and the actions sit in the top bar (AppHeader), which stays at the
@@ -17,13 +17,17 @@ export function PageHeader({
   title,
   back,
   description,
+  meta,
   actions,
   more,
   className,
 }: {
   title: ReactNode;
   back?: { href: string; label: ReactNode };
+  /** A sentence under the title: portals only (the team's own words). The app's pages have none. */
   description?: ReactNode;
+  /** Facts about the thing the page shows ("#12 · Ada · 3 votes"), in the meta style. */
+  meta?: ReactNode;
   actions?: ReactNode;
   /** Actions used less often: behind the top bar's "More actions" (PageActions). */
   more?: ReactNode;
@@ -43,6 +47,7 @@ export function PageHeader({
         {(actions || more) && <PageActions more={more}>{actions}</PageActions>}
       </div>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
     </div>
   );
 }
