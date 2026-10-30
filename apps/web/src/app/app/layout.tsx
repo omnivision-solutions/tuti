@@ -10,7 +10,7 @@ import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { portalAddress } from "@/server/custom-domains";
 import { appWidgetProject } from "@/lib/app-portal";
 import { LAST_PROJECT_COOKIE } from "@/lib/last-project";
-import { VERIFY_EMAIL_DISMISSED_COOKIE } from "@/lib/verify-email";
+import { verifyEmailDismissedCookie } from "@/lib/verify-email";
 import { pendingInvitationsFor } from "@/server/invitation-lookup";
 import { listMyProjects } from "@/server/membership";
 import { getSession } from "@/server/session";
@@ -44,7 +44,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       header={<AppHeader projects={projects} fallbackSlug={fallbackSlug} />}
       banners={
         <>
-          {!session.user.emailVerified && cookieStore.get(VERIFY_EMAIL_DISMISSED_COOKIE)?.value !== session.user.id && (
+          {!session.user.emailVerified && !cookieStore.has(verifyEmailDismissedCookie(session.user.id)) && (
             <VerifyEmailBanner userId={session.user.id} email={session.user.email} />
           )}
           <PendingInvitations invitations={invitations} />

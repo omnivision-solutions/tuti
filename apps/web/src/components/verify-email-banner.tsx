@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
-import { VERIFY_EMAIL_DISMISSED_COOKIE } from "@/lib/verify-email";
+import { verifyEmailDismissedCookie } from "@/lib/verify-email";
 
 /** A slim strip in /app until the signed-in account's email is verified, or it's dismissed (in this browser). */
 export function VerifyEmailBanner({ userId, email }: { userId: string; email: string }) {
@@ -31,7 +31,7 @@ export function VerifyEmailBanner({ userId, email }: { userId: string; email: st
   }
 
   function dismiss() {
-    document.cookie = `${VERIFY_EMAIL_DISMISSED_COOKIE}=${encodeURIComponent(userId)}; path=/app; max-age=31536000; samesite=lax`;
+    document.cookie = `${verifyEmailDismissedCookie(userId)}=1; path=/app; max-age=31536000; samesite=lax`;
     setDismissed(true);
   }
 

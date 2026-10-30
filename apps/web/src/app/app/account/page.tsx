@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { AccountForms } from "@/components/account-forms";
 import { PageHeader } from "@/components/page-header";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
-import { VERIFY_EMAIL_DISMISSED_COOKIE } from "@/lib/verify-email";
+import { verifyEmailDismissedCookie } from "@/lib/verify-email";
 import { getSession } from "@/server/session";
 
 export default async function AccountPage() {
@@ -13,7 +13,7 @@ export default async function AccountPage() {
   }
 
   // Dismissed elsewhere (where the layout leaves it out), it's still here, with its "Resend email".
-  const dismissed = (await cookies()).get(VERIFY_EMAIL_DISMISSED_COOKIE)?.value === session.user.id;
+  const dismissed = (await cookies()).has(verifyEmailDismissedCookie(session.user.id));
 
   return (
     <>

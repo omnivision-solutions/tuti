@@ -84,6 +84,16 @@ test("the strip asking to verify an email can be dismissed, and stays dismissed"
   await olive.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
   await olive.goto("/app/new");
   await expect(strip).toBeVisible();
+  // Each account keeps its own: Otto dismisses his, and Olive's is still dismissed when she's back.
+  await strip.getByRole("button", { name: "Dismiss" }).click();
+  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.goto("/sign-in");
+  await olive.getByLabel("Email").fill(olive.email);
+  await olive.getByLabel("Password").fill("correct horse battery staple");
+  await olive.getByRole("button", { name: "Sign in", exact: true }).click();
+  await olive.waitForURL(`**/app/${slug}`);
+  await expect(olive.getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
+  await expect(strip).toHaveCount(0);
 });
 
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {

@@ -1,5 +1,6 @@
 /**
- * Set to the account's id when someone dismisses the "Verify your email" strip in /app, so another
- * account signing in on the same browser still sees its own. Account settings shows it anyway.
+ * The cookie set when an account dismisses the "Verify your email" strip in /app: one per account, so
+ * another account on the same browser still sees its own, and each keeps its own dismissal. Account
+ * settings shows the strip anyway.
  */
-export const VERIFY_EMAIL_DISMISSED_COOKIE = "tuti_verify_email_dismissed";
+export const verifyEmailDismissedCookie = (userId: string) => `tuti_verify_email_dismissed_${userId}`;
