@@ -20,7 +20,7 @@ const VIEWS = {
   open: { title: "Open", empty: "Nothing waits for an answer." },
   mine: { title: "Mine", empty: "Nothing's assigned to you." },
   unassigned: { title: "Unassigned", empty: "Every open conversation has someone on it." },
-  waiting: { title: "Waiting", empty: "No conversations wait on a user." },
+  waiting: { title: "Waiting on user", empty: "No conversations wait on a user." },
   closed: { title: "Closed", empty: "No closed conversations yet." },
   spam: { title: "Spam", empty: "No spam." },
 } as const;
@@ -117,7 +117,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                       }
                       badges={
                         c.status === "OPEN" &&
-                        c.waitingSince && <Badge variant="outline">Waiting {shortDuration(c.waitingSince)}</Badge>
+                        c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>
                       }
                       meta={
                         <>
