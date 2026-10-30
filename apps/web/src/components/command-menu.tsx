@@ -130,6 +130,10 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
             search(event.target.value);
           }}
           onKeyDown={(event) => {
+            // Keys that finish composing text (an input method's Enter) are the input method's.
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
             if (event.key === "ArrowDown") {
               event.preventDefault();
               setActive((current + 1) % Math.max(options.length, 1));

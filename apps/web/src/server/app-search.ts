@@ -27,7 +27,8 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   }
   const projectId = membership.project.id;
   const base = `/app/${projectSlug}`;
-  const has = { contains: query, mode: "insensitive" as const };
+  // `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
+  const has = { contains: query.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const };
   // "#12" or "12": a number as posts and conversations have them (a 32-bit integer).
   const asNumber = /^#?\d{1,10}$/.test(query) ? Number(query.replace("#", "")) : null;
   const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;

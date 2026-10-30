@@ -26,6 +26,9 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     ["article", `${base}/docs/dark-mode`],
   ]);
   expect((await searchApp(project.slug, "#7")).results!.map((r) => r.href)).toEqual([`${base}/p/7`]);
+  // "_" and "%" are themselves, not LIKE's wildcards.
+  expect((await searchApp(project.slug, "__")).results).toEqual([]);
+  expect((await searchApp(project.slug, "%%")).results).toEqual([]);
   // A number too big to be one isn't looked up as one (nor does it fail the search).
   expect((await searchApp(project.slug, "99999999999")).results).toEqual([]);
   // Too short to search: nothing (the menu still matches pages and actions itself).
