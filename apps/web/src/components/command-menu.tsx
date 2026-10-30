@@ -5,14 +5,13 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { cn } from "@/lib/utils";
 import { type AppSearchResult, searchApp } from "@/server/app-search";
 
 /** A page or an action the menu offers, matched by its title as it's typed. */
 export type CommandItem = { title: string; group: "Pages" | "Settings" | "Actions"; href: string; external?: boolean };
 
-/** Opens the menu from anywhere in the app (the sidebar's Search button): ⌘K / Ctrl K does too. */
-export const OPEN_COMMAND_MENU = "tuti:command-menu";
 
 const SEARCH_DELAY_MS = 150;
 
@@ -70,17 +69,25 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
   const search = (value: string) => {
     clearTimeout(timer.current);
     const asked = ++latest.current;
+    // What was found for an older query goes at once: Enter mustn't open it.
+    setFound([]);
     if (value.trim().length < 2) {
-      setFound([]);
       setSearching(false);
       return;
     }
     setSearching(true);
     timer.current = setTimeout(async () => {
-      const result = await searchApp(projectSlug, value);
-      if (asked === latest.current) {
-        setFound(result.results ?? []);
-        setSearching(false);
+      try {
+        const result = await searchApp(projectSlug, value);
+        if (asked === latest.current) {
+          setFound(result.results ?? []);
+        }
+      } catch {
+        // Offline, say: nothing found this time; typing again tries again.
+      } finally {
+        if (asked === latest.current) {
+          setSearching(false);
+        }
       }
     }, SEARCH_DELAY_MS);
   };

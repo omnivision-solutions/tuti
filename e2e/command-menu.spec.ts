@@ -43,4 +43,9 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.fill("new article");
   await box.press("Enter");
   await team.waitForURL(`**/app/${slug}/docs/new`);
+
+  // Outside a project's pages (Account settings) there's no ⌘K, so no Search button either.
+  await team.goto("/app/account");
+  await expect(team.getByRole("heading", { name: "Account settings" })).toBeVisible();
+  await expect(team.getByRole("button", { name: /^Search/ })).toHaveCount(0);
 });

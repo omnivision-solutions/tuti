@@ -26,6 +26,8 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     ["article", `${base}/docs/dark-mode`],
   ]);
   expect((await searchApp(project.slug, "#7")).results!.map((r) => r.href)).toEqual([`${base}/p/7`]);
+  // A number too big to be one isn't looked up as one (nor does it fail the search).
+  expect((await searchApp(project.slug, "99999999999")).results).toEqual([]);
   // Too short to search: nothing (the menu still matches pages and actions itself).
   expect((await searchApp(project.slug, "d")).results).toEqual([]);
   // Someone outside the team gets nothing.

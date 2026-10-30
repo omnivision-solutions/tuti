@@ -28,7 +28,9 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   const projectId = membership.project.id;
   const base = `/app/${projectSlug}`;
   const has = { contains: query, mode: "insensitive" as const };
-  const number = /^#?\d+$/.test(query) ? Number(query.replace("#", "")) : null;
+  // "#12" or "12": a number as posts and conversations have them (a 32-bit integer).
+  const asNumber = /^#?\d{1,10}$/.test(query) ? Number(query.replace("#", "")) : null;
+  const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;
   const [posts, conversations, articles, { users }] = await Promise.all([
     prisma.post.findMany({
       where: { projectId, duplicateOfId: null, OR: [{ title: has }, ...(number ? [{ number }] : [])] },
@@ -64,7 +66,8 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
         kind: "user" as const,
         title: user.name ?? user.email ?? user.id,
         meta: user.email ?? user.id,
-        href: `${base}/users?${new URLSearchParams({ q: user.email ?? user.id })}`,
+        // Their id in the team's app: Users finds exactly them by it.
+        href: `${base}/users?${new URLSearchParams({ q: user.id })}`,
       })),
     ],
   };

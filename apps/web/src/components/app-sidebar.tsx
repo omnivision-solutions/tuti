@@ -56,7 +56,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { OPEN_COMMAND_MENU } from "@/components/command-menu";
+import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { authClient } from "@/lib/auth-client";
 import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { cn } from "@/lib/utils";
@@ -86,6 +86,7 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const current = useCurrentProject(projects, fallbackSlug);
+  const onProject = Boolean(useParams<{ project?: string }>().project);
   const { setOpenMobile } = useSidebar();
   // On phones it's a menu over the page: a new page closes it.
   useEffect(() => setOpenMobile(false), [pathname, setOpenMobile]);
@@ -95,7 +96,8 @@ export function AppSidebar({
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <ProjectSwitcher projects={projects} current={current} />
-        {current && <SearchButton />}
+        {/* On a project's pages, where ⌘K is (not Account settings or New project). */}
+        {onProject && <SearchButton />}
       </SidebarHeader>
       <SidebarContent>
         {current &&
