@@ -289,7 +289,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   await expect(visitor.getByRole("dialog").getByRole("alert")).toHaveText("Couldn't search just now. Keep typing to try again.");
   await visitor.unroute("**/*");
   await visitor.keyboard.press("Escape");
-  // ⌘K opens it too; Escape closes it.
+  // ⌘K (Ctrl K off a Mac, as the box says: the Desktop Chrome preset's browser says it's on Windows) opens it too;
+  // Escape closes it.
+  await expect(searchButton.locator("kbd")).toHaveText("Ctrl K");
   await visitor.keyboard.press("ControlOrMeta+k");
   await expect(visitor.getByRole("dialog").getByRole("combobox", { name: "Search the docs" })).toBeFocused();
   await visitor.keyboard.press("Escape");

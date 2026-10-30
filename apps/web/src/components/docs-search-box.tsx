@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "cn";
 import { highlightParts } from "@/lib/highlight";
+import { useShortcutLabel } from "@/lib/shortcut-keys";
 import { logDocsSearch, searchDocsAsTyped } from "@/server/docs-readers";
 import type { DocsSearchResult } from "@/server/docs-search";
 
@@ -68,6 +69,7 @@ export function DocsSearchBox({
     () => false,
   );
   const [open, setOpen] = useState(false);
+  const shortcutText = useShortcutLabel("K");
   useEffect(() => {
     if (!shortcut) {
       return;
@@ -127,7 +129,7 @@ export function DocsSearchBox({
         <span className={cn("flex-1 truncate", query && "text-foreground", compact && "max-md:hidden")}>{query || (large ? label : "Search docs")}</span>
         {shortcut && (
           <kbd aria-hidden className="rounded border bg-muted px-1.5 font-sans text-xs max-md:hidden">
-            ⌘K
+            {shortcutText}
           </kbd>
         )}
         {large && <ArrowRightIcon aria-hidden className="size-5 shrink-0" />}
