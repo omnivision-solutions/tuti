@@ -24,7 +24,7 @@ export async function saveAssistantSettings(projectSlug: string, _state: FormSta
   );
 }
 
-/** Saves the support email in Customize → AI answers (see assistant.update): a new address gets a confirmation link; empty turns "Ask a person" off. */
+/** Saves the support email in Settings → Support → Ask a person (see assistant.update): a new address gets a confirmation link; empty turns "Ask a person" off. */
 export async function saveSupportEmail(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const field = formData.get("supportEmail");
   return asAdmin(projectSlug, "Only project owners and admins can change AI answers", (context) =>

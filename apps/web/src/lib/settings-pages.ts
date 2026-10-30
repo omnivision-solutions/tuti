@@ -1,3 +1,4 @@
+import { emailConfigured } from "@tuti/email";
 import { aiEnabled } from "@tuti/shared";
 
 export type SettingsGroup = { title: string; pages: { title: string; href: string }[] };
@@ -16,8 +17,19 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         { title: "Domain", href: at("domain") },
       ],
     },
-    { title: "Support", pages: [{ title: "Inbox and email", href: at("support") }] },
-    { title: "AI", pages: aiEnabled() ? [{ title: "Models", href: at("ai-models") }] : [] },
+    {
+      title: "Support",
+      pages: [
+        { title: "Inbox and email", href: at("support") },
+        // It emails the team, so only where this server sends email.
+        ...(emailConfigured() ? [{ title: "Ask a person", href: at("ask-a-person") }] : []),
+      ],
+    },
+    {
+      title: "AI",
+      // How it answers can be set before the server has AI (as it could in Customize); which models, only with it.
+      pages: [{ title: "AI answers", href: at("ai-answers") }, ...(aiEnabled() ? [{ title: "Models", href: at("ai-models") }] : [])],
+    },
     {
       title: "Connections",
       pages: [
