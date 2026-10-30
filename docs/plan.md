@@ -587,7 +587,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 - [x] Portal changelog: a reaction shows its count only once it has one (no row of zeros under every entry)
 - [x] Status dots in `PostStatusBadge` (design.md's statuses), so every list has them
 - [ ] No sentence under page titles in the app (`PageHeader`'s description goes; what it said moves into the page's empty state)
-- [ ] The unverified-email banner: a slim strip that can be dismissed, and an item in Home's setup list (step 3)
+- [x] The unverified-email banner: a slim strip that can be dismissed, and an item in Home's setup list (step 3)
 - [x] Customize: the top bar names the section, not the project; logo, favicon and share image uploads as a drop zone with "Upload", not the browser's file input
 - [x] Landing page: "On the way" lists the roadmap, the changelog drafted from GitHub, docs, the widget and the API and MCP as coming, and they have all shipped. Rewritten around the loop (feedback, roadmap, Autopilot, changelog, docs, inbox, widget) with screenshots, and links in the header (Features, Pricing, Docs, GitHub). Pricing: Free's, Business's and Enterprise's buttons as outline buttons (they look disabled). Sign in and sign up: a line on what Tuti does beside the form. Marketing pages: a build and a screenshot, no tests
 

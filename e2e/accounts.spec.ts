@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
-import { createProject, newPerson, signUp } from "./helpers";
+import { createProject, fillSignUp, newPerson, signUp } from "./helpers";
 import { latestEmailTo, linkIn } from "./mail";
 
 const PASSWORD = "correct horse battery staple";
@@ -58,6 +58,55 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.getByLabel("Password").fill("a brand new passphrase");
   await olive.getByRole("button", { name: "Sign in" }).click();
   await olive.waitForURL(/\/app\//);
+});
+
+test("the strip asking to verify an email can be dismissed, and stays dismissed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const olive = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(olive, "Acme", slug);
+  const strip = olive.getByRole("status").filter({ hasText: "Verify your email" });
+  await expect(strip).toContainText(`We sent a link to ${olive.email}.`);
+  await checkpoint(olive, "verify-email-strip", { fullPage: false });
+  await strip.getByRole("button", { name: "Dismiss" }).click();
+  await expect(strip).toHaveCount(0);
+  // Not back on the next page, or after reloading.
+  await olive.goto(`/app/${slug}/feedback`);
+  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
+  await expect(strip).toHaveCount(0);
+  // Account settings still offers to send the email again.
+  await olive.goto("/app/account");
+  await expect(olive.getByText("Not verified")).toBeVisible();
+  await expect(olive.getByRole("main").getByRole("button", { name: "Resend email" })).toBeVisible();
+  // Another account on the same browser has its own.
+  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.goto("/sign-up");
+  await fillSignUp(olive, "Otto Other", `e2e-${randomUUID()}@example.com`);
+  await olive.waitForURL((url) => !url.pathname.startsWith("/sign-up"));
+  await olive.goto("/app/new");
+  await expect(strip).toBeVisible();
+  // Each account keeps its own: Otto dismisses his, and Olive's is still dismissed when she's back.
+  await strip.getByRole("button", { name: "Dismiss" }).click();
+  await olive.context().clearCookies({ name: /^tuti\./ });
+  await olive.goto("/sign-in");
+  await olive.getByLabel("Email").fill(olive.email);
+  await olive.getByLabel("Password").fill("correct horse battery staple");
+  await olive.getByRole("button", { name: "Sign in", exact: true }).click();
+  await olive.waitForURL(`**/app/${slug}`);
+  await expect(olive.getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
+  await expect(strip).toHaveCount(0);
+  // Verified in another tab, Account settings stops asking once this tab is back in focus.
+  await olive.goto("/app/account");
+  await expect(olive.getByText("Not verified")).toBeVisible();
+  const otherTab = await olive.context().newPage();
+  await otherTab.goto(linkIn(await latestEmailTo(olive.email), `${APP_URL}/api/auth/verify-email`));
+  await otherTab.close();
+  await olive.bringToFront();
+  // Better Auth refetches the session when the tab becomes visible, at most every 5 seconds.
+  await expect(async () => {
+    await olive.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(olive.getByText("Not verified")).toHaveCount(0, { timeout: 500 });
+  }).toPass({ timeout: 15_000 });
 });
 
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {
