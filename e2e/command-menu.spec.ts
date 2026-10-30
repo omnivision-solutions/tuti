@@ -20,6 +20,10 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await team.getByRole("button", { name: /^Search/ }).click();
   const menu = team.getByRole("dialog", { name: "Go to or do" });
   const box = menu.getByRole("combobox", { name: "Search the project" });
+  // Up from the first goes round to the last, past the list's fold: it scrolls into sight.
+  await box.press("ArrowUp");
+  await expect(menu.getByRole("option").last()).toHaveAttribute("aria-selected", "true");
+  await expect(menu.getByRole("option").last()).toBeInViewport();
   await box.fill("dark");
   await expect(menu.getByRole("option", { name: /Dark mode/ })).toBeVisible();
   await expect(menu.getByRole("option", { name: /Turning on dark mode/ })).toBeVisible();
