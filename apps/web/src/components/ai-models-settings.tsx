@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useId, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keepingFields } from "@/lib/forms";
+import { choiceOf, costLabel, costPerUse, type ListedModel, pickedModel, TIER_NAMES, tiersFor } from "@/lib/model-tiers";
 import { AI_FEATURE_NAMES } from "@/lib/usage-format";
 import { saveAiModels } from "@/server/ai-models";
 import type { FormState } from "@/server/form-state";
@@ -24,16 +25,22 @@ const WRITES: Record<keyof AiModels, string> = {
 /** A price in dollars per token, per million tokens. */
 const perMillion = (dollars: number) => `$${Number((dollars * 1e6).toFixed(4))}`;
 
-/** Settings → AI models: a model id per feature, from the endpoint's list (see aiModels.update); empty uses the default. */
+/**
+ * Settings → AI models: for each feature, Fast (the server's default), Balanced or Best, each with its model
+ * and what one use costs, or a custom model id from the endpoint's list (see aiModels.update).
+ */
 export function AiModelsSettings({
   projectSlug,
   models,
   listed,
+  creditsPerDollar,
 }: {
   projectSlug: string;
   models: AiModels;
   /** The endpoint's models, to pick from; empty when the list couldn't be read. */
-  listed: { id: string; name: string; input: number | null; output: number | null }[];
+  listed: ListedModel[];
+  /** Where AI is paid with credits, how many a dollar of it costs, to price each choice in them. */
+  creditsPerDollar: number | null;
 }) {
   // What this page last saw saved: only fields changed since are sent, so a page opened earlier can't undo another admin's pick.
   const saved = useRef(Object.fromEntries((Object.keys(WRITES) as (keyof AiModels)[]).map((feature) => [feature, models[feature].model ?? ""])));
@@ -59,20 +66,7 @@ export function AiModelsSettings({
     <form {...keepingFields(action)}>
       <FieldGroup>
         {(Object.keys(WRITES) as (keyof AiModels)[]).map((feature) => (
-          <Field key={feature}>
-            <FieldLabel htmlFor={`model-${feature}`}>{AI_FEATURE_NAMES[feature]}</FieldLabel>
-            <FieldDescription>{WRITES[feature]}</FieldDescription>
-            <Input
-              id={`model-${feature}`}
-              name={feature}
-              list="ai-models"
-              defaultValue={models[feature].model ?? ""}
-              placeholder={`Default: ${models[feature].default}`}
-              maxLength={200}
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </Field>
+          <FeatureModel key={feature} feature={feature} model={models[feature]} listed={listed} creditsPerDollar={creditsPerDollar} />
         ))}
         <datalist id="ai-models">
           {listed.map((model) => (
@@ -91,5 +85,76 @@ export function AiModelsSettings({
         </div>
       </FieldGroup>
     </form>
+  );
+}
+
+/** One feature's choice: its tiers as cards, then Custom model with a box for the id. Its field holds the id ("" for Fast). */
+function FeatureModel({
+  feature,
+  model,
+  listed,
+  creditsPerDollar,
+}: {
+  feature: keyof AiModels;
+  model: AiModels[keyof AiModels];
+  listed: ListedModel[];
+  creditsPerDollar: number | null;
+}) {
+  const tiers = tiersFor(model.default, listed);
+  const [choice, setChoice] = useState(choiceOf(model.model, tiers));
+  const [custom, setCustom] = useState(choice === "custom" ? (model.model ?? "") : "");
+  // A tier the endpoint no longer lists (after a refresh) becomes what was saved, as a custom id, once.
+  if (choice !== "fast" && choice !== "custom" && !tiers.some((option) => option.tier === choice)) {
+    setChoice("custom");
+    setCustom(model.model ?? "");
+  }
+  const value = pickedModel(choice, custom, tiers, model.model);
+  const byId = new Map(listed.map((listing) => [listing.id, listing]));
+  const priced = (id: string) => costLabel(costPerUse(feature, byId.get(id)), creditsPerDollar);
+  const name = useId();
+  const card = "flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-sm has-checked:border-primary has-checked:bg-soft has-focus-visible:ring-2 has-focus-visible:ring-ring";
+
+  return (
+    <Field>
+      <input type="hidden" name={feature} value={value} />
+      <FieldTitle>{AI_FEATURE_NAMES[feature]}</FieldTitle>
+      <FieldDescription>{WRITES[feature]}</FieldDescription>
+      <div role="radiogroup" aria-label={AI_FEATURE_NAMES[feature]} className="grid gap-2 sm:grid-cols-2">
+        {tiers.map((option) => (
+          <label key={option.tier} className={card}>
+            <span className="flex items-center gap-2 font-medium">
+              <input type="radio" name={name} className="accent-primary" checked={choice === option.tier} onChange={() => setChoice(option.tier)} />
+              {TIER_NAMES[option.tier]}
+            </span>
+            <span className="break-all text-xs text-muted-foreground">{byId.get(option.model)?.name ?? option.model}</span>
+            {priced(option.model) && <span className="text-xs text-muted-foreground">{priced(option.model)}</span>}
+          </label>
+        ))}
+        <label className={card}>
+          <span className="flex items-center gap-2 font-medium">
+            <input type="radio" name={name} className="accent-primary" checked={choice === "custom"} onChange={() => setChoice("custom")} />
+            Custom model
+          </span>
+          <span className="text-xs text-muted-foreground">Any other model id</span>
+        </label>
+      </div>
+      {choice === "custom" && (
+        <>
+          <Input
+            aria-label={`${AI_FEATURE_NAMES[feature]}: model id`}
+            // Empty would save as the default (Fast): pick Fast for that.
+            required
+            list="ai-models"
+            value={custom}
+            onChange={(event) => setCustom(event.target.value)}
+            placeholder="provider/model"
+            maxLength={200}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {priced(custom.trim()) && <FieldDescription>{priced(custom.trim())}</FieldDescription>}
+        </>
+      )}
+    </Field>
   );
 }

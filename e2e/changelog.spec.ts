@@ -206,10 +206,19 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(team.getByText("Style saved").first()).toBeVisible();
   await expect(styleDialog).toBeHidden();
 
-  // The team picks a bigger model for changelog drafts (Settings → AI models).
+  // The team picks a bigger model for changelog drafts (Settings → AI models): Fast (the default) or Balanced,
+  // each with its model and what a draft costs with it (Best is only offered where the endpoint lists its model),
+  // or a custom model id.
   await team.goto(`/app/${slug}/settings/ai-models`);
-  const changelogModel = team.getByLabel("Changelog drafts and edits");
-  await expect(changelogModel).toHaveAttribute("placeholder", /^Default: /);
+  const changelogModels = team.getByRole("radiogroup", { name: "Changelog drafts and edits" });
+  await expect(changelogModels.getByRole("radio", { name: /^Fast/ })).toBeChecked();
+  await expect(changelogModels.getByRole("radio")).toHaveCount(3); // Fast, Balanced, Custom model
+  await expect(changelogModels.getByText("Anthropic: Claude Sonnet 5.5")).toBeVisible();
+  await expect(changelogModels.getByText(/^About [\d.$]+ (credits? )?per draft$/).first()).toBeVisible();
+  await changelogModels.getByRole("radio", { name: /^Custom model/ }).check();
+  const changelogModel = team.getByLabel("Changelog drafts and edits: model id");
+  // An empty custom id isn't sent (it would save as the default).
+  await expect(changelogModel).toHaveAttribute("required", "");
   await changelogModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();
@@ -221,16 +230,17 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // Another tab, open since before the pick: saving its own change leaves the pick alone.
   const other = await team.context().newPage();
   await other.goto(`/app/${slug}/settings/ai-models`);
-  await changelogModel.fill("anthropic/claude-sonnet-5.5");
+  await changelogModels.getByRole("radio", { name: /^Balanced/ }).check();
   await checkpoint(team, "team-settings-ai-models");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("AI models saved")).toBeVisible();
-  await other.getByLabel("AI answers").fill("acme/tiny");
+  await other.getByRole("radiogroup", { name: "AI answers" }).getByRole("radio", { name: /^Custom model/ }).check();
+  await other.getByLabel("AI answers: model id").fill("acme/tiny");
   await other.getByRole("button", { name: "Save" }).click();
   await expect(other.getByText("AI models saved")).toBeVisible();
   await other.reload();
-  await expect(other.getByLabel("Changelog drafts and edits")).toHaveValue("anthropic/claude-sonnet-5.5");
-  await expect(other.getByLabel("AI answers")).toHaveValue("acme/tiny");
+  await expect(other.getByRole("radiogroup", { name: "Changelog drafts and edits" }).getByRole("radio", { name: /^Balanced/ })).toBeChecked();
+  await expect(other.getByLabel("AI answers: model id")).toHaveValue("acme/tiny");
   await other.close();
 
   // The next AI draft follows the style, written by that model.

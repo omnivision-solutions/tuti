@@ -1,4 +1,4 @@
-import { aiEnabled, aiProvider, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
+import { aiEnabled, aiProvider, creditsEnabled, creditsPerUsageDollar, listModels, log, modelMaxPrice, withinModelCap } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { AiModelsSettings } from "@/components/ai-models-settings";
@@ -30,12 +30,18 @@ export default async function AiModelsSettingsPage(props: PageProps<"/app/[proje
       <CardHeader>
         <CardTitle>AI models</CardTitle>
         <CardDescription>
-          Which model writes for each AI feature, from the models at {aiProvider()}. Leave one empty to use the default. A bigger model can write better and costs more.
+          Which model writes for each AI feature, from the models at {aiProvider()}. Fast is the default; a bigger model can write better and
+          costs more (estimates for a typical use).
           {cap !== null && ` This server allows models up to $${cap} per million output tokens.`}
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <AiModelsSettings projectSlug={slug} models={models} listed={listed} />
+        <AiModelsSettings
+          projectSlug={slug}
+          models={models}
+          listed={listed}
+          creditsPerDollar={creditsEnabled() ? creditsPerUsageDollar() : null}
+        />
       </CardContent>
     </Card>
   );
