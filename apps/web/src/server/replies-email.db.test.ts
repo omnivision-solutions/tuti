@@ -217,11 +217,15 @@ test("with Amazon SES, sent under the project's own tenant, set up once before i
     }
   };
   const running = run();
-  const early = await Promise.race([running.then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 1000))]);
-  expect(early).toBe("waiting");
-  release();
-  await running;
-  ses.respond = undefined;
+  try {
+    const early = await Promise.race([running.then(() => "done"), new Promise((resolve) => setTimeout(() => resolve("waiting"), 1000))]);
+    expect(early).toBe("waiting");
+  } finally {
+    // Answered whatever happened above, so a failure doesn't leave the call open until its deadline.
+    release();
+    await running;
+    ses.respond = undefined;
+  }
   expect(emailsTo(kim)).toEqual([]);
   await run();
 
