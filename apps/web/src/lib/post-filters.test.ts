@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 
-import { parsePostFilters, postOrderBy } from "./post-filters";
+import { nextPageHref, parsePostFilters, postOrderBy } from "./post-filters";
 
 test("defaults to all statuses, most votes, every board", () => {
-  expect(parsePostFilters({})).toEqual({ statusParam: "all", status: undefined, sort: "top", board: undefined });
+  expect(parsePostFilters({})).toEqual({ statusParam: "all", status: undefined, sort: "top", board: undefined, page: 1 });
 });
 
 test("reads status, sort and board", () => {
@@ -12,6 +12,7 @@ test("reads status, sort and board", () => {
     status: "IN_PROGRESS",
     sort: "new",
     board: "bugs",
+    page: 1,
   });
 });
 
@@ -29,6 +30,19 @@ test("status names on Object.prototype aren't statuses", () => {
 });
 
 test("newest sorts by date, top by votes then date", () => {
-  expect(postOrderBy("new")).toEqual([{ createdAt: "desc" }]);
-  expect(postOrderBy("top")).toEqual([{ voteCount: "desc" }, { createdAt: "desc" }]);
+  expect(postOrderBy("new")).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
+  expect(postOrderBy("top")).toEqual([{ voteCount: "desc" }, { createdAt: "desc" }, { id: "desc" }]);
+});
+
+test("reads how many pages are shown, from the first", () => {
+  expect(parsePostFilters({ page: "3" }).page).toBe(3);
+  for (const page of ["0", "-1", "1.5", "x", "1e400"]) {
+    expect(parsePostFilters({ page }).page).toBe(1);
+  }
+});
+
+test("Load more keeps the filters and shows a page more", () => {
+  const searchParams = { status: "open", sort: "new", page: "2" };
+  expect(nextPageHref(searchParams, parsePostFilters(searchParams))).toBe("?status=open&sort=new&page=3");
+  expect(nextPageHref({}, parsePostFilters({}))).toBe("?page=2");
 });

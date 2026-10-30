@@ -10,15 +10,17 @@ import { PageHeader } from "@/components/page-header";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { SignInLink } from "@/components/sign-in-link";
 import { Card, CardContent } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 import { VoteButton } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
 import { sortFilter, statusFilter } from "@/lib/post-filter-options";
-import { parsePostFilters, postOrderBy } from "@/lib/post-filters";
+import { nextPageHref, parsePostFilters } from "@/lib/post-filters";
 import { boardPath, postPath } from "@/lib/post-urls";
 import { portalAddress } from "@/server/custom-domains";
 import { getSession } from "@/server/session";
 import { portalLinks } from "@/server/portal-base";
 import { mediaUrls } from "@/server/media-urls";
+import { boardPosts } from "@/server/post-lists";
 
 /** Sorted or filtered (`?sort=`, `?status=`), it's still the board: one address for search engines. */
 export async function generateMetadata(props: PageProps<"/portal/[project]/feedback/[board]">): Promise<Metadata> {
@@ -38,17 +40,6 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
 
   const board = await prisma.board.findFirst({
     where: { slug: boardSlug, project: { slug: projectSlug } },
-    include: {
-      posts: {
-        where: { duplicateOfId: null, ...(filters.status && { status: filters.status }) },
-        orderBy: postOrderBy(filters.sort),
-        take: 100,
-        include: {
-          author: { select: { name: true } },
-          votes: { where: { userId: userId ?? "" }, select: { userId: true } },
-        },
-      },
-    },
   });
   if (!board) {
     // An old URL of a board that has since moved?
@@ -62,6 +53,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
     notFound();
   }
 
+  const { posts, more } = await boardPosts(board.id, filters, userId);
   const { postButton, ...placeholders } = boardTexts(board);
   return (
     <div className="flex flex-col gap-6">
@@ -94,7 +86,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
       <ListFilters filters={[sortFilter(filters.sort), statusFilter(filters.statusParam)]} />
 
       <div className="flex flex-col gap-3">
-        {board.posts.map((post) => (
+        {posts.map((post) => (
           <Card key={post.id} size="sm">
             <CardContent className="flex gap-4">
               <VoteButton
@@ -123,11 +115,20 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
             </CardContent>
           </Card>
         ))}
-        {board.posts.length === 0 && (
+        {posts.length === 0 && (
           <EmptyState
             title={filters.status ? "No posts with this status yet" : "No feedback yet"}
             description={filters.status ? "Try another status." : "Be the first to share an idea."}
           />
+        )}
+        {more && (
+          <Link
+            href={nextPageHref(searchParams, filters)}
+            scroll={false}
+            className={buttonVariants({ variant: "outline", className: "self-center" })}
+          >
+            Load more
+          </Link>
         )}
       </div>
     </div>
