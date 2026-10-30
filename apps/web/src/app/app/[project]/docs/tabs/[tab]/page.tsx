@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AccessForm, DeleteTabButton, TabSettingsForm } from "@/components/docs";
-import { AddContentMenu, DocsFilter } from "@/components/docs-tree";
+import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -44,7 +44,6 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
       <PageHeader
         title={tab.name}
         meta={`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
-        actions={<DocsFilter />}
         more={
           // The first is the docs' home: another goes first before it can go.
           (index > 0 || docs.tabs.length === 1) && <DeleteTabButton projectSlug={slug} tab={tab} movesTo={docs.tabs[index - 1]?.name ?? null} />

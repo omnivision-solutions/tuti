@@ -11,7 +11,6 @@ import { ArticleActions, ArticleChanges, ArticleForm, ArticleSaveButton, Article
 import { ArticleDiff } from "@/components/article-diff";
 import { ArticleHistory } from "@/components/article-history";
 import { HistorySheet } from "@/components/history-sheet";
-import { DocsFilter } from "@/components/docs-tree";
 import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
@@ -93,7 +92,6 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         }
         actions={
           <>
-            <DocsFilter />
             <ArticleSaveButton />
             <ArticleActions projectSlug={slug} slug={article.slug} title={article.title} published={article.publishedAt !== null} part="publish" />
           </>
