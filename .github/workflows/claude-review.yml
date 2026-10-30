@@ -44,8 +44,11 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
-          # admin, write (maintainers too), read or none.
-          permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission)
+          # admin, write (maintainers too), read or none; a 404 for an account it doesn't know.
+          if ! permission=$(gh api "repos/$REPO/collaborators/$AUTHOR/permission" --jq .permission 2> "$RUNNER_TEMP/error"); then
+            grep -q 'HTTP 404' "$RUNNER_TEMP/error" || { cat "$RUNNER_TEMP/error" >&2; exit 1; }
+            permission=none
+          fi
           if [[ "$permission" == admin || "$permission" == write ]]; then
             echo "write=true" >> "$GITHUB_OUTPUT"
           else
