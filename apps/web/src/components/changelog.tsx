@@ -22,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -347,11 +347,32 @@ function AiHelpers({
 }
 
 /** The team's writing style for AI drafts: tone notes, and up to 3 published entries as examples. */
+/** "Writing style" in the changelog's header: the style form in a dialog, closed once it's saved. */
+export function ChangelogStyleDialog(props: Omit<Parameters<typeof ChangelogStyleForm>[0], "onSaved">) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>Writing style</DialogTrigger>
+      {/* Closed without saving, it keeps what was changed. */}
+      <DialogContent keepMounted className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Writing style</DialogTitle>
+          <DialogDescription>
+            Draft with AI writes like this. It takes facts only from the entry it drafts, never from the examples.
+          </DialogDescription>
+        </DialogHeader>
+        <ChangelogStyleForm {...props} onSaved={() => setOpen(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ChangelogStyleForm({
   projectSlug,
   tone,
   examples,
   published,
+  onSaved,
 }: {
   projectSlug: string;
   tone: string;
@@ -359,68 +380,76 @@ export function ChangelogStyleForm({
   examples: number[];
   /** Published entries, newest first. */
   published: { number: number; title: string }[];
+  onSaved?: () => void;
 }) {
   const [picked, setPicked] = useState(examples);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogStyle(projectSlug, prev, formData);
-    if (!result.error) {
+    if (result.error) {
+      // In a toast too: the dialog may have been closed while it saved.
+      toast.error(result.error);
+    } else {
       toast.success("Style saved");
+      onSaved?.();
     }
     return result;
   }, {});
 
   return (
     <form {...keepingFields(action)}>
-      <FieldGroup>
-        <Field data-invalid={state.error ? true : undefined}>
-          <FieldLabel htmlFor="style-tone">Tone</FieldLabel>
-          <Textarea
-            id="style-tone"
-            name="tone"
-            defaultValue={tone}
-            maxLength={1000}
-            placeholder="Friendly, short sentences, no jargon. Address the reader as you."
-            aria-invalid={state.error ? true : undefined}
-            aria-describedby={state.error ? "style-error" : undefined}
-          />
-          {state.error && <FieldError id="style-error">{state.error}</FieldError>}
-        </Field>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">Examples</legend>
-          {published.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Publish an entry to use it as an example.</p>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground">Pick up to 3 published entries that read the way you like.</p>
-              <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
-                {published.map((entry) => (
-                  <li key={entry.number}>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        name="examples"
-                        value={entry.number}
-                        checked={picked.includes(entry.number)}
-                        disabled={!picked.includes(entry.number) && picked.length >= 3}
-                        onChange={(event) =>
-                          setPicked(
-                            event.target.checked ? [...picked, entry.number] : picked.filter((n) => n !== entry.number),
-                          )
-                        }
-                        className="size-4 accent-primary"
-                      />
-                      <span className="min-w-0 flex-1 break-words">{entry.title}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </fieldset>
-        <Button type="submit" disabled={pending} className="self-end">
-          {pending ? "Saving…" : "Save style"}
-        </Button>
-      </FieldGroup>
+      {/* Locked while saving: an edit made then wouldn't be in what's saved, and the dialog closes after it. */}
+      <fieldset disabled={pending} className="contents">
+        <FieldGroup>
+          <Field data-invalid={state.error ? true : undefined}>
+            <FieldLabel htmlFor="style-tone">Tone</FieldLabel>
+            <Textarea
+              id="style-tone"
+              name="tone"
+              defaultValue={tone}
+              maxLength={1000}
+              placeholder="Friendly, short sentences, no jargon. Address the reader as you."
+              aria-invalid={state.error ? true : undefined}
+              aria-describedby={state.error ? "style-error" : undefined}
+            />
+            {state.error && <FieldError id="style-error">{state.error}</FieldError>}
+          </Field>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-sm font-medium">Examples</legend>
+            {published.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Publish an entry to use it as an example.</p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">Pick up to 3 published entries that read the way you like.</p>
+                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border p-2">
+                  {published.map((entry) => (
+                    <li key={entry.number}>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          name="examples"
+                          value={entry.number}
+                          checked={picked.includes(entry.number)}
+                          disabled={!picked.includes(entry.number) && picked.length >= 3}
+                          onChange={(event) =>
+                            setPicked(
+                              event.target.checked ? [...picked, entry.number] : picked.filter((n) => n !== entry.number),
+                            )
+                          }
+                          className="size-4 accent-primary"
+                        />
+                        <span className="min-w-0 flex-1 break-words">{entry.title}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </fieldset>
+          <Button type="submit" disabled={pending} className="self-end">
+            {pending ? "Saving…" : "Save style"}
+          </Button>
+        </FieldGroup>
+      </fieldset>
     </form>
   );
 }

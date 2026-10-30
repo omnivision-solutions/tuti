@@ -3,22 +3,27 @@ import { aiEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ChangelogStyleForm } from "@/components/changelog";
+import { ChangelogStyleDialog } from "@/components/changelog";
 import { TAG_LABELS } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
+import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { formatDate } from "@/lib/format";
 import { reactionSummary } from "@/lib/reactions";
 import { reactionCounts } from "@/server/changelog-queries";
 import { getMembership } from "@/server/membership";
 
-/** The team's changelog: drafts first (latest edited), then what's published (newest first). */
+/**
+ * The team's changelog, in two tabs: Drafts (latest edited first) and Published (newest first). It opens
+ * on Drafts, or on Published when there are none.
+ */
 export default async function TeamChangelogPage(props: PageProps<"/app/[project]/changelog">) {
   const { project: slug } = await props.params;
+  const { tab: param } = await props.searchParams;
   const membership = await getMembership(slug);
   if (!membership) {
     notFound();
@@ -49,6 +54,11 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
   const examples = style
     ? entries.filter((e) => e.publishedAt && style.changelogExampleIds.includes(e.id)).map((e) => e.number)
     : [];
+  const drafts = entries.filter((e) => !e.publishedAt);
+  const published = entries.filter((e) => e.publishedAt);
+  const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
+  const listed = tab === "drafts" ? drafts : published;
+  const base = `/app/${slug}/changelog`;
   const newEntry = (
     <Link href={`/app/${slug}/changelog/new`} className={buttonVariants()}>
       New entry
@@ -59,15 +69,46 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     <>
       <PageHeader
         title="Changelog"
-        actions={newEntry}
+        actions={
+          <>
+            {style && (
+              <ChangelogStyleDialog
+                // A fresh form when the examples change underneath it (one unpublished, say), so stale picks don't count.
+                key={examples.join(",")}
+                projectSlug={slug}
+                tone={style.changelogTone}
+                examples={examples}
+                published={published.map(({ number, title }) => ({ number, title }))}
+              />
+            )}
+            {newEntry}
+          </>
+        }
       />
-      {entries.length === 0 ? (
-        <EmptyState title="No entries yet" description="Write what shipped and pick the posts it completes." />
+      <SubNav
+        label="Entries"
+        current={`${base}?tab=${tab}`}
+        items={[
+          { href: `${base}?tab=drafts`, title: <>Drafts <span className="text-muted-foreground tabular-nums">{drafts.length}</span></> },
+          { href: `${base}?tab=published`, title: <>Published <span className="text-muted-foreground tabular-nums">{published.length}</span></> },
+        ]}
+      />
+      {listed.length === 0 ? (
+        <EmptyState
+          title={entries.length === 0 ? "No entries yet" : tab === "drafts" ? "No drafts" : "Nothing published yet"}
+          description={
+            entries.length === 0
+              ? "Write what shipped and pick the posts it completes."
+              : tab === "drafts"
+                ? "With GitHub connected, merged pull requests gather in a draft until the next release."
+                : "Published entries show on your portal."
+          }
+        />
       ) : (
         <Card>
           <CardContent>
             <ItemList>
-              {entries.map((entry) => (
+              {listed.map((entry) => (
                 <ItemRow
                   key={entry.number}
                   title={
@@ -93,26 +134,6 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
                 />
               ))}
             </ItemList>
-          </CardContent>
-        </Card>
-      )}
-      {style && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Writing style</CardTitle>
-            <CardDescription>
-              Draft with AI writes like this. It takes facts only from the entry it drafts, never from the examples.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ChangelogStyleForm
-              // A fresh form when the examples change underneath it (one unpublished, say), so stale picks don't count.
-              key={examples.join(",")}
-              projectSlug={slug}
-              tone={style.changelogTone}
-              examples={examples}
-              published={entries.filter((e) => e.publishedAt).map(({ number, title }) => ({ number, title }))}
-            />
           </CardContent>
         </Card>
       )}
