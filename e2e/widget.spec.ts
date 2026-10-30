@@ -938,6 +938,13 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // Opened from the keyboard, focus goes into the panel.
   await owner.keyboard.press("Enter");
   await expect(owner.locator('iframe[title="Widget panel preview"]')).toBeFocused();
+  // And Escape there closes it, back on the launcher.
+  await expect(async () => {
+    await owner.keyboard.press("Escape");
+    await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0, { timeout: 1_000 });
+  }).toPass();
+  await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
+  await expect(previewLauncher("Help & ideas")).toBeFocused();
   await owner.reload();
   await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();
