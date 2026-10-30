@@ -1313,14 +1313,14 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await expect(visitor.getByText("Feedback posted")).toBeVisible();
   await expect(visitor.getByRole("link", { name: unrelated })).toBeVisible();
 
-  // What the AI cost the project this month, in AI credits (Settings → Usage)…
+  // What the AI cost the project this month, in AI credits (Usage, on Settings → Billing; its old address lands there)…
   await team.goto(`/app/${slug}/settings/usage`);
+  await team.waitForURL(`**/app/${slug}/settings/billing#usage`);
   const spent = team.getByRole("table", { name: /^AI use in / });
   await expect(spent.getByRole("columnheader", { name: "Credits" })).toBeVisible();
   await expect(spent.getByRole("row", { name: /AI answers/ })).toBeVisible();
   await checkpoint(team, "team-settings-usage");
-  // …taken from the free credits every project starts with (Settings → Billing).
-  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Billing" }).click();
+  // …taken from the free credits every project starts with, on the same page.
   await expect(team.getByText(/^[\d,.]+ AI credits$/)).toBeVisible();
   await expect(team.getByRole("table", { name: "AI credits left" }).getByRole("row", { name: /Free credits/ })).toBeVisible();
   await checkpoint(team, "team-settings-billing");

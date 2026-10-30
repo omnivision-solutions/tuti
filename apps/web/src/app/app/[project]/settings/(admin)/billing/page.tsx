@@ -1,30 +1,39 @@
 import { prisma } from "@tuti/db";
 import { creditBalance } from "@tuti/jobs";
-import { creditsEnabled, creditsPerTopupDollar, planCredits, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
-import Link from "next/link";
+import { creditsEnabled, creditsPerTopupDollar, planSalesEnabled, plansEnabled, topupExpiryDays, topupsEnabled } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
 import { BuyCredits } from "@/components/buy-credits";
 import { BadgeAddOn, ManagePlan, PlanPicker } from "@/components/plan-picker";
+import { UsageMonths } from "@/components/usage-months";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BADGE_PRICE, PLAN_PRICES, planPriceText } from "@/lib/plans";
+import { pricingPlans } from "@/lib/pricing-plans";
 import { credits } from "@/lib/usage-format";
 import { getAdminProject } from "@/server/membership";
 import { TOPUP_DOLLARS } from "@/server/operations/credits";
 
 const SOURCES = { FREE: "Free credits", TOPUP: "Top-up", PLAN: "Plan", MANUAL: "Given by Tuti" } as const;
 
+/** What each plan includes, as the pricing page lists it, for the comparison. */
+function planFeatures(): Record<"FREE" | "PRO" | "BUSINESS", string[]> {
+  const plans = pricingPlans();
+  const named = (name: string) => plans.find((plan) => plan.name === name)?.features ?? [];
+  return { FREE: named("Free"), PRO: named(PLAN_PRICES.PRO.name), BUSINESS: named(PLAN_PRICES.BUSINESS.name) };
+}
+
 const day = (date: Date) => date.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
- * Settings → Billing (with plans or AI credits on): the project's plan, and its AI credits (the balance,
- * and the credits it has left by when they expire).
+ * Settings → Billing: the project's plan (where plans are sold), its AI credits (where AI is paid with
+ * them: the balance, and what's left by when it expires), and what its AI use cost each month.
  */
 export default async function BillingSettingsPage(props: PageProps<"/app/[project]/settings/billing">) {
   const { project: slug } = await props.params;
   const project = await getAdminProject(slug);
-  if (!project || !(creditsEnabled() || plansEnabled())) {
+  if (!project) {
     notFound();
   }
   const [{ balance, grants }, plan] = await Promise.all([
@@ -68,7 +77,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
             {plan.plan !== "FREE" ? (
               <ManagePlan projectSlug={slug} />
             ) : planSalesEnabled() ? (
-              <PlanPicker projectSlug={slug} credits={creditsEnabled() ? { PRO: planCredits("PRO"), BUSINESS: planCredits("BUSINESS") } : null} />
+              <PlanPicker projectSlug={slug} features={planFeatures()} />
             ) : (
               <p className="text-sm text-muted-foreground">Plans can&apos;t be bought here right now.</p>
             )}
@@ -87,9 +96,16 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
                   : `The badge at the foot of the portal: hide it for $${BADGE_PRICE} a month, added to this project's plan.`}
             </CardDescription>
           </CardHeader>
-          {plan.plan !== "FREE" && (plan.badgeAddOn || planSalesEnabled()) && (
+          {(plan.badgeAddOn || planSalesEnabled()) && (
             <CardContent>
-              <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+              {plan.plan === "FREE" ? (
+                // To the plans above, monthly or yearly as picked there.
+                <a href="#plans" className={buttonVariants({ variant: "outline" })}>
+                  Choose a plan
+                </a>
+              ) : (
+                <BadgeAddOn projectSlug={slug} on={plan.badgeAddOn} />
+              )}
             </CardContent>
           )}
         </Card>
@@ -100,9 +116,9 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
         <CardTitle>{credits(balance)} AI credits</CardTitle>
         <CardDescription>
           AI answers, changelog drafts and code changes spend credits as they&apos;re used; what each spent is in{" "}
-          <Link href={`/app/${slug}/settings/usage`} className="underline underline-offset-4">
+          <a href="#usage" className="underline underline-offset-4">
             Usage
-          </Link>
+          </a>
           . Credits that expire soonest are spent first.
         </CardDescription>
       </CardHeader>
@@ -147,6 +163,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
           </CardContent>
         </Card>
       )}
+      <UsageMonths projectId={project.id} />
     </>
   );
 }

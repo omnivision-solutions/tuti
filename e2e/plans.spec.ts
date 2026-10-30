@@ -15,10 +15,23 @@ test("an owner starts Pro on Stripe, gets its month's AI credits, hides \"Powere
 
   await owner.goto(`/app/${slug}/settings/billing`);
   await expect(owner.getByText("Free plan", { exact: true })).toBeVisible();
-  await owner.getByRole("button", { name: "Yearly" }).click();
+  // Picked with the keyboard too (native radios): Yearly, then back.
+  await owner.getByRole("radio", { name: "Monthly" }).focus();
+  await owner.keyboard.press("ArrowRight");
+  await expect(owner.getByRole("radio", { name: "Yearly" })).toBeChecked();
   await expect(owner.getByText("$32 a month, billed yearly")).toBeVisible();
-  await owner.getByRole("button", { name: "Monthly" }).click();
+  await owner.getByText("Monthly", { exact: true }).click();
   await expect(owner.getByText("$39 a month", { exact: true })).toBeVisible();
+  // Free beside Pro and Business, each with what it includes, as on the pricing page; Pro's button is the page's one primary.
+  await expect(owner.getByText("3 team members")).toBeVisible();
+  await expect(owner.getByText("Unlimited team members")).toBeVisible();
+  await expect(owner.getByText("A private portal")).toBeVisible();
+  const primary = await owner.getByRole("main").locator('[data-slot="button"]').evaluateAll((buttons) =>
+    buttons.filter((button) => button.className.includes("bg-primary ")).map((button) => button.textContent),
+  );
+  expect(primary).toEqual(["Upgrade to Pro"]);
+  // The badge's card has a way to it on the free plan too: to the plans, billed as picked there.
+  await expect(owner.getByRole("link", { name: "Choose a plan" })).toHaveAttribute("href", "#plans");
   await checkpoint(owner, "team-settings-billing-free-plan");
   await owner.getByRole("button", { name: "Upgrade to Pro" }).click();
 

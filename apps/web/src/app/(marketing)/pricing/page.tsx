@@ -1,4 +1,4 @@
-import { creditsEnabled, freeCredits, planCredits, plansEnabled } from "@tuti/shared";
+import { plansEnabled } from "@tuti/shared";
 import { CheckIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -6,7 +6,8 @@ import { notFound } from "next/navigation";
 
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { BADGE_PRICE, PLAN_PRICES } from "@/lib/plans";
+import { BADGE_PRICE } from "@/lib/plans";
+import { pricingPlans } from "@/lib/pricing-plans";
 import { cn } from "@/lib/utils";
 
 import { REPO_URL } from "../links";
@@ -19,67 +20,13 @@ export const metadata: Metadata = {
 // Plans and prices are the server's settings, read when the page is asked for, not when it's built.
 export const dynamic = "force-dynamic";
 
-const SALES_EMAIL = "hello@tuti.so";
-
-/** "1,000 AI credits a month", only where AI is paid with credits. */
-const monthly = (credits: number) => (creditsEnabled() && credits > 0 ? [`${credits.toLocaleString("en")} AI credits a month`] : []);
 
 /** tuti.so's pricing (docs/plan.md, Plans): only where plans are sold. */
 export default function PricingPage() {
   if (!plansEnabled()) {
     notFound();
   }
-  const plans = [
-    {
-      name: "Free",
-      price: "$0",
-      per: "forever",
-      features: [
-        "3 team members",
-        "Your portal at your-project.tuti.so",
-        "Feedback, roadmap, changelog and docs",
-        ...(creditsEnabled() && freeCredits() > 0 ? [`${freeCredits().toLocaleString("en")} AI credits to start`] : []),
-        "Shows “Powered by tuti”",
-      ],
-      cta: { label: "Get started", href: "/sign-up" },
-    },
-    {
-      name: PLAN_PRICES.PRO.name,
-      price: `$${PLAN_PRICES.PRO.month}`,
-      per: `a month per project, or $${PLAN_PRICES.PRO.year} a month, billed yearly`,
-      features: [
-        "Unlimited team members",
-        "Your own domain",
-        "Code changes from GitHub",
-        "Your own widget launcher icon",
-        ...monthly(planCredits("PRO")),
-        `Hide “Powered by tuti” for $${BADGE_PRICE} a month`,
-      ],
-      cta: { label: "Start with Pro", href: "/sign-up" },
-      featured: true,
-    },
-    {
-      name: PLAN_PRICES.BUSINESS.name,
-      price: `$${PLAN_PRICES.BUSINESS.month}`,
-      per: `a month per project, or $${PLAN_PRICES.BUSINESS.year} a month, billed yearly`,
-      features: [
-        "Everything in Pro",
-        "A private portal",
-        "Reader groups and readers by email",
-        "Your portal under a path of your site",
-        ...monthly(planCredits("BUSINESS")),
-        "Priority support",
-      ],
-      cta: { label: "Start with Business", href: "/sign-up" },
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      per: "by quote",
-      features: ["Everything in Business", "SAML single sign-on for your team", "Audit logs", "An SLA", "Invoices"],
-      cta: { label: "Contact us", href: `mailto:${SALES_EMAIL}?subject=${encodeURIComponent("Tuti Enterprise")}` },
-    },
-  ];
+  const plans = pricingPlans();
 
   return (
     <div className="flex flex-col gap-12">
