@@ -60,8 +60,11 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await bo.getByRole("button", { name: "Upvote" }).click();
   await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
 
-  // The team merges the duplicate into the original…
+  // The sidebar counts the posts waiting for triage (Open), where the team works.
   await team.goto(`/app/${slug}/p/2`);
+  const feedbackItem = team.locator('[data-slot="sidebar-menu-item"]').filter({ has: team.getByRole("link", { name: "Feedback", exact: true }) });
+  await expect(feedbackItem).toContainText("2 to triage");
+  // The team merges the duplicate into the original…
   await team.getByRole("button", { name: "Merge into…" }).click();
   await team.getByRole("button", { name: /Dark mode/ }).click();
   await checkpoint(team, "team-merge-confirm", { fullPage: false });

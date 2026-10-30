@@ -19,6 +19,8 @@ test("a team member switches projects, edits their account, signs out and back i
   // The sidebar's project switcher lists both projects.
   await olive.getByRole("button", { name: /Globex/ }).click();
   await expect(olive.getByRole("menuitem", { name: /Acme/ })).toBeVisible();
+  // It has the portal too, with its address.
+  await expect(olive.getByRole("menuitem", { name: /^View portal/ })).toHaveAttribute("href", portalUrl(globex));
   await checkpoint(olive, "project-switcher", { fullPage: false });
   await olive.getByRole("menuitem", { name: /Acme/ }).click();
   await olive.waitForURL(`**/app/${acme}`);
