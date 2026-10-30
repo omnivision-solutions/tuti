@@ -35,9 +35,12 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(owner.getByRole("heading", { name: "Content actions", level: 1 })).toBeVisible();
   await expect(size.getByRole("button", { name: "Phone" })).toHaveAttribute("aria-pressed", "true");
   await expect(mode.getByRole("button", { name: "Dark mode" })).toHaveAttribute("aria-pressed", "true");
+  // And so does the preview itself: laid out at a phone's width, dark.
+  const preview = owner.frameLocator('iframe[title="Portal preview"]');
+  await expect(owner.locator('iframe[title="Portal preview"]')).toHaveCSS("width", "390px");
+  await expect(preview.locator("html")).toHaveClass(/\bdark\b/);
   await size.getByRole("button", { name: "Desktop" }).click();
   await mode.getByRole("button", { name: "Light mode" }).click();
-  const preview = owner.frameLocator('iframe[title="Portal preview"]');
   await expect(preview.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(preview.getByRole("button", { name: "Copy page" })).toBeVisible();
   await expect(preview.getByText(/^Updated /)).toBeVisible();
