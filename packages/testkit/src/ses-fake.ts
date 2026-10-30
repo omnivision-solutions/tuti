@@ -113,8 +113,13 @@ export async function startSesFake(): Promise<SesFake> {
         return answer(500, { message: "Internal failure" }, "InternalFailure");
       }
       const body = (chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}) as Record<string, unknown>;
-      // A hook that throws answers 500, rather than leaving the call waiting for its deadline.
-      const status = await Promise.resolve(fake.respond?.(path, body)).catch(() => 500 as const);
+      // A hook that throws (or rejects) answers 500, rather than leaving the call waiting for its deadline.
+      let status: Awaited<ReturnType<NonNullable<SesFake["respond"]>>>;
+      try {
+        status = await fake.respond?.(path, body);
+      } catch {
+        status = 500;
+      }
       if (status === "cut-off") {
         res.writeHead(200, { "content-type": "application/json", "content-length": "1000" });
         // Dropped once that much has gone out, so the client has its headers and part of the body.
