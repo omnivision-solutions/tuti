@@ -385,7 +385,10 @@ export function ChangelogStyleForm({
   const [picked, setPicked] = useState(examples);
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await saveChangelogStyle(projectSlug, prev, formData);
-    if (!result.error) {
+    if (result.error) {
+      // In a toast too: the dialog may have been closed while it saved.
+      toast.error(result.error);
+    } else {
       toast.success("Style saved");
       onSaved?.();
     }
