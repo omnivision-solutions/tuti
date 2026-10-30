@@ -101,12 +101,13 @@ function FeatureModel({
   creditsPerDollar: number | null;
 }) {
   const tiers = tiersFor(model.default, listed);
-  const [picked, setChoice] = useState(choiceOf(model.model, tiers));
-  const [typed, setCustom] = useState(picked === "custom" ? (model.model ?? "") : "");
-  // A tier the endpoint no longer lists (after a refresh) shows as what was saved, a custom id.
-  const gone = picked !== "fast" && picked !== "custom" && !tiers.some((option) => option.tier === picked);
-  const choice = gone ? "custom" : picked;
-  const custom = gone && !typed ? (model.model ?? "") : typed;
+  const [choice, setChoice] = useState(choiceOf(model.model, tiers));
+  const [custom, setCustom] = useState(choice === "custom" ? (model.model ?? "") : "");
+  // A tier the endpoint no longer lists (after a refresh) becomes what was saved, as a custom id, once.
+  if (choice !== "fast" && choice !== "custom" && !tiers.some((option) => option.tier === choice)) {
+    setChoice("custom");
+    setCustom(model.model ?? "");
+  }
   const value = pickedModel(choice, custom, tiers, model.model);
   const byId = new Map(listed.map((listing) => [listing.id, listing]));
   const priced = (id: string) => costLabel(costPerUse(feature, byId.get(id)), creditsPerDollar);
@@ -141,6 +142,8 @@ function FeatureModel({
         <>
           <Input
             aria-label={`${AI_FEATURE_NAMES[feature]}: model id`}
+            // Empty would save as the default (Fast): pick Fast for that.
+            required
             list="ai-models"
             value={custom}
             onChange={(event) => setCustom(event.target.value)}

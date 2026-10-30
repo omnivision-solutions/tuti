@@ -217,6 +217,8 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(changelogModels.getByText(/^About [\d.$]+ (credits? )?per draft$/).first()).toBeVisible();
   await changelogModels.getByRole("radio", { name: /^Custom model/ }).check();
   const changelogModel = team.getByLabel("Changelog drafts and edits: model id");
+  // An empty custom id isn't sent (it would save as the default).
+  await expect(changelogModel).toHaveAttribute("required", "");
   await changelogModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();
