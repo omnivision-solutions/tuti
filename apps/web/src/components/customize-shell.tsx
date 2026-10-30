@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeftIcon, LockIcon, MonitorIcon, MoonIcon, SmartphoneIcon, SunIcon } from "lucide-react";
+import { ChevronDownIcon, LockIcon, MonitorIcon, MoonIcon, SmartphoneIcon, SunIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createContext, type ReactNode, useActionState, useCallback, useContext, useEffect, useEffectEvent, useId, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import { keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
 import { cn } from "@/lib/utils";
+import { CUSTOMIZE_GROUPS, sectionTitle } from "@/app/app/[project]/customize/sections";
 import type { WidgetIcon } from "@/lib/widget-icons";
 import type { FormState } from "@/server/form-state";
 
@@ -32,8 +33,8 @@ export type SeoDraft = { title: string; description: string; image: string | nul
 /** Changes not saved yet: to the portal's look (sent to the frame), to the widget's launcher, or to the search listing. */
 export type Draft = Partial<PortalLook> & { widget?: WidgetDraft; seo?: SeoDraft };
 
-/** The section's form that "Save changes" in the panel's header submits (see useCustomizeForm). */
-type SaveForm = { id: string; dirty: boolean; pending: boolean };
+/** A form of the section's that "Save changes" in the panel's header submits (see useCustomizeForm); a section may have several. */
+type SaveForm = { dirty: boolean; pending: boolean };
 
 /** What a Customize section's settings can ask of the preview beside them. */
 type Preview = {
@@ -43,7 +44,8 @@ type Preview = {
   draft: Draft;
   /** Merges a change not saved yet into the preview. */
   setDraft: (draft: Draft) => void;
-  register: (form: SaveForm | null) => void;
+  /** A form's state, by its id; null once it's gone. */
+  register: (id: string, form: SaveForm | null) => void;
 };
 
 const PreviewContext = createContext<Preview>({ reload: () => {}, version: 0, draft: {}, setDraft: () => {}, register: () => {} });
@@ -117,8 +119,8 @@ export function useCustomizeForm({
       form.removeEventListener("change", read);
     };
   }, [read]);
-  useEffect(() => register({ id, dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);
-  useEffect(() => () => register(null), [register]);
+  useEffect(() => register(id, { dirty, pending: pending || busy }), [register, id, dirty, pending, busy]);
+  useEffect(() => () => register(id, null), [register, id]);
 
   const { onSubmit, ...submit } = keepingFields(action);
   return {
@@ -163,20 +165,22 @@ const THEMES = {
 type Theme = keyof typeof THEMES;
 
 /**
- * A Customize section: its settings in a panel on the left (the way back, its title, "Save changes"),
+ * A Customize section: Customize's sections in a rail on the far left (the preview stays as you move
+ * between them), the section's settings in a panel beside it (its title, "Save changes"),
  * and on the right the portal they change, live in a frame (its Tuti address, which the app may
  * frame: see proxy.ts), as a desktop or a phone shows it, in light or dark mode. Changes show there
  * as they're made; leaving with some not saved asks first. On phones the preview comes after the
  * settings.
  */
 export function CustomizeShell({
-  backHref,
-  title,
+  projectSlug,
+  section,
   preview,
   children,
 }: {
-  backHref: string;
-  title: string;
+  projectSlug: string;
+  /** The section's slug (sections.ts): its title, and where it is in the rail. */
+  section: string;
   /**
    * The portal page to show: `origin`, its Tuti address; `path`, the page; `address`, where readers
    * find the portal, for the address bar. Or something of its own to show.
@@ -184,10 +188,11 @@ export function CustomizeShell({
   preview: { origin: string; path: string; address: string; token?: string } | { custom: ReactNode };
   children: ReactNode;
 }) {
+  const title = sectionTitle(section);
   const router = useRouter();
   const [version, setVersion] = useState(0);
   const [draft, setDraftState] = useState<Draft>({});
-  const [form, setForm] = useState<SaveForm | null>(null);
+  const [forms, setForms] = useState<Record<string, SaveForm>>({});
   const [leaving, setLeaving] = useState<string | null>(null);
   // The draft stays: once saved, it's what's saved (and the new frame gets it again when it opens).
   const reload = useCallback(() => {
@@ -195,8 +200,25 @@ export function CustomizeShell({
     router.refresh();
   }, [router]);
   const setDraft = useCallback((part: Draft) => setDraftState((current) => ({ ...current, ...part })), []);
-  const register = useCallback((next: SaveForm | null) => setForm(next), []);
-  const dirty = form?.dirty ?? false;
+  const register = useCallback(
+    (id: string, next: SaveForm | null) =>
+      setForms((current) => {
+        const others = { ...current };
+        delete others[id];
+        return next ? { ...others, [id]: next } : others;
+      }),
+    [],
+  );
+  const dirty = Object.values(forms).some((form) => form.dirty);
+  const pending = Object.values(forms).some((form) => form.pending);
+  // "Save changes": every form of the section's with a change.
+  const save = () => {
+    for (const [id, form] of Object.entries(forms)) {
+      if (form.dirty) {
+        (document.getElementById(id) as HTMLFormElement | null)?.requestSubmit();
+      }
+    }
+  };
 
   // Leaving with changes not saved: the browser asks on reloading or closing, we ask on the app's links.
   useEffect(() => {
@@ -228,15 +250,13 @@ export function CustomizeShell({
   return (
     <PreviewContext value={{ reload, version, draft, setDraft, register }}>
       <div className="flex flex-1 flex-col lg:h-[calc(100svh-3rem)] lg:flex-row">
+        <CustomizeRail projectSlug={projectSlug} section={section} />
         <div className="flex flex-col border-b lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-b-0">
-          <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-2">
-            <Link href={backHref} aria-label="Back to Customize" className={buttonVariants({ variant: "ghost", size: "icon-sm" })}>
-              <ChevronLeftIcon />
-            </Link>
+          <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center gap-1 border-b bg-background px-4">
             <h1 className="text-sm font-semibold">{title}</h1>
-            {form && (
-              <Button type="submit" form={form.id} size="sm" disabled={!form.dirty || form.pending} className="ml-auto">
-                {form.pending ? "Saving…" : "Save changes"}
+            {Object.keys(forms).length > 0 && (
+              <Button type="button" size="sm" disabled={!dirty || pending} onClick={save} className="ml-auto">
+                {pending ? "Saving…" : "Save changes"}
               </Button>
             )}
           </div>
@@ -260,7 +280,7 @@ export function CustomizeShell({
               variant="destructive"
               onClick={() => {
                 const href = leaving;
-                setForm(null);
+                setForms({});
                 setLeaving(null);
                 if (href) {
                   router.push(href);
@@ -448,5 +468,46 @@ export function CustomizeSection({ title, description, children }: { title: stri
       </div>
       {children}
     </section>
+  );
+}
+
+/** Customize's sections, in a rail on the far left from laptop width; above the panel, as a menu, on smaller screens. */
+function CustomizeRail({ projectSlug, section }: { projectSlug: string; section: string }) {
+  const link = (slug: string, title: string, Icon: React.ComponentType<{ className?: string }>) => (
+    <Link
+      key={slug}
+      href={`/app/${projectSlug}/customize/${slug}`}
+      aria-current={slug === section ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted",
+        slug === section ? "bg-muted font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon aria-hidden className="size-4 shrink-0" />
+      {title}
+    </Link>
+  );
+  const groups = CUSTOMIZE_GROUPS.map((group) => (
+    <div key={group.title} className="flex flex-col gap-0.5">
+      <h2 className="px-2 pb-1 text-xs font-medium text-muted-foreground">{group.title}</h2>
+      {group.sections.map((s) => link(s.slug, s.title, s.icon))}
+    </div>
+  ));
+  return (
+    <>
+      <nav aria-label="Customize" className="hidden w-48 shrink-0 flex-col gap-4 overflow-y-auto border-r p-3 lg:flex">
+        {groups}
+      </nav>
+      {/* `key`: closed again after moving to another section. */}
+      <details key={section} className="group border-b lg:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+          Customize: {sectionTitle(section)}
+          <ChevronDownIcon aria-hidden className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <nav aria-label="Customize" className="flex flex-col gap-4 border-t p-3">
+          {groups}
+        </nav>
+      </details>
+    </>
   );
 }

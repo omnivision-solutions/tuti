@@ -73,12 +73,14 @@ green, In progress orange, Completed green, Closed light grey.
   Settings tabs. On Docs pages the sidebar is folded
   away, as on Customize's.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
-  sidebar folded away. `CustomizeShell`: the section's settings in a panel on
-  the left (back, title; cards inside), the portal it changes on the right in
-  a browser frame, at desktop or phone width, light or dark. Settings that
-  change how the portal looks go here, not in Settings. A section's form uses
-  `useCustomizeForm`: "Save changes" in the panel's header (enabled once
-  something changed), and `toDraft` shows a change in the frame as it's made
+  sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
+  the far left (a menu above the panel on smaller screens; no index page, no
+  Back), the section's settings in a panel beside it (title; cards inside),
+  the portal it changes on the right in a browser frame, at desktop or phone
+  width, light or dark. Settings that
+  change how the portal looks go here, not in Settings. A section's forms use
+  `useCustomizeForm`: "Save changes" in the panel's header saves every one with
+  a change (enabled once something changed), and `toDraft` shows a change in the frame as it's made
   (the portal's `PortalLookProvider` takes it); leaving with changes not saved
   asks first.
 - **Portals**: header with the project name and the four parts (Feedback,

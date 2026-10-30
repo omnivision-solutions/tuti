@@ -6,8 +6,6 @@ import { portalAddress } from "@/server/custom-domains";
 import { getAdminProject } from "@/server/membership";
 import { branding, SEO_DESCRIPTION_MAX, SEO_TITLE_MAX } from "@/server/operations/branding";
 
-import { sectionTitle } from "../sections";
-
 /** Customize → SEO: the portal's search listing and share image, beside how they show in a search result and a shared link. */
 export default async function SeoPage(props: PageProps<"/app/[project]/customize/seo">) {
   const { project: slug } = await props.params;
@@ -18,8 +16,7 @@ export default async function SeoPage(props: PageProps<"/app/[project]/customize
   const brand = (await branding({ id: project.id }))!;
   return (
     <CustomizeShell
-      backHref={`/app/${slug}/customize`}
-      title={sectionTitle("seo")}
+      projectSlug={slug} section="seo"
       preview={{
         custom: (
           <SeoPreview

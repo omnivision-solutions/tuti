@@ -9,8 +9,6 @@ import { portalPreview } from "@/server/customize";
 import { getAdminProject } from "@/server/membership";
 import { branding } from "@/server/operations/branding";
 
-import { sectionTitle } from "../sections";
-
 /** Customize → Custom code: the team's CSS for the portal, and HTML for it on their own address. */
 export default async function CustomCodePage(props: PageProps<"/app/[project]/customize/custom-code">) {
   const { project: slug } = await props.params;
@@ -20,7 +18,7 @@ export default async function CustomCodePage(props: PageProps<"/app/[project]/cu
   }
   const [brand, address] = await Promise.all([branding({ id: project.id }), portalAddress(slug)]);
   return (
-    <CustomizeShell backHref={`/app/${slug}/customize`} title={sectionTitle("custom-code")} preview={await portalPreview(slug, "/")}>
+    <CustomizeShell projectSlug={slug} section="custom-code" preview={await portalPreview(slug, "/")}>
       <CustomCodeSettings
         projectSlug={slug}
         css={brand!.customCss}

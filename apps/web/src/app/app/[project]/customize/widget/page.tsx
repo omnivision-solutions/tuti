@@ -11,8 +11,6 @@ import { appUrl, portalUrl } from "@/lib/hosts";
 import { getAdminProject } from "@/server/membership";
 import { DEFAULT_WIDGET_COLOR, servedIcon, widgetSettings } from "@/server/operations/widget";
 
-import { sectionTitle } from "../sections";
-
 /** Customize → Widget: the launcher on the team's site, beside the widget open on a stand-in for it. */
 export default async function WidgetPage(props: PageProps<"/app/[project]/customize/widget">) {
   const { project: slug } = await props.params;
@@ -35,8 +33,7 @@ export default async function WidgetPage(props: PageProps<"/app/[project]/custom
   );
   return (
     <CustomizeShell
-      backHref={`/app/${slug}/customize`}
-      title={sectionTitle("widget")}
+      projectSlug={slug} section="widget"
       preview={{
         custom: (
           <WidgetPreview src={`${portalUrl(slug)}/widget`} label={widget.label} color={color} position={widget.position} {...servedIcon(widget, plan)} />
