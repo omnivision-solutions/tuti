@@ -90,6 +90,15 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The board's status filter finds it under Planned only.
   await bo.goto("/feedback/feature-requests?status=planned");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toBeVisible();
+  // Its badge has Planned's dark green dot beside it.
+  const dot = bo.getByRole("main").locator("[data-status-dot]");
+  const plannedColor = await bo.evaluate(() => {
+    const probe = document.body.appendChild(document.createElement("span"));
+    probe.style.backgroundColor = "var(--status-planned)";
+    return getComputedStyle(probe).backgroundColor;
+  });
+  expect(plannedColor).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(dot).toHaveCSS("background-color", plannedColor);
   await bo.goto("/feedback/feature-requests?status=open");
   await expect(bo.getByRole("link", { name: "Dark mode" })).toHaveCount(0);
   await checkpoint(bo, "portal-filtered");

@@ -22,6 +22,26 @@ const STATUS_VARIANTS: Record<PostStatus, VariantProps<typeof badgeVariants>["va
   CLOSED: "secondary",
 };
 
+/** Each status's colour, for its dot. */
+const STATUS_DOTS: Record<PostStatus, string> = {
+  OPEN: "bg-status-open",
+  UNDER_REVIEW: "bg-status-under-review",
+  PLANNED: "bg-status-planned",
+  IN_PROGRESS: "bg-status-in-progress",
+  COMPLETED: "bg-status-completed",
+  CLOSED: "bg-status-closed",
+};
+
+export function StatusDot({ status }: { status: PostStatus }) {
+  return <span aria-hidden data-status-dot className={`size-2 shrink-0 rounded-full ${STATUS_DOTS[status]}`} />;
+}
+
+/** The status's badge with its colour dot beside it. */
 export function PostStatusBadge({ status }: { status: PostStatus }) {
-  return <Badge variant={STATUS_VARIANTS[status]}>{STATUS_LABELS[status]}</Badge>;
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5">
+      <StatusDot status={status} />
+      <Badge variant={STATUS_VARIANTS[status]}>{STATUS_LABELS[status]}</Badge>
+    </span>
+  );
 }

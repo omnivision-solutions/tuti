@@ -585,7 +585,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 - [ ] Portal boards: a "Share your idea" box at the top for everyone (a signed-out visitor types first and signs in to post; similar ideas as they type, as the widget shows them), and open by default on Open, Under review, Planned and In progress, with completed ideas in a "Recently shipped" card
 - [ ] Changelog (team): Writing style moves out of the list into a dialog from the header (into Settings → AI with step 2); Drafts and Published tabs on the list
 - [x] Portal changelog: a reaction shows its count only once it has one (no row of zeros under every entry)
-- [ ] Status dots in `PostStatusBadge` (design.md's statuses), so every list has them
+- [x] Status dots in `PostStatusBadge` (design.md's statuses), so every list has them
 - [ ] No sentence under page titles in the app (`PageHeader`'s description goes; what it said moves into the page's empty state)
 - [ ] The unverified-email banner: a slim strip that can be dismissed, and an item in Home's setup list (step 3)
 - [ ] Customize: the top bar names the section, not the project; logo, favicon and share image uploads as a drop zone with "Upload", not the browser's file input

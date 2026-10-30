@@ -38,6 +38,9 @@ Never hard-code a colour in a component; add a token if one is missing.
 
 Post statuses (`PostStatusBadge`): Open = outline, Under review = secondary,
 Planned / In progress = soft, Completed = solid primary, Closed = secondary.
+Beside each badge, its colour dot (`status-*` tokens, `StatusDot`), so a list
+of mixed statuses can be scanned: Open grey, Under review amber, Planned dark
+green, In progress orange, Completed green, Closed light grey.
 
 ## Type scale
 
