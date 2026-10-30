@@ -43,7 +43,7 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
       <PageHeader
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         title="Insights"
-        description={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
+        meta={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
       />
       <Card>
         <CardHeader>

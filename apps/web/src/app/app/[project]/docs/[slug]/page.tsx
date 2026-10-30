@@ -71,7 +71,7 @@ export default async function ArticlePage(props: PageProps<"/app/[project]/docs/
         back={{ href: `/app/${slug}/docs`, label: "Docs" }}
         // On phones the form's title field shows it, right under this; from tablet width up it's in the top bar too, after "← Docs".
         title={<span className="sr-only topbar:not-sr-only">{article.title}</span>}
-        description={
+        meta={
           article.publishedAt ? (
             <>
               Published {formatDate(article.publishedAt)} ·{" "}

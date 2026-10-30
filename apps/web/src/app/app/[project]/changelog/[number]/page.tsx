@@ -47,7 +47,7 @@ export default async function ChangelogEntryPage(props: PageProps<"/app/[project
     <>
       <PageHeader
         title={entry.title}
-        description={
+        meta={
           entry.publishedAt
             ? `Published ${formatDate(entry.publishedAt)}`
             : entry.collecting

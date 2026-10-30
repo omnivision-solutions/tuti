@@ -20,7 +20,7 @@ export default async function AppHome() {
 
   return (
     <>
-      <PageHeader title="Welcome to Tuti" description="Create a project to start collecting feedback." />
+      <PageHeader title="Welcome to Tuti" />
       <Card className="max-w-xl">
         <CardHeader>
           <CardTitle>Create your first project</CardTitle>

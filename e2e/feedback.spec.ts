@@ -120,6 +120,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("link", { name: /Dark mode/ })).toHaveCount(0);
   await team.goto(`/app/${slug}/feedback`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
+  // No sentence under the page's title (what it's for is in its empty state).
+  await expect(team.locator('[data-slot="page-header"] p')).toHaveCount(0);
   // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.
   const row = team.getByRole("main").getByRole("listitem").filter({ hasText: "Dark mode" });
   await expect(row).toContainText("#1 · Feature requests · Ada");

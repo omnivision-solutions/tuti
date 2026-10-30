@@ -59,7 +59,6 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     <>
       <PageHeader
         title="Changelog"
-        description="What shipped, for the people who asked. Published entries show on your portal. With GitHub connected, merged pull requests gather in a draft until the next release."
         actions={newEntry}
       />
       {entries.length === 0 ? (

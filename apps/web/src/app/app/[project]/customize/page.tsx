@@ -11,7 +11,7 @@ export default async function CustomizePage(props: PageProps<"/app/[project]/cus
   const { project: slug } = await props.params;
   return (
     <>
-      <PageHeader title="Customize" description="How your portal and docs look. Each part opens beside a preview of your portal." />
+      <PageHeader title="Customize" />
       {CUSTOMIZE_GROUPS.map((group) => (
         <Card key={group.title}>
           <CardHeader>

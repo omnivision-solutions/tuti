@@ -43,7 +43,7 @@ export default async function TabPage(props: PageProps<"/app/[project]/docs/tabs
     <>
       <PageHeader
         title={tab.name}
-        description={`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
+        meta={`Tab · ${count} ${count === 1 ? "collection" : "collections"}`}
         actions={<DocsFilter />}
         more={
           // The first is the docs' home: another goes first before it can go.

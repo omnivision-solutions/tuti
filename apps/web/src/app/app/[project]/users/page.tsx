@@ -49,7 +49,6 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     <>
       <PageHeader
         title="Users"
-        description="The people your app signs in or sends to Tuti, with the properties your groups match."
         // In the top bar from tablet width up, like other pages' controls.
         actions={
           <>
