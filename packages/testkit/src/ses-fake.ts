@@ -18,6 +18,11 @@ export type SesFake = {
   /** Paths that answer 500 while they're in it, to test failures. */
   failing: Set<string>;
   /**
+   * Called with each SES call before it's answered: it may wait (to hold the answer back), and a status
+   * it returns is the answer instead (500: a failure of that call alone).
+   */
+  respond?: (path: string, body: Record<string, unknown>) => Promise<number | void> | number | void;
+  /**
    * A message as SNS posts it for the events topic, signed with the fake's key (its certificate is on
    * the fake): a Notification carries an SES event, a SubscriptionConfirmation a link to confirm.
    * `signed: false` gives it another key's signature.
@@ -72,7 +77,7 @@ export async function startSesFake(): Promise<SesFake> {
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => {
+    req.on("end", async () => {
       const path = new URL(req.url ?? "/", "http://fake").pathname;
       const query = new URL(req.url ?? "/", "http://fake").searchParams;
       // For journeys in other processes: SES finds a domain's DKIM records (POST /_fake/verify?domain=…).
@@ -107,6 +112,10 @@ export async function startSesFake(): Promise<SesFake> {
         return answer(500, { message: "Internal failure" }, "InternalFailure");
       }
       const body = (chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : {}) as Record<string, unknown>;
+      const status = await fake.respond?.(path, body);
+      if (status) {
+        return answer(status, { message: "Internal failure" }, "InternalFailure");
+      }
       if (req.method === "POST" && path === "/v2/email/tenants") {
         const name = String(body.TenantName);
         if (tenants.has(name)) {
@@ -171,7 +180,8 @@ export async function startSesFake(): Promise<SesFake> {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return {
+  // `respond` is read from here as each call comes in (the server above answers only after this).
+  const fake: SesFake = {
     url,
     env: {
       SES_API_URL: url,
@@ -191,4 +201,5 @@ export async function startSesFake(): Promise<SesFake> {
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
+  return fake;
 }

@@ -48,6 +48,8 @@ export type Ses = {
 
 /** The tag naming the project an identity was added for. */
 const PROJECT_TAG = "tuti-project";
+/** The most an SES call (with its retries) may take. */
+const SES_TIMEOUT_MS = 20_000;
 
 /** The configured SES API, or null without the settings. */
 export function ses(): Ses | null {
@@ -68,6 +70,8 @@ export function ses(): Ses | null {
       method,
       headers: { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
+      // One deadline for the call and its retries: a stalled request ends rather than holding a send (and its lock).
+      signal: AbortSignal.timeout(SES_TIMEOUT_MS),
     });
     if (response.ok) {
       return ((await response.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
