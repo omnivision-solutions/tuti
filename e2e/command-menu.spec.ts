@@ -20,6 +20,12 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await team.getByRole("button", { name: /^Search/ }).click();
   const menu = team.getByRole("dialog", { name: "Go to or do" });
   const box = menu.getByRole("combobox", { name: "Search the project" });
+  // Scrolled away from the first option, typing replaces the list: the new first is in sight.
+  await menu.getByRole("listbox").evaluate((list) => (list.scrollTop = list.scrollHeight));
+  await box.fill("se");
+  await expect(menu.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await expect(menu.getByRole("option").first()).toBeInViewport();
+  await box.fill("");
   // Up from the first goes round to the last, past the list's fold: it scrolls into sight.
   await box.press("ArrowUp");
   await expect(menu.getByRole("option").last()).toHaveAttribute("aria-selected", "true");

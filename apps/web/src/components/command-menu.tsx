@@ -100,10 +100,11 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
     ...found.map((result) => ({ key: `${result.kind}:${result.href}`, group: KIND[result.kind].group, title: result.title, meta: result.meta, href: result.href, icon: KIND[result.kind].icon })),
   ];
   const current = Math.min(active, Math.max(options.length - 1, 0));
-  // The arrow keys move past the list's fold: keep the active option in sight.
+  // The arrow keys move past the list's fold, and new results replace the list: keep the active option in sight.
+  const activeKey = options[current]?.key;
   useEffect(() => {
     document.getElementById(`${listId}-${current}`)?.scrollIntoView({ block: "nearest" });
-  }, [listId, current]);
+  }, [listId, current, activeKey]);
 
   const go = (option: Option) => {
     onClose();
