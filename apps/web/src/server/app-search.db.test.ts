@@ -35,6 +35,10 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
   expect((await searchApp(project.slug, "%%")).results).toEqual([]);
   // A number too big to be one isn't looked up as one (nor does it fail the search).
   expect((await searchApp(project.slug, "99999999999")).results).toEqual([]);
+  // Longer than the box takes: nothing, rather than what its first 200 characters match.
+  await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 8, title: "a".repeat(200) } });
+  expect((await searchApp(project.slug, "a".repeat(200))).results!.map((r) => r.href)).toEqual([`${base}/p/8`]);
+  expect((await searchApp(project.slug, `${"a".repeat(200)}b`)).results).toEqual([]);
   // Too short to search: nothing (the menu still matches pages and actions itself).
   expect((await searchApp(project.slug, "d")).results).toEqual([]);
   // Someone outside the team gets nothing.

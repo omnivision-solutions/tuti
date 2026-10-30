@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
+import { MAX_QUERY, OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { cn } from "@/lib/utils";
 import { type AppSearchResult, searchApp } from "@/server/app-search";
 
@@ -127,6 +127,7 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
           aria-activedescendant={options[current] ? `${listId}-${current}` : undefined}
           aria-label="Search the project"
           placeholder="Search posts, conversations, articles, users, settings…"
+          maxLength={MAX_QUERY}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);

@@ -2,6 +2,8 @@
 
 import { prisma } from "@tuti/db";
 
+import { MAX_QUERY } from "@/lib/command-menu-event";
+
 import { getMembership } from "./membership";
 import { listUsers } from "./operations/users";
 import { call } from "./operations/run";
@@ -21,8 +23,9 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   if (!session || !membership) {
     return { error: "Only the project's team can search it" };
   }
-  const query = q.trim().slice(0, 200);
-  if (query.length < 2) {
+  const query = q.trim();
+  // Too short to search, or longer than anything worth searching for (the box takes 200): nothing.
+  if (query.length < 2 || query.length > MAX_QUERY) {
     return { results: [] };
   }
   const projectId = membership.project.id;
