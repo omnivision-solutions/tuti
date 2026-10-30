@@ -218,4 +218,7 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await visitor.waitForURL(/\?status=all$/);
   await expect(main.getByRole("link", { name: "Export to CSV" })).toHaveCount(1);
   await expect(shipped).toHaveCount(0);
+  // The default list asked for by name (or with a status it doesn't know) has the card too.
+  await visitor.goto("/feedback/feature-requests?status=active");
+  await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
 });

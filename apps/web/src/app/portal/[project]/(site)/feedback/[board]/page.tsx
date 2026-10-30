@@ -55,8 +55,8 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
   const statuses = boardStatuses(searchParams);
   const [{ posts, more }, shipped] = await Promise.all([
     boardPosts(board.id, filters, userId, statuses),
-    // Beside the default list, which leaves completed ideas out.
-    searchParams.status === undefined ? recentlyShipped(board.id) : [],
+    // Beside the default list (however it's asked for), which leaves completed ideas out.
+    statuses && statuses.length > 1 ? recentlyShipped(board.id) : [],
   ]);
   const texts = boardTexts(board);
   return (
