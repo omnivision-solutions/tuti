@@ -28,7 +28,7 @@ export function botState(name, runs, statuses) {
   return statuses.find((s) => s.context === name)?.state ?? "missing";
 }
 
-// Status chrome, not findings: CodeRabbit's walkthrough and review headers (unless
+// Status chrome, not findings: CodeRabbit's walkthrough, its replies to a review request and its review headers (unless
 // they carry comments outside the diff, or nitpicks), Greptile's summary and lockout notice, the E2E screenshots comment (scripts/publish-screenshots.sh) and
 // bare requests for a review (review-bot.yml's or a person's).
 function isNoise({ user, body }) {
@@ -38,7 +38,8 @@ function isNoise({ user, body }) {
   if (user.login === "coderabbitai[bot]")
     return (
       /^(<!-- coderabbit-ai-generated:v1 -->\s*)?<!-- This is an auto-generated comment: (summarize|rate limited) by coderabbit\.ai -->/.test(body) ||
-      (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body))
+      (body.includes("Actionable comments posted") && !/(Outside diff range|Nitpick) comments \(/.test(body)) ||
+      body.includes("<!-- CodeRabbit review command invocation:")
     );
   if (user.login === "greptile-apps[bot]")
     return /^(<h3>Greptile Summary<\/h3>|<!-- greptile_summary -->)/.test(body) || LOCKOUT.test(body);

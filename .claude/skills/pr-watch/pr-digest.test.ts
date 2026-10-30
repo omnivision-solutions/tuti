@@ -243,6 +243,7 @@ describe("pr-digest", () => {
 
     it.each([
       ["coderabbitai[bot]", "<!-- coderabbit-ai-generated:v1 -->\n\n<!-- This is an auto-generated comment: summarize by coderabbit.ai -->"],
+      ["coderabbitai[bot]", "<!-- This is an auto-generated reply by CodeRabbit -->\n<!-- CodeRabbit review command invocation: v2:0 -->\n<details><summary>Action performed</summary>Review triggered.</details>"],
       ["greptile-apps[bot]", "To keep reviewing, [Reactivate Greptile](https://example.com)"],
       ["greptile-apps[bot]", "Your organization has run out of review credits. [Add credits](https://example.com) to resume code reviews."],
       ["greptile-apps[bot]", "<h3>Greptile Summary</h3>"],
