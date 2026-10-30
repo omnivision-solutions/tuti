@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { COMMAND_MENU_NAVIGATE } from "@/lib/command-menu-event";
 import { keepingFields } from "@/lib/forms";
 import { CUSTOMIZE, PREVIEW_TOKEN_PARAM, PREVIEW_TTL_SECONDS } from "@/lib/portal-base";
 import { isFromPortal, type PortalLook, PREVIEW_FRAME, type ToPortal } from "@/lib/portal-look";
@@ -250,11 +251,18 @@ export function CustomizeShell({
       event.stopPropagation();
       setLeaving(`${url.pathname}${url.search}${url.hash}`);
     };
+    // And on ⌘K's.
+    const onNavigate = (event: Event) => {
+      event.preventDefault();
+      setLeaving((event as CustomEvent<string>).detail);
+    };
     window.addEventListener("beforeunload", onBeforeUnload);
     document.addEventListener("click", onClick, true);
+    window.addEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
       document.removeEventListener("click", onClick, true);
+      window.removeEventListener(COMMAND_MENU_NAVIGATE, onNavigate);
     };
   }, [dirty]);
 

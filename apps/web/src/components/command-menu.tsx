@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { MAX_QUERY, OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
+import { COMMAND_MENU_NAVIGATE, MAX_QUERY, OPEN_COMMAND_MENU } from "@/lib/command-menu-event";
 import { cn } from "@/lib/utils";
 import { type AppSearchResult, searchApp } from "@/server/app-search";
 
@@ -33,6 +33,10 @@ export function CommandMenu({ projectSlug, items }: { projectSlug: string; items
   const [open, setOpen] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Taken already (in an editor, ⌘K adds a link).
+      if (event.defaultPrevented) {
+        return;
+      }
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setOpen((was) => !was);
@@ -109,7 +113,7 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
     onClose();
     if (option.external) {
       window.open(option.href, "_blank", "noopener");
-    } else {
+    } else if (window.dispatchEvent(new CustomEvent(COMMAND_MENU_NAVIGATE, { detail: option.href, cancelable: true }))) {
       router.push(option.href);
     }
   };
@@ -172,8 +176,11 @@ function Menu({ projectSlug, items, onClose }: { projectSlug: string; items: Com
               className={cn("flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm", i === current && "bg-muted")}
             >
               <option.icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0 flex-1 truncate">{option.title}</span>
-              {option.meta && <span className="shrink-0 text-xs text-muted-foreground">{option.meta}</span>}
+              {/* The meta (an email, say) goes under the title when both don't fit; long ones wrap. */}
+              <span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-2">
+                <span className="min-w-0 break-words">{option.title}</span>
+                {option.meta && <span className="min-w-0 text-xs break-all text-muted-foreground">{option.meta}</span>}
+              </span>
             </div>
           </li>
         ))}

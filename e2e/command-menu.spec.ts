@@ -14,6 +14,7 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   const api = await apiFor(team, slug);
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/articles", { title: "Turning on dark mode", body: "Open your profile menu." });
+  await api("/users", { users: [{ id: "u-long", name: "Lou Long", email: "e2e-someone.with.a.long.name@subsidiary.example-company.com" }] });
 
   await team.goto(`/app/${slug}`);
   // The sidebar's Search opens it, saying the shortcut as this platform writes it.
@@ -45,6 +46,19 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await menu.getByRole("option", { name: /Turning on dark mode/ }).click();
   await team.waitForURL(`**/app/${slug}/docs/turning-on-dark-mode`);
 
+  // On a phone, a long email wraps rather than squeezing the name out or pushing the list sideways.
+  await team.setViewportSize({ width: 390, height: 844 });
+  await team.keyboard.press("ControlOrMeta+k");
+  await box.fill("lou long");
+  const lou = menu.getByRole("option", { name: /Lou Long/ });
+  await expect(lou).toBeVisible();
+  expect(await menu.getByRole("listbox").evaluate((list) => list.scrollWidth <= list.clientWidth)).toBe(true);
+  expect((await lou.getByText("Lou Long", { exact: true }).boundingBox())!.width).toBeGreaterThan(40);
+  await checkpoint(team, "command-menu-phone", { fullPage: false });
+  await box.press("Escape");
+  await expect(menu).toBeHidden();
+  await team.setViewportSize({ width: 1280, height: 720 });
+
   // A settings page, and an action.
   await team.keyboard.press("ControlOrMeta+k");
   await box.fill("single sign");
@@ -54,6 +68,11 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.fill("new article");
   await box.press("Enter");
   await team.waitForURL(`**/app/${slug}/docs/new`);
+  // In the article's editor ⌘K adds a link instead.
+  await team.getByRole("textbox", { name: "Article" }).click();
+  await team.keyboard.press("ControlOrMeta+k");
+  await expect(team.getByRole("dialog", { name: "Add a link" })).toBeVisible();
+  await expect(menu).toHaveCount(0);
 
   // Outside a project's pages (Account settings) there's no ⌘K, so no Search button either.
   await team.goto("/app/account");

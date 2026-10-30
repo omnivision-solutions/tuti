@@ -20,6 +20,12 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
   await prisma.conversation.create({
     data: { projectId: project.id, number: 4, subject: "Dark mode for cheap", status: "OPEN", origin: "API", spam: true, lastMessageAt: new Date() },
   });
+  // Merged into #7, and deleted: neither is found.
+  const seven = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: 7 } });
+  await prisma.post.create({
+    data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 9, title: "Dark theme please", duplicateOfId: seven.id },
+  });
+  await prisma.article.create({ data: { projectId: project.id, slug: "dark-mode-old", title: "Dark mode (old)", deletedAt: new Date() } });
   actAs(owner);
   const base = `/app/${project.slug}`;
   const { results } = await searchApp(project.slug, "dark");
