@@ -64,6 +64,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.goto(`/app/${slug}/p/2`);
   const feedbackItem = team.locator('[data-slot="sidebar-menu-item"]').filter({ has: team.getByRole("link", { name: "Feedback", exact: true }) });
   await expect(feedbackItem).toContainText("2 to triage");
+  await expect(team.getByRole("link", { name: "Feedback", exact: true }).first()).toHaveAccessibleDescription("2 to triage");
   // The team merges the duplicate into the original…
   await team.getByRole("button", { name: "Merge into…" }).click();
   await team.getByRole("button", { name: /Dark mode/ }).click();

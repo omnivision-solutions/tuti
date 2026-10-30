@@ -106,13 +106,14 @@ export function AppSidebar({
                       <SidebarMenuButton
                         isActive={pathname === item.href || (!!item.section && pathname.startsWith(`${item.href}/`))}
                         tooltip={item.title}
-                        render={<Link href={item.href} />}
+                        // Its count is read with it ("Feedback, 2 to triage").
+                        render={<Link href={item.href} aria-describedby={item.badge ? countId(item.title) : undefined} />}
                       >
                         <item.icon />
                         <span>{item.title}</span>
                       </SidebarMenuButton>
                       {!!item.badge && (
-                        <SidebarMenuBadge>
+                        <SidebarMenuBadge id={countId(item.title)}>
                           {item.badge.count}
                           <span className="sr-only"> {item.badge.label}</span>
                         </SidebarMenuBadge>
@@ -166,6 +167,8 @@ export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: stri
   const slug = params.project ?? fallbackSlug;
   return projects.find((p) => p.slug === slug) ?? null;
 }
+
+const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+/g, "-")}`;
 
 type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string } | false };
 
