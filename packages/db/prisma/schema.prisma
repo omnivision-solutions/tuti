@@ -139,9 +139,8 @@ model Project {
   conversationCount     Int          @default(0)
   /// The support inbox is on (Settings → Support): Messages in the widget, "Ask a person" starts a conversation.
   supportInbox          Boolean      @default(false)
-  /// No longer used (projects were approved before emailing their users): drop in a later release.
-  emailRequestedAt      DateTime?
-  emailApprovedAt       DateTime?
+  // "emailRequestedAt" and "emailApprovedAt" (projects were once approved before emailing their users) are
+  // still in the database, unread, so the release before this one keeps working: a later release drops them.
   /// On a server selling plans, its email to its users is paused (its bounces or complaints went over,
   /// packages/jobs/src/email-limits.ts) until the operator resumes it: when, and why.
   emailPausedAt         DateTime?
