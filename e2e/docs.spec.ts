@@ -1213,8 +1213,23 @@ test("a visitor asks the docs' AI: an answer with its source, or “I don't know
   await team.getByRole("radio", { name: "Short" }).check();
   await team.getByLabel("Standing instructions").fill("Call the product Acme.");
   await team.getByLabel("Off-limits topics").fill("refund\n  legal advice  ");
+  // Locked while it saves (held here until checked).
+  let releaseSave!: () => void;
+  const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
+  const saving = `**/app/${slug}/settings/ai-answers`;
+  await team.route(saving, async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fallback();
+    }
+    const response = await route.fetch();
+    await saveHeld;
+    await route.fulfill({ response });
+  });
   await team.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(team.getByLabel("Tone", { exact: true })).toBeDisabled();
+  releaseSave();
   await expect(team.getByText("AI answers saved")).toBeVisible();
+  await team.unroute(saving);
   // The form shows what was saved: each topic trimmed.
   await expect(team.getByLabel("Off-limits topics")).toHaveValue("refund\nlegal advice");
   await team.reload();
