@@ -119,11 +119,13 @@ describe("pr-digest", () => {
         expect(bot(counted)).toContain("only tests and docs changed since");
       });
 
-      it("expires a notice once Greptile reviews again, and reads one posted as a review on an earlier commit", () => {
+      it("expires a notice once Greptile reviews or comments again, and reads one posted as a review on an earlier commit", () => {
         const notice = review(56, "greptile-apps[bot]", "COMMENTED", "2026-01-01T00:01:00Z", "To keep reviewing, [Reactivate Greptile](https://example.com)");
         expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }] }).verdict).toBe("no-bot");
         const later = { ...review(57, "greptile-apps[bot]", "APPROVED", "2026-01-01T00:02:00Z"), commit_id: reviewed };
         expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }, later] }).verdict).toBe("pending");
+        const summary = comment(59, "greptile-apps[bot]", "<h3>Greptile Summary</h3>", "2026-01-01T00:02:00Z");
+        expect(observe({ ...greptile, reviews: [{ ...notice, commit_id: reviewed }], conversation: [summary] }).verdict).toBe("pending");
       });
 
       it("times silence from the latest @greptileai when no check has registered", () => {

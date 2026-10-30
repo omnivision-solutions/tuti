@@ -74,8 +74,8 @@ function greptileGone({ head, runs, conversation, reviews, now }) {
   const greptile = [...conversation, ...reviews].filter((c) => c.user.login === "greptile-apps[bot]");
   const lockouts = greptile.filter((c) => LOCKOUT.test(c.body ?? ""));
   const mentioned = latest(conversation.filter((c) => /^@greptileai\b/.test(c.body)));
-  // Asked again, or reviewing again: it may have credits now.
-  const back = Math.max(mentioned, latest(greptile.filter((c) => c.submitted_at && !lockouts.includes(c))));
+  // Asked again, or reviewing or commenting again: it may have credits now.
+  const back = Math.max(mentioned, latest(greptile.filter((c) => !lockouts.includes(c))));
   if (lockouts.some((c) => at(c) > back)) return "it can't review (out of credits)";
   const starts = runs.map((r) => Date.parse(r.started_at));
   const asked = Math.max(mentioned, starts.length ? Math.min(...starts) : -Infinity);
