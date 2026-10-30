@@ -27,7 +27,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
               Pricing
             </Link>
           )}
-          <a href={docsUrl()} className={buttonVariants({ variant: "ghost", size: "sm", className: "max-sm:hidden" })}>
+          <a href={await docsUrl()} className={buttonVariants({ variant: "ghost", size: "sm", className: "max-sm:hidden" })}>
             Docs
           </a>
           <a href={REPO_URL} className={buttonVariants({ variant: "ghost", size: "sm" })}>
