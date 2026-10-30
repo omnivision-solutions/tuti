@@ -24,7 +24,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(team, "team-new-project");
 
   // Until they verify their email, the dashboard asks them to; the emailed link does it.
-  const banner = team.getByRole("alert").filter({ hasText: "Verify your email" });
+  const banner = team.getByRole("status").filter({ hasText: "Verify your email" });
   await expect(banner).toContainText(team.email);
   const emailsBefore = countEmailsTo(team.email);
   await team.getByRole("button", { name: "Resend email" }).click();

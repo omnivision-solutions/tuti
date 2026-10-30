@@ -1,20 +1,21 @@
 "use client";
 
-import { MailIcon } from "lucide-react";
+import { MailIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { VERIFY_EMAIL_DISMISSED_COOKIE } from "@/lib/verify-email";
 
-/** Shown in /app until the signed-in account's email is verified. */
+/** A slim strip in /app until the signed-in account's email is verified, or it's dismissed (in this browser). */
 export function VerifyEmailBanner({ email }: { email: string }) {
   const [state, setState] = useState<"idle" | "sending" | "sent">("idle");
+  const [dismissed, setDismissed] = useState(false);
   // Rendered by the server while unverified; the session refreshes when the tab
   // regains focus, so verifying in another tab hides it here too.
   const { data } = authClient.useSession();
-  if (data?.user.emailVerified) {
+  if (data?.user.emailVerified || dismissed) {
     return null;
   }
 
@@ -29,18 +30,24 @@ export function VerifyEmailBanner({ email }: { email: string }) {
     setState("sent");
   }
 
+  function dismiss() {
+    document.cookie = `${VERIFY_EMAIL_DISMISSED_COOKIE}=1; path=/app; max-age=31536000; samesite=lax`;
+    setDismissed(true);
+  }
+
   return (
-    <Alert>
-      <MailIcon />
-      <AlertTitle>Verify your email</AlertTitle>
-      <AlertDescription>
-        We sent a link to {email}. Verifying it lets teams invite you by email.
-      </AlertDescription>
-      <AlertAction>
-        <Button size="sm" variant="outline" onClick={resend} disabled={state !== "idle"}>
-          {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
-        </Button>
-      </AlertAction>
-    </Alert>
+    <div role="status" className="flex items-center gap-2 rounded-lg border bg-muted/50 py-1 pr-1 pl-3 text-sm">
+      <MailIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <p className="min-w-0 flex-1 break-words">
+        <span className="font-medium">Verify your email.</span>{" "}
+        <span className="text-muted-foreground">We sent a link to {email}.</span>
+      </p>
+      <Button size="xs" variant="ghost" onClick={resend} disabled={state !== "idle"}>
+        {state === "sent" ? "Sent" : state === "sending" ? "Sending…" : "Resend email"}
+      </Button>
+      <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={dismiss}>
+        <XIcon />
+      </Button>
+    </div>
   );
 }

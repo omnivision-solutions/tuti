@@ -60,6 +60,22 @@ test("a team member switches projects, edits their account, signs out and back i
   await olive.waitForURL(/\/app\//);
 });
 
+test("the strip asking to verify an email can be dismissed, and stays dismissed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const olive = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(olive, "Acme", slug);
+  const strip = olive.getByRole("status").filter({ hasText: "Verify your email" });
+  await expect(strip).toContainText(`We sent a link to ${olive.email}.`);
+  await checkpoint(olive, "verify-email-strip", { fullPage: false });
+  await strip.getByRole("button", { name: "Dismiss" }).click();
+  await expect(strip).toHaveCount(0);
+  // Not back on the next page, or after reloading.
+  await olive.goto(`/app/${slug}/feedback`);
+  await expect(olive.getByRole("heading", { name: "Feedback" })).toBeVisible();
+  await expect(strip).toHaveCount(0);
+});
+
 test("someone signs up on a portal, signs out and signs back in there", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
