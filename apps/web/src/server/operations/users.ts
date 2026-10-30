@@ -68,7 +68,8 @@ export const listUsers = defineOperation({
   scope: "read",
   access: "team",
   input: z.object({
-    q: z.string().trim().max(200).optional(),
+    // As long as an id can be, so Users can find anyone by theirs.
+    q: z.string().trim().max(255).optional(),
     group: readerGroup.optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
