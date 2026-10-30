@@ -151,29 +151,26 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(ada.getByText("Completed").first()).toBeVisible();
   await expect(ada.getByRole("link", { name: "Dark mode is here" })).toHaveAttribute("href", "/changelog/1");
 
-  // The team's writing style: tone notes, and the published entry as an example.
-  const tone = `Friendly, short sentences, no jargon (${slug}).`;
-  // The list opens on Published while there are no drafts; Writing style is a dialog from its header.
+  // The list opens on Published while there are no drafts; nothing but the new entry in its header.
   await team.goto(`/app/${slug}/changelog`);
   const tabs = team.getByRole("navigation", { name: "Entries" });
   await expect(tabs.getByRole("link", { name: "Published 1" })).toHaveAttribute("aria-current", "page");
   await tabs.getByRole("link", { name: "Drafts 0" }).click();
   await expect(team.getByText("No drafts")).toBeVisible();
-  await team.getByRole("button", { name: "Writing style" }).click();
-  const styleDialog = team.getByRole("dialog", { name: "Writing style" });
-  // Closed without saving, it keeps what was typed.
-  await styleDialog.getByLabel("Tone").fill("Half a thought");
-  await team.keyboard.press("Escape");
-  await team.getByRole("button", { name: "Writing style" }).click();
-  await expect(styleDialog.getByLabel("Tone")).toHaveValue("Half a thought");
-  await styleDialog.getByLabel("Tone").fill(tone);
-  await styleDialog.getByRole("checkbox", { name: "Dark mode is here" }).check();
-  await checkpoint(team, "team-changelog-style", { fullPage: false });
+  await expect(team.getByRole("button", { name: "Writing style" })).toHaveCount(0);
+
+  // The team's writing style (Settings → AI → Writing style): tone notes, and the published entry as an example.
+  const tone = `Friendly, short sentences, no jargon (${slug}).`;
+  await team.goto(`/app/${slug}/settings`);
+  await team.getByRole("navigation", { name: "Settings" }).getByRole("link", { name: "Writing style" }).click();
+  await team.waitForURL(`**/app/${slug}/settings/writing-style`);
+  await team.getByLabel("Tone").fill(tone);
+  await team.getByRole("checkbox", { name: "Dark mode is here" }).check();
+  await checkpoint(team, "team-settings-writing-style");
   // While it saves, the fields are locked (an edit then wouldn't be saved).
   let releaseSave!: () => void;
   const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-  // No `times`: a prefetch GET would use it up before the POST.
-  const saving = `**/app/${slug}/changelog**`;
+  const saving = `**/app/${slug}/settings/writing-style`;
   await team.route(saving, async (route) => {
     if (route.request().method() !== "POST") {
       return route.fallback();
@@ -182,29 +179,15 @@ test("the team writes what shipped, publishes it, and people see it on the porta
     await saveHeld;
     await route.fulfill({ response });
   });
-  await styleDialog.getByRole("button", { name: "Save style" }).click();
-  await expect(styleDialog.getByLabel("Tone")).toBeDisabled();
+  await team.getByRole("button", { name: "Save style" }).click();
+  await expect(team.getByLabel("Tone")).toBeDisabled();
   releaseSave();
   await expect(team.getByText("Style saved")).toBeVisible();
   await team.unroute(saving);
-  await expect(styleDialog).toBeHidden();
-  await team.reload();
-  await team.getByRole("button", { name: "Writing style" }).click();
-  await expect(styleDialog.getByLabel("Tone")).toHaveValue(tone);
-  await expect(styleDialog.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
-  // A save that changes only the tone closes it too.
-  await styleDialog.getByLabel("Tone").fill(`${tone} Updated.`);
-  await styleDialog.getByRole("button", { name: "Save style" }).click();
-  await expect(team.getByText("Style saved").first()).toBeVisible();
-  await expect(styleDialog).toBeHidden();
   // Saved, not just left in the form: it's there after a reload.
   await team.reload();
-  await team.getByRole("button", { name: "Writing style" }).click();
-  await expect(styleDialog.getByLabel("Tone")).toHaveValue(`${tone} Updated.`);
-  await styleDialog.getByLabel("Tone").fill(tone);
-  await styleDialog.getByRole("button", { name: "Save style" }).click();
-  await expect(team.getByText("Style saved").first()).toBeVisible();
-  await expect(styleDialog).toBeHidden();
+  await expect(team.getByLabel("Tone")).toHaveValue(tone);
+  await expect(team.getByRole("checkbox", { name: "Dark mode is here" })).toBeChecked();
 
   // The team picks a bigger model for changelog drafts (Settings → AI models): Fast (the default) or Balanced,
   // each with its model and what a draft costs with it (Best is only offered where the endpoint lists its model),
@@ -217,8 +200,10 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(changelogModels.getByText(/^About [\d.$]+ (credits? )?per draft$/).first()).toBeVisible();
   await changelogModels.getByRole("radio", { name: /^Custom model/ }).check();
   const changelogModel = team.getByLabel("Changelog drafts and edits: model id");
-  // An empty custom id isn't sent (it would save as the default).
+  // An empty custom id, or one of spaces only, isn't sent (it would save as the default).
   await expect(changelogModel).toHaveAttribute("required", "");
+  await changelogModel.fill("   ");
+  expect(await changelogModel.evaluate((input: HTMLInputElement) => input.validity.valid)).toBe(false);
   await changelogModel.fill("acme/imaginary");
   await team.getByRole("button", { name: "Save" }).click();
   await expect(team.getByText("has no model “acme/imaginary”")).toBeVisible();

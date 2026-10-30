@@ -1,9 +1,7 @@
 import { prisma } from "@tuti/db";
-import { aiEnabled } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { ChangelogStyleDialog } from "@/components/changelog";
 import { TAG_LABELS } from "@/components/changelog-entry";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -43,17 +41,6 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     },
   });
   const reactions = await reactionCounts(entries.map((e) => e.id));
-  // The writing style only matters to AI drafts.
-  const style =
-    aiEnabled() &&
-    (await prisma.project.findUniqueOrThrow({
-      where: { id: membership.project.id },
-      select: { changelogTone: true, changelogExampleIds: true },
-    }));
-  // The picked examples that are still published.
-  const examples = style
-    ? entries.filter((e) => e.publishedAt && style.changelogExampleIds.includes(e.id)).map((e) => e.number)
-    : [];
   const drafts = entries.filter((e) => !e.publishedAt);
   const published = entries.filter((e) => e.publishedAt);
   const tab = param === "published" || (param !== "drafts" && drafts.length === 0) ? "published" : "drafts";
@@ -69,21 +56,7 @@ export default async function TeamChangelogPage(props: PageProps<"/app/[project]
     <>
       <PageHeader
         title="Changelog"
-        actions={
-          <>
-            {style && (
-              <ChangelogStyleDialog
-                // A fresh form when the examples change underneath it (one unpublished, say), so stale picks don't count.
-                key={examples.join(",")}
-                projectSlug={slug}
-                tone={style.changelogTone}
-                examples={examples}
-                published={published.map(({ number, title }) => ({ number, title }))}
-              />
-            )}
-            {newEntry}
-          </>
-        }
+        actions={newEntry}
       />
       <SubNav
         label="Entries"

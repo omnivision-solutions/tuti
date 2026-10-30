@@ -28,7 +28,15 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
     {
       title: "AI",
       // How it answers can be set before the server has AI (as it could in Customize); which models, only with it.
-      pages: [{ title: "AI answers", href: at("ai-answers") }, ...(aiEnabled() ? [{ title: "Models", href: at("ai-models") }] : [])],
+      pages: [
+        { title: "AI answers", href: at("ai-answers") },
+        ...(aiEnabled()
+          ? [
+              { title: "Writing style", href: at("writing-style") },
+              { title: "Models", href: at("ai-models") },
+            ]
+          : []),
+      ],
     },
     {
       title: "Connections",
