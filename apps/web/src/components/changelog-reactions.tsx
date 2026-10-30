@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { reactToChangelogEntry } from "@/server/changelog";
 import { REACTION_EMOJI, REACTIONS, type Reaction, type ReactionCounts } from "@/lib/reactions";
 
-/** A published entry's reactions on the portal: one of each per reader, toggled; signed out, just the counts. */
+/**
+ * A published entry's reactions on the portal: one of each per reader, toggled; signed out, just the counts.
+ * A count shows once it's above zero, so entries nobody reacted to don't carry a row of zeros.
+ */
 export function ChangelogReactions({
   projectSlug,
   number,
@@ -37,7 +40,7 @@ export function ChangelogReactions({
             disabled={!signedIn || pending}
             title={signedIn ? undefined : "Sign in to react"}
             aria-pressed={on}
-            aria-label={`React with ${REACTION_EMOJI[reaction]} (${count})`}
+            aria-label={`React with ${REACTION_EMOJI[reaction]}${count > 0 ? ` (${count})` : ""}`}
             onClick={() =>
               startTransition(async () => {
                 setOptimistic((s) => ({
@@ -54,7 +57,7 @@ export function ChangelogReactions({
             }
           >
             <span aria-hidden>{REACTION_EMOJI[reaction]}</span>
-            <span className="tabular-nums">{count}</span>
+            {count > 0 && <span className="tabular-nums">{count}</span>}
           </Button>
         );
       })}

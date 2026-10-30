@@ -114,7 +114,9 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await checkpoint(ada, "portal-changelog");
   // Readers react, one of each, on and off; the team's list shows the counts.
   const tada = entry.getByRole("button", { name: /^React with 🎉/ });
-  await expect(tada).toHaveAccessibleName("React with 🎉 (0)");
+  // No count until there is one.
+  await expect(tada).toHaveAccessibleName("React with 🎉");
+  await expect(tada).toHaveText("🎉");
   await tada.click();
   await expect(tada).toHaveAccessibleName("React with 🎉 (1)");
   await expect(tada).toHaveAttribute("aria-pressed", "true");
@@ -131,11 +133,11 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   await expect(readerTada).toHaveAttribute("title", "Sign in to react");
   // Taken back.
   await tada.click();
-  await expect(tada).toHaveAccessibleName("React with 🎉 (0)");
+  await expect(tada).toHaveAccessibleName("React with 🎉");
   await expect(tada).toHaveAttribute("aria-pressed", "false");
   await expect(tada).toBeEnabled();
   await reader.reload();
-  await expect(readerTada).toHaveAccessibleName("React with 🎉 (0)");
+  await expect(readerTada).toHaveAccessibleName("React with 🎉");
   await reader.context().close();
   // Feed readers find it too.
   await expect(ada.locator('link[rel="alternate"][type="application/rss+xml"]')).toHaveAttribute("href", `${portalUrl(slug)}/changelog/rss.xml`);
@@ -311,13 +313,13 @@ test("the team writes what shipped, publishes it, and people see it on the porta
   // A reaction the server refuses (the entry was unpublished meanwhile) says why and isn't shown as kept.
   await ada.goto("/changelog/1");
   const heart = ada.getByRole("button", { name: /^React with ❤️/ });
-  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await expect(heart).toHaveAccessibleName("React with ❤️");
   await team.goto(`/app/${slug}/changelog/1`);
   await team.getByRole("button", { name: "Unpublish" }).click();
   await expect(team.getByText("Unpublished", { exact: true })).toBeVisible();
   await heart.click();
   await expect(ada.getByText("There's no changelog entry #1")).toBeVisible();
-  await expect(heart).toHaveAccessibleName("React with ❤️ (0)");
+  await expect(heart).toHaveAccessibleName("React with ❤️");
   await expect(heart).toHaveAttribute("aria-pressed", "false");
 });
 
