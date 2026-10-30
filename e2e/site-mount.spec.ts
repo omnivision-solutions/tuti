@@ -47,6 +47,11 @@ test("the team puts the portal under a path of its own site: its site forwards i
   await owner.getByRole("button", { name: "Check setup" }).click();
   await expect(owner.getByText(`Your portal is at ${siteUrl()}/portal`)).toBeVisible();
   await expect(owner.getByText("Verified", { exact: true })).toBeVisible();
+  // The project switcher's View portal says the portal's address, path and all.
+  await owner.reload();
+  await owner.getByRole("button", { name: /Acme/ }).first().click();
+  await expect(owner.getByRole("menuitem", { name: /^View portal/ })).toContainText(`${new URL(siteUrl()).host}/portal`);
+  await owner.keyboard.press("Escape");
 
   // People read it on the site, and its links stay under the path.
   const visitor = await newPerson(browser, siteUrl());

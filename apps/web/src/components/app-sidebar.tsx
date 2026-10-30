@@ -168,6 +168,12 @@ export function useCurrentProject(projects: ProjectSummary[], fallbackSlug: stri
   return projects.find((p) => p.slug === slug) ?? null;
 }
 
+/** A portal's address without its scheme: its host, and its path where it's under a site's (acme.com/portal). */
+const portalLabel = (url: string) => {
+  const { host, pathname } = new URL(url);
+  return `${host}${pathname.replace(/\/$/, "")}`;
+};
+
 const countId = (title: string) => `nav-count-${title.toLowerCase().replace(/\W+/g, "-")}`;
 
 type NavItem = { title: string; href: string; icon: LucideIcon; section?: boolean; badge?: { count: number; label: string } | false };
@@ -227,7 +233,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
             </div>
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-medium">{current.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{new URL(current.portalUrl).host}</span>
+              <span className="truncate text-xs text-muted-foreground">{portalLabel(current.portalUrl)}</span>
             </div>
             <ChevronsUpDownIcon className="ml-auto" />
           </DropdownMenuTrigger>
@@ -241,7 +247,7 @@ function ProjectSwitcher({ projects, current }: { projects: ProjectSummary[]; cu
               <ExternalLinkIcon />
               <span className="flex min-w-0 flex-col">
                 View portal
-                <span className="truncate text-xs text-muted-foreground">{new URL(current.portalUrl).host}</span>
+                <span className="truncate text-xs text-muted-foreground">{portalLabel(current.portalUrl)}</span>
               </span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />

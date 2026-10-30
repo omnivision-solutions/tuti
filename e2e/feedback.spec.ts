@@ -71,6 +71,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await checkpoint(team, "team-merge-confirm", { fullPage: false });
   await team.getByRole("dialog").getByRole("button", { name: "Merge", exact: true }).click();
   await team.waitForURL(`**/app/${slug}/p/1`);
+  // The merged duplicate no longer waits for triage.
+  await expect(feedbackItem).toContainText("1 to triage");
 
   // …then answers and plans it.
   await team.getByRole("textbox", { name: "Comment" }).fill("Thanks! We're on it.");
