@@ -247,7 +247,7 @@ const matrix: Matrix = {
       call: (slug) => changelog.reactToChangelogEntry(slug, 1, "tada", true),
     },
     saveChangelogStyle: {
-      allowed: "MEMBER",
+      allowed: "ADMIN",
       call: (slug) => {
         const form = new FormData();
         form.set("tone", "Friendly");

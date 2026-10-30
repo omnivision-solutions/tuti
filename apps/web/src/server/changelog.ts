@@ -18,7 +18,7 @@ import {
   updateChangelogEntry,
   updateChangelogStyle,
 } from "./operations/changelog";
-import { asAnyone, asTeam, call } from "./operations/run";
+import { asAdmin, asAnyone, asTeam, call } from "./operations/run";
 
 /** The changelog actions: the team's, and readers' reactions (see the changelog.* operations). */
 
@@ -107,7 +107,8 @@ export async function deleteChangelogEntry(projectSlug: string, number: number):
 /** Saves the writing style form: tone notes and the published entries picked as examples (see changelogStyle.update). */
 export async function saveChangelogStyle(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
   const input = { tone: String(formData.get("tone") ?? ""), examples: formData.getAll("examples").map(Number) };
-  return asTeam(projectSlug, DENIED, (context) => call(updateChangelogStyle, context, input));
+  // A setting (Settings → Writing style), like AI answers: owners and admins.
+  return asAdmin(projectSlug, "Only project owners and admins can change the writing style", (context) => call(updateChangelogStyle, context, input));
 }
 
 /** A reader's reaction to a published entry on the portal, or taking it back (see changelog.react). */
