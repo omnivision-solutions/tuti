@@ -59,7 +59,7 @@ export default async function WidgetPage(props: PageProps<"/portal/[project]/wid
       select: {
         id: true,
         name: true,
-        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, titlePlaceholder: true, detailsPlaceholder: true } },
+        boards: { orderBy: { createdAt: "asc" }, take: 1, select: { slug: true, postButton: true, titlePlaceholder: true, detailsPlaceholder: true } },
         articles: { where: listedArticle, take: 1, select: { id: true } },
         supportInbox: true,
       },
@@ -282,7 +282,7 @@ async function Feedback({
   title,
 }: {
   slug: string;
-  board?: { slug: string; titlePlaceholder: string | null; detailsPlaceholder: string | null };
+  board?: { slug: string; postButton: string | null; titlePlaceholder: string | null; detailsPlaceholder: string | null };
   title?: string;
 }) {
   if (!board) {
@@ -291,8 +291,8 @@ async function Feedback({
   // Portal sessions are per host and their cookies aren't sent to an iframe on another site:
   // there, the customer's page signs people in (Tuti.identify), or they sign in in a new tab.
   const session = await getSession();
-  const { titlePlaceholder, detailsPlaceholder } = boardTexts(board);
-  const placeholders = { titlePlaceholder, detailsPlaceholder };
+  // The board's own words, as on the portal's box.
+  const placeholders = boardTexts(board);
   if (!session) {
     return <WidgetFeedback projectSlug={slug} boardSlug={board.slug} defaultTitle={title} {...placeholders} />;
   }

@@ -122,12 +122,14 @@ export function WidgetFeedback({
   projectSlug,
   boardSlug,
   defaultTitle,
+  postButton,
   titlePlaceholder,
   detailsPlaceholder,
 }: {
   projectSlug: string;
   boardSlug: string;
   defaultTitle?: string;
+  postButton?: string;
   titlePlaceholder?: string;
   detailsPlaceholder?: string;
 }) {
@@ -148,6 +150,7 @@ export function WidgetFeedback({
               linkTarget="_blank"
               submit={(prev, formData) => widgetCreatePost(projectSlug, token, prev, formData)}
               defaultTitle={defaultTitle}
+              postButton={postButton}
               titlePlaceholder={titlePlaceholder}
               detailsPlaceholder={detailsPlaceholder}
             />

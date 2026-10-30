@@ -107,7 +107,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
         {posts.length === 0 && (
           <EmptyState
             title={statuses?.length === 1 ? "No posts with this status yet" : statuses ? "No ideas waiting" : "No feedback yet"}
-            description={statuses?.length === 1 ? "Try another status." : "Be the first to share an idea."}
+            description={
+              statuses?.length === 1 ? "Try another status." : statuses ? "Share one in the box above." : "Be the first to share an idea."
+            }
           />
         )}
         {more && (

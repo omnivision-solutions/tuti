@@ -132,4 +132,8 @@ test("a board's own words for posting: the team sees them in a preview as they t
   // Posted (saving runs its jobs first, see postFeedback): the post is on the board; the box starts empty again.
   await expect(ada.getByRole("link", { name: "Dark mode" })).toBeVisible({ timeout: 15_000 });
   await expect(form.getByLabel("Title")).toHaveValue("");
+  // The widget's Feedback tab uses the same words (signed in on the portal, it posts as them).
+  await ada.goto("/widget?tab=feedback");
+  await expect(ada.getByLabel("Title")).toHaveAttribute("placeholder", "What should it do?");
+  await expect(ada.getByRole("button", { name: "Request a feature" })).toBeVisible();
 });
