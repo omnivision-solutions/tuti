@@ -84,7 +84,7 @@ export function PostStatusMenu({ projectSlug, postId, status }: { projectSlug: s
           }
         >
           {STATUSES.map((s) => (
-            <DropdownMenuRadioItem key={s} value={s}>
+            <DropdownMenuRadioItem key={s} value={s} closeOnClick>
               <StatusDot status={s} />
               {STATUS_LABELS[s]}
             </DropdownMenuRadioItem>
