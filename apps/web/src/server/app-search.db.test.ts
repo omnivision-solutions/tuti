@@ -41,6 +41,10 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: n, title: `Plan #7 idea ${n}`, voteCount: 10 } });
   }
   expect((await searchApp(project.slug, "#7")).results!.filter((r) => r.kind === "post")[0]!.href).toBe(`${base}/p/7`);
+  // A number finds its conversation too, but never a spam conversation or a merged post.
+  expect((await searchApp(project.slug, "#3")).results!.map((r) => r.href)).toEqual([`${base}/inbox/3`]);
+  expect((await searchApp(project.slug, "#4")).results).toEqual([]);
+  expect((await searchApp(project.slug, "#9")).results).toEqual([]);
   // "_" and "%" are themselves, not LIKE's wildcards.
   expect((await searchApp(project.slug, "__")).results).toEqual([]);
   expect((await searchApp(project.slug, "%%")).results).toEqual([]);
