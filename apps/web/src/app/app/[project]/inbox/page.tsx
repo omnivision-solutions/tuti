@@ -116,6 +116,8 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                         </Link>
                       }
                       badges={
+                        // Spam waits on nobody, however it came in.
+                        view !== "spam" &&
                         c.status === "OPEN" &&
                         c.waitingSince && <Badge variant="highlight">Needs reply · {shortDuration(c.waitingSince)}</Badge>
                       }

@@ -179,6 +179,8 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await views.getByRole("link", { name: "Spam 1" }).click();
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("Do you have a discount for nonprofits?");
+  // Still open, but not a reply the team owes.
+  await expect(rows.getByText(/^Needs reply/)).toHaveCount(0);
 
   // A view name the page doesn't know (even one every object has) is the Open view, of this project only:
   // another project's open conversation stays out of it.
