@@ -357,14 +357,18 @@ export function ImageField({
       <input type="hidden" name={`${name}Url`} value={image?.url ?? ""} />
       {/* Dropped here, or picked with "Upload" (the file input itself stays out of sight and out of the tab order). */}
       <div
+        // Not in a disabled fieldset (a setting the plan doesn't include): the file input and buttons are off there too.
         onDragOver={(event) => {
           event.preventDefault();
-          setDragging(true);
+          setDragging(!event.currentTarget.closest("fieldset:disabled"));
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(event) => {
           event.preventDefault();
           setDragging(false);
+          if (event.currentTarget.closest("fieldset:disabled")) {
+            return;
+          }
           const file = event.dataTransfer.files[0];
           if (file) {
             void upload(file);
