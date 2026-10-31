@@ -120,10 +120,14 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   const stored = new Map<string, string>(seenHere ? [["tuti:seen:acme", seenHere]] : []);
   const mediaLists: { matches: boolean; onchange: (() => void) | null }[] = [];
   const observers: (() => void)[] = [];
+  // What each observer watches (MutationObserver's options).
+  const watching: { attributeFilter?: string[] }[] = [];
   const page = {
     documentListeners,
     windowListeners,
     mediaLists,
+    /** What the script's MutationObservers watch. */
+    watching,
     /** The page changed: what MutationObserver tells the script. */
     mutated() {
       observers.forEach((callback) => callback());
@@ -209,7 +213,9 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         constructor(callback: () => void) {
           observers.push(callback);
         }
-        observe() {}
+        observe(_target: unknown, options: { attributeFilter?: string[] }) {
+          watching.push(options);
+        }
       },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
@@ -995,4 +1001,10 @@ test("on a phone, a page with a modal open (help opened from inside it) isn't co
   dialog.checkVisibility = () => true;
   page.Tuti.open();
   expect(app.hasAttribute("inert")).toBe(false);
+  // Closed in place while the panel's open (no element added or taken away): covered then. The loader
+  // hears of it: it watches the attributes a modal is opened and closed by.
+  expect(page.watching.some((options) => ["aria-modal", "open"].every((name) => options.attributeFilter?.includes(name)))).toBe(true);
+  dialog.setAttribute("aria-modal", "false");
+  page.mutated();
+  expect(app.hasAttribute("inert")).toBe(true);
 });

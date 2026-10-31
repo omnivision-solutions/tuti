@@ -518,10 +518,11 @@ export function widgetLoader(portalTemplate: string): string {
   whenBody(function () {
     mountInline();
     if (window.MutationObserver) {
+      // Elements added (inline panels; what to cover), and a modal of the page's opened or closed in place.
       new window.MutationObserver(function () {
         mountInline();
         coverPage();
-      }).observe(document.body, { childList: true, subtree: true });
+      }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-modal", "open", "hidden"] });
     }
   });
   var getToken = typeof settings.identify === "function" ? settings.identify : null;
