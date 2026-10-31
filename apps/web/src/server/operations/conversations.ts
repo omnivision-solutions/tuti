@@ -10,7 +10,7 @@ import { emitEvent } from "../events";
 import { notifyInbox } from "../live";
 import { upsertProjectUser } from "../project-users";
 import { type Actor, defineOperation, OperationError } from "./define";
-import { projectSlug } from "./read";
+import { findPost, postNumber, projectSlug, toApiStatus as toPostStatus } from "./read";
 
 /** The support inbox (docs/plan.md, Support inbox): conversations between a project's users and its team. */
 
@@ -204,6 +204,7 @@ export const getConversation = defineOperation({
     );
     return {
       ...view(conversation, await projectSlug(projectId)),
+      posts: await linkedPosts(conversation.id),
       messages: messages.map((message) => {
         const shown = messageView(message);
         return { ...shown, attachments: shown.attachments.map((a) => ({ ...a, url: links.get(a.id) ?? null })) };
@@ -510,5 +511,63 @@ export const updateConversation = defineOperation({
       return row;
     });
     return view(updated, await projectSlug(projectId));
+  },
+});
+
+/** The posts a conversation is linked to, the first linked first. */
+async function linkedPosts(conversationId: string) {
+  const links = await prisma.conversationPost.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: "asc" },
+    select: { post: { select: { number: true, title: true, status: true } } },
+  });
+  return links.map(({ post }) => ({ number: post.number, title: post.title, status: toPostStatus(post.status) }));
+}
+
+export const linkConversationPost = defineOperation({
+  name: "conversations.linkPost",
+  summary: "Link a conversation to a post it's about; merging the post takes the link along",
+  method: "POST",
+  path: "/conversations/{number}/posts",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: conversationNumber, post: postNumber }),
+  example: { post: 12 },
+  run: async ({ projectId }, input) => {
+    const conversation = await findConversation(projectId, input.number);
+    let post = await findPost(projectId, input.post);
+    if (!post.duplicateOf) {
+      // Only while it isn't merged: a merge locks its row first (mergePosts), so a link either lands before it
+      // (and the merge moves it) or waits for it and finds it merged.
+      const linked = await prisma.$executeRaw`
+        INSERT INTO conversation_post ("conversationId", "postId")
+        SELECT ${conversation.id}, id FROM post WHERE id = ${post.id} AND "duplicateOfId" IS NULL FOR SHARE
+        ON CONFLICT ("conversationId", "postId") DO NOTHING`;
+      if (linked === 0) {
+        post = await findPost(projectId, input.post);
+      }
+    }
+    if (post.duplicateOf) {
+      throw new OperationError(409, "merged", `#${post.number} was merged into #${post.duplicateOf.number}: link that one`);
+    }
+    return { posts: await linkedPosts(conversation.id) };
+  },
+});
+
+export const unlinkConversationPost = defineOperation({
+  name: "conversations.unlinkPost",
+  summary: "Unlink a conversation from a post",
+  method: "DELETE",
+  path: "/conversations/{number}/posts/{post}",
+  scope: "write",
+  access: "team",
+  input: z.object({ number: conversationNumber, post: postNumber }),
+  run: async ({ projectId }, input) => {
+    const conversation = await findConversation(projectId, input.number);
+    // Waits for a merge of the post (which holds its row), so a link it moves isn't unlinked halfway.
+    await prisma.$executeRaw`
+      DELETE FROM conversation_post WHERE "conversationId" = ${conversation.id}
+        AND "postId" = (SELECT id FROM post WHERE "projectId" = ${projectId} AND number = ${input.post} FOR SHARE)`;
+    return { posts: await linkedPosts(conversation.id) };
   },
 });

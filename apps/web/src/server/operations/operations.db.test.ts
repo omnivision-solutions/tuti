@@ -108,6 +108,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "conversations.create": () => ({ email: "e2e-matrix-asker@example.com", body: "From the matrix" }),
   "conversations.reply": () => ({ number: 1, body: "From the matrix" }),
   "conversations.update": () => ({ number: 1, status: "closed" }),
+  "conversations.linkPost": () => ({ number: 1, post: 1 }),
+  "conversations.unlinkPost": () => ({ number: 1, post: 1 }),
   // Nothing in the fixture's docs is close to what was asked: no draft, and the model isn't asked.
   "conversations.suggestReply": () => ({ number: 1 }),
   "conversations.summarize": () => ({ number: 1 }),
@@ -452,7 +454,7 @@ const snapshot = () =>
     prisma.siteMount.findMany({ where: { projectId: project.id } }),
     prisma.ssoIdentity.findMany({ where: { projectId: project.id }, include: { user: true }, orderBy: { externalId: "asc" } }),
     prisma.codeChange.findMany({ where: { projectId: project.id }, include: { actions: { orderBy: { id: "asc" } } } }),
-    prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } } }, orderBy: { number: "asc" } }),
+    prisma.conversation.findMany({ where: { projectId: project.id }, include: { messages: { orderBy: { id: "asc" } }, posts: true }, orderBy: { number: "asc" } }),
     prisma.emailDomain.findUnique({ where: { projectId: project.id } }),
   ]);
 

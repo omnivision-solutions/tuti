@@ -6,8 +6,10 @@ import { createComment, createPost } from "./create";
 import {
   createConversation,
   getConversation,
+  linkConversationPost,
   listConversations,
   replyToConversation,
+  unlinkConversationPost,
   updateConversation,
 } from "./conversations";
 import { checkEmailDomainOperation, getSupportSettings, removeEmailDomain, setEmailDomain, updateSupportSettings } from "./support";
@@ -83,6 +85,8 @@ const all = [
   createConversation,
   replyToConversation,
   updateConversation,
+  linkConversationPost,
+  unlinkConversationPost,
   suggestReply,
   summarizeConversation,
   getSupportSettings,

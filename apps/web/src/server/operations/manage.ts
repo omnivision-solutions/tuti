@@ -130,24 +130,41 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
 
   const from = post.id;
   const to = target.id;
-  await prisma.$transaction([
-    prisma.$executeRaw`
+  await prisma.$transaction(async (tx) => {
+    // Both posts locked first, in a fixed order, and checked again under the lock: a merge of either, or a link
+    // to either (conversations.linkPost), waits for this one, and nothing merged meanwhile is merged twice or into.
+    const locked = await tx.$queryRaw<{ id: string; duplicateOfId: string | null }[]>`
+      SELECT id, "duplicateOfId" FROM post WHERE id IN (${from}, ${to}) ORDER BY id FOR NO KEY UPDATE`;
+    if (locked.find((row) => row.id === from)?.duplicateOfId) {
+      throw new OperationError(409, "already_merged", "This post was already merged");
+    }
+    if (locked.find((row) => row.id === to)?.duplicateOfId) {
+      throw new OperationError(409, "target_merged", "The post to merge into was just merged into another: try again");
+    }
+    await tx.$executeRaw`
       INSERT INTO vote ("postId", "userId", "projectId", "createdAt")
       SELECT ${to}, "userId", "projectId", "createdAt" FROM vote WHERE "postId" = ${from}
-      ON CONFLICT ("postId", "userId") DO NOTHING`,
-    prisma.vote.deleteMany({ where: { postId: from } }),
+      ON CONFLICT ("postId", "userId") DO NOTHING`;
+    await tx.vote.deleteMany({ where: { postId: from } });
     // A reply still to be emailed to its post's voters (Email voters) isn't, once moved: the target's voters never saw it asked.
-    prisma.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } }),
-    prisma.postNote.updateMany({ where: { postId: from }, data: { postId: to } }),
-    prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
-    prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
+    await tx.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } });
+    await tx.postNote.updateMany({ where: { postId: from }, data: { postId: to } });
+    // Conversations about it are about the post it's merged into.
+    await tx.$executeRaw`
+      INSERT INTO conversation_post ("conversationId", "postId", "createdAt")
+      SELECT "conversationId", ${to}, "createdAt" FROM conversation_post WHERE "postId" = ${from}
+      ON CONFLICT ("conversationId", "postId") DO NOTHING`;
+    await tx.conversationPost.deleteMany({ where: { postId: from } });
+    await tx.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } });
+    await tx.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } });
     // The merged post is out of every list, so its duplicate suggestions are settled.
-    prisma.duplicateSuggestion.deleteMany({ where: { OR: [{ postId: from }, { originalId: from }] } }),
-    prisma.$executeRaw`
+    await tx.duplicateSuggestion.deleteMany({ where: { OR: [{ postId: from }, { originalId: from }] } });
+    await tx.$executeRaw`
       UPDATE post SET
         "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${to}),
         "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${to})
-      WHERE id = ${to}`,
-  ]);
+      WHERE id = ${to}`;
+    // Past Prisma's 5 seconds: a merge may wait for a vote on either post, and move thousands of votes.
+  }, { timeout: 30_000 });
   return target.number;
 }

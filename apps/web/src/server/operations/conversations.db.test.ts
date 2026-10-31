@@ -8,11 +8,16 @@ import { removeMember } from "../team";
 import {
   createConversation,
   getConversation,
+  linkConversationPost,
   listConversations,
   replyToConversation,
+  unlinkConversationPost,
   updateConversation,
 } from "./conversations";
-import type { Actor } from "./define";
+import { createPost } from "./create";
+import { type Actor, OperationError } from "./define";
+import { mergePost } from "./manage";
+import { setVote } from "./more";
 import { call } from "./run";
 
 async function setup() {
@@ -157,4 +162,81 @@ test("webhooks hear of new conversations and of the user's messages, not the tea
   });
   expect(deliveries.map((d) => d.event)).toEqual(["conversation.created", "conversation.message_created"]);
   expect(deliveries[1]!.payload).toMatchObject({ data: { conversation: 1, message: { author: "user", body: "Thanks" } } });
+});
+
+test("the team links a conversation to the posts it's about; merging a post takes its link along", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  await call(createConversation, context, { user: sam, body: "And to Excel?" });
+  const author = { id: "user-7", name: "Ann" };
+  const csv = await call(createPost, context, { board: "feature-requests", title: "CSV export", author });
+  const excel = await call(createPost, context, { board: "feature-requests", title: "Excel export", author });
+
+  expect(await call(linkConversationPost, context, { number: 1, post: excel.number })).toEqual({
+    posts: [{ number: excel.number, title: "Excel export", status: "open" }],
+  });
+  // Twice is once.
+  await call(linkConversationPost, context, { number: 1, post: excel.number });
+  await call(linkConversationPost, context, { number: 1, post: csv.number });
+  expect((await call(getConversation, context, { number: 1 })).posts.map((p) => p.number)).toEqual([excel.number, csv.number]);
+
+  // #2 only about the one that's merged.
+  await call(linkConversationPost, context, { number: 2, post: excel.number });
+
+  // Merged into the other: one link each, to the post that's left.
+  await call(mergePost, context, { number: excel.number, into: csv.number });
+  expect((await call(getConversation, context, { number: 1 })).posts).toEqual([{ number: csv.number, title: "CSV export", status: "open" }]);
+  expect((await call(getConversation, context, { number: 2 })).posts).toEqual([{ number: csv.number, title: "CSV export", status: "open" }]);
+  await expect(call(linkConversationPost, context, { number: 1, post: excel.number })).rejects.toThrow(
+    new OperationError(409, "merged", `#${excel.number} was merged into #${csv.number}: link that one`),
+  );
+
+  expect(await call(unlinkConversationPost, context, { number: 1, post: csv.number })).toEqual({ posts: [] });
+});
+
+test("two merges of one post at once: one goes through, the other is refused, and its links follow the one that did", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const author = { id: "user-7", name: "Ann" };
+  const [a, b, c] = [
+    await call(createPost, context, { board: "feature-requests", title: "Export", author }),
+    await call(createPost, context, { board: "feature-requests", title: "CSV export", author }),
+    await call(createPost, context, { board: "feature-requests", title: "Excel export", author }),
+  ];
+  await call(linkConversationPost, context, { number: 1, post: a.number });
+  const results = await Promise.allSettled([
+    call(mergePost, context, { number: a.number, into: b.number }),
+    call(mergePost, context, { number: a.number, into: c.number }),
+  ]);
+  const done = results.flatMap((result) => (result.status === "fulfilled" ? [result.value.into] : []));
+  expect(done).toHaveLength(1);
+  expect((await call(getConversation, context, { number: 1 })).posts.map((p) => p.number)).toEqual(done);
+});
+
+test("a vote taken back during a merge waits for it, then finds the post merged: no deadlock", async () => {
+  const { context } = await setup();
+  const author = { id: "user-7", name: "Ann" };
+  const a = await call(createPost, context, { board: "feature-requests", title: "Export", author });
+  const b = await call(createPost, context, { board: "feature-requests", title: "CSV export", author });
+  const voter = { id: "user-8", name: "Bea" };
+  await call(setVote, context, { number: a.number, voted: true, author: voter });
+  const id = async (number: number) => (await prisma.post.findFirstOrThrow({ where: { projectId: context.projectId, number } })).id;
+  const [from, to] = [await id(a.number), await id(b.number)];
+
+  // A merge, step by step as mergePosts takes it: the post's row first, then its votes.
+  let unvoted: Promise<unknown> = Promise.resolve();
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM post WHERE id = ${from} FOR NO KEY UPDATE`;
+      unvoted = call(setVote, context, { number: a.number, voted: false, author: voter }).catch((error: unknown) => error);
+      // Until it waits for a lock (this merge's), so the votes are moved while it does.
+      await expect
+        .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n)
+        .toBeGreaterThan(0);
+      await tx.vote.deleteMany({ where: { postId: from } });
+      await tx.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0 } });
+    },
+    { timeout: 10_000 },
+  );
+  expect(await unvoted).toEqual(new OperationError(409, "merged", "This post was merged into another one; vote there instead"));
 });
