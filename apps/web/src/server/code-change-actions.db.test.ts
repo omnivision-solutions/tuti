@@ -242,6 +242,15 @@ describe("undo", () => {
     expect((await postOf(post.id)).comments).toHaveLength(1);
   });
 
+  test("a request completed already when it's approved: Undo leaves it Completed, and the review page says its emails still go", async () => {
+    const { action } = await proposal("RESOLVES", { status: "COMPLETED" });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: true, putsBackStatus: false });
+    const moved = await proposal("RESOLVES");
+    await call(applyCodeChangeAction, team(), { id: moved.action.id });
+    expect((await call(getCodeChange, team(), { id: moved.action.codeChangeId })).actions.find((a) => a.id === moved.action.id)).toMatchObject({ putsBackStatus: true });
+  });
+
   test("one approved before Undo was there (nothing recorded to put back) is refused, and has no Undo", async () => {
     const { post, action } = await proposal("RESOLVES");
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date(), payload: {} } });
@@ -751,6 +760,26 @@ describe("the changelog line", () => {
     await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
     expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
     expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("a bullet a teammate rewrites while the line is being applied: Undo puts back their words, not the ones from before", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("A dark theme");
+    // After the apply's first look, a teammate rewrites the bullet (still linking to the pull request).
+    const find = prisma.changelogEntryPullRequest.findFirst.bind(prisma.changelogEntryPullRequest) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.changelogEntryPullRequest, "findFirst")
+      .mockImplementationOnce(((...args: unknown[]) => find(...args)) as never)
+      .mockImplementationOnce((async (...args: unknown[]) => {
+        const { content } = await draft();
+        await prisma.changelogEntry.updateMany({
+          where: { projectId: project.id, collecting: true },
+          data: { content: JSON.parse(JSON.stringify(content).replace("Add a dark theme (acme/app#30)", "Dark theme, from the team")) },
+        });
+        return find(...args);
+      }) as never);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("Dark theme, from the team");
   });
 
   test("Undo's changelog step leaves an entry published meanwhile as it is", async () => {

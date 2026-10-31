@@ -225,6 +225,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         /** Approved, with what it changed recorded: Undo can put it back. */
         // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
         canUndo: action.status === "APPLIED" && undoOf(action.payload) !== null && undoOf(action.payload)?.published !== false,
+        /** Undo puts the post's status back (applying moved it): a closed request's shipped emails still due won't go. */
+        putsBackStatus: Boolean(undoOf(action.payload)?.status),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
       };
@@ -411,7 +413,7 @@ export const applyCodeChangeAction = defineOperation({
     }
     if (action.kind === "CHANGELOG_LINE") {
       const line = input.line ?? ((action.payload ?? {}) as { line?: string }).line ?? "";
-      // What the bullet said, for Undo to put back.
+      // Whether the changelog has the pull request yet: if not, a failed try takes out what it added.
       const before = await changelogLineOf(projectId, action.codeChange.url);
       const undo = { previous: before?.text ?? null, added: before === null ? ("entry" as const) : before.text === null ? ("bullet" as const) : null };
       const { count } = await prisma.codeChangeAction.updateMany({
@@ -429,8 +431,9 @@ export const applyCodeChangeAction = defineOperation({
         throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
       }
       try {
-        const entry = await setChangelogLine(projectId, { ...action.codeChange }, line);
-        await recordUndo(action.id, { line }, undo);
+        // What to put back is what the bullet said as it was rewritten (read under the project's lock).
+        const { number: entry, previous, added } = await setChangelogLine(projectId, { ...action.codeChange }, line);
+        await recordUndo(action.id, { line }, { previous, added });
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
         // Not done: the pull request it put in a draft comes out again (writing the line is one save: it's

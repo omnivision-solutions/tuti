@@ -270,6 +270,10 @@ export function AutopilotReview({
 function undoes(update: Update): string {
   switch (update.kind) {
     case "resolves":
+      // Completed already when it was approved: it stays so, and what's due still goes.
+      if (!update.putsBackStatus) {
+        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.`;
+      }
       return `${update.post?.title} goes back to the status it had.${
         update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
       }`;
