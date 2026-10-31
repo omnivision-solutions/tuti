@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import pg from "pg";
@@ -676,6 +676,30 @@ test("an email whose read missed an update the runner saved before it was stampe
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: savedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("Publish now and Stop name only the updates the email shows (five in all); a change it shows none of gets neither", async () => {
+  const one = await change("Add a dark theme");
+  // Six more going out by itself: seven, and the email shows five.
+  for (let i = 0; i < 6; i++) {
+    const post = await call(createPost, team(), { board: "feature-requests", title: `More ${i}` });
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+    await prisma.codeChangeAction.create({
+      data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { comment: "Out soon" } },
+    });
+  }
+  const two = await change("Faster search");
+  await queueAutopilotNotices(one.id);
+  await queueAutopilotNotices(two.id);
+  // The first change first in the email: its updates use up the five.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: two.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!);
+  const publish = buttons.filter((button) => button.button.startsWith("publish:"));
+  expect(publish.map((button) => button.codeChangeId)).toEqual([one.id]);
+  expect(publish[0]!.button.slice("publish:".length).split(",")).toHaveLength(5);
+  expect(buttons.filter((button) => button.button.startsWith("stop:")).map((button) => button.codeChangeId)).toEqual([one.id]);
 });
 
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {

@@ -289,8 +289,10 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           const token = signAutopilotButton(userId, codeChange.id, button, now);
           return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
         };
-        const scheduledIds = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => action.id);
-        const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
+        const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
+        const goesOut = take(scheduled.map((action) => previewOf(action, now)));
+        // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
+        const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
         const needsYou = codeChange.actions
           .filter((action) => action.status === "PENDING" || action.status === "STALE")
           .map((action) => ({
@@ -307,9 +309,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           pullRequest: `${codeChange.repo}#${codeChange.number}`,
           summary: codeChange.summary,
           reviewUrl: `${page}?select=likely`,
-          // For the ones it shows: analysed again, others may take their place, and these buttons don't act on them.
-          ...(goesOut.length > 0 && { publishUrl: act(`publish:${scheduledIds.join(",")}`), stopUrl: act(`stop:${scheduledIds.join(",")}`) }),
-          goesOut: take(goesOut),
+          ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
+          goesOut,
           wentOut: take(gone),
           needsYou: take(needsYou),
           done: take(drafts),

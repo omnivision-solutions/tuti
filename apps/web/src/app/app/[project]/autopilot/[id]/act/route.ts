@@ -43,7 +43,7 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     if (result?.status === "failed" && result.code === "not_found") {
       page("?select=likely&done=replaced");
     }
-    page(`?done=${result?.status === "applied" ? "approved" : "already"}&update=${encodeURIComponent(actionId)}`);
+    page(`?done=${result?.status === "applied" ? "approved" : "already&button=approve"}&update=${encodeURIComponent(actionId)}`);
   }
   // Publish now or Stop: the ones the email showed, if they're still going out by themselves.
   const [kind, list = ""] = which.split(":") as ["publish" | "stop", string];
@@ -71,7 +71,8 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   const heldQuery = held.length > 0 ? `&held=${held.length}&select=${held.map(encodeURIComponent).join(",")}` : "";
   if (done === 0 && held.length === 0) {
     // Nothing it showed is going out any more: who did what to it, and when.
-    page(`?done=already${ids[0] ? `&update=${encodeURIComponent(ids[0])}` : ""}`);
+    page(`?done=already&button=${kind}${ids[0] ? `&update=${encodeURIComponent(ids[0])}` : ""}`);
   }
-  page(`?done=${kind === "publish" ? "published" : "stopped"}${heldQuery}`);
+  // None of them done: none went (or stopped), and the page says so.
+  page(`?done=${done === 0 ? "refused" : kind === "publish" ? "published" : "stopped"}&button=${kind}${heldQuery}`);
 }

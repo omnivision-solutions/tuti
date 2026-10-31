@@ -77,7 +77,7 @@ test("Approve: one click for its recipient, signed in, then the page says it's d
   const token = signAutopilotButton(owner.id, id, `approve:${link.id}`)!;
   expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=approved&update=${link.id}`);
   expect(await statusOf(link.id)).toBe("APPLIED");
-  expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=already&update=${link.id}`);
+  expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=already&button=approve&update=${link.id}`);
 });
 
 test("signed out (a mail scanner, or the recipient on another device): sign in first, nothing done until then", async () => {
@@ -109,17 +109,17 @@ const scheduledOf = (c: Awaited<ReturnType<typeof change>>) => c.actions.find((a
 test("Stop and Publish now act on what the email showed; once it's gone, a click says so (who, and when) and does nothing", async () => {
   const stopped = await change();
   const stop = signAutopilotButton(owner.id, stopped.id, `stop:${scheduledOf(stopped)}`)!;
-  expect(await click(stopped.id, stop)).toBe(`/app/${project.slug}/autopilot/${stopped.id}?done=stopped`);
+  expect(await click(stopped.id, stop)).toBe(`/app/${project.slug}/autopilot/${stopped.id}?done=stopped&button=stop`);
   expect(await statusOf(scheduledOf(stopped))).toBe("PENDING");
   // Clicked again: done already, by whom (the page says "stopped by Olive Owner").
-  expect(await click(stopped.id, stop)).toBe(`/app/${project.slug}/autopilot/${stopped.id}?done=already&update=${scheduledOf(stopped)}`);
+  expect(await click(stopped.id, stop)).toBe(`/app/${project.slug}/autopilot/${stopped.id}?done=already&button=stop&update=${scheduledOf(stopped)}`);
   expect(await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: scheduledOf(stopped) } })).toMatchObject({ decidedById: owner.id, waitReason: "Stopped by Olive Owner" });
 
   const published = await change();
   const publish = signAutopilotButton(owner.id, published.id, `publish:${scheduledOf(published)}`)!;
-  expect(await click(published.id, publish)).toBe(`/app/${project.slug}/autopilot/${published.id}?done=published`);
+  expect(await click(published.id, publish)).toBe(`/app/${project.slug}/autopilot/${published.id}?done=published&button=publish`);
   expect(await statusOf(scheduledOf(published))).toBe("APPLIED");
-  expect(await click(published.id, publish)).toBe(`/app/${project.slug}/autopilot/${published.id}?done=already&update=${scheduledOf(published)}`);
+  expect(await click(published.id, publish)).toBe(`/app/${project.slug}/autopilot/${published.id}?done=already&button=publish&update=${scheduledOf(published)}`);
 });
 
 test("an email's buttons act only on what it showed: analysed again, a new scheduled update isn't published, and a replaced one's Approve says so", async () => {
@@ -131,16 +131,16 @@ test("an email's buttons act only on what it showed: analysed again, a new sched
   const fresh = await prisma.codeChangeAction.create({
     data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "New words" } },
   });
-  expect(await click(c.id, publish)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=already&update=${scheduledOf(c)}`);
+  expect(await click(c.id, publish)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=already&button=publish&update=${scheduledOf(c)}`);
   expect(await statusOf(fresh.id)).toBe("SCHEDULED");
   expect(await click(c.id, approve)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=likely&done=replaced`);
 });
 
-test("Publish now that's refused (nothing to post, say) says so, and the update waits for the team", async () => {
+test("Publish now that's refused (nothing to post, say) says nothing went out, and the update waits for the team", async () => {
   const c = await change();
   // Its words were cleared since it was scheduled: applying refuses it ("Write the comment to post first").
   await prisma.codeChangeAction.update({ where: { id: scheduledOf(c) }, data: { payload: { comment: "" } } });
   const landing = await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!);
-  expect(landing).toBe(`/app/${project.slug}/autopilot/${c.id}?done=published&held=1&select=${scheduledOf(c)}`);
+  expect(landing).toBe(`/app/${project.slug}/autopilot/${c.id}?done=refused&button=publish&held=1&select=${scheduledOf(c)}`);
   expect(await statusOf(scheduledOf(c))).toBe("PENDING");
 });

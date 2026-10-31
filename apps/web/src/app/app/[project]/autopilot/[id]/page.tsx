@@ -13,12 +13,12 @@ import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { updateKind } from "@/lib/autopilot-words";
+import { afterButton } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { type CodeChangeDetail, codeChangeDetail } from "@/server/operations/code-changes";
+import { codeChangeDetail } from "@/server/operations/code-changes";
 
 /**
  * Pending docs proposals (`ids`) formatted as readers see them, by id: an edit's changed blocks (with
@@ -74,6 +74,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   const done = afterButton(
     updates,
     typeof searchParams.done === "string" ? searchParams.done : null,
+    typeof searchParams.button === "string" ? searchParams.button : null,
     typeof searchParams.update === "string" ? searchParams.update : null,
     Number(typeof searchParams.held === "string" ? searchParams.held : 0) || 0,
   );
@@ -156,43 +157,4 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
       )}
     </>
   );
-}
-
-/** What a button in Autopilot's email did (`done`, `update`, `held`), as a line above the updates; null when not back from one. */
-function afterButton(updates: CodeChangeDetail["actions"], done: string | null, updateId: string | null, held: number): string | null {
-  const update = updateId ? updates.find((u) => u.id === updateId) : undefined;
-  const named = update ? `${updateKind(update)}: ${update.post?.title ?? update.article?.title ?? update.title ?? update.line ?? ""}` : "";
-  const by = (u: CodeChangeDetail["actions"][number]) =>
-    `${u.decidedBy ? ` by ${u.decidedBy}` : ""}${u.decidedAt ? `, ${timeAgo(new Date(u.decidedAt))}` : ""}`;
-  const couldnt = held > 0 ? ` ${held === 1 ? "One couldn't go out: it's ticked below" : `${held} couldn't go out: they're ticked below`}, to check.` : "";
-  switch (done) {
-    case "approved":
-      return `Approved: ${named}. Undo is under Done.`;
-    case "published":
-      return `Published: what was going out by itself went now.${couldnt}`;
-    case "stopped":
-      return "Stopped: those updates wait for you now.";
-    case "replaced":
-      return "That update was replaced when Autopilot read the pull request again: here's what it found now.";
-    case "already": {
-      if (!update) {
-        return "Nothing it named is going out any more. Nothing more to do.";
-      }
-      const what =
-        update.status === "applied"
-          ? update.auto
-            ? "went out by itself"
-            : "was approved"
-          : update.status === "dismissed"
-            ? "was dismissed"
-            : update.status === "undone"
-              ? "was undone"
-              : update.status === "pending" && update.waitReason?.startsWith("Stopped by")
-                ? "was stopped"
-                : null;
-      return what ? `Done already: ${named} ${what}${update.auto ? "" : by(update)}. Nothing more to do.` : `${named} couldn't be approved as it is. Check it below.`;
-    }
-    default:
-      return null;
-  }
 }
