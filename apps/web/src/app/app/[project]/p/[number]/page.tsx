@@ -11,6 +11,7 @@ import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
+import { Property, PostShipped, PostVoters } from "@/components/post-sidebar";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { howShipped, postVoters, VOTERS_SHOWN, voterTotals } from "@/server/post-lists";
+import { howShipped, postVoters, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -165,9 +166,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           </section>
         </div>
 
-        {/* Its properties, beside it (above it on a phone). */}
+        {/* Its properties, beside it (above it on a phone): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
         {!post.duplicateOf && (
-          <aside aria-label="Properties" className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:order-none lg:sticky lg:top-18">
+          <aside
+            aria-label="Properties"
+            className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:order-none lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto"
+          >
             <Property label="Status">
               <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} className="w-full" />
             </Property>
@@ -186,53 +190,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!)}</span>}
               </span>
             </Property>
-            {voters.length > 0 && (
-              <Property label="Voters">
-                <ul aria-label="Voters" className="flex flex-col gap-1">
-                  {voters.map((voter) => (
-                    <li key={voter.userId} className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 break-words">
-                        {voter.name}
-                        {voter.company && <span className="text-muted-foreground"> · {voter.company}</span>}
-                      </span>
-                      {voter.value !== null && <span className="shrink-0 text-muted-foreground tabular-nums">{asking(voter.value, project.askingProperty!)}</span>}
-                    </li>
-                  ))}
-                </ul>
-                {post.voteCount > VOTERS_SHOWN && <span className="text-xs text-muted-foreground">{post.voteCount - voters.length} more</span>}
-              </Property>
-            )}
-            {shipped.change && (
-              <Property label="Shipped by">
-                <Link href={`/app/${slug}/autopilot/${shipped.change.id}`} className="break-all hover:underline">
-                  {shipped.change.repo}#{shipped.change.number}
-                </Link>
-              </Property>
-            )}
-            {shipped.entries.length > 0 && (
-              <Property label="Changelog">
-                {shipped.entries.map((entry) => (
-                  <Link key={entry.number} href={`/app/${slug}/changelog/${entry.number}`} className="break-words hover:underline">
-                    {entry.title}
-                    <span className="text-muted-foreground"> · {entry.publishedAt ? "Published" : "Draft"}</span>
-                  </Link>
-                ))}
-              </Property>
-            )}
+            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
+            <PostShipped projectSlug={slug} {...shipped} />
             <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
           </aside>
         )}
       </div>
     </>
-  );
-}
-
-/** One of the post's properties in its sidebar: a label above its control. */
-function Property({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-    </div>
   );
 }

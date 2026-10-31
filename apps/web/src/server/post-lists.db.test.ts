@@ -1,5 +1,9 @@
 import { prisma } from "@tuti/db";
+import { createElement, Fragment } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
+
+import { PostShipped, PostVoters } from "@/components/post-sidebar";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -245,4 +249,37 @@ test("what shipped a post: the Autopilot change that completed it, and the chang
       { number: 2, title: "March", publishedAt: day(10) },
     ],
   });
+});
+
+test("a post's sidebar shows them: each voter, how many more, what shipped it and its entries, linked", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "SSO", status: "COMPLETED" } });
+  const voters = await Promise.all(Array.from({ length: VOTERS_SHOWN + 2 }, (_, i) => signUp(`Voter ${i}`)));
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "v0", userId: voters[0]!.id, properties: { company: "Acme", mrr: 1200 } } });
+  await prisma.vote.createMany({ data: voters.map((user) => ({ projectId: project.id, postId: post.id, userId: user.id })) });
+  await prisma.post.update({ where: { id: post.id }, data: { voteCount: voters.length } });
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 9, url: "https://github.com/acme/app/pull/9", title: "SSO", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 4, title: "March", posts: { create: { postId: post.id } } } });
+
+  const html = renderToStaticMarkup(
+    createElement(
+      Fragment,
+      null,
+      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr" }),
+      createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
+    ),
+  );
+  const text = html.replace(/<[^>]+>/g, "|");
+  // The one the app knows first, with their company and number; ten shown, two more.
+  expect(text).toContain("|Voter 0| · Acme|||1,200 mrr|");
+  expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
+  expect(text).toContain("|2 more|");
+  expect(html).toContain(`href="/app/${project.slug}/autopilot/${change.id}"`);
+  expect(text).toContain("|acme/app#9|");
+  expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
+  expect(text).toContain("March| · Draft|");
 });
