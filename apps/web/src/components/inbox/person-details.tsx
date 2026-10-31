@@ -11,9 +11,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 export function PersonDetails({ name, children }: { name: string; children: ReactNode }) {
   return (
     <>
+      {/* In the column beside the conversation, which holds it in view. */}
       <aside aria-label="About them" className="hidden lg:block">
-        {/* Scrolls on its own when taller than the screen, so it never makes the messages' column taller. */}
-        <Card size="sm" className="sticky top-16 max-h-[calc(100svh-5.5rem)] overflow-y-auto">
+        <Card size="sm">
           <CardContent>{children}</CardContent>
         </Card>
       </aside>

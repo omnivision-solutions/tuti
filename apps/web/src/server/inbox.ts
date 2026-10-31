@@ -11,7 +11,7 @@ import { startUpload } from "./attachments";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./operations/conversations";
+import { linkConversationPost, replyToConversation, SETTABLE_STATUSES, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
@@ -103,6 +103,46 @@ export async function markConversationSpam(projectSlug: string, conversation: nu
   return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),
   );
+}
+
+/**
+ * The posts "Link post…" offers for what's typed: the one with that number ("#12" or "12") first, then those with it
+ * in their title, the most voted first; with nothing typed, the newest (what someone writes in about is often new).
+ * Merged posts are left out. Up to 20.
+ */
+export async function findPostsToLink(projectSlug: string, q: string): Promise<{ error?: string; posts?: { id: string; number: number; title: string; voteCount: number }[] }> {
+  const [session, membership] = await Promise.all([getSession(), getMembership(projectSlug)]);
+  if (!session || !membership) {
+    return { error: "Only the project's team can link conversations to posts" };
+  }
+  const projectId = membership.project.id;
+  const query = String(q).trim().slice(0, 200);
+  const select = { id: true, number: true, title: true, voteCount: true };
+  if (!query) {
+    return { posts: await prisma.post.findMany({ where: { projectId, duplicateOfId: null }, orderBy: { createdAt: "desc" }, take: 20, select }) };
+  }
+  // A number as posts have them (a 32-bit integer).
+  const asNumber = /^#?\d{1,10}$/.test(query) ? Number(query.replace("#", "")) : null;
+  const number = asNumber !== null && asNumber <= 2_147_483_647 ? asNumber : null;
+  const [numbered, titled] = await Promise.all([
+    number === null ? null : prisma.post.findFirst({ where: { projectId, number, duplicateOfId: null }, select }),
+    prisma.post.findMany({
+      // Without a leading "#", as the picker matches titles; `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
+      where: { projectId, duplicateOfId: null, title: { contains: query.replace(/^#/, "").replace(/[\\%_]/g, "\\$&"), mode: "insensitive" } },
+      orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+      take: 20,
+      select,
+    }),
+  ]);
+  return { posts: [...(numbered ? [numbered] : []), ...titled.filter((post) => post.id !== numbered?.id)].slice(0, 20) };
+}
+
+/** Links a conversation to a post it's about (by the post's number), or unlinks it. */
+export async function linkPostToConversation(projectSlug: string, conversation: number, post: number, linked: boolean): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link conversations to posts", async (context) => {
+    const input = { number: conversationNumber(conversation), post: Number(post) };
+    return linked === true ? call(linkConversationPost, context, input) : call(unlinkConversationPost, context, input);
+  });
 }
 
 /** Settings → Support: turns the inbox on or off (owners and admins). */

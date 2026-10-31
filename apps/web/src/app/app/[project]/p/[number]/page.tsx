@@ -11,7 +11,7 @@ import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
-import { Property, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
+import { CONVERSATIONS_SHOWN, Property, PostConversations, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 import { PostSteps } from "@/components/post-steps";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -21,6 +21,7 @@ import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
+import { conversationPerson } from "@/server/operations/conversations";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
@@ -48,6 +49,25 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         links: {
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
+        },
+        // The latest linked, and how many there are.
+        _count: { select: { conversations: { where: { conversation: { spam: false } } } } },
+        conversations: {
+          where: { conversation: { spam: false } },
+          orderBy: { createdAt: "desc" },
+          take: CONVERSATIONS_SHOWN,
+          select: {
+            conversation: {
+              select: {
+                number: true,
+                subject: true,
+                status: true,
+                email: true,
+                emailVerified: true,
+                user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+              },
+            },
+          },
         },
         events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, emailed: true, createdAt: true, actor: { select: { name: true } } } },
         comments: {
@@ -208,6 +228,14 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               </span>
             </Property>
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
+            <PostConversations
+              projectSlug={slug}
+              count={post._count.conversations}
+              conversations={post.conversations.map(({ conversation }) => {
+                const person = conversationPerson(conversation);
+                return { ...conversation, person: person.name ?? person.email ?? "Unknown" };
+              })}
+            />
             <PostShipped projectSlug={slug} {...shipped} />
             <PostsLike projectSlug={slug} posts={like} />
           </aside>

@@ -141,6 +141,29 @@ test("conversations from the API land in the inbox, where the team replies, assi
   await expect(owner.getByText("Assigned to Olive Owner")).toBeVisible();
   await checkpoint(owner, "conversation");
 
+  // It's about a post on the board: linked to it, the conversation shows on the post, and the post beside it.
+  await api("/posts", { board: "feature-requests", title: "Export reports to CSV", author: { id: "user-42" } });
+  await owner.reload();
+  const linkedPosts = owner.getByRole("region", { name: "Linked posts" });
+  await expect(linkedPosts).toContainText("Link the posts this is about");
+  await linkedPosts.getByRole("button", { name: "Link post…" }).click();
+  await owner.getByRole("dialog").getByRole("textbox", { name: "Search posts" }).fill("csv");
+  await owner.getByRole("dialog").getByRole("button", { name: /Export reports to CSV/ }).click();
+  await expect(owner.getByText("Linked to #1")).toBeVisible();
+  await expect(linkedPosts.getByRole("link", { name: "Export reports to CSV" })).toBeVisible();
+  await checkpoint(owner, "conversation-linked-post");
+  await linkedPosts.getByRole("link", { name: "Export reports to CSV" }).click();
+  await owner.waitForURL(`**/app/${slug}/p/1`);
+  const conversations = owner.getByRole("complementary", { name: "Properties" }).getByRole("list", { name: "Conversations" });
+  await expect(conversations.getByRole("listitem")).toHaveText([/^Can't export to CSVSam Smith · /]);
+  await checkpoint(owner, "post-linked-conversation");
+  await conversations.getByRole("link", { name: "Can't export to CSV" }).click();
+  await owner.waitForURL(`**/app/${slug}/inbox/1`);
+  // Unlinked, it's off the post again.
+  await linkedPosts.getByRole("button", { name: "Unlink “Export reports to CSV”" }).click();
+  await expect(owner.getByText("Unlinked #1")).toBeVisible();
+  await expect(linkedPosts).toContainText("Link the posts this is about");
+
   // Sam writes again from the team's app: it's open again.
   await api("/conversations/1/messages", { body: "Thanks! Any idea when?", author: { id: "user-42" } });
   await owner.reload();
@@ -172,9 +195,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Someone known only by their address.
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Known only by this address.");
+  // Linked to the post as well (through the API): the post lists it until it's spam.
+  await api("/conversations/2/posts", { post: 1 });
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(conversations).toContainText("Do you have a discount for nonprofits?");
+  await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Mark as spam" }).click();
   await expect(owner.getByText("Marked as spam")).toBeVisible();
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByRole("complementary", { name: "Properties" })).toContainText("Voters");
+  await expect(conversations).toHaveCount(0);
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Open 0" })).toBeVisible();
   await views.getByRole("link", { name: "Spam 1" }).click();
@@ -241,6 +272,9 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await expect(messages.last()).toBeInViewport();
   await expect(messages.first()).not.toBeInViewport();
   await expect(reply).toBeInViewport();
+  // What's beside it stays in view too: the linked posts and who it's with.
+  await expect(owner.getByRole("region", { name: "Linked posts" })).toBeInViewport();
+  await expect(owner.getByRole("complementary", { name: "About them" })).toBeInViewport();
   await checkpoint(owner, "conversation-newest", { fullPage: false });
   // Scrolled back to the first message, the reply box is where it was.
   const y = (await send.boundingBox())!.y;

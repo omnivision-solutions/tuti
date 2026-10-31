@@ -4,6 +4,7 @@ import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
+import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
@@ -61,6 +62,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         visitorHash: true,
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+        posts: { orderBy: { createdAt: "asc" }, select: { post: { select: { number: true, title: true, status: true } } } },
         messages: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -158,9 +160,18 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
       {/* The page's height at least, so the reply box is at the bottom of the screen with few messages too. */}
       <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-6">
-        <PersonDetails name={personName}>
-          <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
-        </PersonDetails>
+        {/* Beside it: the posts it's about, then the person (a sheet on phones, where the posts stay on the page). Held in
+            view as the messages scroll, scrolling on its own when taller than the screen (so it never makes the row taller). */}
+        <div className="flex flex-col gap-4 lg:sticky lg:top-16 lg:col-start-2 lg:row-start-1 lg:max-h-[calc(100svh-5.5rem)] lg:self-start lg:overflow-y-auto">
+          <Card size="sm">
+            <CardContent>
+              <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} />
+            </CardContent>
+          </Card>
+          <PersonDetails name={personName}>
+            <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+          </PersonDetails>
+        </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <ol className="flex flex-col gap-3" aria-label="Messages">
             {conversation.messages.map((message) => {

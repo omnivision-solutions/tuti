@@ -1,8 +1,9 @@
-import type { PostStatus } from "@tuti/db";
+import type { ConversationStatus, PostStatus } from "@tuti/db";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { asking } from "@/lib/format";
 
 /** One of the post's properties in its sidebar: a label above its control. */
@@ -99,6 +100,44 @@ export function PostsLike({ projectSlug, posts }: { projectSlug: string; posts: 
           </li>
         ))}
       </ul>
+    </Property>
+  );
+}
+
+/** How many of a post's linked conversations its sidebar lists, the latest linked first. */
+export const CONVERSATIONS_SHOWN = 10;
+
+/**
+ * The conversations linked to the post (from the Inbox), the latest linked first: each opens in the Inbox, with who
+ * it's with and its status; past CONVERSATIONS_SHOWN, "N more" of `count`.
+ */
+export function PostConversations({
+  projectSlug,
+  conversations,
+  count,
+}: {
+  projectSlug: string;
+  conversations: { number: number; subject: string; status: ConversationStatus; person: string }[];
+  count: number;
+}) {
+  if (conversations.length === 0) {
+    return null;
+  }
+  return (
+    <Property label="Conversations">
+      <ul aria-label="Conversations" className="flex flex-col gap-2">
+        {conversations.map((conversation) => (
+          <li key={conversation.number} className="flex flex-col gap-0.5">
+            <Link href={`/app/${projectSlug}/inbox/${conversation.number}`} className="break-words hover:underline">
+              {conversation.subject}
+            </Link>
+            <span className="text-xs break-words text-muted-foreground">
+              {conversation.person} · {CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {count > conversations.length && <span className="text-xs text-muted-foreground">{count - conversations.length} more</span>}
     </Property>
   );
 }

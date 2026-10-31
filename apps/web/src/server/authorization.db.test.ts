@@ -435,6 +435,8 @@ const matrix: Matrix = {
     setConversationStatus: { allowed: "MEMBER", call: (slug) => inbox.setConversationStatus(slug, 1, "closed") },
     assignConversation: { allowed: "MEMBER", call: (slug) => inbox.assignConversation(slug, 1, users.MEMBER.id) },
     markConversationSpam: { allowed: "MEMBER", call: (slug) => inbox.markConversationSpam(slug, 1, true) },
+    linkPostToConversation: { allowed: "MEMBER", call: (slug) => inbox.linkPostToConversation(slug, 1, 1, true) },
+    findPostsToLink: { allowed: "MEMBER", call: (slug) => inbox.findPostsToLink(slug, "Post") },
     setSupportInbox: { allowed: "ADMIN", call: (slug) => inbox.setSupportInbox(slug, true) },
     getSupportAddress: { allowed: "ADMIN", call: (slug) => withEnv({ SUPPORT_EMAIL_DOMAIN: "tuti.email" }, () => inbox.getSupportAddress(slug)) },
     setNewConversationEmails: { allowed: "MEMBER", call: (slug) => inbox.setNewConversationEmails(slug, false) },
