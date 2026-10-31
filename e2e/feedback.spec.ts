@@ -103,7 +103,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("option", { name: next }).click();
   await expect(team.getByText(`ETA: ${next}`)).toBeVisible();
   // Who asked for it: its voters, Bo (the duplicate's vote, moved over) and Ada, the latest first.
-  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText([/^Bo/, /^Ada/]);
+  await expect(properties.getByRole("list", { name: "Voters" }).getByRole("listitem")).toHaveText(["Bo", "Ada"]);
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
   await checkpoint(team, "team-planned");
