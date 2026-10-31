@@ -1,10 +1,10 @@
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
-import { parsePostFilters } from "@/lib/post-filters";
+import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, MAX_LISTED, teamPosts } from "./post-lists";
+import { boardPosts, MAX_LISTED, teamPostCounts, teamPosts } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -22,10 +22,10 @@ test("lists of 120 posts are read in full, a page of 50 at a time", async () => 
   });
 
   for (const list of [
-    (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort })),
+    (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort }, TEAM_SORTS)),
     (page: string, sort: string) => boardPosts(board.id, parsePostFilters({ page, sort }), owner.id),
   ]) {
-    for (const sort of ["top", "new"]) {
+    for (const sort of ["top", "new", "trending"]) {
       const pages = [await list("1", sort), await list("2", sort), await list("3", sort)];
       expect(pages.map(({ posts, more }) => [posts.length, more])).toEqual([
         [50, true],
@@ -61,4 +61,47 @@ test("however far a list is loaded, one request lists at most 1,000 posts, the l
   expect([last.posts.length, last.posts.at(-1)!.number, last.more]).toEqual([970, 1, false]);
   const past = await teamPosts(project.id, parsePostFilters({ page: "100000", sort: "new" }));
   expect([past.posts.length, past.more]).toEqual([0, false]);
+});
+
+test("Feedback: a tab's posts, words found in titles and descriptions, Trending by this week's votes, and the tabs' counts", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  const ideas = project.boards[0]!;
+  const bugs = await prisma.board.create({ data: { projectId: project.id, slug: "bugs", name: "Bugs" } });
+  const post = (number: number, title: string, data: { body?: string; status?: "OPEN" | "PLANNED"; voteCount?: number; boardId?: string } = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: ideas.id, authorId: owner.id, number, title, ...data } });
+  const dark = await post(1, "Dark mode", { voteCount: 5 });
+  const exports = await post(2, "Exports", { body: "CSV for 50% of the reports", voteCount: 2 });
+  const sso = await post(3, "SSO", { status: "PLANNED", voteCount: 1 });
+  const crash = await post(4, "Crash on save", { boardId: bugs.id, voteCount: 0 });
+  // Night theme was merged into Dark mode: it isn't listed (in no list below). Crash may duplicate Dark mode.
+  await post(5, "Night theme", { voteCount: 9 }).then((p) => prisma.post.update({ where: { id: p.id }, data: { duplicateOfId: dark.id } }));
+  await prisma.duplicateSuggestion.create({ data: { projectId: project.id, postId: crash.id, originalId: dark.id, similarity: 0.9 } });
+  // This week: two votes for SSO, one for Exports; Dark mode's are older.
+  const voters = await Promise.all(["Vera", "Val"].map((name) => signUp(name)));
+  await prisma.vote.createMany({
+    data: [
+      { projectId: project.id, postId: sso.id, userId: voters[0]!.id },
+      { projectId: project.id, postId: sso.id, userId: voters[1]!.id },
+      { projectId: project.id, postId: exports.id, userId: voters[0]!.id },
+      { projectId: project.id, postId: dark.id, userId: voters[1]!.id, createdAt: new Date(Date.now() - 10 * 86_400_000) },
+    ],
+  });
+  const titles = async (params: Record<string, string>, scope = {}) => (await teamPosts(project.id, parsePostFilters(params, TEAM_SORTS), scope)).posts.map((p) => p.title);
+
+  expect(await titles({ status: "open" })).toEqual(["Dark mode", "Exports", "Crash on save"]);
+  expect(await titles({ sort: "trending" })).toEqual(["SSO", "Exports", "Dark mode", "Crash on save"]);
+  expect(await titles({ sort: "trending", status: "open" }, { board: ideas.slug })).toEqual(["Exports", "Dark mode"]);
+  // In the description, any case; % is the character, not "anything".
+  expect(await titles({}, { q: "csv" })).toEqual(["Exports"]);
+  expect(await titles({}, { q: "50%" })).toEqual(["Exports"]);
+  expect(await titles({}, { q: "5%" })).toEqual([]);
+  expect(await titles({ sort: "trending" }, { q: "50%" })).toEqual(["Exports"]);
+  expect(await titles({}, { duplicatesOnly: true })).toEqual(["Crash on save"]);
+  expect(await titles({ sort: "trending" }, { duplicatesOnly: true })).toEqual(["Crash on save"]);
+
+  const counts = await teamPostCounts(project.id, {});
+  expect([counts.of("OPEN"), counts.of("PLANNED"), counts.of("COMPLETED"), counts.all, counts.duplicates]).toEqual([3, 1, 0, 4, 1]);
+  const searched = await teamPostCounts(project.id, { q: "O", board: ideas.slug });
+  expect([searched.of("OPEN"), searched.of("PLANNED"), searched.all, searched.duplicates]).toEqual([2, 1, 3, 0]);
 });

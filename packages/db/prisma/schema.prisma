@@ -1171,6 +1171,8 @@ model Vote {
 
   @@id([postId, userId])
   @@index([userId])
+  /// This week's votes in a project: Feedback's Trending.
+  @@index([projectId, createdAt])
   @@map("vote")
 }
 
