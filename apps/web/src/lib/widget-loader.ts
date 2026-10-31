@@ -227,9 +227,14 @@ export function widgetLoader(portalTemplate: string): string {
       return false;
     }
   }
+  // Whether the page is covered now: decided as the panel opens (left as it is while a modal of the page's
+  // shows, covered once that closes), then kept till it closes. A modal the page opens later is under the panel.
+  var covering = false;
   function coverPage() {
-    var cover = opened && small && small.matches && !modalOpen();
+    var cover = opened && small && small.matches;
+    if (cover && !covering && modalOpen()) return;
     if (cover) {
+      covering = true;
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
@@ -239,6 +244,7 @@ export function widgetLoader(portalTemplate: string): string {
         }
       }
     } else {
+      covering = false;
       for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");
       covered = [];
     }

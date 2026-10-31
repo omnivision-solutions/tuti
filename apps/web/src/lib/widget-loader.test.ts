@@ -1008,3 +1008,19 @@ test("on a phone, a page with a modal open (help opened from inside it) isn't co
   page.mutated();
   expect(app.hasAttribute("inert")).toBe(true);
 });
+
+test("on a phone, a modal the page opens once the panel covers it doesn't uncover the page; closing puts it all back", async () => {
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // A popup of the page's (on a timer, say), added to the page: still covered, the popup with it.
+  const popup = page.body.appendChild(new FakeElement("div", page));
+  popup.setAttribute("aria-modal", "true");
+  page.mutated();
+  expect(app.hasAttribute("inert")).toBe(true);
+  expect(popup.hasAttribute("inert")).toBe(true);
+  page.Tuti.close();
+  expect(app.hasAttribute("inert")).toBe(false);
+  expect(popup.hasAttribute("inert")).toBe(false);
+});
