@@ -63,7 +63,7 @@ export function ConversationPosts({
 
   const link = (post: number, linked: boolean) =>
     startTransition(async () => {
-      const result = await linkPostToConversation(projectSlug, number, post, linked);
+      const result = await linkPostToConversation(projectSlug, number, post, linked).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
       if (result.error) {
         toast.error(result.error);
         return;
