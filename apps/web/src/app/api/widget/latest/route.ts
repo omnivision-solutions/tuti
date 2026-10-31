@@ -18,7 +18,8 @@ import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/wid
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
-  const headers = { "access-control-allow-origin": "*", "cache-control": "public, max-age=60" };
+  // Kept apart by the site asking: a browser's copy for the portal isn't reused for the team's site (Get set up counts that one).
+  const headers = { "access-control-allow-origin": "*", "cache-control": "public, max-age=60", vary: "Origin" };
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
@@ -78,7 +79,9 @@ async function isOwnDomain(slug: string, origin: string): Promise<boolean> {
 /** A request's site (its Origin, or its Referer's origin); null if there isn't one. */
 function siteOrigin(header: string | null): string | null {
   try {
-    return header ? new URL(header).origin : null;
+    const origin = header ? new URL(header).origin : null;
+    // An opaque origin (a browser extension's, a sandboxed frame's) is "null": no site.
+    return origin === "null" ? null : origin;
   } catch {
     return null;
   }

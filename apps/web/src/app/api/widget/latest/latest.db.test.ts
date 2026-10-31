@@ -100,3 +100,13 @@ test("a portal under a path of the team's site: the site still counts (the widge
   await from("https://www.acme.example");
   expect(await seen()).not.toBeNull();
 });
+
+test("an opaque origin (a browser extension's) is no site: the settings still come back, and nothing is counted", async () => {
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const response = await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin: "chrome-extension://abcdef" } }));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("vary")).toBe("Origin");
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt).toBeNull();
+});
