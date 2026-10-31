@@ -591,6 +591,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 - [x] The unverified-email banner: a slim strip that can be dismissed, and an item in Home's setup list (step 3)
 - [x] Customize: the top bar names the section, not the project; logo, favicon and share image uploads as a drop zone with "Upload", not the browser's file input
 - [x] Landing page: "On the way" lists the roadmap, the changelog drafted from GitHub, docs, the widget and the API and MCP as coming, and they have all shipped. Rewritten around the loop (feedback, roadmap, Autopilot, changelog, docs, inbox, widget) with screenshots, and links in the header (Features, Pricing, Docs, GitHub). Pricing: Free's, Business's and Enterprise's buttons as outline buttons (they look disabled). Sign in and sign up: a line on what Tuti does beside the form. Marketing pages: a build and a screenshot, no tests
+- [x] Landing page led by the problem: the hero is the AI answering from out-of-date docs (its answer turning right as a merge rewrites the article), then what goes stale while a team ships, the list nobody does after a release beside what Tuti does, one merge fanning out to what it updates, one request's steps and who does each, the hold (on autopilot, not unsupervised), everything else in tiles, Tuti beside feedback boards and help centers, open source, and a last call. Sections run the whole width; light and dark; still with reduced motion (no tests; checked by build and screenshots)
 
 ### 2. Structure: navigation, Settings and Customize
 
