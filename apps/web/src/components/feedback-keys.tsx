@@ -10,7 +10,7 @@ import { pageShortcut } from "@/lib/shortcut-keys";
  * none open), Esc closes the pane. Not while typing, nor with a dialog, menu or list of choices open; a
  * select of the pane's, focused after a pick, doesn't keep them (`data-feedback-pane`).
  * `order`: the list's post numbers; `base`: the list's address with none open. On a phone, the pane is brought
- * into view as a post opens.
+ * into view as a post opens, and the list back to where it was as the pane closes.
  */
 export function FeedbackKeys({ order, open, base }: { order: number[]; open: number | null; base: string }) {
   const router = useRouter();
@@ -23,11 +23,25 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
     }
   }, [base, order, open]);
 
-  // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its top.
+  // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its
+  // top; closed, the list goes back to where it was (kept as it scrolls, before the pane hides it).
+  const listScroll = useRef(0);
   useEffect(() => {
-    if (open !== null && window.matchMedia("(max-width: 63.99rem)").matches) {
-      document.querySelector("[data-feedback-pane]")?.scrollIntoView({ block: "start" });
+    const phone = window.matchMedia("(max-width: 63.99rem)").matches;
+    if (open !== null) {
+      if (phone) {
+        document.querySelector("[data-feedback-pane]")?.scrollIntoView({ block: "start" });
+      }
+      return;
     }
+    if (phone && listScroll.current > 0) {
+      window.scrollTo(0, listScroll.current);
+    }
+    const keep = () => {
+      listScroll.current = window.scrollY;
+    };
+    window.addEventListener("scroll", keep, { passive: true });
+    return () => window.removeEventListener("scroll", keep);
   }, [open]);
 
   useEffect(() => {

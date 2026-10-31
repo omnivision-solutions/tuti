@@ -492,4 +492,7 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   const last = (await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents()).at(-1)!;
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
+  // Closed, the list is back where it was: at the row just triaged.
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();
 });
