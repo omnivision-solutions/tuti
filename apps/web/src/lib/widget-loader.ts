@@ -208,6 +208,25 @@ export function widgetLoader(portalTemplate: string): string {
   function showStandIn() {
     standIn.style.display = small && small.matches && !closable ? "flex" : "none";
   }
+  // On a phone the open panel is the whole screen: the page under it is out of reach (Tab, a screen reader's
+  // swipes) until it closes or the screen's wide again. Only what the loader made inert is put back.
+  var covered = [];
+  function coverPage() {
+    var cover = opened && small && small.matches;
+    if (cover && covered.length === 0) {
+      var children = document.body ? document.body.children : [];
+      for (var c = 0; c < children.length; c++) {
+        var child = children[c];
+        if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
+          child.setAttribute("inert", "");
+          covered.push(child);
+        }
+      }
+    } else if (!cover) {
+      for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");
+      covered = [];
+    }
+  }
   // The sidebar: a drawer over the button, with a backdrop that closes it on narrow screens
   // (where it covers most of the page); on wider ones the page stays usable beside it.
   var backdrop = document.createElement("div");
@@ -225,7 +244,7 @@ export function widgetLoader(portalTemplate: string): string {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
     css(backdrop, { position: "fixed", top: "0", right: "0", bottom: "0", left: "0", zIndex: "2147483001", display: "none", background: "rgba(0, 0, 0, 0.4)" });
     backdrop.addEventListener("click", function () { close(); });
-    if (narrow) narrow.onchange = function () { showBackdrop(); showStandIn(); };
+    if (narrow) narrow.onchange = function () { showBackdrop(); showStandIn(); coverPage(); };
   } else {
     placePanel();
     if (small) small.onchange = placePanel;
@@ -234,6 +253,7 @@ export function widgetLoader(portalTemplate: string): string {
   // button at the top). Pinned to the screen's edges there, so the browser's bars can't push it off screen.
   function placePanel() {
     showStandIn();
+    coverPage();
     if (small && small.matches) {
       // Clear of the status bar and home indicator where the page runs under them (viewport-fit=cover):
       // the panel's page, in a frame, isn't told where they are.
@@ -416,6 +436,7 @@ export function widgetLoader(portalTemplate: string): string {
     }
     tellShown(true);
     showBackdrop();
+    coverPage();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
@@ -431,6 +452,8 @@ export function widgetLoader(portalTemplate: string): string {
     animate(false);
     tellShown(false);
     showBackdrop();
+    // Back in reach before focus goes back to it.
+    coverPage();
     button.setAttribute("aria-expanded", "false");
     (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }

@@ -945,3 +945,23 @@ test("on a phone, until the panel's page is up with its own Close, the loader's 
   page.resize(false);
   expect(standIn.style.display).toBe("none");
 });
+
+test("on a phone the open panel is the whole screen, so the page under it is out of reach (Tab, screen readers) until it closes", async () => {
+  const page = loadWidget({ narrow: true });
+  const content = page.body.appendChild(new FakeElement("main", page));
+  // Something the page made inert itself stays so.
+  const own = page.body.appendChild(new FakeElement("aside", page));
+  own.setAttribute("inert", "");
+  await settled();
+  page.button!.click();
+  expect(content.hasAttribute("inert")).toBe(true);
+  expect(page.button!.hasAttribute("inert")).toBe(true);
+  expect(page.panel.hasAttribute("inert")).toBe(false);
+  page.press("Escape");
+  expect(content.hasAttribute("inert")).toBe(false);
+  expect(own.hasAttribute("inert")).toBe(true);
+  // Turned wide while open: back in reach.
+  page.button!.click();
+  page.resize(false);
+  expect(content.hasAttribute("inert")).toBe(false);
+});
