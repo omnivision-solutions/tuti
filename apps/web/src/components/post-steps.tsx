@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 
 /** Whether a dialog, menu or list of choices is showing (a closed one may stay in the page, hidden), or the page's More actions. */
 const open = () =>
-  [...document.querySelectorAll('[role="dialog"], [role="listbox"], [role="menu"], [aria-label="More actions"][aria-expanded="true"]')].some(
+  [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"], [aria-label="More actions"][aria-expanded="true"]')].some(
     (element) => element.getAttribute("aria-expanded") === "true" || element.checkVisibility(),
   );
 

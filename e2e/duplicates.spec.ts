@@ -48,6 +48,14 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await expect(panel).toContainText(original);
   await expect(panel).toContainText("80% similar");
   await checkpoint(owner, "team-duplicate-panel");
+  // Asked whether to merge, J doesn't take the team to another post (a step would have gone by now).
+  const here = new URL(owner.url()).pathname;
+  await panel.getByRole("button", { name: /^Merge into #/ }).click();
+  await expect(owner.getByRole("alertdialog")).toBeVisible();
+  await owner.keyboard.press("j");
+  await expect(owner.waitForURL((url) => url.pathname !== here, { timeout: 1500 })).rejects.toThrow();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   await panel.getByRole("button", { name: "Not a duplicate" }).click();
   await expect(owner.getByText("Possible duplicates")).toHaveCount(0);
 
