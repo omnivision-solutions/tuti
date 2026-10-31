@@ -15,6 +15,11 @@ const SHOWN = 5;
 /** Kinds customers see once they go out (the rest are drafts only the team sees). */
 const PUBLIC = new Set<CodeChangeActionKind>(["RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT"]);
 
+/** Applied by Autopilot itself, nobody approving it. */
+const auto = (action: { payload: unknown }) => ((action.payload ?? {}) as { auto?: boolean }).auto === true;
+/** Gone out by itself where customers see it. */
+const wentOut = (action: { kind: CodeChangeActionKind; status: string; payload: unknown }) => action.status === "APPLIED" && auto(action) && PUBLIC.has(action.kind);
+
 const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).origin : "");
 
 /**
@@ -23,6 +28,14 @@ const appOrigin = () => (process.env.APP_URL ? new URL(process.env.APP_URL).orig
  * chose when something customers see goes out by itself, so the hold never passes unseen. Returns how many.
  */
 export async function queueAutopilotNotices(codeChangeId: string): Promise<number> {
+  // Called once the analysis is saved: a failure here is logged, not the analysis's (which would mark it failed and run it again).
+  return queueNotices(codeChangeId).catch((error: unknown) => {
+    log.error("Queuing Autopilot's email failed", { error, codeChangeId });
+    return 0;
+  });
+}
+
+async function queueNotices(codeChangeId: string): Promise<number> {
   const change = await prisma.codeChange.findUnique({
     where: { id: codeChangeId },
     select: {
@@ -172,7 +185,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       where: { projectId_userId: { projectId: project.id, userId } },
       select: { role: true, autopilotTold: true, user: { select: { autopilotEmails: true } } },
     });
-    const goesOutUnseen = mine.some(({ codeChange }) => codeChange.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind)));
+    // Going out by itself, or gone already (a short hold passes before the email goes): owners hear of it.
+    const goesOutUnseen = mine.some(({ codeChange }) => codeChange.actions.some((action) => (action.status === "SCHEDULED" && PUBLIC.has(action.kind)) || wentOut(action)));
     if (!member || !isTold(member, project, goesOutUnseen)) {
       // Not told after all: gone, so the page doesn't say they were emailed.
       await prisma.autopilotNotice.deleteMany({ where: { id: { in: ids } } });
@@ -190,6 +204,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
     const all = mine.flatMap(({ codeChange }) => codeChange.actions);
     const totals = {
       goesOut: all.filter((action) => action.status === "SCHEDULED").length,
+      wentOut: all.filter(wentOut).length,
       needsYou: all.filter((action) => action.status === "PENDING" || action.status === "STALE").length,
       first: when(
         all.filter((action) => action.status === "SCHEDULED").reduce<Date | null>((min, action) => (!min || (action.dueAt && action.dueAt < min) ? action.dueAt : min), null),
@@ -197,17 +212,18 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       ),
     };
     const changes: AutopilotEmailChange[] = mine.map(({ codeChange }) => {
-      const auto = (action: ActionRow) => ((action.payload ?? {}) as { auto?: boolean }).auto === true;
       const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
       const needsYou = codeChange.actions.filter((action) => action.status === "PENDING" || action.status === "STALE").map((action) => previewOf(action, now));
-      // What Autopilot did by itself already: drafts only the team sees, links.
-      const done = codeChange.actions.filter((action) => action.status === "APPLIED" && auto(action)).map((action) => previewOf(action, now));
+      // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.
+      const went = codeChange.actions.filter(wentOut).map((action) => previewOf(action, now));
+      const done = codeChange.actions.filter((action) => action.status === "APPLIED" && auto(action) && !PUBLIC.has(action.kind)).map((action) => previewOf(action, now));
       return {
         title: codeChange.title,
         pullRequest: `${codeChange.repo}#${codeChange.number}`,
         summary: codeChange.summary,
         reviewUrl: `${appOrigin()}/app/${project.slug}/autopilot/${codeChange.id}?select=likely`,
         goesOut: take(goesOut),
+        wentOut: take(went),
         needsYou: take(needsYou),
         done: take(done),
       };

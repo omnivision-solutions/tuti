@@ -13,6 +13,8 @@ export type AutopilotEmailChange = {
   /** Its review page, with the likely updates ticked. */
   reviewUrl: string;
   goesOut: AutopilotEmailUpdate[];
+  /** What customers see that went out by itself already (a hold shorter than the wait for this email). */
+  wentOut: AutopilotEmailUpdate[];
   needsYou: AutopilotEmailUpdate[];
   done: AutopilotEmailUpdate[];
 };
@@ -21,7 +23,7 @@ type AutopilotProps = {
   projectName: string;
   changes: AutopilotEmailChange[];
   /** Every update going out by itself (and when the first goes) and needing the team, shown or not: the subject's counts. */
-  totals: { goesOut: number; needsYou: number; first: string };
+  totals: { goesOut: number; wentOut: number; needsYou: number; first: string };
   /** Updates past the first five, left out: "+N more in Tuti". */
   more: number;
   autopilotUrl: string;
@@ -68,6 +70,7 @@ export function AutopilotEmail({ projectName, changes, totals, more, autopilotUr
           <Text style={{ fontSize: 13, color: colors.muted, margin: "0 0 8px" }}>{change.pullRequest}</Text>
           {change.summary && <Text style={{ fontSize: 14, color: colors.text, lineHeight: "21px", margin: "0 0 8px" }}>{change.summary}</Text>}
           <Updates heading="Goes out by itself" updates={change.goesOut} />
+          <Updates heading="Went out by itself" updates={change.wentOut} />
           <Updates heading="Needs you" updates={change.needsYou} />
           <Updates heading="Done (only your team sees it)" updates={change.done} />
           <Button href={change.reviewUrl} style={button}>
@@ -96,6 +99,7 @@ export function AutopilotEmail({ projectName, changes, totals, more, autopilotUr
 /** "Autopilot: Add a dark theme · 2 updates go out in 24 hours, 1 needs you"; for several, how many merged. */
 function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"]): string {
   const parts = [
+    totals.wentOut > 0 && `${plural(totals.wentOut, "update", "updates")} went out`,
     totals.goesOut > 0 && `${plural(totals.goesOut, "update goes", "updates go")} out ${totals.first}`,
     totals.needsYou > 0 && `${totals.needsYou} ${totals.needsYou === 1 ? "needs" : "need"} you`,
   ].filter(Boolean);

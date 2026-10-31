@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { queueAutopilotNotices, sendAutopilotEmails } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -166,4 +167,27 @@ test("the subject counts every update, the email shows five and says how many mo
   const [email] = to(owner);
   expect(email!.subject).toBe("Autopilot: Big release · 1 update goes out in 24 hours, 6 need you");
   expect(email!.text).toContain("+2 more in Tuti");
+});
+
+test("what went out by itself before the email did (a short hold) is still news: the owner hears of it, under Went out by itself", async () => {
+  // The owner turned Autopilot's email off: they're told only about what customers see that goes out by itself.
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // The hold passes before the email goes: the progress update goes out by itself.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  const [email] = to(owner);
+  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update went out, 1 needs you");
+  expect(email!.text).toContain("Went out by itself");
+  expect(email!.text).not.toContain("Done (only your team sees it)");
+});
+
+test("queuing the email failing doesn't fail what called it (a saved analysis): it's logged", async () => {
+  const one = await change("Add a dark theme");
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  vi.spyOn(prisma.autopilotNotice, "createMany").mockRejectedValueOnce(new Error("database blip"));
+  expect(await queueAutopilotNotices(one.id)).toBe(0);
+  expect(logged).toHaveBeenCalledWith("Queuing Autopilot's email failed", expect.objectContaining({ codeChangeId: one.id }));
+  logged.mockRestore();
 });
