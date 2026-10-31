@@ -38,8 +38,8 @@ const big = "h-11 px-5 text-base";
 /** Where the call to action goes: the app when signed in, else sign-up. */
 export type Start = { href: string; label: string };
 
-/** The plan Autopilot comes with on tuti.so, or null where every project has it. */
-export const autopilotPlanName = () => (planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")].name);
+/** The plan (name and price) Autopilot comes with on tuti.so, or null where every project has it. */
+const autopilotPlan = () => (planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")]);
 
 /** The two buttons every call to action has. */
 function Ctas({ start, docs, className }: { start: Start; docs: string; className?: string }) {
@@ -378,7 +378,7 @@ export function HelpFeatures() {
     { icon: LockIcon, title: "Private docs", text: "Single sign-on and reader groups." },
     { icon: SearchIcon, title: "Made for search", text: "SEO settings on every article." },
     { icon: ChartColumnIcon, title: "Search insights", text: "See what customers can't find." },
-    { icon: HistoryIcon, title: "Version history", text: "Every edit kept. Restore any." },
+    { icon: HistoryIcon, title: "Version history", text: "Restore an earlier version." },
     { icon: ArrowRightLeftIcon, title: "Redirects", text: "Old links keep working." },
   ];
   return (
@@ -522,7 +522,7 @@ function Panel({ label, children }: { label: string; children: ReactNode }) {
 
 /** The questions a buyer asks before switching, the how among them. */
 export function Faq() {
-  const plan = autopilotPlanName();
+  const plan = autopilotPlan();
   const items: [string, string][] = [
     [
       "How does Tuti know what changed?",
@@ -541,7 +541,7 @@ export function Faq() {
       `Yes: help.yourcompany.com, or a path of your site like yourcompany.com/help.${plansEnabled() ? " Your own domain comes with Pro, a path of your site with Business." : ""}`,
     ],
     ...(plansEnabled() && plan
-      ? ([["How much does it cost?", `The help center is free to start. Autopilot comes with ${plan}, at $${PLAN_PRICES.PRO.month} a month per project. Never per seat.`]] as [string, string][])
+      ? ([["How much does it cost?", `The help center is free to start. Autopilot comes with ${plan.name}, at $${plan.month} a month per project. Never per seat.`]] as [string, string][])
       : []),
   ];
   return (
