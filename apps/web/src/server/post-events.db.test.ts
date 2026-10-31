@@ -22,6 +22,11 @@ test("each change of a post's status is in its activity: who, from what, to what
   await call(updatePost, as, { number: post.number, status: "planned" });
   expect(await events()).toEqual([{ from: "OPEN", to: "PLANNED", actorId: owner.id, emailed: 0 }]);
 
+  // Two people moving it to In progress at the same moment: one change, once.
+  await Promise.all([1, 2].map(() => call(updatePost, as, { number: post.number, status: "in_progress" })));
+  expect((await events()).filter((e) => e.to === "IN_PROGRESS")).toEqual([{ from: "PLANNED", to: "IN_PROGRESS", actorId: owner.id, emailed: 0 }]);
+  await call(updatePost, as, { number: post.number, status: "planned" });
+
   // Completed by publishing its changelog entry: by whoever published it. A voter (verified) is emailed, and counted.
   const voter = await signUp("Vera Voter");
   await prisma.user.update({ where: { id: voter.id }, data: { emailVerified: true } });
@@ -29,8 +34,5 @@ test("each change of a post's status is in its activity: who, from what, to what
   await call(createChangelogEntry, as, { title: "Themes", body: "Dark.", posts: [post.number] });
   await call(publishChangelogEntry, as, { number: 1, announce: false });
   await handlers.postShipped({ postId }, { info: () => {}, warn: () => {} });
-  expect(await events()).toEqual([
-    { from: "OPEN", to: "PLANNED", actorId: owner.id, emailed: 0 },
-    { from: "PLANNED", to: "COMPLETED", actorId: owner.id, emailed: 1 },
-  ]);
+  expect((await events()).slice(-1)).toEqual([{ from: "PLANNED", to: "COMPLETED", actorId: owner.id, emailed: 1 }]);
 });

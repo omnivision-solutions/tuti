@@ -1,4 +1,4 @@
-import { prisma } from "@tuti/db";
+import { type PostStatus, prisma } from "@tuti/db";
 import { postStatusChanged } from "@tuti/jobs";
 import { z } from "zod";
 
@@ -34,16 +34,19 @@ export const updatePost = defineOperation({
     const portal = await projectPortal(projectId);
     const status = input.status && fromApiStatus(input.status);
     // The change and its event (the post's activity) together: by whoever made it (an API key: its creator).
-    const updated = await prisma.$transaction(async (tx) => {
+    // The status it has now, read with its row locked: changes at the same moment (a teammate, publishing its entry) go one after the other.
+    const { updated, previous } = await prisma.$transaction(async (tx) => {
+      const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
+      const previous = current?.status ?? post.status;
       const saved = await tx.post.update({ where: { id: post.id }, data: { ...(status && { status }), ...(boardId && { boardId }) }, select: postSummarySelect });
-      if (status && status !== post.status) {
-        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: post.status, to: status } });
+      if (status && status !== previous) {
+        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
       }
-      return saved;
+      return { updated: saved, previous };
     });
     const result = summary(updated, portal);
-    if (updated.status !== post.status) {
-      await postStatusChanged(projectId, post.id, result, post.status);
+    if (updated.status !== previous) {
+      await postStatusChanged(projectId, post.id, result, previous);
     }
     return result;
   },
