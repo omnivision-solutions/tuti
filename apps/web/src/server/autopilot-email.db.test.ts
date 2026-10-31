@@ -540,3 +540,25 @@ test("what went out by itself during a mail outage stays news when the change is
   expect(email!.text).toContain("Went out by itself");
   expect(email!.text).toContain("In progress, posted: “Out soon”");
 });
+
+test("what goes out by itself while an email is being sent (read before it) is in the next one", async () => {
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // Its ten minutes are up: this minute's sweep sends it.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  // After the sweep read the change, before the send ends: the progress update goes out by itself and its owner is told.
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.teamMember, "findUnique").mockImplementationOnce((async (...args: unknown[]) => {
+    const action = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+    await tellOwners(one.id, action.createdAt);
+    return findUnique(...args);
+  }) as never);
+  expect(await sendAutopilotEmails()).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  // The next email says it went.
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});

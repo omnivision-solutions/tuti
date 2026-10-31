@@ -310,8 +310,9 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         }
         continue;
       }
-      // Sent, unless analysed again while it went: that one's left unsent, for the next email.
-      const sentAt = new Date();
+      // Sent, unless analysed again while it went: that one's left unsent, for the next email. As of when its
+      // content was read (its claim): what Autopilot did since is in neither this email nor, otherwise, the next.
+      const sentAt = claimedAt;
       for (const notice of mine) {
         await prisma.autopilotNotice.updateMany({ where: { id: notice.id, claimedAt, createdAt: notice.createdAt }, data: { sentAt } });
       }
