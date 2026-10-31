@@ -129,21 +129,27 @@ export const listUsers = defineOperation({
       filters.push(inGroupSql(storedConditions(group.conditions), Prisma.sql`s`));
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
-    const sorted = input.sort === "name" ? Prisma.empty : Prisma.sql`${activitySql[input.sort]} DESC NULLS LAST, `;
-    const page = await prisma.$queryRaw<({ id: string } & Omit<UserActivity, "lastSeenAt"> & { lastSeen: Date | null })[]>`
-      SELECT s.id, ${activitySql.posts} AS posts, ${activitySql.votes} AS votes, ${activitySql.conversations} AS conversations, ${activitySql.lastSeen} AS "lastSeen"
-      FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${accountsOf}
+    // By name, the page is picked first and its activity worked out after; an activity sort needs everyone's.
+    const page = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
-      ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${sorted}u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
-    const rows = page.slice(0, input.limit);
-    const users = await prisma.ssoIdentity.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select: { id: true, ...userSelect } });
+      ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${
+        input.sort === "name" ? Prisma.empty : Prisma.sql`${activitySql[input.sort]} DESC NULLS LAST, `
+      }u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+    const ids = page.slice(0, input.limit).map((row) => row.id);
+    const [users, activity] = await Promise.all([
+      prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } }),
+      ids.length === 0
+        ? []
+        : prisma.$queryRaw<({ id: string } & Omit<UserActivity, "lastSeenAt"> & { lastSeen: Date | null })[]>`
+            SELECT s.id, ${activitySql.posts} AS posts, ${activitySql.votes} AS votes, ${activitySql.conversations} AS conversations, ${activitySql.lastSeen} AS "lastSeen"
+            FROM sso_identity s ${accountsOf} WHERE s.id IN (${Prisma.join(ids)})`,
+    ]);
     const byId = new Map(users.map((user) => [user.id, user]));
-    const views = await viewsOf(projectId, rows.map((row) => byId.get(row.id)!));
+    const activityOf = new Map(activity.map(({ id, lastSeen, ...counts }) => [id, { ...counts, lastSeenAt: lastSeen } satisfies UserActivity]));
+    const views = await viewsOf(projectId, ids.map((id) => byId.get(id)!));
     return {
-      users: views.map((view, i) => {
-        const { posts, votes, conversations, lastSeen } = rows[i]!;
-        return { ...view, activity: { posts, votes, conversations, lastSeenAt: lastSeen } satisfies UserActivity };
-      }),
+      users: views.map((view, i) => ({ ...view, activity: activityOf.get(ids[i]!)! })),
       nextCursor: page.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },
