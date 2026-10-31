@@ -70,7 +70,9 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           <CardTitle>How it&apos;s doing</CardTitle>
           <CardDescription>
             {record.of === 0
-              ? "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them."
+              ? record.wentOut
+                ? "Nothing it can count yet: drafts finished in the editor, and updates approved before this was kept, aren't counted."
+                : "Nothing has gone out yet. Once updates are approved, this says how many were kept as Autopilot wrote them."
               : `Kept ${record.kept} of its last ${record.of} ${record.of === 1 ? "update" : "updates"} unchanged: not edited before approving, nor undone since.`}
           </CardDescription>
         </CardHeader>

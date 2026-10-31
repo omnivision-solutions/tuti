@@ -294,7 +294,7 @@ test("the review page ticks the likely updates as it opens (not a comment nobody
 });
 
 test("how Autopilot is doing: of its last updates that went out, those kept as it wrote them (not edited first, nor undone)", async () => {
-  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
   const kept = await proposal("RESOLVES");
   const edited = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
   const undone = await proposal("LINKS");
@@ -305,7 +305,7 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   // Waiting, or dismissed: not counted.
   const waiting = await proposal("LINKS");
   await call(dismissCodeChangeAction, team(), { id: waiting.action.id });
-  expect(await autopilotRecord(project.id)).toEqual({ kept: 1, of: 3 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 3 });
   // Approved before edits were recorded (its own words or not, nobody knows): left out.
   const old = await proposal("MOVES_FORWARD", { comment: "Monthly too." });
   await prisma.codeChangeAction.update({ where: { id: old.action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { comment: "Monthly too, next week." } } });
@@ -315,7 +315,7 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   });
   const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Faster search" } } });
   await call(applyCodeChangeAction, team(), { id: line.id, line: "Faster search" });
-  expect(await autopilotRecord(project.id)).toEqual({ kept: 2, of: 4 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 2, of: 4 });
 });
 
 test("how Autopilot is doing: what isn't counted when kept isn't counted when undone; the last 50 are the last proposed, whenever undone", async () => {
@@ -326,14 +326,15 @@ test("how Autopilot is doing: what isn't counted when kept isn't counted when un
   await prisma.codeChangeAction.create({
     data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 3 * 86_400_000), decidedAt: new Date(), payload: { undo: { revision: null } } },
   });
-  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+  // Something went out, though nothing it can count: the page says so, not "Nothing has gone out yet".
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0, wentOut: true });
   // An old link, undone just now, then 50 newer ones kept: the last 50 are the newer ones.
   const day = 86_400_000;
   await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 2 * day), decidedAt: new Date(), payload: { undo: { linked: true } } } });
   await prisma.codeChangeAction.createMany({
     data: Array.from({ length: 50 }, (_, i) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9, status: "APPLIED" as const, createdAt: new Date(Date.now() - day + i * 1000), decidedAt: new Date(Date.now() - day), payload: { undo: { linked: true } } })),
   });
-  expect(await autopilotRecord(project.id)).toEqual({ kept: 50, of: 50 });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 50, of: 50 });
 });
 
 describe("approving several (applyMany)", () => {
@@ -655,9 +656,9 @@ describe("docs", () => {
   test("how Autopilot is doing: an edit finished in the editor isn't counted, either way (whether it went out as written isn't known)", async () => {
     const { article, action } = await articleEdit();
     await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
-    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
     await call(updateArticle, team(), { slug: article.slug, body: "Pick Light, Dark or System in Settings → Appearance." });
-    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
   });
 
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {

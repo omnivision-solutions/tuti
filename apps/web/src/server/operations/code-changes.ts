@@ -242,12 +242,14 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
  * approving; a draft or an edit finished in the editor, saved again since). Those approved before this
  * was recorded aren't counted either way.
  */
-export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number }> {
+export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number; wentOut: boolean }> {
   const recent = await prisma.codeChangeAction.findMany({
     where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
     // By when it was proposed, which Undo doesn't move (it does move decidedAt): an old update undone stays old.
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 50,
+    // The last 50 it can count, from a few more (some aren't counted). ponytail: a fixed window, past
+    // 200 mostly-uncountable ones it counts fewer than 50.
+    take: 200,
     select: { kind: true, status: true, payload: true },
   });
   const known = recent.flatMap((action) => {
@@ -269,7 +271,8 @@ export async function autopilotRecord(projectId: string): Promise<{ kept: number
     }
     return [!payload.edited];
   });
-  return { kept: known.filter(Boolean).length, of: known.length };
+  const last = known.slice(0, 50);
+  return { kept: last.filter(Boolean).length, of: last.length, wentOut: recent.length > 0 };
 }
 
 const id = z.string().min(1).max(100);
