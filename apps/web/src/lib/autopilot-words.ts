@@ -42,7 +42,7 @@ export function afterButton(
     unsure > 0 ? ` ${unsure === 1 ? "Couldn't tell whether one went out: check it" : `Couldn't tell whether ${unsure} went out: check them`} below before doing it again.` : "";
   const othersOf = (w: number, k: number) =>
     (w > 0 ? ` ${w === 1 ? "One went out already: it's under Done, to undo there." : `${w} went out already: they're under Done, to undo there.`}` : "") +
-    (k > 0 ? ` ${k === 1 ? "One was stopped by a teammate: it waits for you below." : `${k} were stopped by a teammate: they wait for you below.`}` : "");
+    (k > 0 ? ` ${k === 1 ? "One was stopped: it waits for you below." : `${k} were stopped: they wait for you below.`}` : "");
   const others = othersOf(went, kept);
   switch (done) {
     case "approved":
@@ -85,6 +85,10 @@ export function afterButton(
               : update.status === "pending" && button === "stop" && update.waitReason?.startsWith("Stopped by")
                 ? "was stopped"
                 : null;
+      // Stop on one that went out: it's live, and Undo is what's left.
+      if (button === "stop" && update.status === "applied") {
+        return `${named} went out already${update.auto ? " by itself" : by(update)}: it's under Done, to undo there.${rest}`;
+      }
       if (what) {
         return `Done already: ${named} ${what}${update.auto ? "" : by(update)}. Nothing more to do.${rest}`;
       }

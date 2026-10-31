@@ -44,13 +44,13 @@ test("Approve refused on an update someone stopped says it couldn't be approved,
 test("done already names the update, and says the others someone decided first, not counting it twice", () => {
   // Publish now: the one named went out (by a teammate), another was stopped.
   expect(afterButton([progress("applied")], "already", "publish", "u1", { kept: 1 })).toBe(
-    "Done already: Progress update: Dark mode was approved. Nothing more to do. One was stopped by a teammate: it waits for you below.",
+    "Done already: Progress update: Dark mode was approved. Nothing more to do. One was stopped: it waits for you below.",
   );
-  // Stop: the one named went out itself; it isn't counted again.
-  expect(afterButton([progress("applied")], "already", "stop", "u1", { went: 1 })).toBe("Done already: Progress update: Dark mode was approved. Nothing more to do.");
+  // Stop: the one named went out; Undo is what's left (and it isn't counted again).
+  expect(afterButton([progress("applied")], "already", "stop", "u1", { went: 1 })).toBe("Progress update: Dark mode went out already: it's under Done, to undo there.");
 });
 
 test("Stop or Publish now says which of the others it named someone decided first: went out already, or stopped", () => {
   expect(afterButton([], "stopped", "stop", null, { went: 1 })).toBe("Stopped: those updates wait for you now. One went out already: it's under Done, to undo there.");
-  expect(afterButton([], "published", "publish", null, { kept: 2 })).toBe("Published: what was going out by itself went now. 2 were stopped by a teammate: they wait for you below.");
+  expect(afterButton([], "published", "publish", null, { kept: 2 })).toBe("Published: what was going out by itself went now. 2 were stopped: they wait for you below.");
 });
