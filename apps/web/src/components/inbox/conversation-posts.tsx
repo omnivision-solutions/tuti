@@ -93,6 +93,8 @@ export function ConversationPosts({
         onOpenChange={(next) => {
           setOpen(next);
           setQuery("");
+          // Not the last time's results while the newest load.
+          setFound([]);
           if (next) {
             search("", 0);
           }

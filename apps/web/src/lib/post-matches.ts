@@ -4,6 +4,8 @@ export function postMatches<T extends { number: number; title: string }>(posts: 
   if (!q) {
     return posts.slice(0, 50);
   }
-  const numbered = posts.filter((post) => String(post.number) === q);
-  return [...numbered, ...posts.filter((post) => String(post.number) !== q && post.title.toLowerCase().includes(q))].slice(0, 50);
+  // By value: "#012" is #12, as the server reads it.
+  const number = /^\d+$/.test(q) ? Number(q) : null;
+  const numbered = posts.filter((post) => post.number === number);
+  return [...numbered, ...posts.filter((post) => post.number !== number && post.title.toLowerCase().includes(q))].slice(0, 50);
 }
