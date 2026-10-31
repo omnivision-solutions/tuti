@@ -7,6 +7,8 @@ import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
 import { appUrl } from "@/lib/hosts";
+import { mailProvider } from "@/lib/mail-providers";
+import { mxHosts } from "@/server/custom-domains";
 import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
@@ -27,6 +29,10 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
     own?.included && !own.verified && dkim?.length === 3
       ? oneClickDns(dkim[0]![1]!, "email-domain", { dkim1: dkim[0]![0]!, dkim2: dkim[1]![0]!, dkim3: dkim[2]![0]! }, new URL(`/app/${project.slug}/settings/support`, appUrl()).href)
       : null;
+  // Who receives the address's email (its domain's MX), for how to forward it, until it's forwarded.
+  // Not awaited either: the general guide shows until it's in.
+  const receiver =
+    own?.address && !own.receivedAt ? mxHosts(own.address.slice(own.address.lastIndexOf("@") + 1)).then(mailProvider, () => "other" as const) : null;
   return (
     <>
       <Card>
@@ -78,11 +84,14 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
         <Card>
           <CardHeader>
             <CardTitle>Your own address</CardTitle>
-            <CardDescription>Send replies from your company&apos;s address, like support@yourcompany.com, instead of your support address above.</CardDescription>
+            <CardDescription>
+              Use your company&apos;s address, like support@yourcompany.com, instead of your support address above: replies come from it, and emails to it
+              land in the Inbox.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {settings.email.ownDomain.included || settings.email.ownDomain.address ? (
-              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} oneClick={oneClick} />
+              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} oneClick={oneClick} receiver={receiver} />
             ) : (
               <PlanNotice feature="emailDomain" projectSlug={project.slug} admin />
             )}

@@ -72,6 +72,25 @@ function headersOf(lines: readonly { key: string; line: string }[]) {
   return headers;
 }
 
+/** The addresses these headers name, lowercase. */
+const addressesIn = (lines: readonly { key: string; line: string }[], keys: string[]) =>
+  lines
+    .filter(({ key }) => keys.includes(key.toLowerCase()))
+    .flatMap(({ line }) => line.slice(line.indexOf(":") + 1).toLowerCase().match(/[^\s<>,;:"()]+@[a-z0-9.-]+/g) ?? []);
+
+/**
+ * The addresses a forwarded email was first sent to: its To and Cc (forwarders keep them), and what
+ * forwarders add (Gmail's X-Forwarded-For). None when To or Cc names an address on the support domain:
+ * then it was sent here directly, perhaps with the team's address beside it, which proves no forwarding.
+ */
+function forwardedFrom(lines: readonly { key: string; line: string }[], domain: string) {
+  const addressed = addressesIn(lines, ["to", "cc"]);
+  if (addressed.some((address) => address.endsWith(`@${domain}`) || address.endsWith(`.${domain}`))) {
+    return [];
+  }
+  return [...addressed, ...addressesIn(lines, ["delivered-to", "x-original-to", "x-forwarded-for", "x-gm-original-to"])];
+}
+
 /** What happened to it, as the receiver should hear it: 200 (taken, ignored or refused), 404 (no such address), 500 (try again). */
 export type Received = { status: 200 | 404 | 500; outcome: string };
 
@@ -140,9 +159,9 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   if (row.status !== "RECEIVED" && row.status !== "FAILED") {
     return { status: 200, outcome: row.status.toLowerCase() };
   }
+  let outcome: string;
   try {
-    const outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
-    return { status: 200, outcome };
+    outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
   } catch (error) {
     if (error instanceof AlreadyRead) {
       return { status: 200, outcome: "already read" };
@@ -151,6 +170,17 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     await prisma.inboundEmail.update({ where: { id: row.id }, data: { status: "FAILED", reason: "processing_failed" } });
     return { status: 500, outcome: "failed" };
   }
+  // Sent to the team's own address, forwarded here and in the Inbox: its forwarding works (Settings →
+  // Support); list mail (a group's) and refused mail never get here. Only a status: anyone who knows
+  // the support address can write headers that look forwarded. The email is in either way, so a
+  // failure here mustn't fail it (a retry would add it again).
+  const forwarded = outcome === "added" ? forwardedFrom(mail.headerLines, domain!) : [];
+  if (forwarded.length > 0) {
+    await prisma.emailDomain
+      .updateMany({ where: { projectId, address: { in: forwarded } }, data: { receivedAt: new Date() } })
+      .catch((error: unknown) => log.warn("Recording a forwarded email failed", { projectId, inboundEmailId: row.id, error }));
+  }
+  return { status: 200, outcome };
 }
 
 type Mail = Awaited<ReturnType<typeof simpleParser>>;

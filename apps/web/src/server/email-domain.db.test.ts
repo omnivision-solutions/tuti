@@ -244,3 +244,15 @@ test("Send a test email only when replies do come from it: not on a plan without
   vi.stubEnv("PLANS", "on");
   expect(await sendEmailDomainTest(project.slug)).toEqual({ error: expect.stringContaining("Pro plan") });
 });
+
+test("another address on the domain isn't forwarded yet: its Receiving starts over", async () => {
+  const { project, subdomain, team } = await setup();
+  const domain = `${project.slug}.example.com`;
+  await call(setEmailDomain, team, { address: `support@${domain}` });
+  await postEmail(rawEmail({ from: "e2e-kim@example.com", to: `support@${domain}` }), { recipient: supportAddress(subdomain, DOMAIN) });
+  expect((await call(getSupportSettings, team, {})).email!.ownDomain!.receivedAt).toBeInstanceOf(Date);
+
+  // The same address again keeps it; another one starts over.
+  expect((await call(setEmailDomain, team, { address: `support@${domain}` })).email!.ownDomain!.receivedAt).toBeInstanceOf(Date);
+  expect((await call(setEmailDomain, team, { address: `help@${domain}` })).email!.ownDomain!.receivedAt).toBeNull();
+});

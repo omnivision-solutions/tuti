@@ -1035,6 +1035,8 @@ model EmailDomain {
   verifiedAt DateTime?
   checkedAt  DateTime?
   error      String?
+  /// When an email forwarded from the address last reached the inbox (it named the address): receiving works.
+  receivedAt DateTime?
   createdAt  DateTime  @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

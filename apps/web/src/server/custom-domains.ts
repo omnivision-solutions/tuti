@@ -116,14 +116,14 @@ export function forgetCustomDomain(hostname: string) {
 }
 
 /**
- * The TXT records at `name`, each with its strings joined, from a DNS-over-HTTPS resolver
- * (DNS_LOOKUP_URL, Cloudflare's by default): fresh answers right after someone adds a record,
- * whatever this server's own resolver has kept. Throws when the resolver can't be asked.
+ * The answers of `type` at `name` (TXT, MX), from a DNS-over-HTTPS resolver (DNS_LOOKUP_URL,
+ * Cloudflare's by default): fresh answers right after someone adds a record, whatever this server's
+ * own resolver has kept. Throws when the resolver can't be asked.
  */
-export async function txtRecords(name: string): Promise<string[]> {
+async function lookUp(name: string, type: "TXT" | "MX"): Promise<string[]> {
   const url = new URL(process.env.DNS_LOOKUP_URL || "https://cloudflare-dns.com/dns-query");
   url.searchParams.set("name", name);
-  url.searchParams.set("type", "TXT");
+  url.searchParams.set("type", type);
   const response = await fetch(url, { headers: { accept: "application/dns-json" }, signal: AbortSignal.timeout(5_000) });
   if (!response.ok) {
     throw new Error(`DNS lookup answered ${response.status}`);
@@ -133,11 +133,19 @@ export async function txtRecords(name: string): Promise<string[]> {
   if (Status !== 0 && Status !== 3) {
     throw new Error(`DNS lookup failed (status ${Status})`);
   }
-  return (Answer ?? [])
-    .filter((answer) => answer.type === 16)
-    .map((answer) => {
-      // Quoted strings ("a" "b" is "ab"), as Cloudflare answers; some resolvers leave the quotes out.
-      const parts = [...answer.data.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((part) => part[1]!.replace(/\\(.)/g, "$1"));
-      return parts.length > 0 ? parts.join("") : answer.data;
-    });
+  return (Answer ?? []).filter((answer) => answer.type === (type === "TXT" ? 16 : 15)).map((answer) => answer.data);
+}
+
+/** The TXT records at `name`, each with its strings joined. */
+export async function txtRecords(name: string): Promise<string[]> {
+  return (await lookUp(name, "TXT")).map((data) => {
+    // Quoted strings ("a" "b" is "ab"), as Cloudflare answers; some resolvers leave the quotes out.
+    const parts = [...data.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((part) => part[1]!.replace(/\\(.)/g, "$1"));
+    return parts.length > 0 ? parts.join("") : data;
+  });
+}
+
+/** The mail servers `domain`'s MX records name ("10 aspmx.l.google.com." is aspmx.l.google.com), lowercase. */
+export async function mxHosts(domain: string): Promise<string[]> {
+  return (await lookUp(domain, "MX")).map((data) => data.split(/\s+/).at(-1)!.replace(/\.$/, "").toLowerCase()).filter(Boolean);
 }

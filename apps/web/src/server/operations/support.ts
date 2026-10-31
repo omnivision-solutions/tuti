@@ -37,6 +37,8 @@ export const supportSettings = async (projectId: string) => {
                 verified: !!own?.verifiedAt,
                 checkedAt: own?.checkedAt ?? null,
                 error: own?.error ?? null,
+                // Receiving: when an email forwarded from the address last came (the team forwards it to the support address).
+                receivedAt: own?.receivedAt ?? null,
               }
             : null,
         }
@@ -107,7 +109,8 @@ export const setEmailDomain = defineOperation({
         }
         await tx.emailDomain.create({ data: { projectId, domain, address, dkimTokens: (created ?? existing)?.tokens ?? [] } });
       } else {
-        await tx.emailDomain.update({ where: { projectId }, data: { address } });
+        // Another address on the domain hasn't been forwarded yet.
+        await tx.emailDomain.update({ where: { projectId }, data: { address, ...(address !== current.address && { receivedAt: null }) } });
       }
     });
     return supportSettings(projectId);

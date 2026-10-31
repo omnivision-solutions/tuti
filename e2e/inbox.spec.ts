@@ -3,6 +3,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { checkpoints } from "./checkpoint";
+import { publishMx } from "./dns";
 import { setTodaysEmails } from "./email-days";
 import { APP_PORTAL_OWNER, APP_URL, CLOUD_URL, cloudPortalUrl, INBOUND_SECRET, SUPPORT_EMAIL_DOMAIN } from "./env";
 import { apiFor, createProject, png, signUp } from "./helpers";
@@ -417,7 +418,7 @@ test("on a server selling plans, a new project's email is capped in its first we
   await expect(paused).toHaveCount(0);
 });
 
-test("replies from the team's own address: add it, put SES's records in DNS, check, and a test email comes from it", async ({ browser }, testInfo) => {
+test("the team's own address: add it, put SES's records in DNS, check, a test email comes from it, and its forwarded emails land in the Inbox", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const domain = `${slug}.example.com`;
@@ -428,9 +429,15 @@ test("replies from the team's own address: add it, put SES's records in DNS, che
   const supportAddress = `support@${slug}.${SUPPORT_EMAIL_DOMAIN}`;
   await expect(owner.getByText(supportAddress).first()).toBeVisible();
 
+  // Its email is at Google Workspace: the guide to forwarding it there.
+  await publishMx(domain, ["aspmx.l.google.com", "alt1.aspmx.l.google.com"]);
   await owner.getByLabel("Your company's address").fill(`support@${domain}`);
   await owner.getByRole("button", { name: "Use this address" }).click();
   await expect(owner.getByText("Waiting for DNS")).toBeVisible();
+  const receiving = owner.getByRole("region", { name: "Receiving emails" });
+  await expect(receiving).toContainText(`${domain}'s email is at Google Workspace. There, forward support@${domain} to your support address`);
+  await expect(receiving.getByRole("link", { name: "How to forward with Google Workspace" })).toHaveAttribute("href", "https://tuti.so/help/docs/forward-from-google-workspace");
+  await expect(receiving.getByText("Waiting for an email")).toBeVisible();
   for (const n of [1, 2, 3]) {
     await expect(owner.getByRole("region", { name: `CNAME record ${n}` })).toContainText(`._domainkey.${domain}`);
   }
@@ -447,6 +454,15 @@ test("replies from the team's own address: add it, put SES's records in DNS, che
   await expect(owner.getByText("Test email sent to you")).toBeVisible();
   const test = await latestEmailTo(owner.email, { subject: /A test from/ });
   expect(test.from).toBe(`"Acme" <support@${domain}>`);
+
+  // Forwarded by Google: still to the team's address, and it lands in the Inbox.
+  await receive(
+    supportAddress,
+    [`From: Kim Lee <e2e-kim@example.com>`, `To: support@${domain}`, `X-Forwarded-For: support@${domain} ${supportAddress}`, "Subject: Forwarded?", `Message-ID: <${randomUUID()}@mail.example.com>`, "", "Hello"].join("\r\n"),
+  );
+  await owner.reload();
+  await expect(receiving.getByText("Forwarded", { exact: true })).toBeVisible();
+  await expect(receiving).toContainText(`Emails to support@${domain} land in the Inbox.`);
   await checkpoint(owner, "own-address-verified");
 
   await owner.getByRole("button", { name: "Remove address" }).click();

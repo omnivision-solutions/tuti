@@ -10,6 +10,18 @@ export async function publishTxt(name: string, value: string) {
   }
 }
 
+/** Points `domain`'s MX records at these mail servers in the DNS fake. */
+export async function publishMx(domain: string, hosts: string[]) {
+  const response = await fetch(`${process.env.E2E_DNS_URL}/_fake/mx`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: domain, hosts }),
+  });
+  if (!response.ok) {
+    throw new Error(`Couldn't publish ${domain}'s MX records (${response.status})`);
+  }
+}
+
 /** Cloudflare (the fake) got the certificate for a custom domain. */
 export async function issueCertificate(hostname: string) {
   const response = await fetch(`${process.env.E2E_CLOUDFLARE_URL}/_fake/certificate`, {
