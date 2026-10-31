@@ -413,6 +413,18 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await pane.getByRole("button", { name: "Comment" }).click();
   await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("");
 
+  // Scrolled down the pane (to its reply box) on a short laptop screen, J's post starts at its top.
+  await team.setViewportSize({ width: 1440, height: 420 });
+  await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).not.toBeInViewport();
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await team.keyboard.press("j");
+  const titles = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  const after = titles[titles.indexOf("Calendar sync") + 1]!;
+  await expect(pane.getByRole("heading", { name: after })).toBeInViewport();
+  await team.keyboard.press("k");
+  await team.setViewportSize({ width: 1440, height: 900 });
+
   // J and K step through the list in the pane; Esc closes it.
   const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
   const at = order.indexOf("Calendar sync");

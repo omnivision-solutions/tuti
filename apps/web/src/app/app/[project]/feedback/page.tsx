@@ -213,7 +213,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             </Link>
           )}
         </div>
+        {/* Keyed by the post: each one starts at the top of the pane (scrolling on its own), wherever the last was. */}
         <aside
+          key={open ?? "none"}
           aria-label="Post"
           className={cn(
             "lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:border-l lg:pl-6",
