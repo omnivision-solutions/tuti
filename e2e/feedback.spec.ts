@@ -314,6 +314,11 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team.getByRole("alertdialog", { name: "Mark “Calendar sync” completed?" })).toContainText("Nobody is emailed.");
   await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
+  // Any other status from the menu moves the card at once.
+  await card("Calendar sync").getByRole("button", { name: "Status: In progress" }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
+  await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
 
   // A board at a time.
   await team.getByRole("combobox", { name: "Board" }).click();
