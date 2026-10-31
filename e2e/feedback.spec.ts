@@ -691,3 +691,26 @@ test("Feedback's picked rows: one that can't be done (merged meanwhile) is said,
   await expect(team.getByRole("link", { name: "Night theme", exact: true })).toHaveCount(0);
   await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
 });
+
+test("Feedback's picked rows go by the list as it is now: Merge keeps the one with the most votes after they changed", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  // Meanwhile Night theme gets votes; the list refreshes (another post's status set from its row).
+  await api("/posts/2/vote", { voted: true, author: { id: "user-1" } });
+  await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
+  const other = team.getByRole("main").getByRole("listitem").filter({ hasText: "Export to PDF" });
+  await other.getByRole("button", { name: /^Status: / }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(team.getByText("Status: Planned")).toBeVisible();
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText("2");
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
+  await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
+});

@@ -124,7 +124,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         {/* Rows picked for Set status, Move to board and Merge, the bar over the list once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => post.id)}>
+        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount }))}>
           <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"

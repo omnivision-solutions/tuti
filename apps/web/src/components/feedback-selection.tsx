@@ -42,15 +42,23 @@ const useSelection = () => {
 };
 
 /**
- * Feedback's rows picked for Set status, Move to board and Merge (FeedbackBulk), kept as the list re-renders.
- * Only those still `listed`: one that left the list (a new status from its row, merged from the pane) isn't.
- * While an action runs (`pending`), the picks stay as they are.
+ * Feedback's rows picked for Set status, Move to board and Merge (FeedbackBulk), kept as the list re-renders,
+ * as the list has them now (`listed`: their titles and votes as they are). One that leaves the list (a new
+ * status from its row, merged from the pane) is let go, not picked again if it comes back. While an action runs
+ * (`pending`), the picks stay as they are.
  */
-export function FeedbackSelection({ listed, children }: { listed: string[]; children: ReactNode }) {
-  const [chosen, setChosen] = useState<Picked[]>([]);
+export function FeedbackSelection({ listed, children }: { listed: Picked[]; children: ReactNode }) {
+  const [chosen, setChosen] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
-  const picked = chosen.filter((post) => listed.includes(post.id));
-  const toggle = (post: Picked, on: boolean) => setChosen((now) => (on ? [...now.filter((p) => p.id !== post.id), post] : now.filter((p) => p.id !== post.id)));
+  // The list changed: picks no longer in it are let go (as it renders, React's way to adjust state to props).
+  const ids = listed.map((post) => post.id).join(" ");
+  const [seen, setSeen] = useState(ids);
+  if (seen !== ids) {
+    setSeen(ids);
+    setChosen((picks) => picks.filter((id) => listed.some((post) => post.id === id)));
+  }
+  const picked = listed.filter((post) => chosen.includes(post.id));
+  const toggle = (post: Picked, on: boolean) => setChosen((now) => (on ? [...now.filter((id) => id !== post.id), post.id] : now.filter((id) => id !== post.id)));
   return <Selection value={{ picked, toggle, clear: () => setChosen([]), pending, startTransition }}>{children}</Selection>;
 }
 
