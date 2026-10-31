@@ -183,7 +183,8 @@ export async function roadmapColumns(projectId: string, { board, completedDays }
           ${since ? Prisma.sql`AND ${completedAt} >= ${since}` : Prisma.empty}
         ORDER BY ${completedAt} DESC, p.id DESC
         LIMIT 50`;
-      const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select });
+      // Still Completed as they're read (one may have moved since the ids were).
+      const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) }, status: "COMPLETED", duplicateOfId: null }, select });
       const byId = new Map(posts.map((post) => [post.id, post]));
       return rows.flatMap((row) => byId.get(row.id) ?? []);
     }),
