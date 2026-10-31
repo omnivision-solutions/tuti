@@ -84,7 +84,6 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
         select: {
           number: true,
           title: true,
-          duplicateOfId: true,
           board: { select: { slug: true } },
           projectId: true,
           project: { select: { name: true, slug: true, portalAccess: true, plan: true } },
@@ -93,8 +92,8 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
       },
     },
   });
-  // Not due (sent, or never asked for), or its post merged into another since: nothing to send.
-  if (!comment?.votersEmailDueAt || comment.post.duplicateOfId) {
+  // Not due (sent, never asked for, or its post merged into another since: the merge clears it).
+  if (!comment?.votersEmailDueAt) {
     await prisma.comment.updateMany({ where: { id: commentId }, data: { votersEmailDueAt: null } });
     return { skipped: true };
   }
@@ -109,10 +108,9 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
     project,
     post.votes.map((vote) => vote.userId).filter((id) => id !== comment.authorId),
   );
-  if (people.length === 0) {
-    // Nobody to tell: claims a crashed try left unsent are dropped, so the reply isn't due again and again.
-    await prisma.replyEmail.deleteMany({ where: { commentId, sentAt: null, claimedAt: { lt: late() } } });
-  }
+  // Claims a crashed try left unsent for people no longer to be told (unsubscribed, joined the team since) are
+  // dropped, so they don't keep the reply due. A run still sending keeps its claim (not stale yet).
+  await prisma.replyEmail.deleteMany({ where: { commentId, sentAt: null, claimedAt: { lt: late() }, userId: { notIn: people.map((person) => person.id) } } });
 
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);

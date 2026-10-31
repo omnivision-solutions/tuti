@@ -120,3 +120,22 @@ test("a reply still to be emailed whose post is merged into another isn't emaile
   expect(emailsTo(otherVoter.email)).toEqual([]);
   expect(emailsTo(other.author.email)).toEqual([]);
 });
+
+test("a crashed send's claim for a voter who has since unsubscribed doesn't keep the reply due", async () => {
+  const [voter, gone] = [await verified("Voter"), await verified("Gone")];
+  const { post } = await votedFor(voter, gone);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
+  // A run died while sending to Gone (its claim left unsent), and Gone has unsubscribed since.
+  await prisma.replyEmail.upsert({
+    where: { commentId_userId: { commentId: reply.id, userId: gone.id } },
+    create: { commentId: reply.id, userId: gone.id, claimedAt: new Date(Date.now() - 11 * 60_000) },
+    update: { sentAt: null, claimedAt: new Date(Date.now() - 11 * 60_000) },
+  });
+  await prisma.emailOptOut.create({ data: { projectId: project.id, userId: gone.id } });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
+  await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} });
+  expect(emailsTo(voter.email)).toHaveLength(1);
+  expect((await prisma.comment.findUniqueOrThrow({ where: { id: reply.id } })).votersEmailDueAt).toBeNull();
+});
