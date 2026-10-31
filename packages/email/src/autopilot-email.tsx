@@ -216,6 +216,7 @@ function previewOf(changes: AutopilotEmailChange[], totals: AutopilotProps["tota
     named("Needs you", changes.flatMap((change) => change.needsYou)),
     named(`Goes out ${totals.first}`, changes.flatMap((change) => change.goesOut)),
     named("Went out", changes.flatMap((change) => change.wentOut)),
+    named("Done", changes.flatMap((change) => change.done)),
     changes.length === 1 ? changes[0]!.summary : changes.map((change) => change.title).join(" · "),
   ]
     .filter(Boolean)
