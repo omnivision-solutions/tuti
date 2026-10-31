@@ -1,4 +1,4 @@
-import { plansEnabled } from "@tuti/shared";
+import { creditsEnabled, freeCredits, planCredits, plansEnabled } from "@tuti/shared";
 import {
   ArrowRightLeftIcon,
   ChartColumnIcon,
@@ -466,9 +466,12 @@ export function CompareSuites() {
 export function PricingTeaser() {
   if (!plansEnabled()) return null;
   const pro = PLAN_PRICES.PRO;
+  // AI answers run on credits where they're sold: Free gets a grant to start, Pro some each month (as /pricing says).
+  const startCredits = creditsEnabled() && freeCredits() > 0 ? `, with ${freeCredits().toLocaleString("en")} AI credits to start` : "";
+  const proCredits = creditsEnabled() ? `, ${planCredits("PRO").toLocaleString("en")} AI credits a month` : "";
   const tiers: { name: string; price: string; text: string }[] = [
-    { name: "Free", price: "$0", text: "Help center, AI answers, feedback board, roadmap and changelog." },
-    { name: pro.name, price: `$${pro.month} a month`, text: "Autopilot, your own domain and unlimited team members. Per project, not per seat." },
+    { name: "Free", price: "$0", text: `Help center, feedback board, roadmap and changelog${startCredits}.` },
+    { name: pro.name, price: `$${pro.month} a month`, text: `Autopilot, your own domain${proCredits} and unlimited team members. Per project, not per seat.` },
     { name: "Self-hosted", price: "Free", text: "Every feature on your own servers, open source under AGPL-3.0." },
   ];
   return (
