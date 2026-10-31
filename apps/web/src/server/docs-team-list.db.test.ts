@@ -42,7 +42,7 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   at.pathname = `/app/${project.slug}/docs`;
   const html = renderToStaticMarkup(await TeamDocsLayout({ params, children: await TeamDocsPage({ params } as never) } as never));
   // The list, after its tabs (the tree beside it lists the articles too).
-  const text = html.slice(html.indexOf('aria-label="Docs"')).replace(/<[^>]+>/g, "|");
+  const text = html.slice(html.indexOf('aria-label="Docs sections"')).replace(/<[^>]+>/g, "|");
   const rows = [...text.matchAll(/\|(Inviting your team|Billing|Exports)\|/g)].map((m) => m[1]);
   expect(rows).toEqual(["Billing", "Exports", "Inviting your team"]);
   expect(text).toContain("|Draft|");

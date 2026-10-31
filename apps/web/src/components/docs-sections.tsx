@@ -5,7 +5,7 @@ export function DocsSections({ projectSlug }: { projectSlug: string }) {
   const base = `/app/${projectSlug}/docs`;
   return (
     <SubNav
-      label="Docs"
+      label="Docs sections"
       items={[
         { href: base, title: "Content" },
         { href: `${base}/insights`, title: "Insights" },

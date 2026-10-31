@@ -333,9 +333,9 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // The list says how often each article was read lately; Insights is the tab beside it.
   await expect(team.getByText("2 views in 30 days")).toBeVisible();
   await checkpoint(team, "team-docs-list-views");
-  await team.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Insights" }).click();
+  await team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" }).click();
   await team.waitForURL(`**/app/${slug}/docs/insights`);
-  await expect(team.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
+  await expect(team.getByRole("navigation", { name: "Docs sections" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
   await expect(team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.")).toBeVisible();
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
@@ -1539,7 +1539,7 @@ test("on a phone, a page's actions are a menu from the top bar", async ({ browse
   // A menu in it ("Add content" on the docs' home): picking from it closes both.
   await team.goto(`/app/${slug}/docs`);
   await more.click();
-  await expect(team.getByRole("link", { name: "Insights" })).toBeVisible();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
   await team.getByRole("button", { name: "Add content" }).click();
   await team.getByRole("menuitem", { name: "New collection" }).click();
   await expect(team.getByRole("dialog", { name: "New collection" })).toBeVisible();
