@@ -504,3 +504,21 @@ test("analysed again and its new update applied mid-queue: an owner emailed abou
   // Emailed since (about it): not again.
   expect(await tellOwners(one.id, proposed)).toBe(0);
 });
+
+test("the mail server refusing the message itself (its limits, the sender: 554 at DATA) is the server's: tried again past five, not given up", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  let at = Date.now() + 11 * MINUTE;
+  try {
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      mailbox.refuseNext(owner.email, { code: 554 });
+      expect(await sendAutopilotEmails(new Date(at))).toBe(0);
+      at += 16 * MINUTE;
+    }
+  } finally {
+    logged.mockRestore();
+  }
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: 0, sentAt: null });
+  expect(await sendAutopilotEmails(new Date(at))).toBe(1);
+});

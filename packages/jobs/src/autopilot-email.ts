@@ -293,8 +293,10 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
         // down, or not taking it for now (4xx): for as long as that lasts. It refusing this address (5xx): a few
         // times, then given up.
-        const code = (error as { responseCode?: unknown }).responseCode;
-        const refused = typeof code === "number" && code >= 500;
+        // Only the server refusing this address (5xx to its RCPT TO) is the address's; anything else (down,
+        // a failed login, the sender or the message refused, its limits) is the server's, and passes.
+        const { responseCode: code, command } = error as { responseCode?: unknown; command?: unknown };
+        const refused = typeof code === "number" && code >= 500 && typeof command === "string" && /^RCPT\b/i.test(command);
         log.error("Sending Autopilot's email failed", { error, userId, refused });
         if (refused) {
           await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
