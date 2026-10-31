@@ -122,7 +122,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                     }
                     actions={
                       <>
-                        {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} />}
+                        {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} emails={item.scheduled.emails} />}
                         <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
                           {item.action}
                         </Link>

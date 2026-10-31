@@ -1,6 +1,6 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotDueToken, scheduleByItself } from "@tuti/jobs";
-import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { POST as due } from "@/app/api/autopilot/due/route";
@@ -8,7 +8,8 @@ import { publishCodeChangesNow, stopCodeChanges } from "@/server/code-changes";
 import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
-import { getCodeChange, runDueAutopilot } from "@/server/operations/code-changes";
+import { homeOverview } from "@/server/home";
+import { getCodeChange, runDueAutopilot, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -238,4 +239,40 @@ test("a request that goes out by itself says how many people completing it email
   const reader = await signUp("Rae Reader");
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "scheduled", emails: 1 });
+});
+
+test("held back at its time, it's told about (code_change.ready); one a teammate stopped meanwhile keeps who stopped it", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+  const receiver = await startWebhookReceiver();
+  await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+  const a = await update("MOVES_FORWARD");
+  const b = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [a, b]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [a.action.id, b.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotMinSure: 99 } });
+  // As the runner reads what's due, a teammate stops b.
+  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+    const due = await findMany(...args);
+    await call(stopCodeChangeAction, team(), { id: b.action.id });
+    return due;
+  }) as never);
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+  expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
+  expect(await statusOf(b.action.id)).toMatchObject({ status: "PENDING", waitReason: "Stopped by Olive Owner" });
+  // a's change is told about: one update waits there now.
+  await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
+  expect(JSON.parse(receiver.received[0]!.body)).toMatchObject({ type: "code_change.ready", data: { codeChange: { id: a.codeChangeId, waiting: 1 } } });
+  await receiver.close();
+});
+
+test("Home's Publish now says how many people a request it completes emails", async () => {
+  const { action } = await update("RESOLVES");
+  await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  const reader = await signUp("Rae Reader");
+  await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.attention.find((item) => item.kind === "Autopilot")?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
 });

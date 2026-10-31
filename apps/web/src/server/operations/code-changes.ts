@@ -1,8 +1,10 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { autopilotSettingsSelect, changelogLineOf, confidence, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
+
+import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
 import { aiOrRefuse } from "./credits";
@@ -1014,20 +1016,30 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   });
   let applied = 0;
   let waiting = 0;
-  const wait = async (id: string, waitReason: string) => {
-    const { count } = await prisma.codeChangeAction.updateMany({ where: { id, status: { in: ["SCHEDULED", "PENDING"] } }, data: { status: "PENDING", dueAt: null, waitReason } });
+  // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
+  const nowWaiting = new Set<string>();
+  // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays); after the
+  // runner's own claim (`claimed`), the one it took off the schedule.
+  const wait = async (action: { id: string; codeChangeId: string }, waitReason: string, claimed = false) => {
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: claimed ? "PENDING" : "SCHEDULED" },
+      data: { status: "PENDING", dueAt: null, waitReason },
+    });
     waiting += count;
+    if (count > 0) {
+      nowWaiting.add(action.codeChangeId);
+    }
   };
   for (const action of due) {
     const { projectId, project } = action.codeChange;
     const reason = await waitsBecause(action, project);
     if (reason) {
-      await wait(action.id, reason);
+      await wait(action, reason);
       continue;
     }
     const owner = await prisma.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { userId: true } });
     if (!owner) {
-      await wait(action.id, "The project has no owner to apply it as");
+      await wait(action, "The project has no owner to apply it as");
       continue;
     }
     // Taken off the schedule first, so two runners (or a Publish now) apply it once.
@@ -1041,7 +1053,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
       // Saved before the failure: it went. Not: it waits for the team, saying why.
       if (!(error as { saved?: boolean }).saved) {
-        await wait(action.id, error instanceof OperationError ? error.message : "Couldn't apply it");
+        await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
         continue;
       }
     }
@@ -1050,7 +1062,23 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
     applied++;
   }
+  for (const codeChangeId of nowWaiting) {
+    await announceWaiting(codeChangeId);
+  }
   return { applied, waiting };
+}
+
+/** `code_change.ready` for a change whose update went back to waiting for the team (as saving its analysis says it), with how many wait now. */
+async function announceWaiting(codeChangeId: string) {
+  const change = await prisma.codeChange.findUniqueOrThrow({
+    where: { id: codeChangeId },
+    select: { id: true, projectId: true, repo: true, number: true, url: true, title: true, summary: true, project: { select: { slug: true } } },
+  });
+  const count = await prisma.codeChangeAction.count({ where: { codeChangeId, status: { in: ["PENDING", "STALE"] } } });
+  const { projectId, project, ...pullRequest } = change;
+  await emitEvent(projectId, "code_change.ready", {
+    codeChange: { ...pullRequest, waiting: count, page: `${appUrl().origin}/app/${project.slug}/autopilot/${change.id}` },
+  });
 }
 
 export const dismissCodeChangeAction = defineOperation({

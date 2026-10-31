@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { AnalyseCodeChangeButton } from "@/components/code-changes";
+import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { DiffLines } from "@/components/line-diff";
 import {
   AlertDialog,
@@ -26,7 +26,7 @@ import { emailLine } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
-import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, publishCodeChangesNow, stopCodeChanges, undoCodeChange } from "@/server/code-changes";
+import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 type Update = CodeChangeDetail["actions"][number];
@@ -418,17 +418,6 @@ function UpdateCard({
         resolve(!result.error);
       }),
     );
-  // Publish now or Stop, on a scheduled update.
-  const run = (act: (slug: string, ids: string[]) => Promise<{ error?: string }>, done: string) =>
-    startTransition(async () => {
-      const result = await act(projectSlug, [update.id]);
-      if (result.error) {
-        toast.error(result.error);
-      } else {
-        toast.success(done);
-      }
-      router.refresh();
-    });
   // An article edit's Edit: kept unpublished, to finish in the editor (as "Edit first" did).
   const editArticle = () =>
     startTransition(async () => {
@@ -484,14 +473,8 @@ function UpdateCard({
           )}
           <span className="ml-auto flex items-center gap-1">
             {isScheduled ? (
-              <>
-                <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(stopCodeChanges, "Stopped: it waits for you")}>
-                  Stop
-                </Button>
-                <Button variant="ghost" size="sm" disabled={disabled} onClick={() => run(publishCodeChangesNow, "Published")}>
-                  Publish now
-                </Button>
-              </>
+              // Asks first when it emails people (a request it completes), as Approve does.
+              <ScheduledButtons projectSlug={projectSlug} actionIds={[update.id]} emails={update.emails ?? 0} />
             ) : (
               <>
                 {!isStale && editable && (

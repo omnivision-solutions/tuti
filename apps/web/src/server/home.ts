@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 
 import { githubConfig } from "@/lib/github";
+import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { insightsSince } from "@/server/operations/docs-insights";
 
 /** Home's numbers, what needs the team (oldest first), what's left to set up and the trending ideas. */
@@ -19,7 +20,7 @@ export type AttentionItem = {
   action: string;
   href: string;
   /** Autopilot's updates going out by themselves, with when the first goes (Publish now, Stop). */
-  scheduled?: { ids: string[]; dueAt: string };
+  scheduled?: { ids: string[]; dueAt: string; emails: number };
 };
 
 /**
@@ -72,7 +73,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
         title: true,
         mergedAt: true,
         _count: { select: { actions: { where: updateWaits } } },
-        actions: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true } },
+        actions: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true, kind: true, post: { select: { id: true, status: true, duplicateOfId: true } } } },
       },
     }),
     prisma.codeChange.count({ where: changeWaits }),
@@ -94,6 +95,11 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
     prisma.vote.groupBy({ by: ["postId"], where: { projectId, createdAt: { gte: week } }, _count: { postId: true }, orderBy: { _count: { postId: "desc" } }, take: 5 }),
   ]);
 
+  // Publish now on what completes a request emails people: Home asks first, saying how many.
+  const completing = (actions: (typeof changes)[number]["actions"]) =>
+    actions.flatMap((a) => (a.kind === "RESOLVES" && a.post && a.post.status !== "COMPLETED" && !a.post.duplicateOfId ? [a.post.id] : []));
+  const emails = await emailedOnCompletion(projectId, changes.flatMap((c) => completing(c.actions)));
+
   const attention: AttentionItem[] = [
     ...replies.map((c) => ({ key: `c${c.number}`, at: c.waitingSince ?? c.lastMessageAt, kind: "Conversation", title: c.subject, action: "Reply", href: `${base}/inbox/${c.number}` })),
     ...triage.map((p) => ({ key: `p${p.number}`, at: p.createdAt, kind: "New post", title: p.title, action: "Triage", href: `${base}/p/${p.number}` })),
@@ -112,7 +118,9 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
       action: "Review",
       href: `${base}/autopilot/${c.id}`,
-      ...(c.actions.length > 0 && { scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString() } }),
+      ...(c.actions.length > 0 && {
+        scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString(), emails: completing(c.actions).reduce((sum, id) => sum + (emails.get(id) ?? 0), 0) },
+      }),
     })),
     ...failedSearches.map((s) => ({
       key: `s${s.query}`,
