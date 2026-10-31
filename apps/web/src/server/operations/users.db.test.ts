@@ -219,6 +219,9 @@ test("each with their activity, and sorted by it: the most posts, votes or conve
   await prisma.widgetPresence.create({ data: { projectId, who: bea, lastSeenAt: new Date("2026-10-25") } });
   expect(await order("lastSeen")).toEqual(["user-b", "user-c", "user-a"]);
   expect((await activity())["user-b"]!.lastSeenAt).toEqual(new Date("2026-10-25"));
+  // A comment since: seen then too.
+  await prisma.comment.create({ data: { projectId, postId: first.id, authorId: ada, body: "Me too", createdAt: new Date("2026-10-28") } });
+  expect(await order("lastSeen")).toEqual(["user-a", "user-b", "user-c"]);
 });
 
 test("the project picks the properties Users shows as columns: company and plan to start with, each once, up to 10", async () => {

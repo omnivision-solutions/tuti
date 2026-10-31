@@ -48,7 +48,7 @@ const activitySql = {
     (SELECT w."lastSeenAt" FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = s."userId"),
     (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = s."userId"),
     (SELECT max(v."createdAt") FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = s."userId"),
-    (SELECT max(m."createdAt") FROM comment m JOIN post p ON p.id = m."postId" WHERE p."projectId" = s."projectId" AND m."authorId" = s."userId"),
+    (SELECT max(m."createdAt") FROM comment m WHERE m."projectId" = s."projectId" AND m."authorId" = s."userId"),
     (SELECT max(cm."createdAt") FROM conversation_message cm JOIN conversation c ON c.id = cm."conversationId"
       WHERE c."projectId" = s."projectId" AND c."userId" = s."userId" AND cm.author = 'USER'))`,
 };
