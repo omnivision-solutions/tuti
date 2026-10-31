@@ -289,6 +289,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           const token = signAutopilotButton(userId, codeChange.id, button, now);
           return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
         };
+        const scheduledIds = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => action.id);
         const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
         const needsYou = codeChange.actions
           .filter((action) => action.status === "PENDING" || action.status === "STALE")
@@ -306,7 +307,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           pullRequest: `${codeChange.repo}#${codeChange.number}`,
           summary: codeChange.summary,
           reviewUrl: `${page}?select=likely`,
-          ...(goesOut.length > 0 && { publishUrl: act("publish"), stopUrl: act("stop") }),
+          // For the ones it shows: analysed again, others may take their place, and these buttons don't act on them.
+          ...(goesOut.length > 0 && { publishUrl: act(`publish:${scheduledIds.join(",")}`), stopUrl: act(`stop:${scheduledIds.join(",")}`) }),
           goesOut: take(goesOut),
           wentOut: take(gone),
           needsYou: take(needsYou),

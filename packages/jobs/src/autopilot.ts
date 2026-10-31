@@ -181,8 +181,8 @@ export async function autopilotDue(): Promise<{ applied: number; waiting: number
   return (await response.json()) as { applied: number; waiting: number; emailed: number };
 }
 
-/** What a button in Autopilot's email does: approve one update, or publish now or stop a change's scheduled ones. */
-export type AutopilotButton = `approve:${string}` | "publish" | "stop";
+/** What a button in Autopilot's email does: approve one update, or publish now or stop the scheduled ones it showed (their ids, comma-separated). */
+export type AutopilotButton = `approve:${string}` | `publish:${string}` | `stop:${string}`;
 
 /** How long an email's buttons act: a week, then they only open the review page. */
 const BUTTON_DAYS = 7;
@@ -203,7 +203,8 @@ export function signAutopilotButton(userId: string, codeChangeId: string, button
 export function readAutopilotButton(token: string, now = new Date()): { userId: string; codeChangeId: string; button: AutopilotButton; expired: boolean } | null {
   const [payload, sent] = token.split(".");
   const expected = payload ? signature(payload) : null;
-  if (!payload || !sent || !expected || sent.length !== expected.length || !timingSafeEqual(Buffer.from(sent), Buffer.from(expected))) {
+  const [given, wanted] = [Buffer.from(sent ?? ""), Buffer.from(expected ?? "")];
+  if (!payload || !sent || !expected || given.length !== wanted.length || !timingSafeEqual(given, wanted)) {
     return null;
   }
   try {

@@ -38,25 +38,40 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   }
   const as = { actor: { kind: "user" as const, userId }, projectId: membership.project.id };
   if (actionId) {
-    const { results } = await call(applyCodeChangeActions, as, { actions: [{ id: actionId }] });
-    page(`?done=${results[0]?.status === "applied" ? "approved" : "already"}&update=${encodeURIComponent(actionId)}`);
+    const [result] = (await call(applyCodeChangeActions, as, { actions: [{ id: actionId }] })).results;
+    // Analysed again since: the update it named was replaced; the page has what's there now.
+    if (result?.status === "failed" && result.code === "not_found") {
+      page("?select=likely&done=replaced");
+    }
+    page(`?done=${result?.status === "applied" ? "approved" : "already"}&update=${encodeURIComponent(actionId)}`);
   }
-  // Publish now or Stop: the change's updates still going out by themselves.
+  // Publish now or Stop: the ones the email showed, if they're still going out by themselves.
+  const [kind, list = ""] = which.split(":") as ["publish" | "stop", string];
+  const ids = list.split(",").filter(Boolean);
   const scheduled = await prisma.codeChangeAction.findMany({
-    where: { codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" },
+    where: { id: { in: ids }, codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" },
     select: { id: true },
   });
   let done = 0;
+  const held: string[] = [];
   for (const action of scheduled) {
     try {
-      await call(which === "publish" ? publishCodeChangeActionNow : stopCodeChangeAction, as, { id: action.id });
+      await call(kind === "publish" ? publishCodeChangeActionNow : stopCodeChangeAction, as, { id: action.id });
       done++;
     } catch (error) {
-      // One went (or was stopped) meanwhile: the rest still are.
       if (!(error instanceof OperationError)) {
         throw error;
       }
+      // Went (or stopped) meanwhile: nothing to do. Refused (its article changed, say): it waits for the team now, and the page says so.
+      if (error.code !== "not_scheduled") {
+        held.push(action.id);
+      }
     }
   }
-  page(`?done=${done === 0 ? "already" : which === "publish" ? "published" : "stopped"}`);
+  const heldQuery = held.length > 0 ? `&held=${held.length}&select=${held.map(encodeURIComponent).join(",")}` : "";
+  if (done === 0 && held.length === 0) {
+    // Nothing it showed is going out any more: who did what to it, and when.
+    page(`?done=already${ids[0] ? `&update=${encodeURIComponent(ids[0])}` : ""}`);
+  }
+  page(`?done=${kind === "publish" ? "published" : "stopped"}${heldQuery}`);
 }
