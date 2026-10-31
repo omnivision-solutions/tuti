@@ -247,6 +247,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
         /** Applied by Autopilot itself, nobody approving it. */
         auto: Boolean((payload as { auto?: boolean }).auto),
+        /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
+        unsure: Boolean((payload as { unsure?: boolean }).unsure),
         /** Approved, with what it changed recorded: Undo can put it back. */
         // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
         canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
@@ -1058,9 +1060,10 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
         await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
         continue;
       }
-      // Can't tell whether it went: it stays applied (never twice), says so, and isn't called Autopilot's.
+      // Can't tell whether it went: it stays applied (never twice), credited to nobody, and the page says to check it.
       if (saved === "unknown") {
-        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { waitReason: "Couldn't tell whether it went out: check it" } });
+        const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
+        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), unsure: true } } });
         continue;
       }
     }

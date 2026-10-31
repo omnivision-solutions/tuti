@@ -301,3 +301,17 @@ test("an update Autopilot applied by itself without a record of what it changed 
   expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: false });
   await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("There's no record of what it changed");
 });
+
+test("due, its comment failing and the check for it too: it stays applied, credited to nobody, and the page says to check it", async () => {
+  const progress = await update("MOVES_FORWARD");
+  // Already in progress: posting the comment is all it does.
+  await prisma.post.update({ where: { id: progress.postId! }, data: { status: "IN_PROGRESS" } });
+  await scheduleByItself(project.id, progress.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: progress.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("Connection lost"));
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 0 });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null });
+  const detail = await call(getCodeChange, team(), { id: progress.codeChangeId });
+  expect(detail.actions[0]).toMatchObject({ status: "applied", unsure: true, auto: false, decidedBy: null });
+});

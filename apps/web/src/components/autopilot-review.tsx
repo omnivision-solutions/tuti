@@ -187,13 +187,15 @@ export function AutopilotReview({
                     <span className="text-xs text-muted-foreground">
                       {update.status === "undone"
                         ? "Undone"
-                        : update.auto
-                          ? update.kind === "links"
-                            ? "Linked by Autopilot"
-                            : "Applied by Autopilot"
-                          : update.status === "applied"
-                            ? "Approved"
-                            : "Dismissed"}
+                        : update.unsure
+                          ? "Autopilot couldn't tell whether it went out: check it"
+                          : update.auto
+                            ? update.kind === "links"
+                              ? "Linked by Autopilot"
+                              : "Applied by Autopilot"
+                            : update.status === "applied"
+                              ? "Approved"
+                              : "Dismissed"}
                       {(update.status === "undone" || !update.auto) && update.decidedBy && ` by ${update.decidedBy}`}
                       {update.dismissReason && `: ${update.dismissReason}`}
                       {update.status === "applied" && update.article && (
