@@ -103,6 +103,7 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
       ON CONFLICT ("postId", "userId") DO NOTHING`,
     prisma.vote.deleteMany({ where: { postId: from } }),
     prisma.comment.updateMany({ where: { postId: from }, data: { postId: to } }),
+    prisma.postNote.updateMany({ where: { postId: from }, data: { postId: to } }),
     prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
     prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
     // The merged post is out of every list, so its duplicate suggestions are settled.

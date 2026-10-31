@@ -77,6 +77,17 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // …then answers and plans it.
   await team.getByRole("textbox", { name: "Comment" }).fill("Thanks! We're on it.");
   await team.getByRole("button", { name: "Comment" }).click();
+  // And a note only the team sees.
+  await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
+  // Switched on once the page is ready for it (before then, a click isn't heard).
+  await expect(async () => {
+    await team.getByRole("switch", { name: /Internal note/ }).check();
+    await expect(team.getByRole("button", { name: "Add note" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  await team.getByRole("textbox", { name: "Comment" }).fill("Acme asked for this on their call too.");
+  await team.getByRole("button", { name: "Add note" }).click();
+  await expect(team.getByRole("listitem").filter({ hasText: "Acme asked for this on their call too." })).toContainText("Internal note");
+  await expect(team.getByRole("switch", { name: /Internal note/ })).not.toBeChecked();
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
@@ -91,6 +102,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // Bo voted for both, so counts once: Ada + Bo.
   await expect(bo.getByRole("button", { name: "Remove vote" })).toHaveText("2");
   await expect(bo.getByText("Thanks! We're on it.")).toBeVisible();
+  await expect(bo.getByText("Acme asked for this on their call too.")).toHaveCount(0);
   await expect(bo.getByText("Team", { exact: true })).toBeVisible();
   await expect(bo.getByText("Planned").first()).toBeVisible();
   await checkpoint(bo, "portal-merged-post");

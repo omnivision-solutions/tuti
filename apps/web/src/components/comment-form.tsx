@@ -6,10 +6,13 @@ import { keepingFields } from "@/lib/forms";
 import { RichEditor } from "@/components/rich-editor";
 import { Button } from "@/components/ui/button";
 import { Field, FieldError } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
 import type { FormState } from "@/server/form-state";
 import { addComment } from "@/server/posts";
 
-export function CommentForm({ postId, placeholder = "Add a comment…" }: { postId: string; placeholder?: string }) {
+/** `notes`: the team's form, which can write an internal note (only the team sees it) instead. */
+export function CommentForm({ postId, placeholder = "Add a comment…", notes = false }: { postId: string; placeholder?: string; notes?: boolean }) {
+  const [internal, setInternal] = useState(false);
   // Bumped after each comment, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
   const errorId = useId();
@@ -17,6 +20,8 @@ export function CommentForm({ postId, placeholder = "Add a comment…" }: { post
     const result = await addComment(prev, formData);
     if (!result.error) {
       setSubmitted((n) => n + 1);
+      // The next one is a reply again, unless switched on again.
+      setInternal(false);
     }
     return result;
   }, {});
@@ -36,9 +41,17 @@ export function CommentForm({ postId, placeholder = "Add a comment…" }: { post
         />
         {state.error && <FieldError id={errorId}>{state.error}</FieldError>}
       </Field>
-      <Button type="submit" disabled={pending} className="self-end">
-        {pending ? "Posting…" : "Comment"}
-      </Button>
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {notes && (
+          <label className="mr-auto flex items-center gap-2 text-sm">
+            <Switch name="internal" checked={internal} onChange={(event) => setInternal(event.target.checked)} />
+            Internal note <span className="text-muted-foreground">(only your team sees it)</span>
+          </label>
+        )}
+        <Button type="submit" disabled={pending}>
+          {pending ? "Posting…" : internal ? "Add note" : "Comment"}
+        </Button>
+      </div>
     </form>
   );
 }

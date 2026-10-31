@@ -50,6 +50,10 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           orderBy: { createdAt: "asc" },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
         },
+        notes: {
+          orderBy: { createdAt: "asc" },
+          select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
+        },
       },
     }),
     prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } }),
@@ -151,13 +155,19 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       <section className="flex flex-col gap-4" aria-label="Comments">
         <h2 className="font-medium">
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+          {post.notes.length > 0 && (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
+            </span>
+          )}
         </h2>
         <CommentList
-          comments={post.comments}
+          comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
           teamUserIds={new Set(team.map((m) => m.userId))}
           events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
         />
-        {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" />}
+        {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes />}
       </section>
     </>
   );
