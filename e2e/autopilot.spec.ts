@@ -306,3 +306,20 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
 });
+
+test("on their account, someone picks when they hear from Autopilot; a choice that isn't saved goes back", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/account");
+  const off = owner.getByRole("radio", { name: /^Off/ });
+  const asTheyHappen = owner.getByRole("radio", { name: /^As they happen/ });
+  await expect(asTheyHappen).toBeChecked();
+  await off.check();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await checkpoint(owner, "account-autopilot-email");
+  // Signed out meanwhile (another tab, say): not saved, so it shows what is.
+  await owner.context().clearCookies();
+  await asTheyHappen.check();
+  await expect(owner.getByText("Sign in first")).toBeVisible();
+  await expect(off).toBeChecked();
+});

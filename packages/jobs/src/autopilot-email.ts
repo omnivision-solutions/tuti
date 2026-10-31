@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, sendEmail } from "@tuti/email";
+import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log } from "@tuti/shared";
 
 /**
@@ -137,7 +137,8 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
  * Returns how many emails went.
  */
 export async function sendAutopilotEmails(now = new Date()): Promise<number> {
-  if (!codeChangesEnabled()) {
+  // Without a mail server nothing would go: they wait (unsent) rather than being marked sent.
+  if (!codeChangesEnabled() || !emailConfigured()) {
     return 0;
   }
   // Not sent, and not being sent (or taken by a sweep that stopped before it could send them: a deploy).
@@ -224,13 +225,19 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         now,
       ),
     };
+    // Everything decided in the ten minutes before it went (the team approved it all, say): nothing to say.
+    const done = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind));
+    if (totals.goesOut + totals.wentOut + totals.needsYou + mine.reduce((sum, notice) => sum + done(notice).length, 0) === 0) {
+      await prisma.autopilotNotice.deleteMany({ where: { id: { in: ids } } });
+      continue;
+    }
     const changes: AutopilotEmailChange[] = mine.map((notice) => {
       const { codeChange } = notice;
       const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
       const needsYou = codeChange.actions.filter((action) => action.status === "PENDING" || action.status === "STALE").map((action) => previewOf(action, now));
       // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.
       const gone = went(notice).map((action) => previewOf(action, now));
-      const done = codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind)).map((action) => previewOf(action, now));
+      const drafts = done(notice).map((action) => previewOf(action, now));
       return {
         title: codeChange.title,
         pullRequest: `${codeChange.repo}#${codeChange.number}`,
@@ -239,7 +246,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         goesOut: take(goesOut),
         wentOut: take(gone),
         needsYou: take(needsYou),
-        done: take(done),
+        done: take(drafts),
       };
     });
     try {

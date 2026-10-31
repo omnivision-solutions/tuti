@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -153,6 +153,9 @@ export function AutopilotRecipientsForm({
 /** Account → Autopilot's email: as each change is analysed, or off. Saved as it's picked. */
 export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "OFF" }) {
   const [pending, startTransition] = useTransition();
+  // What's saved: a choice that isn't (signed out meanwhile, say) goes back to it.
+  const [saved, setSaved] = useState(choice);
+  const [picked, setPicked] = useState(choice);
   return (
     <fieldset disabled={pending} className="flex flex-col gap-2">
       <legend className="sr-only">Autopilot&apos;s email</legend>
@@ -167,18 +170,21 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
             type="radio"
             name="autopilotEmails"
             value={value}
-            defaultChecked={choice === value}
+            checked={picked === value}
             className="mt-0.5 size-4 accent-primary"
-            onChange={() =>
+            onChange={() => {
+              setPicked(value);
               startTransition(async () => {
                 const result = await setAutopilotEmails(value);
                 if (result.error) {
+                  setPicked(saved);
                   toast.error(result.error);
                 } else {
+                  setSaved(value);
                   toast.success("Saved");
                 }
-              })
-            }
+              });
+            }}
           />
           <span className="flex flex-col">
             <span className="font-medium">{label}</span>

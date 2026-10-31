@@ -228,3 +228,23 @@ test("no hold, and the runner applies it before the notices are queued: owners s
   expect(await sendAutopilotEmails(later())).toBe(1);
   expect(to(owner)[0]!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
 });
+
+test("everything decided before the email went (the team approved it all): no email, and the page doesn't say anyone was emailed", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), decidedById: owner.id } });
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  expect(to(owner)).toHaveLength(0);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id } })).toBe(0);
+});
+
+test("without a mail server, nothing's marked sent: the notices wait for one", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const host = process.env.SMTP_HOST ?? "";
+  vi.stubEnv("SMTP_HOST", "");
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  vi.stubEnv("SMTP_HOST", host);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: null } })).toBe(1);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+});
