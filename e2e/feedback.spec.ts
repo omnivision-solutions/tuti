@@ -813,6 +813,15 @@ test("Completed's question fits a phone, whatever the post's title (a long link)
   await expect(heading).toContainText("oauth-callback");
   const box = (await heading.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  // The roadmap's own question, from a card's status menu, too.
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await team.goto(`/app/${slug}/feedback/roadmap`);
+  await team.getByRole("region", { name: "Planned" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  await expect(heading).toContainText("oauth-callback");
+  const roadmapBox = (await heading.boundingBox())!;
+  expect(roadmapBox.x + roadmapBox.width).toBeLessThanOrEqual(390);
 });
 
 test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {
