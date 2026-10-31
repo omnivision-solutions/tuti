@@ -653,6 +653,14 @@ describe("deciding", () => {
     script(19);
     await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
     expect(await line()).toEqual([{ id: scheduled!.id, status: "PENDING" }]);
+
+    // Gone out of date (an approval found it changed): analysed again, it's written again, stopped or not.
+    await prisma.codeChangeAction.update({ where: { id: scheduled!.id }, data: { status: "STALE" } });
+    script(19);
+    await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
+    const lines = await line();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.id).not.toBe(scheduled!.id);
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {

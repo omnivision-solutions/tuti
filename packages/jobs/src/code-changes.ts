@@ -389,7 +389,10 @@ async function finish(
   const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
     // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
     // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
-    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE", "SCHEDULED"] }, decidedById: null } });
+    // Out of date (STALE) is replaced too, stopped or not: "Write it again" writes it again.
+    await tx.codeChangeAction.deleteMany({
+      where: { codeChangeId: id, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
+    });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(

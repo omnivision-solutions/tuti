@@ -14,7 +14,11 @@ export function goesOutAt(at: Date, now = new Date()): string {
   return `${day} at ${time}`;
 }
 
-const noChange = () => () => {};
+/** A minute's tick: "tomorrow" becomes "today" past midnight, and "in a moment" once it's due. */
+const everyMinute = (onChange: () => void) => {
+  const timer = setInterval(onChange, 60_000);
+  return () => clearInterval(timer);
+};
 
 /**
  * "Goes out tomorrow at 3:10 pm" (`prefix`, then when), in the reader's time zone. The server doesn't
@@ -22,7 +26,7 @@ const noChange = () => () => {};
  */
 export function GoesOut({ at, prefix = "Goes out" }: { at: string; prefix?: string }) {
   const when = useSyncExternalStore(
-    noChange,
+    everyMinute,
     () => goesOutAt(new Date(at)),
     () => null,
   );
