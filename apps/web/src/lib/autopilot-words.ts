@@ -51,7 +51,9 @@ export function afterButton(updates: Update[], done: string | null, button: stri
     case "replaced":
       return button === "approve" || !button
         ? "That update was replaced when Autopilot read the pull request again: here's what it found now."
-        : "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.";
+        : updates.some((u) => u.status === "scheduled")
+          ? "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish."
+          : "Those updates were replaced when Autopilot read the pull request again: nothing goes out by itself now, and what it found waits for you below.";
     case "already": {
       if (!update) {
         return "Nothing it named is going out any more. Nothing more to do.";

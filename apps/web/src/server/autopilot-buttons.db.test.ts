@@ -208,3 +208,25 @@ test("Publish now that can't tell whether an update went says to check it, and d
   const landing = await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!);
   expect(landing).toBe(`/app/${project.slug}/autopilot/${c.id}?done=unsure&button=publish&unsure=1&select=${scheduledOf(c)}`);
 });
+
+test("Stop when one update it named was replaced and another decided ticks what replaced it; replaced by nothing scheduled, it ticks nothing", async () => {
+  const c = await change();
+  const a = scheduledOf(c);
+  // A second one going out by itself, which a teammate stops.
+  const b = await prisma.codeChangeAction.create({
+    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.96, status: "PENDING", decidedById: owner.id, waitReason: "Stopped by Olive Owner", payload: { comment: "Later" } },
+  });
+  const stop = signAutopilotButton(owner.id, c.id, `stop:${a},${b.id}`)!;
+  // Analysed again: the one still scheduled replaced, the stopped one kept.
+  await prisma.codeChangeAction.delete({ where: { id: a } });
+  const replacement = await prisma.codeChangeAction.create({
+    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "New words" } },
+  });
+  expect(await click(c.id, stop)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=${replacement.id}&done=replaced&button=stop`);
+  expect(await statusOf(replacement.id)).toBe("SCHEDULED");
+
+  // Analysed again once more: what it finds now waits for the team (nothing goes out by itself).
+  await prisma.codeChangeAction.update({ where: { id: replacement.id }, data: { status: "PENDING", dueAt: null } });
+  const gone = signAutopilotButton(owner.id, c.id, `publish:${a}`)!;
+  expect(await click(c.id, gone)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=&done=replaced&button=publish`);
+});

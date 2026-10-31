@@ -25,7 +25,13 @@ test("Approve that can't tell whether it went, or failed for now, says so rather
 });
 
 test("Publish now or Stop whose updates were replaced (analysed again) says so, not that nothing's going out", () => {
-  expect(afterButton([], "replaced", "stop", null, 0)).toBe("Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.");
+  expect(afterButton([progress("scheduled")], "replaced", "stop", null, 0)).toBe(
+    "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.",
+  );
+  // Nothing goes out by itself now: it doesn't say there is.
+  expect(afterButton([progress("pending")], "replaced", "stop", null, 0)).toBe(
+    "Those updates were replaced when Autopilot read the pull request again: nothing goes out by itself now, and what it found waits for you below.",
+  );
 });
 
 test("Approve refused on an update someone stopped says it couldn't be approved, not that it's done", () => {

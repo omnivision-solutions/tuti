@@ -68,7 +68,8 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   // `?select=likely` (the email's Review) or `?select=<ids>` (its buttons, opened by someone else) ticks those; else the likely ones.
   const select = typeof searchParams.select === "string" ? searchParams.select : null;
   const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
-  const ticked = select === null || select === "likely" ? likely : select.split(",").map((id) => id.trim());
+  // (Empty: nothing ticked, its buttons' updates replaced by none that go out by themselves.)
+  const ticked = select === null || select === "likely" ? likely : select.split(",").map((id) => id.trim()).filter(Boolean);
 
   // Back from a button in Autopilot's email (the act page): what it did, or who did it first, and when.
   const done = afterButton(
@@ -150,7 +151,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           change={change}
           updates={updates}
           ticked={ticked}
-          fromEmail={select === null ? null : select === "likely" ? "likely" : "named"}
+          fromEmail={!select ? null : select === "likely" ? "likely" : "named"}
           emailed={await emailedAbout(change.id)}
           previews={previews}
           canAnalyse={included}
