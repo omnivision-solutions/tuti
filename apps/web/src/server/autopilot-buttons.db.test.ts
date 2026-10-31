@@ -102,6 +102,10 @@ test("someone else's button, or an old one, only opens the page with those updat
   await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "ADMIN" } });
   actAs(teammate);
   expect(await click(id, signAutopilotButton(owner.id, id, `approve:${link.id}`)!)).toBe(`/app/${project.slug}/autopilot/${id}?select=${link.id}`);
+  // Stop or Publish now: the scheduled ones it named, ticked.
+  const scheduled = actions.find((action) => action.status === "SCHEDULED")!;
+  expect(await click(id, signAutopilotButton(owner.id, id, `stop:${scheduled.id}`)!)).toBe(`/app/${project.slug}/autopilot/${id}?select=${scheduled.id}`);
+  expect(await statusOf(scheduled.id)).toBe("SCHEDULED");
   actAs(owner);
   const old = signAutopilotButton(owner.id, id, `approve:${link.id}`, new Date(Date.now() - 8 * 86_400_000))!;
   expect(await click(id, old)).toBe(`/app/${project.slug}/autopilot/${id}?select=${link.id}`);

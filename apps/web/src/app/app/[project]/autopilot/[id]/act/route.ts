@@ -31,7 +31,9 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     redirect(`/sign-in?next=${encodeURIComponent(`${url.pathname}${url.search}`)}`);
   }
   if (session.user.id !== userId || expired) {
-    page(actionId ? `?select=${encodeURIComponent(actionId)}` : "?select=likely");
+    // The updates it named, ticked (Approve's one, or the scheduled ones Publish now or Stop showed).
+    const named = actionId ? [actionId] : (which.split(":")[1] ?? "").split(",").filter(Boolean);
+    page(named.length > 0 ? `?select=${named.map(encodeURIComponent).join(",")}` : "?select=likely");
   }
   const membership = await getMembership(slug);
   if (!membership) {
