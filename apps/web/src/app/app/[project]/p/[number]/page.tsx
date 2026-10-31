@@ -22,7 +22,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { voterTotals } from "@/server/post-lists";
+import { howShipped, postVoters, VOTERS_SHOWN, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -63,7 +63,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const total = (await voterTotals(project.id, project.askingProperty, [post.id])).get(post.id);
+  const [totals, voters, shipped] = await Promise.all([
+    voterTotals(project.id, project.askingProperty, [post.id]),
+    postVoters(project.id, project.askingProperty, post.id),
+    howShipped(post.id),
+  ]);
+  const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
@@ -181,6 +186,39 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!)}</span>}
               </span>
             </Property>
+            {voters.length > 0 && (
+              <Property label="Voters">
+                <ul aria-label="Voters" className="flex flex-col gap-1">
+                  {voters.map((voter) => (
+                    <li key={voter.userId} className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        {voter.name}
+                        {voter.company && <span className="text-muted-foreground"> · {voter.company}</span>}
+                      </span>
+                      {voter.value !== null && <span className="shrink-0 text-muted-foreground tabular-nums">{asking(voter.value, project.askingProperty!)}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {post.voteCount > VOTERS_SHOWN && <span className="text-xs text-muted-foreground">{post.voteCount - voters.length} more</span>}
+              </Property>
+            )}
+            {shipped.change && (
+              <Property label="Shipped by">
+                <Link href={`/app/${slug}/autopilot/${shipped.change.id}`} className="hover:underline">
+                  {shipped.change.repo}#{shipped.change.number}
+                </Link>
+              </Property>
+            )}
+            {shipped.entries.length > 0 && (
+              <Property label="Changelog">
+                {shipped.entries.map((entry) => (
+                  <Link key={entry.number} href={`/app/${slug}/changelog/${entry.number}`} className="hover:underline">
+                    {entry.title}
+                    <span className="text-muted-foreground"> · {entry.publishedAt ? "Published" : "Draft"}</span>
+                  </Link>
+                ))}
+              </Property>
+            )}
             <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
           </aside>
         )}
