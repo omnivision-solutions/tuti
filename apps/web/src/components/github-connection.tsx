@@ -246,18 +246,20 @@ export function GithubAccountChoice({
   );
 }
 
-/** Settings → Integrations → GitHub → Autopilot: its two switches, each saved at once. */
+/** Settings → AI → Autopilot: a switch, saved at once; only owners change it (`owner`). */
 export function CodeChangeSwitch({
   projectSlug,
   setting,
   on,
   provider,
+  owner,
 }: {
   projectSlug: string;
   /** Analysing merged pull requests at all, or applying sure links by itself. */
   setting: "analysis" | "autoLinks";
   on: boolean;
   provider: string;
+  owner: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [checked, setChecked] = useState(on);
@@ -283,7 +285,7 @@ export function CodeChangeSwitch({
         id={id}
         className="mt-0.5"
         checked={checked}
-        disabled={pending}
+        disabled={pending || !owner}
         onChange={(event) => {
           const next = event.currentTarget.checked;
           setChecked(next);

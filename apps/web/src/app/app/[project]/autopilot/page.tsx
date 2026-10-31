@@ -79,13 +79,16 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
                 : !connection
                 ? "Connect GitHub and add your repositories: each pull request merged there shows up here."
                 : !connection.project.analyseCodeChanges
-                  ? "Autopilot is off for this project. Turn it on in GitHub's settings."
+                  ? membership.role === "OWNER"
+                    ? "Autopilot is off for this project. Turn it on in its settings."
+                    : "Autopilot is off for this project. An owner can turn it on in Settings → Autopilot."
                   : "Each pull request merged on your repositories shows up here, with the requests it closes and the docs it changes."
           }
           action={
-            codeChangesEnabled() && included && (!connection || !connection.project.analyseCodeChanges) && membership.role !== "MEMBER" ? (
-              <Link href={`/app/${slug}/settings/integrations${connection ? "/github" : ""}`} className={buttonVariants({ variant: "outline" })}>
-                {connection ? "GitHub settings" : "Connect GitHub"}
+            // Connecting GitHub is for owners and admins; turning Autopilot on, for owners.
+            codeChangesEnabled() && included && (connection ? !connection.project.analyseCodeChanges && membership.role === "OWNER" : membership.role !== "MEMBER") ? (
+              <Link href={`/app/${slug}/settings/${connection ? "autopilot" : "integrations"}`} className={buttonVariants({ variant: "outline" })}>
+                {connection ? "Autopilot settings" : "Connect GitHub"}
               </Link>
             ) : undefined
           }

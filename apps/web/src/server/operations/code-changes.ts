@@ -70,7 +70,7 @@ export async function emailedOnCompletion(projectId: string, postIds: string[]):
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
-type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string };
+type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string; edited?: boolean };
 
 /** An article edit is out of date once the article was saved again since it was written, or has unpublished changes (applying would publish them too). */
 const outdated = (payload: DocsPayload, article: { revisions: { id: string }[]; changes: unknown }) =>
@@ -236,6 +236,45 @@ export async function codeChangeDetail(projectId: string, id: string) {
 
 export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeDetail>>>;
 
+/**
+ * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
+ * many were kept as it wrote them: not undone since, and not edited (the team's own words before
+ * approving; a draft or an edit finished in the editor, saved again since). Those approved before this
+ * was recorded aren't counted either way.
+ */
+export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number; wentOut: boolean }> {
+  const recent = await prisma.codeChangeAction.findMany({
+    where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
+    // By when it was proposed, which Undo doesn't move (it does move decidedAt): an old update undone stays old.
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    // The last 50 it can count, from a few more (some aren't counted). ponytail: a fixed window, past
+    // 200 mostly-uncountable ones it counts fewer than 50.
+    take: 200,
+    select: { kind: true, status: true, payload: true },
+  });
+  const known = recent.flatMap((action) => {
+    const payload = (action.payload ?? {}) as { edited?: boolean; undo?: Undo; auto?: boolean };
+    // What isn't counted when kept isn't counted when undone either.
+    if (action.kind === "NEW_ARTICLE" || (action.kind === "ARTICLE_EDIT" && payload.undo?.published === false)) {
+      // Finished in the editor: whether it went out as written isn't known (saved again before or after
+      // it was published, deleted…), so it isn't counted either way.
+      return [];
+    }
+    if ((action.kind === "MOVES_FORWARD" || action.kind === "CHANGELOG_LINE") && payload.edited === undefined) {
+      return [];
+    }
+    if (action.kind === "ARTICLE_EDIT" && payload.undo === undefined) {
+      return [];
+    }
+    if (action.status === "UNDONE") {
+      return [false];
+    }
+    return [!payload.edited];
+  });
+  const last = known.slice(0, 50);
+  return { kept: last.filter(Boolean).length, of: last.length, wentOut: recent.length > 0 };
+}
+
 const id = z.string().min(1).max(100);
 
 export const listCodeChanges = defineOperation({
@@ -284,7 +323,7 @@ export const analyseCodeChange = defineOperation({
       throw new OperationError(404, "not_found", "Code change not found");
     }
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: an owner turns it on in Settings → Autopilot");
     }
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
@@ -312,7 +351,7 @@ export const resumeCodeChanges = defineOperation({
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: an owner turns it on in Settings → Autopilot");
     }
     await requirePlan(projectId, "codeChanges");
     await aiOrRefuse(projectId, "code_changes");
@@ -416,6 +455,8 @@ export const applyCodeChangeAction = defineOperation({
       // Whether the changelog has the pull request yet: if not, a failed try takes out what it added.
       const before = await changelogLineOf(projectId, action.codeChange.url);
       const undo = { previous: before?.text ?? null, added: before === null ? ("entry" as const) : before.text === null ? ("bullet" as const) : null };
+      // Changed by the team before approving (for "how it's doing").
+      const edited = line !== (((action.payload ?? {}) as { line?: string }).line ?? "");
       const { count } = await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: "PENDING" },
         // Applying adds the bullet when no entry has it (and the pull request too, when none has that): Undo takes them out again.
@@ -424,7 +465,7 @@ export const applyCodeChangeAction = defineOperation({
           decidedById: actorUser(context.actor),
           decidedAt: new Date(),
           // What to undo is recorded once it's done: till then, Undo has nothing to go on.
-          payload: { line },
+          payload: { line, edited },
         },
       });
       if (count === 0) {
@@ -433,7 +474,7 @@ export const applyCodeChangeAction = defineOperation({
       try {
         // What to put back is what the bullet said as it was rewritten (read under the project's lock).
         const { number: entry, previous, added } = await setChangelogLine(projectId, { ...action.codeChange }, line);
-        await recordUndo(action.id, { line }, { previous, added });
+        await recordUndo(action.id, { line, edited }, { previous, added });
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
         // Not done: the pull request it put in a draft comes out again (writing the line is one save: it's
@@ -523,7 +564,7 @@ export const applyCodeChangeAction = defineOperation({
         const saved = found === "unknown" ? "unknown" : found !== null;
         if (found && found !== "unknown") {
           // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
-          await recordUndo(action.id, { comment }, { ...undo, commentId: found.id });
+          await recordUndo(action.id, { comment, edited: comment !== proposed }, { ...undo, commentId: found.id });
         }
         if (saved !== false) {
           throw Object.assign(error as Error, { saved });
@@ -533,7 +574,7 @@ export const applyCodeChangeAction = defineOperation({
       await putBackPost(context, action.kind, post, codeChange.url, undo).catch((cause: unknown) => unknown(error, cause));
       return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
     }
-    await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment } : asObject(action.payload), undo);
+    await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment, edited: comment !== proposed } : asObject(action.payload), undo);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
 });

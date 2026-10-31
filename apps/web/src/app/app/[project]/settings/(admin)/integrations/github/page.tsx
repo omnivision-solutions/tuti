@@ -1,15 +1,14 @@
 import { prisma } from "@tuti/db";
-import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled } from "@tuti/shared";
 import { listedRepositories } from "@tuti/jobs";
 import { ArrowLeftRightIcon, ChevronLeftIcon } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { CodeChangeSwitch, DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
+import { DisconnectGithubButton, GithubAccountChoice, GithubRepositories } from "@/components/github-connection";
 import { GithubMark } from "@/components/github-mark";
 import { IntegrationLogo } from "@/components/integration-logo";
-import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -161,33 +160,15 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Autopilot</CardTitle>
-          <CardDescription>
-            When a pull request merges, Autopilot reads it and finds the requests it closes, the docs it changes and its changelog line.
-            Nothing changes for your users until your team approves an update.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {codeChangesEnabled() && !planIncludes(installation.project.plan, "codeChanges") ? (
-            <PlanNotice feature="codeChanges" projectSlug={project.slug} admin>
-              Merged pull requests still go into the changelog&apos;s running draft.
-            </PlanNotice>
-          ) : codeChangesEnabled() ? (
-            <>
-              <CodeChangeSwitch projectSlug={project.slug} setting="analysis" on={installation.project.analyseCodeChanges} provider={aiProvider()} />
-              {installation.project.analyseCodeChanges && (
-                <CodeChangeSwitch projectSlug={project.slug} setting="autoLinks" on={installation.project.autoApplyLinks} provider={aiProvider()} />
-              )}
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Autopilot needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {codeChangesEnabled() && (
+        <p className="text-sm text-muted-foreground">
+          What Autopilot does with merged pull requests is in{" "}
+          <Link href={`/app/${project.slug}/settings/autopilot`} className="underline">
+            Settings → Autopilot
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }

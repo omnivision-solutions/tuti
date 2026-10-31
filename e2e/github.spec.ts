@@ -45,13 +45,22 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   );
   await checkpoint(owner, "settings-github-connected");
 
-  // Autopilot is on, and the team can turn it off (and on again).
+  // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
+  await owner.getByRole("link", { name: "Settings → Autopilot" }).click();
+  await owner.waitForURL("**/settings/autopilot");
+  await expect(owner.getByText("Nothing has gone out yet.", { exact: false })).toBeVisible();
+  await checkpoint(owner, "settings-autopilot");
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
   await analysis.click();
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
   await expect(analysis).not.toBeChecked();
+  // Off, Autopilot's page says so, and takes its owner to the switch.
+  await owner.goto(`/app/${web}/autopilot`);
+  await expect(owner.getByText("Autopilot is off for this project. Turn it on in its settings.")).toBeVisible();
+  await owner.getByRole("link", { name: "Autopilot settings" }).click();
+  await owner.waitForURL("**/settings/autopilot");
   await analysis.click();
   await expect(owner.getByText("Autopilot on")).toBeVisible();
   // Applying by itself is opt-in, and only for links.

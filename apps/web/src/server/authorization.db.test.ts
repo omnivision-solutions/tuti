@@ -358,8 +358,8 @@ const matrix: Matrix = {
       },
     },
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
-    setCodeChangeAnalysis: { allowed: "ADMIN", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
-    setAutoApplyLinks: { allowed: "ADMIN", call: (slug) => github.setAutoApplyLinks(slug, true) },
+    setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
+    setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
   },
   invitations: {
     createInvitation: {

@@ -5,7 +5,7 @@ import { addToRunningDraft, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction, autopilotRecord } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -293,6 +293,50 @@ test("the review page ticks the likely updates as it opens (not a comment nobody
   expect(again.actions.find((action) => action.id === done.action.id)).toMatchObject({ emails: 0 });
 });
 
+test("how Autopilot is doing: of its last updates that went out, those kept as it wrote them (not edited first, nor undone)", async () => {
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
+  const kept = await proposal("RESOLVES");
+  const edited = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+  const undone = await proposal("LINKS");
+  await call(applyCodeChangeAction, team(), { id: kept.action.id });
+  await call(applyCodeChangeAction, team(), { id: edited.action.id, comment: "Weekly repeats are out; monthly next." });
+  await call(applyCodeChangeAction, team(), { id: undone.action.id });
+  await call(undoCodeChangeAction, team(), { id: undone.action.id });
+  // Waiting, or dismissed: not counted.
+  const waiting = await proposal("LINKS");
+  await call(dismissCodeChangeAction, team(), { id: waiting.action.id });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 1, of: 3 });
+  // Approved before edits were recorded (its own words or not, nobody knows): left out.
+  const old = await proposal("MOVES_FORWARD", { comment: "Monthly too." });
+  await prisma.codeChangeAction.update({ where: { id: old.action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { comment: "Monthly too, next week." } } });
+  // The changelog line approved as written: kept.
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 31, url: "https://github.com/acme/app/pull/31", title: "Faster", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Faster search" } } });
+  await call(applyCodeChangeAction, team(), { id: line.id, line: "Faster search" });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 2, of: 4 });
+});
+
+test("how Autopilot is doing: what isn't counted when kept isn't counted when undone; the last 50 are the last proposed, whenever undone", async () => {
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 40, url: "https://github.com/acme/app/pull/40", title: "Docs", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  // A new article's draft, undone: not counted (nor would it be, kept).
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 3 * 86_400_000), decidedAt: new Date(), payload: { undo: { revision: null } } },
+  });
+  // Something went out, though nothing it can count: the page says so, not "Nothing has gone out yet".
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0, wentOut: true });
+  // An old link, undone just now, then 50 newer ones kept: the last 50 are the newer ones.
+  const day = 86_400_000;
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 2 * day), decidedAt: new Date(), payload: { undo: { linked: true } } } });
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 50 }, (_, i) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9, status: "APPLIED" as const, createdAt: new Date(Date.now() - day + i * 1000), decidedAt: new Date(Date.now() - day), payload: { undo: { linked: true } } })),
+  });
+  expect(await autopilotRecord(project.id)).toMatchObject({ kept: 50, of: 50 });
+});
+
 describe("approving several (applyMany)", () => {
   test("each as apply does, with its edits; one refused doesn't stop the rest, and says why", async () => {
     const resolves = await proposal("RESOLVES");
@@ -336,6 +380,8 @@ describe("approving several (applyMany)", () => {
     vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Whether it was edited is recorded on this path too ("how it's doing" counts it): approved as Autopilot wrote it.
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: saved.action.id } })).payload).toMatchObject({ edited: false });
     // Undo knows the comment it found.
     await call(undoCodeChangeAction, team(), { id: saved.action.id });
     expect((await postOf(saved.post.id)).comments).toHaveLength(0);
@@ -609,6 +655,14 @@ describe("docs", () => {
     expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
   });
 
+  test("how Autopilot is doing: an edit finished in the editor isn't counted, either way (whether it went out as written isn't known)", async () => {
+    const { article, action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
+    await call(updateArticle, team(), { slug: article.slug, body: "Pick Light, Dark or System in Settings → Appearance." });
+    expect(await autopilotRecord(project.id)).toMatchObject({ kept: 0, of: 0 });
+  });
+
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
     const { article, action } = await articleEdit();
     await call(applyCodeChangeAction, team(), { id: action.id });
@@ -696,6 +750,7 @@ describe("the changelog line", () => {
     });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({
       line: "A dark theme, in Settings",
+      edited: true,
       undo: { previous: "Add a dark theme (acme/app#30)", added: null },
     });
     // Undo puts the bullet back as it was, still linking to the pull request.

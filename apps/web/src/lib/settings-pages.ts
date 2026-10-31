@@ -1,5 +1,5 @@
 import { emailConfigured } from "@tuti/email";
-import { aiEnabled } from "@tuti/shared";
+import { aiEnabled, codeChangesEnabled } from "@tuti/shared";
 
 export type SettingsGroup = { title: string; pages: { title: string; href: string }[] };
 
@@ -33,6 +33,8 @@ export function settingsGroups(slug: string, admin: boolean): SettingsGroup[] {
         ...(aiEnabled()
           ? [
               { title: "Writing style", href: at("writing-style") },
+              // Analysing merged pull requests needs AI too (codeChangesEnabled).
+              ...(codeChangesEnabled() ? [{ title: "Autopilot", href: at("autopilot") }] : []),
               { title: "Models", href: at("ai-models") },
             ]
           : []),
