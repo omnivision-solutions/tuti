@@ -225,8 +225,10 @@ test("Stop when one update it named was replaced and another decided ticks what 
   expect(await click(c.id, stop)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=${replacement.id}&done=replaced&button=stop`);
   expect(await statusOf(replacement.id)).toBe("SCHEDULED");
 
-  // Analysed again once more: what it finds now waits for the team (nothing goes out by itself).
+  // Analysed again once more: what it finds now waits for the team (nothing goes out by itself). Publish now, the
+  // stopped one kept or not, says so rather than "nothing more to do".
   await prisma.codeChangeAction.update({ where: { id: replacement.id }, data: { status: "PENDING", dueAt: null } });
-  const gone = signAutopilotButton(owner.id, c.id, `publish:${a}`)!;
-  expect(await click(c.id, gone)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=&done=replaced&button=publish`);
+  for (const button of [`publish:${a}`, `publish:${a},${b.id}`, `publish:${b.id},${a}`] as const) {
+    expect(await click(c.id, signAutopilotButton(owner.id, c.id, button)!)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=&done=replaced&button=publish`);
+  }
 });

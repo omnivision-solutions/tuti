@@ -200,7 +200,17 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
               actions: {
                 where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } },
                 orderBy: [{ probability: "desc" }, { id: "asc" }],
-                select: { id: true, kind: true, status: true, dueAt: true, decidedAt: true, payload: true, post: { select: { title: true, status: true } }, article: { select: { title: true } } },
+                select: {
+                  id: true,
+                  kind: true,
+                  status: true,
+                  dueAt: true,
+                  decidedAt: true,
+                  waitReason: true,
+                  payload: true,
+                  post: { select: { title: true, status: true } },
+                  article: { select: { title: true } },
+                },
               },
             },
           },
@@ -297,8 +307,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           .filter((action) => action.status === "PENDING" || action.status === "STALE")
           .map((action) => ({
             ...previewOf(action, now),
-            // Out of date ones can't be approved as they are: Edit only.
-            ...(action.status === "PENDING" && { approveUrl: act(`approve:${action.id}`) }),
+            // Out of date ones can't be approved as they are, and one a teammate stopped isn't to approve unasked: Edit only.
+            ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && { approveUrl: act(`approve:${action.id}`) }),
             editUrl: `${page}?select=${action.id}`,
           }));
         // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.

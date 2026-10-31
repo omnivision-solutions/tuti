@@ -58,14 +58,12 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     where: { id: { in: ids }, codeChangeId: id, codeChange: { projectId: membership.project.id } },
     select: { id: true, status: true },
   });
-  // Some of them not there any more: analysed again since (it replaces what was still scheduled, keeping what the
-  // team decided), and what replaced them may go out by itself. Those are ticked, to publish or stop there; none
-  // (what it found waits for the team), nothing's ticked, and the page says so.
+  // Some of them not there any more: analysed again since. It replaces what was still scheduled and keeps what the
+  // team decided, so none it named goes out by itself now; what replaced them may. Those are ticked, to publish or
+  // stop there; none (what it found waits for the team), nothing's ticked, and the page says so.
   if (named.length < ids.length) {
     const now = await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" }, select: { id: true } });
-    if (now.length > 0 || named.length === 0) {
-      page(`?select=${now.map(({ id: actionId }) => encodeURIComponent(actionId)).join(",")}&done=replaced&button=${kind}`);
-    }
+    page(`?select=${now.map(({ id: actionId }) => encodeURIComponent(actionId)).join(",")}&done=replaced&button=${kind}`);
   }
   const scheduled = named.filter((action) => action.status === "SCHEDULED");
   let done = 0;

@@ -709,6 +709,20 @@ test("Publish now and Stop name only the updates the email shows (five in all); 
   }
 });
 
+test("an update a teammate stopped is in the email with Edit only, not a one-click Approve", async () => {
+  const one = await change("Add a dark theme");
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id, waitReason: "Stopped by Olive Owner" } });
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!.button);
+  expect(buttons).not.toContain(`approve:${progress.id}`);
+  // The request it closes (not stopped) keeps its Approve.
+  expect(buttons.filter((button) => button.startsWith("approve:"))).toHaveLength(1);
+  expect(to(owner)[0]!.html).toContain(`select=${progress.id}`);
+});
+
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {
   const one = await change("Add a dark theme");
   await queueAutopilotNotices(one.id);
