@@ -137,3 +137,33 @@ test("changes merged within ten minutes go in one email", async () => {
   expect(email!.text).toContain("Add a dark theme");
   expect(email!.text).toContain("Faster search");
 });
+
+test("analysed again, those told hear again; someone who left the team (or turned it off) before it went isn't sent it", async () => {
+  const admin = await signUp("Ada Admin");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotTellAdmins: true } });
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // The admin leaves before it goes: only the owner gets it.
+  await prisma.teamMember.deleteMany({ where: { projectId: project.id, userId: admin.id } });
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(to(admin)).toHaveLength(0);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, userId: admin.id } })).toBe(0);
+  // Analysed again: the owner is told again.
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(1);
+  expect(to(owner)).toHaveLength(2);
+});
+
+test("the subject counts every update, the email shows five and says how many more", async () => {
+  const many = await change("Big release");
+  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 5 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+  });
+  await queueAutopilotNotices(many.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.subject).toBe("Autopilot: Big release · 1 update goes out in 24 hours, 6 need you");
+  expect(email!.text).toContain("+2 more in Tuti");
+});

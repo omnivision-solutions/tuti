@@ -40,18 +40,30 @@ export async function queueAutopilotNotices(codeChangeId: string): Promise<numbe
     where: { projectId: change.projectId },
     select: { role: true, autopilotTold: true, userId: true, user: { select: { autopilotEmails: true } } },
   });
-  const told = team.filter(({ role, autopilotTold, user }) => {
-    const on = user.autopilotEmails === "AS_THEY_HAPPEN";
-    if (role === "OWNER") {
-      return on || goesOutUnseen;
-    }
-    return on && (autopilotTold || (role === "ADMIN" && change.project.autopilotTellAdmins));
-  });
+  const told = team.filter((member) => isTold(member, change.project, goesOutUnseen));
   const { count } = await prisma.autopilotNotice.createMany({
     data: told.map(({ userId }) => ({ codeChangeId, userId })),
     skipDuplicates: true,
   });
-  return count;
+  // Told already (an analysis before this one): told again, about what this one found.
+  const { count: again } = await prisma.autopilotNotice.updateMany({
+    where: { codeChangeId, userId: { in: told.map(({ userId }) => userId) }, sentAt: { not: null } },
+    data: { sentAt: null, createdAt: new Date() },
+  });
+  return count + again;
+}
+
+/** Whether someone on the team is told: owners (always, while something customers see goes out by itself), admins the project tells, members it picked; each unless they turned it off. */
+function isTold(
+  member: { role: string; autopilotTold: boolean; user: { autopilotEmails: string } },
+  project: { autopilotTellAdmins: boolean },
+  goesOutUnseen: boolean,
+): boolean {
+  const on = member.user.autopilotEmails === "AS_THEY_HAPPEN";
+  if (member.role === "OWNER") {
+    return on || goesOutUnseen;
+  }
+  return on && (member.autopilotTold || (member.role === "ADMIN" && project.autopilotTellAdmins));
 }
 
 const statusName = (status: string) => status.charAt(0) + status.slice(1).toLowerCase().replace("_", " ");
@@ -122,7 +134,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
-        user: { select: { email: true } },
+        user: { select: { email: true, autopilotEmails: true } },
         codeChange: {
           select: {
             id: true,
@@ -130,7 +142,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
             repo: true,
             number: true,
             summary: true,
-            project: { select: { id: true, slug: true, name: true } },
+            project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true } },
             actions: {
               where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } },
               orderBy: [{ probability: "desc" }, { id: "asc" }],
@@ -155,6 +167,17 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       continue;
     }
     const project = mine[0]!.codeChange.project;
+    // Still told? (They may have left the team, or turned it off, since.) If not: dropped, not sent.
+    const member = await prisma.teamMember.findUnique({
+      where: { projectId_userId: { projectId: project.id, userId } },
+      select: { role: true, autopilotTold: true, user: { select: { autopilotEmails: true } } },
+    });
+    const goesOutUnseen = mine.some(({ codeChange }) => codeChange.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind)));
+    if (!member || !isTold(member, project, goesOutUnseen)) {
+      // Not told after all: gone, so the page doesn't say they were emailed.
+      await prisma.autopilotNotice.deleteMany({ where: { id: { in: ids } } });
+      continue;
+    }
     let budget = SHOWN;
     let more = 0;
     const take = (list: AutopilotEmailUpdate[]) => {
@@ -162,6 +185,16 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       budget -= shown.length;
       more += list.length - shown.length;
       return shown;
+    };
+    // The subject counts them all, not just the ones shown.
+    const all = mine.flatMap(({ codeChange }) => codeChange.actions);
+    const totals = {
+      goesOut: all.filter((action) => action.status === "SCHEDULED").length,
+      needsYou: all.filter((action) => action.status === "PENDING" || action.status === "STALE").length,
+      first: when(
+        all.filter((action) => action.status === "SCHEDULED").reduce<Date | null>((min, action) => (!min || (action.dueAt && action.dueAt < min) ? action.dueAt : min), null),
+        now,
+      ),
     };
     const changes: AutopilotEmailChange[] = mine.map(({ codeChange }) => {
       const auto = (action: ActionRow) => ((action.payload ?? {}) as { auto?: boolean }).auto === true;
@@ -182,7 +215,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
     try {
       await sendEmail({
         to: mine[0]!.user.email,
-        ...autopilotEmail({ projectName: project.name, changes, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
+        ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
       });
       sent++;
     } catch (error) {

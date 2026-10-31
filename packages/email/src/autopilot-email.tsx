@@ -20,6 +20,8 @@ export type AutopilotEmailChange = {
 type AutopilotProps = {
   projectName: string;
   changes: AutopilotEmailChange[];
+  /** Every update going out by itself (and when the first goes) and needing the team, shown or not: the subject's counts. */
+  totals: { goesOut: number; needsYou: number; first: string };
   /** Updates past the first five, left out: "+N more in Tuti". */
   more: number;
   autopilotUrl: string;
@@ -56,9 +58,9 @@ function Updates({ heading, updates }: { heading: string; updates: AutopilotEmai
  * To the people told about a project's Autopilot (owners, and those the project adds): what its
  * merged pull requests change, what goes out by itself and when, what needs them, and what's done.
  */
-export function AutopilotEmail({ projectName, changes, more, autopilotUrl, accountUrl }: AutopilotProps) {
+export function AutopilotEmail({ projectName, changes, totals, more, autopilotUrl, accountUrl }: AutopilotProps) {
   return (
-    <Layout preview={subjectOf(changes)}>
+    <Layout preview={subjectOf(changes, totals)}>
       {changes.map((change, i) => (
         <Section key={i}>
           {i > 0 && <Hr style={{ borderColor: colors.border, margin: "16px 0" }} />}
@@ -92,21 +94,16 @@ export function AutopilotEmail({ projectName, changes, more, autopilotUrl, accou
 }
 
 /** "Autopilot: Add a dark theme · 2 updates go out in 24 hours, 1 needs you"; for several, how many merged. */
-function subjectOf(changes: AutopilotEmailChange[]): string {
-  const all = (list: (change: AutopilotEmailChange) => AutopilotEmailUpdate[]) => changes.flatMap(list);
-  const goesOut = all((change) => change.goesOut);
-  const needsYou = all((change) => change.needsYou);
-  // When the first one goes (the sooner of what's listed).
-  const first = goesOut.find((update) => update.goesOut === "now")?.goesOut ?? goesOut[0]?.goesOut;
+function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"]): string {
   const parts = [
-    goesOut.length > 0 && `${plural(goesOut.length, "update goes", "updates go")} out ${first}`,
-    needsYou.length > 0 && `${needsYou.length} ${needsYou.length === 1 ? "needs" : "need"} you`,
+    totals.goesOut > 0 && `${plural(totals.goesOut, "update goes", "updates go")} out ${totals.first}`,
+    totals.needsYou > 0 && `${totals.needsYou} ${totals.needsYou === 1 ? "needs" : "need"} you`,
   ].filter(Boolean);
   const what = changes.length === 1 ? changes[0]!.title : `${changes.length} merged pull requests`;
   return `Autopilot: ${what}${parts.length > 0 ? ` · ${parts.join(", ")}` : ""}`;
 }
 
 export const autopilotEmail = (props: AutopilotProps) => ({
-  subject: subjectOf(props.changes),
+  subject: subjectOf(props.changes, props.totals),
   body: <AutopilotEmail {...props} />,
 });
