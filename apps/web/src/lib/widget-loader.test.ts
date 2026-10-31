@@ -984,8 +984,15 @@ test("on a phone, what the page adds while the panel covers it (the button, once
 test("on a phone, a page with a modal open (help opened from inside it) isn't covered: the modal stays usable", async () => {
   const page = loadWidget({ narrow: true });
   const app = page.body.appendChild(new FakeElement("div", page));
-  const dialog = app.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
   dialog.setAttribute("aria-modal", "true");
+  // Closed, kept in the markup: the page is covered as usual.
+  dialog.checkVisibility = () => false;
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  page.Tuti.close();
+  // Showing: left as it is.
+  dialog.checkVisibility = () => true;
   page.Tuti.open();
   expect(app.hasAttribute("inert")).toBe(false);
 });

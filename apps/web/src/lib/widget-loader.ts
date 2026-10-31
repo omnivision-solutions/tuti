@@ -215,8 +215,12 @@ export function widgetLoader(portalTemplate: string): string {
   // A modal the page has open (help opened from inside it) is the page's: covered, it would freeze with
   // nothing in reach to close it, so the page is left as it is then.
   function modalOpen() {
+    // Only one showing: pages keep closed ones in their markup, marked all the same.
     var marked = document.querySelectorAll("[aria-modal]");
-    for (var m = 0; m < marked.length; m++) if (marked[m].getAttribute("aria-modal") === "true") return true;
+    for (var m = 0; m < marked.length; m++) {
+      var modal = marked[m];
+      if (modal.getAttribute("aria-modal") === "true" && (!modal.checkVisibility || modal.checkVisibility())) return true;
+    }
     try {
       return !!document.querySelector("dialog:modal");
     } catch (error) {
