@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { DismissGapButton } from "@/components/docs";
+import { DocsSections } from "@/components/docs-sections";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -41,10 +42,10 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
   return (
     <>
       <PageHeader
-        back={{ href: `/app/${slug}/docs`, label: "Docs" }}
-        title="Insights"
+        title="Docs"
         meta={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
       />
+      <DocsSections projectSlug={slug} current="insights" />
       <Card>
         <CardHeader>
           <CardTitle>Gaps</CardTitle>

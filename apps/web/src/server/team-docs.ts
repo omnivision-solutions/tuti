@@ -8,6 +8,7 @@ import { levelSelect } from "@/lib/reader-groups";
 
 import { type AccessChoices, collectionPath, inTreeOrder, namedLevel, readingOrder, tabOrder } from "./docs-queries";
 import { tabSelect, tabView } from "./operations/docs";
+import { insightsSince } from "./operations/docs-insights";
 
 const articleOrder = [{ order: "asc" as const }, { title: "asc" as const }];
 const articleSelect = { slug: true, title: true, publishedAt: true } as const;
@@ -87,3 +88,20 @@ export const contentsMeta = (c: TeamDocs["collections"][number], docs: TeamDocs)
 /** The collections a new one can go in: the ones less than 5 levels deep, named with the ones they're in. */
 export const newCollectionParents = (docs: TeamDocs) =>
   docs.collections.filter((c) => c.depth < MAX_COLLECTION_DEPTH).map((c) => ({ slug: c.slug, name: docs.pathOf(c.id) }));
+
+/** Each article's views and "Yes, it helped" answers in Insights' window (the last 30 days), by article id: the list's rows. */
+export async function articleStats(projectId: string): Promise<Map<string, { views: number; helpful: number }>> {
+  const since = insightsSince();
+  const [views, helpful] = await Promise.all([
+    prisma.articleViewDay.groupBy({ by: ["articleId"], where: { article: { projectId }, day: { gte: since } }, _sum: { views: true } }),
+    prisma.articleFeedback.groupBy({ by: ["articleId"], where: { article: { projectId }, helpful: true, updatedAt: { gte: since } }, _count: { _all: true } }),
+  ]);
+  const stats = new Map<string, { views: number; helpful: number }>();
+  for (const v of views) {
+    stats.set(v.articleId, { views: v._sum.views ?? 0, helpful: 0 });
+  }
+  for (const h of helpful) {
+    stats.set(h.articleId, { views: stats.get(h.articleId)?.views ?? 0, helpful: h._count._all });
+  }
+  return stats;
+}

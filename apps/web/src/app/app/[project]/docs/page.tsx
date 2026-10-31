@@ -6,28 +6,29 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton, TabDialog } from "@/components/docs";
+import { DocsSections } from "@/components/docs-sections";
 import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { type Listing, LISTING_LABELS } from "@/lib/article-listing";
-import { formatDate, timeAgo } from "@/lib/format";
+import { timeAgo } from "@/lib/format";
 import { levelSelect } from "@/lib/reader-groups";
 import { portalAddress } from "@/server/custom-domains";
 import { accessChoices } from "@/server/docs-queries";
 import { getMembership } from "@/server/membership";
 import { restorableSince } from "@/server/operations/docs";
-import { accessBadgeFor, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
+import { INSIGHTS_DAYS } from "@/server/operations/docs-insights";
+import { accessBadgeFor, articleStats, contentsMeta, type TeamDocs, teamDocs } from "@/server/team-docs";
 
 /**
  * The team's docs at a glance, the whole width (no tree beside it; a tab's, a collection's or an
  * article's page has it): each tab, its collections (each a card with its articles, then the
- * collections in it) and, on the first, the articles in none, in the order readers see them; then
- * articles deleted lately (which can be restored).
+ * collections in it) and, on the first, the articles in none, in the order readers see them (drafts and
+ * unpublished changes first); then articles deleted lately (which can be restored).
  */
 export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs">) {
   const { project: slug } = await props.params;
@@ -36,11 +37,11 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     notFound();
   }
   const projectId = membership.project.id;
-  const [docs, details, deleted, access, portal] = await Promise.all([
+  const [docs, details, deleted, access, portal, stats] = await Promise.all([
     teamDocs(projectId),
     prisma.article.findMany({
       where: { projectId, deletedAt: null },
-      select: { slug: true, publishedAt: true, listing: true, ...levelSelect, changes: { select: { articleId: true } } },
+      select: { id: true, slug: true, publishedAt: true, listing: true, ...levelSelect, changes: { select: { articleId: true } } },
     }),
     prisma.article.findMany({
       where: { projectId, deletedAt: { gte: restorableSince() } },
@@ -56,15 +57,22 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
     }),
     accessChoices(projectId),
     portalAddress(slug),
+    articleStats(projectId),
   ]);
   // Rows say who can read them when it isn't inherit ("Signed-in", "Enterprise, Pro").
   const badge = accessBadgeFor(access);
   const detailsOf = new Map(details.map((d) => [d.slug, d]));
   const base = `/app/${slug}/docs`;
 
+  // What isn't out as written yet: a draft, or a published article with changes not published.
+  const status = (articleSlug: string) => {
+    const article = detailsOf.get(articleSlug);
+    return !article ? null : !article.publishedAt ? "Draft" : article.changes ? "Changes not published" : null;
+  };
   const articleRows = (articles: { slug: string; title: string }[]) =>
-    articles.map(({ slug: articleSlug, title }) => {
+    articles.toSorted((a, b) => Number(status(b.slug) !== null) - Number(status(a.slug) !== null)).map(({ slug: articleSlug, title }) => {
       const article = detailsOf.get(articleSlug);
+      const read = article && stats.get(article.id);
       return (
         <Fragment key={articleSlug}>
           <ItemRow
@@ -77,15 +85,19 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             badges={
               article && (
                 <>
+                  {status(articleSlug) && <Badge variant={article.publishedAt ? "highlight" : "outline"}>{status(articleSlug)}</Badge>}
                   {badge(article) && <Badge variant="outline">{badge(article)}</Badge>}
-                  {article.changes && <Badge variant="highlight">Unpublished changes</Badge>}
                 </>
               )
             }
             meta={
               article?.publishedAt
-                ? `Published ${formatDate(article.publishedAt)}${article.listing === "EVERYWHERE" ? "" : ` · ${LISTING_LABELS[article.listing.toLowerCase() as Listing]}`}`
-                : "Draft"
+                ? [
+                    `${(read?.views ?? 0).toLocaleString("en")} ${read?.views === 1 ? "view" : "views"} in ${INSIGHTS_DAYS} days`,
+                    ...(read?.helpful ? [`${read.helpful.toLocaleString("en")} found it helpful`] : []),
+                    ...(article.listing === "EVERYWHERE" ? [] : [LISTING_LABELS[article.listing.toLowerCase() as Listing]]),
+                  ].join(" · ")
+                : undefined
             }
           />
         </Fragment>
@@ -166,15 +178,9 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             </a>
           </span>
         }
-        actions={
-          <>
-            <Link href={`${base}/insights`} className={buttonVariants({ variant: "outline" })}>
-              Insights
-            </Link>
-            <AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />
-          </>
-        }
+        actions={<AddContentMenu parent={null} tab={docs.tabs[0]?.slug} article={null} />}
       />
+      <DocsSections projectSlug={slug} current="content" />
       {/* With tabs, each has a section (an empty one says so), so a new tab is there to open. */}
       {docs.tabs.length === 0 && docs.collections.length === 0 && docs.uncollected.length === 0 ? (
         <EmptyState title="No articles yet" description="Write the first one: how to get started is a good place to begin. Published articles show in your portal's docs." />
