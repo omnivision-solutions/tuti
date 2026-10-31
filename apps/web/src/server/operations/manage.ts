@@ -9,16 +9,28 @@ import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, 
 
 export const updatePost = defineOperation({
   name: "posts.update",
-  summary: "Change a post's status or move it to another board",
+  summary:
+    "Change a post's status, move it to another board, or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said)",
   method: "PATCH",
   path: "/posts/{number}",
   scope: "write",
   access: "team",
   input: z
-    .object({ number: postNumber, status: z.enum(STATUSES).optional(), board: z.string().optional() })
-    .refine((input) => input.status !== undefined || input.board !== undefined, "Send a status or a board")
+    .object({
+      number: postNumber,
+      status: z.enum(STATUSES).optional(),
+      board: z.string().optional(),
+      owner: z.email().nullable().optional(),
+      eta: z
+        .string()
+        // A month this century, as 2026-12 (a year typed halfway, like 0002, isn't one).
+        .regex(/^20\d{2}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
+        .nullable()
+        .optional(),
+    })
+    .refine((input) => [input.status, input.board, input.owner, input.eta].some((value) => value !== undefined), "Send a status, a board, an owner or an ETA")
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }] }),
+    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }] }),
   example: { status: "planned" },
   run: async ({ actor, projectId }, input) => {
     const post = await findPost(projectId, input.number);
@@ -30,15 +42,37 @@ export const updatePost = defineOperation({
       }
       boardId = board.id;
     }
+    // The ETA: a month's first day. The owner: found on the team in the update's transaction (below).
+    const eta = input.eta === undefined ? undefined : input.eta === null ? null : new Date(`${input.eta}-01T00:00:00Z`);
     // Before the change is written (see posts.create).
     const portal = await projectPortal(projectId);
     const status = input.status && fromApiStatus(input.status);
     // The change and its event (the post's activity) together: by whoever made it (an API key: its creator).
     // The status it has now, read with its row locked: changes at the same moment (a teammate, publishing its entry) go one after the other.
     const { updated, previous } = await prisma.$transaction(async (tx) => {
+      // The owner is on the team (by their email), its membership row held until this commits: taken off the
+      // team meanwhile, their removal waits for this, and then clears them as owner. Held before the post's row,
+      // in the order their removal takes them, so the two never wait on each other.
+      let ownerId: string | null | undefined;
+      if (input.owner !== undefined) {
+        ownerId = null;
+        if (input.owner !== null) {
+          const [member] = await tx.$queryRaw<{ userId: string }[]>`
+            SELECT m."userId" FROM team_member m JOIN "user" u ON u.id = m."userId"
+            WHERE m."projectId" = ${projectId} AND lower(u.email) = lower(${input.owner}) FOR SHARE OF m`;
+          if (!member) {
+            throw new OperationError(400, "invalid_input", "The owner must be on your team");
+          }
+          ownerId = member.userId;
+        }
+      }
       const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
       const previous = current?.status ?? post.status;
-      const saved = await tx.post.update({ where: { id: post.id }, data: { ...(status && { status }), ...(boardId && { boardId }) }, select: postSummarySelect });
+      const saved = await tx.post.update({
+        where: { id: post.id },
+        data: { ...(status && { status }), ...(boardId && { boardId }), ...(ownerId !== undefined && { ownerId }), ...(eta !== undefined && { eta }) },
+        select: postSummarySelect,
+      });
       if (status && status !== previous) {
         await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
       }

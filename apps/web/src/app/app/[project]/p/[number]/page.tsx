@@ -8,12 +8,12 @@ import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
+import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { asking, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
@@ -40,6 +40,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       include: {
         board: { select: { slug: true } },
         author: { select: { name: true } },
+        owner: { select: { id: true } },
         duplicateOf: { select: { number: true, title: true } },
         links: {
           orderBy: { createdAt: "asc" },
@@ -57,7 +58,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
       },
     }),
     prisma.board.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } }),
-    prisma.teamMember.findMany({ where: { projectId: project.id }, select: { userId: true } }),
+    prisma.teamMember.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { userId: true, user: { select: { name: true } } } }),
   ]);
   if (!post) {
     notFound();
@@ -122,53 +123,78 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           </AlertTitle>
           <AlertDescription>Its votes and comments moved there, and its link points there.</AlertDescription>
         </Alert>
-      ) : (
-        <Card size="sm">
-          <CardContent className="flex flex-wrap items-center gap-4 text-sm">
-            <span className="flex items-center gap-2">
-              Status <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} />
-            </span>
-            <span className="flex items-center gap-2">
-              Board <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} />
-            </span>
-            <span className="ml-auto">
-              <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
-            </span>
-          </CardContent>
-        </Card>
-      )}
+      ) : null}
 
-      {!isEmptyDoc(displayDoc(post)) && (
-        <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text break-words" />
-      )}
-
-      {!post.duplicateOf && post.links.length > 0 && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
-
-      {suggestions.length > 0 && (
-        <DuplicateSuggestions
-          projectSlug={slug}
-          postId={post.id}
-          suggestions={suggestions.map(({ post: duplicate, ...s }) => ({ ...s, duplicate }))}
-        />
-      )}
-
-      <section className="flex flex-col gap-4" aria-label="Comments">
-        <h2 className="font-medium">
-          {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
-          {post.notes.length > 0 && (
-            <span className="font-normal text-muted-foreground">
-              {" "}
-              · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
-            </span>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem] lg:items-start">
+        <div className="flex min-w-0 flex-col gap-6">
+          {!isEmptyDoc(displayDoc(post)) && (
+            <RichText doc={displayDoc(post)} mediaUrls={await mediaUrls(displayDoc(post))} className="rich-text break-words" />
           )}
-        </h2>
-        <CommentList
-          comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
-          teamUserIds={new Set(team.map((m) => m.userId))}
-          events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
-        />
-        {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes />}
-      </section>
+
+          {!post.duplicateOf && post.links.length > 0 && <PostLinks projectSlug={slug} postId={post.id} links={post.links} />}
+
+          {suggestions.length > 0 && (
+            <DuplicateSuggestions
+              projectSlug={slug}
+              postId={post.id}
+              suggestions={suggestions.map(({ post: duplicate, ...s }) => ({ ...s, duplicate }))}
+            />
+          )}
+
+          <section className="flex flex-col gap-4" aria-label="Comments">
+            <h2 className="font-medium">
+              {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
+              {post.notes.length > 0 && (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  · {post.notes.length} internal {post.notes.length === 1 ? "note" : "notes"}
+                </span>
+              )}
+            </h2>
+            <CommentList
+              comments={[...post.comments, ...post.notes.map((note) => ({ ...note, internal: true }))].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())}
+              teamUserIds={new Set(team.map((m) => m.userId))}
+              events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
+            />
+            {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes />}
+          </section>
+        </div>
+
+        {/* Its properties, beside it (above it on a phone). */}
+        {!post.duplicateOf && (
+          <aside aria-label="Properties" className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:order-none lg:sticky lg:top-18">
+            <Property label="Status">
+              <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} className="w-full" />
+            </Property>
+            <Property label="Board">
+              <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />
+            </Property>
+            <Property label="Owner">
+              <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />
+            </Property>
+            <Property label="ETA">
+              <PostEtaSelect projectSlug={slug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} />
+            </Property>
+            <Property label="Votes">
+              <span>
+                {post.voteCount}
+                {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!)}</span>}
+              </span>
+            </Property>
+            <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
+          </aside>
+        )}
+      </div>
     </>
+  );
+}
+
+/** One of the post's properties in its sidebar: a label above its control. */
+function Property({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      {children}
+    </div>
   );
 }

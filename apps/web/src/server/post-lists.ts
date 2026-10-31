@@ -157,13 +157,11 @@ export function boardPosts(boardId: string, filters: PostFilters, userId: string
   );
 }
 
-/** A board's completed posts, the latest changed first, for its "Recently shipped" card. */
+/** A board's completed posts, the latest completed first (as the roadmap's Completed: older ones by their last change), for its "Recently shipped" card. */
 export function recentlyShipped(boardId: string) {
-  // ponytail: updatedAt stands in for when it shipped (votes and edits move it too); post_event (step 3) has the real time.
-  return prisma.post.findMany({
-    where: { boardId, duplicateOfId: null, status: "COMPLETED" },
-    orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-    take: 5,
-    select: { id: true, number: true, title: true, voteCount: true },
-  });
+  return prisma.$queryRaw<{ id: string; number: number; title: string; voteCount: number }[]>`
+    SELECT p.id, p.number, p.title, p."voteCount" FROM post p
+    WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED'
+    ORDER BY COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") DESC, p.id DESC
+    LIMIT 5`;
 }

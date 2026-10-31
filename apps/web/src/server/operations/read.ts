@@ -99,21 +99,28 @@ export async function findPost(projectId: string, number: number) {
 
 export const getPost = defineOperation({
   name: "posts.get",
-  summary: "Get a post by its number, with its text and rich content",
+  summary: "Get a post by its number, with its text and rich content; to the team, who looks after it (`owner`) and when it's expected (`eta`, a month)",
   method: "GET",
   path: "/posts/{number}",
   scope: "read",
   access: "anyone",
   input: z.object({ number: postNumber }),
-  run: async ({ projectId }, { number }) => {
+  run: async ({ actor, projectId }, { number }) => {
     const post = await findPost(projectId, number);
-    const links = await prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect });
+    const [links, ofTeam] = await Promise.all([
+      prisma.postLink.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select: linkSelect }),
+      actorReader(actor, projectId).then((reader) => reader === null),
+    ]);
+    // Who looks after it and when it's expected: the team's to read.
+    const planning =
+      ofTeam && (await prisma.post.findUniqueOrThrow({ where: { id: post.id }, select: { eta: true, owner: { select: { name: true, email: true } } } }));
     return {
       ...summary(post, await projectPortal(projectId)),
       body: post.body,
       content: displayDoc(post),
       mergedInto: post.duplicateOf?.number ?? null,
       links: links.map(linkView),
+      ...(planning && { owner: planning.owner, eta: planning.eta?.toISOString().slice(0, 7) ?? null }),
     };
   },
 });

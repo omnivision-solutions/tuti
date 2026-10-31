@@ -226,7 +226,7 @@ describe("changing", () => {
     });
     expect(await send("PATCH", "/posts/1", {}, writeKey)).toMatchObject({
       status: 400,
-      body: { error: { message: "input: Send a status or a board" } },
+      body: { error: { message: "input: Send a status, a board, an owner or an ETA" } },
     });
     expect(await send("PATCH", "/posts/1", "not json", writeKey)).toMatchObject({ status: 400, body: { error: { code: "invalid_json" } } });
   });
@@ -357,6 +357,8 @@ describe("OpenAPI", () => {
     expect(spec.paths["/posts/{number}"].patch.requestBody.content["application/json"].schema.anyOf).toEqual([
       { required: ["status"] },
       { required: ["board"] },
+      { required: ["owner"] },
+      { required: ["eta"] },
     ]);
     expect(spec.paths["/posts/{number}"].get.parameters).toEqual([
       { name: "number", in: "path", required: true, schema: expect.objectContaining({ type: "integer" }) },

@@ -92,6 +92,16 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
   await expect(team.getByText("Status: Planned")).toBeVisible();
+  // Its properties, beside it: who looks after it, and when it's expected.
+  const properties = team.getByRole("complementary", { name: "Properties" });
+  await properties.getByRole("combobox", { name: "Owner" }).click();
+  await team.getByRole("option", { name: "Tess Team" }).click();
+  await expect(team.getByText("Owner: Tess Team")).toBeVisible();
+  // The month after this one: always among the next two years'.
+  const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  await properties.getByRole("combobox", { name: "ETA" }).click();
+  await team.getByRole("option", { name: next }).click();
+  await expect(team.getByText(`ETA: ${next}`)).toBeVisible();
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
   await checkpoint(team, "team-planned");

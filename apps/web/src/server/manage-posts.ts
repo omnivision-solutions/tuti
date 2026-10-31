@@ -1,5 +1,6 @@
 "use server";
 
+import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import type { FormState } from "./form-state";
@@ -23,6 +24,24 @@ import { asTeam, call, postNumberOf } from "./operations/run";
 export async function movePost(projectSlug: string, postId: string, boardSlug: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can move posts", async (context) =>
     call(updatePost, context, { number: await postNumberOf(context.projectId, postId), board: String(boardSlug) }),
+  );
+}
+
+/** Who on the team looks after a post (a team member's id; null: nobody). See posts.update. */
+export async function setPostOwner(projectSlug: string, postId: string, ownerId: string | null): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can change a post's owner", async (context) => {
+    const owner = ownerId === null ? null : await prisma.user.findUnique({ where: { id: String(ownerId) }, select: { email: true } });
+    if (ownerId !== null && !owner) {
+      throw new OperationError(400, "invalid_input", "The owner must be on your team");
+    }
+    return call(updatePost, context, { number: await postNumberOf(context.projectId, postId), owner: owner?.email ?? null });
+  });
+}
+
+/** When the team expects a post: a month ("2026-12"; null: not said). See posts.update. */
+export async function setPostEta(projectSlug: string, postId: string, month: string | null): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can change a post's ETA", async (context) =>
+    call(updatePost, context, { number: await postNumberOf(context.projectId, postId), eta: month === null || month === "" ? null : String(month) }),
   );
 }
 
