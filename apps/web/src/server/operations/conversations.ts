@@ -537,8 +537,8 @@ export const linkConversationPost = defineOperation({
     const conversation = await findConversation(projectId, input.number);
     let post = await findPost(projectId, input.post);
     if (!post.duplicateOf) {
-      // Only while it isn't merged: a merge marks it first, holding its row, so a link either lands before
-      // (and the merge moves it) or finds it merged.
+      // Only while it isn't merged: a merge locks its row first (mergePosts), so a link either lands before it
+      // (and the merge moves it) or waits for it and finds it merged.
       const linked = await prisma.$executeRaw`
         INSERT INTO conversation_post ("conversationId", "postId")
         SELECT ${conversation.id}, id FROM post WHERE id = ${post.id} AND "duplicateOfId" IS NULL FOR SHARE

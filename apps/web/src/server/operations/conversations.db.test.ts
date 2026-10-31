@@ -187,3 +187,22 @@ test("the team links a conversation to the posts it's about; merging a post take
 
   expect(await call(unlinkConversationPost, context, { number: 1, post: csv.number })).toEqual({ posts: [] });
 });
+
+test("two merges of one post at once: one goes through, the other is refused, and its links follow the one that did", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const author = { id: "user-7", name: "Ann" };
+  const [a, b, c] = [
+    await call(createPost, context, { board: "feature-requests", title: "Export", author }),
+    await call(createPost, context, { board: "feature-requests", title: "CSV export", author }),
+    await call(createPost, context, { board: "feature-requests", title: "Excel export", author }),
+  ];
+  await call(linkConversationPost, context, { number: 1, post: a.number });
+  const results = await Promise.allSettled([
+    call(mergePost, context, { number: a.number, into: b.number }),
+    call(mergePost, context, { number: a.number, into: c.number }),
+  ]);
+  const done = results.flatMap((result) => (result.status === "fulfilled" ? [result.value.into] : []));
+  expect(done).toHaveLength(1);
+  expect((await call(getConversation, context, { number: 1 })).posts.map((p) => p.number)).toEqual(done);
+});
