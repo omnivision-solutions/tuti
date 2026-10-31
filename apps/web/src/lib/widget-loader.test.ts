@@ -538,7 +538,7 @@ test("by default the panel opens above the launcher; on a phone it's the whole s
   page.resize(true);
   expect(page.panel.style).toMatchObject({ top: "0", left: "0", borderRadius: "0" });
   page.resize(false);
-  expect(page.panel.style).toMatchObject({ top: "auto", right: "20px", left: "auto", borderRadius: "14px" });
+  expect(page.panel.style).toMatchObject({ top: "auto", right: "20px", left: "auto", borderRadius: "14px", paddingTop: "0" });
   expect(page.backdrop).toBeUndefined();
   expect(page.inlineFrames).toEqual([]);
 
@@ -546,6 +546,8 @@ test("by default the panel opens above the launcher; on a phone it's the whole s
   await settled();
   phone.button!.click();
   expect(phone.panel.style).toMatchObject({ display: "block", top: "0", right: "0", bottom: "0", left: "0", borderRadius: "0", zIndex: "2147483001" });
+  // Clear of the phone's status bar and home indicator, where the page runs under them.
+  expect(phone.panel.style).toMatchObject({ boxSizing: "border-box", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" });
   expect(phone.backdrop).toBeUndefined();
 });
 

@@ -40,12 +40,12 @@ settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
 
 | Value | What visitors see |
 | --- | --- |
-| `launcher` (default) | The button, which opens the panel above it. |
+| `launcher` (default) | The button, which opens the panel above it. On screens up to 640px wide the panel takes the whole screen, over the button, and its Close button (in its header) closes it. |
 | `sidebar` | The button, which opens the panel as a full-height drawer on its side (right, or left with a bottom-left button). On screens up to 640px wide the rest of the page is dimmed, and tapping it closes the drawer. |
 | `inline` | No button: the panel shows in your page, where you put it (see below). |
 
-The floating panel grows out of the button's corner as it opens and shrinks back as it closes; a
-sidebar slides in from its edge. Visitors whose device asks for reduced motion get it without the motion.
+The floating panel grows out of the button's corner as it opens and shrinks back as it closes (on a
+phone's screen it slides up); a sidebar slides in from its edge. Visitors whose device asks for reduced motion get it without the motion.
 
 ```html
 <!-- Launcher (the default) -->

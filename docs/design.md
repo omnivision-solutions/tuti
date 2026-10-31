@@ -114,6 +114,8 @@ green, In progress orange, Completed green, Closed light grey.
   has (Messages, a docs search box, Feedback, the latest update) and the quick links.
   It grows out of the launcher's corner as it opens (a sidebar slides in from
   its edge) and shrinks back as it closes; with reduced motion it just appears.
+  On screens up to 640px wide the floating panel takes the whole screen, over the
+  launcher, kept clear of the phone's status bar and home indicator, and slides up.
   A conversation in Messages opens at its newest message, its reply box at the
   bottom of the panel as the messages scroll under it.
 - Both layouts stack page sections with `gap-6`; don't add margins between them.

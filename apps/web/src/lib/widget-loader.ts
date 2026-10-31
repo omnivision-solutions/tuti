@@ -210,10 +210,16 @@ export function widgetLoader(portalTemplate: string): string {
   // button at the top). Pinned to the screen's edges there, so the browser's bars can't push it off screen.
   function placePanel() {
     if (small && small.matches) {
-      css(panel, { top: "0", right: "0", bottom: "0", left: "0", width: "auto", height: "auto", borderRadius: "0", zIndex: "2147483001" });
+      // Clear of the status bar and home indicator where the page runs under them (viewport-fit=cover):
+      // the panel's page, in a frame, isn't told where they are.
+      css(panel, {
+        top: "0", right: "0", bottom: "0", left: "0", width: "auto", height: "auto", borderRadius: "0", zIndex: "2147483001", boxSizing: "border-box",
+        paddingTop: "env(safe-area-inset-top)", paddingRight: "env(safe-area-inset-right)", paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)"
+      });
       return;
     }
     css(panel, {
+      paddingTop: "0", paddingRight: "0", paddingBottom: "0", paddingLeft: "0",
       top: "auto", bottom: hideLauncher ? "20px" : "88px", right: onLeft ? "auto" : "20px", left: onLeft ? "20px" : "auto",
       borderRadius: "14px", zIndex: "2147483000", width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))",
       transformOrigin: onLeft ? "bottom left" : "bottom right"
