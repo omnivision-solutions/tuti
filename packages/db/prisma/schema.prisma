@@ -18,6 +18,9 @@ model User {
   email            String
   /// Autopilot's email for the projects they're told about: as each change is analysed, or never.
   autopilotEmails  AutopilotEmails @default(AS_THEY_HAPPEN)
+  /// The time zone their browser reported when they chose the digest (an IANA name), and the (local) day it last went.
+  autopilotTimeZone String?
+  autopilotDigestOn DateTime? @db.Date
   emailVerified    Boolean   @default(false)
   image            String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
@@ -2212,6 +2215,8 @@ model License {
 /// Autopilot's email choice on a person's account.
 enum AutopilotEmails {
   AS_THEY_HAPPEN
+  /// One email each morning with what's still waiting (and, for owners, what goes out by itself as it happens).
+  DIGEST
   OFF
 }
 

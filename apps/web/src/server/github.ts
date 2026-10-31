@@ -186,16 +186,29 @@ export async function saveAutopilotRecipients(projectSlug: string, _state: FormS
   return {};
 }
 
-/** Account → Autopilot's email: as each change is analysed, or off (owners still hear what goes out by itself). */
-export async function setAutopilotEmails(choice: string): Promise<FormState> {
+/**
+ * Account → Autopilot's email: as each change is analysed, a daily digest (in the morning of `timeZone`,
+ * the one their browser reports), or off (owners still hear what goes out by itself).
+ */
+export async function setAutopilotEmails(choice: string, timeZone?: string): Promise<FormState> {
   const session = await getSession();
   if (!session) {
     return { error: "Sign in first" };
   }
-  if (choice !== "AS_THEY_HAPPEN" && choice !== "OFF") {
+  if (choice !== "AS_THEY_HAPPEN" && choice !== "DIGEST" && choice !== "OFF") {
     return { error: "Pick when you hear from Autopilot" };
   }
-  await prisma.user.update({ where: { id: session.user.id }, data: { autopilotEmails: choice } });
+  const known = (zone: unknown): zone is string => {
+    try {
+      return typeof zone === "string" && zone.length <= 100 && Boolean(new Intl.DateTimeFormat("en", { timeZone: zone }));
+    } catch {
+      return false;
+    }
+  };
+  if (choice === "DIGEST" && !known(timeZone)) {
+    return { error: "Your browser didn't say which time zone you're in" };
+  }
+  await prisma.user.update({ where: { id: session.user.id }, data: { autopilotEmails: choice, ...(choice === "DIGEST" && { autopilotTimeZone: timeZone }) } });
   refresh();
   return {};
 }

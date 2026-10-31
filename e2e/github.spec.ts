@@ -82,6 +82,13 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("button", { name: "Save who's told" }).click();
   await expect(owner.getByText("Who's told saved")).toBeVisible();
   await checkpoint(owner, "settings-autopilot");
+  // Each person picks when they hear: a daily digest, in the morning where their browser says they are.
+  await owner.goto("/app/account");
+  await owner.getByLabel("A daily digest").check();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByLabel("A daily digest")).toBeChecked();
+  await owner.goto(`/app/${web}/settings/integrations/github`);
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, { ...account, add: [] });

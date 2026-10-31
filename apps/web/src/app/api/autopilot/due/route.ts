@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 
-import { autopilotDueToken, sendAutopilotEmails } from "@tuti/jobs";
+import { autopilotDueToken, sendAutopilotDigests, sendAutopilotEmails } from "@tuti/jobs";
 
 import { runDueAutopilot } from "@/server/operations/code-changes";
 
@@ -17,5 +17,5 @@ export async function POST(request: Request) {
   }
   // Due updates first, so an email says what went.
   const run = await runDueAutopilot();
-  return Response.json({ ...run, emailed: await sendAutopilotEmails() });
+  return Response.json({ ...run, emailed: (await sendAutopilotEmails()) + (await sendAutopilotDigests()) });
 }

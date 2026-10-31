@@ -150,8 +150,8 @@ export function AutopilotRecipientsForm({
   );
 }
 
-/** Account → Autopilot's email: as each change is analysed, or off. Saved as it's picked. */
-export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "OFF" }) {
+/** Account → Autopilot's email: as each change is analysed, a daily digest, or off. Saved as it's picked. */
+export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "DIGEST" | "OFF" }) {
   const [pending, startTransition] = useTransition();
   // What's saved: a choice that isn't (signed out meanwhile, say) goes back to it.
   const [saved, setSaved] = useState(choice);
@@ -169,6 +169,7 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
       {(
         [
           ["AS_THEY_HAPPEN", "As they happen", "An email when a merged pull request has updates (several merged within ten minutes in one)."],
+          ["DIGEST", "A daily digest", "One email each morning (8 am where you are now) with everything still waiting for you; none on a day with nothing."],
           ["OFF", "Off", "None. If you own a project, you still hear what goes out by itself."],
         ] as const
       ).map(([value, label, description]) => (
@@ -182,7 +183,8 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
             onChange={() => {
               setPicked(value);
               startTransition(async () => {
-                const result = await setAutopilotEmails(value);
+                // The digest comes in the morning where they are: the time zone their browser reports.
+                const result = await setAutopilotEmails(value, Intl.DateTimeFormat().resolvedOptions().timeZone);
                 if (result.error) {
                   setPicked(saved);
                   toast.error(result.error);

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import pg from "pg";
@@ -748,4 +748,32 @@ test("an email claimed just before the runner took an update, but read once it h
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: markedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("the daily digest: in their morning (their browser's time zone), once a day, with what still waits; none on a day with nothing", async () => {
+  // Chosen with a time zone the server doesn't know: refused.
+  expect(await setAutopilotEmails("DIGEST", "Mars/Olympus")).toEqual({ error: "Your browser didn't say which time zone you're in" });
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  // As they happen: nothing for a digest reader (nothing goes out by itself here).
+  const waiting = await change("Add a dark theme", { scheduled: false });
+  await queueAutopilotNotices(waiting.id);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: waiting.id } })).toBe(0);
+  // 7:00 in Berlin: not yet. 8:30: the digest. Again at 8:45: not twice.
+  expect(await sendAutopilotDigests(new Date("2026-11-02T06:00:00Z"))).toBe(0);
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:45:00Z"))).toBe(0);
+  const [digest] = to(owner);
+  expect(digest!.subject).toBe("Autopilot this morning: 1 update waits for you in 1 merged pull request");
+  expect(digest!.text).toContain("Closes the request · Dark mode");
+  // A day the sweep ran late (11:00 in Berlin): still that day's, once.
+  expect(await sendAutopilotDigests(new Date("2026-11-03T10:00:00Z"))).toBe(1);
+  expect(await sendAutopilotDigests(new Date("2026-11-03T10:01:00Z"))).toBe(0);
+  // Autopilot turned off on the project: what's left waiting there isn't news.
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  expect(await sendAutopilotDigests(new Date("2026-11-04T07:30:00Z"))).toBe(0);
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+  // A morning with nothing waiting any more: none.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: waiting.id }, data: { status: "DISMISSED" } });
+  expect(await sendAutopilotDigests(new Date("2026-11-05T07:10:00Z"))).toBe(0);
+  expect(to(owner)).toHaveLength(2);
 });
