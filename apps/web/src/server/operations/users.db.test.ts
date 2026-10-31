@@ -9,6 +9,7 @@ import { generateSsoSecret, verifySsoToken } from "@/lib/sso";
 import { createProject, signUp, type TestUser } from "@/test/helpers";
 
 import { createGroup } from "./groups";
+import { updateProject } from "./more";
 import { call } from "./run";
 import { getUser, listUsers, MAX_USERS_PER_SYNC, syncUsersOperation } from "./users";
 
@@ -178,4 +179,51 @@ test("the same id in another project is someone else, and each project lists onl
   expect((await get("user-1")).properties).toEqual({ plan: "pro" });
   expect((await list()).users).toHaveLength(1);
   expect((await call(getUser, team(other.id), { user: "user-1" })).properties).toEqual({ plan: "free" });
+});
+
+test("each with their activity, and sorted by it: the most posts, votes or conversations, or the latest seen, first", async () => {
+  await sync([
+    { id: "user-a", name: "Ada" },
+    { id: "user-b", name: "Bea" },
+    { id: "user-c", name: "Cy" },
+  ]);
+  const userOf = async (id: string) =>
+    (await prisma.ssoIdentity.findUniqueOrThrow({ where: { projectId_externalId: { projectId: project.id, externalId: id } } })).userId;
+  const [ada, bea, cy] = [await userOf("user-a"), await userOf("user-b"), await userOf("user-c")];
+  const projectId = project.id;
+  const boardId = project.boards[0]!.id;
+  // Bea posted twice, and once more, merged away (not counted, though she was seen then).
+  const first = await prisma.post.create({ data: { projectId, boardId, authorId: bea, number: 1, title: "One", createdAt: new Date("2026-10-01") } });
+  await prisma.post.create({ data: { projectId, boardId, authorId: bea, number: 2, title: "Two", createdAt: new Date("2026-10-02") } });
+  await prisma.post.create({ data: { projectId, boardId, authorId: bea, number: 3, title: "One again", duplicateOfId: first.id, createdAt: new Date("2026-10-03") } });
+  // Cy voted; Ada wrote in, and once more as spam (not counted).
+  await prisma.vote.create({ data: { postId: first.id, userId: cy, projectId, createdAt: new Date("2026-10-20") } });
+  for (const [number, spam] of [[1, false], [2, true]] as const) {
+    await prisma.conversation.create({
+      data: { projectId, number, subject: "Hi", origin: "API", userId: ada, spam, messages: { create: { projectId, author: "USER", channel: "API", body: "Hi", createdAt: new Date(`2026-10-1${number}`) } } },
+    });
+  }
+  const activity = async () => Object.fromEntries((await list()).users.map((user) => [user.id, user.activity]));
+  expect(await activity()).toEqual({
+    "user-a": { posts: 0, votes: 0, conversations: 1, lastSeenAt: new Date("2026-10-12") },
+    "user-b": { posts: 2, votes: 0, conversations: 0, lastSeenAt: new Date("2026-10-03") },
+    "user-c": { posts: 0, votes: 1, conversations: 0, lastSeenAt: new Date("2026-10-20") },
+  });
+  const order = async (sort: "posts" | "votes" | "conversations" | "lastSeen") => (await list({ sort })).users.map((user) => user.id);
+  // The most first, then by name.
+  expect(await order("posts")).toEqual(["user-b", "user-a", "user-c"]);
+  expect(await order("votes")).toEqual(["user-c", "user-a", "user-b"]);
+  expect(await order("conversations")).toEqual(["user-a", "user-b", "user-c"]);
+  expect(await order("lastSeen")).toEqual(["user-c", "user-a", "user-b"]);
+  // In the widget since: seen then.
+  await prisma.widgetPresence.create({ data: { projectId, who: bea, lastSeenAt: new Date("2026-10-25") } });
+  expect(await order("lastSeen")).toEqual(["user-b", "user-c", "user-a"]);
+  expect((await activity())["user-b"]!.lastSeenAt).toEqual(new Date("2026-10-25"));
+});
+
+test("the project picks the properties Users shows as columns: company and plan to start with, each once, up to 10", async () => {
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).userColumns).toEqual(["company", "plan"]);
+  expect((await call(updateProject, team(), { userColumns: ["mrr", "company", "mrr"] })).userColumns).toEqual(["mrr", "company"]);
+  await expect(call(updateProject, team(), { userColumns: Array.from({ length: 11 }, (_, i) => `p${i}`) })).rejects.toMatchObject({ status: 400 });
+  expect((await call(updateProject, team(), { userColumns: [] })).userColumns).toEqual([]);
 });

@@ -26,7 +26,7 @@ export const getProject = defineOperation({
 export const updateProject = defineOperation({
   name: "project.update",
   summary:
-    "Rename the project (the name its portal, emails and the app show; its address stays the same), or pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none)",
+    "Rename the project (the name its portal, emails and the app show; its address stays the same), pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none), or pick `userColumns`: the properties Users shows as columns, in order (up to 10)",
   method: "PATCH",
   path: "/project",
   scope: "write",
@@ -34,13 +34,18 @@ export const updateProject = defineOperation({
   input: z.object({
     name: z.string().trim().min(2, "Give the project a name of 2 characters or more").max(60, "Keep the name under 60 characters").optional(),
     askingProperty: z.string().trim().min(1, "Pick one of your users' properties").max(64, "Properties are up to 64 characters").nullable().optional(),
+    userColumns: z
+      .array(z.string().trim().min(1, "Pick one of your users' properties").max(64, "Properties are up to 64 characters"))
+      .max(10, "Pick up to 10 columns")
+      .transform((names) => [...new Set(names)])
+      .optional(),
   }),
-  example: { name: "Acme", askingProperty: "mrr" },
+  example: { name: "Acme", askingProperty: "mrr", userColumns: ["company", "plan", "mrr"] },
   run: async ({ projectId }, input) => {
     const project = await prisma.project.update({
       where: { id: projectId },
-      data: { name: input.name, askingProperty: input.askingProperty },
-      select: { slug: true, name: true, askingProperty: true },
+      data: { name: input.name, askingProperty: input.askingProperty, userColumns: input.userColumns },
+      select: { slug: true, name: true, askingProperty: true, userColumns: true },
     });
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },

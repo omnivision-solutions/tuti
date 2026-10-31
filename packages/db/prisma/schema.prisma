@@ -143,6 +143,8 @@ model Project {
   ssoSecret             String?
   /// Who's asking: the number property (Users, from the app: MRR, seats…) totalled over a post's voters for the team; none until picked.
   askingProperty        String?
+  /// The users' properties Users shows as columns, in order (users.sync's `properties`; project.update).
+  userColumns           String[]     @default(["company", "plan"])
   /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
@@ -920,6 +922,7 @@ model Post {
   @@index([projectId, status])
   @@index([duplicateOfId])
   @@index([shippedEmailsDueAt])
+  @@index([authorId])
   @@index([ownerId])
   @@map("post")
 }
@@ -1277,6 +1280,7 @@ model Comment {
   replyEmails ReplyEmail[]
 
   @@index([postId, createdAt])
+  @@index([authorId])
   @@index([votersEmailDueAt])
   @@map("comment")
 }
