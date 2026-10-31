@@ -263,3 +263,17 @@ test("an email forwarded from the team's own address shows its forwarding works;
   expect(await receivedAt()).toBeInstanceOf(Date);
   expect(await conversations(project.id)).toHaveLength(3);
 });
+
+test("an email in the Inbox stays in once, even when recording its forwarding fails", async () => {
+  const { project, address } = await setup();
+  await prisma.emailDomain.create({ data: { projectId: project.id, domain: "beta.example", address: "support@beta.example", dkimTokens: [] } });
+  const updateMany = vi.spyOn(prisma.emailDomain, "updateMany").mockRejectedValueOnce(new Error("connection lost"));
+  const raw = rawEmail({ from: "e2e-kim@example.com", to: "support@beta.example" });
+  expect(await postEmail(raw, { recipient: address })).toEqual({ status: 200, body: { outcome: "added" } });
+  updateMany.mockRestore();
+  expect(await inbound(project.id)).toMatchObject([{ status: "ADDED" }]);
+
+  // Delivered again: still one.
+  await postEmail(raw, { recipient: address });
+  expect(await conversations(project.id)).toHaveLength(1);
+});

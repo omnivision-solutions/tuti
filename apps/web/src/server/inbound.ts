@@ -159,16 +159,9 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   if (row.status !== "RECEIVED" && row.status !== "FAILED") {
     return { status: 200, outcome: row.status.toLowerCase() };
   }
+  let outcome: string;
   try {
-    const outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
-    // Sent to the team's own address, forwarded here and in the Inbox: its forwarding works (Settings →
-    // Support); list mail (a group's) and refused mail never get here. Only a status: anyone who knows
-    // the support address can write headers that look forwarded.
-    const forwarded = outcome === "added" ? forwardedFrom(mail.headerLines, domain!) : [];
-    if (forwarded.length > 0) {
-      await prisma.emailDomain.updateMany({ where: { projectId, address: { in: forwarded } }, data: { receivedAt: new Date() } });
-    }
-    return { status: 200, outcome };
+    outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
   } catch (error) {
     if (error instanceof AlreadyRead) {
       return { status: 200, outcome: "already read" };
@@ -177,6 +170,17 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
     await prisma.inboundEmail.update({ where: { id: row.id }, data: { status: "FAILED", reason: "processing_failed" } });
     return { status: 500, outcome: "failed" };
   }
+  // Sent to the team's own address, forwarded here and in the Inbox: its forwarding works (Settings →
+  // Support); list mail (a group's) and refused mail never get here. Only a status: anyone who knows
+  // the support address can write headers that look forwarded. The email is in either way, so a
+  // failure here mustn't fail it (a retry would add it again).
+  const forwarded = outcome === "added" ? forwardedFrom(mail.headerLines, domain!) : [];
+  if (forwarded.length > 0) {
+    await prisma.emailDomain
+      .updateMany({ where: { projectId, address: { in: forwarded } }, data: { receivedAt: new Date() } })
+      .catch((error: unknown) => log.warn("Recording a forwarded email failed", { projectId, inboundEmailId: row.id, error }));
+  }
+  return { status: 200, outcome };
 }
 
 type Mail = Awaited<ReturnType<typeof simpleParser>>;
