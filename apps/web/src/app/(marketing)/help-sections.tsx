@@ -379,7 +379,7 @@ export function Switching() {
   const points: [string, string][] = [
     ["Bring your articles", "Through the API, or have Claude or Cursor copy them over with Tuti's MCP server."],
     ["Keep your old links", "Redirect the old help center's addresses, so links and search rankings keep working."],
-    ["Leave whenever you like", "Take all your data with you through the API at any time, or run Tuti on your own servers."],
+    ["Leave whenever you like", "Take your articles and posts with you through the API at any time, or run Tuti on your own servers."],
   ];
   return (
     <Band>
