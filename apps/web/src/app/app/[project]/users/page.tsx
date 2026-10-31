@@ -14,7 +14,7 @@ import { UserColumnsMenu } from "@/components/user-columns-menu";
 import { timeAgo } from "@/lib/format";
 import type { PropertyValue } from "@/lib/user-properties";
 import { getMembership, isAdminRole } from "@/server/membership";
-import { propertyNames } from "@/server/operations/groups";
+import { propertiesInUse, propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
 import { listUsers, USER_SORTS } from "@/server/operations/users";
 import { getSession } from "@/server/session";
@@ -48,17 +48,19 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const group = groups.find((g) => g.key === searchParams.group)?.key;
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
   const sort: Sort = USER_SORTS.find((s) => s === searchParams.sort) ?? "name";
-  const [{ users, nextCursor }, { userColumns }, properties] = await Promise.all([
+  const { userColumns } = await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } });
+  const [{ users, nextCursor }, named, picked] = await Promise.all([
     call(
       listUsers,
       { actor: { kind: "user", userId: session.user.id }, projectId: project.id },
       { q: q || undefined, group, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE },
     ),
-    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } }),
     propertyNames(project.id),
+    propertiesInUse(project.id, userColumns),
   ]);
-  // The picked properties some user has (one no user has any more has nothing to show).
-  const columns = userColumns.filter((name) => properties.includes(name));
+  // One no user has any more has nothing to show, and goes when Columns is next saved.
+  const columns = picked;
+  const properties = [...new Set([...named, ...columns])].sort();
   const names = new Map(groups.map((g) => [g.key, g.name]));
   const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) => {
     const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
@@ -82,9 +84,10 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
           <>
             <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
               {group && <input type="hidden" name="group" value={group} />}
+              {sort !== "name" && <input type="hidden" name="sort" value={sort} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
-            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={userColumns} properties={properties} />}
+            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={columns} properties={properties} />}
             {groups.length > 0 && (
               <ListFilters
                 filters={[

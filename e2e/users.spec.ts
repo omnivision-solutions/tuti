@@ -61,6 +61,13 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(rows.first()).toContainText("Bea Byte");
   await expect(rows.first().getByRole("cell").last()).not.toHaveText("Never");
   await checkpoint(owner, "team-users");
+  // A search keeps the sort.
+  await owner.getByRole("searchbox", { name: "Search users" }).fill("example.com");
+  await owner.getByRole("searchbox", { name: "Search users" }).press("Enter");
+  await expect(owner).toHaveURL(/\?sort=votes&q=example\.com$/);
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("Bea Byte");
+  await owner.goto(`/app/${slug}/users?sort=votes`);
   await table.getByRole("link", { name: "User" }).click();
   await expect(owner).toHaveURL(new RegExp(`/app/${slug}/users$`));
   await expect(rows.first()).toContainText("Ada Lovelace");
