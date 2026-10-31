@@ -67,6 +67,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.getByRole("link", { name: "Feedback", exact: true }).first()).toHaveAccessibleDescription("2 to triage");
   // J and K step to the older post and back (by number). Not while a list of choices is open: a letter there picks one.
   await team.getByLabel("Status").click();
+  await expect(team.getByRole("listbox")).toBeVisible();
   await team.keyboard.press("j");
   // A step would have gone by now (it's not instant: wait for one, and expect none).
   await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
