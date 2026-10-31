@@ -317,6 +317,17 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await off.check();
   await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
   await checkpoint(owner, "account-autopilot-email");
+  // Changed back in another tab: this one shows it once the page refreshes (saving the name, here).
+  const other = await owner.context().newPage();
+  await other.goto("/app/account");
+  await other.getByRole("radio", { name: /^As they happen/ }).check();
+  await expect(other.getByText("Saved", { exact: true })).toBeVisible();
+  await other.close();
+  await owner.getByLabel("Name").fill("Olive O. Owner");
+  await owner.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(asTheyHappen).toBeChecked();
+  await off.check();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
   // Signed out meanwhile (another tab, say): not saved, so it shows what is.
   await owner.context().clearCookies();
   await asTheyHappen.check();
