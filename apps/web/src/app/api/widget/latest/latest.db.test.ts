@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { portalUrl } from "@/lib/hosts";
 import { createProject, signUp } from "@/test/helpers";
 
 import { GET, OPTIONS } from "./route";
@@ -63,6 +64,7 @@ test("read from one of the team's sites, the widget counts as added (Home's Get 
   const from = (origin: string) => GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin } }));
   const seen = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt;
   await from(new URL(process.env.APP_URL!).origin);
+  await from(new URL(portalUrl(project.slug)).origin);
   expect(await seen()).toBeNull();
   await from("https://www.acme.example");
   expect(await seen()).not.toBeNull();

@@ -63,3 +63,39 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   const later = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(later.setup!.filter((step) => step.done).map((step) => step.key)).toEqual(["verify", "widget", "sso"]);
 });
+
+test("Home counts every update waiting and every change past the list, and offers no merge Feedback wouldn't list", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  // 101 merged pull requests with an update waiting each: more than Home lists.
+  await prisma.codeChange.createMany({
+    data: Array.from({ length: 101 }, (_, i) => ({
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number: i + 1,
+      url: `https://github.com/acme/app/pull/${i + 1}`,
+      title: `Change ${i + 1}`,
+      author: "octo",
+      mergedAt: ago(1),
+      state: "READY" as const,
+    })),
+  });
+  const changes = await prisma.codeChange.findMany({ where: { projectId: project.id }, select: { id: true } });
+  await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "LINKS" as const, probability: 0.9 })) });
+  // A possible duplicate whose post was merged meanwhile: settled.
+  const ids = await Promise.all(["Dark mode", "Night theme", "Dark theme"].map(async (title) => {
+    const { number } = await call(createPost, team, { board: "feature-requests", title });
+    return (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
+  }));
+  await prisma.post.update({ where: { id: ids[2]! }, data: { duplicateOfId: ids[0]!, status: "CLOSED" } });
+  await prisma.duplicateSuggestion.create({ data: { projectId: project.id, postId: ids[2]!, originalId: ids[1]!, similarity: 0.9 } });
+
+  const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.numbers.updatesWaiting).toBe(101);
+  expect(home.attention.some((item) => item.kind === "Possible duplicate")).toBe(false);
+  // 101 changes and the two posts to triage, 20 shown.
+  expect(home.moreAttention).toBe(101 + 2 - 20);
+});
