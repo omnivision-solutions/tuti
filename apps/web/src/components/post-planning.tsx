@@ -47,7 +47,10 @@ export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projec
 /** "none" can't be a month: it stands for no ETA. */
 const NO_ETA = "none";
 
-/** This month and the next 23 (and `keep`, a month already saved outside them), as "2026-12" → "December 2026". */
+/**
+ * This month and the next 23 (and `keep`, a month already saved outside them), as "2026-12" → "December 2026":
+ * in UTC and English, as dates are shown everywhere (see formatDate), so the server's render and the browser's agree.
+ */
 function months(keep: string | null): Record<string, string> {
   const now = new Date();
   const values = Array.from({ length: 24 }, (_, i) => {
@@ -57,7 +60,7 @@ function months(keep: string | null): Record<string, string> {
   if (keep && !values.includes(keep)) {
     values.unshift(keep);
   }
-  const label = (value: string) => new Date(`${value}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  const label = (value: string) => new Date(`${value}-01T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
   return { [NO_ETA]: "No ETA", ...Object.fromEntries(values.map((value) => [value, label(value)])) };
 }
 

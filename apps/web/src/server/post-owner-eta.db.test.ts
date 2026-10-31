@@ -56,7 +56,7 @@ test("made a post's owner while they're taken off the team: one waits for the ot
   const member = await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
   const post = await call(createPost, team, { board: "feature-requests", title: "Dark mode" });
   await call(updatePost, team, { number: post.number, owner: admin.email });
-  const blocked = async () => (await prisma.$queryRaw<[{ n: number }]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`)[0].n > 0;
+  const blocked = async () => (await prisma.$queryRaw<[{ n: number }]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FOR SHARE OF m%'`)[0].n > 0;
 
   // Their removal, as `removeFromTeam` does it (membership, then the posts they own), paused while the update waits on it.
   let update: Promise<unknown> | undefined;

@@ -98,7 +98,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("option", { name: "Tess Team" }).click();
   await expect(team.getByText("Owner: Tess Team")).toBeVisible();
   // The month after this one: always among the next two years'.
-  const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1)).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
   await properties.getByRole("combobox", { name: "ETA" }).click();
   await team.getByRole("option", { name: next }).click();
   await expect(team.getByText(`ETA: ${next}`)).toBeVisible();
