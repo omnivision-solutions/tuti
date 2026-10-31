@@ -443,9 +443,9 @@ export default async function Home() {
             <a href={REPO_URL} className="hover:text-foreground">
               GitHub
             </a>
-            <Link href="/license" className="hover:text-foreground">
+            <a href={`${REPO_URL}/blob/main/LICENSE`} className="hover:text-foreground">
               License
-            </Link>
+            </a>
           </nav>
         </div>
       </footer>
