@@ -179,7 +179,9 @@ Use these instead of hand-rolling layout:
 - Design for 390px first; nothing may overflow or squeeze text to nothing.
 - In a row, text gets the space and controls move below it on phones
   (`ItemRow wideActions`), never the other way round.
-- Long user content (titles, emails, URLs) wraps (`break-words` / `break-all`).
+- Long user content (titles, emails, URLs) wraps (`break-words` / `break-all`;
+  `wrap-anywhere` where it sits in a grid that sizes to it, such as a dialog's
+  title, which `break-words` doesn't shrink).
 - Filters wrap onto more lines; they don't scroll sideways.
 
 ## Interaction

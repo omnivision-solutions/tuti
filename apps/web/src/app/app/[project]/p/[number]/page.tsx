@@ -20,6 +20,7 @@ import { asking, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
+import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
@@ -65,12 +66,13 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const [totals, voters, shipped, like, neighbours] = await Promise.all([
+  const [totals, voters, shipped, like, neighbours, emails] = await Promise.all([
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
     howShipped(post.id),
     post.duplicateOf ? [] : postsLike(project.id, post),
     postNeighbours(project.id, post.number),
+    emailedOnCompletion(project.id, [post.id]),
   ]);
   const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
@@ -180,7 +182,13 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:order-none lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto"
           >
             <Property label="Status">
-              <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} className="w-full" />
+              <PostStatusSelect
+                projectSlug={slug}
+                postId={post.id}
+                status={post.status}
+                completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                className="w-full"
+              />
             </Property>
             <Property label="Board">
               <MovePostSelect projectSlug={slug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />

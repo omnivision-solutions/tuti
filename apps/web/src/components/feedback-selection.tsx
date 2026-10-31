@@ -23,7 +23,7 @@ import { eachPost } from "@/lib/each-post";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
 /** A post as the selection keeps it: enough to name it and pick which one stays in a merge. */
-type Picked = { id: string; number: number; title: string; voteCount: number };
+type Picked = { id: string; number: number; title: string; voteCount: number; emails: number };
 
 const Selection = createContext<{
   picked: Picked[];
@@ -94,6 +94,8 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
     return null;
   }
   const count = `${picked.length} ${picked.length === 1 ? "post" : "posts"}`;
+  // Who completing them emails, at most (one person asking for two is counted twice).
+  const emailing = picked.reduce((sum, post) => sum + post.emails, 0);
 
   // Each in turn: what went, what didn't (and why), then the list again with none picked.
   const each = (posts: Picked[], run: (post: Picked) => Promise<{ error?: string }>, done: string) =>
@@ -164,7 +166,11 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Mark {count} as Completed?</AlertDialogTitle>
-            <AlertDialogDescription>Everyone who voted for them is emailed that it shipped, as when one post is completed.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {emailing
+                ? `This emails up to ${emailing} ${emailing === 1 ? "person" : "people"} who asked for them that it shipped, as when one post is completed.`
+                : "Nobody is emailed."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>

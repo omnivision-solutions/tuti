@@ -129,7 +129,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
       <AlertDialog open={completing !== null} onOpenChange={(open) => !open && !pending && setCompleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mark “{completing?.title}” completed?</AlertDialogTitle>
+            <AlertDialogTitle className="wrap-anywhere">Mark “{completing?.title}” completed?</AlertDialogTitle>
             <AlertDialogDescription>
               {completing?.emails
                 ? `This emails up to ${completing.emails} ${completing.emails === 1 ? "person" : "people"} who asked for it that it shipped.`

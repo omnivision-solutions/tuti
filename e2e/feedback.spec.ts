@@ -543,8 +543,9 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
     await team.evaluate((to) => window.scrollTo(0, to), y);
     await expect.poll(scrollY).toBe(y);
   };
-  // J from part way down the list (it opens the first post), then Esc.
+  // J from part way down the list (it opens the first post), then Esc. (Each page ready for keys first.)
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await scrolledTo(400);
   await team.keyboard.press("j");
   await expect(pane).toBeVisible();
@@ -553,13 +554,15 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect.poll(scrollY).toBe(400);
   // J from the very top: back at the top.
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await scrolledTo(0);
   await team.keyboard.press("j");
-  await expect.poll(scrollY).toBeGreaterThan(0);
+  await expect(pane).toBeVisible();
   await team.keyboard.press("Escape");
   await expect.poll(scrollY).toBe(0);
   // Opened, Back, the list scrolled elsewhere, Forward (the pane again), closed: at that new place.
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane).toBeVisible();
   await team.goBack();
@@ -611,10 +614,19 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
   const ask = team.getByRole("alertdialog", { name: "Mark 1 post as Completed?" });
-  await expect(ask).toContainText("Everyone who voted for them is emailed that it shipped");
+  // Who it emails (here, nobody: only the team has voted).
+  await expect(ask).toContainText("Nobody is emailed.");
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask).toHaveCount(0);
   await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
+
+  // From a row's own status menu, Completed asks first too.
+  await row("Export to PDF").getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  const one = team.getByRole("alertdialog", { name: "Mark “Export to PDF” completed?" });
+  await expect(one).toContainText("Nobody is emailed.");
+  await one.getByRole("button", { name: "Cancel" }).click();
+  await expect(row("Export to PDF").getByRole("button", { name: "Status: Planned" })).toBeVisible();
 
   // Moved to another board.
   await bar.getByRole("button", { name: "Move to board" }).click();
@@ -784,4 +796,71 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
     await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeEnabled();
   }
   await team.unroute(`**/app/${slug}/feedback**`);
+});
+
+test("Completed's question fits a phone, whatever the post's title (a long link)", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const title = "https://example.com/integrations/salesforce/oauth-callback-fails-for-sandbox-orgs";
+  await api("/posts", { board: "feature-requests", title });
+  await team.setViewportSize({ width: 390, height: 800 });
+  await team.goto(`/app/${slug}/feedback`);
+  await team.getByRole("main").getByRole("listitem").getByRole("button", { name: /^Status: / }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  const heading = team.getByRole("alertdialog").getByRole("heading");
+  await expect(heading).toContainText("oauth-callback");
+  const box = (await heading.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  // The roadmap's own question, from a card's status menu, too.
+  await api("/posts/1", { status: "planned" }, "PATCH");
+  await team.goto(`/app/${slug}/feedback/roadmap`);
+  await team.getByRole("region", { name: "Planned" }).getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  await expect(heading).toContainText("oauth-callback");
+  const roadmapBox = (await heading.boundingBox())!;
+  expect(roadmapBox.x + roadmapBox.width).toBeLessThanOrEqual(390);
+});
+
+test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const [number, title] of [[1, "Dark mode"], [2, "Export to PDF"]] as const) {
+    await api("/posts", { board: "feature-requests", title });
+    await api(`/posts/${number}/vote`, { voted: true, author: { id: `user-${number}`, email: `e2e-${randomUUID()}@example.com` } });
+  }
+  await api("/posts/1", { status: "completed" }, "PATCH");
+  // Someone votes for it after it shipped: counted for it, though completing it again emails nobody.
+  await api("/posts/1/vote", { voted: true, author: { id: "user-late", email: `e2e-${randomUUID()}@example.com` } });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Completed" }).click();
+  await expect(team.getByRole("alertdialog").getByText("This emails up to 1 person who asked for them that it shipped, as when one post is completed.", { exact: true })).toBeVisible();
+});
+
+test("Feedback's pane asks before Completed too, saying how many it emails", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-1", email: `e2e-${randomUUID()}@example.com` } });
+  await team.goto(`/app/${slug}/feedback?post=1`);
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Completed" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
+  await expect(ask.getByText("This emails up to 1 person who asked for it that it shipped.", { exact: true })).toBeVisible();
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toHaveCount(0);
+  // What's saved, not only what's shown: still Open after a reload, once anything sent has gone.
+  await team.waitForLoadState("networkidle");
+  await team.reload();
+  await expect(pane.getByRole("combobox", { name: "Status" })).toHaveText(/Open/);
 });
