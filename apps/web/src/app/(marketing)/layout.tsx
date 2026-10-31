@@ -44,7 +44,7 @@ export default async function MarketingLayout({ children }: LayoutProps<"/">) {
           )}
         </nav>
       </header>
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10 has-data-wide:max-w-5xl">{children}</main>
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-10 has-data-wide:max-w-5xl has-data-full:max-w-none has-data-full:p-0">{children}</main>
     </>
   );
 }
