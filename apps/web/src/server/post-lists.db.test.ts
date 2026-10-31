@@ -1,5 +1,9 @@
 import { prisma } from "@tuti/db";
+import { createElement, Fragment } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
+
+import { PostShipped, PostVoters } from "@/components/post-sidebar";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -7,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, MAX_LISTED, teamPostCounts, teamPosts, voterTotals } from "./post-lists";
+import { boardPosts, howShipped, MAX_LISTED, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -168,4 +172,119 @@ test("Who's asking: each post's voters' total of the number property the team pi
   expect(await titles([{ property: "plan", op: "is", value: "free" }])).toEqual(["Exports"]);
   expect((await teamPosts(project.id, parsePostFilters({ sort: "trending" }, TEAM_SORTS), { group: [{ property: "plan", op: "is", value: "free" }] })).posts.map((p) => p.title)).toEqual(["Exports"]);
   expect((await teamPostCounts(project.id, { group: [{ property: "plan", op: "is", value: "free" }] })).all).toBe(1);
+});
+
+test("a post's voters: their company and number from the project's app, the biggest first, then the latest; the team as itself", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 1, title: "SSO" } });
+  // Signed in through the app (their own identity), with a company and mrr; one without mrr; one the app doesn't know;
+  // and one signed in another way, known to the app by their verified address.
+  const [ada, ben, cy, dee] = await Promise.all(["Ada", "Ben", "Cy", "Dee"].map((name) => signUp(name)));
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ada", userId: ada!.id, properties: { company: "Acme", mrr: 120 } } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ben", userId: ben!.id, properties: { company: "Globex" } } });
+  await prisma.user.update({ where: { id: dee!.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "dee", userId: (await signUp("Dee (app)")).id, email: dee!.email.toLowerCase(), properties: { company: "Initech", mrr: 40 } } });
+  // The owner's verified address is one of the app's users too, but they vote as the team: no company or number.
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "olive", userId: (await signUp("Olive (app)")).id, email: owner.email.toLowerCase(), properties: { company: "Us", mrr: 9000 } } });
+  const at = (minutes: number) => new Date(Date.now() - minutes * 60_000);
+  await prisma.vote.createMany({
+    data: [
+      { projectId: project.id, postId: post.id, userId: owner.id, createdAt: at(1) },
+      { projectId: project.id, postId: post.id, userId: cy!.id, createdAt: at(2) },
+      { projectId: project.id, postId: post.id, userId: ben!.id, createdAt: at(3) },
+      { projectId: project.id, postId: post.id, userId: ada!.id, createdAt: at(4) },
+      { projectId: project.id, postId: post.id, userId: dee!.id, createdAt: at(5) },
+    ],
+  });
+  expect(await postVoters(project.id, "mrr", post.id)).toEqual([
+    { userId: ada!.id, name: "Ada", company: "Acme", value: 120 },
+    { userId: dee!.id, name: "Dee", company: "Initech", value: 40 },
+    { userId: owner.id, name: "Olive Owner", company: null, value: null },
+    { userId: cy!.id, name: "Cy", company: null, value: null },
+    { userId: ben!.id, name: "Ben", company: "Globex", value: null },
+  ]);
+  // No number chosen: the latest first, companies still shown.
+  expect((await postVoters(project.id, null, post.id)).map((v) => [v.name, v.company])).toEqual([["Olive Owner", null], ["Cy", null], ["Ben", "Globex"], ["Ada", "Acme"], ["Dee", "Initech"]]);
+  // Only the first few.
+  const more = await Promise.all(Array.from({ length: VOTERS_SHOWN }, (_, i) => signUp(`Voter ${i}`)));
+  await prisma.vote.createMany({ data: more.map((user) => ({ projectId: project.id, postId: post.id, userId: user.id })) });
+  expect(await postVoters(project.id, "mrr", post.id)).toHaveLength(VOTERS_SHOWN);
+});
+
+test("what shipped a post: the Autopilot change that completed it, and the changelog entries listing it", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "SSO" } });
+  expect(await howShipped(post.id)).toEqual({ change: null, entries: [] });
+  const change = (number: number) =>
+    prisma.codeChange.create({ data: { projectId: project.id, repoId: 1, repo: "acme/app", number, url: `https://github.com/acme/app/pull/${number}`, title: "SSO", author: "octo", mergedAt: new Date(), state: "READY" } });
+  // One that only linked it, one that closes it but wasn't approved, and the one that completed it.
+  const linked = await change(7);
+  const proposed = await change(8);
+  const completed = await change(9);
+  await prisma.codeChangeAction.createMany({
+    data: [
+      { codeChangeId: linked.id, kind: "LINKS", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() },
+      { codeChangeId: proposed.id, kind: "RESOLVES", postId: post.id, probability: 0.9 },
+      { codeChangeId: completed.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() },
+    ],
+  });
+  // Completed by it.
+  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+  // Written in order (February, March, April), published in another (March, then February); April's a draft.
+  const day = (n: number) => new Date(Date.UTC(2026, 9, n));
+  for (const [number, title, publishedAt] of [[1, "February", day(20)], [2, "March", day(10)], [3, "April", null]] as const) {
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
+  }
+  expect(await howShipped(post.id)).toEqual({
+    change: { id: completed.id, repo: "acme/app", number: 9 },
+    entries: [
+      { number: 3, title: "April", publishedAt: null },
+      { number: 1, title: "February", publishedAt: day(20) },
+      { number: 2, title: "March", publishedAt: day(10) },
+    ],
+  });
+  // Reopened by hand: it didn't ship after all. Completed again by hand: not that change's either.
+  await prisma.postEvent.create({ data: { postId: post.id, from: "COMPLETED", to: "IN_PROGRESS", createdAt: new Date(Date.now() + 1000) } });
+  await prisma.post.update({ where: { id: post.id }, data: { status: "IN_PROGRESS" } });
+  expect((await howShipped(post.id)).change).toBeNull();
+  await prisma.postEvent.create({ data: { postId: post.id, from: "IN_PROGRESS", to: "COMPLETED", createdAt: new Date(Date.now() + 2000) } });
+  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+  expect((await howShipped(post.id)).change).toBeNull();
+});
+
+test("a post's sidebar shows them: each voter, how many more, what shipped it and its entries, linked", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const post = await prisma.post.create({ data: { projectId: project.id, boardId: project.boards[0]!.id, authorId: owner.id, number: 1, title: "SSO", status: "COMPLETED" } });
+  const voters = await Promise.all(Array.from({ length: VOTERS_SHOWN + 2 }, (_, i) => signUp(`Voter ${i}`)));
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "v0", userId: voters[0]!.id, properties: { company: "Acme", mrr: 1200 } } });
+  await prisma.vote.createMany({ data: voters.map((user) => ({ projectId: project.id, postId: post.id, userId: user.id })) });
+  await prisma.post.update({ where: { id: post.id }, data: { voteCount: voters.length } });
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 9, url: "https://github.com/acme/app/pull/9", title: "SSO", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 4, title: "March", posts: { create: { postId: post.id } } } });
+
+  const html = renderToStaticMarkup(
+    createElement(
+      Fragment,
+      null,
+      createElement(PostVoters, { voters: await postVoters(project.id, "mrr", post.id), voteCount: voters.length, property: "mrr" }),
+      createElement(PostShipped, { projectSlug: project.slug, ...(await howShipped(post.id)) }),
+    ),
+  );
+  const text = html.replace(/<[^>]+>/g, "|");
+  // The one the app knows first, with their company and number; ten shown, two more.
+  expect(text).toContain("|Voter 0| · Acme|||1,200 mrr|");
+  expect((html.match(/<li/g) ?? []).length).toBe(VOTERS_SHOWN);
+  expect(text).toContain("|2 more|");
+  expect(html).toContain(`href="/app/${project.slug}/autopilot/${change.id}"`);
+  expect(text).toContain("|acme/app#9|");
+  expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
+  expect(text).toContain("March| · Draft|");
 });

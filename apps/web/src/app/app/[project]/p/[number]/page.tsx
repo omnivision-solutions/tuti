@@ -11,6 +11,7 @@ import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
+import { Property, PostShipped, PostVoters } from "@/components/post-sidebar";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,7 +23,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { voterTotals } from "@/server/post-lists";
+import { howShipped, postVoters, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -63,7 +64,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const total = (await voterTotals(project.id, project.askingProperty, [post.id])).get(post.id);
+  const [totals, voters, shipped] = await Promise.all([
+    voterTotals(project.id, project.askingProperty, [post.id]),
+    postVoters(project.id, project.askingProperty, post.id),
+    howShipped(post.id),
+  ]);
+  const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
@@ -160,9 +166,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           </section>
         </div>
 
-        {/* Its properties, beside it (above it on a phone). */}
+        {/* Its properties, beside it (above it on a phone): held in view as the page scrolls, scrolling on their own when taller than the screen. */}
         {!post.duplicateOf && (
-          <aside aria-label="Properties" className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:order-none lg:sticky lg:top-18">
+          <aside
+            aria-label="Properties"
+            className="order-first flex flex-col gap-3 rounded-xl border p-4 text-sm lg:sticky lg:top-18 lg:order-none lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto"
+          >
             <Property label="Status">
               <PostStatusSelect projectSlug={slug} postId={post.id} status={post.status} className="w-full" />
             </Property>
@@ -181,20 +190,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 {total !== undefined && <span className="text-muted-foreground"> · {asking(total, project.askingProperty!)}</span>}
               </span>
             </Property>
+            <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
+            <PostShipped projectSlug={slug} {...shipped} />
             <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
           </aside>
         )}
       </div>
     </>
-  );
-}
-
-/** One of the post's properties in its sidebar: a label above its control. */
-function Property({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      {children}
-    </div>
   );
 }

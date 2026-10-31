@@ -135,6 +135,55 @@ export async function voterTotals(projectId: string, property: string | null, po
   return new Map(rows.map((row) => [row.postId, Number(row.total)]));
 }
 
+/** How many voters a post's sidebar lists; past them, "N more". */
+export const VOTERS_SHOWN = 10;
+
+/**
+ * A post's voters for its sidebar: name, their `company` and `property`'s number (from their identity
+ * in the project's app, as voterTotals finds it; none for the team or someone it doesn't know), the
+ * biggest number first, then the latest vote.
+ */
+export function postVoters(projectId: string, property: string | null, postId: string) {
+  return prisma.$queryRaw<{ userId: string; name: string; company: string | null; value: number | null }[]>`
+    SELECT "userId", name, company, value::float8 AS value FROM (
+      SELECT DISTINCT ON (v."userId") v."userId", u.name, v."createdAt",
+        CASE WHEN jsonb_typeof(s.attributes -> 'company') = 'string' THEN s.attributes ->> 'company' END AS company,
+        CASE WHEN ${property}::text IS NOT NULL AND jsonb_typeof(s.attributes -> ${property}::text) = 'number' THEN (s.attributes ->> ${property}::text)::numeric END AS value
+      FROM vote v
+      JOIN "user" u ON u.id = v."userId"
+      LEFT JOIN sso_identity s ON s."projectId" = ${projectId}
+        AND (s."userId" = v."userId" OR (u."emailVerified" AND s.email = lower(u.email)))
+        AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = v."userId")
+      WHERE v."postId" = ${postId}
+      -- Their own identity first, then the oldest with their address.
+      ORDER BY v."userId", (s."userId" = v."userId") DESC NULLS LAST, s."createdAt"
+    ) voter
+    ORDER BY value DESC NULLS LAST, "createdAt" DESC, "userId"
+    LIMIT ${VOTERS_SHOWN}`;
+}
+
+/** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */
+export async function howShipped(postId: string) {
+  const [change, entries] = await Promise.all([
+    // Only while it's completed: reopened by hand, it didn't ship after all (Undo marks the update undone).
+    prisma.codeChangeAction.findFirst({
+      where: { postId, kind: "RESOLVES", status: "APPLIED", post: { status: "COMPLETED" } },
+      orderBy: { decidedAt: "desc" },
+      select: { decidedAt: true, codeChange: { select: { id: true, repo: true, number: true } } },
+    }),
+    prisma.changelogEntryPost.findMany({
+      where: { postId },
+      // Drafts first, then the latest published.
+      orderBy: [{ entry: { publishedAt: { sort: "desc", nulls: "first" } } }, { entry: { createdAt: "desc" } }],
+      select: { entry: { select: { number: true, title: true, publishedAt: true } } },
+    }),
+  ]);
+  // Reopened since (and completed again some other way): this completion isn't that change's.
+  const reopened =
+    change?.decidedAt && (await prisma.postEvent.count({ where: { postId, from: "COMPLETED", createdAt: { gt: change.decidedAt } } })) > 0;
+  return { change: change && !reopened ? change.codeChange : null, entries: entries.map(({ entry }) => entry) };
+}
+
 /** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */
 export function boardPosts(boardId: string, filters: PostFilters, userId: string | undefined, statuses?: PostStatus[]) {
   return upToPage(filters, (page) =>
