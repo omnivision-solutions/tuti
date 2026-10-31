@@ -9,6 +9,8 @@ import { codeChangesEnabled, log } from "@tuti/shared";
 
 /** How long notices wait for others to join them in one email. */
 const MERGE_MINUTES = 10;
+/** How long a sweep's claim on notices holds: one that stopped before sending them (a deploy) leaves them to the next after this. */
+const CLAIM_MINUTES = 15;
 /** Updates shown in an email; past them, "+N more in Tuti". */
 const SHOWN = 5;
 
@@ -41,14 +43,17 @@ async function queueNotices(codeChangeId: string): Promise<number> {
     select: {
       projectId: true,
       project: { select: { autopilotTellAdmins: true } },
-      actions: { where: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } }, select: { kind: true, status: true } },
+      actions: { where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } }, select: { kind: true, status: true, payload: true, decidedAt: true } },
     },
   });
-  // Nothing to do, nothing to say.
-  if (!change || change.actions.length === 0) {
+  // What customers see that went out by itself just now (no hold: the runner may apply it before this runs) is this analysis's.
+  const justNow = new Date(Date.now() - MERGE_MINUTES * 60_000);
+  const gone = change?.actions.filter((action) => wentOut(action) && action.decidedAt && action.decidedAt > justNow) ?? [];
+  // Nothing to do or tell, nothing to say.
+  if (!change || (!change.actions.some((action) => action.status !== "APPLIED") && gone.length === 0)) {
     return 0;
   }
-  const goesOutUnseen = change.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind));
+  const goesOutUnseen = gone.length > 0 || change.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind));
   const team = await prisma.teamMember.findMany({
     where: { projectId: change.projectId },
     select: { role: true, autopilotTold: true, userId: true, user: { select: { autopilotEmails: true } } },
@@ -58,11 +63,11 @@ async function queueNotices(codeChangeId: string): Promise<number> {
     data: told.map(({ userId }) => ({ codeChangeId, userId })),
     skipDuplicates: true,
   });
-  // Told already (an analysis before this one): told again, about what this one found.
-  const { count: again } = await prisma.autopilotNotice.updateMany({
-    where: { codeChangeId, userId: { in: told.map(({ userId }) => userId) }, sentAt: { not: null } },
-    data: { sentAt: null, createdAt: new Date() },
-  });
+  // Told already (an analysis before this one): told again, about what this one found; what Autopilot did by
+  // itself before that email isn't news again (`since`).
+  const again = await prisma.$executeRaw`
+    UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now()
+    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${told.map(({ userId }) => userId)}) AND "sentAt" IS NOT NULL`;
   return count + again;
 }
 
@@ -92,6 +97,7 @@ type ActionRow = {
   kind: CodeChangeActionKind;
   status: string;
   dueAt: Date | null;
+  decidedAt: Date | null;
   payload: unknown;
   post: { title: string; status: string } | null;
   article: { title: string } | null;
@@ -134,8 +140,10 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
   if (!codeChangesEnabled()) {
     return 0;
   }
+  // Not sent, and not being sent (or taken by a sweep that stopped before it could send them: a deploy).
+  const free = { sentAt: null, OR: [{ claimedAt: null }, { claimedAt: { lt: new Date(now.getTime() - CLAIM_MINUTES * 60_000) } }] };
   const ripe = await prisma.autopilotNotice.findMany({
-    where: { sentAt: null, createdAt: { lte: new Date(now.getTime() - MERGE_MINUTES * 60_000) } },
+    where: { ...free, createdAt: { lte: new Date(now.getTime() - MERGE_MINUTES * 60_000) } },
     distinct: ["userId"],
     select: { userId: true },
     take: 100,
@@ -143,10 +151,11 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
   let sent = 0;
   for (const { userId } of ripe) {
     const notices = await prisma.autopilotNotice.findMany({
-      where: { userId, sentAt: null },
+      where: { userId, ...free },
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
+        since: true,
         user: { select: { email: true, autopilotEmails: true } },
         codeChange: {
           select: {
@@ -159,7 +168,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
             actions: {
               where: { status: { in: ["PENDING", "STALE", "SCHEDULED", "APPLIED"] } },
               orderBy: [{ probability: "desc" }, { id: "asc" }],
-              select: { id: true, kind: true, status: true, dueAt: true, payload: true, post: { select: { title: true, status: true } }, article: { select: { title: true } } },
+              select: { id: true, kind: true, status: true, dueAt: true, decidedAt: true, payload: true, post: { select: { title: true, status: true } }, article: { select: { title: true } } },
             },
           },
         },
@@ -172,11 +181,12 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       continue;
     }
     const ids = mine.map((notice) => notice.id);
+    // Claimed first, so two sweeps send each once; marked sent only once it's gone.
     const claimedAt = new Date();
-    const { count } = await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, sentAt: null }, data: { sentAt: claimedAt } });
+    const { count } = await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, ...free }, data: { claimedAt } });
     if (count !== ids.length) {
       // Another sweep has some of them: it sends them.
-      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, sentAt: claimedAt }, data: { sentAt: null } });
+      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { claimedAt: null } });
       continue;
     }
     const project = mine[0]!.codeChange.project;
@@ -185,8 +195,11 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       where: { projectId_userId: { projectId: project.id, userId } },
       select: { role: true, autopilotTold: true, user: { select: { autopilotEmails: true } } },
     });
+    // What Autopilot did by itself since the email before this one about the change (if any): the news.
+    const lately = (notice: (typeof mine)[number]) => (action: ActionRow) => auto(action) && (!notice.since || (action.decidedAt !== null && action.decidedAt > notice.since));
+    const went = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => wentOut(action) && lately(notice)(action));
     // Going out by itself, or gone already (a short hold passes before the email goes): owners hear of it.
-    const goesOutUnseen = mine.some(({ codeChange }) => codeChange.actions.some((action) => (action.status === "SCHEDULED" && PUBLIC.has(action.kind)) || wentOut(action)));
+    const goesOutUnseen = mine.some((notice) => went(notice).length > 0 || notice.codeChange.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind)));
     if (!member || !isTold(member, project, goesOutUnseen)) {
       // Not told after all: gone, so the page doesn't say they were emailed.
       await prisma.autopilotNotice.deleteMany({ where: { id: { in: ids } } });
@@ -204,26 +217,27 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
     const all = mine.flatMap(({ codeChange }) => codeChange.actions);
     const totals = {
       goesOut: all.filter((action) => action.status === "SCHEDULED").length,
-      wentOut: all.filter(wentOut).length,
+      wentOut: mine.reduce((sum, notice) => sum + went(notice).length, 0),
       needsYou: all.filter((action) => action.status === "PENDING" || action.status === "STALE").length,
       first: when(
         all.filter((action) => action.status === "SCHEDULED").reduce<Date | null>((min, action) => (!min || (action.dueAt && action.dueAt < min) ? action.dueAt : min), null),
         now,
       ),
     };
-    const changes: AutopilotEmailChange[] = mine.map(({ codeChange }) => {
+    const changes: AutopilotEmailChange[] = mine.map((notice) => {
+      const { codeChange } = notice;
       const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
       const needsYou = codeChange.actions.filter((action) => action.status === "PENDING" || action.status === "STALE").map((action) => previewOf(action, now));
       // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.
-      const went = codeChange.actions.filter(wentOut).map((action) => previewOf(action, now));
-      const done = codeChange.actions.filter((action) => action.status === "APPLIED" && auto(action) && !PUBLIC.has(action.kind)).map((action) => previewOf(action, now));
+      const gone = went(notice).map((action) => previewOf(action, now));
+      const done = codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind)).map((action) => previewOf(action, now));
       return {
         title: codeChange.title,
         pullRequest: `${codeChange.repo}#${codeChange.number}`,
         summary: codeChange.summary,
         reviewUrl: `${appOrigin()}/app/${project.slug}/autopilot/${codeChange.id}?select=likely`,
         goesOut: take(goesOut),
-        wentOut: take(went),
+        wentOut: take(gone),
         needsYou: take(needsYou),
         done: take(done),
       };
@@ -233,12 +247,14 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         to: mine[0]!.user.email,
         ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
       });
-      sent++;
     } catch (error) {
       // Not sent: tried again next minute; the others still go.
       log.error("Sending Autopilot's email failed", { error, userId });
-      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, sentAt: claimedAt }, data: { sentAt: null } });
+      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { claimedAt: null } });
+      continue;
     }
+    await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { sentAt: new Date() } });
+    sent++;
   }
   return sent;
 }

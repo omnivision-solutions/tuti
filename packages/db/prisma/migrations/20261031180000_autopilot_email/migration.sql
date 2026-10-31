@@ -12,7 +12,9 @@ CREATE TABLE "autopilot_notice" (
     "codeChangeId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "claimedAt" TIMESTAMP(3),
     "sentAt" TIMESTAMP(3),
+    "since" TIMESTAMP(3),
 
     CONSTRAINT "autopilot_notice_pkey" PRIMARY KEY ("id")
 );

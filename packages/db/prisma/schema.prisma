@@ -2220,7 +2220,12 @@ model AutopilotNotice {
   codeChangeId String
   userId       String
   createdAt    DateTime  @default(now())
+  /// A sweep sending it took it then; one left from a sweep that stopped (a deploy) is taken again after a while.
+  claimedAt    DateTime?
   sentAt       DateTime?
+  /// When the email before this one about the change went (it was analysed again since): what Autopilot did
+  /// by itself before then isn't news.
+  since        DateTime?
 
   codeChange CodeChange @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)

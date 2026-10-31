@@ -191,3 +191,40 @@ test("queuing the email failing doesn't fail what called it (a saved analysis): 
   expect(logged).toHaveBeenCalledWith("Queuing Autopilot's email failed", expect.objectContaining({ codeChangeId: one.id }));
   logged.mockRestore();
 });
+
+test("a sweep that stopped after taking someone's notices (a deploy) doesn't lose them: after a while the next one sends them, and only then are they sent", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // Taken by a sweep that stopped before sending.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { claimedAt: new Date() } });
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: { not: null } } })).toBe(0);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 16 * MINUTE))).toBe(1);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: { not: null } } })).toBe(1);
+});
+
+test("analysed again, what Autopilot did by itself before the last email isn't news again", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // The hold passes before the email: the progress update goes out by itself, and the email says so.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(to(owner)[0]!.text).toContain("Went out by itself");
+  // Analysed again later: the request still waits; what went out then isn't listed again.
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(1);
+  const [, again] = to(owner);
+  expect(again!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(again!.text).not.toContain("Went out by itself");
+});
+
+test("no hold, and the runner applies it before the notices are queued: owners still hear of it", async () => {
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  // Only what went out by itself is left (the request was decided already).
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  expect(await queueAutopilotNotices(one.id)).toBe(1);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(to(owner)[0]!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
+});
