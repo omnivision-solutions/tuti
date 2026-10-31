@@ -4,7 +4,7 @@ import type { PostStatus } from "@tuti/db";
 import { LinkIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { type PickablePost, PostPicker } from "@/components/post-picker";
@@ -36,6 +36,13 @@ export function ConversationPosts({
   const asked = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Closed (or gone): a search still waiting or on its way isn't sent or applied.
+  const cancelSearch = () => {
+    clearTimeout(timer.current);
+    asked.current++;
+  };
+  useEffect(() => () => cancelSearch(), []);
+
   const search = (q: string, wait: number) => {
     clearTimeout(timer.current);
     const ask = ++asked.current;
@@ -62,6 +69,7 @@ export function ConversationPosts({
         return;
       }
       toast.success(linked ? `Linked to #${post}` : `Unlinked #${post}`);
+      cancelSearch();
       setOpen(false);
       setQuery("");
       router.refresh();
@@ -100,6 +108,8 @@ export function ConversationPosts({
           setFound([]);
           if (next) {
             search("", 0);
+          } else {
+            cancelSearch();
           }
         }}
       >
