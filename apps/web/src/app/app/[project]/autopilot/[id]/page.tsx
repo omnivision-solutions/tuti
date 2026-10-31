@@ -77,6 +77,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
     typeof searchParams.button === "string" ? searchParams.button : null,
     typeof searchParams.update === "string" ? searchParams.update : null,
     Number(typeof searchParams.held === "string" ? searchParams.held : 0) || 0,
+    Number(typeof searchParams.unsure === "string" ? searchParams.unsure : 0) || 0,
   );
 
   return (

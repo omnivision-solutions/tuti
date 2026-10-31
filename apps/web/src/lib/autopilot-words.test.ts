@@ -16,3 +16,10 @@ test("Stop or Publish now on an update already waiting for the team says why it 
   expect(afterButton([waiting], "already", "stop", "u1", 0)).toBe("Progress update: Dark mode waits for you now (Its article changed). Check it below.");
   expect(afterButton([waiting], "already", "approve", "u1", 0)).toBe("Progress update: Dark mode couldn't be approved as it is. Check it below.");
 });
+
+test("Approve that can't tell whether it went, or failed for now, says so rather than done already", () => {
+  const update = progress("applied");
+  expect(afterButton([update], "unknown", "approve", "u1", 0)).toBe("Couldn't tell whether Progress update: Dark mode went out: check it below before doing it again.");
+  expect(afterButton([progress("pending")], "failed", "approve", "u1", 0)).toBe("Couldn't approve Progress update: Dark mode just now. Try again in a moment.");
+  expect(afterButton([], "unsure", "publish", null, 0, 1)).toBe("Couldn't tell whether one went out: check it below before doing it again.");
+});

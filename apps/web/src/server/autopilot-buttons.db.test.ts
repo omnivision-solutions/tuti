@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 import { readAutopilotButton, signAutopilotButton } from "@tuti/jobs";
-import { beforeEach, expect, test } from "vitest";
+import { log } from "@tuti/shared";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
 import { createPost } from "@/server/operations/create";
@@ -15,6 +16,10 @@ beforeEach(async () => {
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
   actAs(owner);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
@@ -75,7 +80,7 @@ test("Approve: one click for its recipient, signed in, then the page says it's d
   const { id, actions } = await change();
   const link = actions.find((action) => action.kind === "LINKS")!;
   const token = signAutopilotButton(owner.id, id, `approve:${link.id}`)!;
-  expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=approved&update=${link.id}`);
+  expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=approved&button=approve&update=${link.id}`);
   expect(await statusOf(link.id)).toBe("APPLIED");
   expect(await click(id, token)).toBe(`/app/${project.slug}/autopilot/${id}?done=already&button=approve&update=${link.id}`);
 });
@@ -143,4 +148,58 @@ test("Publish now that's refused (nothing to post, say) says nothing went out, a
   const landing = await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!);
   expect(landing).toBe(`/app/${project.slug}/autopilot/${c.id}?done=refused&button=publish&held=1&select=${scheduledOf(c)}`);
   expect(await statusOf(scheduledOf(c))).toBe("PENDING");
+});
+
+/** Posting the progress update's comment fails; with `unsure`, so does the check of whether it was saved. */
+function commentFails({ unsure }: { unsure: boolean }) {
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  const transaction = prisma.$transaction.bind(prisma) as (...args: unknown[]) => Promise<unknown>;
+  // Saving a comment (in a transaction) fails; anything else goes through.
+  const failing = (tx: object) =>
+    new Proxy(tx, {
+      get: (target, key) => {
+        const value = Reflect.get(target, key) as object;
+        return key === "comment"
+          ? new Proxy(value, { get: (comment, method) => (method === "create" ? () => Promise.reject(new Error("connection reset")) : Reflect.get(comment, method)) })
+          : value;
+      },
+    });
+  vi.spyOn(prisma, "$transaction").mockImplementation(((first: unknown, ...rest: unknown[]) =>
+    typeof first === "function" ? transaction((tx: object) => (first as (tx: object) => unknown)(failing(tx)), ...rest) : transaction(first, ...rest)) as never);
+  if (unsure) {
+    const findFirst = prisma.comment.findFirst.bind(prisma.comment) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.comment, "findFirst").mockImplementation((async (...args: unknown[]) => {
+      if ((args[0] as { where?: { createdAt?: unknown } }).where?.createdAt) {
+        throw new Error("connection reset");
+      }
+      return findFirst(...args);
+    }) as never);
+  }
+}
+
+test("Approve whose comment may or may not have gone says to check it first; one that failed for now says to try again", async () => {
+  const unsure = await change();
+  const progress = scheduledOf(unsure);
+  await prisma.codeChangeAction.update({ where: { id: progress }, data: { status: "PENDING", dueAt: null } });
+  commentFails({ unsure: true });
+  expect(await click(unsure.id, signAutopilotButton(owner.id, unsure.id, `approve:${progress}`)!)).toBe(
+    `/app/${project.slug}/autopilot/${unsure.id}?done=unknown&button=approve&update=${progress}`,
+  );
+  vi.restoreAllMocks();
+
+  const failed = await change();
+  const again = scheduledOf(failed);
+  await prisma.codeChangeAction.update({ where: { id: again }, data: { status: "PENDING", dueAt: null } });
+  commentFails({ unsure: false });
+  expect(await click(failed.id, signAutopilotButton(owner.id, failed.id, `approve:${again}`)!)).toBe(
+    `/app/${project.slug}/autopilot/${failed.id}?done=failed&button=approve&update=${again}`,
+  );
+  expect(await statusOf(again)).toBe("PENDING");
+});
+
+test("Publish now that can't tell whether an update went says to check it, and doesn't stop half-way with an error", async () => {
+  const c = await change();
+  commentFails({ unsure: true });
+  const landing = await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${scheduledOf(c)}`)!);
+  expect(landing).toBe(`/app/${project.slug}/autopilot/${c.id}?done=unsure&button=publish&unsure=1&select=${scheduledOf(c)}`);
 });
