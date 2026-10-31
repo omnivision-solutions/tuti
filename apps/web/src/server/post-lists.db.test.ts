@@ -74,7 +74,7 @@ test("Feedback: a tab's posts, words found in titles and descriptions, Trending 
   const exports = await post(2, "Exports", { body: "CSV for 50% of the reports", voteCount: 2 });
   const sso = await post(3, "SSO", { status: "PLANNED", voteCount: 1 });
   const crash = await post(4, "Crash on save", { boardId: bugs.id, voteCount: 0 });
-  // Exports was merged into Dark mode: it isn't listed. Crash may duplicate Dark mode.
+  // Night theme was merged into Dark mode: it isn't listed (in no list below). Crash may duplicate Dark mode.
   await post(5, "Night theme", { voteCount: 9 }).then((p) => prisma.post.update({ where: { id: p.id }, data: { duplicateOfId: dark.id } }));
   await prisma.duplicateSuggestion.create({ data: { projectId: project.id, postId: crash.id, originalId: dark.id, similarity: 0.9 } });
   // This week: two votes for SSO, one for Exports; Dark mode's are older.
