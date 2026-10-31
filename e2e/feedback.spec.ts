@@ -634,9 +634,36 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await team.getByRole("checkbox", { name: "Select Night theme" }).check();
   await expect(team.getByRole("alertdialog")).toHaveCount(0);
 
+  // Merge's choice of which to keep starts at the most voted for each time, not the last one picked.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await bar.getByRole("button", { name: "Merge…" }).click();
+  const again = team.getByRole("alertdialog", { name: "Merge 2 posts into one?" });
+  await again.getByRole("radio", { name: /Calendar sync/ }).check();
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await bar.getByRole("button", { name: "Merge…" }).click();
+  await expect(again.getByRole("radio", { name: /Night theme/ })).toBeChecked();
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).uncheck();
+
+  // A box just ticked (focused) doesn't keep J: it opens the first post.
+  const box = team.getByRole("checkbox", { name: "Select Night theme" });
+  await box.uncheck();
+  await box.check();
+  await expect(box).toBeFocused();
+  await team.keyboard.press("j");
+  await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
+  await team.keyboard.press("Escape");
+
   // Another tab or filter: what was picked isn't any more (none of it may be listed).
   await expect(bar).toContainText("1 selected");
   await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
   await team.waitForURL(/status=planned/);
+  await expect(bar).toHaveCount(0);
+  // A picked post that leaves the list another way (its own status menu) isn't picked any more either.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await expect(bar).toContainText("1 selected");
+  await row("Calendar sync").getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Under review" }).click();
+  await expect(row("Calendar sync")).toHaveCount(0);
   await expect(bar).toHaveCount(0);
 });

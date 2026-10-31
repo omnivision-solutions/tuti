@@ -24,7 +24,13 @@ import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 /** A post as the selection keeps it: enough to name it and pick which one stays in a merge. */
 type Picked = { id: string; number: number; title: string; voteCount: number };
 
-const Selection = createContext<{ picked: Picked[]; toggle: (post: Picked, on: boolean) => void; clear: () => void } | null>(null);
+const Selection = createContext<{
+  picked: Picked[];
+  toggle: (post: Picked, on: boolean) => void;
+  clear: () => void;
+  pending: boolean;
+  startTransition: (run: () => Promise<void>) => void;
+} | null>(null);
 
 const useSelection = () => {
   const selection = use(Selection);
@@ -34,19 +40,26 @@ const useSelection = () => {
   return selection;
 };
 
-/** Feedback's rows picked for Set status, Move to board and Merge (FeedbackBulk), kept as the list re-renders. */
-export function FeedbackSelection({ children }: { children: ReactNode }) {
-  const [picked, setPicked] = useState<Picked[]>([]);
-  const toggle = (post: Picked, on: boolean) => setPicked((now) => (on ? [...now.filter((p) => p.id !== post.id), post] : now.filter((p) => p.id !== post.id)));
-  return <Selection value={{ picked, toggle, clear: () => setPicked([]) }}>{children}</Selection>;
+/**
+ * Feedback's rows picked for Set status, Move to board and Merge (FeedbackBulk), kept as the list re-renders.
+ * Only those still `listed`: one that left the list (a new status from its row, merged from the pane) isn't.
+ * While an action runs (`pending`), the picks stay as they are.
+ */
+export function FeedbackSelection({ listed, children }: { listed: string[]; children: ReactNode }) {
+  const [chosen, setChosen] = useState<Picked[]>([]);
+  const [pending, startTransition] = useTransition();
+  const picked = chosen.filter((post) => listed.includes(post.id));
+  const toggle = (post: Picked, on: boolean) => setChosen((now) => (on ? [...now.filter((p) => p.id !== post.id), post] : now.filter((p) => p.id !== post.id)));
+  return <Selection value={{ picked, toggle, clear: () => setChosen([]), pending, startTransition }}>{children}</Selection>;
 }
 
 /** A row's checkbox, to pick its post. */
 export function SelectPost({ post }: { post: Picked }) {
-  const { picked, toggle } = useSelection();
+  const { picked, toggle, pending } = useSelection();
   return (
     <input
       type="checkbox"
+      disabled={pending}
       aria-label={`Select ${post.title}`}
       checked={picked.some((p) => p.id === post.id)}
       onChange={(event) => toggle(post, event.currentTarget.checked)}
@@ -63,9 +76,8 @@ const STATUSES = Object.keys(STATUS_LABELS) as PostStatus[];
  * as on its own; what fails is said and the rest still go.
  */
 export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boards: { slug: string; name: string }[] }) {
-  const { picked, clear } = useSelection();
+  const { picked, clear, pending, startTransition } = useSelection();
   const router = useRouter();
-  const [pending, startTransition] = useTransition();
   const [completing, setCompleting] = useState(false);
   const [merging, setMerging] = useState(false);
   const [keep, setKeep] = useState<string | null>(null);
@@ -128,7 +140,16 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
         </DropdownMenuContent>
       </DropdownMenu>
       {picked.length > 1 && (
-        <Button variant="outline" size="sm" disabled={pending} onClick={() => setMerging(true)}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            // The most voted for, each time it opens.
+            setKeep(null);
+            setMerging(true);
+          }}
+        >
           Merge…
         </Button>
       )}
