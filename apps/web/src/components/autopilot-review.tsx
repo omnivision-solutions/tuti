@@ -72,8 +72,8 @@ export function AutopilotReview({
   change: Pick<CodeChangeDetail, "id" | "repo" | "number" | "url" | "author" | "mergedAt" | "changelog">;
   updates: Update[];
   ticked: string[];
-  /** Opened from an email's link: say why some are ticked. */
-  fromEmail: boolean;
+  /** Opened from an email's link (its Review, the likely ones; or its buttons, those it named): say why some are ticked. */
+  fromEmail: "likely" | "named" | null;
   /** Formatted as readers see it (from the server), by update id: an edit's changed blocks, or a new article's draft. */
   previews: Record<string, ReactNode>;
   /** Whether an out-of-date edit can be written again (the project's plan includes Autopilot). */
@@ -90,6 +90,20 @@ export function AutopilotReview({
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
   // What the email's link named and is still waiting, as the page opened.
   const [named] = useState(() => selected.size);
+  // What the email's line says when nothing it named is waiting to tick: what became of them.
+  const [instead] = useState(() => {
+    const listed = updates.filter((update) => ticked.includes(update.id));
+    if (listed.some((update) => update.status === "stale")) {
+      return "the update it named changed since: write it again, or dismiss it.";
+    }
+    if (listed.length > 0 && listed.every((update) => update.status === "scheduled")) {
+      return "the updates it named go out by themselves (Publish now, or Stop).";
+    }
+    if (fromEmail === "likely" && waiting.length > 0) {
+      return "Autopilot isn't sure of any of these: tick the ones to approve.";
+    }
+    return "the updates it named were decided already.";
+  });
   // The team's edits: a progress update's comment, the changelog line.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const textOf = (update: Update) => edits[update.id] ?? (update.kind === "moves_forward" ? (update.comment ?? "") : (update.line ?? ""));
@@ -131,8 +145,10 @@ export function AutopilotReview({
         return;
       }
       setSelected(new Set());
+      // Each one that didn't go, by name (it may be under Done already: "check the post").
       for (const failure of result.failed ?? []) {
-        toast.error(failure.message);
+        const update = updates.find((u) => u.id === failure.id);
+        toast.error(update ? `${updateKind(update)}: ${titleOf(update)}. ${failure.message}` : failure.message);
       }
       if (result.applied) {
         toast.success(`Approved ${plural(result.applied, "update")}`);
@@ -147,7 +163,7 @@ export function AutopilotReview({
           <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
             <span className="font-medium">From your email:</span>{" "}
             {named === 0
-              ? "the updates it named were decided already."
+              ? instead
               : `${named === 1 ? "the update is" : `${named} updates are`} selected. Check ${named === 1 ? "it" : "them"} and approve.`}
           </p>
         )}

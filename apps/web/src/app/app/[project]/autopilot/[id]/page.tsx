@@ -132,7 +132,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           change={change}
           updates={updates}
           ticked={ticked}
-          fromEmail={select !== null}
+          fromEmail={select === null ? null : select === "likely" ? "likely" : "named"}
           previews={previews}
           canAnalyse={included}
         />

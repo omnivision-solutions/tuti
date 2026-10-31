@@ -55,7 +55,7 @@ export type Approval = { id: string; comment?: string; publish?: boolean; line?:
 
 /**
  * The review page's Approve: the ticked updates, each with its edits (codeChangeActions.applyMany).
- * `failed`: those not applied, with why (out of date, someone else decided first); none applied is an error, with the first one's why.
+ * `failed`: those not applied, with why (out of date, someone else decided first, or it can't tell); an error only when none is the project's.
  */
 export async function approveCodeChanges(projectSlug: string, approvals: Approval[]): Promise<FormState & { applied?: number; failed?: { id: string; message: string }[] }> {
   let outcome: { applied: number; failed: { id: string; message: string }[] } = { applied: 0, failed: [] };
@@ -71,9 +71,10 @@ export async function approveCodeChanges(projectSlug: string, approvals: Approva
       applied: results.filter((r) => r.status === "applied").length,
       failed: results.flatMap((r) => (r.status === "failed" ? [{ id: r.id, message: r.message }] : [])),
     };
-    // None went: that's the answer (out of date, decided already, not this project's).
-    if (outcome.applied === 0 && outcome.failed[0]) {
-      throw new OperationError(409, "not_applied", outcome.failed[0].message);
+    // None of them is this project's: refused, as for any other project's records. Otherwise each one
+    // that didn't go says why (the page names each), even when none went.
+    if (outcome.applied === 0 && results.every((r) => r.status === "failed" && r.code === "not_found")) {
+      throw new OperationError(404, "not_found", outcome.failed[0]!.message);
     }
   });
   return result.error ? result : outcome;

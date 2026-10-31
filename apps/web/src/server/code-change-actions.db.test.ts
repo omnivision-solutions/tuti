@@ -282,8 +282,10 @@ describe("approving several (applyMany)", () => {
       applied: 1,
       failed: [{ id: "nope", message: "Action not found" }],
     });
-    // None went: an error, saying why.
-    expect(await approveCodeChanges(project.slug, [{ id: action.id }])).toEqual({ error: "Someone already applied or dismissed this" });
+    // None went: each one says why.
+    expect(await approveCodeChanges(project.slug, [{ id: action.id }])).toEqual({ applied: 0, failed: [{ id: action.id, message: "Someone already applied or dismissed this" }] });
+    // None of them is the project's: refused.
+    expect(await approveCodeChanges(project.slug, [{ id: "nope" }])).toEqual({ error: "Action not found" });
   });
 });
 
