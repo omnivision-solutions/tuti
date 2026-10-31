@@ -320,9 +320,20 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(column("Planned").getByRole("listitem").filter({ hasText: "Calendar sync" })).toBeVisible();
   await expect(column("In progress").getByRole("listitem")).toHaveCount(0);
 
-  // A board at a time.
+  // A board at a time: a bug planned on another board leaves when Feature requests is picked.
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  const newBoard = team.getByRole("dialog", { name: "New board" });
+  await newBoard.getByLabel("Name").fill("Bugs");
+  await newBoard.getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByRole("dialog")).toHaveCount(0);
+  await api("/posts", { board: "bugs", title: "Crash on save" });
+  await api("/posts/3", { status: "planned" }, "PATCH");
+  await team.goto(`/app/${slug}/feedback/roadmap`);
+  await expect(card("Crash on save")).toBeVisible();
   await team.getByRole("combobox", { name: "Board" }).click();
   await team.getByRole("option", { name: "Feature requests" }).click();
   await expect(team).toHaveURL(/\?board=feature-requests$/);
-  await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
+  await expect(card("Crash on save")).toHaveCount(0);
+  await expect(card("Calendar sync")).toBeVisible();
 });
