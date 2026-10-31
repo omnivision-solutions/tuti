@@ -140,6 +140,9 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light, Dark or System in Settings." });
   expect(await statusOf(changed.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its article changed since" });
   expect((await statusOf(later.action.id)).status).toBe("SCHEDULED");
+  // Its owner is told it went (Autopilot's email); not about the edit held back.
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: progress.codeChangeId, userId: owner.id } })).toBe(1);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: changed.codeChangeId } })).toBe(0);
   // The page says it was Autopilot's own.
   const detail = await call(getCodeChange, team(), { id: progress.codeChangeId });
   expect(detail.actions[0]).toMatchObject({ status: "applied", auto: true, decidedBy: "Autopilot" });

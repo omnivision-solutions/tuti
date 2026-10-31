@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -428,4 +428,21 @@ test("an email the mail server keeps refusing is tried again a while after each 
   }
   // Given up: no notice left (it was never sent).
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id } })).toBe(0);
+});
+
+test("what the runner puts out by itself reaches the owners even if the analysis's notices were queued while it was being applied", async () => {
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  // The request was decided; the analysis queued its notices while the progress update was mid-apply (claimed, not yet marked Autopilot's).
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "PENDING", dueAt: null, decidedById: owner.id } });
+  expect(await queueAutopilotNotices(one.id)).toBe(0);
+  // The runner finishes and marks it Autopilot's, then tells the owners.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "MOVES_FORWARD" }, data: { status: "APPLIED", decidedById: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  expect(await tellOwners(one.id)).toBe(1);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  const [email] = to(owner);
+  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
+  // Said as what it did, not what it will do.
+  expect(email!.text).toContain("In progress, posted: “Out soon”");
 });

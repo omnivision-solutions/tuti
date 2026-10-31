@@ -124,11 +124,13 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     NEW_ARTICLE: "New article",
     CHANGELOG_LINE: "Changelog line",
   };
+  // Gone already (by itself, before this email): what it did, not what it will do.
+  const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
-    RESOLVES: `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: `In progress, posting: “${payload.comment ?? ""}”`,
-    LINKS: "Links the pull request",
-    ARTICLE_EDIT: "Publishes its edit",
+    RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
+    MOVES_FORWARD: done ? `In progress, posted: “${payload.comment ?? ""}”` : `In progress, posting: “${payload.comment ?? ""}”`,
+    LINKS: done ? "Linked the pull request" : "Links the pull request",
+    ARTICLE_EDIT: done ? "Published its edit" : "Publishes its edit",
     NEW_ARTICLE: "A draft only your team sees",
     CHANGELOG_LINE: `“${payload.line ?? ""}”, in the changelog's draft`,
   };
@@ -320,4 +322,24 @@ export async function emailedAbout(codeChangeId: string): Promise<string[]> {
     select: { user: { select: { name: true } } },
   });
   return notices.map((notice) => notice.user.name);
+}
+
+/**
+ * Something customers see went out by itself (the runner applied it): the project's owners hear of it,
+ * each that hasn't a notice for the change yet (queued when it was analysed, they'd hear of it then). The
+ * runner may apply it as the analysis's notices are queued (no hold), before they could tell it went.
+ */
+export async function tellOwners(codeChangeId: string): Promise<number> {
+  try {
+    const change = await prisma.codeChange.findUnique({ where: { id: codeChangeId }, select: { projectId: true } });
+    if (!change) {
+      return 0;
+    }
+    const owners = await prisma.teamMember.findMany({ where: { projectId: change.projectId, role: "OWNER" }, select: { userId: true } });
+    const { count } = await prisma.autopilotNotice.createMany({ data: owners.map(({ userId }) => ({ codeChangeId, userId })), skipDuplicates: true });
+    return count;
+  } catch (error) {
+    log.error("Telling owners what Autopilot applied failed", { error, codeChangeId });
+    return 0;
+  }
 }

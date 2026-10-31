@@ -1,6 +1,6 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, tellOwners, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
@@ -1032,6 +1032,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   let waiting = 0;
   // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
   const nowWaiting = new Set<string>();
+  // Changes with something customers see that went out by itself: their owners are told (tellOwners).
+  const wentOut = new Set<string>();
   // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays). After the
   // runner's own claim (`claimed`), the one its failed apply put back: waiting, or out of date (an article
   // changed since), as it is, now nobody's (an analysis may replace it again).
@@ -1089,9 +1091,16 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
     applied++;
+    // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
+    if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
+      wentOut.add(action.codeChangeId);
+    }
   }
   for (const codeChangeId of nowWaiting) {
     await announceWaiting(codeChangeId);
+  }
+  for (const codeChangeId of wentOut) {
+    await tellOwners(codeChangeId);
   }
   return { applied, waiting };
 }
