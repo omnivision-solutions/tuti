@@ -326,3 +326,46 @@ test("stopped, then an approval that fails: still stopped by who stopped it, so 
   // Back to waiting, still stopped (what keeps an analysis from replacing and scheduling it again).
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: owner.id, waitReason: "Stopped by Olive Owner" });
 });
+
+/** Runs `before` as the runner's apply starts (its first read of the update), between its claim and the apply. */
+function asApplyStarts(before: () => Promise<unknown>) {
+  const findFirst = prisma.codeChangeAction.findFirst.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  vi.spyOn(prisma.codeChangeAction, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
+    await before();
+    return findFirst(...args);
+  }) as never);
+}
+
+test("analysed again while the runner applies a due update: the update it took is left alone, and goes out", async () => {
+  const progress = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, progress.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: progress.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // What an analysis saved at that moment replaces (finish in @tuti/jobs): what nobody has decided.
+  asApplyStarts(() =>
+    prisma.codeChangeAction.deleteMany({
+      where: { codeChangeId: progress.codeChangeId, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
+    }),
+  );
+  expect(await runDueAutopilot()).toEqual({ applied: 1, waiting: 0 });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null, payload: expect.objectContaining({ auto: true }) });
+});
+
+test("a due article edit whose article changed as it was applied: out of date, saying why, and told about", async () => {
+  const receiver = await startWebhookReceiver();
+  try {
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    const edit = await articleEdit();
+    await scheduleByItself(project.id, edit.codeChangeId);
+    await prisma.codeChangeAction.update({ where: { id: edit.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+    asApplyStarts(() => call(updateArticle, team(), { slug: edit.article.slug, body: "Pick Light or Sepia in Settings.", publish: true }));
+    expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+    expect(await statusOf(edit.action.id)).toMatchObject({
+      status: "STALE",
+      decidedById: null,
+      waitReason: "The article changed since this edit was written. Analyse again to write it again, or dismiss it.",
+    });
+    await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
+  } finally {
+    await receiver.close();
+  }
+});

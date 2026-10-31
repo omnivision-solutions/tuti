@@ -1024,12 +1024,13 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   let waiting = 0;
   // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
   const nowWaiting = new Set<string>();
-  // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays); after the
-  // runner's own claim (`claimed`), the one it took off the schedule.
+  // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays). After the
+  // runner's own claim (`claimed`), the one its failed apply put back: waiting, or out of date (an article
+  // changed since), as it is, now nobody's (an analysis may replace it again).
   const wait = async (action: { id: string; codeChangeId: string }, waitReason: string, claimed = false) => {
     const { count } = await prisma.codeChangeAction.updateMany({
-      where: { id: action.id, status: claimed ? "PENDING" : "SCHEDULED" },
-      data: { status: "PENDING", dueAt: null, waitReason },
+      where: { id: action.id, status: claimed ? { in: ["PENDING", "STALE"] } : "SCHEDULED" },
+      data: claimed ? { dueAt: null, waitReason, decidedById: null } : { status: "PENDING", dueAt: null, waitReason },
     });
     waiting += count;
     if (count > 0) {
@@ -1048,8 +1049,12 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       await wait(action, "The project has no owner to apply it as");
       continue;
     }
-    // Taken off the schedule first, so two runners (or a Publish now) apply it once.
-    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED", dueAt: { lte: now } }, data: { status: "PENDING", dueAt: null } });
+    // Taken off the schedule first, so two runners (or a Publish now) apply it once; held as the owner's while
+    // it's applied, so an analysis at the same moment leaves it alone (it replaces only what nobody decided).
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: "SCHEDULED", dueAt: { lte: now } },
+      data: { status: "PENDING", dueAt: null, decidedById: owner.userId },
+    });
     if (count === 0) {
       continue;
     }
