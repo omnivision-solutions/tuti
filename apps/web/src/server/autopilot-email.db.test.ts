@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotDigests, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import pg from "pg";
@@ -748,4 +748,159 @@ test("an email claimed just before the runner took an update, but read once it h
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: markedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("the daily digest: in their morning (their browser's time zone), once a day, with what still waits; none on a day with nothing", async () => {
+  // Chosen with a time zone the server doesn't know: refused.
+  expect(await setAutopilotEmails("DIGEST", "Mars/Olympus")).toEqual({ error: "Your browser didn't say which time zone you're in" });
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  // As they happen: nothing for a digest reader (nothing goes out by itself here).
+  const waiting = await change("Add a dark theme", { scheduled: false });
+  await queueAutopilotNotices(waiting.id);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: waiting.id } })).toBe(0);
+  // 7:00 in Berlin: not yet. 8:30: the digest. Again at 8:45: not twice.
+  expect(await sendAutopilotDigests(new Date("2026-11-02T06:00:00Z"))).toBe(0);
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:45:00Z"))).toBe(0);
+  const [digest] = to(owner);
+  expect(digest!.subject).toBe("Autopilot this morning: 1 update waits for you in 1 merged pull request");
+  expect(digest!.text).toContain("Closes the request · Dark mode");
+  // A day the sweep ran late (11:00 in Berlin): still that day's, once.
+  expect(await sendAutopilotDigests(new Date("2026-11-03T10:00:00Z"))).toBe(1);
+  expect(await sendAutopilotDigests(new Date("2026-11-03T10:01:00Z"))).toBe(0);
+  // Autopilot turned off on the project: what's left waiting there isn't news.
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: false } });
+  expect(await sendAutopilotDigests(new Date("2026-11-04T07:30:00Z"))).toBe(0);
+  await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: true } });
+  // A morning with nothing waiting any more: none.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: waiting.id }, data: { status: "DISMISSED" } });
+  expect(await sendAutopilotDigests(new Date("2026-11-05T07:10:00Z"))).toBe(0);
+  expect(to(owner)).toHaveLength(2);
+});
+
+test("the digest of each project goes on its own: one that fails is tried again a while later, without the other going twice", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  const first = project;
+  project = await createProject(owner);
+  await change("Faster search", { scheduled: false });
+  const second = project;
+  project = first;
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // The first one the sweep sends is refused for now.
+  mailbox.refuseNext(owner.email, { code: 421 });
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  // Within the wait: nothing again.
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:31:00Z"))).toBe(0);
+  // Its claim lapsed: that one goes, the other not again.
+  await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:47:00Z"))).toBe(1);
+  const digests = to(owner);
+  expect(digests).toHaveLength(2);
+  for (const named of [first.name, second.name]) {
+    expect(digests.filter((email) => email.text.includes(named))).toHaveLength(1);
+  }
+});
+
+test("the digest shows the newest five updates and counts the rest, and goes to those told, not a member who isn't", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  const member = await signUp("Max Member");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+  await prisma.user.update({ where: { id: member.id }, data: { autopilotEmails: "DIGEST", autopilotTimeZone: "Europe/Berlin" } });
+  const titles: string[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const c = await change(`Change ${i}`, { scheduled: false });
+    await prisma.codeChange.update({ where: { id: c.id }, data: { mergedAt: new Date(Date.now() - (8 - i) * 3_600_000) } });
+    titles.push(`Change ${i}`);
+  }
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  expect(to(member)).toHaveLength(0);
+  const [digest] = to(owner);
+  expect(digest!.subject).toBe("Autopilot this morning: 7 updates wait for you in 7 merged pull requests");
+  // The five newest, each with its update; the two oldest only counted.
+  for (const title of titles.slice(2)) {
+    expect(digest!.text).toContain(title);
+  }
+  for (const title of titles.slice(0, 2)) {
+    expect(digest!.text).not.toContain(`${title}\n`);
+  }
+  expect(digest!.text).toContain("+2 more in Tuti");
+});
+
+test("chosen again from a time zone further west, the digest still comes that morning", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Asia/Tokyo")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // 8:30 on the 3rd in Tokyo.
+  await sendAutopilotDigests(new Date("2026-11-02T23:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  // Now in Los Angeles: 8:30 on the 3rd there, a day already sent from Tokyo, so not again; the 4th's comes.
+  expect(await setAutopilotEmails("DIGEST", "America/Los_Angeles")).toEqual({});
+  await sendAutopilotDigests(new Date("2026-11-03T16:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  await sendAutopilotDigests(new Date("2026-11-04T16:30:00Z"));
+  expect(to(owner)).toHaveLength(2);
+});
+
+test("a digest claimed late in a long sweep is claimed as of then: a sweep starting meanwhile doesn't take it again", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // The sweep reaches this reader 20 minutes after it started (lots of readers before, a slow mail server).
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-02T07:30:00Z") });
+  try {
+    const findMany = prisma.teamMember.findMany.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.teamMember, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+      vi.setSystemTime(new Date("2026-11-02T07:50:00Z"));
+      return findMany(...args);
+    }) as never);
+    expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBeGreaterThanOrEqual(1);
+    const claim = await prisma.autopilotDigest.findFirstOrThrow({ where: { userId: owner.id } });
+    expect(claim.claimedAt!.getTime()).toBeGreaterThanOrEqual(new Date("2026-11-02T07:50:00Z").getTime());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a mail server down for a while (not refusing the address) doesn't use up the digest's tries", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // Six sweeps in a row the server answers "try later" (421), each after the claim lapsed.
+  for (let i = 0; i < 6; i++) {
+    mailbox.refuseNext(owner.email, { code: 421 });
+    await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+    await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"));
+  }
+  expect(to(owner)).toHaveLength(0);
+  // Back up: it goes.
+  await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+  await sendAutopilotDigests(new Date("2026-11-02T09:00:00Z"));
+  expect(to(owner)).toHaveLength(1);
+});
+
+test("once a reader's digests for the day are sent, later sweeps that day don't claim them again (nor read their teams one by one)", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  // (Counted from here: an earlier test's spy may be the one returned.)
+  const claims = vi.spyOn(prisma.autopilotDigest, "createMany");
+  const teams = vi.spyOn(prisma.teamMember, "findMany");
+  claims.mockClear();
+  teams.mockClear();
+  await sendAutopilotDigests(new Date("2026-11-02T09:00:00Z"));
+  expect(claims.mock.calls.filter(([args]) => JSON.stringify(args).includes(owner.id))).toHaveLength(0);
+  expect(teams).toHaveBeenCalledTimes(1);
+  expect(to(owner)).toHaveLength(1);
+});
+
+test("the digest chosen in the afternoon doesn't come straight away: the next morning", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // 14:00 and 21:30 in Berlin: not a morning.
+  await sendAutopilotDigests(new Date("2026-11-02T13:00:00Z"));
+  await sendAutopilotDigests(new Date("2026-11-02T20:30:00Z"));
+  expect(to(owner)).toHaveLength(0);
+  // 8:15 the next day.
+  await sendAutopilotDigests(new Date("2026-11-03T07:15:00Z"));
+  expect(to(owner)).toHaveLength(1);
 });

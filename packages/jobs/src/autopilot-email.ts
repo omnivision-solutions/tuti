@@ -1,6 +1,6 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
-import { codeChangesEnabled, log } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 import { type AutopilotButton, signAutopilotButton } from "./autopilot";
 
@@ -149,6 +149,62 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   };
 }
 
+type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
+
+/**
+ * One change as an email shows it to `userId`: what goes out by itself (Publish now, Stop), what needs them
+ * (Approve, Edit), and what Autopilot did by itself already (`gone`: what customers see; `drafts`: what only
+ * the team sees), each list cut by `take` (the email's five).
+ */
+function emailChange(
+  codeChange: EmailedChange,
+  projectSlug: string,
+  userId: string,
+  now: Date,
+  take: (list: AutopilotEmailUpdate[]) => AutopilotEmailUpdate[],
+  gone: ActionRow[],
+  drafts: ActionRow[],
+): AutopilotEmailChange {
+  const page = `${appOrigin()}/app/${projectSlug}/autopilot/${codeChange.id}`;
+  // One click for this person, signed in (see the act page); anyone else only gets the page.
+  const act = (button: AutopilotButton) => {
+    const token = signAutopilotButton(userId, codeChange.id, button, now);
+    return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
+  };
+  const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
+  const goesOut = take(scheduled.map((action) => previewOf(action, now)));
+  // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
+  const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
+  const needsYou = codeChange.actions
+    .filter((action) => action.status === "PENDING" || action.status === "STALE")
+    .map((action) => ({
+      ...previewOf(action, now),
+      // Out of date ones can't be approved as they are, and one a teammate stopped isn't to approve unasked: Edit only.
+      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && { approveUrl: act(`approve:${action.id}`) }),
+      editUrl: `${page}?select=${action.id}`,
+    }));
+  return {
+    title: codeChange.title,
+    pullRequest: `${codeChange.repo}#${codeChange.number}`,
+    summary: codeChange.summary,
+    reviewUrl: `${page}?select=likely`,
+    ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
+    goesOut,
+    wentOut: take(gone.map((action) => previewOf(action, now))),
+    needsYou: take(needsYou),
+    done: take(drafts.map((action) => previewOf(action, now))),
+  };
+}
+
+/**
+ * Whether a failed send was the mail server refusing this address (5xx to its RCPT TO): that's the address's.
+ * Anything else (down, a failed login, the sender or the message refused, its limits) is the server's, and passes.
+ */
+function refusedAddress(error: unknown): boolean {
+  const { responseCode: code, command } = error as { responseCode?: unknown; command?: unknown };
+  return typeof code === "number" && code >= 500 && typeof command === "string" && /^RCPT\b/i.test(command);
+}
+
 /**
  * The minute's sweep: each person's notices from ten minutes ago or more (with any newer ones of the
  * same project, so nothing's left for a lonely email right after) go in one email, then are marked
@@ -291,41 +347,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         await settle();
         continue;
       }
-      const changes: AutopilotEmailChange[] = mine.map((notice) => {
-        const { codeChange } = notice;
-        const page = `${appOrigin()}/app/${project.slug}/autopilot/${codeChange.id}`;
-        // One click for this person, signed in (see the act page); anyone else only gets the page.
-        const act = (button: AutopilotButton) => {
-          const token = signAutopilotButton(userId, codeChange.id, button, now);
-          return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
-        };
-        const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
-        const goesOut = take(scheduled.map((action) => previewOf(action, now)));
-        // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
-        const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
-        const needsYou = codeChange.actions
-          .filter((action) => action.status === "PENDING" || action.status === "STALE")
-          .map((action) => ({
-            ...previewOf(action, now),
-            // Out of date ones can't be approved as they are, and one a teammate stopped isn't to approve unasked: Edit only.
-            ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && { approveUrl: act(`approve:${action.id}`) }),
-            editUrl: `${page}?select=${action.id}`,
-          }));
-        // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.
-        const gone = went(notice).map((action) => previewOf(action, now));
-        const drafts = done(notice).map((action) => previewOf(action, now));
-        return {
-          title: codeChange.title,
-          pullRequest: `${codeChange.repo}#${codeChange.number}`,
-          summary: codeChange.summary,
-          reviewUrl: `${page}?select=likely`,
-          ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
-          goesOut,
-          wentOut: take(gone),
-          needsYou: take(needsYou),
-          done: take(drafts),
-        };
-      });
+      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, take, went(notice), done(notice)));
       try {
         await sendEmail({
           to: mine[0]!.user.email,
@@ -335,10 +357,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
         // down, or not taking it for now (4xx): for as long as that lasts. It refusing this address (5xx): a few
         // times, then given up.
-        // Only the server refusing this address (5xx to its RCPT TO) is the address's; anything else (down,
-        // a failed login, the sender or the message refused, its limits) is the server's, and passes.
-        const { responseCode: code, command } = error as { responseCode?: unknown; command?: unknown };
-        const refused = typeof code === "number" && code >= 500 && typeof command === "string" && /^RCPT\b/i.test(command);
+        const refused = refusedAddress(error);
         log.error("Sending Autopilot's email failed", { error, userId, refused });
         if (refused) {
           await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
@@ -411,4 +430,171 @@ export async function tellOwners(codeChangeId: string, since: Date, inFlight?: {
     log.error("Telling owners what Autopilot applied failed", { error, codeChangeId });
     return 0;
   }
+}
+
+/** The morning: the digest goes from 8 o'clock, the reader's time, till noon (a sweep or a mail server late by
+ * then sends it the next morning; one chosen in the afternoon comes the next morning, not straight away). */
+const DIGEST_HOUR = 8;
+const DIGEST_UNTIL = 12;
+
+/** The date ("2026-10-31") and hour it is in `timeZone`; null for a zone this server doesn't know. */
+function localNow(now: Date, timeZone: string): { day: string; hour: number } | null {
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" })
+        .formatToParts(now)
+        .map((part) => [part.type, part.value]),
+    );
+    return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The daily digest (A6): for each person who chose it, from their morning on (in the time zone their
+ * browser reported), one email per project they're told about with what still waits for approval, newest
+ * first; none on a day with nothing. Each project's for each of their days is claimed and sent on its own
+ * (`autopilot_digest`): two sweeps send it once, and one that failed is tried again (CLAIM_MINUTES on, MAX_SENDS
+ * at most) without the others going twice. Returns how many went.
+ */
+export async function sendAutopilotDigests(now = new Date()): Promise<number> {
+  if (!codeChangesEnabled() || !emailConfigured()) {
+    return 0;
+  }
+  // A week's claims are plenty to keep (a reader's day, wherever they are, is over by then).
+  await prisma.autopilotDigest.deleteMany({ where: { day: { lt: new Date(now.getTime() - 7 * 86_400_000) } } });
+  const readers = await prisma.user.findMany({ where: { autopilotEmails: "DIGEST", autopilotTimeZone: { not: null } }, select: { id: true, email: true, autopilotTimeZone: true } });
+  if (readers.length === 0) {
+    return 0;
+  }
+  // Read once a sweep, not per reader: their teams, and the digests of their last days already settled (sent, or
+  // given up), which need no claim again.
+  const ids = readers.map((reader) => reader.id);
+  const teams = new Map<string, Awaited<ReturnType<typeof readTeams>>>();
+  const readTeams = () =>
+    prisma.teamMember.findMany({
+      where: { userId: { in: ids } },
+      select: {
+        userId: true,
+        role: true,
+        autopilotTold: true,
+        project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true, analyseCodeChanges: true, plan: true } },
+      },
+    });
+  for (const team of await readTeams()) {
+    teams.set(team.userId, [...(teams.get(team.userId) ?? []), team]);
+  }
+  const settled = new Set(
+    (
+      await prisma.autopilotDigest.findMany({
+        where: { userId: { in: ids }, day: { gte: new Date(now.getTime() - 2 * 86_400_000) }, OR: [{ sentAt: { not: null } }, { attempts: { gte: MAX_SENDS } }] },
+        select: { userId: true, projectId: true, day: true },
+      })
+    ).map((digest) => `${digest.userId} ${digest.projectId} ${digest.day.toISOString()}`),
+  );
+  let sent = 0;
+  for (const reader of readers) {
+    const local = localNow(now, reader.autopilotTimeZone!);
+    // Its morning only (a sweep that ran late sends it late, not never); once a day, by the claim below.
+    if (!local || local.hour < DIGEST_HOUR || local.hour >= DIGEST_UNTIL) {
+      continue;
+    }
+    const day = new Date(`${local.day}T00:00:00Z`);
+    try {
+      const memberships = (teams.get(reader.id) ?? []).filter((team) => !settled.has(`${reader.id} ${team.project.id} ${day.toISOString()}`));
+      for (const { role, autopilotTold, project } of memberships) {
+        if (role !== "OWNER" && !autopilotTold && !(role === "ADMIN" && project.autopilotTellAdmins)) {
+          continue;
+        }
+        // Autopilot off there (or not on its plan): what's left waiting isn't news every morning.
+        if (!project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
+          continue;
+        }
+        // Taken: new for the day, or one that failed (or whose sweep stopped) a while ago, with tries left. As of
+        // now, not when the sweep started: a long sweep's claim isn't one another can take as lapsed.
+        const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
+        const lapsed = new Date(claimedAt.getTime() - CLAIM_MINUTES * 60_000);
+        const mine = { userId: reader.id, projectId: project.id, day };
+        const { count: fresh } = await prisma.autopilotDigest.createMany({ data: [{ ...mine, claimedAt }], skipDuplicates: true });
+        const taken =
+          fresh > 0 ||
+          (await prisma.autopilotDigest.updateMany({ where: { ...mine, sentAt: null, attempts: { lt: MAX_SENDS }, claimedAt: { lt: lapsed } }, data: { claimedAt } })).count > 0;
+        if (!taken) {
+          continue;
+        }
+        const waiting = await prisma.codeChange.findMany({
+          where: { projectId: project.id, state: "READY", actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
+          orderBy: { mergedAt: "desc" },
+          select: {
+            id: true,
+            title: true,
+            repo: true,
+            number: true,
+            summary: true,
+            actions: {
+              where: { status: { in: ["PENDING", "STALE"] } },
+              orderBy: [{ probability: "desc" }, { id: "asc" }],
+              select: {
+                id: true,
+                kind: true,
+                status: true,
+                dueAt: true,
+                decidedAt: true,
+                waitReason: true,
+                payload: true,
+                post: { select: { title: true, status: true } },
+                article: { select: { title: true } },
+              },
+            },
+          },
+        });
+        // Nothing waiting: nothing to say, and the day's done.
+        if (waiting.length === 0) {
+          await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
+          continue;
+        }
+        let budget = SHOWN;
+        let more = 0;
+        const take = (list: AutopilotEmailUpdate[]) => {
+          const shown = list.slice(0, Math.max(budget, 0));
+          budget -= shown.length;
+          more += list.length - shown.length;
+          return shown;
+        };
+        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
+        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, take, [], [])).filter((change) => change.needsYou.length > 0);
+        const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
+        try {
+          await sendEmail({
+            to: reader.email,
+            ...autopilotEmail({
+              projectName: project.name,
+              changes,
+              totals: { goesOut: 0, wentOut: 0, needsYou, first: "", pullRequests: waiting.length },
+              more,
+              digest: true,
+              autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`,
+              accountUrl: `${appOrigin()}/app/account`,
+            }),
+          });
+        } catch (error) {
+          // Tried again once the claim lapses: while the server's down, for as long as that lasts; the address
+          // refused, a few times at most (tomorrow's comes all the same).
+          const refused = refusedAddress(error);
+          log.error("Sending Autopilot's digest failed", { error, userId: reader.id, projectId: project.id, refused });
+          if (refused) {
+            await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { attempts: { increment: 1 } } });
+          }
+          continue;
+        }
+        await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
+        sent++;
+      }
+    } catch (error) {
+      // Its claims lapse, so what didn't go is tried again; the others' digests still go.
+      log.error("Autopilot's digest sweep failed for someone", { error, userId: reader.id });
+    }
+  }
+  return sent;
 }

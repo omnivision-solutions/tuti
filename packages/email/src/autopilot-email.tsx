@@ -34,7 +34,9 @@ type AutopilotProps = {
   projectName: string;
   changes: AutopilotEmailChange[];
   /** Every update going out by itself (and when the first goes) and needing the team, shown or not: the subject's counts. */
-  totals: { goesOut: number; wentOut: number; needsYou: number; first: string };
+  totals: { goesOut: number; wentOut: number; needsYou: number; first: string; pullRequests?: number };
+  /** The morning's digest: what's still waiting. */
+  digest?: boolean;
   /** Updates past the first five, left out: "+N more in Tuti". */
   more: number;
   autopilotUrl: string;
@@ -87,9 +89,9 @@ function Updates({ heading, updates }: { heading: string; updates: AutopilotEmai
  * To the people told about a project's Autopilot (owners, and those the project adds): what its
  * merged pull requests change, what goes out by itself and when, what needs them, and what's done.
  */
-export function AutopilotEmail({ projectName, changes, totals, more, autopilotUrl, accountUrl }: AutopilotProps) {
+export function AutopilotEmail({ projectName, changes, totals, digest, more, autopilotUrl, accountUrl }: AutopilotProps) {
   return (
-    <Layout preview={subjectOf(changes, totals)}>
+    <Layout preview={subjectOf(changes, totals, digest)}>
       {changes.map((change, i) => (
         <Section key={i}>
           {i > 0 && <Hr style={{ borderColor: colors.border, margin: "16px 0" }} />}
@@ -139,7 +141,10 @@ export function AutopilotEmail({ projectName, changes, totals, more, autopilotUr
 }
 
 /** "Autopilot: Add a dark theme · 2 updates go out in 24 hours, 1 needs you"; for several, how many merged. */
-function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"]): string {
+function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"], digest = false): string {
+  if (digest) {
+    return `Autopilot this morning: ${totals.needsYou} ${totals.needsYou === 1 ? "update waits" : "updates wait"} for you in ${plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}`;
+  }
   const parts = [
     totals.wentOut > 0 && `${plural(totals.wentOut, "update", "updates")} went out`,
     totals.goesOut > 0 && `${plural(totals.goesOut, "update goes", "updates go")} out ${totals.first}`,
@@ -150,6 +155,6 @@ function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["tota
 }
 
 export const autopilotEmail = (props: AutopilotProps) => ({
-  subject: subjectOf(props.changes, props.totals),
+  subject: subjectOf(props.changes, props.totals, props.digest),
   body: <AutopilotEmail {...props} />,
 });

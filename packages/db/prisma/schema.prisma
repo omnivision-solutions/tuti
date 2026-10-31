@@ -13,19 +13,21 @@ datasource db {
 // the domain back-relations on User are ours.
 
 model User {
-  id               String    @id
-  name             String
-  email            String
+  id                String          @id
+  name              String
+  email             String
   /// Autopilot's email for the projects they're told about: as each change is analysed, or never.
-  autopilotEmails  AutopilotEmails @default(AS_THEY_HAPPEN)
-  emailVerified    Boolean   @default(false)
-  image            String?
+  autopilotEmails   AutopilotEmails @default(AS_THEY_HAPPEN)
+  /// The time zone their browser reported when they chose the digest (an IANA name).
+  autopilotTimeZone String?
+  emailVerified     Boolean         @default(false)
+  image             String?
   /// Secret in unsubscribe links: whoever has it can stop a project's emails to this person.
-  unsubscribeToken String    @unique @default(dbgenerated("gen_random_uuid()::text"))
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  sessions         Session[]
-  accounts         Account[]
+  unsubscribeToken  String          @unique @default(dbgenerated("gen_random_uuid()::text"))
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  sessions          Session[]
+  accounts          Account[]
 
   teamMemberships    TeamMember[]
   posts              Post[]
@@ -53,10 +55,10 @@ model User {
   conversations         Conversation[]        @relation("ConversationUser")
   assignedConversations Conversation[]        @relation("ConversationAssignee")
   conversationMessages  ConversationMessage[]
+  autopilotNotices      AutopilotNotice[]
+  autopilotDigests      AutopilotDigest[]
 
   @@unique([email])
-  autopilotNotices AutopilotNotice[]
-
   @@map("user")
 }
 
@@ -367,6 +369,8 @@ model Project {
   codeChanges             CodeChange[]
   aiUsage                 AiUsage[]
   aiCreditGrants          AiCreditGrant[]
+
+  autopilotDigests AutopilotDigest[]
 
   @@map("project")
 }
@@ -2069,10 +2073,10 @@ model CodeChange {
   project Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   actions CodeChangeAction[]
   links   PostLink[]
+  notices AutopilotNotice[]
 
   @@unique([projectId, repoId, number])
   @@index([projectId, createdAt])
-  notices AutopilotNotice[]
   @@map("code_change")
 }
 
@@ -2212,6 +2216,8 @@ model License {
 /// Autopilot's email choice on a person's account.
 enum AutopilotEmails {
   AS_THEY_HAPPEN
+  /// One email each morning with what's still waiting (and, for owners, what goes out by itself as it happens).
+  DIGEST
   OFF
 }
 
@@ -2244,4 +2250,26 @@ model AutopilotNotice {
   @@unique([codeChangeId, userId])
   @@index([sentAt, createdAt])
   @@map("autopilot_notice")
+}
+
+/// A person's daily digest of a project (docs/plan.md, A6), for one day of theirs: taken by a sweep, then sent,
+/// each project's on its own, so one that fails is tried again without the others going twice.
+model AutopilotDigest {
+  userId    String
+  projectId String
+  /// The reader's own day (in their time zone) it's for.
+  day       DateTime  @db.Date
+  /// A sweep sending it took it then; one that failed (or a sweep that stopped) is taken again after a while.
+  claimedAt DateTime?
+  /// Sends the mail server refused (the address, not the server being down): tried again a while after each,
+  /// given up after a few (tomorrow's comes all the same).
+  attempts  Int       @default(0)
+  sentAt    DateTime?
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId, day])
+  @@index([day])
+  @@map("autopilot_digest")
 }
