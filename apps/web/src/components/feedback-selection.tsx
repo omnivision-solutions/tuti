@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { eachPost } from "@/lib/each-post";
 import { changePostStatus, mergePost, movePost } from "@/server/manage-posts";
 
 /** A post as the selection keeps it: enough to name it and pick which one stays in a merge. */
@@ -89,14 +90,7 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
   // Each in turn: what went, what didn't (and why), then the list again with none picked.
   const each = (posts: Picked[], run: (post: Picked) => Promise<{ error?: string }>, done: string) =>
     startTransition(async () => {
-      const failed: string[] = [];
-      for (const post of posts) {
-        // A failed call (the network, the server) is that post's: the rest still go.
-        const result = await run(post).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
-        if (result.error) {
-          failed.push(`#${post.number}: ${result.error}`);
-        }
-      }
+      const failed = await eachPost(posts, run);
       if (failed.length === 0) {
         toast.success(done);
       } else {

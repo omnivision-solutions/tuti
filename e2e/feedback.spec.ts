@@ -667,3 +667,27 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(row("Calendar sync")).toHaveCount(0);
   await expect(bar).toHaveCount(0);
 });
+
+test("Feedback's picked rows: one that can't be done (merged meanwhile) is said, and the rest still go", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Dark theme"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  // Dark theme (#3) has a vote: it's the one kept.
+  await api("/posts/3/vote", { voted: true, author: { id: "user-1" } });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  for (const title of ["Dark mode", "Night theme", "Dark theme"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).check();
+  }
+  // Meanwhile, elsewhere, Dark mode is merged into Dark theme (this page doesn't know yet).
+  await api("/posts/1/merge", { into: 3 });
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Merge into #3" }).click();
+  await expect(team.getByText("1 of 2 done. #1: This post was already merged")).toBeVisible();
+  // The other went, and the list is fresh, none picked.
+  await expect(team.getByRole("link", { name: "Night theme", exact: true })).toHaveCount(0);
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+});
