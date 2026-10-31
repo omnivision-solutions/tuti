@@ -248,3 +248,35 @@ test("without a mail server, nothing's marked sent: the notices wait for one", a
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: null } })).toBe(1);
   expect(await sendAutopilotEmails(later())).toBe(1);
 });
+
+test("someone told for the first time on a later analysis hears only what that analysis did, not what went out days before", async () => {
+  const admin = await signUp("Ada Admin");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  const one = await change("Add a dark theme");
+  // Its progress update went out by itself two days ago.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 2 * 86_400_000), payload: { comment: "Out soon", auto: true } } });
+  // Admins are told now; analysed again, the request still waits.
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotTellAdmins: true } });
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(later())).toBe(2);
+  const [email] = to(admin);
+  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(email!.text).not.toContain("Went out by itself");
+});
+
+test("analysed again while its email is being sent: that email goes, and the new analysis's in the next one", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // As the sweep sends (after claiming), the change is analysed again.
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.teamMember, "findUnique").mockImplementationOnce((async (...args: unknown[]) => {
+    await queueAutopilotNotices(one.id);
+    return findUnique(...args);
+  }) as never);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  spy.mockRestore();
+  // Not marked sent: it goes again, ten minutes after the analysis.
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: null, claimedAt: null });
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)).toHaveLength(2);
+});

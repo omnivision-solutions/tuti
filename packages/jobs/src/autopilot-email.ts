@@ -68,6 +68,10 @@ async function queueNotices(codeChangeId: string): Promise<number> {
   const again = await prisma.$executeRaw`
     UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now()
     WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${told.map(({ userId }) => userId)}) AND "sentAt" IS NOT NULL`;
+  // Being sent right now (with what the analysis before found): left unsent by that sweep, so it goes again.
+  await prisma.$executeRaw`
+    UPDATE autopilot_notice SET "createdAt" = now()
+    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${told.map(({ userId }) => userId)}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
   return count + again;
 }
 
@@ -157,6 +161,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       select: {
         id: true,
         since: true,
+        createdAt: true,
         user: { select: { email: true, autopilotEmails: true } },
         codeChange: {
           select: {
@@ -197,7 +202,9 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       select: { role: true, autopilotTold: true, user: { select: { autopilotEmails: true } } },
     });
     // What Autopilot did by itself since the email before this one about the change (if any): the news.
-    const lately = (notice: (typeof mine)[number]) => (action: ActionRow) => auto(action) && (!notice.since || (action.decidedAt !== null && action.decidedAt > notice.since));
+    // A first notice: what this analysis did, since a little before it was queued (as queuing reads it).
+    const lately = (notice: (typeof mine)[number]) => (action: ActionRow) =>
+      auto(action) && action.decidedAt !== null && action.decidedAt > (notice.since ?? new Date(notice.createdAt.getTime() - MERGE_MINUTES * 60_000));
     const went = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => wentOut(action) && lately(notice)(action));
     // Going out by itself, or gone already (a short hold passes before the email goes): owners hear of it.
     const goesOutUnseen = mine.some((notice) => went(notice).length > 0 || notice.codeChange.actions.some((action) => action.status === "SCHEDULED" && PUBLIC.has(action.kind)));
@@ -260,7 +267,12 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { claimedAt: null } });
       continue;
     }
-    await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { sentAt: new Date() } });
+    // Sent, unless analysed again while it went: that one's left unsent, for the next email.
+    const sentAt = new Date();
+    for (const notice of mine) {
+      await prisma.autopilotNotice.updateMany({ where: { id: notice.id, claimedAt, createdAt: notice.createdAt }, data: { sentAt } });
+    }
+    await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt, sentAt: null }, data: { claimedAt: null } });
     sent++;
   }
   return sent;
