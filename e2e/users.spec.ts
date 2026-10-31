@@ -25,7 +25,7 @@ test("the team syncs its users over the API and finds them on the Users page, by
     users: [
       { id: "user-1", name: "Ada Lovelace", email: "e2e-ada@example.com", properties: { plan: "enterprise", seats: 40, features: ["sso", "audit"] } },
       { id: "user-2", name: "Bea Byte", email: "e2e-bea@example.com", properties: { plan: "free" } },
-      { id: "user-3", name: "Cy Cipher", properties: { plan: "enterprise", company: "A company with a rather long name, Incorporated" } },
+      { id: "user-3", name: "Cy Cipher", properties: { plan: "enterprise", company: "A company with a rather long name, Incorporated", constructor: "x" } },
     ],
   });
   await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
@@ -48,8 +48,11 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await expect(table.getByRole("columnheader")).toHaveText(["User", "company", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
   await owner.getByRole("menuitemcheckbox", { name: "company" }).click();
   await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "Posts", "Votes", "Conversations", "Last seen"]);
+  // A property named like something every object has is only theirs who have it.
+  await owner.getByRole("menuitemcheckbox", { name: "constructor" }).click();
+  await expect(table.getByRole("columnheader")).toHaveText(["User", "plan", "seats", "constructor", "Posts", "Votes", "Conversations", "Last seen"]);
   await owner.keyboard.press("Escape");
-  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "0", "0", "0", "Never"]);
+  await expect(ada.getByRole("cell")).toHaveText([/^A/, "enterprise", "40", "–", "0", "0", "0", "Never"]);
 
   // Bea votes: sorted by votes, she's first, seen just now.
   await api("/posts", { board: "feature-requests", title: "Dark mode" });

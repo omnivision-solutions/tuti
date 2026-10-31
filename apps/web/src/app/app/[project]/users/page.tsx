@@ -55,7 +55,8 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
       { actor: { kind: "user", userId: session.user.id }, projectId: project.id },
       { q: q || undefined, group, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE },
     ),
-    propertyNames(project.id),
+    // For Columns, which only owners and admins have.
+    isAdminRole(membership.role) ? propertyNames(project.id) : [],
     propertiesInUse(project.id, userColumns),
   ]);
   // One no user has any more has nothing to show, and goes when Columns is next saved.
@@ -162,7 +163,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
                     </td>
                     {columns.map((name) => (
                       <td key={name} className="hidden break-words md:table-cell">
-                        {name in user.properties ? text(user.properties[name]!) : <span className="text-muted-foreground">–</span>}
+                        {Object.hasOwn(user.properties, name) ? text(user.properties[name]!) : <span className="text-muted-foreground">–</span>}
                       </td>
                     ))}
                     {COUNTS.map((count) => (
