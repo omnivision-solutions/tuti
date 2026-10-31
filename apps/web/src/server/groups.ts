@@ -1,6 +1,5 @@
 "use server";
 
-import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
@@ -8,6 +7,7 @@ import { groupConditions } from "@/lib/group-conditions";
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
 import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
+import { updateProject } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -58,11 +58,7 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
   return matchingUsers(project.id, input.data, PREVIEW_USERS);
 }
 
-/** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none). */
+/** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
 export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
-  const name = property === null ? null : String(property).trim();
-  if (name !== null && (name.length < 1 || name.length > 64)) {
-    return { error: "Pick one of your users' properties" };
-  }
-  return asAdmin(projectSlug, DENIED, ({ projectId }) => prisma.project.update({ where: { id: projectId }, data: { askingProperty: name } }));
+  return asAdmin(projectSlug, DENIED, (context) => call(updateProject, context, { askingProperty: property === null ? null : String(property) }));
 }

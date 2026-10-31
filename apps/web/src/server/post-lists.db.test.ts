@@ -125,10 +125,15 @@ test("Who's asking: each post's voters' total of the number property the team pi
   const acme = await user("Acme", { mrr: 1200.5, plan: "enterprise" });
   const bolt = await user("Bolt", { mrr: 300, plan: "pro" });
   const free = await user("Free", { mrr: "none", plan: "free" });
+  // Signed in to the portal with their own account, the address the app gave Cora (verified): Cora's properties.
+  const cora = await signUp("Cora");
+  await prisma.user.update({ where: { id: cora.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "cora", userId: (await signUp("Cora (app)")).id, email: cora.email.toLowerCase(), properties: { mrr: 99, plan: "pro" } } });
   await prisma.vote.createMany({
     data: [
       { projectId: project.id, postId: sso.id, userId: acme },
       { projectId: project.id, postId: sso.id, userId: bolt },
+      { projectId: project.id, postId: quiet.id, userId: cora.id },
       { projectId: project.id, postId: exports.id, userId: free },
       { projectId: project.id, postId: quiet.id, userId: owner.id },
     ],
@@ -137,14 +142,16 @@ test("Who's asking: each post's voters' total of the number property the team pi
   // Picked in Settings → Access, from the number properties.
   expect(await numberPropertyNames(project.id)).toEqual(["mrr"]);
   expect(await setAskingProperty(project.slug, "mrr")).toEqual({});
+  expect(await setAskingProperty(project.slug, " ")).toEqual({ error: "Pick one of your users' properties" });
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).askingProperty).toBe("mrr");
   const totals = await voterTotals(project.id, "mrr", [sso.id, exports.id, quiet.id]);
-  expect([...totals]).toEqual([[sso.id, 1500.5]]);
+  expect(new Map(totals)).toEqual(new Map([[sso.id, 1500.5], [quiet.id, 99]]));
   expect(await voterTotals(project.id, null, [sso.id])).toEqual(new Map());
 
-  // Voted for by the paying ones: SSO only; by enterprise: SSO; by free: Exports. The tab counts follow.
+  // Voted for by the paying ones: SSO and Quiet (Cora); by enterprise: SSO; by free: Exports. The tab counts follow.
   const titles = async (group: GroupCondition[]) => (await teamPosts(project.id, parsePostFilters({}), { group })).posts.map((p) => p.title);
-  expect(await titles([{ property: "plan", op: "is_any_of", value: ["enterprise", "pro"] }])).toEqual(["SSO"]);
+  expect(await titles([{ property: "plan", op: "is_any_of", value: ["enterprise", "pro"] }])).toEqual(["Quiet", "SSO"]);
+  expect(await titles([{ property: "plan", op: "is", value: "enterprise" }])).toEqual(["SSO"]);
   expect(await titles([{ property: "plan", op: "is", value: "free" }])).toEqual(["Exports"]);
   expect((await teamPosts(project.id, parsePostFilters({ sort: "trending" }, TEAM_SORTS), { group: [{ property: "plan", op: "is", value: "free" }] })).posts.map((p) => p.title)).toEqual(["Exports"]);
   expect((await teamPostCounts(project.id, { group: [{ property: "plan", op: "is", value: "free" }] })).all).toBe(1);

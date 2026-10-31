@@ -25,15 +25,23 @@ export const getProject = defineOperation({
 
 export const updateProject = defineOperation({
   name: "project.update",
-  summary: "Rename the project: the name its portal, emails and the app show (its address stays the same)",
+  summary:
+    "Rename the project (the name its portal, emails and the app show; its address stays the same), or pick Who's asking: the number property of your users (users.sync's `properties`, like `mrr`) the app totals over each post's voters for the team (null: none)",
   method: "PATCH",
   path: "/project",
   scope: "write",
   access: "admin",
-  input: z.object({ name: z.string().trim().min(2, "Give the project a name of 2 characters or more").max(60, "Keep the name under 60 characters") }),
-  example: { name: "Acme" },
+  input: z.object({
+    name: z.string().trim().min(2, "Give the project a name of 2 characters or more").max(60, "Keep the name under 60 characters").optional(),
+    askingProperty: z.string().trim().min(1, "Pick one of your users' properties").max(64, "Properties are up to 64 characters").nullable().optional(),
+  }),
+  example: { name: "Acme", askingProperty: "mrr" },
   run: async ({ projectId }, input) => {
-    const project = await prisma.project.update({ where: { id: projectId }, data: { name: input.name }, select: { slug: true, name: true } });
+    const project = await prisma.project.update({
+      where: { id: projectId },
+      data: { name: input.name, askingProperty: input.askingProperty },
+      select: { slug: true, name: true, askingProperty: true },
+    });
     return { ...project, portalUrl: await portalAddress(project.slug) };
   },
 });
