@@ -16,12 +16,12 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   const owner = await signUp("Olive Owner");
   const project = await createProject(owner);
   actAs(owner);
-  const article = (slug: string, title: string, publishedAt: Date | null) =>
-    prisma.article.create({ data: { projectId: project.id, slug, title, body: "Words.", publishedAt } });
-  // In reading order: published, a draft, then one with changes not published.
-  const invite = await article("inviting", "Inviting your team", new Date());
-  await article("billing", "Billing", null);
-  const exports = await article("exports", "Exports", new Date());
+  const article = (slug: string, title: string, publishedAt: Date | null, order: number) =>
+    prisma.article.create({ data: { projectId: project.id, slug, title, body: "Words.", publishedAt, order } });
+  // In reading order (not by title): published, then one with changes not published, then a draft.
+  const invite = await article("inviting", "Inviting your team", new Date(), 0);
+  const exports = await article("exports", "Exports", new Date(), 1);
+  await article("billing", "Billing", null, 2);
   await prisma.articleChanges.create({ data: { articleId: exports.id, title: "Exports", body: "New words." } });
   // Read 5 times today and 100 times 40 days ago (outside the window); two found it helpful, one didn't.
   await prisma.articleViewDay.createMany({
@@ -44,7 +44,8 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   // The list, after its tabs (the tree beside it lists the articles too).
   const text = html.slice(html.indexOf('aria-label="Docs sections"')).replace(/<[^>]+>/g, "|");
   const rows = [...text.matchAll(/\|(Inviting your team|Billing|Exports)\|/g)].map((m) => m[1]);
-  expect(rows).toEqual(["Billing", "Exports", "Inviting your team"]);
+  // The two needing work first, in reading order between them.
+  expect(rows).toEqual(["Exports", "Billing", "Inviting your team"]);
   expect(text).toContain("|Draft|");
   expect(text).toContain("|Changes not published|");
   expect(text).not.toContain("|Published");
