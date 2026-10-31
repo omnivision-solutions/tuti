@@ -37,7 +37,8 @@ export function CommandMenu({ projectSlug, items }: { projectSlug: string; items
       if (event.defaultPrevented) {
         return;
       }
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+      // `key` is missing on the keydowns browsers send when they autofill a form.
+      if (event.key?.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setOpen((was) => !was);
       }

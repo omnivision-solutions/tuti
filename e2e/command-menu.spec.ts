@@ -17,6 +17,11 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await api("/users", { users: [{ id: "u-long", name: "Lou Long", email: "e2e-someone.with.a.very.long.name@subsidiary.department.example.com" }] });
 
   await team.goto(`/app/${slug}`);
+  // A keydown with no key (as browsers send when autofilling a form) is nothing to it.
+  const errors: string[] = [];
+  team.on("pageerror", (error) => errors.push(error.message));
+  await team.evaluate(() => window.dispatchEvent(new Event("keydown")));
+  expect(errors).toEqual([]);
   // The sidebar's Search opens it, saying the shortcut as this platform writes it.
   await team.getByRole("button", { name: /^Search/ }).click();
   const menu = team.getByRole("dialog", { name: "Go to or do" });
