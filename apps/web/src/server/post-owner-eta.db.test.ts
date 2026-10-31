@@ -47,3 +47,25 @@ test("a post's owner (someone on the team) and ETA (a month): set and cleared, a
   expect(await removeMember(project.slug, memberId)).toEqual({});
   expect((await planning()).ownerId).toBeNull();
 });
+
+test("made a post's owner while they're taken off the team: one waits for the other, and they don't end up owning it", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const admin = await signUp("Ada Admin");
+  const member = await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  const post = await call(createPost, team, { board: "feature-requests", title: "Dark mode" });
+  await call(updatePost, team, { number: post.number, owner: admin.email });
+  const blocked = async () => (await prisma.$queryRaw<[{ n: number }]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock'`)[0].n > 0;
+
+  // Their removal, as `removeFromTeam` does it (membership, then the posts they own), paused while the update waits on it.
+  let update: Promise<unknown> | undefined;
+  await prisma.$transaction(async (tx) => {
+    await tx.teamMember.delete({ where: { id: member.id } });
+    update = call(updatePost, team, { number: post.number, owner: admin.email }).catch((error: Error) => error);
+    await expect.poll(blocked).toBe(true);
+    await tx.post.updateMany({ where: { projectId: project.id, ownerId: admin.id }, data: { ownerId: null } });
+  });
+  expect(await update).toMatchObject({ message: "The owner must be on your team" });
+  expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).ownerId).toBeNull();
+});

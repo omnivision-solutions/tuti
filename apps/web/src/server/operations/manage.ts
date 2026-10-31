@@ -50,10 +50,9 @@ export const updatePost = defineOperation({
     // The change and its event (the post's activity) together: by whoever made it (an API key: its creator).
     // The status it has now, read with its row locked: changes at the same moment (a teammate, publishing its entry) go one after the other.
     const { updated, previous } = await prisma.$transaction(async (tx) => {
-      const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
-      const previous = current?.status ?? post.status;
       // The owner is on the team (by their email), its membership row held until this commits: taken off the
-      // team meanwhile, their removal waits for this, and then clears them as owner.
+      // team meanwhile, their removal waits for this, and then clears them as owner. Held before the post's row,
+      // in the order their removal takes them, so the two never wait on each other.
       let ownerId: string | null | undefined;
       if (input.owner !== undefined) {
         ownerId = null;
@@ -67,6 +66,8 @@ export const updatePost = defineOperation({
           ownerId = member.userId;
         }
       }
+      const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
+      const previous = current?.status ?? post.status;
       const saved = await tx.post.update({
         where: { id: post.id },
         data: { ...(status && { status }), ...(boardId && { boardId }), ...(ownerId !== undefined && { ownerId }), ...(eta !== undefined && { eta }) },
