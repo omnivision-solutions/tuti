@@ -24,8 +24,8 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
           </>
         ) : (
           <>
-            <strong>{projectName}</strong> has {left} AI credits left. When they run out, AI answers, changelog drafts and code
-            changes pause until it has more.
+            <strong>{projectName}</strong> has {left} AI credits left. When they run out, AI answers, changelog drafts and
+            Autopilot pause until it has more.
           </>
         )}
       </Text>

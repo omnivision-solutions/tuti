@@ -98,6 +98,11 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("link", { name: `acme/app#${number} · ${pr}` })).toBeVisible();
   await owner.getByRole("link", { name: "From Autopilot" }).click();
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
+  // A change's old address (in webhooks already sent, and bookmarks) lands on it in Autopilot.
+  const changePage = new URL(owner.url()).pathname;
+  await owner.goto(changePage.replace("/autopilot/", "/code-changes/"));
+  await owner.waitForURL(`**${changePage}`);
+  await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
 
   // A pull request users don't see: nothing to do, folded away, and "Analyse anyway" looks past the gate.
   const chore = `Refactor the theme store ${id}`;

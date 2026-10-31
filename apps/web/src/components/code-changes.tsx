@@ -195,8 +195,8 @@ export function PostProposal({ projectSlug, action }: { projectSlug: string; act
         ))}
       {!waiting && (
         <span className="text-xs text-muted-foreground">
-          {action.status === "applied" ? "Approved" : action.status === "dismissed" ? "Dismissed" : "Changed since"}
-          {action.decidedBy && ` by ${action.decidedBy}`}
+          {action.auto ? "Linked by Autopilot" : action.status === "applied" ? "Approved" : action.status === "dismissed" ? "Dismissed" : "Changed since"}
+          {!action.auto && action.decidedBy && ` by ${action.decidedBy}`}
           {action.dismissReason && `: ${action.dismissReason}`}
         </span>
       )}
