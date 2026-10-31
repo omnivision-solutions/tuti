@@ -1,6 +1,6 @@
-import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type Prisma, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, Prisma, prisma } from "@tuti/db";
 import { confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
-import { codeChangesEnabled } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
@@ -28,17 +28,43 @@ const KINDS: Record<CodeChangeActionKind, string> = {
 };
 const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale" };
 
-/** A feedback proposal "Apply likely" takes: above its kind's likely threshold, and for a post it moves forward, with a comment to post. */
+/**
+ * An update the review page ticks as it opens: one Autopilot is sure of (above its kind's likely
+ * threshold; the changelog line always), and for a progress update, with a comment to post.
+ */
 export function likelyToApply(action: { kind: CodeChangeActionKind; probability: number; payload: Prisma.JsonValue }): boolean {
   // The changelog line only rewrites a bullet in a draft: always likely.
   if (action.kind === "CHANGELOG_LINE") {
     return true;
   }
-  if (action.kind !== "RESOLVES" && action.kind !== "MOVES_FORWARD" && action.kind !== "LINKS") {
-    return false;
-  }
   const comment = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
   return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
+}
+
+/**
+ * How many people completing each post emails (its author, voters and commenters, past the team,
+ * those who turned the project's emails off and those it emailed already), by post id, as postShipped
+ * does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
+ * a few it won't email.
+ */
+async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
+  // A private portal on a plan without them is the team's only: postShipped emails nobody.
+  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal"))) {
+    return new Map();
+  }
+  const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
+    SELECT x."postId", COUNT(DISTINCT x."userId") AS people
+    FROM (
+      SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
+    ) x
+    WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
+      AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
+      AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
+    GROUP BY x."postId"`;
+  return new Map(rows.map((row) => [row.postId, Number(row.people)]));
 }
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
@@ -134,7 +160,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
           decidedAt: true,
           dismissReason: true,
           decidedBy: { select: { name: true } },
-          post: { select: { ...postSummarySelect, id: true } },
+          post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
           article: { select: articleSelect },
         },
       },
@@ -143,9 +169,14 @@ export async function codeChangeDetail(projectId: string, id: string) {
   if (!change) {
     return null;
   }
-  const [portal, bullet] = await Promise.all([
+  // Approving completes (and emails about) only a post not completed yet, nor merged into another.
+  const completing = change.actions
+    .filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId)
+    .map((action) => action.post!.id);
+  const [portal, bullet, emails] = await Promise.all([
     projectPortal(projectId),
     prisma.changelogEntryPullRequest.findFirst({ where: { url: change.url, entry: { projectId } }, select: { entry: { select: { number: true, title: true } } } }),
+    emailedOnCompletion(projectId, completing),
   ]);
   return {
     ...changeView(change),
@@ -161,8 +192,10 @@ export async function codeChangeDetail(projectId: string, id: string) {
         status: stale ? "stale" : ACTION_STATUSES[action.status],
         probability: action.probability,
         confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
-        /** "Apply likely" applies it (see likelyToApply). */
-        applyLikely: action.status === "PENDING" && likelyToApply(action),
+        /** Ticked as the review page opens (see likelyToApply). */
+        applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
+        /** For a request it closes: how many people completing it emails. */
+        ...(action.kind === "RESOLVES" && action.status === "PENDING" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
         reason: action.reason,
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
@@ -305,6 +338,21 @@ const actorUser = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
 /** Statuses a post moves on from to In progress when a code change moves it forward. */
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 
+/**
+ * Puts a claimed action back (waiting again, or out of date) after a failure, then rethrows `error`.
+ * If even that fails, nobody can tell what went: rethrown marked `saved: "unknown"` (it stays claimed,
+ * so it's never done twice, and the team is told to check).
+ */
+async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateInput, error: unknown): Promise<never> {
+  try {
+    await prisma.codeChangeAction.update({ where: { id }, data });
+  } catch {
+    // Not a refusal (an OperationError's message would say "try again" or "out of date"): unknown, the refusal as its cause.
+    throw Object.assign(new Error("Couldn't put an Autopilot update back after a failure", { cause: error }), { saved: "unknown" as const });
+  }
+  throw error;
+}
+
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
@@ -359,8 +407,7 @@ export const applyCodeChangeAction = defineOperation({
         const entry = await setChangelogLine(projectId, { ...action.codeChange }, line);
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
-        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue } });
-        throw error;
+        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue }, error);
       }
     }
     if (!action.post) {
@@ -372,12 +419,13 @@ export const applyCodeChangeAction = defineOperation({
       throw new OperationError(400, "invalid_input", "Write the comment to post first");
     }
     // Claimed first, so two people applying it at once do it once.
+    const claimedAt = new Date();
     const { count } = await prisma.codeChangeAction.updateMany({
       where: { id: action.id, status: "PENDING" },
       data: {
         status: "APPLIED",
         decidedById: actorUser(context.actor),
-        decidedAt: new Date(),
+        decidedAt: claimedAt,
         ...(action.kind === "MOVES_FORWARD" && { payload: { comment } }),
       },
     });
@@ -423,17 +471,65 @@ export const applyCodeChangeAction = defineOperation({
       }
     } catch (error) {
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
+      // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
-        throw error;
+        // Can't tell (the check failed too): it stays applied, so it's never posted twice, but nobody's told it went.
+        const saved = await prisma.comment
+          .count({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } } })
+          .then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+        if (saved !== false) {
+          throw Object.assign(error as Error, { saved });
+        }
       }
       // Not done: it's waiting again, for another try.
-      await prisma.codeChangeAction.update({
-        where: { id: action.id },
-        data: { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue },
-      });
-      throw error;
+      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue }, error);
     }
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
+  },
+});
+
+export const applyCodeChangeActions = defineOperation({
+  name: "codeChangeActions.applyMany",
+  summary:
+    "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `publish`, `line`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
+  method: "POST",
+  path: "/code-change-actions/apply",
+  scope: "write",
+  access: "team",
+  input: z.object({
+    actions: z
+      .array(z.object({ id, comment: z.string().trim().min(1).max(5_000).optional(), publish: z.boolean().optional(), line: z.string().trim().min(1).max(300).optional() }))
+      .min(1, "Pick at least one")
+      .max(50, "Up to 50 at once")
+      .refine((actions) => new Set(actions.map((action) => action.id)).size === actions.length, "Each action once"),
+  }),
+  example: { actions: [{ id: "cm3x9a1b2c3d4e5f6g7h8i9j0" }, { id: "cm3x9a1b2c3d4e5f6g7h8i9j1", comment: "Weekly repeats are out today." }] },
+  run: async (context, input) => {
+    const results: ({ id: string; status: "applied" } | { id: string; status: "failed"; code: string; message: string })[] = [];
+    for (const action of input.actions) {
+      try {
+        await call(applyCodeChangeAction, context, action);
+        results.push({ id: action.id, status: "applied" });
+      } catch (error) {
+        // Said, and the rest go on, so those already applied (and emailed about) are still reported.
+        // First what apply says went (or may have) before the failure, whatever the error: a comment or
+        // an article's version saved stays applied, so trying again can't do it twice.
+        const { saved } = error as { saved?: boolean | "unknown" };
+        if (saved === true) {
+          results.push({ id: action.id, status: "applied" });
+        } else if (saved === "unknown") {
+          log.error("Approving an Autopilot update: couldn't tell whether it went", { error, actionId: action.id });
+          results.push({ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" });
+        } else if (error instanceof OperationError) {
+          // Refused (out of date, decided already, not found): nothing went.
+          results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
+        } else {
+          log.error("Approving an Autopilot update failed", { error, actionId: action.id });
+          results.push({ id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." });
+        }
+      }
+    }
+    return { results };
   },
 });
 
@@ -487,19 +583,22 @@ async function applyDocs(
     // the article (or a new article) by whoever applies it, with the proposal's text, since the claim:
     // a teammate's save meanwhile isn't it.
     const ours = { createdAt: { gte: claimedAt }, body: payload.body ?? "" };
-    const saved =
-      action.kind === "ARTICLE_EDIT"
-        ? (await prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })) > 0
-        : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })) > 0;
-    if (!saved) {
-      // Saved again since the check above: it's out of date now.
-      const changed = error instanceof OperationError && error.code === "changed";
-      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null } });
-      if (changed) {
-        throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
-      }
+    // Can't tell (the check failed too): it stays applied, and the team is told to check.
+    const saved = await (action.kind === "ARTICLE_EDIT"
+      ? prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })
+      : prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })
+    ).then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+    if (saved !== false) {
+      // What users see was saved (or may have been): it stays applied, and says so.
+      throw Object.assign(error as Error, { saved });
     }
-    throw error;
+    // Saved again since the check above: it's out of date now.
+    const changed = error instanceof OperationError && error.code === "changed";
+    return revert(
+      action.id,
+      { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null },
+      changed ? new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.") : error,
+    );
   }
 }
 

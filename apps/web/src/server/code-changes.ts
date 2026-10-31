@@ -1,10 +1,8 @@
 "use server";
 
-import { prisma } from "@tuti/db";
-
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { analyseCodeChange as analyseOperation, applyCodeChangeAction, dismissCodeChangeAction, likelyToApply, resumeCodeChanges as resumeOperation } from "./operations/code-changes";
+import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, resumeCodeChanges as resumeOperation } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
@@ -52,26 +50,32 @@ export async function dismissCodeChange(projectSlug: string, actionId: string, r
   );
 }
 
+/** One update to approve, with the team's edits (as applyCodeChange takes them). */
+export type Approval = { id: string; comment?: string; publish?: boolean; line?: string };
+
 /**
- * "Apply likely": the code change's waiting feedback proposals above their kind's "likely" threshold,
- * one after another (not a comment nobody wrote: that one waits for the team). Stops at the first
- * that fails (the ones before it stay applied).
+ * The review page's Approve: the ticked updates, each with its edits (codeChangeActions.applyMany).
+ * `failed`: those not applied, with why (out of date, someone else decided first, or it can't tell); an error only when none is the project's.
  */
-export async function applyLikelyCodeChanges(projectSlug: string, codeChangeId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
-    const change = await prisma.codeChange.findFirst({ where: { id: String(codeChangeId), projectId: context.projectId }, select: { id: true } });
-    if (!change) {
-      throw new OperationError(404, "not_found", "Code change not found");
-    }
-    const actions = await prisma.codeChangeAction.findMany({
-      where: { codeChangeId: change.id, status: "PENDING", kind: { in: ["RESOLVES", "MOVES_FORWARD", "LINKS", "CHANGELOG_LINE"] } },
-      orderBy: [{ probability: "desc" }, { kind: "desc" }, { id: "asc" }],
-      select: { id: true, kind: true, probability: true, payload: true },
-    });
-    for (const action of actions) {
-      if (likelyToApply(action)) {
-        await call(applyCodeChangeAction, context, { id: action.id });
-      }
+export async function approveCodeChanges(projectSlug: string, approvals: Approval[]): Promise<FormState & { applied?: number; failed?: { id: string; message: string }[] }> {
+  let outcome: { applied: number; failed: { id: string; message: string }[] } = { applied: 0, failed: [] };
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    const actions = (Array.isArray(approvals) ? approvals : []).map((approval) => ({
+      id: String(approval.id),
+      ...(typeof approval.comment === "string" && approval.comment.trim() && { comment: approval.comment }),
+      ...(typeof approval.publish === "boolean" && { publish: approval.publish }),
+      ...(typeof approval.line === "string" && approval.line.trim() && { line: approval.line }),
+    }));
+    const { results } = await call(applyCodeChangeActions, context, { actions });
+    outcome = {
+      applied: results.filter((r) => r.status === "applied").length,
+      failed: results.flatMap((r) => (r.status === "failed" ? [{ id: r.id, message: r.message }] : [])),
+    };
+    // None of them is this project's: refused, as for any other project's records. Otherwise each one
+    // that didn't go says why (the page names each), even when none went.
+    if (outcome.applied === 0 && results.every((r) => r.status === "failed" && r.code === "not_found")) {
+      throw new OperationError(404, "not_found", outcome.failed[0]!.message);
     }
   });
+  return result.error ? result : outcome;
 }

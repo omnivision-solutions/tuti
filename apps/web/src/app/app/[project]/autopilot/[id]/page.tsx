@@ -6,11 +6,12 @@ import { notFound } from "next/navigation";
 import { RichText } from "@tuti/content/react";
 
 import { ArticleDiff } from "@/components/article-diff";
-import { AnalyseCodeChangeButton, ApplyLikelyButton, ChangelogProposal, DocsProposal, PostProposal } from "@/components/code-changes";
+import { AutopilotReview } from "@/components/autopilot-review";
+import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
@@ -46,7 +47,7 @@ async function docsPreviews(ids: string[]) {
 
 /** A shipped change in Autopilot: the merged pull request, what changed for users, and its updates to review. */
 export default async function CodeChangePage(props: PageProps<"/app/[project]/autopilot/[id]">) {
-  const { project: slug, id } = await props.params;
+  const [{ project: slug, id }, searchParams] = await Promise.all([props.params, props.searchParams]);
   const membership = await getMembership(slug);
   const change = membership && (await codeChangeDetail(membership.project.id, id));
   if (!change) {
@@ -56,14 +57,15 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   // On a plan without code changes it's kept, but can't be analysed again (codeChanges.analyse refuses).
   const { plan } = await prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { plan: true } });
   const included = planIncludes(plan, "codeChanges");
-  const feedback = change.actions.filter((action) => action.post);
-  // Article edits first, then new articles.
-  const docs = change.actions
-    .filter((action) => action.kind === "article_edit" || action.kind === "new_article")
-    .sort((a, b) => Number(a.kind === "new_article") - Number(b.kind === "new_article"));
-  const line = change.actions.find((action) => action.kind === "changelog_line");
-  const previews = await docsPreviews(docs.filter((action) => action.status === "pending").map((action) => action.id));
-  const likely = [...feedback, ...(line ? [line] : [])].filter((action) => action.applyLikely).length;
+  // Feedback first, then the docs (edits, then new articles), then the changelog line.
+  const ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
+  const updates = [...change.actions].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
+  const docs = updates.filter((action) => (action.kind === "article_edit" || action.kind === "new_article") && action.status === "pending");
+  const previews = Object.fromEntries(await docsPreviews(docs.map((action) => action.id)));
+  // `?select=likely` (the email's Review) or `?select=<ids>` (its buttons, opened by someone else) ticks those; else the likely ones.
+  const select = typeof searchParams.select === "string" ? searchParams.select : null;
+  const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
+  const ticked = select === null || select === "likely" ? likely : select.split(",").map((id) => id.trim());
 
   return (
     <>
@@ -124,48 +126,16 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           </CardContent>
         </Card>
       )}
-      {(feedback.length > 0 || docs.length > 0 || line) && (
-        <Card>
-          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex flex-col gap-1">
-              <CardTitle>Updates</CardTitle>
-              <CardDescription>Nothing changes for your users until you approve an update.</CardDescription>
-            </div>
-            {likely > 0 && <ApplyLikelyButton projectSlug={slug} codeChangeId={change.id} count={likely} />}
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {feedback.length > 0 && (
-              <section className="flex flex-col gap-3">
-                <h3 id="feedback-proposals" className="text-sm font-semibold">
-                  Requests
-                </h3>
-                <ul className="flex flex-col divide-y" aria-labelledby="feedback-proposals">
-                  {feedback.map((action) => (
-                    <PostProposal key={action.id} projectSlug={slug} action={action} />
-                  ))}
-                </ul>
-              </section>
-            )}
-            {line && (
-              <section className="flex flex-col gap-3">
-                <h3 className="text-sm font-semibold">Changelog line</h3>
-                <ChangelogProposal projectSlug={slug} action={line} entry={change.changelog} />
-              </section>
-            )}
-            {docs.length > 0 && (
-              <section className="flex flex-col gap-3">
-                <h3 id="docs-proposals" className="text-sm font-semibold">
-                  Docs
-                </h3>
-                <ul className="flex flex-col divide-y" aria-labelledby="docs-proposals">
-                  {docs.map((action) => (
-                    <DocsProposal key={action.id} projectSlug={slug} codeChangeId={change.id} action={action} canAnalyse={included} preview={previews.get(action.id)} />
-                  ))}
-                </ul>
-              </section>
-            )}
-          </CardContent>
-        </Card>
+      {updates.length > 0 && (
+        <AutopilotReview
+          projectSlug={slug}
+          change={change}
+          updates={updates}
+          ticked={ticked}
+          fromEmail={select === null ? null : select === "likely" ? "likely" : "named"}
+          previews={previews}
+          canAnalyse={included}
+        />
       )}
     </>
   );

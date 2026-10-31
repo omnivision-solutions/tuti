@@ -50,50 +50,63 @@ test("a merged pull request becomes a code change; the team completes the post i
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
   await expect(owner.getByText("3 to review")).toBeVisible();
+  // Its updates, in a line.
+  await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText(`Closes ${title} · updates 1 article · changelog line`);
   await checkpoint(owner, "autopilot");
   await owner.getByRole("link", { name: pr }).click();
 
-  // Its page: what changed for users, why, and the request it closes.
+  // Its page: what changed for users, why, and a card per update, the likely ones ticked.
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
   await expect(owner.getByText(summary)).toBeVisible();
   await expect(owner.getByText("It ships the dark theme people asked for.")).toBeVisible();
-  const proposal = owner.getByRole("listitem", { name: `Closes the request: ${title}` });
-  await expect(proposal).toContainText("It adds the dark theme the post asks for.");
-  await expect(proposal).toContainText("Likely");
-  await checkpoint(owner, "autopilot-change");
-  await proposal.getByRole("button", { name: "Approve" }).click();
-  await expect(owner.getByText("#1 completed")).toBeVisible();
-  await expect(proposal).toContainText("Approved by Olive Owner");
-
-  // The changelog line replaces the pull request's bullet in the Next release draft, as the team words it.
-  const line = owner.getByRole("textbox", { name: "Changelog line" });
-  await expect(line).toHaveValue("Dark theme");
-  await line.fill("A dark theme, in Settings");
-  const changelogLine = owner.getByLabel("Changelog line", { exact: true }).and(owner.locator("div"));
-  await changelogLine.getByRole("button", { name: "Approve" }).click();
-  await expect(owner.getByText("Changelog updated")).toBeVisible();
-  await expect(changelogLine).toContainText("Approved by Olive Owner");
-  await expect(changelogLine).toContainText("A dark theme, in Settings");
-
-  // The article's edit, as a diff against what's published, goes live as a new version.
-  const edit = owner.getByRole("listitem", { name: `Out of date: ${article}` });
+  const closes = owner.getByRole("article", { name: `Closes the request: ${title}` });
+  await expect(closes).toContainText("It adds the dark theme the post asks for.");
+  await expect(closes).toContainText("Likely");
+  await expect(closes).toContainText("Open → Completed");
+  await expect(closes.getByRole("checkbox")).toBeChecked();
+  const edit = owner.getByRole("article", { name: `Out of date: ${article}` });
+  await expect(edit.getByRole("checkbox")).toBeChecked();
   await expect(edit).toContainText("It says Light is the only theme.");
-  const changes = edit.getByRole("region", { name: `Changes to ${article}` }).or(edit.getByLabel(`Changes to ${article}`));
+  const changes = edit.getByLabel(`Changes to ${article}`);
   await expect(changes).toContainText("Pick Light, Dark or System in Settings.");
   // Formatted as readers see it: the new paragraph's bold is bold.
   await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
-  await checkpoint(owner, "autopilot-docs");
-  await edit.getByRole("button", { name: "Approve" }).click();
-  await expect(owner.getByText(`${article} updated`)).toBeVisible();
-  await expect(edit).toContainText("Approved by Olive Owner");
+  const line = owner.getByRole("article", { name: "Changelog line: Dark theme" });
+  await expect(line.getByRole("checkbox")).toBeChecked();
+  // One button says what approving does; beside it, the same in words.
+  await expect(owner.getByRole("button", { name: "Approve 3 updates" })).toBeEnabled();
+  await expect(owner.getByText("3 of 3 selected · publishes 1 article")).toBeVisible();
+  await expect(owner.getByRole("region", { name: "When you approve" })).toContainText("1 article edit published");
+  await checkpoint(owner, "autopilot-change");
+  // The changelog line as the team words it (Edit), and the request left out for now.
+  await line.getByRole("button", { name: "Edit" }).click();
+  await line.getByRole("textbox", { name: "Changelog line" }).fill("A dark theme, in Settings");
+  await closes.getByRole("checkbox").uncheck();
+  await expect(owner.getByText("2 of 3 selected · publishes 1 article")).toBeVisible();
+  await owner.getByRole("button", { name: "Approve 2 updates" }).click();
+  // It asks first, saying what will happen.
+  const confirm = owner.getByRole("alertdialog", { name: "Approve 2 updates?" });
+  await expect(confirm).toContainText("1 article edit published. The changelog line updated (still a draft).");
+  await confirm.getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText("Approved 2 updates")).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  const done = owner.getByRole("region", { name: "Done" });
+  await expect(done.getByRole("listitem", { name: `Out of date: ${article}` })).toContainText("Approved by Olive Owner");
+  await expect(done.getByRole("listitem", { name: "Changelog line: A dark theme, in Settings" })).toContainText("Approved by Olive Owner");
+  // Then the request on its own: nothing's ticked until it is.
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
+  await closes.getByRole("checkbox").check();
+  await owner.getByRole("button", { name: "Approve 1 update" }).click();
+  await owner.getByRole("alertdialog", { name: "Approve 1 update?" }).getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText("Approved 1 update")).toBeVisible();
+  await expect(done.getByRole("listitem", { name: `Closes the request: ${title}` })).toContainText("Approved by Olive Owner");
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
 
   // The post is completed, linked to the pull request, with the way back to Autopilot.
-  await proposal.getByRole("link", { name: title }).click();
-  await owner.waitForURL(`**/app/${slug}/p/1`);
+  await owner.goto(`/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Completed");
   await expect(owner.getByRole("link", { name: `acme/app#${number} · ${pr}` })).toBeVisible();
   await owner.getByRole("link", { name: "From Autopilot" }).click();
@@ -159,12 +172,41 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
 
   await owner.goto(`/app/${slug}/autopilot`);
   await owner.getByRole("link", { name: pr }).click();
-  const proposal = owner.getByRole("listitem", { name: `New article: ${draft}` });
+  const proposal = owner.getByRole("article", { name: `New article: ${draft}` });
   await expect(proposal).toContainText("Nothing explains exports yet.");
+  await expect(proposal).toContainText("A draft only your team sees");
   // The draft as readers will see it: its heading, its list and its bold.
   const preview = proposal.getByLabel(`Draft of ${draft}`);
   await expect(preview.getByRole("heading", { name: "Export it" })).toBeVisible();
   await expect(preview.getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
   await expect(preview.locator("strong")).toHaveText(["Settings", "Export"]);
   await checkpoint(owner, "autopilot-new-article");
+
+  // From an email: `?select=likely` ticks the likely ones and says so; `?select=<ids>` only those (here, none).
+  const page = owner.url();
+  await owner.goto(`${page}?select=likely`);
+  await expect(owner.getByText("From your email:")).toBeVisible();
+  await expect(proposal.getByRole("checkbox")).toBeChecked();
+  await owner.goto(`${page}?select=someone-else`);
+  await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
+  await expect(proposal.getByRole("checkbox")).not.toBeChecked();
+  await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
+
+  // On a phone: the updates as a list, each preview a tap away, and the button at the bottom.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.goto(page);
+  await expect(preview).toBeHidden();
+  await proposal.getByRole("button", { name: "Preview" }).click();
+  await expect(preview.getByRole("heading", { name: "Export it" })).toBeVisible();
+  const approve = owner.getByRole("button", { name: /^Approve \d/ });
+  await expect(approve).toBeInViewport();
+  await checkpoint(owner, "autopilot-phone", { fullPage: false });
+
+  // Approved from the email's link: the line says they're decided now, not still selected.
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`${page}?select=likely`);
+  await owner.getByRole("button", { name: /^Approve \d/ }).click();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
+  await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
 });

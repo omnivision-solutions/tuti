@@ -2,9 +2,10 @@ import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { addToRunningDraft } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 
-import { applyLikelyCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
+import { approveCodeChanges } from "@/server/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -183,17 +184,109 @@ test("proposals as likely as each other keep one order: by kind, then id", async
   expect((await call(getCodeChange, team(), { id: change.id })).actions.map((action) => action.id)).toEqual(["c", "a", "b", unlikely.id]);
 });
 
-test('"Apply likely" applies the likely feedback proposals and leaves the maybes, and a comment nobody wrote', async () => {
-  // Most likely of all, but with no comment to post: it waits for the team, and doesn't stop the rest.
+test("the review page ticks the likely updates as it opens (not a comment nobody wrote, nor a maybe), and says how many people completing a post emails", async () => {
+  // Most likely of all, but with no comment to post: not ticked.
   const unwritten = await proposal("MOVES_FORWARD", { probability: 0.95 });
   const likely = await proposal("RESOLVES", { probability: 0.9 });
   const maybe = await proposal("LINKS", { probability: 0.7 });
-  expect(await applyLikelyCodeChanges(project.slug, likely.change.id)).toEqual({});
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: likely.action.id } })).status).toBe("APPLIED");
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: maybe.action.id } })).status).toBe("PENDING");
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: unwritten.action.id } })).status).toBe("PENDING");
-  expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.filter((action) => action.applyLikely)).toEqual([]);
-  expect((await postOf(likely.post.id)).status).toBe("COMPLETED");
+  // The post's author is the voter; another voter, a commenter, and a teammate who voted (not emailed).
+  const other = await signUp("Otto Other");
+  const teammate = await signUp("Tess Team");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  await prisma.vote.createMany({ data: [other, teammate].map((user) => ({ projectId: project.id, postId: likely.post.id, userId: user.id })) });
+  await prisma.comment.create({ data: { projectId: project.id, postId: likely.post.id, authorId: other.id, body: "Yes please" } });
+  const { actions } = await call(getCodeChange, team(), { id: likely.change.id });
+  expect(actions.filter((action) => action.applyLikely).map((action) => action.id)).toEqual([likely.action.id]);
+  expect(actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 2 });
+  // Someone emailed already (it was completed, then reopened): not again.
+  await prisma.shippedEmail.create({ data: { postId: likely.post.id, userId: other.id, claimedAt: new Date(), sentAt: new Date() } });
+  expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 1 });
+  expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining([unwritten.action.id, maybe.action.id]));
+  // A post completed already (by hand, since): approving emails nobody.
+  const done = await proposal("RESOLVES", { status: "COMPLETED" });
+  const again = await call(getCodeChange, team(), { id: done.change.id });
+  expect(again.actions.find((action) => action.id === done.action.id)).toMatchObject({ emails: 0 });
+});
+
+describe("approving several (applyMany)", () => {
+  test("each as apply does, with its edits; one refused doesn't stop the rest, and says why", async () => {
+    const resolves = await proposal("RESOLVES");
+    const forward = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    const dismissed = await proposal("LINKS");
+    await call(dismissCodeChangeAction, team(), { id: dismissed.action.id });
+    const { results } = await call(applyCodeChangeActions, team(), {
+      actions: [{ id: resolves.action.id }, { id: dismissed.action.id }, { id: forward.action.id, comment: "Weekly repeats are out; monthly next." }],
+    });
+    expect(results).toEqual([
+      { id: resolves.action.id, status: "applied" },
+      { id: dismissed.action.id, status: "failed", code: "already_decided", message: "Someone already applied or dismissed this" },
+      { id: forward.action.id, status: "applied" },
+    ]);
+    expect((await postOf(resolves.post.id)).status).toBe("COMPLETED");
+    expect(await postOf(forward.post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out; monthly next." }] });
+  });
+
+  test("one failing unexpectedly is reported, and those before and after it are still applied", async () => {
+    const first = await proposal("LINKS");
+    const failing = await proposal("RESOLVES");
+    const last = await proposal("LINKS");
+    const upsert = prisma.postLink.upsert.bind(prisma.postLink);
+    vi.spyOn(prisma.postLink, "upsert").mockImplementation(((args: Parameters<typeof upsert>[0]) =>
+      args.where.postId_url?.postId === failing.post.id ? Promise.reject(new Error("connection reset")) : upsert(args)) as unknown as typeof prisma.postLink.upsert);
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: first.action.id }, { id: failing.action.id }, { id: last.action.id }] });
+    expect(results).toEqual([
+      { id: first.action.id, status: "applied" },
+      { id: failing.action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+      { id: last.action.id, status: "applied" },
+    ]);
+    // Not done: it's waiting again.
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: failing.action.id } })).status).toBe("PENDING");
+  });
+
+  test("a progress update: approved when its comment was saved before something failed, waiting again when it wasn't", async () => {
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // Saved, then reading who wrote it fails.
+    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out." });
+    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
+    expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Not saved: the comment's transaction fails.
+    const lost = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Monthly too." });
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: lost.action.id }] })).results).toEqual([
+      { id: lost.action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+    ]);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: lost.action.id } })).status).toBe("PENDING");
+    expect((await postOf(lost.post.id)).comments).toHaveLength(0);
+    // Not saved, and checking fails too: it stays applied (never posted twice), reported as unknown, not approved.
+    const unknown = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Yearly too." });
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.comment, "count").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
+      { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },
+    ]);
+  });
+
+  test("two people approving the same ones at once apply each once", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    const both = await Promise.all([1, 2].map(() => call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })));
+    expect(both.flatMap(({ results }) => results.map((result) => result.status)).sort()).toEqual(["applied", "failed"]);
+    expect((await postOf(post.id)).status).toBe("COMPLETED");
+    expect(shippedTo(voter.email)).toHaveLength(1);
+  });
+
+  test("the review page's Approve, as a server action: how many went, and those that didn't", async () => {
+    const { action } = await proposal("LINKS");
+    expect(await approveCodeChanges(project.slug, [{ id: action.id }, { id: "nope" }])).toEqual({
+      applied: 1,
+      failed: [{ id: "nope", message: "Action not found" }],
+    });
+    // None went: each one says why.
+    expect(await approveCodeChanges(project.slug, [{ id: action.id }])).toEqual({ applied: 0, failed: [{ id: action.id, message: "Someone already applied or dismissed this" }] });
+    // None of them is the project's: refused.
+    expect(await approveCodeChanges(project.slug, [{ id: "nope" }])).toEqual({ error: "Action not found" });
+  });
 });
 
 describe("docs", () => {
@@ -331,6 +424,59 @@ describe("docs", () => {
     }) as never);
     await expect(call(applyCodeChangeAction, team(), { id: draft.id })).rejects.toThrow("database blip");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("PENDING");
+  });
+
+  test("approving several: a new article saved before something after it failed is reported as applied, not to try again", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 22, url: "https://github.com/acme/app/pull/22", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    // The draft is saved; pointing the action at it fails.
+    vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("database blip"));
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    expect(await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).toEqual({ results: [{ id: action.id, status: "applied" }] });
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+  });
+
+  test("approving several: an article edit whose save failed and whose check failed too is reported as unknown, not to try again", async () => {
+    const { action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // The edit's save fails, and so does the check of whether it was saved.
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+  });
+
+  test("approving several: refused (the article changed meanwhile), and the check of what was saved failed too: unknown, not the refusal", async () => {
+    const { article, action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+  });
+
+  test("approving several: refused (the article changed meanwhile), then not put back (the database went): unknown, not the refusal", async () => {
+    const { article, action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // Right as it's claimed, someone saves the article (so its save is refused as changed)...
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    // ...and putting it back fails.
+    vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
   });
 
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
