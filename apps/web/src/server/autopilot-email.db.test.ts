@@ -876,3 +876,19 @@ test("a mail server down for a while (not refusing the address) doesn't use up t
   await sendAutopilotDigests(new Date("2026-11-02T09:00:00Z"));
   expect(to(owner)).toHaveLength(1);
 });
+
+test("once a reader's digests for the day are sent, later sweeps that day don't claim them again (nor read their teams one by one)", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  // (Counted from here: an earlier test's spy may be the one returned.)
+  const claims = vi.spyOn(prisma.autopilotDigest, "createMany");
+  const teams = vi.spyOn(prisma.teamMember, "findMany");
+  claims.mockClear();
+  teams.mockClear();
+  await sendAutopilotDigests(new Date("2026-11-02T09:00:00Z"));
+  expect(claims.mock.calls.filter(([args]) => JSON.stringify(args).includes(owner.id))).toHaveLength(0);
+  expect(teams).toHaveBeenCalledTimes(1);
+  expect(to(owner)).toHaveLength(1);
+});

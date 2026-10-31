@@ -463,6 +463,34 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
   // A week's claims are plenty to keep (a reader's day, wherever they are, is over by then).
   await prisma.autopilotDigest.deleteMany({ where: { day: { lt: new Date(now.getTime() - 7 * 86_400_000) } } });
   const readers = await prisma.user.findMany({ where: { autopilotEmails: "DIGEST", autopilotTimeZone: { not: null } }, select: { id: true, email: true, autopilotTimeZone: true } });
+  if (readers.length === 0) {
+    return 0;
+  }
+  // Read once a sweep, not per reader: their teams, and the digests of their last days already settled (sent, or
+  // given up), which need no claim again.
+  const ids = readers.map((reader) => reader.id);
+  const teams = new Map<string, Awaited<ReturnType<typeof readTeams>>>();
+  const readTeams = () =>
+    prisma.teamMember.findMany({
+      where: { userId: { in: ids } },
+      select: {
+        userId: true,
+        role: true,
+        autopilotTold: true,
+        project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true, analyseCodeChanges: true, plan: true } },
+      },
+    });
+  for (const team of await readTeams()) {
+    teams.set(team.userId, [...(teams.get(team.userId) ?? []), team]);
+  }
+  const settled = new Set(
+    (
+      await prisma.autopilotDigest.findMany({
+        where: { userId: { in: ids }, day: { gte: new Date(now.getTime() - 2 * 86_400_000) }, OR: [{ sentAt: { not: null } }, { attempts: { gte: MAX_SENDS } }] },
+        select: { userId: true, projectId: true, day: true },
+      })
+    ).map((digest) => `${digest.userId} ${digest.projectId} ${digest.day.toISOString()}`),
+  );
   let sent = 0;
   for (const reader of readers) {
     const local = localNow(now, reader.autopilotTimeZone!);
@@ -472,14 +500,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
     }
     const day = new Date(`${local.day}T00:00:00Z`);
     try {
-      const memberships = await prisma.teamMember.findMany({
-        where: { userId: reader.id },
-        select: {
-          role: true,
-          autopilotTold: true,
-          project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true, analyseCodeChanges: true, plan: true } },
-        },
-      });
+      const memberships = (teams.get(reader.id) ?? []).filter((team) => !settled.has(`${reader.id} ${team.project.id} ${day.toISOString()}`));
       for (const { role, autopilotTold, project } of memberships) {
         if (role !== "OWNER" && !autopilotTold && !(role === "ADMIN" && project.autopilotTellAdmins)) {
           continue;
