@@ -14,14 +14,19 @@ const noSubscription = () => () => {};
 /**
  * Tells the loader its Close is here (on a phone it hides its own, kept for a page that never comes),
  * and that it's gone once it is: the page goes away (a tab loading as a whole new page, which may fail),
- * or this Close does (the page's error screen took its place). Returns the cleanup.
+ * or this Close does (the page's error screen took its place). A page the browser kept (back/forward)
+ * says it's here again when it's shown. Returns the cleanup.
  */
 export function announceClose(window: Pick<Window, "addEventListener" | "removeEventListener"> & { parent: Pick<Window, "postMessage"> }) {
+  const here = () => window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
   const gone = () => window.parent.postMessage({ type: WIDGET_CLOSABLE_MESSAGE, closable: false }, "*");
-  window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
+  const back = (event: Event) => (event as PageTransitionEvent).persisted && here();
+  here();
   window.addEventListener("pagehide", gone);
+  window.addEventListener("pageshow", back);
   return () => {
     window.removeEventListener("pagehide", gone);
+    window.removeEventListener("pageshow", back);
     gone();
   };
 }
