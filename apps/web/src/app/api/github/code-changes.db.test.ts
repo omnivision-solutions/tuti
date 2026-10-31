@@ -43,6 +43,11 @@ beforeEach(async () => {
   model.requests.splice(0);
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
+  // What analysing proposes, as the team sees it: nothing goes out by itself here (autopilot-hold.db.test.ts has that).
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { autoApplyLinks: false, autopilotDrafts: false, autopilotArticleEdits: false, autopilotProgress: false, autopilotComplete: false },
+  });
   actAs(owner);
   installationId++;
   repo = `acme/app-${installationId}`;
@@ -626,6 +631,14 @@ describe("deciding", () => {
 
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Autopilot", auto: true });
+
+    // With drafts going out by themselves (Autopilot's default), the changelog line is scheduled as the analysis is saved.
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotDrafts: true } });
+    script(19);
+    await merge(19);
+    expect(await prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 19 }, kind: "CHANGELOG_LINE" }, select: { status: true } })).toEqual([
+      { status: "SCHEDULED" },
+    ]);
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {

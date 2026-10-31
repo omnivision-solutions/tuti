@@ -2,7 +2,7 @@
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, resumeCodeChanges as resumeOperation, undoCodeChangeAction } from "./operations/code-changes";
+import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
@@ -47,6 +47,24 @@ export async function applyCodeChange(
 /** Undo on an approved update: puts back what it changed (codeChangeActions.undo). */
 export async function undoCodeChange(projectSlug: string, actionId: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) => call(undoCodeChangeAction, context, { id: String(actionId) }));
+}
+
+/** Publish now: scheduled updates applied at once, by whoever asks (codeChangeActions.publishNow). */
+export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    for (const id of (Array.isArray(actionIds) ? actionIds : []).map(String)) {
+      await call(publishCodeChangeActionNow, context, { id });
+    }
+  });
+}
+
+/** Stop: scheduled updates wait for the team instead (codeChangeActions.stop). */
+export async function stopCodeChanges(projectSlug: string, actionIds: string[]): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    for (const id of (Array.isArray(actionIds) ? actionIds : []).map(String)) {
+      await call(stopCodeChangeAction, context, { id });
+    }
+  });
 }
 
 export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {

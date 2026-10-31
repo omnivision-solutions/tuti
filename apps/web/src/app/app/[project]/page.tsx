@@ -4,7 +4,8 @@ import { CheckCircle2Icon, CircleIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { ResumeAllButton } from "@/components/code-changes";
+import { ResumeAllButton, ScheduledButtons } from "@/components/code-changes";
+import { GoesOut } from "@/components/goes-out";
 import { EmptyState } from "@/components/empty-state";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
@@ -109,11 +110,23 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                       </Link>
                     }
                     badges={<Badge variant="outline">{item.kind}</Badge>}
-                    meta={<span title={formatDate(item.at)}>{timeAgo(item.at)}</span>}
+                    meta={
+                      <>
+                        <span title={formatDate(item.at)}>{timeAgo(item.at)}</span>
+                        {item.scheduled && (
+                          <span className="block text-foreground">
+                            <GoesOut at={item.scheduled.dueAt} prefix={item.scheduled.ids.length === 1 ? "1 update goes out" : `${item.scheduled.ids.length} updates go out`} />
+                          </span>
+                        )}
+                      </>
+                    }
                     actions={
-                      <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
-                        {item.action}
-                      </Link>
+                      <>
+                        {item.scheduled && <ScheduledButtons projectSlug={slug} actionIds={item.scheduled.ids} />}
+                        <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                          {item.action}
+                        </Link>
+                      </>
                     }
                   />
                 ))}

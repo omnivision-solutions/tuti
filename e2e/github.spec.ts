@@ -63,11 +63,21 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.waitForURL("**/settings/autopilot");
   await analysis.click();
   await expect(owner.getByText("Autopilot on")).toBeVisible();
-  // Applying by itself is opt-in, and only for links.
+  // Linking by itself is on for a new project; its owner can turn it off.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
-  await expect(autoLinks).not.toBeChecked();
+  await expect(autoLinks).toBeChecked();
   await autoLinks.click();
-  await expect(owner.getByText("Autopilot links posts by itself")).toBeVisible();
+  await expect(owner.getByText("Autopilot asks before linking posts")).toBeVisible();
+  // What it does by itself, what always waits, and the hold, saved by the owner.
+  await expect(owner.getByRole("switch", { name: "Complete requests" })).not.toBeChecked();
+  await owner.getByRole("switch", { name: "Complete requests" }).click();
+  await owner.getByLabel("The hold (hours)").fill("12");
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
+  await owner.reload();
+  await expect(owner.getByRole("switch", { name: "Complete requests" })).toBeChecked();
+  await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
+  await checkpoint(owner, "settings-autopilot");
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, { ...account, add: [] });

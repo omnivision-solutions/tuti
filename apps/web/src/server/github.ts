@@ -4,6 +4,7 @@ import { prisma } from "@tuti/db";
 import { includeRepositories, inInstallation, listedRepositories, syncRepositories } from "@tuti/jobs";
 import { refresh } from "next/cache";
 
+import type { FormState } from "./form-state";
 import { getAdminProject, getOwnerProject } from "./membership";
 
 /** Disconnects GitHub from the project here (the App stays installed on GitHub until removed there). */
@@ -121,6 +122,44 @@ export async function setAutoApplyLinks(projectSlug: string, on: boolean): Promi
     return { error: "Only project owners can change Autopilot's settings" };
   }
   await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: on === true } });
+  refresh();
+  return {};
+}
+
+/**
+ * Settings → Autopilot (owners): what it does by itself (switches, unticked = off) and what always waits
+ * for someone (how sure, how many people a post reaches, how often an article is read), and the hold.
+ */
+export async function saveAutopilotSettings(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const project = await getOwnerProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners can change Autopilot's settings" };
+  }
+  const whole = (name: string, min: number, max: number) => {
+    const value = Number(formData.get(name));
+    return Number.isInteger(value) && value >= min && value <= max ? value : null;
+  };
+  const minSure = whole("minSure", 50, 100);
+  const maxReach = whole("maxReach", 1, 100_000);
+  const maxViews = whole("maxViews", 1, 10_000_000);
+  const holdHours = whole("holdHours", 0, 24 * 14);
+  if (minSure === null || maxReach === null || maxViews === null || holdHours === null) {
+    return { error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)" };
+  }
+  const on = (name: string) => formData.get(name) === "on";
+  await prisma.project.update({
+    where: { id: project.id },
+    data: {
+      autopilotDrafts: on("drafts"),
+      autopilotArticleEdits: on("articleEdits"),
+      autopilotProgress: on("progress"),
+      autopilotComplete: on("complete"),
+      autopilotMinSure: minSure,
+      autopilotMaxReach: maxReach,
+      autopilotMaxViews: maxViews,
+      autopilotHoldHours: holdHours,
+    },
+  });
   refresh();
   return {};
 }

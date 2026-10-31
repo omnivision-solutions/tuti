@@ -11,7 +11,16 @@ const ATTENTION = 20;
 const DAY = 86_400_000;
 
 /** One thing waiting for the team, with what to do about it. */
-export type AttentionItem = { key: string; at: Date; kind: string; title: string; action: string; href: string };
+export type AttentionItem = {
+  key: string;
+  at: Date;
+  kind: string;
+  title: string;
+  action: string;
+  href: string;
+  /** Autopilot's updates going out by themselves, with when the first goes (Publish now, Stop). */
+  scheduled?: { ids: string[]; dueAt: string };
+};
 
 /**
  * A project's Home (docs/plan.md, the redesign's step 3): four numbers that each open their list; what
@@ -33,7 +42,8 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
   // As the sidebar and Autopilot's list: updates waiting, whatever the change's analysis is doing now.
   const updateWaits = { status: { in: ["PENDING" as const, "STALE" as const] } };
-  const changeWaits = { projectId, actions: { some: updateWaits } };
+  // A change is listed while updates wait for the team or go out by themselves; the number counts those waiting.
+  const changeWaits = { projectId, actions: { some: { status: { in: ["PENDING" as const, "STALE" as const, "SCHEDULED" as const] } } } };
   // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
   const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes] =
     await Promise.all([
@@ -57,7 +67,13 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       where: changeWaits,
       orderBy: { mergedAt: "asc" },
       take: ATTENTION,
-      select: { id: true, title: true, mergedAt: true, _count: { select: { actions: { where: updateWaits } } } },
+      select: {
+        id: true,
+        title: true,
+        mergedAt: true,
+        _count: { select: { actions: { where: updateWaits } } },
+        actions: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, select: { id: true, dueAt: true } },
+      },
     }),
     prisma.codeChange.count({ where: changeWaits }),
     prisma.codeChangeAction.count({ where: { ...updateWaits, codeChange: { projectId } } }),
@@ -93,9 +109,10 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
       key: `a${c.id}`,
       at: c.mergedAt,
       kind: "Autopilot",
-      title: `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}`,
+      title: c._count.actions > 0 ? `${c.title} · ${c._count.actions} ${c._count.actions === 1 ? "update" : "updates"}` : c.title,
       action: "Review",
       href: `${base}/autopilot/${c.id}`,
+      ...(c.actions.length > 0 && { scheduled: { ids: c.actions.map((a) => a.id), dueAt: (c.actions[0]!.dueAt ?? new Date()).toISOString() } }),
     })),
     ...failedSearches.map((s) => ({
       key: `s${s.query}`,

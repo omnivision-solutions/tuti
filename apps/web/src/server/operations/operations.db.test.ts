@@ -130,6 +130,8 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "codeChangeActions.applyMany": (f) => ({ actions: [{ id: f.linkActionId }] }),
   "codeChangeActions.dismiss": (f) => ({ id: f.dismissActionId, reason: "Not this one" }),
   "codeChangeActions.undo": (f) => ({ id: f.appliedActionId }),
+  "codeChangeActions.publishNow": (f) => ({ id: f.scheduledActionId }),
+  "codeChangeActions.stop": (f) => ({ id: f.stoppableActionId }),
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
@@ -356,11 +358,14 @@ async function createFixture(own: "domain" | "site" = "domain") {
           { kind: "LINKS", postId: first!.id, probability: 0.9 },
           // Approved already, to undo (it put nothing back to put back).
           { kind: "RESOLVES", postId: first!.id, probability: 0.9, status: "APPLIED", payload: { undo: { linked: false } } },
+          // Going out by itself later: to publish now, and to stop.
+          { kind: "MOVES_FORWARD", postId: first!.id, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Out now" } },
+          { kind: "ARTICLE_EDIT", probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000) },
           { kind: "MOVES_FORWARD", postId: second!.id, probability: 0.5, payload: { comment: "Getting there" } },
         ],
       },
     },
-    select: { id: true, actions: { select: { id: true, kind: true } } },
+    select: { id: true, actions: { select: { id: true, kind: true, status: true } } },
   });
   return {
     marker,
@@ -371,8 +376,10 @@ async function createFixture(own: "domain" | "site" = "domain") {
     redirectId: redirect.id,
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
-    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
+    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "PENDING")!.id,
     appliedActionId: codeChange.actions.find((action) => action.kind === "RESOLVES")!.id,
+    scheduledActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "SCHEDULED")!.id,
+    stoppableActionId: codeChange.actions.find((action) => action.kind === "ARTICLE_EDIT")!.id,
   };
 }
 

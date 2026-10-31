@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
+import { runAutopilot } from "./autopilot";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -35,25 +36,36 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextModelReply(summary, pr);
   await nextDecision({ effect: { resolves: 0.9, moves_forward: 0.05, related: 0.04, unrelated: 0.01 } }, title);
   // (The new-article question lists the article's title too, so this one matches the article itself.)
-  await nextDecision({ effect: { wrong: 0.9, missing: 0.05, unaffected: 0.05 } }, `"article":{"title":"${article}"`);
+  // 90% sure it's wrong: under the bar (95%), so the edit waits for the team.
+  await nextDecision({ effect: { wrong: 0.85, missing: 0.05, unaffected: 0.1 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
+<<<<<<< HEAD
   // Home's "Needs your attention" has it, with Review, and so does Autopilot, waiting for the team.
   await owner.goto(`/app/${slug}`);
   const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
   await expect(catchUp).toContainText(`${pr} · 3 updates`);
   await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(owner.getByRole("link", { name: /^3\s*Updates waiting$/ })).toBeVisible();
+=======
+  // Home's Catch up has it, and so does Autopilot: two updates wait for the team (not 95% sure, and completing a post
+  // asks first), and the changelog line goes out by itself at once.
+  await owner.goto(`/app/${slug}`);
+  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
+  await expect(catchUp).toContainText("2 to review");
+  await expect(catchUp).toContainText("1 update goes out in a moment");
+  await expect(catchUp.getByRole("button", { name: "Publish now" })).toBeVisible();
+>>>>>>> cfe3ebc3 (Autopilot's hold: what it's sure of goes out by itself (drafts at once, the rest after the hold), checked again when due; Publish now and Stop; the settings for it)
   await checkpoint(owner, "home-catch-up");
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/autopilot`);
   await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
-  await expect(owner.getByText("3 to review")).toBeVisible();
-  // Its updates, in a line.
-  await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText(`Closes ${title} · updates 1 article · changelog line`);
+  await expect(owner.getByText("2 to review")).toBeVisible();
+  // Its updates waiting for the team, in a line.
+  await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText(`Closes ${title} · updates 1 article`);
   await checkpoint(owner, "autopilot");
   await owner.getByRole("link", { name: pr }).click();
 
@@ -73,14 +85,21 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(changes).toContainText("Pick Light, Dark or System in Settings.");
   // Formatted as readers see it: the new paragraph's bold is bold.
   await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
+  // The changelog line goes out by itself; Stop makes it wait for the team.
   const line = owner.getByRole("article", { name: "Changelog line: Dark theme" });
-  await expect(line.getByRole("checkbox")).toBeChecked();
+  await expect(line).toContainText("Goes out by itself");
+  await expect(line).toContainText("Goes out in a moment");
+  await expect(line.getByRole("checkbox")).toHaveCount(0);
   // One button says what approving does; beside it, the same in words.
-  await expect(owner.getByRole("button", { name: "Approve 3 updates" })).toBeEnabled();
-  await expect(owner.getByText("3 of 3 selected · publishes 1 article")).toBeVisible();
+  await expect(owner.getByRole("button", { name: "Approve 2 updates" })).toBeEnabled();
+  await expect(owner.getByText("2 of 2 selected · publishes 1 article")).toBeVisible();
   await expect(owner.getByRole("region", { name: "When you approve" })).toContainText("1 article edit published");
   await checkpoint(owner, "autopilot-change");
+  await line.getByRole("button", { name: "Stop" }).click();
+  await expect(owner.getByText("Stopped: it waits for you")).toBeVisible();
+  await expect(line).toContainText("Waits for you: Stopped by Olive Owner.");
   // The changelog line as the team words it (Edit), and the request left out for now.
+  await line.getByRole("checkbox").check();
   await line.getByRole("button", { name: "Edit" }).click();
   await line.getByRole("textbox", { name: "Changelog line" }).fill("A dark theme, in Settings");
   await closes.getByRole("checkbox").uncheck();
@@ -140,7 +159,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await row.getByRole("button", { name: "Analyse anyway" }).click();
   await expect(owner.getByText("Analysed", { exact: true })).toBeVisible();
   await expect(owner.getByText("Nothing to do (1)")).toHaveCount(0);
-  await expect(owner.getByRole("listitem").filter({ hasText: chore })).toContainText("1 to review");
+  // Its changelog line goes out by itself (nothing waits for the team).
+  await expect(owner.getByRole("listitem").filter({ hasText: chore })).toContainText("1 update goes out in a moment");
 
   // The changelog's draft has the line the team wrote, and not the pull request users don't see.
   await owner.goto(`/app/${slug}/changelog/1`);
@@ -223,4 +243,53 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(done).toContainText("Undone by Olive Owner");
   await owner.goto(`/app/${slug}/docs`);
   await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
+});
+
+test("an article edit Autopilot is sure of goes out by itself once the hold passes; Home and the page say when", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  // 97% sure: over the bar, so it goes out by itself after the hold.
+  await nextDecision({ effect: { wrong: 0.97, missing: 0, unaffected: 0.03 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
+  await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
+
+  // Home says it goes out by itself, with Publish now and Stop; the page says when.
+  await owner.goto(`/app/${slug}`);
+  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
+  await expect(catchUp).toContainText("2 updates go out");
+  await expect(catchUp.getByRole("button", { name: "Stop" })).toBeVisible();
+  await catchUp.getByRole("link", { name: pr }).click();
+  const edit = owner.getByRole("article", { name: `Out of date: ${article}` });
+  await expect(edit).toContainText("Goes out by itself");
+  await expect(edit).toContainText(/Goes out tomorrow at \d/);
+  await expect(edit.getByRole("button", { name: "Publish now" })).toBeVisible();
+  await checkpoint(owner, "autopilot-scheduled");
+
+  // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
+  // (It runs for every project, journeys running beside this one too: what it did here is checked below.)
+  await runAutopilot(slug, { dueNow: true });
+  await owner.reload();
+  const done = owner.getByRole("region", { name: "Done" });
+  await expect(done.getByRole("listitem", { name: `Out of date: ${article}` })).toContainText("Applied by Autopilot");
+  const portalArticle = await owner.context().newPage();
+  await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
+  await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
+  await portalArticle.close();
 });

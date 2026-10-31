@@ -115,6 +115,12 @@ export const jobs = {
     // 5s, 25s, 2m, 10m, then an hour: rides out a mail provider's outage.
     backoff: { factor: 5, maxSeconds: 60 * 60 },
   },
+  /** Applies Autopilot's updates that are due (its hold is over), through the web app. */
+  autopilotDue: {
+    name: "autopilot-due",
+    input: z.object({}),
+    cron: "* * * * *",
+  },
   /** Queues post-shipped again for posts whose emails are late (never queued, or the run died). */
   resubmitShippedEmails: {
     name: "shipped-emails-resubmit",

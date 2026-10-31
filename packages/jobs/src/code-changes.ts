@@ -21,6 +21,7 @@ import {
   THRESHOLDS,
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
+import { scheduleByItself } from "./autopilot";
 import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
@@ -206,7 +207,7 @@ async function analyse(
       await finish(change.id, { state: "NOTHING_TO_DO", reason: gate.reason, summary: "", why: "", ...versions }, []);
       // The gate decides what the changelog hears about (instead of labels): its bullet leaves the running draft.
       await removeFromRunningDraft(change.projectId, change.pullRequest.url);
-      return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0 };
+      return { state: "NOTHING_TO_DO" as const, actions: 0, linked: 0, scheduled: 0 };
     }
   }
   const summary = await writeSummary(pr, use);
@@ -253,7 +254,9 @@ async function analyse(
     pullRequest: change.pullRequest,
     data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
   });
-  return { state: "READY" as const, actions: waiting, linked };
+  // What it's sure of goes out by itself: drafts at once, the rest after the hold (the web app applies them when due).
+  const scheduled = await scheduleByItself(change.projectId, change.id);
+  return { state: "READY" as const, actions: waiting, linked, scheduled };
 }
 
 /** The app's address (APP_URL), for links to the team's pages. */

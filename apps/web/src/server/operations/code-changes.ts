@@ -1,6 +1,6 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { changelogLineOf, confidence, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine } from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
@@ -27,7 +27,7 @@ const KINDS: Record<CodeChangeActionKind, string> = {
   NEW_ARTICLE: "new_article",
   CHANGELOG_LINE: "changelog_line",
 };
-const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale", UNDONE: "undone" };
+const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale", UNDONE: "undone", SCHEDULED: "scheduled" };
 
 /**
  * An update the review page ticks as it opens: one Autopilot is sure of (above its kind's likely
@@ -121,7 +121,11 @@ const changeView = (change: ChangeRow) => ({
   waiting: change._count.actions,
 });
 
-export type CodeChangeView = ReturnType<typeof changeView>;
+export type CodeChangeView = ReturnType<typeof changeView> & {
+  /** Updates going out by itself (their ids, for Publish now and Stop), and when the first goes (Home's "Goes out …"). */
+  scheduled: string[];
+  nextDueAt: string | null;
+};
 
 /**
  * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
@@ -132,14 +136,27 @@ export async function codeChangeList(projectId: string, { waiting = false, pause
   const changes = await prisma.codeChange.findMany({
     where: {
       projectId,
-      ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }),
+      // Waiting for the team, or going out by itself (Home shows both).
+      ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } } }),
       ...(paused && { state: "PAUSED" as const }),
     },
     orderBy: { mergedAt: "desc" },
     take: 100,
     select: changeSelect,
   });
-  return changes.map(changeView).sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
+  const scheduled = await prisma.codeChangeAction.findMany({
+    where: { codeChangeId: { in: changes.map((change) => change.id) }, status: "SCHEDULED" },
+    orderBy: { dueAt: "asc" },
+    select: { id: true, codeChangeId: true, dueAt: true },
+  });
+  const of = (id: string) => scheduled.filter((action) => action.codeChangeId === id);
+  return changes
+    .map((change) => ({
+      ...changeView(change),
+      scheduled: of(change.id).map((action) => action.id),
+      nextDueAt: of(change.id)[0]?.dueAt?.toISOString() ?? null,
+    }))
+    .sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
 }
 
 /** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
@@ -160,6 +177,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
           payload: true,
           decidedAt: true,
           dismissReason: true,
+          dueAt: true,
+          waitReason: true,
           decidedBy: { select: { name: true } },
           post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
           article: { select: articleSelect },
@@ -229,6 +248,10 @@ export async function codeChangeDetail(projectId: string, id: string) {
         putsBackStatus: Boolean(undoOf(action.payload)?.status),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
+        /** A scheduled update: when it goes out by itself (Publish now, Stop). */
+        dueAt: action.dueAt?.toISOString() ?? null,
+        /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
+        waitReason: action.waitReason,
       };
     }),
   };
@@ -915,6 +938,114 @@ export const undoCodeChangeAction = defineOperation({
     return { id: action.id, status: "undone" };
   },
 });
+
+export const publishCodeChangeActionNow = defineOperation({
+  name: "codeChangeActions.publishNow",
+  summary: "Publish now: a scheduled action (going out by itself after the hold) is applied at once, as codeChangeActions.apply does, by whoever asks",
+  method: "POST",
+  path: "/code-change-actions/{id}/publish-now",
+  scope: "write",
+  access: "team",
+  input: z.object({ id }),
+  run: async (context, input) => {
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    if (!action) {
+      throw new OperationError(404, "not_found", "Action not found");
+    }
+    // Taken off the schedule first, so the runner can't apply it too; apply then claims it as anyone's approval does.
+    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: { status: "PENDING", dueAt: null } });
+    if (count === 0) {
+      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+    }
+    return call(applyCodeChangeAction, context, { id: action.id });
+  },
+});
+
+export const stopCodeChangeAction = defineOperation({
+  name: "codeChangeActions.stop",
+  summary: "Stop: a scheduled action doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss)",
+  method: "POST",
+  path: "/code-change-actions/{id}/stop",
+  scope: "write",
+  access: "team",
+  input: z.object({ id }),
+  run: async (context, input) => {
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    if (!action) {
+      throw new OperationError(404, "not_found", "Action not found");
+    }
+    const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: "SCHEDULED" },
+      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}` },
+    });
+    if (count === 0) {
+      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+    }
+    return { id: action.id, status: "pending" };
+  },
+});
+
+/**
+ * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as
+ * Tuti (by the project's first owner, marked as Autopilot's own), or put back to waiting with why. Run
+ * every minute (the worker's autopilot-due, or a timer where jobs run inline). Returns how many of each.
+ */
+export async function runDueAutopilot(now = new Date()): Promise<{ applied: number; waiting: number }> {
+  const due = await prisma.codeChangeAction.findMany({
+    where: { status: "SCHEDULED", dueAt: { lte: now } },
+    orderBy: { dueAt: "asc" },
+    take: 100,
+    select: {
+      id: true,
+      kind: true,
+      probability: true,
+      payload: true,
+      postId: true,
+      articleId: true,
+      codeChange: { select: { projectId: true, project: { select: autopilotSettingsSelect } } },
+    },
+  });
+  let applied = 0;
+  let waiting = 0;
+  const wait = async (id: string, waitReason: string) => {
+    const { count } = await prisma.codeChangeAction.updateMany({ where: { id, status: { in: ["SCHEDULED", "PENDING"] } }, data: { status: "PENDING", dueAt: null, waitReason } });
+    waiting += count;
+  };
+  for (const action of due) {
+    const { projectId, project } = action.codeChange;
+    const reason = await waitsBecause(action, project);
+    if (reason) {
+      await wait(action.id, reason);
+      continue;
+    }
+    const owner = await prisma.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { userId: true } });
+    if (!owner) {
+      await wait(action.id, "The project has no owner to apply it as");
+      continue;
+    }
+    // Taken off the schedule first, so two runners (or a Publish now) apply it once.
+    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED", dueAt: { lte: now } }, data: { status: "PENDING", dueAt: null } });
+    if (count === 0) {
+      continue;
+    }
+    try {
+      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id });
+    } catch (error) {
+      log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
+      // Saved before the failure: it went. Not: it waits for the team, saying why.
+      if (!(error as { saved?: boolean }).saved) {
+        await wait(action.id, error instanceof OperationError ? error.message : "Couldn't apply it");
+        continue;
+      }
+    }
+    // Autopilot's own: nobody approved it.
+    const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
+    applied++;
+  }
+  return { applied, waiting };
+}
 
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",

@@ -31,6 +31,8 @@ export const serverEnv = {
   PORTAL_URL_TEMPLATE: `http://{project}.localhost:${PORT}`,
   BETTER_AUTH_SECRET: "e2e-secret-at-least-32-characters-long",
   JOBS_DRIVER: "inline",
+  // Autopilot's minute runs when a journey asks (runAutopilot), not on a timer.
+  AUTOPILOT_TIMER: "off",
   // Journeys receive webhooks on localhost.
   WEBHOOK_ALLOW_PRIVATE_URLS: "true",
   // Empty, not unset: Next.js would otherwise fill them from a local .env file.

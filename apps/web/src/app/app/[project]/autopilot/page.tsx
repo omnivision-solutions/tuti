@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { EmptyState } from "@/components/empty-state";
+import { GoesOut } from "@/components/goes-out";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
@@ -48,6 +49,11 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
           {(change.state === "nothing_to_do" || change.state === "paused") && change.reason && ` · ${change.reason}`}
           {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
+          {change.nextDueAt && (
+            <span className="block text-foreground">
+              <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out`} />
+            </span>
+          )}
         </>
       }
       actions={
@@ -127,7 +133,11 @@ function StateBadge({ change }: { change: CodeChangeView }) {
     case "paused":
       return <Badge variant="secondary">Paused</Badge>;
     case "ready":
-      return change.waiting > 0 ? <Badge variant="highlight">{change.waiting} to review</Badge> : <Badge variant="outline">Reviewed</Badge>;
+      return change.waiting > 0 ? (
+        <Badge variant="highlight">{change.waiting} to review</Badge>
+      ) : change.scheduled.length > 0 ? null : (
+        <Badge variant="outline">Reviewed</Badge>
+      );
     default:
       return null;
   }
