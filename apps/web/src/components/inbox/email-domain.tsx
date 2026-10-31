@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
-import { useActionState, useTransition } from "react";
+import { Suspense, use, useActionState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -51,7 +51,7 @@ export function EmailDomainSettings({
   own,
   supportAddress,
   oneClick,
-  receiver = "other",
+  receiver,
 }: {
   projectSlug: string;
   own: OwnDomain;
@@ -59,13 +59,12 @@ export function EmailDomainSettings({
   /** Where the domain's DNS provider can add the records itself, while they're needed. */
   oneClick?: Promise<OneClickDns | null> | null;
   /** Who receives the domain's email (lib/mail-providers.ts), while it isn't forwarded yet. */
-  receiver?: MailProvider | "none" | "other";
+  receiver?: Promise<Receiver> | null;
 }) {
   if (!own.address) {
     return <AddAddressForm projectSlug={projectSlug} />;
   }
   const sending = own.verified && own.included;
-  const domain = own.address.slice(own.address.lastIndexOf("@") + 1);
   return (
     <div className="flex flex-col gap-6">
       <span className="font-medium break-all">{own.address}</span>
@@ -99,33 +98,22 @@ export function EmailDomainSettings({
           <h3 className="text-sm font-medium">Receiving emails</h3>
           <Badge variant={own.receivedAt ? "default" : "secondary"}>{own.receivedAt ? "Forwarded" : "Waiting for an email"}</Badge>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {own.receivedAt
-            ? `Emails to ${own.address} land in the Inbox. Keep forwarding it:`
-            : receiver === "none"
-              ? `Nothing receives email for ${domain} yet. Set up a forwarding service for it (Cloudflare Email Routing and ImprovMX are free), and forward ${own.address}:`
-              : `${typeof receiver === "object" ? `${domain}'s email is at ${receiver.name}. There` : "At your email provider"}, forward ${own.address} to your support address, so emails to it land in the Inbox:`}
-        </p>
+        {own.receivedAt ? (
+          <p className="text-sm text-muted-foreground">Emails to {own.address} land in the Inbox. Keep forwarding it:</p>
+        ) : (
+          <Suspense fallback={<ForwardingGuide address={own.address} receiver="other" />}>
+            <DetectedGuide address={own.address} receiver={receiver} />
+          </Suspense>
+        )}
         <section aria-label={`Forward ${own.address}`} className="flex flex-col gap-2">
           <CopyField label="From" name="forwarding from" value={own.address} />
           <CopyField label="To" name="forwarding to" value={supportAddress} />
         </section>
         {!own.receivedAt && (
-          <>
-            <a
-              href={typeof receiver === "object" ? receiver.docs : EMAIL_FORWARDING_DOCS}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 self-start text-sm underline underline-offset-4"
-            >
-              {typeof receiver === "object" ? `How to forward with ${receiver.name}` : "How to forward it"}
-              <ExternalLinkIcon className="size-3.5" />
-            </a>
-            <p className="text-sm text-muted-foreground">
-              Your provider may ask to confirm the forwarding: that email lands in the Inbox. Then send an email to {own.address} to check: it shows here once it
-              arrives.
-            </p>
-          </>
+          <p className="text-sm text-muted-foreground">
+            Your provider may ask to confirm the forwarding: that email lands in the Inbox. Then send an email to {own.address} to check: it shows here once it
+            arrives.
+          </p>
         )}
         {own.receivedAt && <p className="text-sm text-muted-foreground">Last email received {timeAgo(new Date(own.receivedAt))}.</p>}
       </section>
@@ -133,6 +121,35 @@ export function EmailDomainSettings({
         <RemoveButton projectSlug={projectSlug} address={own.address} supportAddress={supportAddress} />
       </div>
     </div>
+  );
+}
+
+type Receiver = MailProvider | "none" | "other";
+
+function DetectedGuide({ address, receiver }: { address: string; receiver?: Promise<Receiver> | null }) {
+  return <ForwardingGuide address={address} receiver={receiver ? use(receiver) : "other"} />;
+}
+
+/** How to forward the address: where its domain's email is (from its MX), and that provider's guide. */
+function ForwardingGuide({ address, receiver }: { address: string; receiver: Receiver }) {
+  const domain = address.slice(address.lastIndexOf("@") + 1);
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {receiver === "none"
+          ? `Nothing receives email for ${domain} yet. Set up a forwarding service for it (Cloudflare Email Routing and ImprovMX are free), and forward ${address}:`
+          : `${typeof receiver === "object" ? `${domain}'s email is at ${receiver.name}. There` : "At your email provider"}, forward ${address} to your support address, so emails to it land in the Inbox:`}
+      </p>
+      <a
+        href={typeof receiver === "object" ? receiver.docs : EMAIL_FORWARDING_DOCS}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1 self-start text-sm underline underline-offset-4"
+      >
+        {typeof receiver === "object" ? `How to forward with ${receiver.name}` : "How to forward it"}
+        <ExternalLinkIcon className="size-3.5" />
+      </a>
+    </>
   );
 }
 

@@ -109,7 +109,8 @@ export const setEmailDomain = defineOperation({
         }
         await tx.emailDomain.create({ data: { projectId, domain, address, dkimTokens: (created ?? existing)?.tokens ?? [] } });
       } else {
-        await tx.emailDomain.update({ where: { projectId }, data: { address } });
+        // Another address on the domain hasn't been forwarded yet.
+        await tx.emailDomain.update({ where: { projectId }, data: { address, ...(address !== current.address && { receivedAt: null }) } });
       }
     });
     return supportSettings(projectId);

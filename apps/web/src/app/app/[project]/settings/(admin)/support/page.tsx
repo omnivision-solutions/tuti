@@ -30,8 +30,9 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
       ? oneClickDns(dkim[0]![1]!, "email-domain", { dkim1: dkim[0]![0]!, dkim2: dkim[1]![0]!, dkim3: dkim[2]![0]! }, new URL(`/app/${project.slug}/settings/support`, appUrl()).href)
       : null;
   // Who receives the address's email (its domain's MX), for how to forward it, until it's forwarded.
+  // Not awaited either: the general guide shows until it's in.
   const receiver =
-    own?.address && !own.receivedAt ? await mxHosts(own.address.slice(own.address.lastIndexOf("@") + 1)).then(mailProvider, () => "other" as const) : "other";
+    own?.address && !own.receivedAt ? mxHosts(own.address.slice(own.address.lastIndexOf("@") + 1)).then(mailProvider, () => "other" as const) : null;
   return (
     <>
       <Card>
