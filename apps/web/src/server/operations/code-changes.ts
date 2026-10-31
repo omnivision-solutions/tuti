@@ -75,6 +75,9 @@ const changeSelect = {
 
 type ChangeRow = Prisma.CodeChangeGetPayload<{ select: typeof changeSelect }>;
 
+/** Reasons saved before Code changes was Autopilot, as they read now (they stay saved on paused rows). */
+const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": "Autopilot needs the Pro plan." };
+
 const changeView = (change: ChangeRow) => ({
   id: change.id,
   repo: change.repo,
@@ -85,7 +88,7 @@ const changeView = (change: ChangeRow) => ({
   mergedAt: change.mergedAt.toISOString(),
   state: STATES[change.state],
   /** Why there's nothing to do, or where it failed. */
-  reason: change.reason,
+  reason: change.reason && (RENAMED_REASONS[change.reason] ?? change.reason),
   summary: change.summary,
   /** Proposals waiting for the team. */
   waiting: change._count.actions,
@@ -171,8 +174,10 @@ export async function codeChangeDetail(projectId: string, id: string) {
         ...(action.kind === "NEW_ARTICLE" && { title: payload.title ?? "", after: payload.body ?? "" }),
         /** The pull request's line in the changelog (as proposed, or as written once applied). */
         ...(action.kind === "CHANGELOG_LINE" && { line: (payload as { line?: string }).line ?? "" }),
-        /** Who applied or dismissed it: "Tuti" for a link it applied by itself (see AUTO_LINK). */
-        decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Tuti" : null),
+        /** Who applied or dismissed it: "Autopilot" for a link it applied by itself (see AUTO_LINK, and `auto`). */
+        decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
+        /** Applied by Autopilot itself, nobody approving it. */
+        auto: Boolean((payload as { auto?: boolean }).auto),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
       };
@@ -186,7 +191,7 @@ const id = z.string().min(1).max(100);
 
 export const listCodeChanges = defineOperation({
   name: "codeChanges.list",
-  summary: "List code changes: merged pull requests, each with what Tuti proposes (those with proposals waiting first)",
+  summary: "List code changes (Autopilot): merged pull requests, each with the updates it suggests (those with updates waiting first)",
   method: "GET",
   path: "/code-changes",
   scope: "read",
@@ -230,7 +235,7 @@ export const analyseCodeChange = defineOperation({
       throw new OperationError(404, "not_found", "Code change not found");
     }
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
     }
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
@@ -258,7 +263,7 @@ export const resumeCodeChanges = defineOperation({
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
     }
     await requirePlan(projectId, "codeChanges");
     await aiOrRefuse(projectId, "code_changes");

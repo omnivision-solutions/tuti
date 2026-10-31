@@ -163,10 +163,10 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
 
       <Card>
         <CardHeader>
-          <CardTitle>Code changes</CardTitle>
+          <CardTitle>Autopilot</CardTitle>
           <CardDescription>
-            Tuti reads each merged pull request and proposes the feedback it resolves and the docs it changes. Nothing changes for your users
-            until your team applies a proposal.
+            When a pull request merges, Autopilot reads it and finds the requests it closes, the docs it changes and its changelog line.
+            Nothing changes for your users until your team approves an update.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -183,7 +183,7 @@ export default async function GithubIntegrationPage(props: PageProps<"/app/[proj
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Code changes need AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).
+              Autopilot needs AI on this server (OPENROUTER_API_KEY and OPENAI_API_KEY in .env.example).
             </p>
           )}
         </CardContent>

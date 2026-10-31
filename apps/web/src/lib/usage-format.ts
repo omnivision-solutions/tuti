@@ -6,7 +6,7 @@ export const AI_FEATURE_NAMES: Record<string, string> = {
   escalations: "Ask a person (summaries)",
   support: "Support inbox (drafts and summaries)",
   changelog: "Changelog drafts and edits",
-  code_changes: "Code changes",
+  code_changes: "Autopilot",
 };
 
 /** Dollars: cents, or four places below a cent, or "under $0.0001" for a sliver. */

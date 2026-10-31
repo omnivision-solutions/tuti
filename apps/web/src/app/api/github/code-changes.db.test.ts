@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, resumeCodeChanges } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -391,7 +391,7 @@ describe("deciding", () => {
           url: `https://github.com/${repo}/pull/11`,
           summary: SUMMARY,
           waiting: 1,
-          page: `http://tuti.localhost:3100/app/${project.slug}/code-changes/${id}`,
+          page: `http://tuti.localhost:3100/app/${project.slug}/autopilot/${id}`,
         },
       },
     });
@@ -625,7 +625,7 @@ describe("deciding", () => {
     ]);
 
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
-    expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Tuti" });
+    expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Autopilot", auto: true });
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {
@@ -848,7 +848,10 @@ describe("plans", () => {
     });
     github.pullRequest(repo, pullRequest(52));
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
-    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Code changes need the Pro plan." })]);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Autopilot needs the Pro plan." })]);
+    // One paused before the rename says it in the new words too.
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 52 }, data: { reason: "Code changes need the Pro plan." } });
+    expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot needs the Pro plan." });
     expect(readsOf(52)).toEqual([]);
     await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "plan_required" });
     await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "plan_required" });

@@ -89,7 +89,7 @@ test("on Tuti's cloud, hiding \"Powered by tuti\" on the free plan points to Bil
   await expect(owner.getByRole("button", { name: "Hide the badge" })).toHaveCount(0);
 });
 
-test("on the free plan, a project has up to 3 team members, invites included, and code changes, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
+test("on the free plan, a project has up to 3 team members, invites included, and Autopilot, its own address and a private portal need a paid plan", async ({ browser }, testInfo) => {
   const checkpoint = checkpoints(testInfo);
   const slug = `e2e-${randomUUID().slice(0, 8)}`;
   const owner = await signUp(browser, CLOUD_URL, "Olive Owner");
@@ -110,8 +110,8 @@ test("on the free plan, a project has up to 3 team members, invites included, an
   ).toBeVisible();
   await checkpoint(owner, "team-free-plan-full");
 
-  await owner.goto(`/app/${slug}/code-changes`);
-  await expect(owner.getByRole("alert").filter({ hasText: "Code changes need the Pro plan." })).toContainText(
+  await owner.goto(`/app/${slug}/autopilot`);
+  await expect(owner.getByRole("alert").filter({ hasText: "Autopilot needs the Pro plan." })).toContainText(
     "Merged pull requests still go into the changelog's running draft",
   );
   await expect(owner.getByRole("alert").getByRole("link", { name: "See Billing" })).toHaveAttribute("href", `/app/${slug}/settings/billing`);

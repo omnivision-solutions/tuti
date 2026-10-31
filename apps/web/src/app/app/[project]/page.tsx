@@ -44,7 +44,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
       <Card>
         <CardHeader>
           <CardTitle>Catch up</CardTitle>
-          <CardDescription>Merged pull requests with proposals waiting for your team: posts to complete, docs to update, a changelog line.</CardDescription>
+          <CardDescription>Merged pull requests with updates from Autopilot waiting for your team: requests it closes, docs to update, a changelog line.</CardDescription>
         </CardHeader>
         <CardContent>
           {waiting.length === 0 ? (
@@ -52,8 +52,8 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
               title="You're all caught up"
               description="When a merged pull request changes something your users see, it shows up here to review."
               action={
-                <Link href={`/app/${slug}/code-changes`} className={buttonVariants({ variant: "outline" })}>
-                  Code changes
+                <Link href={`/app/${slug}/autopilot`} className={buttonVariants({ variant: "outline" })}>
+                  Autopilot
                 </Link>
               }
             />
@@ -63,7 +63,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 <ItemRow
                   key={change.id}
                   title={
-                    <Link href={`/app/${slug}/code-changes/${change.id}`} className="hover:underline">
+                    <Link href={`/app/${slug}/autopilot/${change.id}`} className="hover:underline">
                       {change.title}
                     </Link>
                   }
@@ -87,7 +87,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             <CardDescription>
               {included
                 ? "Merged pull requests not analysed yet: the project ran out of AI credits. Resume them once it has more."
-                : "Merged pull requests not analysed yet: this project's plan doesn't include code changes. They wait for it."}
+                : "Merged pull requests not analysed yet: this project's plan doesn't include Autopilot. They wait for it."}
             </CardDescription>
             {included && (
               <CardAction>
@@ -101,7 +101,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                 <ItemRow
                   key={change.id}
                   title={
-                    <Link href={`/app/${slug}/code-changes/${change.id}`} className="hover:underline">
+                    <Link href={`/app/${slug}/autopilot/${change.id}`} className="hover:underline">
                       {change.title}
                     </Link>
                   }
@@ -117,7 +117,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
             </ItemList>
             {pausedCount > 10 && (
               <p className="mt-2 text-sm text-muted-foreground">
-                And {pausedCount - 10} more in Code changes{included && "; Resume all resumes them too"}.
+                And {pausedCount - 10} more in Autopilot{included && "; Resume all resumes them too"}.
               </p>
             )}
           </CardContent>

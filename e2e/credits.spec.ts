@@ -53,7 +53,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   // The changelog's AI: shown, disabled, and why.
   await owner.goto(`/app/${slug}/changelog/${entry.number}`);
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
-    "AI answers, changelog drafts and code changes are paused",
+    "AI answers, changelog drafts and Autopilot are paused",
   );
   await expect(owner.getByRole("button", { name: "Draft with AI" })).toBeDisabled();
   await expect(owner.getByRole("button", { name: "Edit with AI" })).toBeDisabled();
@@ -63,20 +63,20 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   const number = randomInt(1_000, 1_000_000);
   const pr = `Add a dark theme ${id}`;
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
-  await owner.goto(`/app/${slug}/code-changes`);
+  await owner.goto(`/app/${slug}/autopilot`);
   // Every project page says so.
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toBeVisible();
   const row = owner.getByRole("listitem").filter({ hasText: pr });
   await expect(row).toContainText("Paused");
   await expect(row).toContainText("The project ran out of AI credits.");
-  await checkpoint(owner, "code-changes-paused");
+  await checkpoint(owner, "autopilot-paused");
   await row.getByRole("button", { name: "Resume" }).click();
   await expect(owner.getByText("This project is out of AI credits. See Settings → Billing.")).toBeVisible();
 
   // Home says so, and lists what's paused.
   await owner.goto(`/app/${slug}`);
   await expect(owner.getByRole("alert").filter({ hasText: "This project is out of AI credits" })).toContainText(
-    "AI answers, changelog drafts and code changes are paused",
+    "AI answers, changelog drafts and Autopilot are paused",
   );
   await expect(owner.getByRole("listitem").filter({ hasText: pr })).toContainText("Paused");
   await checkpoint(owner, "home-paused");
@@ -93,7 +93,7 @@ test("out of AI credits, each feature pauses its own way; with credits again, a 
   // Home reads it again by itself: nothing is paused now.
   await expect(owner.getByText("Merged pull requests not analysed yet")).toHaveCount(0);
   await expect(owner.getByRole("button", { name: "Resume all" })).toHaveCount(0);
-  await owner.goto(`/app/${slug}/code-changes`);
+  await owner.goto(`/app/${slug}/autopilot`);
   await expect(owner.getByText(/^Nothing to do \(1\)$/)).toBeVisible();
 });
 

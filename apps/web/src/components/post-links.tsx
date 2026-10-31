@@ -44,8 +44,8 @@ export function PostLinks({ projectSlug, postId, links }: { projectSlug: string;
                 {link.title && <span className="text-muted-foreground"> · {link.title}</span>}
               </a>
               {link.codeChangeId && (
-                <Link href={`/app/${projectSlug}/code-changes/${link.codeChangeId}`} className="shrink-0 text-xs text-muted-foreground hover:underline">
-                  Code change
+                <Link href={`/app/${projectSlug}/autopilot/${link.codeChangeId}`} className="shrink-0 text-xs text-muted-foreground hover:underline">
+                  From Autopilot
                 </Link>
               )}
               <Button

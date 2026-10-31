@@ -34,7 +34,7 @@ test("an admin adds a webhook, sends a test event to it and deletes it", async (
     await owner.getByRole("button", { name: "Add webhook" }).click();
     const secret = owner.getByRole("alert").filter({ hasText: "Copy the signing secret now" }).locator("code");
     await expect(secret).toHaveText(/^whsec_/);
-    await expect(owner.getByText("New post, New comment, Changelog published, Code change ready, New conversation, New message from a user · no deliveries yet")).toBeVisible();
+    await expect(owner.getByText("New post, New comment, Changelog published, Autopilot found updates, New conversation, New message from a user · no deliveries yet")).toBeVisible();
 
     await owner.getByRole("button", { name: "Send test" }).click();
     await expect(owner.getByText("Test event sent")).toBeVisible();

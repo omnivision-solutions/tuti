@@ -45,20 +45,20 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   );
   await checkpoint(owner, "settings-github-connected");
 
-  // Code changes are on, and the team can turn them off (and on again).
+  // Autopilot is on, and the team can turn it off (and on again).
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
   await analysis.click();
-  await expect(owner.getByText("Code changes off")).toBeVisible();
+  await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
   await expect(analysis).not.toBeChecked();
   await analysis.click();
-  await expect(owner.getByText("Code changes on")).toBeVisible();
+  await expect(owner.getByText("Autopilot on")).toBeVisible();
   // Applying by itself is opt-in, and only for links.
   const autoLinks = owner.getByRole("switch", { name: "Link posts by itself" });
   await expect(autoLinks).not.toBeChecked();
   await autoLinks.click();
-  await expect(owner.getByText("Tuti links posts by itself")).toBeVisible();
+  await expect(owner.getByText("Autopilot links posts by itself")).toBeVisible();
 
   // The second project picks the same account: it starts with none, and adds the iOS app.
   await connectGithub(owner, mobile, { ...account, add: [] });

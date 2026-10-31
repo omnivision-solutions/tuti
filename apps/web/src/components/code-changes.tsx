@@ -48,7 +48,7 @@ export function AnalyseCodeChangeButton({ projectSlug, codeChangeId, label }: { 
   );
 }
 
-/** "Resume all": every code change paused for want of AI credits (Home). */
+/** "Resume all": every merged pull request Autopilot paused for want of AI credits (Home). */
 export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
   const [pending, startTransition] = useTransition();
   return (
@@ -62,7 +62,7 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
           if (result.error) {
             toast.error(result.error);
           } else if (result.failed) {
-            toast.warning(`Resumed; ${result.failed === 1 ? "1 analysis" : `${result.failed} analyses`} stopped. See Code changes.`);
+            toast.warning(`Resumed; ${result.failed === 1 ? "1 analysis" : `${result.failed} analyses`} stopped. See Autopilot.`);
           } else {
             toast.success("Resumed");
           }
@@ -74,20 +74,20 @@ export function ResumeAllButton({ projectSlug }: { projectSlug: string }) {
   );
 }
 
-/** "Apply likely": every waiting feedback proposal Tuti is confident about, after asking. */
+/** "Approve likely": every waiting update Autopilot is confident about, after asking. */
 export function ApplyLikelyButton({ projectSlug, codeChangeId, count }: { projectSlug: string; codeChangeId: string; count: number }) {
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
       <Button size="sm" onClick={() => setOpen(true)}>
-        Apply likely ({count})
+        Approve likely ({count})
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Apply {count === 1 ? "the likely proposal" : `${count} likely proposals`}?</AlertDialogTitle>
+          <AlertDialogTitle>Approve {count === 1 ? "the likely update" : `${count} likely updates`}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Posts it resolves are completed and the people who asked for them get an email, comments are posted as you, and the changelog line goes into its draft.
+            Requests it closes are completed and the people who asked for them get an email, progress updates are posted as you, and the changelog line goes into its draft.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -101,12 +101,12 @@ export function ApplyLikelyButton({ projectSlug, codeChangeId, count }: { projec
                 if (result.error) {
                   toast.error(result.error);
                 } else {
-                  toast.success("Applied");
+                  toast.success("Approved");
                 }
               })
             }
           >
-            Apply
+            Approve
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -116,12 +116,10 @@ export function ApplyLikelyButton({ projectSlug, codeChangeId, count }: { projec
 
 type Action = CodeChangeDetail["actions"][number];
 
-const KIND_LABELS: Record<string, string> = { resolves: "Resolves", moves_forward: "Moves forward", links: "Related" };
-/** What applying does, named. */
-const APPLY_LABELS: Record<string, string> = { resolves: "Mark completed", moves_forward: "Post comment", links: "Link" };
+const KIND_LABELS: Record<string, string> = { resolves: "Closes the request", moves_forward: "Progress update", links: "Link" };
 const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
 
-/** One proposal about a post: what Tuti proposes and why, with apply and dismiss (or who did, once decided). */
+/** One update about a post: what Autopilot suggests and why, with Approve and Dismiss (or who did, once decided). */
 export function PostProposal({ projectSlug, action }: { projectSlug: string; action: Action }) {
   const [pending, startTransition] = useTransition();
   const [comment, setComment] = useState(action.comment ?? "");
@@ -159,7 +157,7 @@ export function PostProposal({ projectSlug, action }: { projectSlug: string; act
               {post.title}
             </Link>
             <Badge variant={action.kind === "resolves" ? "default" : action.kind === "moves_forward" ? "soft" : "outline"}>{KIND_LABELS[action.kind]}</Badge>
-            {waiting && <Badge variant={action.confidence === "likely" ? "secondary" : "outline"}>{action.confidence === "likely" ? "Likely" : "Maybe"}</Badge>}
+            {waiting && <Badge variant={action.confidence === "likely" ? "secondary" : "outline"}>{action.confidence === "likely" ? "Likely" : "Not sure"}</Badge>}
           </div>
           <span className="text-xs text-muted-foreground">
             #{post.number} · {post.votes} {post.votes === 1 ? "vote" : "votes"} · {STATUS_LABELS[post.status]}
@@ -183,7 +181,7 @@ export function PostProposal({ projectSlug, action }: { projectSlug: string; act
               </PopoverContent>
             </Popover>
             <Button size="sm" disabled={pending || (action.kind === "moves_forward" && !comment.trim())} onClick={apply}>
-              {APPLY_LABELS[action.kind]}
+              Approve
             </Button>
           </div>
         )}
@@ -197,8 +195,8 @@ export function PostProposal({ projectSlug, action }: { projectSlug: string; act
         ))}
       {!waiting && (
         <span className="text-xs text-muted-foreground">
-          {action.status === "applied" ? "Applied" : action.status === "dismissed" ? "Dismissed" : "Out of date"}
-          {action.decidedBy && ` by ${action.decidedBy}`}
+          {action.auto ? "Linked by Autopilot" : action.status === "applied" ? "Approved" : action.status === "dismissed" ? "Dismissed" : "Changed since"}
+          {!action.auto && action.decidedBy && ` by ${action.decidedBy}`}
           {action.dismissReason && `: ${action.dismissReason}`}
         </span>
       )}
@@ -229,7 +227,7 @@ function DismissButton({ disabled, onDismiss }: { disabled: boolean; onDismiss: 
   );
 }
 
-/** One proposal about the docs: an article's edit (its changes, to publish or finish in the editor) or a new article's draft. */
+/** One update to the docs: an article's edit (its changes, to publish or finish in the editor) or a new article's draft. */
 export function DocsProposal({
   projectSlug,
   codeChangeId,
@@ -248,6 +246,7 @@ export function DocsProposal({
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const edit = action.kind === "article_edit";
+  const kind = !edit ? "New article" : action.problem === "missing" ? "Missing info" : "Out of date";
   const title = edit ? action.article!.title : action.title!;
   const editor = (slug: string) => `/app/${projectSlug}/docs/${slug}`;
 
@@ -278,7 +277,7 @@ export function DocsProposal({
     );
 
   return (
-    <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0" aria-label={`${edit ? "Updated" : "New"}: ${title}`}>
+    <li className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0" aria-label={`${kind}: ${title}`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -289,12 +288,12 @@ export function DocsProposal({
             ) : (
               <span className="min-w-0 text-sm font-medium break-words">{title}</span>
             )}
-            <Badge variant={edit ? "soft" : "default"}>{edit ? "Updated" : "New"}</Badge>
-            {action.status === "pending" && <Badge variant={action.confidence === "likely" ? "secondary" : "outline"}>{action.confidence === "likely" ? "Likely" : "Maybe"}</Badge>}
-            {action.status === "stale" && <Badge variant="highlight">Out of date</Badge>}
+            <Badge variant={edit ? "soft" : "default"}>{kind}</Badge>
+            {action.status === "pending" && <Badge variant={action.confidence === "likely" ? "secondary" : "outline"}>{action.confidence === "likely" ? "Likely" : "Not sure"}</Badge>}
+            {action.status === "stale" && <Badge variant="highlight">Changed since</Badge>}
           </div>
           <span className="text-xs text-muted-foreground">
-            {edit ? `${action.article!.collection ?? "No collection"} · ${action.problem === "missing" ? "Missing something" : "Now wrong"}` : "A draft only your team sees"}
+            {edit ? (action.article!.collection ?? "No collection") : "A draft only your team sees"}
           </span>
         </div>
         {(action.status === "pending" || action.status === "stale") && (
@@ -308,12 +307,12 @@ export function DocsProposal({
                   Edit first
                 </Button>
                 <Button size="sm" disabled={pending} onClick={() => apply(true)}>
-                  Publish edit
+                  Approve
                 </Button>
               </>
             ) : (
               <Button size="sm" disabled={pending} onClick={() => apply(true)}>
-                Create draft
+                Approve
               </Button>
             )}
           </div>
@@ -337,7 +336,7 @@ export function DocsProposal({
         ))}
       {action.status !== "pending" && action.status !== "stale" && (
         <span className="text-xs text-muted-foreground">
-          {action.status === "applied" ? "Applied" : "Dismissed"}
+          {action.status === "applied" ? "Approved" : "Dismissed"}
           {action.decidedBy && ` by ${action.decidedBy}`}
           {action.dismissReason && `: ${action.dismissReason}`}
           {action.status === "applied" && action.article && (
@@ -396,7 +395,7 @@ export function ChangelogProposal({
     "the next release's draft"
   );
   return (
-    <div className="flex flex-col gap-2" aria-label="Changelog proposal">
+    <div className="flex flex-col gap-2" aria-label="Changelog line">
       <span className="text-xs text-muted-foreground">
         {waiting ? "Replaces the pull request's line in " : "In "}
         {where}
@@ -407,7 +406,7 @@ export function ChangelogProposal({
           <div className="flex shrink-0 items-center gap-2">
             <DismissButton disabled={pending} onDismiss={dismiss} />
             <Button size="sm" disabled={pending || !line.trim()} onClick={apply}>
-              Update changelog
+              Approve
             </Button>
           </div>
         </div>
@@ -415,7 +414,7 @@ export function ChangelogProposal({
         <>
           <p className="text-sm">{line}</p>
           <span className="text-xs text-muted-foreground">
-            {action.status === "applied" ? "Applied" : "Dismissed"}
+            {action.status === "applied" ? "Approved" : "Dismissed"}
             {action.decidedBy && ` by ${action.decidedBy}`}
             {action.dismissReason && `: ${action.dismissReason}`}
           </span>

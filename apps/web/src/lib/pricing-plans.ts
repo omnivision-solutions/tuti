@@ -32,7 +32,7 @@ export function pricingPlans(): PricingPlan[] {
       features: [
         "Unlimited team members",
         "Your own domain",
-        "Code changes from GitHub",
+        "Autopilot for merged pull requests",
         "Your own widget launcher icon",
         ...monthly(planCredits("PRO")),
         `Hide “Powered by tuti” for $${BADGE_PRICE} a month`,
