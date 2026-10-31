@@ -229,16 +229,17 @@ export function widgetLoader(portalTemplate: string): string {
     for (var e = element; e; e = e.parentElement) if (window.getComputedStyle(e).opacity === "0") return false;
     return true;
   }
+  // The modal of the page's that shows, if one does.
   function modalOpen() {
     // Only one showing: pages keep closed ones in their markup, marked all the same.
     var marked = document.querySelectorAll("[aria-modal]");
     for (var m = 0; m < marked.length; m++) {
-      if (marked[m].getAttribute("aria-modal") === "true" && showing(marked[m])) return true;
+      if (marked[m].getAttribute("aria-modal") === "true" && showing(marked[m])) return marked[m];
     }
     try {
-      return !!document.querySelector("dialog:modal");
+      return document.querySelector("dialog:modal");
     } catch (error) {
-      return false;
+      return null;
     }
   }
   // Whether the page is covered now: decided as the panel opens (left as it is while a modal of the page's
@@ -250,8 +251,16 @@ export function widgetLoader(portalTemplate: string): string {
   var waitingOnModal = false;
   function coverPage() {
     var cover = opened && small && small.matches;
-    if (cover && covering && modalOpen()) {
+    var modal = cover && covering ? modalOpen() : null;
+    if (modal) {
       close(true);
+      // Focus goes into it, unless it's there already: the page's own move in fails while the loader has it inert.
+      var active = document.activeElement;
+      if (!(active && modal.contains && modal.contains(active))) {
+        var first = modal.querySelector && modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (!first && !modal.hasAttribute("tabindex")) modal.setAttribute("tabindex", "-1");
+        (first || modal).focus();
+      }
       return;
     }
     if (cover && !covering && modalOpen()) {
@@ -499,7 +508,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
   }
 
-  // \`leaveFocus\`: closed for a modal of the page's, which has focus where it wants it.
+  // \`leaveFocus\`: closed for a modal of the page's, where focus goes instead.
   function close(leaveFocus) {
     if (!opened) return;
     opened = false;

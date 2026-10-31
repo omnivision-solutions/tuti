@@ -1099,6 +1099,21 @@ test("on a phone, a page's modal that closes by a class or style (no attribute t
   }
 });
 
+test("on a phone, a modal of the page's opened inside what the panel covers (its own move of focus failed, inert) gets focus as the panel closes", async () => {
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+  dialog.setAttribute("aria-modal", "false");
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // The page opens it in place; focus stays where it was (in the panel).
+  dialog.setAttribute("aria-modal", "true");
+  page.mutated();
+  expect(app.hasAttribute("inert")).toBe(false);
+  expect(page.document.activeElement).toBe(dialog);
+  expect(dialog.getAttribute("tabindex")).toBe("-1");
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));
