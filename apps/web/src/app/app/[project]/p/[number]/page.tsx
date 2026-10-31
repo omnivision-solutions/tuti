@@ -204,7 +204,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             )}
             {shipped.change && (
               <Property label="Shipped by">
-                <Link href={`/app/${slug}/autopilot/${shipped.change.id}`} className="hover:underline">
+                <Link href={`/app/${slug}/autopilot/${shipped.change.id}`} className="break-all hover:underline">
                   {shipped.change.repo}#{shipped.change.number}
                 </Link>
               </Property>
@@ -212,7 +212,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             {shipped.entries.length > 0 && (
               <Property label="Changelog">
                 {shipped.entries.map((entry) => (
-                  <Link key={entry.number} href={`/app/${slug}/changelog/${entry.number}`} className="hover:underline">
+                  <Link key={entry.number} href={`/app/${slug}/changelog/${entry.number}`} className="break-words hover:underline">
                     {entry.title}
                     <span className="text-muted-foreground"> · {entry.publishedAt ? "Published" : "Draft"}</span>
                   </Link>
