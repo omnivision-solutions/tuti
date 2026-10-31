@@ -52,8 +52,21 @@ export async function undoCodeChange(projectSlug: string, actionId: string): Pro
 /** Publish now: scheduled updates applied at once, by whoever asks (codeChangeActions.publishNow). */
 export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
-    for (const id of (Array.isArray(actionIds) ? actionIds : []).map(String)) {
-      await call(publishCodeChangeActionNow, context, { id });
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await call(publishCodeChangeActionNow, context, { id });
+        done++;
+      } catch (error) {
+        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+          throw error;
+        }
+      }
+    }
+    if (ids.length > 1 && done === 0) {
+      throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
     }
   });
 }
@@ -61,8 +74,21 @@ export async function publishCodeChangesNow(projectSlug: string, actionIds: stri
 /** Stop: scheduled updates wait for the team instead (codeChangeActions.stop). */
 export async function stopCodeChanges(projectSlug: string, actionIds: string[]): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
-    for (const id of (Array.isArray(actionIds) ? actionIds : []).map(String)) {
-      await call(stopCodeChangeAction, context, { id });
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await call(stopCodeChangeAction, context, { id });
+        done++;
+      } catch (error) {
+        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+          throw error;
+        }
+      }
+    }
+    if (ids.length > 1 && done === 0) {
+      throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
     }
   });
 }

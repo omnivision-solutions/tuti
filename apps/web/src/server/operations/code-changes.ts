@@ -998,6 +998,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     take: 100,
     select: {
       id: true,
+      codeChangeId: true,
       kind: true,
       probability: true,
       payload: true,

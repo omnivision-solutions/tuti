@@ -51,7 +51,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
           {change.nextDueAt && (
             <span className="block text-foreground">
-              <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out`} />
+              <GoesOut at={change.nextDueAt} prefix={change.scheduled.length === 1 ? "1 update goes out" : `${change.scheduled.length} updates go out, the first`} />
             </span>
           )}
         </>

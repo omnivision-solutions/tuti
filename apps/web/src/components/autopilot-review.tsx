@@ -89,7 +89,7 @@ export function AutopilotReview({
   const waiting = updates.filter((update) => update.status === "pending");
   const stale = updates.filter((update) => update.status === "stale");
   const scheduled = updates.filter((update) => update.status === "scheduled");
-  const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
+  const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
   // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
   const [namedIds] = useState(() => [...ticked]);

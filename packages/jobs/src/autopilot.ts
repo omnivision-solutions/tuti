@@ -47,6 +47,7 @@ export async function recentViews(articleId: string): Promise<number> {
 }
 
 type Candidate = {
+  codeChangeId: string;
   kind: CodeChangeActionKind;
   probability: number;
   payload: Prisma.JsonValue;
@@ -71,6 +72,14 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   };
   if (!on[action.kind]) {
     return "Autopilot asks first for these";
+  }
+  const change = await prisma.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true } });
+  if (change?.state !== "READY") {
+    return "Its pull request was analysed again";
+  }
+  // The line rewrites the pull request's bullet wherever it is: once that entry is published, readers see it.
+  if (action.kind === "CHANGELOG_LINE" && (await prisma.changelogEntryPullRequest.count({ where: { url: change.url, entry: { publishedAt: { not: null } } } })) > 0) {
+    return "Its changelog entry is published";
   }
   // The changelog line is always written as the pull request's; the rest must be sure enough.
   if (action.kind !== "CHANGELOG_LINE" && action.probability * 100 < project.autopilotMinSure) {
@@ -124,7 +133,7 @@ export async function scheduleByItself(projectId: string, codeChangeId: string):
   }
   const waiting = await prisma.codeChangeAction.findMany({
     where: { codeChangeId, status: "PENDING" },
-    select: { id: true, kind: true, probability: true, payload: true, postId: true, articleId: true },
+    select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true },
   });
   let scheduled = 0;
   for (const action of waiting) {

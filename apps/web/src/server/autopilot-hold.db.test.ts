@@ -37,6 +37,8 @@ beforeEach(async () => {
   await prisma.codeChange.deleteMany({});
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
+  // Article edits and progress updates going out by themselves (off by default until owners are emailed, A5).
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotArticleEdits: true, autopilotProgress: true } });
   actAs(owner);
 });
 
@@ -153,6 +155,34 @@ test("held back at its time when it fell below the bar, or the switch went off",
   await prisma.project.update({ where: { id: project.id }, data: { autopilotMinSure: 99 } });
   expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
   expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
+});
+
+test("held back when its pull request was analysed again since, or its changelog line's entry is published", async () => {
+  const progress = await update("MOVES_FORWARD");
+  const line = await update("CHANGELOG_LINE");
+  for (const { codeChangeId } of [progress, line]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChange.update({ where: { id: progress.codeChangeId }, data: { state: "NOTHING_TO_DO" } });
+  const { url } = await prisma.codeChange.findUniqueOrThrow({ where: { id: line.codeChangeId } });
+  await prisma.changelogEntry.create({
+    data: { projectId: project.id, number: 1, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo: "acme/app", number: 1, title: "Dark theme" } } },
+  });
+  await prisma.codeChangeAction.updateMany({ where: { id: { in: [progress.action.id, line.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 2 });
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its pull request was analysed again" });
+  expect(await statusOf(line.action.id)).toMatchObject({ status: "PENDING", waitReason: "Its changelog entry is published" });
+});
+
+test("Home's Stop for a change's scheduled updates goes past one that went out meanwhile", async () => {
+  const sent = await update("MOVES_FORWARD");
+  const later = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [sent, later]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await publishCodeChangesNow(project.slug, [sent.action.id]);
+  expect(await stopCodeChanges(project.slug, [sent.action.id, later.action.id])).toEqual({});
+  expect((await statusOf(later.action.id)).status).toBe("PENDING");
 });
 
 test("Publish now applies a scheduled update at once, by whoever asks; Stop makes one wait for the team", async () => {

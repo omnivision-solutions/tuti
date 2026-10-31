@@ -389,7 +389,8 @@ async function finish(
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number }> {
   const { waiting, linked, deliveries } = await prisma.$transaction(async (tx) => {
-    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } } });
+    // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces them.
+    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE", "SCHEDULED"] } } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(

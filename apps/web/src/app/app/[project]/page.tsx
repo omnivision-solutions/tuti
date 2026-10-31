@@ -115,7 +115,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
                         <span title={formatDate(item.at)}>{timeAgo(item.at)}</span>
                         {item.scheduled && (
                           <span className="block text-foreground">
-                            <GoesOut at={item.scheduled.dueAt} prefix={item.scheduled.ids.length === 1 ? "1 update goes out" : `${item.scheduled.ids.length} updates go out`} />
+                            <GoesOut at={item.scheduled.dueAt} prefix={item.scheduled.ids.length === 1 ? "1 update goes out" : `${item.scheduled.ids.length} updates go out, the first`} />
                           </span>
                         )}
                       </>

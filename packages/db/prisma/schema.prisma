@@ -267,8 +267,9 @@ model Project {
   /// Autopilot (Settings → Autopilot, owners): what it does by itself. Drafts (the changelog line, a new
   /// article's draft) at once; article edits and progress updates after the hold; completing posts only if on.
   autopilotDrafts       Boolean      @default(true)
-  autopilotArticleEdits Boolean      @default(true)
-  autopilotProgress     Boolean      @default(true)
+  /// Off until owners are emailed what goes out by itself (Autopilot A5, which turns them on for new projects).
+  autopilotArticleEdits Boolean      @default(false)
+  autopilotProgress     Boolean      @default(false)
   autopilotComplete     Boolean      @default(false)
   /// What always waits for someone: an update less sure than this (percent); a post with this many people
   /// (author, voters, commenters) or more; an article with this many views in the last 30 days or more.

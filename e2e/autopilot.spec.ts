@@ -36,29 +36,22 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextModelReply(summary, pr);
   await nextDecision({ effect: { resolves: 0.9, moves_forward: 0.05, related: 0.04, unrelated: 0.01 } }, title);
   // (The new-article question lists the article's title too, so this one matches the article itself.)
-  // 90% sure it's wrong: under the bar (95%), so the edit waits for the team.
-  await nextDecision({ effect: { wrong: 0.85, missing: 0.05, unaffected: 0.1 } }, `"article":{"title":"${article}"`);
+  // 92% sure it's wrong: under the bar (95%), so the edit waits for the team (and above the request's 90%, so it's p1, the post p2).
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
   await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
   await nextModelReply(JSON.stringify({ why: "It ships the dark theme people asked for.", changelog: "Dark theme", proposals: { p2: { reason: "It adds the dark theme the post asks for." } } }), title);
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
-<<<<<<< HEAD
-  // Home's "Needs your attention" has it, with Review, and so does Autopilot, waiting for the team.
+  // Home's "Needs your attention" has it, with Review: two updates wait for the team (not 95% sure, and
+  // completing a post asks first), and the changelog line goes out by itself at once.
   await owner.goto(`/app/${slug}`);
   const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
-  await expect(catchUp).toContainText(`${pr} · 3 updates`);
-  await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
-  await expect(owner.getByRole("link", { name: /^3\s*Updates waiting$/ })).toBeVisible();
-=======
-  // Home's Catch up has it, and so does Autopilot: two updates wait for the team (not 95% sure, and completing a post
-  // asks first), and the changelog line goes out by itself at once.
-  await owner.goto(`/app/${slug}`);
-  const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
-  await expect(catchUp).toContainText("2 to review");
+  await expect(catchUp).toContainText(`${pr} · 2 updates`);
   await expect(catchUp).toContainText("1 update goes out in a moment");
   await expect(catchUp.getByRole("button", { name: "Publish now" })).toBeVisible();
->>>>>>> cfe3ebc3 (Autopilot's hold: what it's sure of goes out by itself (drafts at once, the rest after the hold), checked again when due; Publish now and Stop; the settings for it)
+  await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(owner.getByRole("link", { name: /^2\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/autopilot`);
@@ -257,6 +250,11 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
   await api(`/articles/${articleSlug}/publish`, {});
   const installationId = await connectGithub(owner, slug);
+  // Its owner lets article edits go out by themselves (Settings → Autopilot).
+  await owner.goto(`/app/${slug}/settings/autopilot`);
+  await owner.getByRole("switch", { name: "Publish article edits" }).click();
+  await owner.getByRole("button", { name: "Save" }).click();
+  await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
 
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
@@ -280,6 +278,8 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await expect(edit).toContainText("Goes out by itself");
   await expect(edit).toContainText(/Goes out tomorrow at \d/);
   await expect(edit.getByRole("button", { name: "Publish now" })).toBeVisible();
+  // Nothing's done yet: no Done list.
+  await expect(owner.getByRole("region", { name: "Done" })).toHaveCount(0);
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
