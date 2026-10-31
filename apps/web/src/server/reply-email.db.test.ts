@@ -4,6 +4,7 @@ import { log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createComment, createPost } from "@/server/operations/create";
+import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { OperationError } from "@/server/operations";
 import { call } from "@/server/operations/run";
@@ -102,4 +103,20 @@ test("a send that fails is tried again by the safety net, to that voter only", a
   expect(emailsTo(voter.email)).toHaveLength(1);
   expect(emailsTo(other.email)).toHaveLength(1);
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: reply.id } })).votersEmailDueAt).toBeNull();
+});
+
+test("a reply still to be emailed whose post is merged into another isn't emailed to that one's voters", async () => {
+  const [voter, otherVoter] = [await verified("Voter"), await verified("Other voter")];
+  const { post } = await votedFor(voter);
+  const other = await votedFor(otherVoter);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  // Its send fails for now: still due, and (a while on) late for the safety net.
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "About this one only.", emailVoters: true });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
+  await call(mergePost, as(owner.id), { number: post.number, into: other.post.number });
+  // The safety net: nothing goes to the other post's voters.
+  await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} });
+  expect(emailsTo(otherVoter.email)).toEqual([]);
+  expect(emailsTo(other.author.email)).toEqual([]);
 });

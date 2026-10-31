@@ -136,7 +136,8 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
       SELECT ${to}, "userId", "projectId", "createdAt" FROM vote WHERE "postId" = ${from}
       ON CONFLICT ("postId", "userId") DO NOTHING`,
     prisma.vote.deleteMany({ where: { postId: from } }),
-    prisma.comment.updateMany({ where: { postId: from }, data: { postId: to } }),
+    // A reply still to be emailed to its post's voters (Email voters) isn't, once moved: the target's voters never saw it asked.
+    prisma.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } }),
     prisma.postNote.updateMany({ where: { postId: from }, data: { postId: to } }),
     prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
     prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
