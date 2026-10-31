@@ -48,33 +48,39 @@ export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projec
 
 /**
  * Team-only: the month the team expects a post ("2026-12"). Saved once it's a whole month, as the field
- * is left (typing a year passes through ones that aren't, and a browser without a month picker is a
- * text box); Clear says none.
+ * is left or with Enter (typing a year passes through ones that aren't, and a browser without a month
+ * picker is a text box); one save at a time. Left half-typed (blank to a month input), nothing changes:
+ * only Clear says none. Follows what's saved when the page reloads (a teammate may have changed it).
  */
 export function PostEtaInput({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(eta ?? "");
-  const [saved, setSaved] = useState(eta ?? "");
-  const save = (month: string) => {
-    if (month === saved) {
+  const [shown, setShown] = useState(eta);
+  // A new value from the server (a reload after someone's change): shown, unless one's being typed.
+  if (eta !== shown) {
+    setShown(eta);
+    setValue(eta ?? "");
+  }
+  const save = (month: string | null) => {
+    if (pending || month === (eta ?? null)) {
       return;
     }
-    if (month !== "" && !/^\d{4}-\d{2}$/.test(month)) {
+    if (month !== null && !/^\d{4}-\d{2}$/.test(month)) {
       toast.error("Say the month as 2026-12");
       return;
     }
     startTransition(async () => {
-      const result = await setPostEta(projectSlug, postId, month === "" ? null : month);
+      const result = await setPostEta(projectSlug, postId, month);
       if (result.error) {
         toast.error(result.error);
-        setValue(saved);
+        setValue(eta ?? "");
       } else {
-        setSaved(month);
-        setValue(month);
-        toast.success(month === "" ? "No ETA" : "ETA saved");
+        toast.success(month === null ? "No ETA" : "ETA saved");
       }
     });
   };
+  // Blank is a month half-typed, or a field emptied: put back what's saved; Clear is how to say none.
+  const commit = () => (value === "" ? setValue(eta ?? "") : save(value));
   return (
     <div className="flex items-center gap-1">
       <Input
@@ -84,11 +90,11 @@ export function PostEtaInput({ projectSlug, postId, eta }: { projectSlug: string
         className="h-8"
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        onBlur={() => save(value)}
-        onKeyDown={(event) => event.key === "Enter" && save(value)}
+        onBlur={commit}
+        onKeyDown={(event) => event.key === "Enter" && commit()}
       />
-      {value && (
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => save("")}>
+      {eta && (
+        <Button variant="ghost" size="sm" disabled={pending} onClick={() => save(null)}>
           Clear
         </Button>
       )}
