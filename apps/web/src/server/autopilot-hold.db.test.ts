@@ -1,5 +1,6 @@
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
-import { autopilotDueToken, scheduleByItself } from "@tuti/jobs";
+import { autopilotDue, autopilotDueToken, scheduleByItself } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake, startWebhookReceiver } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
@@ -368,4 +369,20 @@ test("a due article edit whose article changed as it was applied: out of date, s
   } finally {
     await receiver.close();
   }
+});
+
+test("a worker without the web app's address says so only while an update is due", async () => {
+  const appUrl = process.env.APP_URL ?? "";
+  vi.stubEnv("APP_URL", "");
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  // Nothing scheduled (Autopilot off, or nothing sure enough): nothing to say each minute.
+  expect(await autopilotDue()).toEqual({ skipped: true });
+  expect(logged).not.toHaveBeenCalled();
+  const progress = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, progress.codeChangeId);
+  await prisma.codeChangeAction.update({ where: { id: progress.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  expect(await autopilotDue()).toEqual({ skipped: true });
+  expect(logged).toHaveBeenCalledWith(expect.stringContaining("set APP_URL and BETTER_AUTH_SECRET on the worker"));
+  vi.stubEnv("APP_URL", appUrl);
+  logged.mockRestore();
 });

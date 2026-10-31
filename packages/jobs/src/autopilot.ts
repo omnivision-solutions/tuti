@@ -163,8 +163,11 @@ export function autopilotDueToken(): string | null {
 export async function autopilotDue(): Promise<{ applied: number; waiting: number } | { skipped: true }> {
   const token = autopilotDueToken();
   if (!process.env.APP_URL || !token) {
-    // Said each minute, so it's seen: what Autopilot schedules waits until the worker has both.
-    log.error("Autopilot can't apply its due updates: set APP_URL and BETTER_AUTH_SECRET on the worker (the web app's values)");
+    // Said each minute while an update is due, so it's seen: it waits until the worker has both. Nothing due
+    // (Autopilot off, or nothing scheduled): nothing to say.
+    if ((await prisma.codeChangeAction.count({ where: { status: "SCHEDULED", dueAt: { lte: new Date() } } })) > 0) {
+      log.error("Autopilot can't apply its due updates: set APP_URL and BETTER_AUTH_SECRET on the worker (the web app's values)");
+    }
     return { skipped: true };
   }
   const response = await fetch(new URL("/api/autopilot/due", process.env.APP_URL), {
