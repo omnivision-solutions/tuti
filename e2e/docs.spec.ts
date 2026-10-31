@@ -330,8 +330,12 @@ test("the team writes a docs article in a collection, publishes it, and a visito
   // (and the one picked from the search box: what they typed counts once they've picked).
   await team.getByRole("link", { name: "Docs", exact: true }).first().click();
   await team.waitForURL(`**/app/${slug}/docs`);
-  await team.getByRole("link", { name: "Insights" }).click();
+  // The list says how often each article was read lately; Insights is the tab beside it.
+  await expect(team.getByText("2 views in 30 days")).toBeVisible();
+  await checkpoint(team, "team-docs-list-views");
+  await team.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Insights" }).click();
   await team.waitForURL(`**/app/${slug}/docs/insights`);
+  await expect(team.getByRole("navigation", { name: "Docs" }).getByRole("link", { name: "Insights" })).toHaveAttribute("aria-current", "page");
   await expect(team.getByText("The last 30 days: 2 article views, 4 searches, 2 failed searches.")).toBeVisible();
   await expect(team.getByText("2 views · 0% found it helpful (0 of 1)")).toBeVisible();
   await expect(team.getByText("How do I invite by email?")).toBeVisible();
