@@ -65,7 +65,11 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const feedbackItem = team.locator('[data-slot="sidebar-menu-item"]').filter({ has: team.getByRole("link", { name: "Feedback", exact: true }) });
   await expect(feedbackItem).toContainText("2 to triage");
   await expect(team.getByRole("link", { name: "Feedback", exact: true }).first()).toHaveAccessibleDescription("2 to triage");
-  // J and K step to the older post and back (as Feedback lists them, newest first).
+  // J and K step to the older post and back (by number). Not while a list of choices is open: a letter there picks one.
+  await team.getByLabel("Status").click();
+  await team.keyboard.press("j");
+  await expect(team).toHaveURL(new RegExp(`/app/${slug}/p/2$`));
+  await team.keyboard.press("Escape");
   await team.keyboard.press("j");
   await team.waitForURL(`**/app/${slug}/p/1`);
   await team.keyboard.press("k");

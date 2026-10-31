@@ -12,8 +12,9 @@ const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
 
 /**
- * The team's post page: the newer and the older post (as Feedback lists them, newest first), as
- * buttons in its header and as K and J (not while typing, nor with a dialog open).
+ * The team's post page: the newer and the older post (by number, merged ones skipped), as buttons in
+ * its header and as K and J (not while typing, nor with a dialog, menu or list of choices open: a
+ * letter there picks an option).
  */
 export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; newer: number | null; older: number | null }) {
   const router = useRouter();
@@ -21,7 +22,14 @@ export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; 
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || typing(event.target) || document.querySelector('[role="dialog"]')) {
+      if (
+        event.defaultPrevented ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        typing(event.target) ||
+        document.querySelector('[role="dialog"], [role="listbox"], [role="menu"]')
+      ) {
         return;
       }
       const to = event.key === "k" ? newer : event.key === "j" ? older : null;

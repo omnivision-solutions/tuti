@@ -248,7 +248,7 @@ export async function postsLike(projectId: string, post: { id: string; title: st
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
 }
 
-/** The posts either side of `number` among the project's (not merged ones), newest first as Feedback lists them: the newer and the older. */
+/** The posts either side of `number` among the project's, by number (not merged ones): the newer and the older. */
 export async function postNeighbours(projectId: string, number: number) {
   const [newer, older] = await Promise.all([
     prisma.post.findFirst({ where: { projectId, duplicateOfId: null, number: { gt: number } }, orderBy: { number: "asc" }, select: { number: true } }),
