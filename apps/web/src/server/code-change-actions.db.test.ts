@@ -380,6 +380,8 @@ describe("approving several (applyMany)", () => {
     vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Whether it was edited is recorded on this path too ("how it's doing" counts it): approved as Autopilot wrote it.
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: saved.action.id } })).payload).toMatchObject({ edited: false });
     // Undo knows the comment it found.
     await call(undoCodeChangeAction, team(), { id: saved.action.id });
     expect((await postOf(saved.post.id)).comments).toHaveLength(0);
