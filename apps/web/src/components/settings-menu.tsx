@@ -44,7 +44,7 @@ export function SettingsMenu({ groups }: { groups: SettingsGroup[] }) {
 
   return (
     <>
-      <nav aria-label="Settings" className="max-md:hidden md:sticky md:top-16">
+      <nav aria-label="Settings" className="max-md:hidden md:sticky md:top-12 md:max-h-[calc(100dvh-3rem)] md:overflow-y-auto md:p-3">
         {list}
       </nav>
       {/* `key`: closed again after moving to another page. */}

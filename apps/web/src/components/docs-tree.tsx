@@ -608,7 +608,7 @@ export function DocsWorkspace({
   const footerLink = "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60";
   return (
     <DocsWorkspaceContext value={{ projectSlug, depthOf, newCollection: setAdding }}>
-      <div data-slot="docs-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
+      <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t lg:flex-row">
         {/* Beside a tab's, a collection's or an article's page, to go between them; the docs' home shows them all itself. */}
         {current && (
           <aside className="border-b lg:w-72 lg:shrink-0 lg:border-r lg:border-b-0">

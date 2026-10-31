@@ -58,7 +58,12 @@ green, In progress orange, Completed green, Closed light grey.
   (`app/app/layout.tsx`, `components/app-shell.tsx`), content max-w-4xl.
   The top bar stays at the top as the page scrolls; from tablet width up it
   holds the page's title and actions (`PageHeader` puts them there), its
-  meta line staying on the page.
+  meta line staying on the page, and it's fixed to the window as they are (so
+  the page bouncing at its top can't pull them apart).
+  A page of three panes (the sidebar, a column of its own, the page: Settings,
+  a docs tab, collection or article, Customize's sections) takes the whole
+  width and folds the sidebar away; every other page has it open. Its column is
+  the page's height with a border beside it (`data-slot="pane-layout"`).
   A conversation's page (Inbox) opens at its newest message, its reply box at
   the bottom of the screen as the messages scroll under it, however many there are.
   A page with sections of its own lists them under its header with `SubNav`
@@ -69,8 +74,8 @@ green, In progress orange, Completed green, Closed light grey.
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
   above it on phones); ⌘K finds articles and collections by name; a tab's or a collection's page has Content, Access and
-  Settings tabs. On Docs pages the sidebar is folded
-  away, as on Customize's.
+  Settings tabs. Beside the tree the sidebar is folded away (the docs' home,
+  Insights and a new article show it all themselves, with the sidebar open).
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
   sidebar folded away. `CustomizeShell`: Customize's sections in a rail on
   the far left (a menu above the panel on smaller screens; no index page, no
