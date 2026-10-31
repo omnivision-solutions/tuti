@@ -834,3 +834,21 @@ test("Completed for picked rows counts only who it emails: one completed already
   await team.getByRole("menuitem", { name: "Completed" }).click();
   await expect(team.getByRole("alertdialog").getByText("This emails up to 1 person who asked for them that it shipped, as when one post is completed.", { exact: true })).toBeVisible();
 });
+
+test("Feedback's pane asks before Completed too, saying how many it emails", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-1", email: `e2e-${randomUUID()}@example.com` } });
+  await team.goto(`/app/${slug}/feedback?post=1`);
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Completed" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
+  await expect(ask.getByText("This emails up to 1 person who asked for it that it shipped.", { exact: true })).toBeVisible();
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(pane.getByRole("combobox", { name: "Status" })).toHaveText(/Open/);
+});
