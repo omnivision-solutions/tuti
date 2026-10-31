@@ -1,4 +1,4 @@
-import { plansEnabled } from "@tuti/shared";
+import { planFor, planIncludes, plansEnabled } from "@tuti/shared";
 import { CheckIcon, GitMergeIcon, MinusIcon, SearchIcon } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import { PostStatusBadge } from "@/components/post-status-badge";
 import { TutiMark } from "@/components/tuti-logo";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { PLAN_PRICES } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import { getSession } from "@/server/session";
 
@@ -122,6 +123,8 @@ export default async function Home() {
   const session = await getSession();
   const start = session ? { href: "/app", label: "Open app" } : { href: "/sign-up", label: "Start free" };
   const docs = await docsUrl();
+  // On tuti.so Autopilot comes with a paid plan (Free has feedback and docs); self-hosted, every project has it.
+  const autopilotPlan = planIncludes("FREE", "codeChanges") ? null : PLAN_PRICES[planFor("codeChanges")].name;
   const big = "h-11 px-5 text-base";
 
   return (
@@ -149,7 +152,10 @@ export default async function Home() {
                 See how it works
               </a>
             </div>
-            <Checks items={["Free to start", "Connect GitHub in a minute", "Open source"]} className="mt-5" />
+            <Checks
+              items={autopilotPlan ? ["Free plan to start", `Autopilot from ${autopilotPlan}`, "Open source"] : ["Free to start", "Connect GitHub in a minute", "Open source"]}
+              className="mt-5"
+            />
             <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-dashed pt-5 text-muted-foreground">
               Sound familiar?
               <span className="relative h-6 min-w-0 basis-full sm:flex-1 sm:basis-auto">
@@ -159,6 +165,8 @@ export default async function Home() {
                       key={line}
                       className="landing-rotate absolute inset-x-0 top-0 truncate font-semibold text-foreground"
                       style={{ animationDelay: `${i * 4}s` }}
+                      // Screen readers read the first line only; the others take its place for the eye.
+                      aria-hidden={i > 0}
                     >
                       {line}
                     </span>
@@ -376,11 +384,11 @@ export default async function Home() {
           </div>
           <Terminal
             lines={[
-              ["comment", "# run Tuti on your own server"],
-              ["command", "git clone https://github.com/omnivision-solutions/tuti"],
-              ["command", "docker compose up -d"],
-              ["comment", "web     ready"],
-              ["comment", "worker  watching for merged pull requests"],
+              ["comment", "# two images, built from the repository (README: Self-hosting)"],
+              ["command", "docker build -f apps/web/Dockerfile -t tuti-web ."],
+              ["command", "docker build -f apps/worker/Dockerfile -t tuti-worker ."],
+              ["comment", "# web: dashboard, portals and API; applies migrations at start"],
+              ["comment", "# worker: background jobs, merged pull requests among them"],
             ]}
           />
         </div>
@@ -394,7 +402,9 @@ export default async function Home() {
           <h2 className="mx-auto mt-4 max-w-3xl text-4xl font-extrabold tracking-tight text-balance sm:text-5xl">
             Your AI is telling a customer to click a button <Em>that moved.</Em>
           </h2>
-          <p className="mt-5 text-lg text-muted-foreground">Connect GitHub, and your next merge fixes it.</p>
+          <p className="mt-5 text-lg text-muted-foreground">
+            {autopilotPlan ? `Connect GitHub on ${autopilotPlan}, and your next merge fixes it.` : "Connect GitHub, and your next merge fixes it."}
+          </p>
           <div className="mt-7 flex flex-wrap justify-center gap-3">
             <Link href={start.href} className={buttonVariants({ size: "lg", className: big })}>
               {start.label}
@@ -404,7 +414,12 @@ export default async function Home() {
             </a>
           </div>
           <Checks
-            items={["Free to start", "Set up in a minute", "Nothing goes out without a hold you can stop", "Self-host anytime"]}
+            items={[
+              autopilotPlan ? "Free plan to start" : "Free to start",
+              autopilotPlan ? `Autopilot from ${autopilotPlan}` : "Set up in a minute",
+              "Nothing goes out without a hold you can stop",
+              "Self-host anytime",
+            ]}
             className="mt-6 justify-center"
           />
         </div>
@@ -510,8 +525,11 @@ function Cell({ value }: { value: ReactNode }) {
 /** The hero's loop: the AI answers from a stale article; a merge rewrites the article; the answer comes right. */
 function HeroDemo() {
   return (
-    <figure aria-label="An AI answer from an out-of-date article, corrected when a pull request merges" className="flex flex-col gap-3.5">
-      <div className="rounded-xl border bg-card p-4 shadow-lg">
+    <figure
+      aria-label="An AI answer sends a customer to Settings → Billing → Export, from an article last edited 5 months ago. A pull request merges, Autopilot rewrites the article to Settings → Data → Export, and the answer comes right."
+      className="flex flex-col gap-3.5"
+    >
+      <div aria-hidden className="rounded-xl border bg-card p-4 shadow-lg">
         <div className="mb-3.5 flex items-center justify-between text-sm font-bold">
           <span className="flex items-center gap-2">
             <span className="flex size-6.5 items-center justify-center rounded-lg bg-primary text-xs text-primary-foreground">A</span>
@@ -534,7 +552,7 @@ function HeroDemo() {
           </p>
         </div>
       </div>
-      <div className="grid items-start gap-3.5 sm:grid-cols-[auto_1fr]">
+      <div aria-hidden className="grid items-start gap-3.5 sm:grid-cols-[auto_1fr]">
         <span className="landing-merge inline-flex w-fit items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-semibold text-background">
           <GitMergeIcon aria-hidden className="size-3.5" /> PR #512 merged
         </span>
