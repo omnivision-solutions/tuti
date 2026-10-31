@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, resumeCodeChanges } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -849,6 +849,9 @@ describe("plans", () => {
     github.pullRequest(repo, pullRequest(52));
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
     expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Autopilot needs the Pro plan." })]);
+    // One paused before the rename says it in the new words too.
+    await prisma.codeChange.updateMany({ where: { projectId: project.id, number: 52 }, data: { reason: "Code changes need the Pro plan." } });
+    expect((await codeChangeList(project.id)).find((change) => change.number === 52)).toMatchObject({ reason: "Autopilot needs the Pro plan." });
     expect(readsOf(52)).toEqual([]);
     await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "plan_required" });
     await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "plan_required" });

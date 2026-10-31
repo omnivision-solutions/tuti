@@ -75,6 +75,9 @@ const changeSelect = {
 
 type ChangeRow = Prisma.CodeChangeGetPayload<{ select: typeof changeSelect }>;
 
+/** Reasons saved before Code changes was Autopilot, as they read now (they stay saved on paused rows). */
+const RENAMED_REASONS: Record<string, string> = { "Code changes need the Pro plan.": "Autopilot needs the Pro plan." };
+
 const changeView = (change: ChangeRow) => ({
   id: change.id,
   repo: change.repo,
@@ -85,7 +88,7 @@ const changeView = (change: ChangeRow) => ({
   mergedAt: change.mergedAt.toISOString(),
   state: STATES[change.state],
   /** Why there's nothing to do, or where it failed. */
-  reason: change.reason,
+  reason: change.reason && (RENAMED_REASONS[change.reason] ?? change.reason),
   summary: change.summary,
   /** Proposals waiting for the team. */
   waiting: change._count.actions,
