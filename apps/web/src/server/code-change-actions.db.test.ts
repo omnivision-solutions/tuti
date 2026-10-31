@@ -322,8 +322,8 @@ describe("approving several (applyMany)", () => {
 
   test("a progress update: approved when its comment was saved before something failed, waiting again when it wasn't", async () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
-    // Saved, then reading who wrote it fails.
-    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out." });
+    // Saved, then reading who wrote it fails. Two paragraphs: a comment keeps them with one line between.
+    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out.\n\nMonthly ones are next." });
     vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);

@@ -1,4 +1,4 @@
-import { fromPlainText } from "@tuti/content";
+import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
 import { changelogLineOf, confidence, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -512,9 +512,10 @@ export const applyCodeChangeAction = defineOperation({
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
         // Can't tell (the check failed too): it stays applied, so it's never posted twice, but nobody's told it went.
-        // This try's comment: by whoever applies it, with its words, since the claim.
+        // This try's comment: by whoever applies it, with its words as a comment keeps them, since the claim.
+        const body = toPlainText(fromPlainText(comment));
         const found = await prisma.comment
-          .findFirst({ where: { postId: post.id, authorId: actorUser(context.actor), body: comment, createdAt: { gte: claimedAt } }, orderBy: { createdAt: "asc" }, select: { id: true } })
+          .findFirst({ where: { postId: post.id, authorId: actorUser(context.actor), body, createdAt: { gte: claimedAt } }, orderBy: { createdAt: "asc" }, select: { id: true } })
           .catch(() => "unknown" as const);
         const saved = found === "unknown" ? "unknown" : found !== null;
         if (found && found !== "unknown") {
