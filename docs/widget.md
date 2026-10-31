@@ -47,8 +47,8 @@ settings are in the API as `widget.get` and `widget.update` (`/api/v1/widget`).
 The floating panel grows out of the button's corner as it opens and shrinks back as it closes (on a
 phone's screen it slides up); a sidebar slides in from its edge. While the panel covers a phone's screen,
 the rest of your page is made `inert` (out of reach for Tab and screen readers, as under any full-screen
-dialog); the loader puts back what it changed when the panel closes, and leaves alone anything you made
-inert yourself. With a modal of yours open (help opened from inside it), your page is left as it is. Visitors whose device asks for reduced motion get it without the motion.
+dialog); the loader removes the `inert` it added when the panel closes or the screen widens, and elements
+already inert when it covers the page stay inert. With a modal of yours open (help opened from inside it), your page is left as it is. Visitors whose device asks for reduced motion get it without the motion.
 
 ```html
 <!-- Launcher (the default) -->
