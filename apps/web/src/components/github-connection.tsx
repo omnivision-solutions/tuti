@@ -246,7 +246,7 @@ export function GithubAccountChoice({
   );
 }
 
-/** Settings → Integrations → GitHub → Code changes: its two switches, each saved at once. */
+/** Settings → Integrations → GitHub → Autopilot: its two switches, each saved at once. */
 export function CodeChangeSwitch({
   projectSlug,
   setting,
@@ -275,7 +275,7 @@ export function CodeChangeSwitch({
               that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
             </>
           ) : (
-            "When Tuti is very sure a pull request relates to a post, it links them without asking. A link changes nothing for users. Completing posts, comments and docs always wait for your team."
+            "When Autopilot is very sure a pull request relates to a post, it links them without asking. A link changes nothing for users. Closing requests, progress updates and docs always wait for your team."
           )}
         </p>
       </div>
@@ -293,9 +293,9 @@ export function CodeChangeSwitch({
               setChecked(!next);
               toast.error(result.error);
             } else if (setting === "analysis") {
-              toast.success(next ? "Code changes on" : "Code changes off");
+              toast.success(next ? "Autopilot on" : "Autopilot off");
             } else {
-              toast.success(next ? "Tuti links posts by itself" : "Tuti asks before linking posts");
+              toast.success(next ? "Autopilot links posts by itself" : "Autopilot asks before linking posts");
             }
           });
         }}

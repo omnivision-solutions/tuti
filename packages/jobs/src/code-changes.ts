@@ -251,7 +251,7 @@ async function analyse(
   const { waiting, linked } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
     projectId: change.projectId,
     pullRequest: change.pullRequest,
-    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/code-changes/${change.id}` } }),
+    data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
   });
   return { state: "READY" as const, actions: waiting, linked };
 }

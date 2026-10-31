@@ -27,7 +27,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
       ["Boards", "/feedback/boards"],
       ["Changelog", "/changelog"],
       ["Docs", "/docs"],
-      ["Code changes", "/code-changes"],
+      ["Autopilot", "/autopilot"],
       ["Users", "/users"],
     ].map(([title, path]) => ({ title: title!, group: "Pages" as const, href: `${base}${path}` })),
     ...(admin ? CUSTOMIZE_GROUPS.flatMap((group) => group.sections).map((section) => ({ title: `Customize · ${section.title}`, group: "Pages" as const, href: `${base}/customize/${section.slug}` })) : []),
@@ -41,7 +41,7 @@ export default async function ProjectLayout({ children, params }: LayoutProps<"/
     <>
       <CommandMenu projectSlug={project} items={commands} />
       {(await aiPaused(membership.project.id)) && (
-        <AiPaused projectSlug={project} stops="AI answers, changelog drafts and code changes are paused" admin={admin} />
+        <AiPaused projectSlug={project} stops="AI answers, changelog drafts and Autopilot are paused" admin={admin} />
       )}
       <LiveRefresh projectSlug={project} />
       {children}

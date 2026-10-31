@@ -186,7 +186,7 @@ const id = z.string().min(1).max(100);
 
 export const listCodeChanges = defineOperation({
   name: "codeChanges.list",
-  summary: "List code changes: merged pull requests, each with what Tuti proposes (those with proposals waiting first)",
+  summary: "List code changes (Autopilot): merged pull requests, each with the updates it suggests (those with updates waiting first)",
   method: "GET",
   path: "/code-changes",
   scope: "read",
@@ -230,7 +230,7 @@ export const analyseCodeChange = defineOperation({
       throw new OperationError(404, "not_found", "Code change not found");
     }
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
     }
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
@@ -258,7 +258,7 @@ export const resumeCodeChanges = defineOperation({
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Code changes are off: turn them on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
     }
     await requirePlan(projectId, "codeChanges");
     await aiOrRefuse(projectId, "code_changes");

@@ -29,7 +29,7 @@ test("what one use costs, in dollars or credits", () => {
   expect(answer).toEqual({ dollars: 6000 * 3e-6 + 500 * 15e-6, per: "answer" });
   expect(costLabel(answer, null)).toBe("About $0.026 per answer");
   expect(costLabel(answer, 100)).toBe("About 2.6 credits per answer");
-  expect(costLabel(costPerUse("code_changes", listed[0]), null)).toBe("About $0.022 per code change (writing)");
+  expect(costLabel(costPerUse("code_changes", listed[0]), null)).toBe("About $0.022 per merged pull request (writing)");
   expect(costPerUse("answers", { id: "x", name: "x", input: null, output: null })).toBeNull();
   expect(costLabel(null, null)).toBeNull();
 });

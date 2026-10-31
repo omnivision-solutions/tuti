@@ -391,7 +391,7 @@ describe("deciding", () => {
           url: `https://github.com/${repo}/pull/11`,
           summary: SUMMARY,
           waiting: 1,
-          page: `http://tuti.localhost:3100/app/${project.slug}/code-changes/${id}`,
+          page: `http://tuti.localhost:3100/app/${project.slug}/autopilot/${id}`,
         },
       },
     });
@@ -848,7 +848,7 @@ describe("plans", () => {
     });
     github.pullRequest(repo, pullRequest(52));
     await enqueue("codeChange", { codeChangeId: id, force: false, pastGate: false, resume: false });
-    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Code changes need the Pro plan." })]);
+    expect(await changes()).toEqual([expect.objectContaining({ number: 52, state: "PAUSED", reason: "Autopilot needs the Pro plan." })]);
     expect(readsOf(52)).toEqual([]);
     await expect(call(resumeCodeChanges, team(), {})).rejects.toMatchObject({ status: 402, code: "plan_required" });
     await expect(call(analyseCodeChange, team(), { id })).rejects.toMatchObject({ status: 402, code: "plan_required" });

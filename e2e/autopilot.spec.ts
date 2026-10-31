@@ -41,60 +41,62 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
-  // Home's Catch up has it, and so does Code changes, waiting for the team.
+  // Home's Catch up has it, and so does Autopilot, waiting for the team.
   await owner.goto(`/app/${slug}`);
   const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
   await expect(catchUp).toContainText("3 to review");
   await checkpoint(owner, "home-catch-up");
-  await owner.getByRole("link", { name: "Code changes" }).click();
-  await owner.waitForURL(`**/app/${slug}/code-changes`);
+  await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/autopilot`);
+  await expect(owner.getByRole("heading", { name: "Autopilot" })).toBeVisible();
   await expect(owner.getByText("3 to review")).toBeVisible();
-  await checkpoint(owner, "code-changes");
+  await checkpoint(owner, "autopilot");
   await owner.getByRole("link", { name: pr }).click();
 
-  // Its page: what changed for users, why, and the post it resolves.
+  // Its page: what changed for users, why, and the request it closes.
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
   await expect(owner.getByText(summary)).toBeVisible();
   await expect(owner.getByText("It ships the dark theme people asked for.")).toBeVisible();
-  const proposal = owner.getByRole("listitem", { name: `Resolves: ${title}` });
+  const proposal = owner.getByRole("listitem", { name: `Closes the request: ${title}` });
   await expect(proposal).toContainText("It adds the dark theme the post asks for.");
   await expect(proposal).toContainText("Likely");
-  await checkpoint(owner, "code-change");
-  await proposal.getByRole("button", { name: "Mark completed" }).click();
+  await checkpoint(owner, "autopilot-change");
+  await proposal.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("#1 completed")).toBeVisible();
-  await expect(proposal).toContainText("Applied by Olive Owner");
+  await expect(proposal).toContainText("Approved by Olive Owner");
 
   // The changelog line replaces the pull request's bullet in the Next release draft, as the team words it.
   const line = owner.getByRole("textbox", { name: "Changelog line" });
   await expect(line).toHaveValue("Dark theme");
   await line.fill("A dark theme, in Settings");
-  await owner.getByRole("button", { name: "Update changelog" }).click();
+  const changelogLine = owner.getByLabel("Changelog line", { exact: true }).and(owner.locator("div"));
+  await changelogLine.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Changelog updated")).toBeVisible();
-  await expect(owner.getByLabel("Changelog proposal")).toContainText("Applied by Olive Owner");
-  await expect(owner.getByLabel("Changelog proposal")).toContainText("A dark theme, in Settings");
+  await expect(changelogLine).toContainText("Approved by Olive Owner");
+  await expect(changelogLine).toContainText("A dark theme, in Settings");
 
   // The article's edit, as a diff against what's published, goes live as a new version.
-  const edit = owner.getByRole("listitem", { name: `Updated: ${article}` });
+  const edit = owner.getByRole("listitem", { name: `Out of date: ${article}` });
   await expect(edit).toContainText("It says Light is the only theme.");
   const changes = edit.getByRole("region", { name: `Changes to ${article}` }).or(edit.getByLabel(`Changes to ${article}`));
   await expect(changes).toContainText("Pick Light, Dark or System in Settings.");
   // Formatted as readers see it: the new paragraph's bold is bold.
   await expect(changes.getByRole("insertion").locator("strong")).toHaveText("Dark");
-  await checkpoint(owner, "code-change-docs");
-  await edit.getByRole("button", { name: "Publish edit" }).click();
+  await checkpoint(owner, "autopilot-docs");
+  await edit.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText(`${article} updated`)).toBeVisible();
-  await expect(edit).toContainText("Applied by Olive Owner");
+  await expect(edit).toContainText("Approved by Olive Owner");
   const portalArticle = await owner.context().newPage();
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
 
-  // The post is completed, linked to the pull request, with the way back to the code change.
+  // The post is completed, linked to the pull request, with the way back to Autopilot.
   await proposal.getByRole("link", { name: title }).click();
   await owner.waitForURL(`**/app/${slug}/p/1`);
   await expect(owner.getByRole("combobox", { name: "Status" })).toContainText("Completed");
   await expect(owner.getByRole("link", { name: `acme/app#${number} · ${pr}` })).toBeVisible();
-  await owner.getByRole("link", { name: "Code change", exact: true }).click();
+  await owner.getByRole("link", { name: "From Autopilot" }).click();
   await expect(owner.getByRole("heading", { name: pr })).toBeVisible();
 
   // A pull request users don't see: nothing to do, folded away, and "Analyse anyway" looks past the gate.
@@ -102,11 +104,13 @@ test("a merged pull request becomes a code change; the team completes the post i
   const choreSummary = `Nothing visible changed (${id}).`;
   await nextDecision({ audience: { users: 0.05, internal: 0.9, dependencies: 0.03, repository_docs: 0.02 } }, chore);
   await mergePullRequest(installationId, { number: number + 1, title: chore });
+  // Its old address (Code changes) lands on Autopilot.
   await owner.goto(`/app/${slug}/code-changes`);
+  await owner.waitForURL(`**/app/${slug}/autopilot`);
   await owner.getByText("Nothing to do (1)").click();
   const row = owner.getByRole("listitem").filter({ hasText: chore });
   await expect(row).toContainText("Only the team sees this: refactoring, tests, CI or tooling.");
-  await checkpoint(owner, "code-changes-nothing-to-do");
+  await checkpoint(owner, "autopilot-nothing-to-do");
   // The post is completed now and the article is unaffected: only its changelog line is left to review.
   await similar(choreSummary, `${article}\n\nPick Light, Dark or System in Settings.`, 0.5);
   await nextModelReply(choreSummary, chore);
@@ -148,14 +152,14 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await nextModelReply(JSON.stringify({ why: "", changelog: "Feedback exports", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr });
 
-  await owner.goto(`/app/${slug}/code-changes`);
+  await owner.goto(`/app/${slug}/autopilot`);
   await owner.getByRole("link", { name: pr }).click();
-  const proposal = owner.getByRole("listitem", { name: `New: ${draft}` });
+  const proposal = owner.getByRole("listitem", { name: `New article: ${draft}` });
   await expect(proposal).toContainText("Nothing explains exports yet.");
   // The draft as readers will see it: its heading, its list and its bold.
   const preview = proposal.getByLabel(`Draft of ${draft}`);
   await expect(preview.getByRole("heading", { name: "Export it" })).toBeVisible();
   await expect(preview.getByRole("listitem")).toHaveText(["Open Settings.", "Pick Export."]);
   await expect(preview.locator("strong")).toHaveText(["Settings", "Export"]);
-  await checkpoint(owner, "code-change-new-article");
+  await checkpoint(owner, "autopilot-new-article");
 });

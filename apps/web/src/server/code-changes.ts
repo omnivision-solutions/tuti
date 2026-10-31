@@ -11,7 +11,7 @@ import { asTeam, call } from "./operations/run";
 
 /** "Analyse anyway" (nothing to do) or "Analyse again" (failed). */
 export async function analyseCodeChange(projectSlug: string, codeChangeId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can analyse code changes", (context) =>
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
     call(analyseOperation, context, { id: String(codeChangeId) }),
   );
 }
@@ -19,7 +19,7 @@ export async function analyseCodeChange(projectSlug: string, codeChangeId: strin
 /** "Resume all" on Home: every code change paused for want of AI credits. */
 export async function resumeCodeChanges(projectSlug: string): Promise<FormState & { failed?: number }> {
   let failed = 0;
-  const result = await asTeam(projectSlug, "Only the project's team can resume code changes", async (context) => {
+  const result = await asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     failed = (await call(resumeOperation, context, {})).failed;
   });
   return result.error ? result : { failed };
@@ -36,7 +36,7 @@ export async function applyCodeChange(
   options: { comment?: string; publish?: boolean; line?: string } = {},
 ): Promise<FormState> {
   const { comment, publish, line } = options ?? {};
-  return asTeam(projectSlug, "Only the project's team can apply code changes", (context) =>
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
     call(applyCodeChangeAction, context, {
       id: String(actionId),
       ...(typeof comment === "string" && comment.trim() && { comment }),
@@ -47,7 +47,7 @@ export async function applyCodeChange(
 }
 
 export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can dismiss code changes", (context) =>
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) =>
     call(dismissCodeChangeAction, context, { id: String(actionId), ...(typeof reason === "string" && reason.trim() && { reason }) }),
   );
 }
@@ -58,7 +58,7 @@ export async function dismissCodeChange(projectSlug: string, actionId: string, r
  * that fails (the ones before it stay applied).
  */
 export async function applyLikelyCodeChanges(projectSlug: string, codeChangeId: string): Promise<FormState> {
-  return asTeam(projectSlug, "Only the project's team can apply code changes", async (context) => {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
     const change = await prisma.codeChange.findFirst({ where: { id: String(codeChangeId), projectId: context.projectId }, select: { id: true } });
     if (!change) {
       throw new OperationError(404, "not_found", "Code change not found");

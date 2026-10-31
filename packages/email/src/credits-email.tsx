@@ -19,7 +19,7 @@ export function CreditsEmail({ projectName, out, left, url }: CreditsProps) {
       <Text style={{ fontSize: 15, color: colors.text, lineHeight: "24px" }}>
         {out ? (
           <>
-            <strong>{projectName}</strong> is out of AI credits, so AI answers, changelog drafts and code changes are paused
+            <strong>{projectName}</strong> is out of AI credits, so AI answers, changelog drafts and Autopilot are paused
             until it has more. Nothing is lost: merged pull requests wait as Paused for you to resume them.
           </>
         ) : (

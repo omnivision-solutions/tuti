@@ -24,7 +24,7 @@ export async function UsageMonths({ projectId }: { projectId: string }) {
         </p>
       </div>
       {months.length === 0 ? (
-        <EmptyState title="No AI use yet" description="AI answers, changelog drafts and code changes show up here, with what they cost, once they're used." />
+        <EmptyState title="No AI use yet" description="AI answers, changelog drafts and Autopilot show up here, with what they cost, once they're used." />
       ) : (
         months.map((month) => (
           <Card key={month.month}>

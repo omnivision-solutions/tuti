@@ -20,7 +20,7 @@ const TYPICAL_TOKENS: Record<string, { input: number; output: number; per: strin
   support: { input: 6000, output: 500, per: "reply" },
   changelog: { input: 4000, output: 800, per: "draft" },
   // Its writing only: deciding what a change affects is the decision model's, billed apart.
-  code_changes: { input: 15000, output: 1500, per: "code change (writing)" },
+  code_changes: { input: 15000, output: 1500, per: "merged pull request (writing)" },
 };
 
 /** What one use of `feature` costs with `model`, in dollars, or null without prices. */

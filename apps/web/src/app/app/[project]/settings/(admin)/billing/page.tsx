@@ -115,7 +115,7 @@ export default async function BillingSettingsPage(props: PageProps<"/app/[projec
       <CardHeader>
         <CardTitle>{credits(balance)} AI credits</CardTitle>
         <CardDescription>
-          AI answers, changelog drafts and code changes spend credits as they&apos;re used; what each spent is in{" "}
+          AI answers, changelog drafts and Autopilot spend credits as they&apos;re used; what each spent is in{" "}
           <a href="#usage" className="underline underline-offset-4">
             Usage
           </a>

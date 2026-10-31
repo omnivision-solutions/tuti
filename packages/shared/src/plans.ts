@@ -100,12 +100,12 @@ const NEEDS: Record<PlanFeature, string> = {
   customDomain: "A custom domain needs",
   sitePath: "A portal under a path of your site needs",
   privatePortal: "A private portal and reader groups need",
-  codeChanges: "Code changes need",
+  codeChanges: "Autopilot needs",
   emailDomain: "Emailing from your own domain needs",
   launcherIcon: "Choosing the launcher's icon needs",
 };
 
-/** What a project is told when its plan doesn't include `feature`: "Code changes need the Pro plan." */
+/** What a project is told when its plan doesn't include `feature`: "Autopilot needs the Pro plan." */
 export const planNeeded = (feature: PlanFeature) => `${NEEDS[feature]} the ${planFor(feature) === "PRO" ? "Pro" : "Business"} plan.`;
 
 /** How many team members a project on `plan` may have (Free: 3), or null for no limit. */

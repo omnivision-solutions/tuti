@@ -19,7 +19,7 @@ const WRITES: Record<keyof AiModels, string> = {
   escalations: "The summary sent with a question passed to your team.",
   support: "Replies drafted from your docs and summaries of conversations, in your Inbox.",
   changelog: "Draft with AI and Edit with AI on changelog entries.",
-  code_changes: "The summary, changelog line and proposals for each merged pull request.",
+  code_changes: "Autopilot: the summary, changelog line and updates for each merged pull request.",
 };
 
 /** A price in dollars per token, per million tokens. */
