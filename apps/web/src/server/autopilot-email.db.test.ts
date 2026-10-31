@@ -777,3 +777,66 @@ test("the daily digest: in their morning (their browser's time zone), once a day
   expect(await sendAutopilotDigests(new Date("2026-11-05T07:10:00Z"))).toBe(0);
   expect(to(owner)).toHaveLength(2);
 });
+
+test("the digest of each project goes on its own: one that fails is tried again a while later, without the other going twice", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  const first = project;
+  project = await createProject(owner);
+  await change("Faster search", { scheduled: false });
+  const second = project;
+  project = first;
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // The first one the sweep sends is refused for now.
+  mailbox.refuseNext(owner.email, { code: 421 });
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  // Within the wait: nothing again.
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:31:00Z"))).toBe(0);
+  // Its claim lapsed: that one goes, the other not again.
+  await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:47:00Z"))).toBe(1);
+  const digests = to(owner);
+  expect(digests).toHaveLength(2);
+  for (const named of [first.name, second.name]) {
+    expect(digests.filter((email) => email.text.includes(named))).toHaveLength(1);
+  }
+});
+
+test("the digest shows the newest five updates and counts the rest, and goes to those told, not a member who isn't", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  const member = await signUp("Max Member");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: member.id, role: "MEMBER" } });
+  await prisma.user.update({ where: { id: member.id }, data: { autopilotEmails: "DIGEST", autopilotTimeZone: "Europe/Berlin" } });
+  const titles: string[] = [];
+  for (let i = 1; i <= 7; i++) {
+    const c = await change(`Change ${i}`, { scheduled: false });
+    await prisma.codeChange.update({ where: { id: c.id }, data: { mergedAt: new Date(Date.now() - (8 - i) * 3_600_000) } });
+    titles.push(`Change ${i}`);
+  }
+  expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
+  expect(to(member)).toHaveLength(0);
+  const [digest] = to(owner);
+  expect(digest!.subject).toBe("Autopilot this morning: 7 updates wait for you in 7 merged pull requests");
+  // The five newest, each with its update; the two oldest only counted.
+  for (const title of titles.slice(2)) {
+    expect(digest!.text).toContain(title);
+  }
+  for (const title of titles.slice(0, 2)) {
+    expect(digest!.text).not.toContain(`${title}\n`);
+  }
+  expect(digest!.text).toContain("+2 more in Tuti");
+});
+
+test("chosen again from a time zone further west, the digest still comes that morning", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Asia/Tokyo")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // 8:30 on the 3rd in Tokyo.
+  await sendAutopilotDigests(new Date("2026-11-02T23:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  // Now in Los Angeles: 8:30 on the 3rd there, a day already sent from Tokyo, so not again; the 4th's comes.
+  expect(await setAutopilotEmails("DIGEST", "America/Los_Angeles")).toEqual({});
+  await sendAutopilotDigests(new Date("2026-11-03T16:30:00Z"));
+  expect(to(owner)).toHaveLength(1);
+  await sendAutopilotDigests(new Date("2026-11-04T16:30:00Z"));
+  expect(to(owner)).toHaveLength(2);
+});

@@ -444,18 +444,21 @@ function localNow(now: Date, timeZone: string): { day: string; hour: number } | 
 }
 
 /**
- * The daily digest (A6): for each person who chose it, once their morning comes (in the time zone their
- * browser reported), one email per project they're told about with every change still waiting for
- * approval; none on a day with nothing. Claimed by the day first, so two sweeps send it once. Returns how many went.
+ * The daily digest (A6): for each person who chose it, from their morning on (in the time zone their
+ * browser reported), one email per project they're told about with what still waits for approval, newest
+ * first; none on a day with nothing. Each project's for each of their days is claimed and sent on its own
+ * (`autopilot_digest`): two sweeps send it once, and one that failed is tried again (CLAIM_MINUTES on, MAX_SENDS
+ * at most) without the others going twice. Returns how many went.
  */
 export async function sendAutopilotDigests(now = new Date()): Promise<number> {
   if (!codeChangesEnabled() || !emailConfigured()) {
     return 0;
   }
-  const readers = await prisma.user.findMany({
-    where: { autopilotEmails: "DIGEST", autopilotTimeZone: { not: null } },
-    select: { id: true, email: true, autopilotTimeZone: true, autopilotDigestOn: true },
-  });
+  // A week's claims are plenty to keep (a reader's day, wherever they are, is over by then).
+  await prisma.autopilotDigest.deleteMany({ where: { day: { lt: new Date(now.getTime() - 7 * 86_400_000) } } });
+  const readers = await prisma.user.findMany({ where: { autopilotEmails: "DIGEST", autopilotTimeZone: { not: null } }, select: { id: true, email: true, autopilotTimeZone: true } });
+  const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
+  const lapsed = new Date(claimedAt.getTime() - CLAIM_MINUTES * 60_000);
   let sent = 0;
   for (const reader of readers) {
     const local = localNow(now, reader.autopilotTimeZone!);
@@ -463,92 +466,100 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
     if (!local || local.hour < DIGEST_HOUR) {
       continue;
     }
-    const today = new Date(`${local.day}T00:00:00Z`);
-    const { count } = await prisma.user.updateMany({
-      where: { id: reader.id, OR: [{ autopilotDigestOn: null }, { autopilotDigestOn: { lt: today } }] },
-      data: { autopilotDigestOn: today },
-    });
-    if (count === 0) {
-      continue;
-    }
-    const memberships = await prisma.teamMember.findMany({
-      where: { userId: reader.id },
-      select: {
-        role: true,
-        autopilotTold: true,
-        project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true, analyseCodeChanges: true, plan: true } },
-      },
-    });
-    let failed = false;
-    for (const { role, autopilotTold, project } of memberships) {
-      if (role !== "OWNER" && !autopilotTold && !(role === "ADMIN" && project.autopilotTellAdmins)) {
-        continue;
-      }
-      // Autopilot off there (or not on its plan): what's left waiting isn't news every morning.
-      if (!project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
-        continue;
-      }
-      const waiting = await prisma.codeChange.findMany({
-        where: { projectId: project.id, state: "READY", actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
-        orderBy: { mergedAt: "asc" },
+    const day = new Date(`${local.day}T00:00:00Z`);
+    try {
+      const memberships = await prisma.teamMember.findMany({
+        where: { userId: reader.id },
         select: {
-          id: true,
-          title: true,
-          repo: true,
-          number: true,
-          summary: true,
-          actions: {
-            where: { status: { in: ["PENDING", "STALE"] } },
-            orderBy: [{ probability: "desc" }, { id: "asc" }],
-            select: {
-              id: true,
-              kind: true,
-              status: true,
-              dueAt: true,
-              decidedAt: true,
-              waitReason: true,
-              payload: true,
-              post: { select: { title: true, status: true } },
-              article: { select: { title: true } },
-            },
-          },
+          role: true,
+          autopilotTold: true,
+          project: { select: { id: true, slug: true, name: true, autopilotTellAdmins: true, analyseCodeChanges: true, plan: true } },
         },
       });
-      if (waiting.length === 0) {
-        continue;
-      }
-      let budget = SHOWN;
-      let more = 0;
-      const take = (list: AutopilotEmailUpdate[]) => {
-        const shown = list.slice(0, Math.max(budget, 0));
-        budget -= shown.length;
-        more += list.length - shown.length;
-        return shown;
-      };
-      const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, take, [], []));
-      const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
-      try {
-        await sendEmail({
-          to: reader.email,
-          ...autopilotEmail({
-            projectName: project.name,
-            changes,
-            totals: { goesOut: 0, wentOut: 0, needsYou, first: "" },
-            more,
-            digest: true,
-            autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`,
-            accountUrl: `${appOrigin()}/app/account`,
-          }),
+      for (const { role, autopilotTold, project } of memberships) {
+        if (role !== "OWNER" && !autopilotTold && !(role === "ADMIN" && project.autopilotTellAdmins)) {
+          continue;
+        }
+        // Autopilot off there (or not on its plan): what's left waiting isn't news every morning.
+        if (!project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
+          continue;
+        }
+        // Taken: new for the day, or one that failed (or whose sweep stopped) a while ago, with tries left.
+        const mine = { userId: reader.id, projectId: project.id, day };
+        const { count: fresh } = await prisma.autopilotDigest.createMany({ data: [{ ...mine, claimedAt }], skipDuplicates: true });
+        const taken =
+          fresh > 0 ||
+          (await prisma.autopilotDigest.updateMany({ where: { ...mine, sentAt: null, attempts: { lt: MAX_SENDS }, claimedAt: { lt: lapsed } }, data: { claimedAt } })).count > 0;
+        if (!taken) {
+          continue;
+        }
+        const waiting = await prisma.codeChange.findMany({
+          where: { projectId: project.id, state: "READY", actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
+          orderBy: { mergedAt: "desc" },
+          select: {
+            id: true,
+            title: true,
+            repo: true,
+            number: true,
+            summary: true,
+            actions: {
+              where: { status: { in: ["PENDING", "STALE"] } },
+              orderBy: [{ probability: "desc" }, { id: "asc" }],
+              select: {
+                id: true,
+                kind: true,
+                status: true,
+                dueAt: true,
+                decidedAt: true,
+                waitReason: true,
+                payload: true,
+                post: { select: { title: true, status: true } },
+                article: { select: { title: true } },
+              },
+            },
+          },
         });
+        // Nothing waiting: nothing to say, and the day's done.
+        if (waiting.length === 0) {
+          await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
+          continue;
+        }
+        let budget = SHOWN;
+        let more = 0;
+        const take = (list: AutopilotEmailUpdate[]) => {
+          const shown = list.slice(0, Math.max(budget, 0));
+          budget -= shown.length;
+          more += list.length - shown.length;
+          return shown;
+        };
+        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
+        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, take, [], [])).filter((change) => change.needsYou.length > 0);
+        const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
+        try {
+          await sendEmail({
+            to: reader.email,
+            ...autopilotEmail({
+              projectName: project.name,
+              changes,
+              totals: { goesOut: 0, wentOut: 0, needsYou, first: "", pullRequests: waiting.length },
+              more,
+              digest: true,
+              autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`,
+              accountUrl: `${appOrigin()}/app/account`,
+            }),
+          });
+        } catch (error) {
+          // Tried again once the claim lapses, a few times at most; tomorrow's comes all the same.
+          log.error("Sending Autopilot's digest failed", { error, userId: reader.id, projectId: project.id });
+          await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { attempts: { increment: 1 } } });
+          continue;
+        }
+        await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
         sent++;
-      } catch (error) {
-        log.error("Sending Autopilot's digest failed", { error, userId: reader.id });
-        failed = true;
       }
-    }
-    // One didn't go: the day isn't done, so the next minute tries again.
-    if (failed) {
-      await prisma.user.updateMany({ where: { id: reader.id, autopilotDigestOn: today }, data: { autopilotDigestOn: reader.autopilotDigestOn } });
+    } catch (error) {
+      // Its claims lapse, so what didn't go is tried again; the others' digests still go.
+      log.error("Autopilot's digest sweep failed for someone", { error, userId: reader.id });
     }
   }
   return sent;

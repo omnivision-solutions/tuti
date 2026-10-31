@@ -34,7 +34,7 @@ type AutopilotProps = {
   projectName: string;
   changes: AutopilotEmailChange[];
   /** Every update going out by itself (and when the first goes) and needing the team, shown or not: the subject's counts. */
-  totals: { goesOut: number; wentOut: number; needsYou: number; first: string };
+  totals: { goesOut: number; wentOut: number; needsYou: number; first: string; pullRequests?: number };
   /** The morning's digest: what's still waiting. */
   digest?: boolean;
   /** Updates past the first five, left out: "+N more in Tuti". */
@@ -143,7 +143,7 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
 /** "Autopilot: Add a dark theme · 2 updates go out in 24 hours, 1 needs you"; for several, how many merged. */
 function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"], digest = false): string {
   if (digest) {
-    return `Autopilot this morning: ${totals.needsYou} ${totals.needsYou === 1 ? "update waits" : "updates wait"} for you in ${plural(changes.length, "merged pull request", "merged pull requests")}`;
+    return `Autopilot this morning: ${totals.needsYou} ${totals.needsYou === 1 ? "update waits" : "updates wait"} for you in ${plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}`;
   }
   const parts = [
     totals.wentOut > 0 && `${plural(totals.wentOut, "update", "updates")} went out`,
