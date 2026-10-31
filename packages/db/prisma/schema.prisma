@@ -15,6 +15,7 @@ datasource db {
 model User {
   id                String          @id
   name              String
+  /// Also indexed as lower(email) (a migration's index Prisma can't describe), so a project user's address finds their accounts.
   email             String
   /// Autopilot's email for the projects they're told about: as each change is analysed, or never.
   autopilotEmails   AutopilotEmails @default(AS_THEY_HAPPEN)

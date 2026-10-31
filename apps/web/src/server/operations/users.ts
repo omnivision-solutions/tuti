@@ -37,20 +37,33 @@ export type UserActivity = { posts: number; votes: number; conversations: number
 export const USER_SORTS = ["name", "posts", "votes", "conversations", "lastSeen"] as const;
 
 /**
- * A user's activity, as SQL over their identity `s`. Last seen is the latest of their time in the widget,
- * their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
+ * Who a user (`s`, their identity) is on the portal and in the widget, as `who.ids`: the account their app signs them
+ * in as, and the accounts with their address once it's verified (as Who's asking and groups count them, voterIdentities
+ * in server/post-lists.ts), never the team's.
+ */
+const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
+  SELECT array_agg(o.id) AS ids FROM "user" o
+  WHERE o.id = s."userId"
+    OR (s.email IS NOT NULL AND o."emailVerified" AND lower(o.email) = s.email
+      AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = s."projectId" AND t."userId" = o.id))
+) who`;
+
+/**
+ * A user's activity, as SQL over their identity `s` and accounts `who` (accountsOf). Last seen is the latest of their
+ * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
+ * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
  */
 const activitySql = {
-  posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = s."userId" AND p."duplicateOfId" IS NULL)::int`,
-  votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = s."userId")::int`,
-  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND c."userId" = s."userId" AND NOT c.spam)::int`,
+  posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
+  votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids))::int`,
+  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND c."userId" = ANY(who.ids) AND NOT c.spam)::int`,
   lastSeen: Prisma.sql`GREATEST(
-    (SELECT w."lastSeenAt" FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = s."userId"),
-    (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = s."userId"),
-    (SELECT max(v."createdAt") FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = s."userId"),
-    (SELECT max(m."createdAt") FROM comment m WHERE m."projectId" = s."projectId" AND m."authorId" = s."userId"),
+    (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),
+    (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids)),
+    (SELECT max(v."createdAt") FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids)),
+    (SELECT max(m."createdAt") FROM comment m WHERE m."projectId" = s."projectId" AND m."authorId" = ANY(who.ids)),
     (SELECT max(cm."createdAt") FROM conversation_message cm JOIN conversation c ON c.id = cm."conversationId"
-      WHERE c."projectId" = s."projectId" AND c."userId" = s."userId" AND cm.author = 'USER'))`,
+      WHERE c."projectId" = s."projectId" AND c."userId" = ANY(who.ids) AND cm.author = 'USER'))`,
 };
 
 const userSelect = {
@@ -115,7 +128,7 @@ export const listUsers = defineOperation({
     const sorted = input.sort === "name" ? Prisma.empty : Prisma.sql`${activitySql[input.sort]} DESC NULLS LAST, `;
     const page = await prisma.$queryRaw<({ id: string } & Omit<UserActivity, "lastSeenAt"> & { lastSeen: Date | null })[]>`
       SELECT s.id, ${activitySql.posts} AS posts, ${activitySql.votes} AS votes, ${activitySql.conversations} AS conversations, ${activitySql.lastSeen} AS "lastSeen"
-      FROM sso_identity s JOIN "user" u ON u.id = s."userId"
+      FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
       ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${sorted}u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
     const rows = page.slice(0, input.limit);

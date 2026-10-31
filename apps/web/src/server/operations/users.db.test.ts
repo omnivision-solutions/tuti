@@ -230,3 +230,19 @@ test("the project picks the properties Users shows as columns: company and plan 
   await expect(call(updateProject, team(), { userColumns: Array.from({ length: 11 }, (_, i) => `p${i}`) })).rejects.toMatchObject({ status: 400 });
   expect((await call(updateProject, team(), { userColumns: [] })).userColumns).toEqual([]);
 });
+
+test("someone who signs in to the portal another way, with a user's address verified, is that user here too: their activity counts", async () => {
+  await sync([{ id: "user-42", name: "Sam", email: "e2e-sam@example.com" }]);
+  const projectId = project.id;
+  // Signed in another way, with their address (in capitals, as older accounts kept it).
+  const portal = await prisma.user.create({ data: { id: randomUUID(), name: "Sam", email: "E2E-Sam@example.com", emailVerified: false } });
+  const post = await prisma.post.create({ data: { projectId, boardId: project.boards[0]!.id, authorId: portal.id, number: 1, title: "Dark mode", createdAt: new Date("2026-10-05") } });
+  await prisma.vote.create({ data: { postId: post.id, userId: portal.id, projectId, createdAt: new Date("2026-10-06") } });
+  // Not while it isn't verified: anyone can type an address.
+  expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
+  await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true } });
+  expect((await list()).users[0]!.activity).toEqual({ posts: 1, votes: 1, conversations: 0, lastSeenAt: new Date("2026-10-06") });
+  // Once they're on the team, what they do is the team's.
+  await prisma.teamMember.create({ data: { projectId, userId: portal.id, role: "MEMBER" } });
+  expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
+});
