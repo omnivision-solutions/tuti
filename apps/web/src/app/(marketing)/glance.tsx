@@ -49,7 +49,7 @@ function Ctas({ start, docs, className }: { start: Start; docs: string; classNam
         {start.label}
       </Link>
       <a href={docs} className={buttonVariants({ size: "lg", variant: "outline", className: big })}>
-        See a live help center
+        {docs.startsWith(REPO_URL) ? "Read the docs" : "See a live help center"}
       </a>
     </div>
   );
@@ -134,8 +134,8 @@ function StatusFlip() {
 
 /** land-a's picture: everything around the product, current, and what Autopilot just did. */
 export function UpToDateBoard() {
-  const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string }[] = [
-    { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago" },
+  const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string; byItself?: boolean }[] = [
+    { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago", byItself: true },
     {
       icon: LightbulbIcon,
       kind: "Feature request",
@@ -146,13 +146,14 @@ export function UpToDateBoard() {
           <Faces count={128} />
         </span>
       ),
-      when: "Shipped today",
+      // Completing a request waits for a click by default (and always for one reaching this many).
+      when: "Closed in a click",
     },
-    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Switch to dark under Settings → Theme.</span>, when: "Drafted" },
+    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Switch to dark under Settings → Theme.</span>, when: "Drafted", byItself: true },
   ];
   return (
     <figure
-      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data, marked Dark mode completed and told 128 people, and drafted the changelog entry. The AI now answers from the updated article."
+      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data and drafted the changelog entry, and Dark mode was marked completed in one click, with 128 people told. The AI now answers from the updated article."
       className="relative mx-auto max-w-5xl"
     >
       <Frame>
@@ -172,7 +173,7 @@ export function UpToDateBoard() {
         </div>
         <div aria-hidden className="grid gap-5 border-t p-4 sm:p-6 lg:grid-cols-[1fr_19rem]">
           <ul className="flex flex-col gap-3">
-            {updates.map(({ icon: Icon, kind, title, change, when }) => (
+            {updates.map(({ icon: Icon, kind, title, change, when, byItself }) => (
               <li key={kind} className="flex min-w-0 gap-3.5 rounded-xl border bg-background p-4">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-soft-foreground">
                   <Icon className="size-4.5" />
@@ -183,7 +184,7 @@ export function UpToDateBoard() {
                       {title} <span className="ml-1 text-xs font-normal text-muted-foreground">{kind}</span>
                     </span>
                     <span className="flex items-center gap-1 text-xs font-semibold text-soft-foreground">
-                      <SparklesIcon className="size-3.5" /> {when}
+                      {byItself ? <SparklesIcon className="size-3.5" /> : <CheckIcon className="size-3.5" strokeWidth={3} />} {when}
                     </span>
                   </p>
                   {change}
@@ -314,7 +315,7 @@ export function AutoCards() {
     },
     {
       title: "Every request closed out",
-      text: "One click marks it shipped and tells everyone who asked.",
+      text: "One click marks it shipped and emails the people who asked.",
       picture: (
         <div className="flex flex-col gap-3">
           <p className="flex items-center justify-between gap-2 font-semibold">
