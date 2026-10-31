@@ -13,11 +13,12 @@ import { PageHeader } from "@/components/page-header";
 import { PlanNotice } from "@/components/plan-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { updateKind } from "@/lib/autopilot-words";
 import { formatDate, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { getMembership } from "@/server/membership";
 import { mediaUrls } from "@/server/media-urls";
-import { codeChangeDetail } from "@/server/operations/code-changes";
+import { type CodeChangeDetail, codeChangeDetail } from "@/server/operations/code-changes";
 
 /**
  * Pending docs proposals (`ids`) formatted as readers see them, by id: an edit's changed blocks (with
@@ -69,6 +70,9 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   const likely = updates.filter((action) => action.applyLikely).map((action) => action.id);
   const ticked = select === null || select === "likely" ? likely : select.split(",").map((id) => id.trim());
 
+  // Back from a button in Autopilot's email (the act page): what it did, or who did it first, and when.
+  const done = afterButton(updates, typeof searchParams.done === "string" ? searchParams.done : null, typeof searchParams.update === "string" ? searchParams.update : null);
+
   return (
     <>
       <PageHeader
@@ -84,6 +88,11 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           </>
         }
       />
+      {done && (
+        <Alert>
+          <AlertDescription>{done}</AlertDescription>
+        </Alert>
+      )}
       {change.state === "analysing" && (
         <Alert>
           <AlertDescription>Autopilot is reading this pull request. Its updates show here when it&apos;s done.</AlertDescription>
@@ -142,4 +151,31 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
       )}
     </>
   );
+}
+
+/** What a button in Autopilot's email did (`done`, `update`), as a line above the updates; null when not back from one. */
+function afterButton(updates: CodeChangeDetail["actions"], done: string | null, updateId: string | null): string | null {
+  const update = updateId ? updates.find((u) => u.id === updateId) : undefined;
+  const named = update ? `${updateKind(update)}: ${update.post?.title ?? update.article?.title ?? update.title ?? update.line ?? ""}` : "";
+  const by = (u: CodeChangeDetail["actions"][number]) =>
+    `${u.decidedBy ? ` by ${u.decidedBy}` : ""}${u.decidedAt ? ` ${timeAgo(new Date(u.decidedAt))}` : ""}`;
+  switch (done) {
+    case "approved":
+      return `Approved: ${named}. Undo is under Done.`;
+    case "published":
+      return "Published: what was going out by itself went now.";
+    case "stopped":
+      return "Stopped: those updates wait for you now.";
+    case "already": {
+      if (update) {
+        const what = update.status === "applied" ? "approved" : update.status === "dismissed" ? "dismissed" : update.status === "undone" ? "undone" : null;
+        return what ? `Done already: ${named} was ${what}${by(update)}. Nothing more to do.` : `${named} couldn't be approved as it is. Check it below.`;
+      }
+      // The change's latest decision: who published or stopped what was going out.
+      const latest = updates.filter((u) => u.decidedAt).sort((a, b) => b.decidedAt!.localeCompare(a.decidedAt!))[0];
+      return `Nothing was going out by itself any more${latest ? `: the last decision was${by(latest)}` : ""}. Nothing more to do.`;
+    }
+    default:
+      return null;
+  }
 }

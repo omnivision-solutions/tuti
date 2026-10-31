@@ -3,7 +3,15 @@ import { Button, Hr, Link, Section, Text } from "@react-email/components";
 import { colors, Layout } from "./layout";
 
 /** One update, as the email previews it. `goesOut`: when it goes out by itself ("in 24 hours", "now"). */
-export type AutopilotEmailUpdate = { kind: string; title: string; fact: string; goesOut?: string };
+export type AutopilotEmailUpdate = {
+  kind: string;
+  title: string;
+  fact: string;
+  goesOut?: string;
+  /** One click for its recipient (signed in): approve it. And its review page, with it ticked, to edit first. */
+  approveUrl?: string;
+  editUrl?: string;
+};
 
 /** A merged pull request's updates: what goes out by itself, what needs the team, and what Autopilot did already. */
 export type AutopilotEmailChange = {
@@ -12,6 +20,9 @@ export type AutopilotEmailChange = {
   summary: string;
   /** Its review page, with the likely updates ticked. */
   reviewUrl: string;
+  /** One click for its recipient: what goes out by itself goes now, or waits for the team. */
+  publishUrl?: string;
+  stopUrl?: string;
   goesOut: AutopilotEmailUpdate[];
   /** What customers see that went out by itself already (a hold shorter than the wait for this email). */
   wentOut: AutopilotEmailUpdate[];
@@ -50,6 +61,22 @@ function Updates({ heading, updates }: { heading: string; updates: AutopilotEmai
             {update.fact}
             {update.goesOut && ` · goes out ${update.goesOut}`}
           </span>
+          {(update.approveUrl || update.editUrl) && (
+            <>
+              <br />
+              {update.approveUrl && (
+                <Link href={update.approveUrl} style={{ color: colors.green, fontWeight: 600 }}>
+                  Approve
+                </Link>
+              )}
+              {update.approveUrl && update.editUrl && " · "}
+              {update.editUrl && (
+                <Link href={update.editUrl} style={{ color: colors.green }}>
+                  Edit
+                </Link>
+              )}
+            </>
+          )}
         </Text>
       ))}
     </>
@@ -70,6 +97,21 @@ export function AutopilotEmail({ projectName, changes, totals, more, autopilotUr
           <Text style={{ fontSize: 13, color: colors.muted, margin: "0 0 8px" }}>{change.pullRequest}</Text>
           {change.summary && <Text style={{ fontSize: 14, color: colors.text, lineHeight: "21px", margin: "0 0 8px" }}>{change.summary}</Text>}
           <Updates heading="Goes out by itself" updates={change.goesOut} />
+          {change.publishUrl && change.stopUrl && (
+            <Text style={{ fontSize: 14, margin: "0 0 8px" }}>
+              <Link href={change.publishUrl} style={{ color: colors.green, fontWeight: 600 }}>
+                Publish now
+              </Link>
+              {" · "}
+              <Link href={change.reviewUrl} style={{ color: colors.green }}>
+                Review
+              </Link>
+              {" · "}
+              <Link href={change.stopUrl} style={{ color: colors.green }}>
+                Stop
+              </Link>
+            </Text>
+          )}
           <Updates heading="Went out by itself" updates={change.wentOut} />
           <Updates heading="Needs you" updates={change.needsYou} />
           <Updates heading="Done (only your team sees it)" updates={change.done} />

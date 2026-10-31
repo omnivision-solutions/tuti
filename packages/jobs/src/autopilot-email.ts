@@ -2,6 +2,8 @@ import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log } from "@tuti/shared";
 
+import { type AutopilotButton, signAutopilotButton } from "./autopilot";
+
 /**
  * Autopilot's email (docs/plan.md, A5): when a change's analysis is saved, each person told about it
  * gets a notice; a minute's sweep sends each person's notices from the same ten minutes in one email.
@@ -281,8 +283,21 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       }
       const changes: AutopilotEmailChange[] = mine.map((notice) => {
         const { codeChange } = notice;
+        const page = `${appOrigin()}/app/${project.slug}/autopilot/${codeChange.id}`;
+        // One click for this person, signed in (see the act page); anyone else only gets the page.
+        const act = (button: AutopilotButton) => {
+          const token = signAutopilotButton(userId, codeChange.id, button, now);
+          return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
+        };
         const goesOut = codeChange.actions.filter((action) => action.status === "SCHEDULED").map((action) => previewOf(action, now));
-        const needsYou = codeChange.actions.filter((action) => action.status === "PENDING" || action.status === "STALE").map((action) => previewOf(action, now));
+        const needsYou = codeChange.actions
+          .filter((action) => action.status === "PENDING" || action.status === "STALE")
+          .map((action) => ({
+            ...previewOf(action, now),
+            // Out of date ones can't be approved as they are: Edit only.
+            ...(action.status === "PENDING" && { approveUrl: act(`approve:${action.id}`) }),
+            editUrl: `${page}?select=${action.id}`,
+          }));
         // What Autopilot did by itself already: what customers see (its hold passed before this email), then drafts only the team sees, links.
         const gone = went(notice).map((action) => previewOf(action, now));
         const drafts = done(notice).map((action) => previewOf(action, now));
@@ -290,7 +305,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           title: codeChange.title,
           pullRequest: `${codeChange.repo}#${codeChange.number}`,
           summary: codeChange.summary,
-          reviewUrl: `${appOrigin()}/app/${project.slug}/autopilot/${codeChange.id}?select=likely`,
+          reviewUrl: `${page}?select=likely`,
+          ...(goesOut.length > 0 && { publishUrl: act("publish"), stopUrl: act("stop") }),
           goesOut: take(goesOut),
           wentOut: take(gone),
           needsYou: take(needsYou),

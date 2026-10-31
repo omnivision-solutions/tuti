@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -179,4 +179,37 @@ export async function autopilotDue(): Promise<{ applied: number; waiting: number
     throw new Error(`The web app answered ${response.status} to /api/autopilot/due`);
   }
   return (await response.json()) as { applied: number; waiting: number; emailed: number };
+}
+
+/** What a button in Autopilot's email does: approve one update, or publish now or stop a change's scheduled ones. */
+export type AutopilotButton = `approve:${string}` | "publish" | "stop";
+
+/** How long an email's buttons act: a week, then they only open the review page. */
+const BUTTON_DAYS = 7;
+
+const signature = (payload: string) => {
+  const secret = process.env.BETTER_AUTH_SECRET;
+  return secret ? createHmac("sha256", secret).update(`autopilot-act:${payload}`).digest("base64url") : null;
+};
+
+/** A button's token: for its recipient, its change and itself, good for a week. Null without the server's secret. */
+export function signAutopilotButton(userId: string, codeChangeId: string, button: AutopilotButton, now = new Date()): string | null {
+  const payload = Buffer.from(JSON.stringify({ u: userId, c: codeChangeId, b: button, e: now.getTime() + BUTTON_DAYS * 86_400_000 })).toString("base64url");
+  const signed = signature(payload);
+  return signed ? `${payload}.${signed}` : null;
+}
+
+/** A token read back: who it's for, its change and button, and whether it's out of date. Null if it isn't one of ours. */
+export function readAutopilotButton(token: string, now = new Date()): { userId: string; codeChangeId: string; button: AutopilotButton; expired: boolean } | null {
+  const [payload, sent] = token.split(".");
+  const expected = payload ? signature(payload) : null;
+  if (!payload || !sent || !expected || sent.length !== expected.length || !timingSafeEqual(Buffer.from(sent), Buffer.from(expected))) {
+    return null;
+  }
+  try {
+    const { u, c, b, e } = JSON.parse(Buffer.from(payload, "base64url").toString()) as { u: string; c: string; b: AutopilotButton; e: number };
+    return { userId: u, codeChangeId: c, button: b, expired: now.getTime() > e };
+  } catch {
+    return null;
+  }
 }

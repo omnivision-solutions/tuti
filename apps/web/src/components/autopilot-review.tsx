@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Textarea } from "@/components/ui/textarea";
 import { emailLine } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
+import { updateKind } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
 import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -34,24 +35,6 @@ type Update = CodeChangeDetail["actions"][number];
 const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
 const NOT_STARTED = new Set(["open", "under_review", "planned"]);
-
-/** What an update is, as the review page names it. */
-export function updateKind(update: Pick<Update, "kind" | "problem">): string {
-  switch (update.kind) {
-    case "resolves":
-      return "Closes the request";
-    case "moves_forward":
-      return "Progress update";
-    case "links":
-      return "Link";
-    case "article_edit":
-      return update.problem === "missing" ? "Missing info" : "Out of date";
-    case "new_article":
-      return "New article";
-    default:
-      return "Changelog line";
-  }
-}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** "Maya", "Maya and Sam", "Maya, Sam and Lee". */
