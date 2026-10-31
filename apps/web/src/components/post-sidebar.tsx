@@ -35,7 +35,7 @@ export function PostVoters({
               {voter.name}
               {voter.company && <span className="text-muted-foreground"> · {voter.company}</span>}
             </span>
-            {voter.value !== null && property && <span className="shrink-0 text-muted-foreground tabular-nums">{asking(voter.value, property)}</span>}
+            {voter.value !== null && property && <span className="max-w-1/2 text-right break-all text-muted-foreground tabular-nums">{asking(voter.value, property)}</span>}
           </li>
         ))}
       </ul>
