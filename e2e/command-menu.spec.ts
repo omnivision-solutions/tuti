@@ -14,6 +14,7 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   const api = await apiFor(team, slug);
   await api("/posts", { board: "feature-requests", title: "Dark mode" });
   await api("/articles", { title: "Turning on dark mode", body: "Open your profile menu." });
+  await api("/collections", { name: "Billing and invoices" });
   await api("/users", { users: [{ id: "u-long", name: "Lou Long", email: "e2e-someone.with.a.very.long.name@subsidiary.department.example.com" }] });
 
   await team.goto(`/app/${slug}`);
@@ -63,6 +64,12 @@ test("⌘K jumps to a post, an article or a settings page by name, and runs an a
   await box.press("Escape");
   await expect(menu).toBeHidden();
   await team.setViewportSize({ width: 1280, height: 720 });
+
+  // A docs collection, by its name.
+  await team.keyboard.press("ControlOrMeta+k");
+  await box.fill("billing and");
+  await menu.getByRole("option", { name: /Billing and invoices/ }).click();
+  await team.waitForURL(`**/app/${slug}/docs/collections/billing-and-invoices`);
 
   // A settings page, and an action.
   await team.keyboard.press("ControlOrMeta+k");

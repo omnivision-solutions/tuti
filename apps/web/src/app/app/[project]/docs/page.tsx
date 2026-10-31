@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { prisma } from "@tuti/db";
 import { DELETED_ARTICLE_DAYS } from "@tuti/jobs";
 import { ChevronRightIcon, ExternalLinkIcon, FileTextIcon } from "lucide-react";
@@ -5,7 +6,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RestoreDeletedButton, TabDialog } from "@/components/docs";
-import { AddContentMenu, DocsFilter, DocsMatch, DocsNoMatch } from "@/components/docs-tree";
+import { AddContentMenu } from "@/components/docs-tree";
 import { EmptyState } from "@/components/empty-state";
 import { LucideIcon } from "@/components/icon-field";
 import { ItemList, ItemRow } from "@/components/item-list";
@@ -61,18 +62,11 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   const detailsOf = new Map(details.map((d) => [d.slug, d]));
   const base = `/app/${slug}/docs`;
 
-  /** Collection `c`'s name, and those of everything in it: what "Filter by title" looks for to show it. */
-  const textsOf = (c: TeamDocs["collections"][number]): string[] => [
-    c.name,
-    ...c.articles.map((a) => a.title),
-    ...docs.collections.filter((other) => other.parentId === c.id).flatMap(textsOf),
-  ];
-
   const articleRows = (articles: { slug: string; title: string }[]) =>
     articles.map(({ slug: articleSlug, title }) => {
       const article = detailsOf.get(articleSlug);
       return (
-        <DocsMatch key={articleSlug} texts={[title]}>
+        <Fragment key={articleSlug}>
           <ItemRow
             leading={<FileTextIcon aria-hidden className="size-4 text-muted-foreground" />}
             title={
@@ -94,7 +88,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                 : "Draft"
             }
           />
-        </DocsMatch>
+        </Fragment>
       );
     });
 
@@ -102,7 +96,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
   const collectionCard = (c: TeamDocs["collections"][number]) => {
     const inside = docs.collections.filter((other) => other.parentId === c.id);
     return (
-      <DocsMatch key={c.slug} texts={textsOf(c)}>
+      <Fragment key={c.slug}>
         <Card role="region" aria-label={c.name}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -119,7 +113,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
               <ItemList>
                 {articleRows(c.articles)}
                 {inside.map((child) => (
-                  <DocsMatch key={child.slug} texts={textsOf(child)}>
+                  <Fragment key={child.slug}>
                     <ItemRow
                       leading={child.knownIcon && child.icon ? <LucideIcon name={child.icon} className="text-muted-foreground" /> : undefined}
                       title={
@@ -131,17 +125,17 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                       meta={contentsMeta(child, docs)}
                       actions={<ChevronRightIcon aria-hidden className="size-4 text-muted-foreground" />}
                     />
-                  </DocsMatch>
+                  </Fragment>
                 ))}
               </ItemList>
             </CardContent>
           )}
         </Card>
-      </DocsMatch>
+      </Fragment>
     );
   };
   const uncollectedCard = docs.uncollected.length > 0 && (
-    <DocsMatch texts={docs.uncollected.map((a) => a.title)}>
+    <>
       <Card role="region" aria-label="Not in a collection">
         <CardHeader>
           <CardTitle>Not in a collection</CardTitle>
@@ -150,7 +144,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
           <ItemList>{articleRows(docs.uncollected)}</ItemList>
         </CardContent>
       </Card>
-    </DocsMatch>
+    </>
   );
   const top = (tab: string | null) => docs.collections.filter((c) => c.parent === null && c.tab === tab);
 
@@ -174,7 +168,6 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         }
         actions={
           <>
-            <DocsFilter />
             <Link href={`${base}/insights`} className={buttonVariants({ variant: "outline" })}>
               Insights
             </Link>
@@ -192,7 +185,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
         </>
       ) : (
         docs.tabs.map((tab, index) => (
-          <DocsMatch key={tab.slug} texts={[tab.name, ...top(tab.slug).flatMap(textsOf), ...(index === 0 ? docs.uncollected.map((a) => a.title) : [])]}>
+          <Fragment key={tab.slug}>
             <section aria-labelledby={`tab-${tab.slug}`} className="flex flex-col gap-4">
               <h2 id={`tab-${tab.slug}`} className="font-heading text-lg font-semibold">
                 <Link href={`${base}/tabs/${tab.slug}`} className="hover:underline">
@@ -203,15 +196,14 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
               {index === 0 && uncollectedCard}
               {top(tab.slug).length === 0 && !(index === 0 && uncollectedCard) && <p className="text-sm text-muted-foreground">Nothing in this tab yet.</p>}
             </section>
-          </DocsMatch>
+          </Fragment>
         ))
       )}
-      <DocsNoMatch texts={[...docs.tabs.map((tab) => tab.name), ...docs.collections.map((c) => c.name), ...docs.collections.flatMap((c) => c.articles.map((a) => a.title)), ...docs.uncollected.map((a) => a.title), ...deleted.map((a) => a.title)]} />
       <div>
         <TabDialog projectSlug={slug} first={docs.tabs.length === 0 && docs.collections.length > 0} />
       </div>
       {deleted.length > 0 && (
-        <DocsMatch texts={deleted.map((article) => article.title)}>
+        <>
           <Card id="recently-deleted" role="region" aria-labelledby="recently-deleted-title" className="scroll-mt-18">
             <CardHeader>
               <CardTitle id="recently-deleted-title">Recently deleted</CardTitle>
@@ -220,7 +212,7 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
             <CardContent>
               <ItemList>
                 {deleted.map((article) => (
-                  <DocsMatch key={article.id} texts={[article.title]}>
+                  <Fragment key={article.id}>
                     <ItemRow
                       title={article.title}
                       meta={`Deleted ${timeAgo(article.deletedAt!)}`}
@@ -230,12 +222,12 @@ export default async function TeamDocsPage(props: PageProps<"/app/[project]/docs
                         )
                       }
                     />
-                  </DocsMatch>
+                  </Fragment>
                 ))}
               </ItemList>
             </CardContent>
           </Card>
-        </DocsMatch>
+        </>
       )}
     </>
   );

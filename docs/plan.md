@@ -599,7 +599,7 @@ Order: the bugs and quick wins, then Autopilot (the next section), then the app'
 - [x] Integrations as a catalogue: GitHub (Connect, or its settings), and what's on the Later list (GitLab, Linear, Jira, Slack) marked "Coming soon" (decided 2026-10-30), so a team sees what's on the way
 - [x] AI models: a choice per feature of Fast, Balanced or Best, with what each costs per answer (or per code change), and "Custom model" for any other id, instead of a text box
 - [x] Billing: one primary button (the plan to move to), the comparison from the pricing page, a button to get the Powered by add-on (its card only explains it now), and credits as presets or an amount, not both
-- [ ] ⌘K (Ctrl K off a Mac) everywhere in the app: jump to a post, conversation, article, user or settings page by name, or run an action (New post, New article, Draft release notes). It finds only what the person may see. Docs' "Filter by title" box goes
+- [x] ⌘K (Ctrl K off a Mac) everywhere in the app: jump to a post, conversation, article, user or settings page by name, or run an action (New post, New article, Draft release notes). It finds only what the person may see. Docs' "Filter by title" box goes
 - Tests: every old address lands on its new page; each moved setting still saves from its new place; ⌘K finds a post, an article and a settings page
 
 ### 3. The team's daily pages

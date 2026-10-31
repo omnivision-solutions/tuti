@@ -6,7 +6,7 @@ import { actAs, createProject, signUp } from "@/test/helpers";
 import { searchApp } from "./app-search";
 import { upsertProjectUser } from "./project-users";
 
-test("⌘K finds the project's posts, conversations and articles by name (posts and conversations by number too), never another project's", async () => {
+test("⌘K finds the project's posts, conversations, articles and collections by name (posts and conversations by number too), never another project's", async () => {
   const owner = await signUp("Owner");
   const project = await createProject(owner);
   const other = await createProject(owner);
@@ -14,7 +14,11 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     await prisma.post.create({ data: { projectId: p.id, boardId: p.boards[0]!.id, authorId: owner.id, number: 7, title: "Dark mode" } });
     await prisma.conversation.create({ data: { projectId: p.id, number: 3, subject: "Dark mode on mobile?", status: "OPEN", origin: "API", lastMessageAt: new Date() } });
     await prisma.article.create({ data: { projectId: p.id, slug: "dark-mode", title: "Turning on dark mode" } });
+    await prisma.collection.create({ data: { projectId: p.id, slug: "dark-themes", name: "Dark themes" } });
   }
+  // Another collection named alike, inside one: its result says where it is.
+  const parent = await prisma.collection.findFirstOrThrow({ where: { projectId: project.id, slug: "dark-themes" } });
+  await prisma.collection.create({ data: { projectId: project.id, slug: "dark-mode-faq", name: "Dark themes", parentId: parent.id } });
   await upsertProjectUser(project.id, "u-1", { name: "Dark Helmet", email: "e2e-helmet@example.com" });
   await upsertProjectUser(other.id, "u-2", { name: "Dark Helmet", email: "e2e-helmet@example.com" });
   await prisma.conversation.create({
@@ -33,8 +37,11 @@ test("⌘K finds the project's posts, conversations and articles by name (posts 
     ["post", `${base}/p/7`],
     ["conversation", `${base}/inbox/3`], // not the spam one
     ["article", `${base}/docs/dark-mode`],
+    ["collection", `${base}/docs/collections/dark-mode-faq`],
+    ["collection", `${base}/docs/collections/dark-themes`],
     ["user", `${base}/users?q=u-1`], // by their id in the project's product; not the other project's u-2
   ]);
+  expect(results!.filter((r) => r.kind === "collection").map((r) => r.meta)).toEqual(["Collection in Dark themes", "Collection"]);
   expect((await searchApp(project.slug, "#7")).results!.map((r) => r.href)).toEqual([`${base}/p/7`]);
   // The number typed comes first, even when more popular posts have it in their title.
   for (let n = 20; n < 26; n++) {
