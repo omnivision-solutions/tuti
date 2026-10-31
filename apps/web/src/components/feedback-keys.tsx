@@ -27,7 +27,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
   // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its
   // top; closed, the list goes back to where it was. Kept as a post is opened (a click on the list, or J), before
   // the pane hides the list (and the browser moves the page up).
-  const listScroll = useRef(0);
+  const listScroll = useRef<number | null>(null);
   useEffect(() => {
     const phone = window.matchMedia("(max-width: 63.99rem)").matches;
     if (open !== null) {
@@ -36,14 +36,19 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
       }
       return;
     }
-    if (phone && listScroll.current > 0) {
+    if (phone && listScroll.current !== null) {
       window.scrollTo(0, listScroll.current);
     }
+    // Opened from the list (a click), or again by Forward.
     const keep = () => {
       listScroll.current = window.scrollY;
     };
     window.addEventListener("click", keep, true);
-    return () => window.removeEventListener("click", keep, true);
+    window.addEventListener("popstate", keep);
+    return () => {
+      window.removeEventListener("click", keep, true);
+      window.removeEventListener("popstate", keep);
+    };
   }, [open]);
 
   useEffect(() => {
