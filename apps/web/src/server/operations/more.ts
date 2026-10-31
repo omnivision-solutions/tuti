@@ -80,6 +80,13 @@ export const setVote = defineOperation({
     }
     const userId = await authorId(context, input.author);
     const votes = await prisma.$transaction(async (tx) => {
+      // Its post locked first, as a merge locks it (mergePosts): a vote during a merge waits for it (no
+      // deadlock over the votes it moves), then finds the post merged.
+      const [locked] = await tx.$queryRaw<{ duplicateOfId: string | null }[]>`
+        SELECT "duplicateOfId" FROM post WHERE id = ${post.id} FOR NO KEY UPDATE`;
+      if (locked?.duplicateOfId) {
+        throw new OperationError(409, "merged", "This post was merged into another one; vote there instead");
+      }
       const changed = input.voted
         ? (await tx.vote.createMany({ data: { postId: post.id, userId, projectId: context.projectId }, skipDuplicates: true }))
             .count

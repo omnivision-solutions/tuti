@@ -564,7 +564,10 @@ export const unlinkConversationPost = defineOperation({
   input: z.object({ number: conversationNumber, post: postNumber }),
   run: async ({ projectId }, input) => {
     const conversation = await findConversation(projectId, input.number);
-    await prisma.conversationPost.deleteMany({ where: { conversationId: conversation.id, post: { projectId, number: input.post } } });
+    // Waits for a merge of the post (which holds its row), so a link it moves isn't unlinked halfway.
+    await prisma.$executeRaw`
+      DELETE FROM conversation_post WHERE "conversationId" = ${conversation.id}
+        AND "postId" = (SELECT id FROM post WHERE "projectId" = ${projectId} AND number = ${input.post} FOR SHARE)`;
     return { posts: await linkedPosts(conversation.id) };
   },
 });

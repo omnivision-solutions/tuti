@@ -164,6 +164,7 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
         "voteCount" = (SELECT count(*) FROM vote WHERE "postId" = ${to}),
         "commentCount" = (SELECT count(*) FROM comment WHERE "postId" = ${to})
       WHERE id = ${to}`;
-  });
+    // Past Prisma's 5 seconds: a merge may wait for a vote on either post, and move thousands of votes.
+  }, { timeout: 30_000 });
   return target.number;
 }
