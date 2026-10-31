@@ -162,13 +162,17 @@ test("the safety net leaves a new project's replies out once it's past its daily
   vi.spyOn(log, "warn").mockImplementation(() => {});
   mailbox.refuseNext(voter.email, { code: 421 });
   const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
-  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
   vi.stubEnv("PLANS", "on");
   vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "support.example.com");
-  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 } });
+  // Midday, so the cap's day is the same day for the row and the safety net (not across midnight UTC).
+  const noon = new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`);
+  vi.useFakeTimers({ toFake: ["Date"], now: noon });
   try {
+    await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(noon.getTime() - 11 * 60_000) } });
+    await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(noon.toISOString().slice(0, 10)), claimed: 200 } });
     expect(await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} })).toEqual({ found: 0, queued: 0 });
   } finally {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   }
 });
