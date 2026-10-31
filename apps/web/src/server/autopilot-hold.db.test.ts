@@ -328,11 +328,18 @@ test("stopped, then an approval that fails: still stopped by who stopped it, so 
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: owner.id, waitReason: "Stopped by Olive Owner" });
 });
 
-/** Runs `before` as the runner's apply starts (its first read of the update), between its claim and the apply. */
-function asApplyStarts(before: () => Promise<unknown>) {
+/**
+ * Runs `before` as the apply starts (its first read of the update), between taking it off the schedule and
+ * the apply; `skip`: reads of it before that one (Publish now's own).
+ */
+function asApplyStarts(before: () => Promise<unknown>, skip = 0) {
   const findFirst = prisma.codeChangeAction.findFirst.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
-  vi.spyOn(prisma.codeChangeAction, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
-    await before();
+  let reads = 0;
+  const spy = vi.spyOn(prisma.codeChangeAction, "findFirst").mockImplementation((async (...args: unknown[]) => {
+    if (reads++ === skip) {
+      spy.mockRestore();
+      await before();
+    }
     return findFirst(...args);
   }) as never);
 }
@@ -385,4 +392,26 @@ test("a worker without the web app's address says so only while an update is due
   expect(logged).toHaveBeenCalledWith(expect.stringContaining("set APP_URL and BETTER_AUTH_SECRET on the worker"));
   vi.stubEnv("APP_URL", appUrl);
   logged.mockRestore();
+});
+
+test("Publish now with an analysis saved at that moment: the update it took is applied, not replaced and scheduled again", async () => {
+  const progress = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, progress.codeChangeId);
+  asApplyStarts(() =>
+    prisma.codeChangeAction.deleteMany({
+      where: { codeChangeId: progress.codeChangeId, OR: [{ status: { in: ["STALE", "SCHEDULED"] } }, { status: "PENDING", decidedById: null }] },
+    }),
+    1,
+  );
+  expect(await publishCodeChangesNow(project.slug, [progress.action.id])).toEqual({});
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: owner.id });
+});
+
+test("a Publish now that fails leaves the update waiting for anyone, not looking stopped", async () => {
+  const progress = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, progress.codeChangeId);
+  // Moving the post fails, before anything's saved.
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  await expect(publishCodeChangesNow(project.slug, [progress.action.id])).rejects.toThrow("Connection lost");
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: null });
 });

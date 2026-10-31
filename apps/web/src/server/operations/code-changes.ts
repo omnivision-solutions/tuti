@@ -965,11 +965,19 @@ export const publishCodeChangeActionNow = defineOperation({
       throw new OperationError(404, "not_found", "Action not found");
     }
     // Taken off the schedule first, so the runner can't apply it too; apply then claims it as anyone's approval does.
-    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: { status: "PENDING", dueAt: null } });
+    // Held as theirs meanwhile, so an analysis at that moment leaves it alone (it replaces only what nobody decided).
+    const by = actorUser(context.actor);
+    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: { status: "PENDING", dueAt: null, decidedById: by } });
     if (count === 0) {
       throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
     }
-    return call(applyCodeChangeAction, context, { id: action.id });
+    try {
+      return await call(applyCodeChangeAction, context, { id: action.id });
+    } catch (error) {
+      // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
+      await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
+      throw error;
+    }
   },
 });
 
