@@ -4,11 +4,12 @@ import { Agent, fetch } from "undici";
 const publicOnly = new Agent({ connect: { lookup: publicOnlyLookup } });
 
 /**
- * What a team's site answers at `url` ("Check setup" for a portal under its path), the first
- * kilobyte as text, or null when it isn't a 200. The site is the team's, so the same rules as
- * webhooks keep it from reaching our own network (private addresses, DNS rebinding); no redirects.
+ * What a team's site answers at `url` ("Check setup" for a portal under its path; a domain's DNS
+ * provider, for one-click DNS), its first `maxBytes` as text, or null when it isn't a 200. The
+ * site is the team's, so the same rules as webhooks keep it from reaching our own network
+ * (private addresses, DNS rebinding); no redirects.
  */
-export async function fetchSiteCheck(url: string): Promise<string | null> {
+export async function fetchSiteCheck(url: string, maxBytes = 1024): Promise<string | null> {
   await checkWebhookUrl(url);
   const response = await fetch(url, {
     redirect: "manual",
@@ -24,7 +25,7 @@ export async function fetchSiteCheck(url: string): Promise<string | null> {
   const reader = response.body!.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (size < 1024) {
+  while (size < maxBytes) {
     const { done, value } = await reader.read();
     if (done) {
       break;
@@ -33,5 +34,5 @@ export async function fetchSiteCheck(url: string): Promise<string | null> {
     size += value.length;
   }
   await reader.cancel().catch(() => {});
-  return Buffer.concat(chunks).subarray(0, 1024).toString("utf8");
+  return Buffer.concat(chunks).subarray(0, maxBytes).toString("utf8");
 }

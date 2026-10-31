@@ -28,6 +28,7 @@ export function OwnAddressSettings({
   notIncluded,
   portalAddress,
   protocol,
+  oneClick,
 }: {
   projectSlug: string;
   domain: Domain;
@@ -38,13 +39,15 @@ export function OwnAddressSettings({
   notIncluded: { domain: string | null; site: string | null };
   /** The portal's Tuti address, as a host (acme.tuti.so). */
   portalAddress: string;
+  /** Where the domain's DNS provider can add its records itself, while they're needed. */
+  oneClick?: ComponentProps<typeof CustomDomainSettings>["oneClick"];
   protocol: string;
 }) {
   const connected: Choice | null = domain ? "domain" : site ? "site" : null;
   const [picked, setPicked] = useState<Choice>(connected ?? "tuti");
   const choice = connected ?? picked;
   const tuti = `${protocol}//${portalAddress}`;
-  const domainSettings = <CustomDomainSettings projectSlug={projectSlug} domain={domain} portalAddress={portalAddress} protocol={protocol} />;
+  const domainSettings = <CustomDomainSettings projectSlug={projectSlug} domain={domain} portalAddress={portalAddress} protocol={protocol} oneClick={oneClick} />;
   const siteSettings = <SiteMountSettings projectSlug={projectSlug} site={site} portalAddress={portalAddress} tutiAddress={tuti} />;
 
   const options: { value: Choice; title: string; example: string; icon: LucideIcon; off?: string }[] = [

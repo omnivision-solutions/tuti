@@ -6,6 +6,8 @@ import { GetSupportAddressButton, SupportInboxSwitch } from "@/components/inbox/
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { timeAgo } from "@/lib/format";
+import { appUrl } from "@/lib/hosts";
+import { oneClickDns } from "@/server/domain-connect";
 import { getAdminProject } from "@/server/membership";
 import { supportSettings } from "@/server/operations/support";
 
@@ -17,6 +19,14 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
     notFound();
   }
   const settings = await supportSettings(project.id);
+  // Its DKIM records (<token>._domainkey.<domain>) added by its DNS provider in one click while it waits
+  // for them. Not awaited: the button shows once its lookup is in.
+  const own = settings.email?.ownDomain;
+  const dkim = own?.records.map((record) => record.name.split("._domainkey."));
+  const oneClick =
+    own?.included && !own.verified && dkim?.length === 3
+      ? oneClickDns(dkim[0]![1]!, "email-domain", { dkim1: dkim[0]![0]!, dkim2: dkim[1]![0]!, dkim3: dkim[2]![0]! }, new URL(`/app/${project.slug}/settings/support`, appUrl()).href)
+      : null;
   return (
     <>
       <Card>
@@ -72,7 +82,7 @@ export default async function SupportSettingsPage(props: PageProps<"/app/[projec
           </CardHeader>
           <CardContent>
             {settings.email.ownDomain.included || settings.email.ownDomain.address ? (
-              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} />
+              <EmailDomainSettings projectSlug={project.slug} own={settings.email.ownDomain} supportAddress={settings.email.address} oneClick={oneClick} />
             ) : (
               <PlanNotice feature="emailDomain" projectSlug={project.slug} admin />
             )}
