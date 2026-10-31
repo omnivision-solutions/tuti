@@ -37,7 +37,8 @@ type ProviderSettings = { providerName?: string; providerDisplayName?: string; u
  */
 async function providerSettings(api: string, domain: string): Promise<ProviderSettings | null> {
   try {
-    const settings = JSON.parse((await fetchSiteCheck(`https://${api}/v2/${domain}/settings`)) ?? "null") as Partial<ProviderSettings> | null;
+    // Up to 16 KB: more than a site check's token (a provider may list its nameservers and more).
+    const settings = JSON.parse((await fetchSiteCheck(`https://${api}/v2/${domain}/settings`, 16_384)) ?? "null") as Partial<ProviderSettings> | null;
     return settings?.urlSyncUX?.startsWith("https://") && settings.urlAPI?.startsWith("https://") ? (settings as ProviderSettings) : null;
   } catch {
     return null;
