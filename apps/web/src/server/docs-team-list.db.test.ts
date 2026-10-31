@@ -23,7 +23,7 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
   const exports = await article("exports", "Exports", new Date(), 1);
   await article("billing", "Billing", null, 2);
   await prisma.articleChanges.create({ data: { articleId: exports.id, title: "Exports", body: "New words." } });
-  // Read 5 times today and 100 times 40 days ago (outside the window); two found it helpful, one didn't.
+  // Read 5 times today and 100 times 40 days ago (outside the window); two found it helpful lately, one didn't.
   await prisma.articleViewDay.createMany({
     data: [
       { articleId: invite.id, day: new Date(new Date().toISOString().slice(0, 10)), views: 5 },
@@ -35,6 +35,8 @@ test("Docs' list: a status only when it isn't published as written, drafts and u
       { articleId: invite.id, readerId: "reader-1", helpful: true },
       { articleId: invite.id, readerId: "reader-2", helpful: true },
       { articleId: invite.id, readerId: "reader-3", helpful: false },
+      // Helped, but 40 days ago: outside the window.
+      { articleId: invite.id, readerId: "reader-4", helpful: true, createdAt: new Date(Date.now() - 40 * DAY), updatedAt: new Date(Date.now() - 40 * DAY) },
     ],
   });
 
