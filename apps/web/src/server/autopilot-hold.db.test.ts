@@ -252,28 +252,31 @@ test("a request that goes out by itself says how many people completing it email
 test("held back at its time, it's told about (code_change.ready); one a teammate stopped meanwhile keeps who stopped it", async () => {
   vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   const receiver = await startWebhookReceiver();
-  await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
-  const a = await update("MOVES_FORWARD");
-  const b = await update("MOVES_FORWARD");
-  for (const { codeChangeId } of [a, b]) {
-    await scheduleByItself(project.id, codeChangeId);
+  try {
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    const a = await update("MOVES_FORWARD");
+    const b = await update("MOVES_FORWARD");
+    for (const { codeChangeId } of [a, b]) {
+      await scheduleByItself(project.id, codeChangeId);
+    }
+    await prisma.codeChangeAction.updateMany({ where: { id: { in: [a.action.id, b.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotMinSure: 99 } });
+    // As the runner reads what's due, a teammate stops b.
+    const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+      const due = await findMany(...args);
+      await call(stopCodeChangeAction, team(), { id: b.action.id });
+      return due;
+    }) as never);
+    expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
+    expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
+    expect(await statusOf(b.action.id)).toMatchObject({ status: "PENDING", waitReason: "Stopped by Olive Owner" });
+    // a's change is told about: one update waits there now.
+    await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
+    expect(JSON.parse(receiver.received[0]!.body)).toMatchObject({ type: "code_change.ready", data: { codeChange: { id: a.codeChangeId, waiting: 1 } } });
+  } finally {
+    await receiver.close();
   }
-  await prisma.codeChangeAction.updateMany({ where: { id: { in: [a.action.id, b.action.id] } }, data: { dueAt: new Date(Date.now() - 1000) } });
-  await prisma.project.update({ where: { id: project.id }, data: { autopilotMinSure: 99 } });
-  // As the runner reads what's due, a teammate stops b.
-  const findMany = prisma.codeChangeAction.findMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
-  vi.spyOn(prisma.codeChangeAction, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
-    const due = await findMany(...args);
-    await call(stopCodeChangeAction, team(), { id: b.action.id });
-    return due;
-  }) as never);
-  expect(await runDueAutopilot()).toEqual({ applied: 0, waiting: 1 });
-  expect(await statusOf(a.action.id)).toMatchObject({ status: "PENDING", waitReason: "Less than 99% sure" });
-  expect(await statusOf(b.action.id)).toMatchObject({ status: "PENDING", waitReason: "Stopped by Olive Owner" });
-  // a's change is told about: one update waits there now.
-  await vi.waitFor(() => expect(receiver.received).toHaveLength(1));
-  expect(JSON.parse(receiver.received[0]!.body)).toMatchObject({ type: "code_change.ready", data: { codeChange: { id: a.codeChangeId, waiting: 1 } } });
-  await receiver.close();
 });
 
 test("Home's Publish now says how many people a request it completes emails", async () => {
@@ -359,6 +362,7 @@ test("analysed again while the runner applies a due update: the update it took i
 });
 
 test("a due article edit whose article changed as it was applied: out of date, saying why, and told about", async () => {
+  vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
   const receiver = await startWebhookReceiver();
   try {
     await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
