@@ -152,6 +152,11 @@ Use these instead of hand-rolling layout:
     the list in it, Esc closes it (`pageShortcut`: not while typing, nor with a
     dialog or menu open). On a phone the pane takes the list's place, its
     arrow back to the list.
+  - Rows can be picked (a checkbox before the row, "Select <title>") for what's
+    done to many at once; a bar over the list says how many and offers it
+    (Feedback: Set status, Move to board, Merge…, Clear). Each is done as it is
+    for one; what fails is said, the rest still go. What emails people
+    (Completed) or can't be undone (Merge) asks first, naming how many.
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.

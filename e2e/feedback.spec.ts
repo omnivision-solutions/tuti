@@ -426,6 +426,17 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
   await team.setViewportSize({ width: 1440, height: 900 });
 
+  // Writing a reply, its Internal note switch focused: Esc doesn't close the pane (the draft would be lost).
+  await pane.getByRole("textbox", { name: "Comment" }).fill("Half a thought");
+  await pane.getByRole("switch", { name: /Internal note/ }).focus();
+  await team.keyboard.press("Escape");
+  // (Once anything Esc would have done has happened.)
+  await team.waitForLoadState("networkidle");
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("Half a thought");
+  await pane.getByRole("textbox", { name: "Comment" }).fill("");
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
   // J and K step through the list in the pane; Esc closes it.
   const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
   const at = order.indexOf("Calendar sync");
@@ -558,4 +569,219 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(pane).toBeVisible();
   await pane.getByRole("link", { name: "Close" }).click();
   await expect.poll(scrollY).toBe(300);
+});
+
+test("Feedback's rows picked for Set status, Move to board and Merge; Completed asks first", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Calendar sync", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  // Night theme has a vote: it's the one kept by default when merged with Dark mode.
+  await api("/posts/2/vote", { voted: true, author: { id: "user-1" } });
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await team.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const bar = team.getByRole("toolbar", { name: "Selected posts" });
+  const row = (title: string) => team.getByRole("main").getByRole("listitem").filter({ hasText: title });
+  await expect(bar).toHaveCount(0);
+
+  // Two picked: their status set at once.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await expect(bar).toContainText("2 selected");
+  await checkpoint(team, "team-feedback-bulk");
+  await bar.getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Planned" }).click();
+  await expect(team.getByText("2 posts: Planned")).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  for (const title of ["Calendar sync", "Export to PDF"]) {
+    await expect(row(title).getByRole("button", { name: "Status: Planned" })).toBeVisible();
+  }
+
+  // Completed emails their voters: asked first; cancelled, nothing changes.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await bar.getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Completed" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark 1 post as Completed?" });
+  await expect(ask).toContainText("Everyone who voted for them is emailed that it shipped");
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
+
+  // Moved to another board.
+  await bar.getByRole("button", { name: "Move to board" }).click();
+  await team.getByRole("menuitem", { name: "Bug reports" }).click();
+  await expect(team.getByText("1 post moved to Bug reports")).toBeVisible();
+  await expect(row("Calendar sync")).toContainText("Bug reports");
+
+  // Two merged: the most voted for is kept, the other gone from the list.
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  await bar.getByRole("button", { name: "Merge…" }).click();
+  const merge = team.getByRole("alertdialog", { name: "Merge 2 posts into one?" });
+  await expect(merge.getByRole("radio", { name: /Night theme/ })).toBeChecked();
+  await merge.getByRole("button", { name: "Merge into #2" }).click();
+  await expect(team.getByText("Merged into #2")).toBeVisible();
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toHaveCount(0);
+  await expect(team.getByRole("link", { name: "Night theme", exact: true })).toBeVisible();
+  await expect(merge).toHaveCount(0);
+
+  // Picked again after a confirmed one: no dialog opens by itself. Completed confirmed closes too.
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await bar.getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Completed" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark Completed" }).click();
+  await expect(team.getByText("1 post: Completed")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+
+  // Merge's choice of which to keep starts at the most voted for each time, not the last one picked.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await bar.getByRole("button", { name: "Merge…" }).click();
+  const again = team.getByRole("alertdialog", { name: "Merge 2 posts into one?" });
+  await again.getByRole("radio", { name: /Calendar sync/ }).check();
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await bar.getByRole("button", { name: "Merge…" }).click();
+  await expect(again.getByRole("radio", { name: /Night theme/ })).toBeChecked();
+  await again.getByRole("button", { name: "Cancel" }).click();
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).uncheck();
+
+  // A box just ticked (focused) doesn't keep J: it opens the first post.
+  const box = team.getByRole("checkbox", { name: "Select Night theme" });
+  await box.uncheck();
+  await box.check();
+  await expect(box).toBeFocused();
+  await team.keyboard.press("j");
+  await expect(team.getByRole("region", { name: /^Post #/ })).toBeVisible();
+  await team.keyboard.press("Escape");
+
+  // Another tab or filter: what was picked isn't any more (none of it may be listed).
+  await expect(bar).toContainText("1 selected");
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
+  await team.waitForURL(/status=planned/);
+  await expect(bar).toHaveCount(0);
+  // A picked post that leaves the list another way (its own status menu) isn't picked any more either.
+  await team.getByRole("checkbox", { name: "Select Calendar sync" }).check();
+  await expect(bar).toContainText("1 selected");
+  await row("Calendar sync").getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Under review" }).click();
+  await expect(row("Calendar sync")).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
+});
+
+test("Feedback's picked rows: one that can't be done (merged meanwhile) is said, and the rest still go", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Dark theme"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  // Dark theme (#3) has a vote: it's the one kept.
+  await api("/posts/3/vote", { voted: true, author: { id: "user-1" } });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  for (const title of ["Dark mode", "Night theme", "Dark theme"]) {
+    await team.getByRole("checkbox", { name: `Select ${title}` }).check();
+  }
+  // Meanwhile, elsewhere, Dark mode is merged into Dark theme (this page doesn't know yet).
+  await api("/posts/1/merge", { into: 3 });
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Merge into #3" }).click();
+  await expect(team.getByText("1 of 2 done. #1: This post was already merged")).toBeVisible();
+  // The other went, and the list is fresh, none picked.
+  await expect(team.getByRole("link", { name: "Night theme", exact: true })).toHaveCount(0);
+  await expect(team.getByRole("toolbar", { name: "Selected posts" })).toHaveCount(0);
+});
+
+test("Feedback's picked rows go by the list as it is now: Merge keeps the one with the most votes after they changed", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  // Meanwhile Night theme gets votes; the list refreshes (another post's status set from its row).
+  await api("/posts/2/vote", { voted: true, author: { id: "user-1" } });
+  await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
+  const other = team.getByRole("main").getByRole("listitem").filter({ hasText: "Export to PDF" });
+  await other.getByRole("button", { name: /^Status: / }).click();
+  await team.getByRole("menuitemradio", { name: "Planned" }).click();
+  await expect(team.getByText("Status: Planned")).toBeVisible();
+  // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3\s*Night theme/);
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
+  await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
+});
+
+test("Feedback's picked row that leaves the list and comes back (its status set from the pane) isn't picked any more", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback`);
+  await team.getByRole("link", { name: "Dark mode", exact: true }).click();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  const bar = team.getByRole("toolbar", { name: "Selected posts" });
+  await expect(bar).toContainText("1 selected");
+  // Planned: it leaves Needs triage.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Planned" }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Dark mode" })).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
+  // Open again: back in the list, not picked.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Open" }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Dark mode" })).not.toBeChecked();
+  await expect(bar).toHaveCount(0);
+});
+
+test("Feedback's row boxes are off while a picked rows' action runs, and back once it's done", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  // The action's requests held until the boxes are checked.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route(`**/app/${slug}/feedback**`, async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.continue();
+  });
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Planned" }).click();
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeDisabled();
+  }
+  release();
+  await expect(team.getByText("2 posts: Planned")).toBeVisible();
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeEnabled();
+  }
+  await team.unroute(`**/app/${slug}/feedback**`);
 });
