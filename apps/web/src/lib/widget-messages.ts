@@ -2,7 +2,7 @@
 
 /** Panel → page: ask the loader to close the panel. */
 export const WIDGET_CLOSE_MESSAGE = "tuti:close";
-/** Panel → page: its page is up, with its own Close (on a phone the loader's stand-in for it goes). */
+/** Panel → page: its page is up, with its own Close (on a phone the loader's stand-in for it goes); `{ type, closable: false }` as that page goes away (it may not have one). */
 export const WIDGET_CLOSABLE_MESSAGE = "tuti:closable";
 /** Panel → page: ready for a sign-in token (Tuti.identify). */
 export const WIDGET_READY_MESSAGE = "tuti:ready";

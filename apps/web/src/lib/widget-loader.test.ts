@@ -941,6 +941,11 @@ test("on a phone, until the panel's page is up with its own Close, the loader's 
   page.button!.click();
   page.message(page.frame!.contentWindow, "tuti:closable");
   expect(standIn.style.display).toBe("none");
+  // Its page goes away (a tab loading as a new page, which may fail): back until the next says it's up.
+  page.message(page.frame!.contentWindow, { type: "tuti:closable", closable: false });
+  expect(standIn.style.display).toBe("flex");
+  page.message(page.frame!.contentWindow, "tuti:closable");
+  expect(standIn.style.display).toBe("none");
   // Wide screens never show it.
   page.resize(false);
   expect(standIn.style.display).toBe("none");

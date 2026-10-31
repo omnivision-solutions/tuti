@@ -27,15 +27,21 @@ export function WidgetClose({ inline, className }: { inline: boolean; className?
     if (hidden) {
       return;
     }
-    // Here to close it: the loader's own Close (a phone's, in case this page never comes) can go.
+    // Here to close it: the loader's own Close (a phone's, in case this page never comes) can go; leaving (a
+    // tab that loads as a whole new page, which may fail), it's needed again until the next page says so.
     window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
+    const onLeave = () => window.parent.postMessage({ type: WIDGET_CLOSABLE_MESSAGE, closable: false }, "*");
+    window.addEventListener("pagehide", onLeave);
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         close();
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pagehide", onLeave);
+    };
   }, [hidden]);
 
   if (hidden) {
