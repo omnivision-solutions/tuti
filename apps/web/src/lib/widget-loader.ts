@@ -269,14 +269,27 @@ export function widgetLoader(portalTemplate: string): string {
       coverPage();
     }, 250);
   }
-  // Whether an element holds a modal of the page's that may be fading in: there, only its opacity hiding it.
-  function holdsFadingModal(element) {
-    var modal = element.getAttribute("aria-modal") === "true" ? element : element.querySelector && element.querySelector('[aria-modal="true"]');
-    return !!modal && showing(modal, true);
-  }
-  // Since when one has (FADE_WAIT on, it's covered all the same: a fade is over by then).
-  var fadingSince = 0;
+  // Modals of the page's that may be fading in (there, only their opacity hiding them), each since it was first
+  // seen so: watched FADE_WAIT at most (one kept closed at opacity 0 isn't fading).
+  var fading = [];
   var FADE_WAIT = 2000;
+  // Whether one is fading in now, not for longer than a fade.
+  function stillFading() {
+    var now = new Date().getTime();
+    var next = [];
+    var waiting = false;
+    var marked = document.querySelectorAll("[aria-modal]");
+    for (var f = 0; f < marked.length; f++) {
+      var modal = marked[f];
+      if (modal.getAttribute("aria-modal") !== "true" || showing(modal) || !showing(modal, true)) continue;
+      var since = now;
+      for (var g = 0; g < fading.length; g++) if (fading[g].modal === modal) since = fading[g].since;
+      next.push({ modal: modal, since: since });
+      if (now - since < FADE_WAIT) waiting = true;
+    }
+    fading = next;
+    return waiting;
+  }
   function coverPage() {
     var cover = opened && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
@@ -298,8 +311,7 @@ export function widgetLoader(portalTemplate: string): string {
       return;
     }
     if (cover) {
-      var starting = !covering;
-      if (starting) {
+      if (!covering) {
         covering = true;
         // In reach: a modal's library that made it inert (as it was, closed before) may have put that back.
         panel.removeAttribute("inert");
@@ -312,26 +324,16 @@ export function widgetLoader(portalTemplate: string): string {
       }
       released = [];
       var children = document.body ? document.body.children : [];
-      var fading = false;
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
         if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
-          // Added since, holding a modal of the page's fading in: left as it is, checked again till it shows
-          // (closing the panel), goes, or FADE_WAIT is over.
-          if (!starting && holdsFadingModal(child) && (!fadingSince || new Date().getTime() - fadingSince < FADE_WAIT)) {
-            fading = true;
-            continue;
-          }
           child.setAttribute("inert", "");
           covered.push(child);
         }
       }
-      if (fading) {
-        if (!fadingSince) fadingSince = new Date().getTime();
-        checkAgain();
-      } else {
-        fadingSince = 0;
-      }
+      // A modal of the page's fading in (wherever it is, covered with the rest meanwhile): checked again till it
+      // shows, which closes the panel, so it's usable once it can be seen.
+      if (stillFading()) checkAgain();
     } else {
       covering = false;
       for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");

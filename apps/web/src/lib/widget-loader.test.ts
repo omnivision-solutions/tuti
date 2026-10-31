@@ -1192,56 +1192,55 @@ test("on a phone, help opened over a modal of the page's is a card, the modal in
   }
 });
 
-test("on a phone, a modal the page opens fading in (not showing yet) once the panel covers it is left usable, and closes the panel once it shows", async () => {
+test("on a phone, a modal of the page's fading in once the panel covers it (wherever it is) closes the panel once it shows, each watched for a fade's length", async () => {
   vi.useFakeTimers();
   try {
-    const page = loadWidget({ narrow: true });
-    const app = page.body.appendChild(new FakeElement("div", page));
-    page.Tuti.open();
-    expect(app.hasAttribute("inert")).toBe(true);
-    // Added at opacity 0: not showing yet with opacity counted.
-    const popup = page.body.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: (options?: { opacityProperty?: boolean }) => boolean };
-    popup.setAttribute("aria-modal", "true");
-    let faded = true;
-    popup.checkVisibility = (options) => !(faded && options?.opacityProperty);
-    page.mutated();
-    expect(popup.hasAttribute("inert")).toBe(false);
-    // Faded in (a class changes, which the observer doesn't hear): the next check closes the panel.
-    faded = false;
-    vi.advanceTimersByTime(300);
-    expect(page.panel.hasAttribute("inert")).toBe(true);
-    expect(app.hasAttribute("inert")).toBe(false);
-    expect(popup.hasAttribute("inert")).toBe(false);
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-test("on a phone, a closed modal the page adds once the panel covers it (a consent manager's) is covered; one fading in is waited for a moment, no longer", async () => {
-  vi.useFakeTimers();
-  try {
-    const page = loadWidget({ narrow: true });
-    page.body.appendChild(new FakeElement("div", page));
-    page.Tuti.open();
     type Modal = FakeElement & { checkVisibility?: (options?: { opacityProperty?: boolean }) => boolean };
-    // (Timers of the loader's own that run all the same.)
+    const fadingIn = (modal: Modal) => {
+      let faded = true;
+      modal.setAttribute("aria-modal", "true");
+      modal.checkVisibility = (options) => !(faded && options?.opacityProperty);
+      return () => (faded = false);
+    };
+    // Hidden whatever's counted (display: none): covered, and nothing checked again.
+    const quiet = loadWidget({ narrow: true });
+    quiet.Tuti.open();
     const timers = vi.getTimerCount();
-    // Hidden whatever's counted (display: none): covered at once, nothing checked again.
-    const closed = page.body.appendChild(new FakeElement("div", page)) as Modal;
+    const closed = quiet.body.appendChild(new FakeElement("div", quiet)) as Modal;
     closed.setAttribute("aria-modal", "true");
     closed.checkVisibility = () => false;
-    page.mutated();
+    quiet.mutated();
     expect(closed.hasAttribute("inert")).toBe(true);
     expect(vi.getTimerCount()).toBe(timers);
-    // At opacity 0 and staying so: left as it is a moment, then covered, and the checks stop.
-    const stuck = page.body.appendChild(new FakeElement("div", page)) as Modal;
-    stuck.setAttribute("aria-modal", "true");
-    stuck.checkVisibility = (options) => !options?.opacityProperty;
+
+    // Into a container that was there (and covered) before: the dialog's portal, say.
+    const page = loadWidget({ narrow: true });
+    const portal = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    expect(portal.hasAttribute("inert")).toBe(true);
+    const show = fadingIn(portal.appendChild(new FakeElement("div", page)) as Modal);
     page.mutated();
-    expect(stuck.hasAttribute("inert")).toBe(false);
-    vi.advanceTimersByTime(2500);
-    expect(stuck.hasAttribute("inert")).toBe(true);
-    expect(vi.getTimerCount()).toBe(timers);
+    vi.advanceTimersByTime(300);
+    show();
+    vi.advanceTimersByTime(300);
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    expect(portal.hasAttribute("inert")).toBe(false);
+
+    // One kept closed at opacity 0 (a consent manager's) is let go after a fade's length; one fading in late gets its own.
+    const later = loadWidget({ narrow: true });
+    const app = later.body.appendChild(new FakeElement("div", later));
+    later.Tuti.open();
+    fadingIn(later.body.appendChild(new FakeElement("div", later)) as Modal);
+    later.mutated();
+    vi.advanceTimersByTime(1900);
+    const appear = fadingIn(later.body.appendChild(new FakeElement("div", later)) as Modal);
+    later.mutated();
+    vi.advanceTimersByTime(400);
+    appear();
+    vi.advanceTimersByTime(300);
+    expect(later.panel.hasAttribute("inert")).toBe(true);
+    expect(app.hasAttribute("inert")).toBe(false);
+
   } finally {
     vi.useRealTimers();
   }
