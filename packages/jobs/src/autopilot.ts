@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import { type CodeChangeActionKind, Prisma, prisma } from "@tuti/db";
-import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 
 /**
  * Autopilot's hold (docs/plan.md, Autopilot A4): what it's sure of goes out by itself, drafts at once
@@ -59,7 +59,7 @@ type Candidate = {
  * Why an update must wait for someone, whatever the hold (null: it may go out by itself): Autopilot is
  * off for it, it's not sure enough, or its post or article reaches too many people, or changed since.
  */
-export async function waitsBecause(action: Candidate, project: AutopilotSettings): Promise<string | null> {
+export async function waitsBecause(action: Candidate, project: AutopilotSettings, db: Prisma.TransactionClient = prisma): Promise<string | null> {
   if (!codeChangesEnabled() || !project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
     return "Autopilot is off";
   }
@@ -73,12 +73,12 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (!on[action.kind]) {
     return "Autopilot asks first for these";
   }
-  const change = await prisma.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true } });
+  const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true } });
   if (change?.state !== "READY") {
     return "Its pull request was analysed again";
   }
   // The line rewrites the pull request's bullet wherever it is: once that entry is published, readers see it.
-  if (action.kind === "CHANGELOG_LINE" && (await prisma.changelogEntryPullRequest.count({ where: { url: change.url, entry: { publishedAt: { not: null } } } })) > 0) {
+  if (action.kind === "CHANGELOG_LINE" && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { publishedAt: { not: null } } } })) > 0) {
     return "Its changelog entry is published";
   }
   // The changelog line is always written as the pull request's; the rest must be sure enough.
@@ -90,7 +90,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     return "No progress update to post";
   }
   if (action.postId) {
-    const post = await prisma.post.findUnique({ where: { id: action.postId }, select: { status: true, duplicateOfId: true } });
+    const post = await db.post.findUnique({ where: { id: action.postId }, select: { status: true, duplicateOfId: true } });
     if (!post || post.duplicateOfId || post.status === "COMPLETED" || post.status === "CLOSED") {
       return "Its post changed since";
     }
@@ -99,7 +99,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     }
   }
   if (action.kind === "ARTICLE_EDIT" && action.articleId) {
-    const article = await prisma.article.findUnique({
+    const article = await db.article.findUnique({
       where: { id: action.articleId },
       select: {
         deletedAt: true,
@@ -126,20 +126,21 @@ export const dueAt = (kind: CodeChangeActionKind, project: AutopilotSettings, no
  * After an analysis is saved: each update waiting for the team that may go out by itself is scheduled
  * (drafts at once, the rest after the hold). Returns how many.
  */
-export async function scheduleByItself(projectId: string, codeChangeId: string): Promise<number> {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: autopilotSettingsSelect });
+export async function scheduleByItself(projectId: string, codeChangeId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
+  const project = await db.project.findUnique({ where: { id: projectId }, select: autopilotSettingsSelect });
   if (!project) {
     return 0;
   }
-  const waiting = await prisma.codeChangeAction.findMany({
-    where: { codeChangeId, status: "PENDING" },
+  // Not one the team stopped: that waits for them.
+  const waiting = await db.codeChangeAction.findMany({
+    where: { codeChangeId, status: "PENDING", decidedById: null },
     select: { id: true, codeChangeId: true, kind: true, probability: true, payload: true, postId: true, articleId: true },
   });
   let scheduled = 0;
   for (const action of waiting) {
-    if ((await waitsBecause(action, project)) === null) {
+    if ((await waitsBecause(action, project, db)) === null) {
       // Only while it's still waiting (the team may have decided it meanwhile).
-      const { count } = await prisma.codeChangeAction.updateMany({
+      const { count } = await db.codeChangeAction.updateMany({
         where: { id: action.id, status: "PENDING" },
         data: { status: "SCHEDULED", dueAt: dueAt(action.kind, project), waitReason: null },
       });
@@ -162,6 +163,8 @@ export function autopilotDueToken(): string | null {
 export async function autopilotDue(): Promise<{ applied: number; waiting: number } | { skipped: true }> {
   const token = autopilotDueToken();
   if (!process.env.APP_URL || !token) {
+    // Said each minute, so it's seen: what Autopilot schedules waits until the worker has both.
+    log.error("Autopilot can't apply its due updates: set APP_URL and BETTER_AUTH_SECRET on the worker (the web app's values)");
     return { skipped: true };
   }
   const response = await fetch(new URL("/api/autopilot/due", process.env.APP_URL), {

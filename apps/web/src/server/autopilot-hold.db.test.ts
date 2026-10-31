@@ -230,3 +230,12 @@ test("Autopilot's settings: owners save the switches, the three limits and the h
     error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)",
   });
 });
+
+test("a request that goes out by itself says how many people completing it emails, as one waiting does", async () => {
+  const { codeChangeId, action } = await update("RESOLVES");
+  await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "SCHEDULED", dueAt: new Date(Date.now() + HOUR) } });
+  // Its author (not the team) asked for it: one person.
+  const reader = await signUp("Rae Reader");
+  await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
+  expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "scheduled", emails: 1 });
+});

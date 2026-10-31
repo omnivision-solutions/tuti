@@ -191,7 +191,11 @@ export async function codeChangeDetail(projectId: string, id: string) {
   }
   // Approving completes (and emails about) only a post not completed yet, nor merged into another.
   const completing = change.actions
-    .filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId)
+    // Waiting for the team, or going out by itself: both email when they go.
+    .filter(
+      (action) =>
+        action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId,
+    )
     .map((action) => action.post!.id);
   // For Undo to say first: those already emailed that it shipped, since it was approved (they can't be unemailed).
   const sent = new Map(
@@ -225,7 +229,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
         /** For a request it closed: how many it emailed that it shipped (Undo can't take those back). */
         ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
         /** For a request it closes: how many people completing it emails. */
-        ...(action.kind === "RESOLVES" && action.status === "PENDING" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+        ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
         reason: action.reason,
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
@@ -977,7 +981,8 @@ export const stopCodeChangeAction = defineOperation({
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
     const { count } = await prisma.codeChangeAction.updateMany({
       where: { id: action.id, status: "SCHEDULED" },
-      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}` },
+      // Who stopped it, too: analysed again, a stopped update stays as it is, waiting for the team.
+      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor) },
     });
     if (count === 0) {
       throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");

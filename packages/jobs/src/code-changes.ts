@@ -249,13 +249,11 @@ async function analyse(
     ...proposals.filter((_, i) => written[i]),
     { kind: "CHANGELOG_LINE", probability: 1, payload: { line: line || change.pullRequest.title } },
   ];
-  const { waiting, linked } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
+  const { waiting, linked, scheduled } = await finish(change.id, { state: "READY", reason: "", summary, why, ...versions }, kept, {
     projectId: change.projectId,
     pullRequest: change.pullRequest,
     data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
   });
-  // What it's sure of goes out by itself: drafts at once, the rest after the hold (the web app applies them when due).
-  const scheduled = await scheduleByItself(change.projectId, change.id);
   return { state: "READY" as const, actions: waiting, linked, scheduled };
 }
 
@@ -387,10 +385,11 @@ async function finish(
   data: { state: "READY" | "NOTHING_TO_DO"; reason: string; summary: string; why: string; decider: string | null; model: string },
   proposals: Proposal[],
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
-): Promise<{ waiting: number; linked: number }> {
-  const { waiting, linked, deliveries } = await prisma.$transaction(async (tx) => {
-    // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces them.
-    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE", "SCHEDULED"] } } });
+): Promise<{ waiting: number; linked: number; scheduled: number }> {
+  const { waiting, linked, scheduled, deliveries } = await prisma.$transaction(async (tx) => {
+    // Not decided by the team yet (waiting, out of date, or going out by itself later): this analysis replaces
+    // them. Not one the team stopped: it stays waiting for them, so it isn't proposed (or scheduled) again.
+    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE", "SCHEDULED"] }, decidedById: null } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
@@ -402,13 +401,15 @@ async function finish(
     const { count } = await tx.codeChangeAction.createMany({ data: proposals.filter((proposal) => !taken(proposal)).map((proposal) => ({ codeChangeId: id, ...proposal })) });
     await tx.codeChange.update({ where: { id }, data });
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
-    // Only when something waits for the team (analysed again, the team may have decided it all already).
-    const waiting = count - linked;
+    // What it's sure of goes out by itself (drafts at once, the rest after the hold; the web app applies them when due).
+    const scheduled = ready ? await scheduleByItself(ready.projectId, id, tx) : 0;
+    // Only when something waits for the team (analysed again, the team may have decided it all already); not what goes out by itself.
+    const waiting = count - linked - scheduled;
     const deliveries = ready && waiting > 0 ? await recordEvent(tx, ready.projectId, "code_change.ready", ready.data(waiting)) : [];
-    return { waiting, linked, deliveries };
+    return { waiting, linked, scheduled, deliveries };
   });
   await queueDeliveries(deliveries);
-  return { waiting, linked };
+  return { waiting, linked, scheduled };
 }
 
 /** How sure a "links" proposal must be for Tuti to apply it by itself. ponytail: one bar for every project; per project once decisions are calibrated on its own. */
