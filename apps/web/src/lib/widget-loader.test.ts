@@ -1062,3 +1062,25 @@ test("on a phone, a page's modal with no box of its own (display: contents) coun
   page.Tuti.open();
   expect(app.hasAttribute("inert")).toBe(false);
 });
+
+test("on a phone, a page's modal that closes by a class or style (no attribute the loader hears) has the page covered once it's gone", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+    dialog.setAttribute("aria-modal", "true");
+    let shown = true;
+    dialog.checkVisibility = () => shown;
+    page.Tuti.open();
+    expect(app.hasAttribute("inert")).toBe(false);
+    // Hidden by a style the page sets (Alpine's x-show, say): nothing the observer hears.
+    shown = false;
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(true);
+    page.Tuti.close();
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});

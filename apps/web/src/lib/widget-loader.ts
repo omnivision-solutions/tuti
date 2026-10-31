@@ -241,9 +241,21 @@ export function widgetLoader(portalTemplate: string): string {
   // Whether the page is covered now: decided as the panel opens (left as it is while a modal of the page's
   // shows, covered once that closes), then kept till it closes. A modal the page opens later is under the panel.
   var covering = false;
+  // Left uncovered for a modal of the page's: checked again a few times a second till it's gone (many close by
+  // a class or style, which nothing else hears).
+  var waitingOnModal = false;
   function coverPage() {
     var cover = opened && small && small.matches;
-    if (cover && !covering && modalOpen()) return;
+    if (cover && !covering && modalOpen()) {
+      if (!waitingOnModal) {
+        waitingOnModal = true;
+        setTimeout(function () {
+          waitingOnModal = false;
+          coverPage();
+        }, 250);
+      }
+      return;
+    }
     if (cover) {
       covering = true;
       var children = document.body ? document.body.children : [];
