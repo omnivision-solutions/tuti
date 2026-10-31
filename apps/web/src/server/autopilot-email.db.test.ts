@@ -695,11 +695,18 @@ test("Publish now and Stop name only the updates the email shows (five in all); 
   await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
   await prisma.autopilotNotice.updateMany({ where: { codeChangeId: two.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
   expect(await sendAutopilotEmails()).toBe(1);
+  // The five it shows, in its order.
+  const shown = (
+    await prisma.codeChangeAction.findMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, orderBy: [{ probability: "desc" }, { id: "asc" }], select: { id: true } })
+  )
+    .slice(0, 5)
+    .map(({ id }) => id);
   const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!);
-  const publish = buttons.filter((button) => button.button.startsWith("publish:"));
-  expect(publish.map((button) => button.codeChangeId)).toEqual([one.id]);
-  expect(publish[0]!.button.slice("publish:".length).split(",")).toHaveLength(5);
-  expect(buttons.filter((button) => button.button.startsWith("stop:")).map((button) => button.codeChangeId)).toEqual([one.id]);
+  for (const kind of ["publish", "stop"]) {
+    const named = buttons.filter((button) => button.button.startsWith(`${kind}:`));
+    expect(named.map((button) => button.codeChangeId)).toEqual([one.id]);
+    expect(named[0]!.button.slice(kind.length + 1).split(",")).toEqual(shown);
+  }
 });
 
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {
