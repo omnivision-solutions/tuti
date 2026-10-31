@@ -511,22 +511,21 @@ export const applyCodeChangeActions = defineOperation({
         await call(applyCodeChangeAction, context, action);
         results.push({ id: action.id, status: "applied" });
       } catch (error) {
-        // Refused (out of date, decided already, not found) or failed: said, and the rest go on, so
-        // those already applied (and emailed about) are still reported.
-        if (error instanceof OperationError) {
+        // Said, and the rest go on, so those already applied (and emailed about) are still reported.
+        // First what apply says went (or may have) before the failure, whatever the error: a comment or
+        // an article's version saved stays applied, so trying again can't do it twice.
+        const { saved } = error as { saved?: boolean | "unknown" };
+        if (saved === true) {
+          results.push({ id: action.id, status: "applied" });
+        } else if (saved === "unknown") {
+          log.error("Approving an Autopilot update: couldn't tell whether it went", { error, actionId: action.id });
+          results.push({ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" });
+        } else if (error instanceof OperationError) {
+          // Refused (out of date, decided already, not found): nothing went.
           results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
         } else {
           log.error("Approving an Autopilot update failed", { error, actionId: action.id });
-          // apply says when what users see was saved before the failure (a comment, an article's
-          // version): then it went, and stays applied so trying again can't do it twice.
-          const { saved } = error as { saved?: boolean | "unknown" };
-          results.push(
-            saved === true
-              ? { id: action.id, status: "applied" }
-              : saved === "unknown"
-                ? { id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }
-                : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
-          );
+          results.push({ id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." });
         }
       }
     }

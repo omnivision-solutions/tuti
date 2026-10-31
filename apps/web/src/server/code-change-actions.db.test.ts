@@ -451,6 +451,19 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
   });
 
+  test("approving several: refused (the article changed meanwhile), and the check of what was saved failed too: unknown, not the refusal", async () => {
+    const { article, action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+  });
+
   test("approving several: refused (the article changed meanwhile), then not put back (the database went): unknown, not the refusal", async () => {
     const { article, action } = await articleEdit();
     vi.spyOn(log, "error").mockImplementation(() => {});
