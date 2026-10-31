@@ -31,6 +31,45 @@ export type UserView = {
   updatedAt: Date;
 };
 
+/** What someone did on the project's portal and widget: posts (not merged), votes, conversations (not spam), and when they were last seen there. */
+export type UserActivity = { posts: number; votes: number; conversations: number; lastSeenAt: Date | null };
+
+export const USER_SORTS = ["name", "posts", "votes", "conversations", "lastSeen"] as const;
+
+/**
+ * Who a user (`s`, their identity) is on the portal and in the widget, as `who.ids`: the account their app signs them
+ * in as, and the accounts with their address once it's verified (as Who's asking and groups count them, voterIdentities
+ * in server/post-lists.ts), never the team's.
+ */
+const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
+  SELECT array_agg(o.id) AS ids FROM "user" o
+  WHERE o.id = s."userId"
+    OR (s.email IS NOT NULL AND o."emailVerified" AND lower(o.email) = s.email
+      AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = s."projectId" AND t."userId" = o.id))
+) who`;
+
+/**
+ * A user's activity, as SQL over their identity `s` and accounts `who` (accountsOf). Last seen is the latest of their
+ * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
+ * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
+ */
+/** A conversation (`c`) is theirs: with one of their accounts, or started by email from their address, verified. */
+const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" IS NULL AND c."emailVerified" AND c.email = s.email))`;
+
+const activitySql = {
+  posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
+  votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids))::int`,
+  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam)::int`,
+  lastSeen: Prisma.sql`GREATEST(
+    (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),
+    (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids)),
+    (SELECT max(v."createdAt") FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids)),
+    (SELECT max(m."createdAt") FROM comment m WHERE m."projectId" = s."projectId" AND m."authorId" = ANY(who.ids)),
+    (SELECT max(cm."createdAt") FROM conversation_message cm JOIN conversation c ON c.id = cm."conversationId"
+      -- Their own messages: not someone else's on the email (in Cc), who has an address of their own.
+      WHERE c."projectId" = s."projectId" AND ${theirConversation} AND cm.author = 'USER' AND cm."fromAddress" IS NULL))`,
+};
+
 const userSelect = {
   externalId: true,
   email: true,
@@ -62,7 +101,7 @@ export async function viewsOf(projectId: string, users: { externalId: string; em
 export const listUsers = defineOperation({
   name: "users.list",
   summary:
-    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties and the reader groups they're in now; `q` finds them by name, email or id (whoever has that id first), and `group` (a key) keeps those in that group",
+    "List the project's users (the people your app signs in or sends with users.sync) by name, each with their `id` in your app, email, properties, the reader groups they're in now and their `activity` (posts, votes, conversations, when last seen); `q` finds them by name, email or id (whoever has that id first), `group` (a key) keeps those in that group, and `sort` puts the most posts, votes or conversations, or the latest seen, first",
   method: "GET",
   path: "/users",
   scope: "read",
@@ -71,6 +110,7 @@ export const listUsers = defineOperation({
     // As long as an id can be, so Users can find anyone by theirs.
     q: z.string().trim().max(255).optional(),
     group: readerGroup.optional(),
+    sort: z.enum(USER_SORTS).default("name"),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     cursor: z.coerce.number().int().min(0).default(0),
   }),
@@ -89,15 +129,27 @@ export const listUsers = defineOperation({
       filters.push(inGroupSql(storedConditions(group.conditions), Prisma.sql`s`));
     }
     // ponytail: offset cursors, like posts.list; switch to keyset pagination if projects get very large.
+    // By name, the page is picked first and its activity worked out after; an activity sort needs everyone's.
     const page = await prisma.$queryRaw<{ id: string }[]>`
-      SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId"
+      SELECT s.id FROM sso_identity s JOIN "user" u ON u.id = s."userId" ${input.sort === "name" ? Prisma.empty : accountsOf}
       WHERE ${Prisma.join(filters, " AND ")}
-      ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
+      ORDER BY ${input.q ? Prisma.sql`(s."externalId" = ${input.q}) DESC, ` : Prisma.empty}${
+        input.sort === "name" ? Prisma.empty : Prisma.sql`${activitySql[input.sort]} DESC NULLS LAST, `
+      }u.name, s."externalId" OFFSET ${input.cursor} LIMIT ${input.limit + 1}`;
     const ids = page.slice(0, input.limit).map((row) => row.id);
-    const users = await prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } });
+    const [users, activity] = await Promise.all([
+      prisma.ssoIdentity.findMany({ where: { id: { in: ids } }, select: { id: true, ...userSelect } }),
+      ids.length === 0
+        ? []
+        : prisma.$queryRaw<({ id: string } & Omit<UserActivity, "lastSeenAt"> & { lastSeen: Date | null })[]>`
+            SELECT s.id, ${activitySql.posts} AS posts, ${activitySql.votes} AS votes, ${activitySql.conversations} AS conversations, ${activitySql.lastSeen} AS "lastSeen"
+            FROM sso_identity s ${accountsOf} WHERE s.id IN (${Prisma.join(ids)})`,
+    ]);
     const byId = new Map(users.map((user) => [user.id, user]));
+    const activityOf = new Map(activity.map(({ id, lastSeen, ...counts }) => [id, { ...counts, lastSeenAt: lastSeen } satisfies UserActivity]));
+    const views = await viewsOf(projectId, ids.map((id) => byId.get(id)!));
     return {
-      users: await viewsOf(projectId, ids.map((id) => byId.get(id)!)),
+      users: views.map((view, i) => ({ ...view, activity: activityOf.get(ids[i]!)! })),
       nextCursor: page.length > input.limit ? String(input.cursor + input.limit) : null,
     };
   },

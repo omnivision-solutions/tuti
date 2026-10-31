@@ -15,6 +15,7 @@ datasource db {
 model User {
   id                String          @id
   name              String
+  /// Also indexed as lower(email) (a migration's index Prisma can't describe), so a project user's address finds their accounts.
   email             String
   /// Autopilot's email for the projects they're told about: as each change is analysed, or never.
   autopilotEmails   AutopilotEmails @default(AS_THEY_HAPPEN)
@@ -143,6 +144,8 @@ model Project {
   ssoSecret             String?
   /// Who's asking: the number property (Users, from the app: MRR, seats…) totalled over a post's voters for the team; none until picked.
   askingProperty        String?
+  /// The users' properties Users shows as columns, in order (users.sync's `properties`; project.update).
+  userColumns           String[]     @default(["company", "plan"])
   /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.
@@ -920,6 +923,7 @@ model Post {
   @@index([projectId, status])
   @@index([duplicateOfId])
   @@index([shippedEmailsDueAt])
+  @@index([authorId])
   @@index([ownerId])
   @@map("post")
 }
@@ -1017,6 +1021,7 @@ model Conversation {
   @@index([assigneeId])
   @@index([userId])
   @@index([visitorHash])
+  @@index([projectId, email])
   @@map("conversation")
 }
 
@@ -1277,6 +1282,7 @@ model Comment {
   replyEmails ReplyEmail[]
 
   @@index([postId, createdAt])
+  @@index([authorId])
   @@index([votersEmailDueAt])
   @@map("comment")
 }
