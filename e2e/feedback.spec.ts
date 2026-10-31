@@ -769,6 +769,8 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   }
   release();
   await expect(team.getByText("2 posts: Planned")).toBeVisible();
-  await expect(team.getByRole("checkbox", { name: "Select Export to PDF" })).toBeEnabled();
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeEnabled();
+  }
   await team.unroute(`**/app/${slug}/feedback**`);
 });
