@@ -741,3 +741,34 @@ test("Feedback's picked row that leaves the list and comes back (its status set 
   await expect(team.getByRole("checkbox", { name: "Select Dark mode" })).not.toBeChecked();
   await expect(bar).toHaveCount(0);
 });
+
+test("Feedback's row boxes are off while a picked rows' action runs, and back once it's done", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  // The action's requests held until the boxes are checked.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await team.route(`**/app/${slug}/feedback**`, async (route) => {
+    if (route.request().method() === "POST") {
+      await held;
+    }
+    await route.continue();
+  });
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Planned" }).click();
+  for (const title of ["Dark mode", "Night theme", "Export to PDF"]) {
+    await expect(team.getByRole("checkbox", { name: `Select ${title}` })).toBeDisabled();
+  }
+  release();
+  await expect(team.getByText("2 posts: Planned")).toBeVisible();
+  await expect(team.getByRole("checkbox", { name: "Select Export to PDF" })).toBeEnabled();
+  await team.unroute(`**/app/${slug}/feedback**`);
+});
