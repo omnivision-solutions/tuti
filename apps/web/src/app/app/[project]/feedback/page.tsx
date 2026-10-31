@@ -73,9 +73,6 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     }
     return params.size > 0 ? `/app/${slug}/feedback?${params}` : `/app/${slug}/feedback`;
   };
-  const at = posts.findIndex((post) => post.number === open);
-  const next = open === null ? posts[0] : posts[at + 1];
-  const previous = at > 0 ? posts[at - 1] : undefined;
 
   // A tab keeps the board, the search and the sort.
   const href = (to: string) => {
@@ -119,7 +116,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         }
       />
 
-      <FeedbackKeys next={next ? withPost(next.number) : null} previous={previous ? withPost(previous.number) : null} close={open !== null ? withPost(null) : null} />
+      <FeedbackKeys order={posts.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>

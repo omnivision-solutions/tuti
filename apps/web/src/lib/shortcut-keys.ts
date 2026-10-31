@@ -28,7 +28,16 @@ const typing = (target: EventTarget | null) =>
 /**
  * Whether a key press is free for a page's own one-key shortcut (J, K, Esc): no ⌘, Ctrl or Alt, not someone
  * typing, and no dialog, menu or list of choices open (a letter there picks an option; Esc closes it).
+ * `closedChoicesIn`: a closed list of choices (a select's button, focused after a pick) inside it doesn't count as
+ * typing; its letters are the page's then (caught before the select's own, which would pick an option by them).
  */
-export function pageShortcut(event: KeyboardEvent): boolean {
-  return !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && !typing(event.target) && !somethingOpen();
+export function pageShortcut(event: KeyboardEvent, { closedChoicesIn }: { closedChoicesIn?: string } = {}): boolean {
+  const target = event.target;
+  const closedChoice =
+    closedChoicesIn !== undefined &&
+    target instanceof HTMLElement &&
+    target.getAttribute("role") === "combobox" &&
+    target.getAttribute("aria-expanded") !== "true" &&
+    target.closest(closedChoicesIn) !== null;
+  return !event.defaultPrevented && !event.metaKey && !event.ctrlKey && !event.altKey && (closedChoice || !typing(target)) && !somethingOpen();
 }

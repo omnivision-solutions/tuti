@@ -431,6 +431,23 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.goto(`/app/${slug}/p/2`);
   await expect(team.getByText("On our list for next month.")).toBeVisible();
 
+  // On Needs triage, the way it's used: set a post's status (it leaves the tab) and press J straight away, the
+  // select still focused: the post after it, not the top of the list; Esc closes, from the select too.
+  await team.goto(`/app/${slug}/feedback`);
+  const triage = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  expect(triage).toHaveLength(2);
+  await team.getByRole("link", { name: triage[0]!, exact: true }).click();
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Under review" }).click();
+  await expect(team.getByRole("link", { name: triage[0]!, exact: true })).toHaveCount(0);
+  // (Its select keeps focus after a pick in some browsers: J works from there too.)
+  await pane.getByRole("combobox", { name: "Status" }).focus();
+  await team.keyboard.press("j");
+  await expect(pane.getByRole("heading", { name: triage[1]! })).toBeVisible();
+  await pane.getByRole("combobox", { name: "Status" }).focus();
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+
   // On a phone: the pane takes the list's place, and its arrow goes back to the list.
   await team.setViewportSize({ width: 390, height: 800 });
   await team.goto(`/app/${slug}/feedback?status=all`);
