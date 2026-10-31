@@ -54,11 +54,11 @@ export function afterButton(
     case "published":
       return `Published: what was going out by itself went now.${others}${couldnt}${doubt}`;
     case "unsure":
-      return `${doubt.trim()}${couldnt}`;
+      return `${doubt.trim()}${couldnt}${others}`;
     case "stopped":
       return `Stopped: those updates wait for you now.${others}${couldnt}`;
     case "refused":
-      return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It's ticked below` : `they couldn't ${verb} as they are. They're ticked below`}, to check.`;
+      return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It's ticked below` : `they couldn't ${verb} as they are. They're ticked below`}, to check.${others}`;
     case "replaced":
       return button === "approve" || !button
         ? "That update was replaced when Autopilot read the pull request again: here's what it found now."

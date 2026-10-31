@@ -54,3 +54,12 @@ test("Stop or Publish now says which of the others it named someone decided firs
   expect(afterButton([], "stopped", "stop", null, { went: 1 })).toBe("Stopped: those updates wait for you now. One went out already: it's under Done, to undo there.");
   expect(afterButton([], "published", "publish", null, { kept: 2 })).toBe("Published: what was going out by itself went now. 2 were stopped: they wait for you below.");
 });
+
+test("nothing acted on (refused, or can't tell) still says which others went out already or were stopped", () => {
+  expect(afterButton([], "refused", "stop", null, { held: 1, went: 1 })).toBe(
+    "Nothing was stopped: it couldn't be stopped as it is. It's ticked below, to check. One went out already: it's under Done, to undo there.",
+  );
+  expect(afterButton([], "unsure", "publish", null, { unsure: 1, kept: 1 })).toBe(
+    "Couldn't tell whether one went out: check it below before doing it again. One was stopped: it waits for you below.",
+  );
+});
