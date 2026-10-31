@@ -7,6 +7,12 @@ import { type ReactNode, useEffect } from "react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 
+/** Whether a dialog, menu or list of choices is showing (a closed one may stay in the page, hidden), or the page's More actions. */
+const open = () =>
+  [...document.querySelectorAll('[role="dialog"], [role="listbox"], [role="menu"], [aria-label="More actions"][aria-expanded="true"]')].some(
+    (element) => element.getAttribute("aria-expanded") === "true" || element.checkVisibility(),
+  );
+
 /** Whether a key press is someone typing (in a field, an editor), not a shortcut. */
 const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
@@ -28,7 +34,7 @@ export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; 
         event.ctrlKey ||
         event.altKey ||
         typing(event.target) ||
-        document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [aria-label="More actions"][aria-expanded="true"]')
+        open()
       ) {
         return;
       }
