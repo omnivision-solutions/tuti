@@ -34,10 +34,13 @@ export async function FeedbackPane({
   close: string;
 }) {
   const [post, boards, team] = await Promise.all([
-    prisma.post.findUnique({
-      where: { projectId_number: { projectId, number } },
-      include: { board: { select: { slug: true, name: true } }, author: { select: { name: true } }, owner: { select: { id: true } } },
-    }),
+    // A number past what a post's can be (a mistyped address) is no post, not an error.
+    number <= 2_147_483_647
+      ? prisma.post.findUnique({
+          where: { projectId_number: { projectId, number } },
+          include: { board: { select: { slug: true, name: true } }, author: { select: { name: true } }, owner: { select: { id: true } } },
+        })
+      : null,
     prisma.board.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { slug: true, name: true } }),
     prisma.teamMember.findMany({ where: { projectId }, orderBy: { createdAt: "asc" }, select: { userId: true, user: { select: { name: true } } } }),
   ]);

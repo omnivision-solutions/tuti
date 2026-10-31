@@ -448,6 +448,33 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);
 
+  // Filtered so the open post isn't listed any more (another board), J opens the new list's first.
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await team.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+  await api("/posts", { board: "bug-reports", title: "Crash on export" });
+  // The others voted for, so it's last on the list: none listed after it once it's filtered out.
+  for (const number of [1, 2, 3]) {
+    await api(`/posts/${number}/vote`, { voted: true, author: { id: `user-${number}` } });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: "Crash on export", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Crash on export" })).toBeVisible();
+  await team.getByRole("combobox", { name: "Board" }).first().click();
+  await team.getByRole("option", { name: "Feature requests" }).click();
+  await expect(team.getByRole("link", { name: "Crash on export", exact: true })).toHaveCount(0);
+  const filtered = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  // (Back on the page: a filter's own select, focused, keeps its letters.)
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await team.keyboard.press("j");
+  await expect(pane.getByRole("heading", { name: filtered[0]! })).toBeVisible();
+
+  // An address with a post number past any (a mistyped link) says there's no such post.
+  await team.goto(`/app/${slug}/feedback?post=3000000000`);
+  await expect(team.getByText("There's no post #3000000000 here.")).toBeVisible();
+
   // On a phone: the pane takes the list's place, and its arrow goes back to the list.
   await team.setViewportSize({ width: 390, height: 800 });
   await team.goto(`/app/${slug}/feedback?status=all`);

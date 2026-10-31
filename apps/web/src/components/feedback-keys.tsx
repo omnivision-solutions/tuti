@@ -15,13 +15,13 @@ import { pageShortcut } from "@/lib/shortcut-keys";
 export function FeedbackKeys({ order, open, base }: { order: number[]; open: number | null; base: string }) {
   const router = useRouter();
   // The list as it was while the open post was in it: triaged (a new status, say), it leaves the list, and
-  // J and K go on from where it stood.
-  const known = useRef(order);
+  // J and K go on from where it stood. Only for that list (its address): filtered otherwise, J opens the first.
+  const known = useRef({ base, order });
   useEffect(() => {
     if (open === null || order.includes(open)) {
-      known.current = order;
+      known.current = { base, order };
     }
-  }, [order, open]);
+  }, [base, order, open]);
 
   // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its top.
   useEffect(() => {
@@ -36,7 +36,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
       if (open === null) {
         return by === 1 ? (order[0] ?? null) : null;
       }
-      const list = order.includes(open) ? order : known.current;
+      const list = order.includes(open) ? order : known.current.base === base ? known.current.order : order;
       const at = list.indexOf(open);
       if (at === -1) {
         return by === 1 ? (order[0] ?? null) : null;
