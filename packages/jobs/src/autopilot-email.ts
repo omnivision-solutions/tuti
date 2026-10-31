@@ -126,6 +126,26 @@ const DIFF_LINES = 8;
 /** How much of an unchanged line shows, for context. Changed ones show whole: they're what Approve publishes. */
 const CONTEXT_LENGTH = 280;
 const clip = (text: string) => (text.length > CONTEXT_LENGTH ? `${text.slice(0, CONTEXT_LENGTH - 1)}…` : text);
+/** A diff with each run of removed paragraphs and their replacements interleaved: each old one, then its new one. */
+function paired(lines: DiffLine[]): DiffLine[] {
+  const out: DiffLine[] = [];
+  for (let i = 0; i < lines.length; ) {
+    if (lines[i]!.kind === "same") {
+      out.push(lines[i++]!);
+      continue;
+    }
+    const removed: DiffLine[] = [];
+    const added: DiffLine[] = [];
+    for (; i < lines.length && lines[i]!.kind !== "same"; i++) {
+      (lines[i]!.kind === "removed" ? removed : added).push(lines[i]!);
+    }
+    for (let j = 0; j < Math.max(removed.length, added.length); j++) {
+      out.push(...[removed[j], added[j]].filter((line) => line !== undefined));
+    }
+  }
+  return out;
+}
+
 /** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
   action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
@@ -152,12 +172,9 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
   };
   const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text }] : undefined);
-  const edit = action.kind === "ARTICLE_EDIT" ? nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1) : [];
-  // Cut after DIFF_LINES, but not between a paragraph's removed line and what replaces it (up to twice as many).
-  let cut = Math.min(DIFF_LINES, edit.length);
-  while (cut < Math.min(edit.length, 2 * DIFF_LINES) && edit[cut]!.kind !== "same" && edit[cut - 1]!.kind !== "same") {
-    cut++;
-  }
+  const edit = action.kind === "ARTICLE_EDIT" ? paired(nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1)) : [];
+  // Cut after DIFF_LINES, but not between a removed paragraph and its replacement.
+  const cut = Math.min(DIFF_LINES, edit.length) + (edit[DIFF_LINES - 1]?.kind === "removed" && edit[DIFF_LINES]?.kind === "added" ? 1 : 0);
   const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
     MOVES_FORWARD: added(payload.comment),
     ARTICLE_EDIT: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),

@@ -241,7 +241,7 @@ test("an earlier change's done updates don't take the place kept for what goes o
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
-  const paragraphs = (word: string) => Array.from({ length: 12 }, (_, i) => `${word} paragraph ${i + 1}.`).join("\n");
+  const paragraphs = (word: string) => ["Intro.", ...Array.from({ length: 12 }, (_, i) => `${word} paragraph ${i + 1}.`)].join("\n");
   await prisma.codeChangeAction.createMany({
     data: [
       { codeChangeId: one.id, kind: "ARTICLE_EDIT", probability: 0.8, payload: { problem: "wrong", before: paragraphs("Old"), body: paragraphs("New") } },
@@ -251,11 +251,12 @@ test("a long edit shows its first lines and says how many more; a progress updat
   await queueAutopilotNotices(one.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  // All twelve paragraphs replaced: its lines up to twice eight (not cut between the removed and what replaces them), then a count of the rest.
-  expect(email!.text).toContain("− Old paragraph 1.");
-  expect(email!.text).toContain("+ New paragraph 4.");
-  expect(email!.text).not.toContain("New paragraph 5.");
-  expect(email!.text).toContain("8 more lines in Tuti");
+  // Twelve paragraphs replaced after an unchanged one: each old one then its new one. Eight lines would end on
+  // "− Old paragraph 4.", so its replacement comes too (nine), then a count of the rest.
+  expect(email!.text).toMatch(/Intro\.\s+− Old paragraph 1\.\s+\+ New paragraph 1\.\s+− Old paragraph 2\./);
+  expect(email!.text).toMatch(/− Old paragraph 4\.\s+\+ New paragraph 4\./);
+  expect(email!.text).not.toContain("Old paragraph 5.");
+  expect(email!.text).toContain("16 more lines in Tuti");
   expect(email!.text).toContain("Marks it in progress: write its comment first");
 
   // A long paragraph changed only at its end: both its versions whole, so what Approve publishes shows.

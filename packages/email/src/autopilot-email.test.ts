@@ -54,6 +54,15 @@ test("Autopilot's email: from Tuti Autopilot, what needs you first in a short su
   expect(text).toContain("https://app.example.com/act?token=publish Stop https://app.example.com/act?token=stop");
 });
 
+test("the preview says when each update goes out, not just the first", async () => {
+  const goesOut = [
+    { kind: "Changelog line", title: "Changelog", fact: "Writes this line", goesOut: "now" },
+    { kind: "Progress update", title: "Email my voters", fact: "Marks it in progress", goesOut: "in 24 hours" },
+  ];
+  const email = autopilotEmail({ ...props, changes: [{ ...props.changes[0]!, needsYou: [], done: [], goesOut }], totals: { ...props.totals, goesOut: 2, needsYou: 0, first: "now" } });
+  expect(await render(email.body)).toContain("Goes out now: Changelog (changelog line). Goes out in 24 hours: Email my voters (progress update).");
+});
+
 test("with nothing for customers, the subject counts everything done for the team (shown or not); the digest says what still waits", async () => {
   const drafts = { ...props, changes: [{ ...props.changes[0]!, needsYou: [], goesOut: [] }], totals: { goesOut: 0, wentOut: 0, needsYou: 0, done: 7, first: "" } };
   // All of them, not just the one shown.

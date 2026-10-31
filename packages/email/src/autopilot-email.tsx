@@ -139,7 +139,7 @@ function Updates({ heading, tone, updates, children }: { heading: string; tone: 
  */
 export function AutopilotEmail({ projectName, changes, totals, digest, more, autopilotUrl, accountUrl }: AutopilotProps) {
   return (
-    <Layout preview={previewOf(changes, totals)}>
+    <Layout preview={previewOf(changes)}>
       <Text style={{ fontSize: 20, fontWeight: 700, color: colors.text, lineHeight: "26px", margin: "16px 0 2px" }}>{headline(totals, digest)}</Text>
       <Text style={{ fontSize: 13, color: colors.muted, margin: "0 0 8px" }}>
         {projectName} · {plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}
@@ -209,12 +209,14 @@ function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["tota
 }
 
 /** The inbox's line under the subject: which updates, by name, then what shipped (or which pull requests). */
-function previewOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"]): string {
+function previewOf(changes: AutopilotEmailChange[]): string {
   const named = (heading: string, updates: AutopilotEmailUpdate[]) =>
     updates.length > 0 && `${heading}: ${updates.map((update) => `${update.title} (${update.kind.toLowerCase()})`).join(", ")}.`;
+  const goesOut = changes.flatMap((change) => change.goesOut);
   return [
     named("Needs you", changes.flatMap((change) => change.needsYou)),
-    named(`Goes out ${totals.first}`, changes.flatMap((change) => change.goesOut)),
+    // By when each goes ("now" for a draft, "in 24 hours" after the hold).
+    ...[...new Set(goesOut.map((update) => update.goesOut))].map((when) => named(`Goes out ${when}`, goesOut.filter((update) => update.goesOut === when))),
     named("Went out", changes.flatMap((change) => change.wentOut)),
     named("Done", changes.flatMap((change) => change.done)),
     changes.length === 1 ? changes[0]!.summary : changes.map((change) => change.title).join(" · "),
