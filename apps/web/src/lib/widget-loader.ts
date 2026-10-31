@@ -1,6 +1,7 @@
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
+  WIDGET_CLOSABLE_MESSAGE,
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
   WIDGET_INLINE_NAME,
@@ -184,12 +185,173 @@ export function widgetLoader(portalTemplate: string): string {
     position: "fixed", zIndex: "2147483000", display: "none", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
     background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)"
   });
+  // On a phone the panel covers the page and its button: until its page says it's up with its own Close
+  // (WidgetClose), the loader's own, so a page that doesn't come (offline, an error) can still be closed.
+  var closable = false;
+  var standIn = document.createElement("button");
+  standIn.type = "button";
+  standIn.setAttribute("aria-label", "Close");
+  css(standIn, {
+    position: "absolute", top: "calc(env(safe-area-inset-top) + 8px)", right: "8px", zIndex: "1", width: "36px", height: "36px",
+    padding: "0", border: "0", borderRadius: "999px", cursor: "pointer", display: "none", alignItems: "center", justifyContent: "center",
+    background: "rgba(0, 0, 0, 0.55)", color: "#fff"
+  });
+  var cross = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  var crossAttributes = { viewBox: "0 0 24 24", width: "20", height: "20", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "aria-hidden": "true" };
+  for (var attribute in crossAttributes) cross.setAttribute(attribute, crossAttributes[attribute]);
+  var crossPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  crossPath.setAttribute("d", "M18 6 6 18M6 6l12 12");
+  cross.appendChild(crossPath);
+  standIn.appendChild(cross);
+  standIn.addEventListener("click", function () { close(); });
+  panel.appendChild(standIn);
+  function showStandIn() {
+    standIn.style.display = small && small.matches && !closable ? "flex" : "none";
+  }
+  // On a phone the open panel is the whole screen: the page under it is out of reach (Tab, a screen reader's
+  // swipes) until it closes or the screen's wide again, what it adds meanwhile too (the button, once it's
+  // set up). Only what the loader made inert is put back.
+  var covered = [];
+  // A modal the page has open (help opened from inside it) is the page's: covered, it would freeze with
+  // nothing in reach to close it, so the page is left as it is then.
+  // Whether an element is shown: not display: none, nor (as faded-out dialogs are) visibility: hidden or opacity 0.
+  // Where the browser can't say (checkVisibility is new, Safari 17.4), by whether it has a box and isn't hidden.
+  // \`faded\`: opacity 0 counts as shown (one fading in).
+  function showing(element, faded) {
+    // No box of its own (display: contents): shown if what's in it is.
+    if (window.getComputedStyle && window.getComputedStyle(element).display === "contents") {
+      for (var k = 0; k < element.children.length; k++) if (showing(element.children[k], faded)) return true;
+      return false;
+    }
+    if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: !faded });
+    if (element.getClientRects && element.getClientRects().length === 0) return false;
+    if (!window.getComputedStyle) return true;
+    if (window.getComputedStyle(element).visibility === "hidden") return false;
+    if (!faded) for (var e = element; e; e = e.parentElement) if (window.getComputedStyle(e).opacity === "0") return false;
+    return true;
+  }
+  // The modal of the page's that shows, if one does.
+  function modalOpen() {
+    // Only one showing: pages keep closed ones in their markup, marked all the same.
+    var marked = document.querySelectorAll("[aria-modal]");
+    for (var m = 0; m < marked.length; m++) {
+      if (marked[m].getAttribute("aria-modal") === "true" && showing(marked[m])) return marked[m];
+    }
+    try {
+      return document.querySelector("dialog:modal");
+    } catch (error) {
+      return null;
+    }
+  }
+  // Whether the page is covered now: decided as the panel opens (left as it is while a modal of the page's
+  // shows, covered once that closes), then kept till it closes. A modal the page opens later closes the panel:
+  // its own trap (a native one's top layer too) would leave neither in reach.
+  var covering = false;
+  // Left uncovered for a modal of the page's: checked again a few times a second till it's gone (many close by
+  // a class or style, which nothing else hears).
+  var waitingOnModal = false;
+  // Closed for a modal of the page's: what the loader had made inert. A library that saved it so as the modal
+  // opened (Headless UI) makes it inert again as it closes; it's put back once the modal's gone.
+  var released = [];
+  function releaseAfterModal() {
+    if (modalOpen()) {
+      setTimeout(releaseAfterModal, 250);
+      return;
+    }
+    for (var r = 0; r < released.length; r++) released[r].removeAttribute("inert");
+    released = [];
+  }
+  function checkAgain() {
+    if (waitingOnModal) return;
+    waitingOnModal = true;
+    setTimeout(function () {
+      waitingOnModal = false;
+      coverPage();
+    }, 250);
+  }
+  // Modals of the page's that may be fading in (there, only their opacity hiding them), each since it was first
+  // seen so: watched FADE_WAIT at most (one kept closed at opacity 0 isn't fading).
+  var fading = [];
+  var FADE_WAIT = 2000;
+  // Whether one is fading in now, not for longer than a fade.
+  function stillFading() {
+    var now = new Date().getTime();
+    var next = [];
+    var waiting = false;
+    var marked = document.querySelectorAll("[aria-modal]");
+    for (var f = 0; f < marked.length; f++) {
+      var modal = marked[f];
+      if (modal.getAttribute("aria-modal") !== "true" || showing(modal) || !showing(modal, true)) continue;
+      var since = now;
+      for (var g = 0; g < fading.length; g++) if (fading[g].modal === modal) since = fading[g].since;
+      next.push({ modal: modal, since: since });
+      if (now - since < FADE_WAIT) waiting = true;
+    }
+    fading = next;
+    return waiting;
+  }
+  function coverPage() {
+    var cover = opened && small && small.matches;
+    var modal = cover && covering ? modalOpen() : null;
+    if (modal) {
+      if (released.length === 0) setTimeout(releaseAfterModal, 250);
+      released = released.concat(covered);
+      close(true);
+      // Focus goes into it, unless it's there already: the page's own move in fails while the loader has it inert.
+      var active = document.activeElement;
+      if (!(active && modal.contains && modal.contains(active))) {
+        var first = modal.querySelector && modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (!first && !modal.hasAttribute("tabindex")) modal.setAttribute("tabindex", "-1");
+        (first || modal).focus();
+      }
+      return;
+    }
+    if (cover && !covering && modalOpen()) {
+      checkAgain();
+      return;
+    }
+    if (cover) {
+      if (!covering) {
+        covering = true;
+        // In reach: a modal's library that made it inert (as it was, closed before) may have put that back.
+        panel.removeAttribute("inert");
+        layoutPanel();
+      }
+      // Covered again before a modal's library let go of them: the loader's again (theirs or not, inert now).
+      for (var r = 0; r < released.length; r++) {
+        released[r].setAttribute("inert", "");
+        covered.push(released[r]);
+      }
+      released = [];
+      var children = document.body ? document.body.children : [];
+      for (var c = 0; c < children.length; c++) {
+        var child = children[c];
+        if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
+          child.setAttribute("inert", "");
+          covered.push(child);
+        }
+      }
+      // A modal of the page's fading in (wherever it is, covered with the rest meanwhile): checked again till it
+      // shows, which closes the panel, so it's usable once it can be seen.
+      if (stillFading()) checkAgain();
+    } else {
+      covering = false;
+      // Opened again, a modal still at opacity 0 may fade in then: watched afresh.
+      fading = [];
+      for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");
+      covered = [];
+    }
+  }
   // The sidebar: a drawer over the button, with a backdrop that closes it on narrow screens
   // (where it covers most of the page); on wider ones the page stays usable beside it.
   var backdrop = document.createElement("div");
-  var narrow = sidebar && window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  // A phone's width: the sidebar gets a backdrop, the floating panel the whole screen.
+  var small = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  var narrow = sidebar ? small : null;
   // Whether the panel is open: it stays on screen a moment after closing, as it animates away.
   var opened = false;
+  // The button's side: bottom-right unless the project says bottom-left.
+  var onLeft = false;
   function showBackdrop() {
     backdrop.style.display = narrow && narrow.matches && opened ? "block" : "none";
   }
@@ -197,18 +359,44 @@ export function widgetLoader(portalTemplate: string): string {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
     css(backdrop, { position: "fixed", top: "0", right: "0", bottom: "0", left: "0", zIndex: "2147483001", display: "none", background: "rgba(0, 0, 0, 0.4)" });
     backdrop.addEventListener("click", function () { close(); });
-    if (narrow) narrow.onchange = showBackdrop;
+    if (narrow) narrow.onchange = function () { showBackdrop(); showStandIn(); coverPage(); };
   } else {
+    placePanel();
+    if (small) small.onchange = placePanel;
+  }
+  // The floating panel: above the button, or on a phone the whole screen (over the button, its own close
+  // button at the top). Pinned to the screen's edges there, so the browser's bars can't push it off screen.
+  function placePanel() {
+    showStandIn();
+    coverPage();
+    layoutPanel();
+  }
+  // Over a modal of the page's (help opened from inside it), a card, as on a wider screen: the modal stays in
+  // sight, so it can be closed (a modal library blocks the panel too). The whole screen once the page is covered.
+  function layoutPanel() {
+    if (sidebar) return;
+    if (small && small.matches && (covering || !opened)) {
+      // Clear of the status bar and home indicator where the page runs under them (viewport-fit=cover):
+      // the panel's page, in a frame, isn't told where they are.
+      css(panel, {
+        top: "0", right: "0", bottom: "0", left: "0", width: "auto", height: "auto", borderRadius: "0", zIndex: "2147483001", boxSizing: "border-box",
+        paddingTop: "env(safe-area-inset-top)", paddingRight: "env(safe-area-inset-right)", paddingBottom: "env(safe-area-inset-bottom)", paddingLeft: "env(safe-area-inset-left)"
+      });
+      return;
+    }
     css(panel, {
-      right: "20px", bottom: hideLauncher ? "20px" : "88px", borderRadius: "14px",
-      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))", transformOrigin: "bottom right"
+      paddingTop: "0", paddingRight: "0", paddingBottom: "0", paddingLeft: "0",
+      top: "auto", bottom: hideLauncher ? "20px" : "88px", right: onLeft ? "auto" : "20px", left: onLeft ? "20px" : "auto",
+      borderRadius: "14px", zIndex: "2147483000", width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))",
+      transformOrigin: onLeft ? "bottom left" : "bottom right"
     });
+    // The screen's height without the browser's bars, where it's known (iOS counts them in 100vh).
+    panel.style.height = "min(600px, calc(100dvh - 112px))";
   }
   // Opening, the panel grows out of the launcher's corner (a sidebar slides in from its edge); closing, the
   // reverse, then it's hidden. Not for visitors who ask for less motion (as they do now), nor where browsers
   // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
   var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
-  var onLeft = false;
   var motion = null;
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
@@ -225,7 +413,9 @@ export function widgetLoader(portalTemplate: string): string {
     }
     var away = sidebar
       ? { transform: "translateX(" + (onLeft ? "-" : "") + "100%)" }
-      : { opacity: 0, transform: "translateY(16px) scale(0.94)" };
+      : small && small.matches
+        ? { opacity: 0, transform: "translateY(24px)" }
+        : { opacity: 0, transform: "translateY(16px) scale(0.94)" };
     var here = sidebar ? { transform: "none" } : { opacity: 1, transform: "none" };
     motion = panel.animate(showing ? [away, here] : [here, away], showing
       ? { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
@@ -239,6 +429,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (sidebar) document.body.appendChild(backdrop);
     document.body.appendChild(panel);
   });
+
 
   // The button, unless the page has its own: once the settings are read, or after 3 seconds
   // without them (in their place, or styled when they come).
@@ -274,8 +465,9 @@ export function widgetLoader(portalTemplate: string): string {
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
-        css(panel, { left: sidebar ? "0" : "20px", right: "auto", transformOrigin: "bottom left" });
         onLeft = true;
+        if (sidebar) css(panel, { left: "0", right: "auto", transformOrigin: "bottom left" });
+        else placePanel();
       }
     }
     showLauncher();
@@ -348,11 +540,15 @@ export function widgetLoader(portalTemplate: string): string {
     var article = options && typeof options.article === "string" ? options.article : "";
     var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
+    // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
+      closable = false;
       frame = panel.appendChild(newFrame(src));
     } else if (query !== null) {
+      closable = false;
       frame.src = src;
     }
+    showStandIn();
     if (!opened) {
       returnFocus = from;
       opened = true;
@@ -361,6 +557,8 @@ export function widgetLoader(portalTemplate: string): string {
     }
     tellShown(true);
     showBackdrop();
+    coverPage();
+    layoutPanel();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
@@ -370,14 +568,17 @@ export function widgetLoader(portalTemplate: string): string {
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
   }
 
-  function close() {
+  // \`leaveFocus\`: closed for a modal of the page's, where focus goes instead.
+  function close(leaveFocus) {
     if (!opened) return;
     opened = false;
     animate(false);
     tellShown(false);
     showBackdrop();
+    // Back in reach before focus goes back to it.
+    coverPage();
     button.setAttribute("aria-expanded", "false");
-    (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
+    if (!leaveFocus) (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }
 
   button.addEventListener("click", function () {
@@ -423,7 +624,13 @@ export function widgetLoader(portalTemplate: string): string {
   }
   whenBody(function () {
     mountInline();
-    if (window.MutationObserver) new window.MutationObserver(mountInline).observe(document.body, { childList: true, subtree: true });
+    if (window.MutationObserver) {
+      // Elements added (inline panels; what to cover), and a modal of the page's opened or closed in place.
+      new window.MutationObserver(function () {
+        mountInline();
+        coverPage();
+      }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-modal", "open", "hidden"] });
+    }
   });
   var getToken = typeof settings.identify === "function" ? settings.identify : null;
   window.Tuti = {
@@ -454,7 +661,7 @@ export function widgetLoader(portalTemplate: string): string {
     open: function (options) {
       open(options, document.activeElement);
     },
-    close: close,
+    close: function () { close(); },
     unseen: function () {
       return unseen;
     },
@@ -498,6 +705,13 @@ export function widgetLoader(portalTemplate: string): string {
     if (!from) return;
     // Only the floating panel closes; an inline one has nothing to close.
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) { if (from === frame) close(); }
+    else if (event.data === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)} || (event.data && event.data.type === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)})) {
+      if (from === frame) {
+        // Up with its own Close, or going away (the next page may not have one).
+        closable = event.data === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)};
+        showStandIn();
+      }
+    }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
       // Closed while it loaded: it couldn't hear that then.

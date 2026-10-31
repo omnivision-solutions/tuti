@@ -120,10 +120,14 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
   const stored = new Map<string, string>(seenHere ? [["tuti:seen:acme", seenHere]] : []);
   const mediaLists: { matches: boolean; onchange: (() => void) | null }[] = [];
   const observers: (() => void)[] = [];
+  // What each observer watches (MutationObserver's options).
+  const watching: { attributeFilter?: string[] }[] = [];
   const page = {
     documentListeners,
     windowListeners,
     mediaLists,
+    /** What the script's MutationObservers watch. */
+    watching,
     /** The page changed: what MutationObserver tells the script. */
     mutated() {
       observers.forEach((callback) => callback());
@@ -209,7 +213,9 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
         constructor(callback: () => void) {
           observers.push(callback);
         }
-        observe() {}
+        observe(_target: unknown, options: { attributeFilter?: string[] }) {
+          watching.push(options);
+        }
       },
       localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
       addEventListener: (type: string, listener: (event: object) => void) => (windowListeners[type] ??= []).push(listener),
@@ -234,7 +240,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       return page.body.children.find((child) => (child as FakeElement).id === "tuti-widget") as FakeElement;
     },
     get frame() {
-      return page.panel.children[0] as FakeElement | undefined;
+      return page.panel.children.find((child) => (child as FakeElement).tagName === "iframe") as FakeElement | undefined;
     },
     /** Calls to /api/widget/seen. */
     get seenRequests() {
@@ -529,14 +535,26 @@ test("when the panel shows the announcement, it's recorded for the person, so th
   expect(anonymous.seenRequests).toEqual([]);
 });
 
-test("by default the panel opens above the launcher, as before: no drawer, no backdrop", async () => {
-  const page = loadWidget({ narrow: true });
+test("by default the panel opens above the launcher; on a phone it's the whole screen, over the launcher; no drawer, no backdrop", async () => {
+  const page = loadWidget({});
   await settled();
   page.button!.click();
-  expect(page.panel.style).toMatchObject({ display: "block", right: "20px", bottom: "88px", borderRadius: "14px" });
-  expect(page.panel.style.top).toBeUndefined();
+  expect(page.panel.style).toMatchObject({ display: "block", top: "auto", right: "20px", bottom: "88px", borderRadius: "14px" });
+  // Turned to a phone's width and back.
+  page.resize(true);
+  expect(page.panel.style).toMatchObject({ top: "0", left: "0", borderRadius: "0" });
+  page.resize(false);
+  expect(page.panel.style).toMatchObject({ top: "auto", right: "20px", left: "auto", borderRadius: "14px", paddingTop: "0" });
   expect(page.backdrop).toBeUndefined();
   expect(page.inlineFrames).toEqual([]);
+
+  const phone = loadWidget({ narrow: true });
+  await settled();
+  phone.button!.click();
+  expect(phone.panel.style).toMatchObject({ display: "block", top: "0", right: "0", bottom: "0", left: "0", borderRadius: "0", zIndex: "2147483001" });
+  // Clear of the phone's status bar and home indicator, where the page runs under them.
+  expect(phone.panel.style).toMatchObject({ boxSizing: "border-box", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" });
+  expect(phone.backdrop).toBeUndefined();
 });
 
 test("data-display or TutiSettings.display picks the mode, the attribute first; an unknown one is reported and it's the launcher", async () => {
@@ -914,4 +932,347 @@ test("when the page's new identify gives no token or fails, open panels hear nob
     expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:identify", token: null }, "https://acme.tuti.example");
   }
   error.mockRestore();
+});
+
+test("on a phone, until the panel's page is up with its own Close, the loader's Close is there, so a page that never comes can still be closed", async () => {
+  const page = loadWidget({ narrow: true });
+  await settled();
+  page.button!.click();
+  const standIn = page.panel.children.find((child) => child instanceof FakeElement && child.getAttribute("aria-label") === "Close") as FakeElement;
+  expect(standIn.style.display).toBe("flex");
+  // The page failed (offline, an error): its Close closes the panel.
+  standIn.click();
+  expect(page.panel.hasAttribute("inert")).toBe(true);
+  // Up, with its own Close: the loader's goes.
+  page.button!.click();
+  page.message(page.frame!.contentWindow, "tuti:closable");
+  expect(standIn.style.display).toBe("none");
+  // Its page goes away (a tab loading as a new page, which may fail): back until the next says it's up.
+  page.message(page.frame!.contentWindow, { type: "tuti:closable", closable: false });
+  expect(standIn.style.display).toBe("flex");
+  page.message(page.frame!.contentWindow, "tuti:closable");
+  expect(standIn.style.display).toBe("none");
+  // Wide screens never show it.
+  page.resize(false);
+  expect(standIn.style.display).toBe("none");
+});
+
+test("on a phone the open panel is the whole screen, so the page under it is out of reach (Tab, screen readers) until it closes", async () => {
+  const page = loadWidget({ narrow: true });
+  const content = page.body.appendChild(new FakeElement("main", page));
+  // Something the page made inert itself stays so.
+  const own = page.body.appendChild(new FakeElement("aside", page));
+  own.setAttribute("inert", "");
+  await settled();
+  page.button!.click();
+  expect(content.hasAttribute("inert")).toBe(true);
+  expect(page.button!.hasAttribute("inert")).toBe(true);
+  expect(page.panel.hasAttribute("inert")).toBe(false);
+  page.press("Escape");
+  expect(content.hasAttribute("inert")).toBe(false);
+  expect(own.hasAttribute("inert")).toBe(true);
+  // Turned wide while open: back in reach.
+  page.button!.click();
+  page.resize(false);
+  expect(content.hasAttribute("inert")).toBe(false);
+});
+
+test("on a phone, what the page adds while the panel covers it (the button, once it's set up) is out of reach too", async () => {
+  const page = loadWidget({ narrow: true });
+  page.Tuti.open();
+  const late = page.body.appendChild(new FakeElement("div", page));
+  page.mutated();
+  expect(late.hasAttribute("inert")).toBe(true);
+  page.Tuti.close();
+  expect(late.hasAttribute("inert")).toBe(false);
+});
+
+test("on a phone, a page with a modal open (help opened from inside it) isn't covered: the modal stays usable", async () => {
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+  dialog.setAttribute("aria-modal", "true");
+  // Closed, kept in the markup: the page is covered as usual.
+  dialog.checkVisibility = () => false;
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  page.Tuti.close();
+  // Showing: left as it is.
+  dialog.checkVisibility = () => true;
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(false);
+  // Closed in place while the panel's open (no element added or taken away): covered then. The loader
+  // hears of it: it watches the attributes a modal is opened and closed by.
+  expect(page.watching.some((options) => ["aria-modal", "open"].every((name) => options.attributeFilter?.includes(name)))).toBe(true);
+  dialog.setAttribute("aria-modal", "false");
+  page.mutated();
+  expect(app.hasAttribute("inert")).toBe(true);
+});
+
+test("on a phone, a modal the page opens once the panel covers it closes the panel: the page and the modal are left usable, focus where the modal put it", async () => {
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // A popup of the page's (on a timer, say) traps focus and taps: under the panel, neither could be closed.
+  const popup = page.body.appendChild(new FakeElement("div", page));
+  popup.setAttribute("aria-modal", "true");
+  popup.focus();
+  page.mutated();
+  // Closed: the panel is out of reach.
+  expect(page.panel.hasAttribute("inert")).toBe(true);
+  expect(app.hasAttribute("inert")).toBe(false);
+  expect(popup.hasAttribute("inert")).toBe(false);
+  expect(page.document.activeElement).toBe(popup);
+});
+
+test("on a phone, a page's modal counts as showing only when it is: not faded out, nor without a box where the browser can't say", async () => {
+  type Modal = FakeElement & { checkVisibility?: (options?: { visibilityProperty?: boolean; opacityProperty?: boolean }) => boolean; getClientRects?: () => unknown[] };
+  // Faded out (visibility: hidden, opacity 0): shown to a plain checkVisibility(), not with its options.
+  const faded = loadWidget({ narrow: true });
+  const app = faded.body.appendChild(new FakeElement("div", faded));
+  const dialog = app.appendChild(new FakeElement("div", faded)) as Modal;
+  dialog.setAttribute("aria-modal", "true");
+  dialog.checkVisibility = (options) => !(options?.visibilityProperty && options.opacityProperty);
+  faded.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // A browser without checkVisibility (Safari before 17.4): one with no box (hidden) isn't showing.
+  const older = loadWidget({ narrow: true });
+  const page = older.body.appendChild(new FakeElement("div", older));
+  const kept = page.appendChild(new FakeElement("div", older)) as Modal;
+  kept.setAttribute("aria-modal", "true");
+  kept.getClientRects = () => [];
+  older.Tuti.open();
+  expect(page.hasAttribute("inert")).toBe(true);
+  // Nor one that has a box but has faded out (opacity 0).
+  const fadedOut = loadWidget({ narrow: true });
+  const host = fadedOut.body.appendChild(new FakeElement("div", fadedOut));
+  const closing = host.appendChild(new FakeElement("div", fadedOut)) as Modal;
+  closing.setAttribute("aria-modal", "true");
+  closing.getClientRects = () => [{}];
+  (fadedOut.window as unknown as { getComputedStyle: (element: unknown) => { display: string; visibility: string; opacity: string } }).getComputedStyle = (element) => ({
+    display: "block",
+    visibility: "visible",
+    opacity: element === closing ? "0" : "1",
+  });
+  fadedOut.Tuti.open();
+  expect(host.hasAttribute("inert")).toBe(true);
+});
+
+test("on a phone, a page's modal with no box of its own (display: contents) counts as showing when what's in it is", async () => {
+  type Shown = FakeElement & { checkVisibility?: () => boolean };
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as Shown;
+  dialog.setAttribute("aria-modal", "true");
+  // No box, so checkVisibility says no; what's in it shows.
+  dialog.checkVisibility = () => false;
+  const content = dialog.appendChild(new FakeElement("div", page)) as Shown;
+  content.checkVisibility = () => true;
+  (page.window as unknown as { getComputedStyle: (element: unknown) => { display: string; visibility: string } }).getComputedStyle = (element) => ({
+    display: element === dialog ? "contents" : "block",
+    visibility: "visible",
+  });
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(false);
+});
+
+test("on a phone, a page's modal that closes by a class or style (no attribute the loader hears) has the page covered once it's gone", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+    dialog.setAttribute("aria-modal", "true");
+    let shown = true;
+    dialog.checkVisibility = () => shown;
+    page.Tuti.open();
+    expect(app.hasAttribute("inert")).toBe(false);
+    // Hidden by a style the page sets (Alpine's x-show, say): nothing the observer hears.
+    shown = false;
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(true);
+    page.Tuti.close();
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("on a phone, a modal of the page's opened inside what the panel covers (its own move of focus failed, inert) gets focus as the panel closes", async () => {
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+  dialog.setAttribute("aria-modal", "false");
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // The page opens it in place; focus stays where it was (in the panel).
+  dialog.setAttribute("aria-modal", "true");
+  page.mutated();
+  expect(app.hasAttribute("inert")).toBe(false);
+  expect(page.document.activeElement).toBe(dialog);
+  expect(dialog.getAttribute("tabindex")).toBe("-1");
+});
+
+test("on a phone, a page's modal library that saves what's inert as it opens (Headless UI) and puts it back as it closes doesn't leave the page inert", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    expect(app.hasAttribute("inert")).toBe(true);
+    // The library opens its dialog: it records the page's inert (the loader's) and makes it inert itself.
+    const saved = app.hasAttribute("inert");
+    app.setAttribute("inert", "");
+    const popup = page.body.appendChild(new FakeElement("div", page));
+    popup.setAttribute("aria-modal", "true");
+    page.mutated();
+    // The panel closes for it.
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    // Closed: it puts back what it recorded.
+    page.body.children.splice(page.body.children.indexOf(popup), 1);
+    if (saved) app.setAttribute("inert", "");
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("on a phone, help opened again from that library's modal, which then closes, has the page covered till the panel closes", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    // The library's dialog opens (recording the loader's inert, setting its own): the panel closes.
+    const saved = app.hasAttribute("inert");
+    app.setAttribute("inert", "");
+    const popup = page.body.appendChild(new FakeElement("div", page));
+    popup.setAttribute("aria-modal", "true");
+    page.mutated();
+    // Help opened from inside it a moment later: waits, uncovered, while it shows.
+    vi.advanceTimersByTime(100);
+    page.Tuti.open();
+    vi.advanceTimersByTime(200);
+    // It closes, putting back what it recorded; the panel covers the page (and both checks run once more).
+    page.body.children.splice(page.body.children.indexOf(popup), 1);
+    if (saved) app.setAttribute("inert", "");
+    page.mutated();
+    vi.advanceTimersByTime(600);
+    expect(app.hasAttribute("inert")).toBe(true);
+    page.Tuti.close();
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("on a phone, help opened over a modal of the page's is a card, the modal in sight; the whole screen once it's gone", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+    dialog.setAttribute("aria-modal", "true");
+    let shown = true;
+    dialog.checkVisibility = () => shown;
+    page.Tuti.open();
+    expect(page.panel.style.top).toBe("auto");
+    expect(page.panel.style.borderRadius).toBe("14px");
+    // As it closes, the modal's library puts back the panel's inert as it found it (closed before).
+    shown = false;
+    page.panel.setAttribute("inert", "");
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(true);
+    expect(page.panel.style.top).toBe("0");
+    expect(page.panel.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("on a phone, a modal of the page's fading in once the panel covers it (wherever it is) closes the panel once it shows, each watched for a fade's length", async () => {
+  vi.useFakeTimers();
+  try {
+    type Modal = FakeElement & { checkVisibility?: (options?: { opacityProperty?: boolean }) => boolean };
+    const fadingIn = (modal: Modal) => {
+      let faded = true;
+      modal.setAttribute("aria-modal", "true");
+      modal.checkVisibility = (options) => !(faded && options?.opacityProperty);
+      return () => (faded = false);
+    };
+    // Hidden whatever's counted (display: none): covered, and nothing checked again.
+    const quiet = loadWidget({ narrow: true });
+    quiet.Tuti.open();
+    const timers = vi.getTimerCount();
+    const closed = quiet.body.appendChild(new FakeElement("div", quiet)) as Modal;
+    closed.setAttribute("aria-modal", "true");
+    closed.checkVisibility = () => false;
+    quiet.mutated();
+    expect(closed.hasAttribute("inert")).toBe(true);
+    expect(vi.getTimerCount()).toBe(timers);
+
+    // Into a container that was there (and covered) before: the dialog's portal, say.
+    const page = loadWidget({ narrow: true });
+    const portal = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    expect(portal.hasAttribute("inert")).toBe(true);
+    const show = fadingIn(portal.appendChild(new FakeElement("div", page)) as Modal);
+    page.mutated();
+    vi.advanceTimersByTime(300);
+    show();
+    vi.advanceTimersByTime(300);
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    expect(portal.hasAttribute("inert")).toBe(false);
+
+    // One kept closed at opacity 0 (a consent manager's) is let go after a fade's length; one fading in late gets its own.
+    const later = loadWidget({ narrow: true });
+    const app = later.body.appendChild(new FakeElement("div", later));
+    later.Tuti.open();
+    fadingIn(later.body.appendChild(new FakeElement("div", later)) as Modal);
+    later.mutated();
+    vi.advanceTimersByTime(1900);
+    const appear = fadingIn(later.body.appendChild(new FakeElement("div", later)) as Modal);
+    later.mutated();
+    vi.advanceTimersByTime(400);
+    appear();
+    vi.advanceTimersByTime(300);
+    expect(later.panel.hasAttribute("inert")).toBe(true);
+    expect(app.hasAttribute("inert")).toBe(false);
+
+    // One let go (kept at opacity 0 past a fade's length) gets a fresh wait when the panel opens again, and fades in then.
+    const again = loadWidget({ narrow: true });
+    again.Tuti.open();
+    const reused = again.body.appendChild(new FakeElement("div", again)) as Modal;
+    const reveal = fadingIn(reused);
+    again.mutated();
+    vi.advanceTimersByTime(2500);
+    again.Tuti.close();
+    again.Tuti.open();
+    vi.advanceTimersByTime(300);
+    reveal();
+    vi.advanceTimersByTime(300);
+    expect(again.panel.hasAttribute("inert")).toBe(true);
+    expect(reused.hasAttribute("inert")).toBe(false);
+
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
+  const page = loadWidget({ narrow: true });
+  const dialog = page.body.appendChild(new FakeElement("dialog", page));
+  let modal = false;
+  (page.document as unknown as { querySelector: (selector: string) => unknown }).querySelector = (selector) => (selector === "dialog:modal" && modal ? dialog : null);
+  page.Tuti.open();
+  expect(dialog.hasAttribute("inert")).toBe(true);
+  // The page opens it with showModal() (it gets `open`, and matches dialog:modal).
+  modal = true;
+  dialog.setAttribute("open", "");
+  page.mutated();
+  // Closed: the panel is out of reach.
+  expect(page.panel.hasAttribute("inert")).toBe(true);
+  expect(dialog.hasAttribute("inert")).toBe(false);
 });
