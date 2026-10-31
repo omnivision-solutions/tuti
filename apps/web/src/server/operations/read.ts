@@ -6,6 +6,7 @@ import { postOrderBy } from "@/lib/post-filters";
 
 import { displayDoc } from "../content";
 import { portalAddress } from "../custom-domains";
+import { actorReader } from "../portal-access";
 import { defineOperation, OperationError } from "./define";
 import { linkSelect, linkView } from "./link-view";
 
@@ -119,31 +120,34 @@ export const getPost = defineOperation({
 
 export const listComments = defineOperation({
   name: "comments.list",
-  summary: "List a post's comments, oldest first",
+  summary: "List a post's comments, oldest first: to the team (an API key, a team member) with its internal notes (`internal: true`)",
   method: "GET",
   path: "/posts/{number}/comments",
   scope: "read",
   access: "anyone",
   input: z.object({ number: postNumber }),
-  run: async ({ projectId }, { number }) => {
+  run: async ({ actor, projectId }, { number }) => {
     const post = await findPost(projectId, number);
-    const [comments, team] = await Promise.all([
-      prisma.comment.findMany({
-        where: { postId: post.id },
-        orderBy: { createdAt: "asc" },
-        select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } },
-      }),
+    const ofTeam = (await actorReader(actor, projectId)) === null;
+    const select = { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true } } } as const;
+    const [comments, notes, team] = await Promise.all([
+      prisma.comment.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select }),
+      ofTeam ? prisma.postNote.findMany({ where: { postId: post.id }, orderBy: { createdAt: "asc" }, select }) : [],
       prisma.teamMember.findMany({ where: { projectId }, select: { userId: true } }),
     ]);
     const teamIds = new Set(team.map((m) => m.userId));
     return {
-      comments: comments.map((c) => ({
-        id: c.id,
-        author: { name: c.author.name, team: teamIds.has(c.author.id) },
-        body: c.body,
-        content: displayDoc(c),
-        createdAt: c.createdAt.toISOString(),
-      })),
+      // The team's notes between them, in order.
+      comments: [...comments.map((c) => ({ ...c, internal: false })), ...notes.map((n) => ({ ...n, internal: true }))]
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+        .map((c) => ({
+          id: c.id,
+          author: { name: c.author.name, team: teamIds.has(c.author.id) },
+          body: c.body,
+          content: displayDoc(c),
+          createdAt: c.createdAt.toISOString(),
+          ...(c.internal && { internal: true }),
+        })),
     };
   },
 });

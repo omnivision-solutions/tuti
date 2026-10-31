@@ -135,12 +135,19 @@ export const createPost = defineOperation({
 
 export const createComment = defineOperation({
   name: "comments.create",
-  summary: "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app",
+  summary:
+    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks",
   method: "POST",
   path: "/posts/{number}/comments",
   scope: "write",
   access: "anyone",
-  input: z.object({ number: postNumber, ...content, author }),
+  input: z.object({
+    number: postNumber,
+    ...content,
+    author,
+    /** An internal note: only the team sees it (never on the portal, in emails or webhooks; over the API, only to the team). The team's only. */
+    internal: z.boolean().optional(),
+  }),
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
     const { projectId } = context;
@@ -155,8 +162,28 @@ export const createComment = defineOperation({
     if (text.text === "") {
       throw new OperationError(400, "invalid_content", "Write something first");
     }
+    // Notes are the team's own: written by a team member, or the team's key as itself (keys are the team's, as actorReader has them).
+    if (input.internal && input.author) {
+      throw new OperationError(403, "forbidden", "Only your team can write internal notes");
+    }
     const userId = await authorId(context, input.author);
+    if (input.internal && context.actor.kind !== "apiKey" && !(await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } }))) {
+      throw new OperationError(403, "forbidden", "Only your team can write internal notes");
+    }
     const portal = await projectPortal(projectId);
+    if (input.internal) {
+      // Whether its author is on the team now, as comments.list says it (a key's creator may have left): read
+      // before saving, so a failure here can't follow a saved note (a retry would save it twice).
+      const member = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
+      // A note: its own table, so nothing that reads comments shows it; no count, no webhook.
+      const note = await saving(() =>
+        prisma.postNote.create({
+          data: { postId: post.id, authorId: userId, body: text.text, content: text.doc },
+          select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
+        }),
+      );
+      return { id: note.id, author: { name: note.author.name, team: !!member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
+    }
 
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {

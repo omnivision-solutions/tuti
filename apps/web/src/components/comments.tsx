@@ -5,6 +5,7 @@ import { STATUS_LABELS, StatusDot } from "@/components/post-status-badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { timeAgo } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { displayDoc } from "@/server/content";
 
 export type CommentView = {
@@ -13,6 +14,8 @@ export type CommentView = {
   content: unknown;
   createdAt: Date;
   author: { id: string; name: string; image: string | null };
+  /** An internal note: only the team sees it (the team's view only ever has these). */
+  internal?: boolean;
 };
 
 /** A change of the post's status, in its activity. */
@@ -47,7 +50,7 @@ export function CommentList({ comments, teamUserIds, events = [] }: { comments: 
             </span>
           </li>
         ) : (
-          <li key={item.comment.id} className="flex gap-3">
+          <li key={item.comment.id} className={cn("flex gap-3", item.comment.internal && "-mx-2 rounded-lg bg-highlight/40 p-2")}>
             <Avatar className="size-8">
               {item.comment.author.image && <AvatarImage src={item.comment.author.image} alt="" />}
               <AvatarFallback>{item.comment.author.name.slice(0, 1).toUpperCase()}</AvatarFallback>
@@ -56,6 +59,7 @@ export function CommentList({ comments, teamUserIds, events = [] }: { comments: 
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-medium">{item.comment.author.name}</span>
                 {teamUserIds.has(item.comment.author.id) && <Badge variant="secondary">Team</Badge>}
+                {item.comment.internal && <Badge variant="outline">Internal note</Badge>}
                 <time dateTime={item.comment.createdAt.toISOString()} className="text-xs text-muted-foreground">
                   {timeAgo(item.comment.createdAt)}
                 </time>

@@ -34,6 +34,7 @@ model User {
   ssoIdentity        SsoIdentity?
 
   postEvents            PostEvent[]           @relation("PostEventActor")
+  postNotes             PostNote[]            @relation("PostNoteAuthor")
   invitationsCreated    Invitation[]          @relation("InvitationCreatedBy")
   portalReadersAdded    PortalReader[]        @relation("PortalReaderAddedBy")
   customDomainsAdded    CustomDomain[]        @relation("CustomDomainAddedBy")
@@ -870,6 +871,7 @@ model Post {
   votes                  Vote[]
   comments               Comment[]
   events                 PostEvent[]
+  notes                  PostNote[]
   embedding              PostEmbedding?
   duplicateSuggestions   DuplicateSuggestion[] @relation("SuggestedDuplicate")
   duplicateOfSuggestions DuplicateSuggestion[] @relation("SuggestedOriginal")
@@ -1221,6 +1223,26 @@ model Comment {
 
   @@index([postId, createdAt])
   @@map("comment")
+}
+
+/// An internal note on a post: only the team sees it (never on the portal, in emails or webhooks; over
+/// the API, only to the team). Its own table, so nothing that reads comments (an older release, too)
+/// can show it.
+model PostNote {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  /// Plain text (derived from `content`).
+  body      String
+  /// Rich content (@tuti/content "comment" profile).
+  content   Json?
+  createdAt DateTime @default(now())
+
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User @relation("PostNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
+  @@map("post_note")
 }
 
 // ─── Duplicate detection ─────────────────────────────────────────────────────
