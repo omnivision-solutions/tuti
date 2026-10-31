@@ -892,3 +892,15 @@ test("once a reader's digests for the day are sent, later sweeps that day don't 
   expect(teams).toHaveBeenCalledTimes(1);
   expect(to(owner)).toHaveLength(1);
 });
+
+test("the digest chosen in the afternoon doesn't come straight away: the next morning", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // 14:00 and 21:30 in Berlin: not a morning.
+  await sendAutopilotDigests(new Date("2026-11-02T13:00:00Z"));
+  await sendAutopilotDigests(new Date("2026-11-02T20:30:00Z"));
+  expect(to(owner)).toHaveLength(0);
+  // 8:15 the next day.
+  await sendAutopilotDigests(new Date("2026-11-03T07:15:00Z"));
+  expect(to(owner)).toHaveLength(1);
+});

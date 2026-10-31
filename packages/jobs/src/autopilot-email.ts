@@ -432,8 +432,10 @@ export async function tellOwners(codeChangeId: string, since: Date, inFlight?: {
   }
 }
 
-/** The morning: the digest goes from 8 o'clock, the reader's time. */
+/** The morning: the digest goes from 8 o'clock, the reader's time, till noon (a sweep or a mail server late by
+ * then sends it the next morning; one chosen in the afternoon comes the next morning, not straight away). */
 const DIGEST_HOUR = 8;
+const DIGEST_UNTIL = 12;
 
 /** The date ("2026-10-31") and hour it is in `timeZone`; null for a zone this server doesn't know. */
 function localNow(now: Date, timeZone: string): { day: string; hour: number } | null {
@@ -494,8 +496,8 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
   let sent = 0;
   for (const reader of readers) {
     const local = localNow(now, reader.autopilotTimeZone!);
-    // From 8 on (a sweep that ran late sends it late, not never); once a day, by the claim below.
-    if (!local || local.hour < DIGEST_HOUR) {
+    // Its morning only (a sweep that ran late sends it late, not never); once a day, by the claim below.
+    if (!local || local.hour < DIGEST_HOUR || local.hour >= DIGEST_UNTIL) {
       continue;
     }
     const day = new Date(`${local.day}T00:00:00Z`);
