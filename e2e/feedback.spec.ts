@@ -811,3 +811,21 @@ test("Completed's question fits a phone, whatever the post's title (a long link)
   const box = (await heading.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(390);
 });
+
+test("Completed for picked rows counts only who it emails: one completed already emails nobody again", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const [number, title] of [[1, "Dark mode"], [2, "Export to PDF"]] as const) {
+    await api("/posts", { board: "feature-requests", title });
+    await api(`/posts/${number}/vote`, { voted: true, author: { id: `user-${number}`, email: `e2e-${randomUUID()}@example.com` } });
+  }
+  await api("/posts/1", { status: "completed" }, "PATCH");
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Completed" }).click();
+  await expect(team.getByRole("alertdialog")).toContainText("This emails up to 1 person who asked for them");
+});

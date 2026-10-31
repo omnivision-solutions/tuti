@@ -62,6 +62,8 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     voterTotals(project.id, project.askingProperty, posts.map((post) => post.id)),
     emailedOnCompletion(project.id, posts.map((post) => post.id)),
   ]);
+  // What completing it now emails: nobody, if it's completed already (picked with others, say).
+  const emailing = (post: (typeof posts)[number]) => (post.status === "COMPLETED" ? 0 : (emails.get(post.id) ?? 0));
 
   // The post open in the pane (`?post=<number>`), and the list's links with another one open, or none.
   const opened = Number(first(searchParams.post));
@@ -129,7 +131,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         {/* Rows picked for Set status, Move to board and Merge, the bar over the list once some are. */}
-        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emails.get(post.id) ?? 0 }))}>
+        <FeedbackSelection key={listKey.toString()} listed={posts.map((post) => ({ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post) }))}>
           <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"
@@ -193,7 +195,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                         className={cn(post.number === open && "-mx-2 rounded-md bg-muted px-2")}
                         leading={
                           <>
-                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emails.get(post.id) ?? 0 }} />
+                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount, emails: emailing(post) }} />
                             <span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>
                           </>
                         }
