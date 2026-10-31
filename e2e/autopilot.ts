@@ -17,7 +17,7 @@ export async function runAutopilot(slug: string, { dueNow = false, emailNow = fa
     try {
       if (dueNow) {
         await client.query(
-          `UPDATE code_change_action a SET "dueAt" = now() - interval '1 second'
+          `UPDATE code_change_action a SET "dueAt" = (now() AT TIME ZONE 'UTC') - interval '1 second'
            FROM code_change c JOIN project p ON p.id = c."projectId"
            WHERE a."codeChangeId" = c.id AND p.slug = $1 AND a.status = 'SCHEDULED'`,
           [slug],
@@ -26,7 +26,7 @@ export async function runAutopilot(slug: string, { dueNow = false, emailNow = fa
       // Its notices as if ten minutes passed (nothing else merged meanwhile): its email goes in this minute.
       if (emailNow) {
         await client.query(
-          `UPDATE autopilot_notice n SET "createdAt" = now() - interval '11 minutes'
+          `UPDATE autopilot_notice n SET "createdAt" = (now() AT TIME ZONE 'UTC') - interval '11 minutes'
            FROM code_change c JOIN project p ON p.id = c."projectId"
            WHERE n."codeChangeId" = c.id AND p.slug = $1 AND n."sentAt" IS NULL`,
           [slug],

@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import pg from "pg";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
 
 import { saveAutopilotRecipients, setAutopilotEmails } from "@/server/github";
@@ -13,6 +14,15 @@ import { mailbox } from "@/test/mailbox";
 let owner: TestUser;
 let project: Awaited<ReturnType<typeof createProject>>;
 let number = 0;
+
+// A database not on UTC (one set up on a machine elsewhere): times it writes itself come back as Prisma's, all the same.
+// Before the first query, so every connection has it.
+beforeAll(async () => {
+  const admin = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await admin.connect();
+  await admin.query(`ALTER DATABASE "${new URL(process.env.DATABASE_URL!).pathname.slice(1)}" SET TimeZone TO 'Europe/Berlin'`);
+  await admin.end();
+});
 
 // AI on (Autopilot needs it), with local fakes.
 let fakes: { close: () => Promise<void> }[] = [];
@@ -622,6 +632,48 @@ test("an email sent while the runner was marking an update its own (begun, not s
   expect(to(owner)[0]!.text).not.toContain("Went out by itself");
   await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: new Date() })).toBe(1);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("the database's own time zone doesn't move a notice queued again (it's swept ten minutes on)", async () => {
+  expect(await prisma.$queryRaw`SHOW TimeZone`).toEqual([{ TimeZone: "Europe/Berlin" }]);
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  // Analysed again: queued again now, and sent once ten minutes have passed, not before.
+  await queueAutopilotNotices(one.id);
+  const notice = await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } });
+  expect(Math.abs(notice.createdAt.getTime() - Date.now())).toBeLessThan(MINUTE);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 5 * MINUTE))).toBe(0);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+});
+
+test("an email whose read missed an update the runner saved before it was stamped read, and sent before the owners were told, is followed by one that says it went", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  const takenAt = new Date(Date.now() - 31_000);
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 30_000), payload: { comment: "Out soon" } } });
+  // Right after the sweep's read, the runner saves its mark (the window's end taken then); it tells the owners only once the email is sent.
+  let savedAt = new Date();
+  const findMany = prisma.autopilotNotice.findMany.bind(prisma.autopilotNotice) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  const spy = vi.spyOn(prisma.autopilotNotice, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    if (++reads === 2) {
+      const markedAt = new Date();
+      await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
+      savedAt = new Date();
+    }
+    return read;
+  }) as never);
+  expect(await sendAutopilotEmails()).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: savedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
 });
