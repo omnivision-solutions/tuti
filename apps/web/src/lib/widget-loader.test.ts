@@ -1044,3 +1044,21 @@ test("on a phone, a page's modal counts as showing only when it is: not faded ou
   older.Tuti.open();
   expect(page.hasAttribute("inert")).toBe(true);
 });
+
+test("on a phone, a page's modal with no box of its own (display: contents) counts as showing when what's in it is", async () => {
+  type Shown = FakeElement & { checkVisibility?: () => boolean };
+  const page = loadWidget({ narrow: true });
+  const app = page.body.appendChild(new FakeElement("div", page));
+  const dialog = app.appendChild(new FakeElement("div", page)) as Shown;
+  dialog.setAttribute("aria-modal", "true");
+  // No box, so checkVisibility says no; what's in it shows.
+  dialog.checkVisibility = () => false;
+  const content = dialog.appendChild(new FakeElement("div", page)) as Shown;
+  content.checkVisibility = () => true;
+  (page.window as unknown as { getComputedStyle: (element: unknown) => { display: string; visibility: string } }).getComputedStyle = (element) => ({
+    display: element === dialog ? "contents" : "block",
+    visibility: "visible",
+  });
+  page.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(false);
+});

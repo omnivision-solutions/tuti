@@ -217,6 +217,11 @@ export function widgetLoader(portalTemplate: string): string {
   // Whether an element is shown: not display: none, nor (as faded-out dialogs are) visibility: hidden or opacity 0.
   // Where the browser can't say (checkVisibility is new, Safari 17.4), by whether it has a box and isn't hidden.
   function showing(element) {
+    // No box of its own (display: contents): shown if what's in it is.
+    if (window.getComputedStyle && window.getComputedStyle(element).display === "contents") {
+      for (var k = 0; k < element.children.length; k++) if (showing(element.children[k])) return true;
+      return false;
+    }
     if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     if (element.getClientRects && element.getClientRects().length === 0) return false;
     return !(window.getComputedStyle && window.getComputedStyle(element).visibility === "hidden");
