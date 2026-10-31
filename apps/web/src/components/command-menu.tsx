@@ -1,6 +1,6 @@
 "use client";
 
-import { FileTextIcon, InboxIcon, LoaderCircleIcon, MessagesSquareIcon, SearchIcon, UserIcon, ZapIcon, type LucideIcon } from "lucide-react";
+import { FileTextIcon, FolderIcon, InboxIcon, LoaderCircleIcon, MessagesSquareIcon, SearchIcon, UserIcon, ZapIcon, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -18,7 +18,8 @@ const SEARCH_DELAY_MS = 150;
 const KIND: Record<AppSearchResult["kind"], { group: string; icon: LucideIcon }> = {
   post: { group: "Posts", icon: InboxIcon },
   conversation: { group: "Conversations", icon: MessagesSquareIcon },
-  article: { group: "Articles", icon: FileTextIcon },
+  article: { group: "Docs", icon: FileTextIcon },
+  collection: { group: "Docs", icon: FolderIcon },
   user: { group: "Users", icon: UserIcon },
 };
 

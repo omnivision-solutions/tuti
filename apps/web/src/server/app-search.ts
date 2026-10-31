@@ -9,13 +9,13 @@ import { listUsers } from "./operations/users";
 import { call } from "./operations/run";
 import { getSession } from "./session";
 
-export type AppSearchResult = { kind: "post" | "conversation" | "article" | "user"; title: string; meta: string; href: string };
+export type AppSearchResult = { kind: "post" | "conversation" | "article" | "collection" | "user"; title: string; meta: string; href: string };
 
 /** How many of each kind ⌘K lists. */
 const EACH = 5;
 
 /**
- * ⌘K's search in the app: posts, conversations, articles and users whose name has `q`, for the project's
+ * ⌘K's search in the app: posts, conversations, articles, docs collections and users whose name has `q`, for the project's
  * team (what each of them may see on those pages). Settings pages and actions are matched in the menu itself.
  */
 export async function searchApp(projectSlug: string, q: string): Promise<{ error?: string; results?: AppSearchResult[] }> {
@@ -38,7 +38,7 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
   const postSelect = { number: true, title: true, voteCount: true };
   const conversationSelect = { number: true, subject: true, status: true };
   // The post and conversation with the number typed come first, then those with it in their title.
-  const [numberedPost, numberedConversation, titled, subjects, articles, { users }] = await Promise.all([
+  const [numberedPost, numberedConversation, titled, subjects, articles, collections, { users }] = await Promise.all([
     number === null ? null : prisma.post.findFirst({ where: { projectId, number, duplicateOfId: null }, select: postSelect }),
     number === null ? null : prisma.conversation.findFirst({ where: { projectId, number, spam: false }, select: conversationSelect }),
     prisma.post.findMany({
@@ -59,6 +59,7 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
       take: EACH,
       select: { slug: true, title: true, publishedAt: true },
     }),
+    prisma.collection.findMany({ where: { projectId, name: has }, orderBy: { name: "asc" }, take: EACH, select: { slug: true, name: true } }),
     call(listUsers, { actor: { kind: "user", userId: session.user.id }, projectId }, { q: query, limit: EACH }),
   ]);
   const posts = [numberedPost, ...titled].filter((post) => post !== null).slice(0, EACH);
@@ -73,6 +74,7 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
       })),
       ...conversations.map((c) => ({ kind: "conversation" as const, title: c.subject, meta: `#${c.number} · ${c.status.toLowerCase()}`, href: `${base}/inbox/${c.number}` })),
       ...articles.map((a) => ({ kind: "article" as const, title: a.title, meta: a.publishedAt ? "Published" : "Draft", href: `${base}/docs/${a.slug}` })),
+      ...collections.map((c) => ({ kind: "collection" as const, title: c.name, meta: "Collection", href: `${base}/docs/collections/${c.slug}` })),
       ...users.map((user) => ({
         kind: "user" as const,
         title: user.name ?? user.email ?? user.id,

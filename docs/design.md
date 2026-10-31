@@ -68,7 +68,7 @@ green, In progress orange, Completed green, Closed light grey.
   with its collections as cards (each with its articles, then the collections
   in it). A tab's, a collection's or an article's page has the docs as a tree
   in a column of its own beside it (`DocsWorkspace`; a "Browse docs" menu
-  above it on phones); ⌘K finds articles by name; a tab's or a collection's page has Content, Access and
+  above it on phones); ⌘K finds articles and collections by name; a tab's or a collection's page has Content, Access and
   Settings tabs. On Docs pages the sidebar is folded
   away, as on Customize's.
 - **Customize** (`/app/<project>/customize/<section>`): the whole width, the
