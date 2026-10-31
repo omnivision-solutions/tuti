@@ -18,7 +18,7 @@ import { docsUrl, REPO_URL } from "./links";
 export const metadata: Metadata = {
   title: "Tuti: your docs and roadmap, kept true every time you ship",
   description:
-    "When a pull request merges, Tuti updates the docs it changes, closes the requests it ships and tells the people who asked, so your AI never answers from stale docs. Feedback, roadmap, changelog and help center. Open source.",
+    "When a pull request merges, Tuti updates the docs it changes, drafts the changelog and lines up the requests it ships for the people who asked, so your AI never answers from stale docs. Feedback, roadmap, changelog and help center. Open source.",
 };
 
 /** A section's content column. */
@@ -82,16 +82,16 @@ const STALE: { where: string; age: string; picture: ReactNode; cost: string; con
 
 /** After a release: the list nobody gets to, and what Tuti does instead (with when). */
 const CHORES: { todo: string; when: string; done: string; how: string }[] = [
-  { todo: "Move “Dark mode” to Completed", when: "someday", done: "“Dark mode” moved to Completed", how: "on release" },
+  { todo: "Work out which requests it ships", when: "never", done: "“Dark mode” found and linked", how: "on merge" },
   { todo: "Rewrite “Changing your theme”", when: "next sprint", done: "“Changing your theme” rewritten", how: "after a hold" },
   { todo: "Write the changelog entry", when: "Friday?", done: "Changelog line drafted in your voice", how: "on merge" },
-  { todo: "Email the 128 people who voted", when: "forgot", done: "128 voters told", how: "one click" },
-  { todo: "Check what the AI now says", when: "never", done: "AI answers from the new article", how: "as it's published" },
+  { todo: "Complete “Dark mode”, email 128 voters", when: "forgot", done: "“Dark mode” completed, 128 told", how: "one click" },
+  { todo: "Check what the AI now says", when: "someday", done: "AI answers from the new article", how: "as it's published" },
 ];
 
 /** What one merge updates; `place` puts each card in the fan's grid around the merge. */
 const FAN: { kind: string; when: string; title: string; note: string; place: string }[] = [
-  { kind: "Feedback", when: "on release", title: "Dark mode → Completed", note: "128 voters told, with one click from you", place: "lg:col-start-1 lg:row-start-1" },
+  { kind: "Feedback", when: "one click", title: "Dark mode → Completed", note: "128 voters told, with one click from you", place: "lg:col-start-1 lg:row-start-1" },
   { kind: "Docs", when: "after a hold", title: "Changing your theme", note: "2 paragraphs rewritten to match the code", place: "lg:col-start-3 lg:row-start-1" },
   { kind: "Changelog", when: "on merge", title: "Dark mode is here", note: "Written in your voice, in the next draft", place: "lg:col-start-1 lg:row-start-2" },
   { kind: "AI answers", when: "as it's published", title: "“Pick Dark under Theme.”", note: "From the updated article", place: "lg:col-start-3 lg:row-start-2" },
@@ -101,19 +101,19 @@ const FAN: { kind: string; when: string; title: string; note: string; place: str
 const STEPS: { who: "Customer" | "You" | "Tuti"; title: string; text: string }[] = [
   { who: "Customer", title: "Posts “Dark mode”", text: "Similar posts show while they type, so votes land on one post." },
   { who: "Tuti", title: "Gathers the votes", text: "128 votes, and who they're from: their company and plan." },
-  { who: "You", title: "Open a pull request", text: "Write the code. That's your part." },
-  { who: "Tuti", title: "Moves it to In progress", text: "Voters see it's being built without asking." },
-  { who: "Tuti", title: "Updates docs and changelog", text: "On merge, from what the code actually changed." },
-  { who: "Tuti", title: "Completes it, tells 128 people", text: "When the release goes out." },
+  { who: "You", title: "Merge the pull request", text: "Write the code. That's the work." },
+  { who: "Tuti", title: "Finds what it ships", text: "Links “Dark mode” and drafts the changelog line, from what the code changed." },
+  { who: "Tuti", title: "Rewrites the docs", text: "The articles the code made wrong, after a hold you can stop." },
+  { who: "You", title: "Click Approve", text: "Tuti completes “Dark mode” and tells all 128 people." },
 ];
 
 /** Tuti beside the two kinds of tool it replaces. */
 const COMPARE: { row: string; boards: ReactNode; helpCenters: ReactNode; tuti: string }[] = [
   { row: "Feedback, roadmap and changelog", boards: true, helpCenters: false, tuti: "" },
   { row: "Help center with AI answers", boards: "add-on", helpCenters: true, tuti: "" },
-  { row: "Statuses move as you build", boards: "by hand", helpCenters: false, tuti: "from your PRs" },
+  { row: "Statuses move as you ship", boards: "by hand", helpCenters: false, tuti: "from merged PRs" },
   { row: "Docs updated when the code changes", boards: false, helpCenters: "some", tuti: "on merge" },
-  { row: "Voters told when it ships", boards: "by hand", helpCenters: false, tuti: "on release" },
+  { row: "Voters told when it ships", boards: "by hand", helpCenters: false, tuti: "one click" },
   { row: "Open source, self-hostable", boards: false, helpCenters: false, tuti: "AGPL" },
   { row: "Priced per project, not per seat", boards: "varies", helpCenters: "varies", tuti: "" },
 ];
@@ -137,9 +137,9 @@ export default async function Home() {
               Your AI is answering from <span className="text-highlight-foreground">last month&apos;s</span> docs.
             </h1>
             <p className="mt-5 text-lg text-muted-foreground text-pretty">
-              Every time you ship, Tuti <strong className="font-semibold text-foreground">updates your docs</strong>,{" "}
-              <strong className="font-semibold text-foreground">closes the requests</strong> and{" "}
-              <strong className="font-semibold text-foreground">tells the people who asked</strong>. On autopilot.
+              Every time you merge, Tuti <strong className="font-semibold text-foreground">updates your docs</strong>,{" "}
+              <strong className="font-semibold text-foreground">drafts the changelog</strong> and{" "}
+              <strong className="font-semibold text-foreground">lines up the requests you shipped</strong>, so everyone who asked hears about it.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link href={start.href} className={buttonVariants({ size: "lg", className: big })}>
@@ -216,7 +216,7 @@ export default async function Home() {
           <div className="dark relative overflow-hidden rounded-2xl border bg-background p-7 text-foreground">
             <div aria-hidden className="pointer-events-none absolute inset-x-[20%] -bottom-1/2 h-full rounded-full bg-primary/20 blur-3xl" />
             <h3 className="relative text-xl font-bold">After every release, with Tuti</h3>
-            <p className="relative mt-1 text-sm text-muted-foreground">Done before you&apos;ve closed the tab.</p>
+            <p className="relative mt-1 text-sm text-muted-foreground">Done for you, or one click away.</p>
             <ul className="relative mt-5 flex flex-col gap-2.5">
               {CHORES.map((chore, i) => (
                 <li
@@ -233,7 +233,7 @@ export default async function Home() {
               ))}
             </ul>
             <p className="relative mt-5 flex items-center rounded-xl bg-soft px-4 py-3.5 font-bold text-soft-foreground">
-              Your part:<code className="ml-auto font-mono text-sm">git merge</code>
+              Your part:<span className="ml-auto text-sm"><code className="font-mono">git merge</code>, then one click</span>
             </p>
           </div>
         </div>
@@ -278,7 +278,7 @@ export default async function Home() {
           ))}
         </ol>
         <p className="mt-10 text-center text-lg">
-          You write the code. <span className="font-semibold text-primary">Tuti does the rest.</span>
+          You write the code and click once. <span className="font-semibold text-primary">Tuti does the rest.</span>
         </p>
       </section>
 
@@ -291,7 +291,7 @@ export default async function Home() {
               {[
                 ["Sure? It waits out a hold, then goes.", "Article fixes and progress updates wait a day (you pick how long), so there's time to look. Or don't."],
                 ["Not sure? It asks you.", "Anything it isn't sure of, or that reaches lots of people, waits for your click."],
-                ["One email, one click.", "Approve, Publish now or Stop, straight from your inbox. Every change can be undone."],
+                ["Everything in one place.", "Autopilot's page shows what goes out when, with Publish now and Stop, and most changes can be undone after."],
               ].map(([title, text], i) => (
                 <li key={title} className="flex gap-4">
                   <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft font-bold text-soft-foreground">{i + 1}</span>
@@ -303,7 +303,7 @@ export default async function Home() {
               ))}
             </ol>
           </div>
-          <AutopilotEmail />
+          <AutopilotChange />
         </div>
       </Band>
 
@@ -588,22 +588,24 @@ function MergeFan() {
   );
 }
 
-/** The email Autopilot sends after a merge: what goes out after the hold, and what waits for you. */
-function AutopilotEmail() {
+/** Autopilot's page for a merge: what goes out after the hold, and what waits for you. */
+function AutopilotChange() {
   const updates: { kind: string; title: string; status: string; waits?: boolean }[] = [
     { kind: "Docs", title: "Changing your theme", status: "goes out in 23h" },
     { kind: "Progress", title: "Dark mode → In progress", status: "goes out in 23h" },
     { kind: "Closes", title: "Dark mode · tells 128 voters", status: "needs you", waits: true },
   ];
   return (
-    <figure aria-label="Autopilot's email after a merge" className="overflow-hidden rounded-xl border bg-card shadow-lg">
+    <figure aria-label="Autopilot's page for a merged pull request" className="overflow-hidden rounded-xl border bg-card shadow-lg">
       <div className="flex items-center gap-2.5 border-b px-4.5 py-3.5 text-sm">
         <TutiMark className="size-5.5" />
-        <span className="font-bold">Tuti Autopilot</span>
-        <span className="ml-auto text-xs text-muted-foreground">9:41 AM</span>
+        <span className="font-bold">Autopilot</span>
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+          <GitMergeIcon aria-hidden className="size-3.5" /> acme/app#482 · merged 9:41 AM
+        </span>
       </div>
       <div className="p-5">
-        <p className="font-heading text-lg font-bold tracking-tight">#482 Add dark mode · 2 updates go out tomorrow, 1 needs you</p>
+        <p className="font-heading text-lg font-bold tracking-tight">Add dark mode · 2 updates go out tomorrow, 1 needs you</p>
         <ul className="mt-4 flex flex-col gap-2.5">
           {updates.map((update) => (
             <li key={update.title} className="flex items-center gap-3 rounded-lg border bg-background px-3.5 py-3 text-sm">
@@ -619,8 +621,8 @@ function AutopilotEmail() {
           <div className="landing-hold h-full bg-primary" />
         </div>
         <div className="mt-4 flex gap-2">
-          <span className={buttonVariants({ className: "pointer-events-none" })}>Publish now</span>
-          <span className={buttonVariants({ variant: "outline", className: "pointer-events-none" })}>Review</span>
+          <span className={buttonVariants({ className: "pointer-events-none" })}>Approve</span>
+          <span className={buttonVariants({ variant: "outline", className: "pointer-events-none" })}>Publish now</span>
           <span className={buttonVariants({ variant: "outline", className: "pointer-events-none" })}>Stop</span>
         </div>
       </div>
