@@ -30,6 +30,7 @@ export function ConversationPosts({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<PickablePost[]>([]);
+  const [searching, setSearching] = useState(false);
   const [pending, startTransition] = useTransition();
   // The latest search asked for, and its timer: an older answer arriving late is dropped.
   const asked = useRef(0);
@@ -38,6 +39,7 @@ export function ConversationPosts({
   const search = (q: string, wait: number) => {
     clearTimeout(timer.current);
     const ask = ++asked.current;
+    setSearching(true);
     timer.current = setTimeout(async () => {
       const result = await findPostsToLink(projectSlug, q).catch(() => ({ error: "Couldn't reach Tuti. Try again.", posts: undefined }));
       if (ask !== asked.current) {
@@ -47,6 +49,7 @@ export function ConversationPosts({
         toast.error(result.error);
       }
       setFound(result.posts ?? []);
+      setSearching(false);
     }, wait);
   };
   const linked = new Set(posts.map((post) => post.number));
@@ -118,6 +121,7 @@ export function ConversationPosts({
             }}
             onPick={(post) => link(post.number, true)}
             disabled={pending}
+            searching={searching}
           />
         </DialogContent>
       </Dialog>

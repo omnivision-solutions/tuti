@@ -14,6 +14,7 @@ export function PostPicker<T extends PickablePost>({
   onQueryChange,
   onPick,
   disabled = false,
+  searching = false,
 }: {
   candidates: T[];
   query: string;
@@ -21,6 +22,8 @@ export function PostPicker<T extends PickablePost>({
   onPick: (post: T) => void;
   /** While what picking does runs. */
   disabled?: boolean;
+  /** While the candidates for what's typed are on their way: none yet isn't "no match". */
+  searching?: boolean;
 }) {
   const matches = useMemo(() => postMatches(candidates, query), [candidates, query]);
 
@@ -42,7 +45,7 @@ export function PostPicker<T extends PickablePost>({
             </button>
           </li>
         ))}
-        {matches.length === 0 && <li className="px-2 py-2 text-sm text-muted-foreground">No matching posts.</li>}
+        {matches.length === 0 && <li className="px-2 py-2 text-sm text-muted-foreground">{searching ? "Searching…" : "No matching posts."}</li>}
       </ul>
     </>
   );
