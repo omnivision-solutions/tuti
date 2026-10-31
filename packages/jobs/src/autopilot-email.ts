@@ -11,7 +11,7 @@ import { codeChangesEnabled, log } from "@tuti/shared";
 const MERGE_MINUTES = 10;
 /** How long a sweep's claim on notices holds: one that stopped before sending them (a deploy) leaves them to the next after this. */
 const CLAIM_MINUTES = 15;
-/** Sends of one email tried before it's given up (an address the mail server refuses, say), CLAIM_MINUTES apart. */
+/** Sends of one email to an address the mail server refuses (5xx) before it's given up, CLAIM_MINUTES apart. */
 const MAX_SENDS = 5;
 /** Updates shown in an email; past them, "+N more in Tuti". */
 const SHOWN = 5;
@@ -165,7 +165,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
   });
   let sent = 0;
   for (const { userId } of ripe) {
-    const claimedAt = new Date();
+    // The sweep's own time (as its claims are judged by it), never before now.
+    const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
     // One person's failing (a database error) leaves the others to go, and theirs to the next sweep.
     try {
       // Claimed first, then read as claimed: an analysis saved from here on refreshes them (queueNotices), and
@@ -288,10 +289,16 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
         });
       } catch (error) {
-        // Not sent: tried again once its claim lapses (CLAIM_MINUTES on), a few times, then given up; the others still go.
-        const attempts = Math.max(...mine.map((notice) => notice.attempts)) + 1;
+        // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
+        // down, or not taking it for now (4xx): for as long as that lasts. It refusing this address (5xx): a few
+        // times, then given up.
+        const code = (error as { responseCode?: unknown }).responseCode;
+        const refused = typeof code === "number" && code >= 500;
+        const attempts = Math.max(...mine.map((notice) => notice.attempts)) + (refused ? 1 : 0);
         log.error("Sending Autopilot's email failed", { error, userId, attempts });
-        await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
+        if (refused) {
+          await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
+        }
         if (attempts >= MAX_SENDS) {
           await settle();
         }

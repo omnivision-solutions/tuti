@@ -23,8 +23,11 @@ export type SmtpFake = {
   emails: CapturedEmail[];
   /** The latest email to `address` (waits up to a few seconds for it to arrive). */
   latestTo(address: string): Promise<CapturedEmail>;
-  /** Refuses the next email to `address` (a mail server rejecting it), then takes them again. */
-  refuseNext(address: string): void;
+  /**
+   * Refuses the next email to `address` (a mail server rejecting it), then takes them again: for now (450),
+   * or `permanently` (550, as for an address that doesn't exist).
+   */
+  refuseNext(address: string, options?: { permanently?: boolean }): void;
   /** Answers the next email to `address` with `250 <answer>` (e.g. Amazon SES's "Ok <its message id>"). */
   answerNext(address: string, answer: string): void;
   close(): Promise<void>;
@@ -39,7 +42,8 @@ export async function startSmtpFake({
   onEmail,
 }: { onEmail?: (email: CapturedEmail) => void | Promise<void> } = {}): Promise<SmtpFake> {
   const emails: CapturedEmail[] = [];
-  const refusing = new Set<string>();
+  // The address refused next, and the code it's refused with.
+  const refusing = new Map<string, number>();
   const answers = new Map<string, string>();
   const server = new SMTPServer({
     authOptional: true,
@@ -62,8 +66,9 @@ export async function startSmtpFake({
         };
         const refused = to.find((address) => refusing.has(address));
         if (refused) {
+          const responseCode = refusing.get(refused)!;
           refusing.delete(refused);
-          throw new Error(`Mailbox ${refused} refused`);
+          throw Object.assign(new Error(`Mailbox ${refused} refused`), { responseCode });
         }
         await onEmail?.(email);
         emails.push(email);
@@ -95,7 +100,7 @@ export async function startSmtpFake({
       }
       throw new Error(`No email to ${address} arrived`);
     },
-    refuseNext: (address) => void refusing.add(address),
+    refuseNext: (address, options) => void refusing.set(address, options?.permanently ? 550 : 450),
     answerNext: (address, answer) => void answers.set(address, answer),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };

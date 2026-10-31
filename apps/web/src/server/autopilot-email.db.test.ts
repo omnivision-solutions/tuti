@@ -405,25 +405,45 @@ test("analysed again, those emailed still show as emailed on the page until the 
   expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
 });
 
-test("an email the mail server keeps refusing is tried again a while after each failure, a few times, then given up", async () => {
+test("with the mail server down, an email is tried again a while after each failure for as long as that lasts, and goes once it's back", async () => {
   const one = await change("Add a dark theme");
   await queueAutopilotNotices(one.id);
   const logged = vi.spyOn(log, "error").mockImplementation(() => {});
-  // Nothing listens there: every send fails.
+  // Nothing listens there: every send fails, the server's fault, not the address's.
   const port = process.env.SMTP_PORT ?? "";
   vi.stubEnv("SMTP_PORT", "1");
+  let at = Date.now() + 11 * MINUTE;
   try {
-    let at = Date.now() + 11 * MINUTE;
+    for (let attempt = 1; attempt <= 7; attempt++) {
+      expect(await sendAutopilotEmails(new Date(at))).toBe(0);
+      at += 16 * MINUTE;
+    }
+  } finally {
+    vi.stubEnv("SMTP_PORT", port);
+    logged.mockRestore();
+  }
+  // Still there, not given up: it goes once the server's back.
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: 0, sentAt: null });
+  expect(await sendAutopilotEmails(new Date(at))).toBe(1);
+});
+
+test("an email the mail server refuses for its address is tried again a while after each refusal, a few times, then given up", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  let at = Date.now() + 11 * MINUTE;
+  try {
     for (let attempt = 1; attempt <= 5; attempt++) {
+      mailbox.refuseNext(owner.email, { permanently: true });
       expect(await sendAutopilotEmails(new Date(at))).toBe(0);
       // Not again the next minute: after the claim lapses.
+      expect(await sendAutopilotEmails(new Date(at + MINUTE))).toBe(0);
       if (attempt < 5) {
         expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: attempt, sentAt: null });
       }
       at += 16 * MINUTE;
     }
   } finally {
-    vi.stubEnv("SMTP_PORT", port);
     logged.mockRestore();
   }
   // Given up: no notice left (it was never sent).

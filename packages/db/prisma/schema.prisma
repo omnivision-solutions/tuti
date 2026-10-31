@@ -2222,7 +2222,8 @@ model AutopilotNotice {
   createdAt    DateTime  @default(now())
   /// A sweep sending it took it then; one left from a sweep that stopped (a deploy) is taken again after a while.
   claimedAt    DateTime?
-  /// Sends of it that failed, since it was queued: tried again a while after each, given up after a few.
+  /// Sends of it the mail server refused (the address, not the server being down), since it was queued: tried
+  /// again a while after each, given up after a few.
   attempts     Int       @default(0)
   sentAt       DateTime?
   /// When the email before this one about the change went (it was analysed again since): what Autopilot did
