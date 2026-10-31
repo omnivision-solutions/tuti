@@ -1168,6 +1168,27 @@ test("on a phone, help opened again from that library's modal, which then closes
   }
 });
 
+test("on a phone, help opened over a modal of the page's is a card, the modal in sight; the whole screen once it's gone", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    const dialog = app.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: () => boolean };
+    dialog.setAttribute("aria-modal", "true");
+    let shown = true;
+    dialog.checkVisibility = () => shown;
+    page.Tuti.open();
+    expect(page.panel.style.top).toBe("auto");
+    expect(page.panel.style.borderRadius).toBe("14px");
+    shown = false;
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(true);
+    expect(page.panel.style.top).toBe("0");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));

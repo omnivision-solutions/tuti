@@ -287,7 +287,10 @@ export function widgetLoader(portalTemplate: string): string {
       return;
     }
     if (cover) {
-      covering = true;
+      if (!covering) {
+        covering = true;
+        layoutPanel();
+      }
       // Covered again before a modal's library let go of them: the loader's again (theirs or not, inert now).
       for (var r = 0; r < released.length; r++) {
         released[r].setAttribute("inert", "");
@@ -335,7 +338,13 @@ export function widgetLoader(portalTemplate: string): string {
   function placePanel() {
     showStandIn();
     coverPage();
-    if (small && small.matches) {
+    layoutPanel();
+  }
+  // Over a modal of the page's (help opened from inside it), a card, as on a wider screen: the modal stays in
+  // sight, so it can be closed (a modal library blocks the panel too). The whole screen once the page is covered.
+  function layoutPanel() {
+    if (sidebar) return;
+    if (small && small.matches && (covering || !opened)) {
       // Clear of the status bar and home indicator where the page runs under them (viewport-fit=cover):
       // the panel's page, in a frame, isn't told where they are.
       css(panel, {
@@ -518,6 +527,7 @@ export function widgetLoader(portalTemplate: string): string {
     tellShown(true);
     showBackdrop();
     coverPage();
+    layoutPanel();
     button.setAttribute("aria-expanded", "true");
     frame.focus();
   }
