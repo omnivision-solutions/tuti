@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { emailedAbout } from "@tuti/jobs";
 import { planIncludes } from "@tuti/shared";
 import { ExternalLinkIcon } from "lucide-react";
 import { notFound } from "next/navigation";
@@ -134,9 +135,7 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
           updates={updates}
           ticked={ticked}
           fromEmail={select === null ? null : select === "likely" ? "likely" : "named"}
-          emailed={(
-            await prisma.autopilotNotice.findMany({ where: { codeChangeId: change.id, sentAt: { not: null } }, orderBy: { sentAt: "asc" }, select: { user: { select: { name: true } } } })
-          ).map((notice) => notice.user.name)}
+          emailed={await emailedAbout(change.id)}
           previews={previews}
           canAnalyse={included}
         />

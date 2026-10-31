@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { queueAutopilotNotices, sendAutopilotEmails } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -393,4 +393,39 @@ test("a new project publishes article edits and posts progress updates by itself
     autopilotArticleEdits: true,
     autopilotProgress: true,
   });
+});
+
+test("analysed again, those emailed still show as emailed on the page until the next email goes", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  expect(await emailedAbout(one.id)).toEqual([]);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
+  await queueAutopilotNotices(one.id);
+  expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
+});
+
+test("an email the mail server keeps refusing is tried again a while after each failure, a few times, then given up", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  // Nothing listens there: every send fails.
+  const port = process.env.SMTP_PORT ?? "";
+  vi.stubEnv("SMTP_PORT", "1");
+  try {
+    let at = Date.now() + 11 * MINUTE;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      expect(await sendAutopilotEmails(new Date(at))).toBe(0);
+      // Not again the next minute: after the claim lapses.
+      if (attempt < 5) {
+        expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: attempt, sentAt: null });
+      }
+      at += 16 * MINUTE;
+    }
+  } finally {
+    vi.stubEnv("SMTP_PORT", port);
+    logged.mockRestore();
+  }
+  // Given up: no notice left (it was never sent).
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id } })).toBe(0);
 });

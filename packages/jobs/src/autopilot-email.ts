@@ -11,6 +11,8 @@ import { codeChangesEnabled, log } from "@tuti/shared";
 const MERGE_MINUTES = 10;
 /** How long a sweep's claim on notices holds: one that stopped before sending them (a deploy) leaves them to the next after this. */
 const CLAIM_MINUTES = 15;
+/** Sends of one email tried before it's given up (an address the mail server refuses, say), CLAIM_MINUTES apart. */
+const MAX_SENDS = 5;
 /** Updates shown in an email; past them, "+N more in Tuti". */
 const SHOWN = 5;
 
@@ -64,12 +66,12 @@ async function queueNotices(codeChangeId: string): Promise<number> {
   // a later step catches it. Being sent right now (with what the analysis before found): left unsent by that
   // sweep, so it goes again.
   await prisma.$executeRaw`
-    UPDATE autopilot_notice SET "createdAt" = now()
+    UPDATE autopilot_notice SET "createdAt" = now(), attempts = 0
     WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
   // Told already (an analysis before this one): told again, about what this one found; what Autopilot did by
   // itself before that email isn't news again (`since`).
   const again = await prisma.$executeRaw`
-    UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now()
+    UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
     WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NOT NULL`;
   // Not told yet (or the sweep dropped it): told now.
   const { count } = await prisma.autopilotNotice.createMany({
@@ -154,6 +156,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
   const ripe = await prisma.autopilotNotice.findMany({
     where: { ...free, createdAt: { lte: new Date(now.getTime() - MERGE_MINUTES * 60_000) } },
     distinct: ["userId"],
+    // Those tried least first: someone whose email keeps failing doesn't keep the others back.
+    orderBy: [{ attempts: "asc" }, { createdAt: "asc" }],
     select: { userId: true },
     take: 100,
   });
@@ -172,6 +176,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           id: true,
           since: true,
           createdAt: true,
+          attempts: true,
           user: { select: { email: true, autopilotEmails: true } },
           codeChange: {
             select: {
@@ -281,9 +286,13 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
         });
       } catch (error) {
-        // Not sent: tried again next minute; the others still go.
-        log.error("Sending Autopilot's email failed", { error, userId });
-        await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { claimedAt: null } });
+        // Not sent: tried again once its claim lapses (CLAIM_MINUTES on), a few times, then given up; the others still go.
+        const attempts = Math.max(...mine.map((notice) => notice.attempts)) + 1;
+        log.error("Sending Autopilot's email failed", { error, userId, attempts });
+        await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
+        if (attempts >= MAX_SENDS) {
+          await settle();
+        }
         continue;
       }
       // Sent, unless analysed again while it went: that one's left unsent, for the next email.
@@ -301,4 +310,14 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
     }
   }
   return sent;
+}
+
+/** Who has been emailed about a change (its review page's "Emailed to"): sent, or sent before and queued again since (analysed again). */
+export async function emailedAbout(codeChangeId: string): Promise<string[]> {
+  const notices = await prisma.autopilotNotice.findMany({
+    where: { codeChangeId, OR: [{ sentAt: { not: null } }, { since: { not: null } }] },
+    orderBy: { createdAt: "asc" },
+    select: { user: { select: { name: true } } },
+  });
+  return notices.map((notice) => notice.user.name);
 }
