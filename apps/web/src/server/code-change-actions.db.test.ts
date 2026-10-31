@@ -264,7 +264,7 @@ describe("approving several (applyMany)", () => {
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
     vi.spyOn(prisma.comment, "count").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
-      { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether its update was posted: check the post" },
+      { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },
     ]);
   });
 
@@ -438,6 +438,17 @@ describe("docs", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     expect(await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).toEqual({ results: [{ id: action.id, status: "applied" }] });
     expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+  });
+
+  test("approving several: an article edit whose save failed and whose check failed too is reported as unknown, not to try again", async () => {
+    const { action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // The edit's save fails, and so does the check of whether it was saved.
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
   });
 
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {

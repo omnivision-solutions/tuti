@@ -338,6 +338,20 @@ const actorUser = (actor: Actor) => (actor.kind === "user" ? actor.userId : acto
 /** Statuses a post moves on from to In progress when a code change moves it forward. */
 const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
 
+/**
+ * Puts a claimed action back (waiting again, or out of date) after a failure, then rethrows `error`.
+ * If even that fails, nobody can tell what went: rethrown marked `saved: "unknown"` (it stays claimed,
+ * so it's never done twice, and the team is told to check).
+ */
+async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateInput, error: unknown): Promise<never> {
+  try {
+    await prisma.codeChangeAction.update({ where: { id }, data });
+  } catch {
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { saved: "unknown" as const });
+  }
+  throw error;
+}
+
 export const applyCodeChangeAction = defineOperation({
   name: "codeChangeActions.apply",
   summary:
@@ -392,8 +406,7 @@ export const applyCodeChangeAction = defineOperation({
         const entry = await setChangelogLine(projectId, { ...action.codeChange }, line);
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
-        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue } });
-        throw error;
+        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue }, error);
       }
     }
     if (!action.post) {
@@ -468,11 +481,7 @@ export const applyCodeChangeAction = defineOperation({
         }
       }
       // Not done: it's waiting again, for another try.
-      await prisma.codeChangeAction.update({
-        where: { id: action.id },
-        data: { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue },
-      });
-      throw error;
+      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: (action.payload ?? {}) as Prisma.InputJsonValue }, error);
     }
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
@@ -514,7 +523,7 @@ export const applyCodeChangeActions = defineOperation({
             saved === true
               ? { id: action.id, status: "applied" }
               : saved === "unknown"
-                ? { id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether its update was posted: check the post" }
+                ? { id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }
                 : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
           );
         }
@@ -574,21 +583,22 @@ async function applyDocs(
     // the article (or a new article) by whoever applies it, with the proposal's text, since the claim:
     // a teammate's save meanwhile isn't it.
     const ours = { createdAt: { gte: claimedAt }, body: payload.body ?? "" };
-    const saved =
-      action.kind === "ARTICLE_EDIT"
-        ? (await prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })) > 0
-        : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })) > 0;
-    if (saved) {
-      // What users see was saved: it stays applied, and says so.
-      throw Object.assign(error as Error, { saved: true });
+    // Can't tell (the check failed too): it stays applied, and the team is told to check.
+    const saved = await (action.kind === "ARTICLE_EDIT"
+      ? prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })
+      : prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })
+    ).then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+    if (saved !== false) {
+      // What users see was saved (or may have been): it stays applied, and says so.
+      throw Object.assign(error as Error, { saved });
     }
     // Saved again since the check above: it's out of date now.
     const changed = error instanceof OperationError && error.code === "changed";
-    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null } });
-    if (changed) {
-      throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
-    }
-    throw error;
+    return revert(
+      action.id,
+      { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null },
+      changed ? new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.") : error,
+    );
   }
 }
 
