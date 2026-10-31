@@ -586,3 +586,30 @@ test("an update the runner was still applying when an email read the change (app
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
 });
+
+test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  // Between the sweep's claim and its read, the runner takes the update (off the schedule, in hand).
+  let takenAt = new Date();
+  const findMany = prisma.autopilotNotice.findMany.bind(prisma.autopilotNotice) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  const spy = vi.spyOn(prisma.autopilotNotice, "findMany").mockImplementation((async (...args: unknown[]) => {
+    if (++reads === 2) {
+      takenAt = new Date();
+      await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id } });
+    }
+    return findMany(...args);
+  }) as never);
+  expect(await sendAutopilotEmails()).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  // The email is marked sent; then the runner finishes, marks it its own and tells the owners: this one's told again.
+  const markedAt = new Date();
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", decidedById: null, decidedAt: takenAt, payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
+  expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: markedAt })).toBe(1);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});

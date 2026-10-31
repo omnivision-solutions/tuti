@@ -13,6 +13,7 @@ CREATE TABLE "autopilot_notice" (
     "userId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "claimedAt" TIMESTAMP(3),
+    "readAt" TIMESTAMP(3),
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "sentAt" TIMESTAMP(3),
     "since" TIMESTAMP(3),

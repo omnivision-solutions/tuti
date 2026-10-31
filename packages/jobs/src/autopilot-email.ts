@@ -204,6 +204,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
           },
         },
       });
+      // When what it says was read (after the claim): what the runner had in hand then showed as neither going out nor gone (tellOwners).
+      const readAt = new Date();
       // One email per project: the first notice's, the rest of that project's with it; the others wait for the next sweep.
       const projectId = notices[0]?.codeChange.project.id;
       const mine = notices.filter((notice) => notice.codeChange.project.id === projectId);
@@ -323,7 +325,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       // content was read (its claim): what Autopilot did since is in neither this email nor, otherwise, the next.
       const sentAt = claimedAt;
       for (const notice of mine) {
-        await prisma.autopilotNotice.updateMany({ where: { id: notice.id, claimedAt, createdAt: notice.createdAt }, data: { sentAt } });
+        await prisma.autopilotNotice.updateMany({ where: { id: notice.id, claimedAt, createdAt: notice.createdAt }, data: { sentAt, readAt } });
       }
       // Analysed again while it went: it did go, so what it said isn't news again (and, not sent after all next
       // time, it goes back to this send).
@@ -370,7 +372,7 @@ export async function tellOwners(codeChangeId: string, since: Date, inFlight?: {
     const again = await prisma.$executeRaw`
       UPDATE autopilot_notice SET "since" = "sentAt", "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners})
-        AND ("sentAt" < ${since} OR ("sentAt" >= ${inFlight?.from ?? null} AND "sentAt" < ${inFlight?.to ?? null}))`;
+        AND ("sentAt" < ${since} OR ("readAt" >= ${inFlight?.from ?? null} AND "readAt" < ${inFlight?.to ?? null}))`;
     const { count } = await prisma.autopilotNotice.createMany({ data: owners.map((userId) => ({ codeChangeId, userId })), skipDuplicates: true });
     return count + again;
   } catch (error) {
