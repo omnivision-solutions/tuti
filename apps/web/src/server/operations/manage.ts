@@ -9,16 +9,27 @@ import { findPost, fromApiStatus, postNumber, postSummarySelect, projectPortal, 
 
 export const updatePost = defineOperation({
   name: "posts.update",
-  summary: "Change a post's status or move it to another board",
+  summary:
+    "Change a post's status, move it to another board, or say who on the team looks after it (`owner`: a team member's email, null for nobody) and when it's expected (`eta`: a month like 2026-12, null for not said)",
   method: "PATCH",
   path: "/posts/{number}",
   scope: "write",
   access: "team",
   input: z
-    .object({ number: postNumber, status: z.enum(STATUSES).optional(), board: z.string().optional() })
-    .refine((input) => input.status !== undefined || input.board !== undefined, "Send a status or a board")
+    .object({
+      number: postNumber,
+      status: z.enum(STATUSES).optional(),
+      board: z.string().optional(),
+      owner: z.email().nullable().optional(),
+      eta: z
+        .string()
+        .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
+        .nullable()
+        .optional(),
+    })
+    .refine((input) => [input.status, input.board, input.owner, input.eta].some((value) => value !== undefined), "Send a status, a board, an owner or an ETA")
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
-    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }] }),
+    .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }, { required: ["owner"] }, { required: ["eta"] }] }),
   example: { status: "planned" },
   run: async ({ actor, projectId }, input) => {
     const post = await findPost(projectId, input.number);
@@ -30,6 +41,19 @@ export const updatePost = defineOperation({
       }
       boardId = board.id;
     }
+    // The owner is on the team (by their email); the ETA, a month's first day.
+    let ownerId: string | null | undefined;
+    if (input.owner !== undefined) {
+      ownerId = null;
+      if (input.owner !== null) {
+        const member = await prisma.teamMember.findFirst({ where: { projectId, user: { email: { equals: input.owner, mode: "insensitive" } } }, select: { userId: true } });
+        if (!member) {
+          throw new OperationError(400, "invalid_input", "The owner must be on your team");
+        }
+        ownerId = member.userId;
+      }
+    }
+    const eta = input.eta === undefined ? undefined : input.eta === null ? null : new Date(`${input.eta}-01T00:00:00Z`);
     // Before the change is written (see posts.create).
     const portal = await projectPortal(projectId);
     const status = input.status && fromApiStatus(input.status);
@@ -38,7 +62,11 @@ export const updatePost = defineOperation({
     const { updated, previous } = await prisma.$transaction(async (tx) => {
       const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
       const previous = current?.status ?? post.status;
-      const saved = await tx.post.update({ where: { id: post.id }, data: { ...(status && { status }), ...(boardId && { boardId }) }, select: postSummarySelect });
+      const saved = await tx.post.update({
+        where: { id: post.id },
+        data: { ...(status && { status }), ...(boardId && { boardId }), ...(ownerId !== undefined && { ownerId }), ...(eta !== undefined && { eta }) },
+        select: postSummarySelect,
+      });
       if (status && status !== previous) {
         await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: previous, to: status } });
       }

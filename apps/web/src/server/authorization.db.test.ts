@@ -425,6 +425,8 @@ const matrix: Matrix = {
   },
   "manage-posts": {
     movePost: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.movePost(slug, f.postId, "empty") },
+    setPostOwner: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostOwner(slug, f.postId, null) },
+    setPostEta: { allowed: "MEMBER", takesIds: true, call: (slug, f) => managePosts.setPostEta(slug, f.postId, "2026-12") },
     changePostStatus: {
       allowed: "MEMBER",
       takesIds: true,

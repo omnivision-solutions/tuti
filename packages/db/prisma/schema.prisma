@@ -34,6 +34,7 @@ model User {
   ssoIdentity        SsoIdentity?
 
   postEvents            PostEvent[]           @relation("PostEventActor")
+  ownedPosts            Post[]                @relation("PostOwner")
   postNotes             PostNote[]            @relation("PostNoteAuthor")
   invitationsCreated    Invitation[]          @relation("InvitationCreatedBy")
   portalReadersAdded    PortalReader[]        @relation("PortalReaderAddedBy")
@@ -858,11 +859,16 @@ model Post {
   duplicateOfId      String?
   /// Set when the post is completed, cleared once everyone is emailed; the shipped-emails-resubmit cron re-runs late ones.
   shippedEmailsDueAt DateTime?
+  /// Who on the team looks after it (the team's only); null: nobody yet.
+  ownerId            String?
+  /// When the team expects it, as a month (its first day, UTC); null: not said.
+  eta                DateTime?
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
   project                Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   board                  Board                 @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  owner                  User?                 @relation("PostOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   author                 User                  @relation(fields: [authorId], references: [id], onDelete: Cascade)
   duplicateOf            Post?                 @relation("PostDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates             Post[]                @relation("PostDuplicates")
@@ -887,6 +893,7 @@ model Post {
   @@index([projectId, status])
   @@index([duplicateOfId])
   @@index([shippedEmailsDueAt])
+  @@index([ownerId])
   @@map("post")
 }
 
