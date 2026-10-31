@@ -35,7 +35,7 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
-  const duplicatesOnly = searchParams.show === "duplicates";
+  const duplicatesOnly = first(searchParams.show) === "duplicates";
   // No status: Needs triage; one without a tab (Closed, say): All. The duplicates tab: every status.
   const status = first(searchParams.status) ?? "open";
   const tab = duplicatesOnly ? "duplicates" : TABS.some(([key]) => key === status) ? status : "all";
