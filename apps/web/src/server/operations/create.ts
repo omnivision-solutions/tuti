@@ -172,6 +172,9 @@ export const createComment = defineOperation({
     }
     const portal = await projectPortal(projectId);
     if (input.internal) {
+      // Whether its author is on the team now, as comments.list says it (a key's creator may have left): read
+      // before saving, so a failure here can't follow a saved note (a retry would save it twice).
+      const member = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
       // A note: its own table, so nothing that reads comments shows it; no count, no webhook.
       const note = await saving(() =>
         prisma.postNote.create({
@@ -179,8 +182,6 @@ export const createComment = defineOperation({
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         }),
       );
-      // Said as comments.list says it: whether its author is on the team now (a key's creator may have left).
-      const member = await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } });
       return { id: note.id, author: { name: note.author.name, team: !!member }, body: note.body, content: displayDoc(note), createdAt: note.createdAt.toISOString(), internal: true as const };
     }
 
