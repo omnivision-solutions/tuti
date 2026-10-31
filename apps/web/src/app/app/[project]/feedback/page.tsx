@@ -5,6 +5,7 @@ import Link from "next/link";
 import { EmptyState } from "@/components/empty-state";
 import { FeedbackKeys } from "@/components/feedback-keys";
 import { FeedbackPane } from "@/components/feedback-pane";
+import { FeedbackBulk, FeedbackSelection, SelectPost } from "@/components/feedback-selection";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
@@ -119,100 +120,109 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       <FeedbackKeys order={posts.map((post) => post.number)} open={open} base={withPost(null)} />
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
-        <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
-          <SubNav
-            label="Statuses"
-            current={href(tab)}
-            items={tabs.map((t) => ({
-              href: href(t.key),
-              title: (
-                <>
-                  {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
-                </>
-              ),
-            }))}
-          />
+        {/* Rows picked for Set status, Move to board and Merge, the bar over the list once some are. */}
+        <FeedbackSelection>
+          <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
+            <SubNav
+              label="Statuses"
+              current={href(tab)}
+              items={tabs.map((t) => ({
+                href: href(t.key),
+                title: (
+                  <>
+                    {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
+                  </>
+                ),
+              }))}
+            />
 
-          <ListFilters
-            filters={[
-              {
-                name: "board",
-                label: "Board",
-                value: board ?? "all",
-                options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
-              },
-              ...(project.readerGroups.length > 0
-                ? [
-                    {
-                      name: "group",
-                      label: "Voters",
-                      // "*" can't be a group's key (a group named "All" has "all").
-                      value: group?.key ?? "*",
-                      options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
-                    },
-                  ]
-                : []),
-              sortFilter(filters.sort, TEAM_SORTS),
-            ]}
-          />
+            <ListFilters
+              filters={[
+                {
+                  name: "board",
+                  label: "Board",
+                  value: board ?? "all",
+                  options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+                },
+                ...(project.readerGroups.length > 0
+                  ? [
+                      {
+                        name: "group",
+                        label: "Voters",
+                        // "*" can't be a group's key (a group named "All" has "all").
+                        value: group?.key ?? "*",
+                        options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                      },
+                    ]
+                  : []),
+                sortFilter(filters.sort, TEAM_SORTS),
+              ]}
+            />
 
-          {posts.length === 0 ? (
-            counts.all === 0 && !q && !board && !group ? (
-              <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
+            <FeedbackBulk projectSlug={slug} boards={project.boards} />
+            {posts.length === 0 ? (
+              counts.all === 0 && !q && !board && !group ? (
+                <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
+              ) : (
+                <EmptyState
+                  title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
+                  description={
+                    q || board || group
+                      ? "Try other words, or another board or tab."
+                      : tab === "duplicates"
+                        ? "Posts that may repeat an older one show here."
+                        : "Posts show here when they have this status."
+                  }
+                />
+              )
             ) : (
-              <EmptyState
-                title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
-                description={
-                  q || board || group
-                    ? "Try other words, or another board or tab."
-                    : tab === "duplicates"
-                      ? "Posts that may repeat an older one show here."
-                      : "Posts show here when they have this status."
-                }
-              />
-            )
-          ) : (
-            <Card size="sm">
-              <CardContent>
-                <ItemList>
-                  {posts.map((post) => (
-                    <ItemRow
-                      key={post.id}
-                      className={cn(post.number === open && "-mx-2 rounded-md bg-muted px-2")}
-                      leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>}
-                      title={
-                        <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
-                          {post.title}
-                        </Link>
-                      }
-                      badges={
-                        post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
-                      }
-                      meta={
-                        <>
-                          #{post.number} · {post.board.name} · {post.author.name}
-                          {post.commentCount > 0 &&
-                            ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                          {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
-                        </>
-                      }
-                      actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}
-                    />
-                  ))}
-                </ItemList>
-              </CardContent>
-            </Card>
-          )}
-          {more && (
-            <Link
-              href={nextPageHref(searchParams, filters)}
-              scroll={false}
-              className={buttonVariants({ variant: "outline", className: "self-center" })}
-            >
-              Load more
-            </Link>
-          )}
-        </div>
+              <Card size="sm">
+                <CardContent>
+                  <ItemList>
+                    {posts.map((post) => (
+                      <ItemRow
+                        key={post.id}
+                        className={cn(post.number === open && "-mx-2 rounded-md bg-muted px-2")}
+                        leading={
+                          <>
+                            <SelectPost post={{ id: post.id, number: post.number, title: post.title, voteCount: post.voteCount }} />
+                            <span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>
+                          </>
+                        }
+                        title={
+                          <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
+                            {post.title}
+                          </Link>
+                        }
+                        badges={
+                          post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
+                        }
+                        meta={
+                          <>
+                            #{post.number} · {post.board.name} · {post.author.name}
+                            {post.commentCount > 0 &&
+                              ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
+                            {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
+                          </>
+                        }
+                        actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}
+                      />
+                    ))}
+                  </ItemList>
+                </CardContent>
+              </Card>
+            )}
+            {more && (
+              <Link
+                href={nextPageHref(searchParams, filters)}
+                scroll={false}
+                className={buttonVariants({ variant: "outline", className: "self-center" })}
+              >
+                Load more
+              </Link>
+            )}
+          </div>
+        </FeedbackSelection>
         {/* Keyed by the post: each one starts at the top of the pane (scrolling on its own), wherever the last was. */}
         <aside
           key={open ?? "none"}
