@@ -280,3 +280,50 @@ test("analysed again while its email is being sent: that email goes, and the new
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)).toHaveLength(2);
 });
+
+test("what went out by itself between the last email and the next analysis isn't that analysis's news", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  // That email went three days ago; a day after it, its hold passed and the progress update went out by itself.
+  const DAY = 86_400_000;
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { sentAt: new Date(Date.now() - 3 * DAY) } });
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 2 * DAY), payload: { comment: "Out soon", auto: true } } });
+  // Analysed again now.
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  const [, again] = to(owner);
+  expect(again!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(again!.text).not.toContain("Went out by itself");
+});
+
+test("analysed again right after the sweep reads someone's notices: the new analysis isn't lost", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // The analysis is saved just after the sweep reads the notices (with the analysis before's updates).
+  const findMany = prisma.autopilotNotice.findMany.bind(prisma.autopilotNotice) as (...args: unknown[]) => Promise<unknown>;
+  let reads = 0;
+  const spy = vi.spyOn(prisma.autopilotNotice, "findMany").mockImplementation((async (...args: unknown[]) => {
+    const read = await findMany(...args);
+    // The second read is the person's notices.
+    if (++reads === 2) {
+      await queueAutopilotNotices(one.id);
+    }
+    return read;
+  }) as never);
+  await sendAutopilotEmails(later());
+  spy.mockRestore();
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: null, claimedAt: null });
+});
+
+test("not sent after all, a notice sent before goes back to that: the page still says they were emailed then", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  const first = (await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).sentAt;
+  // Analysed again; the team decides it all before the email goes.
+  await queueAutopilotNotices(one.id);
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), decidedById: owner.id } });
+  expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(0);
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: first, claimedAt: null });
+});
