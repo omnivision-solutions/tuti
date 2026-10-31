@@ -249,9 +249,9 @@ export async function codeChangeDetail(projectId: string, id: string) {
         auto: Boolean((payload as { auto?: boolean }).auto),
         /** Approved, with what it changed recorded: Undo can put it back. */
         // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
-        canUndo: action.status === "APPLIED" && undoOf(action.payload) !== null && undoOf(action.payload)?.published !== false,
+        canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
         /** Undo puts the post's status back (applying moved it): a closed request's shipped emails still due won't go. */
-        putsBackStatus: Boolean(undoOf(action.payload)?.status),
+        putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
         /** A scheduled update: when it goes out by itself (Publish now, Stop). */
@@ -824,9 +824,10 @@ type Undo = {
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
-const undoOf = (payload: Prisma.JsonValue): Undo | null => {
+const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | null => {
   const { undo, auto } = (payload ?? {}) as { undo?: Undo; auto?: boolean };
-  return undo ?? (auto ? { linked: true } : null);
+  // A link Autopilot made by itself (linkByItself records no undo): just that link. Anything else without a record has none.
+  return undo ?? (auto && kind === "LINKS" ? { linked: true } : null);
 };
 
 export const undoCodeChangeAction = defineOperation({
@@ -860,7 +861,7 @@ export const undoCodeChangeAction = defineOperation({
     if (action.status !== "APPLIED") {
       throw new OperationError(409, "not_applied", "Only an approved update can be undone");
     }
-    const undo = undoOf(action.payload);
+    const undo = undoOf(action.payload, action.kind);
     if (!undo) {
       throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it by hand");
     }
@@ -1051,9 +1052,15 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id });
     } catch (error) {
       log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
+      const saved = (error as { saved?: boolean | "unknown" }).saved;
       // Saved before the failure: it went. Not: it waits for the team, saying why.
-      if (!(error as { saved?: boolean }).saved) {
+      if (!saved) {
         await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
+        continue;
+      }
+      // Can't tell whether it went: it stays applied (never twice), says so, and isn't called Autopilot's.
+      if (saved === "unknown") {
+        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { waitReason: "Couldn't tell whether it went out: check it" } });
         continue;
       }
     }

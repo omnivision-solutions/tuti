@@ -9,7 +9,7 @@ import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { getCodeChange, runDueAutopilot, stopCodeChangeAction } from "@/server/operations/code-changes";
+import { getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -282,4 +282,22 @@ test("Home's Publish now says how many people a request it completes emails", as
   await prisma.post.update({ where: { id: action.postId! }, data: { authorId: reader.id } });
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
   expect(home.attention.find((item) => item.kind === "Autopilot")?.scheduled).toMatchObject({ ids: [action.id], emails: 1 });
+});
+
+test("another project's published entry with the same pull request doesn't hold this project's line back", async () => {
+  const line = await update("CHANGELOG_LINE");
+  const { url } = await prisma.codeChange.findUniqueOrThrow({ where: { id: line.codeChangeId } });
+  const other = await createProject(await signUp("Otto Other"));
+  await prisma.changelogEntry.create({
+    data: { projectId: other.id, number: 1, title: "1.0", publishedAt: new Date(), pullRequests: { create: { url, repo: "acme/app", number: 1, title: "Dark theme" } } },
+  });
+  await scheduleByItself(project.id, line.codeChangeId);
+  expect(await statusOf(line.action.id)).toMatchObject({ status: "SCHEDULED" });
+});
+
+test("an update Autopilot applied by itself without a record of what it changed has no Undo (only a link it made is just a link)", async () => {
+  const { codeChangeId, action } = await update("RESOLVES");
+  await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { auto: true } } });
+  expect((await call(getCodeChange, team(), { id: codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: false });
+  await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("There's no record of what it changed");
 });

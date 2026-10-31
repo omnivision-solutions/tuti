@@ -73,12 +73,12 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
   if (!on[action.kind]) {
     return "Autopilot asks first for these";
   }
-  const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true } });
+  const change = await db.codeChange.findUnique({ where: { id: action.codeChangeId }, select: { state: true, url: true, projectId: true } });
   if (change?.state !== "READY") {
     return "Its pull request was analysed again";
   }
-  // The line rewrites the pull request's bullet wherever it is: once that entry is published, readers see it.
-  if (action.kind === "CHANGELOG_LINE" && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { publishedAt: { not: null } } } })) > 0) {
+  // The line rewrites the pull request's bullet wherever it is in this project: once that entry is published, readers see it.
+  if (action.kind === "CHANGELOG_LINE" && (await db.changelogEntryPullRequest.count({ where: { url: change.url, entry: { projectId: change.projectId, publishedAt: { not: null } } } })) > 0) {
     return "Its changelog entry is published";
   }
   // The changelog line is always written as the pull request's; the rest must be sure enough.
