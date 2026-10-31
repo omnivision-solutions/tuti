@@ -173,6 +173,29 @@ describe("when a post ships", () => {
     expect(await due(postId)).toBeNull();
   });
 
+  test("reopened while its emails go out (Undo, say), nobody else is emailed", async () => {
+    const [author, voter] = [await verified("Author"), await verified("Voter")];
+    const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Calendar sync" });
+    await call(setVote, as(voter.id), { number: post.number, voted: true });
+    const { id: postId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } });
+    const log = { info: () => {}, warn: () => {} };
+    const port = process.env.SMTP_PORT;
+    process.env.SMTP_PORT = "1"; // the first run reaches nobody
+    try {
+      await setStatus(post.number, "completed");
+    } finally {
+      process.env.SMTP_PORT = port;
+    }
+    // The retry starts while it's Completed; it's reopened right before the first claim.
+    const transaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+      await prisma.post.update({ where: { id: postId }, data: { status: "OPEN" } });
+      return transaction(...args);
+    }) as typeof prisma.$transaction);
+    expect(await handlers.postShipped({ postId }, log)).toMatchObject({ emailed: 0 });
+    expect([...emailsTo(author.email), ...emailsTo(voter.email)]).toEqual([]);
+  });
+
   test("emails that were never queued, or whose run died mid-send, go out later", async () => {
     const [author, crashed, busy] = [await verified("Author"), await verified("Crashed"), await verified("Busy")];
     const post = await call(createPost, as(author.id), { board: "feature-requests", title: "Calendar sync" });

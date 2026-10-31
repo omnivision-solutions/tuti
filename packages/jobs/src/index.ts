@@ -24,7 +24,7 @@ export { checkEmailDomain, dropEmailDomain, forgetIdentity, UNVERIFIED_FOR_MS, w
 export { aiFor, projectModels } from "./ai-usage";
 export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCredits, OutOfCredits, takeBackCredits } from "./credits";
 export { confidence, THRESHOLDS } from "./code-change-decisions";
-export { addToRunningDraft, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine } from "./running-draft";
+export { addToRunningDraft, changelogLineOf, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";
 export { FAILED_SEARCHES_PER_DAY, INSIGHTS_DAYS } from "./docs-searches";

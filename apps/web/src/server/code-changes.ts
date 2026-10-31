@@ -2,7 +2,7 @@
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, resumeCodeChanges as resumeOperation } from "./operations/code-changes";
+import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, resumeCodeChanges as resumeOperation, undoCodeChangeAction } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
@@ -42,6 +42,11 @@ export async function applyCodeChange(
       ...(typeof line === "string" && line.trim() && { line }),
     }),
   );
+}
+
+/** Undo on an approved update: puts back what it changed (codeChangeActions.undo). */
+export async function undoCodeChange(projectSlug: string, actionId: string): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) => call(undoCodeChangeAction, context, { id: String(actionId) }));
 }
 
 export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {

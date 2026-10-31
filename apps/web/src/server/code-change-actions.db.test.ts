@@ -1,11 +1,11 @@
-import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type PostStatus, Prisma, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { addToRunningDraft } from "@tuti/jobs";
+import { addToRunningDraft, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -184,6 +184,91 @@ test("proposals as likely as each other keep one order: by kind, then id", async
   expect((await call(getCodeChange, team(), { id: change.id })).actions.map((action) => action.id)).toEqual(["c", "a", "b", unlikely.id]);
 });
 
+describe("undo", () => {
+  test("a request it closed: back to its status, the link and the entry's post gone; those emailed are counted first, the rest not sent", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    const entry = await prisma.changelogEntry.create({
+      data: { projectId: project.id, number: 1, title: "Next release", collecting: true, pullRequests: { create: { url: PR_URL, repo: "acme/app", number: 12, title: "Dark theme" } } },
+    });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect(shippedTo(voter.email)).toHaveLength(1);
+    const detail = await call(getCodeChange, team(), { id: action.codeChangeId });
+    expect(detail.actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", emailed: 1 });
+    expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect(await prisma.changelogEntryPost.count({ where: { entryId: entry.id } })).toBe(0);
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "undone", decidedBy: "Olive Owner" });
+    // Once: a second undo is refused.
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Only an approved update can be undone");
+  });
+
+  test("a progress update: its comment deleted and the post back to its status; a link it didn't add stays", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect(await postOf(post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out." }] });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).commentCount).toBe(0);
+
+    // The post had the link already: undoing a link leaves it.
+    const linked = await proposal("LINKS");
+    await prisma.postLink.create({ data: { projectId: project.id, postId: linked.post.id, kind: "PULL_REQUEST", repo: "acme/app", number: 12, url: PR_URL, title: "Dark theme", source: "MANUAL" } });
+    await call(applyCodeChangeAction, team(), { id: linked.action.id });
+    await call(undoCodeChangeAction, team(), { id: linked.action.id });
+    expect((await postOf(linked.post.id)).links).toEqual([{ url: PR_URL, source: "MANUAL", codeChangeId: null }]);
+  });
+
+  test("a try that failed part-way puts back what it did (the link, the status it moved), and waits; approved after, Undo still works", async () => {
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    // Linked and moved to In progress, then the comment's transaction fails: both are put back.
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).results[0]).toMatchObject({ status: "failed" });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+  });
+
+  test("a progress update on a post merged since: Undo is refused, saying so, and nothing changes", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    const other = await call(createPost, team(), { board: "feature-requests", title: "Repeating events" });
+    const otherId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id;
+    await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: otherId } });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The post was merged into another since: change it there");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    expect((await postOf(post.id)).comments).toHaveLength(1);
+  });
+
+  test("a request completed already when it's approved: Undo leaves it Completed, and the review page says its emails still go", async () => {
+    const { action } = await proposal("RESOLVES", { status: "COMPLETED" });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ canUndo: true, putsBackStatus: false });
+    const moved = await proposal("RESOLVES");
+    await call(applyCodeChangeAction, team(), { id: moved.action.id });
+    expect((await call(getCodeChange, team(), { id: moved.action.codeChangeId })).actions.find((a) => a.id === moved.action.id)).toMatchObject({ putsBackStatus: true });
+  });
+
+  test("one approved before Undo was there (nothing recorded to put back) is refused, and has no Undo", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date(), payload: {} } });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "applied", canUndo: false });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("There's no record of what it changed");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+  });
+
+  test("a link: removed", async () => {
+    const { post, action } = await proposal("LINKS");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).links).toHaveLength(1);
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).links).toEqual([]);
+  });
+});
+
 test("the review page ticks the likely updates as it opens (not a comment nobody wrote, nor a maybe), and says how many people completing a post emails", async () => {
   // Most likely of all, but with no comment to post: not ticked.
   const unwritten = await proposal("MOVES_FORWARD", { probability: 0.95 });
@@ -246,11 +331,14 @@ describe("approving several (applyMany)", () => {
 
   test("a progress update: approved when its comment was saved before something failed, waiting again when it wasn't", async () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
-    // Saved, then reading who wrote it fails.
-    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out." });
+    // Saved, then reading who wrote it fails. Two paragraphs: a comment keeps them with one line between.
+    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out.\n\nMonthly ones are next." });
     vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Undo knows the comment it found.
+    await call(undoCodeChangeAction, team(), { id: saved.action.id });
+    expect((await postOf(saved.post.id)).comments).toHaveLength(0);
     // Not saved: the comment's transaction fails.
     const lost = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Monthly too." });
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
@@ -262,10 +350,12 @@ describe("approving several (applyMany)", () => {
     // Not saved, and checking fails too: it stays applied (never posted twice), reported as unknown, not approved.
     const unknown = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Yearly too." });
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
-    vi.spyOn(prisma.comment, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
       { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },
     ]);
+    // Nothing known to put back: Undo says so, rather than "Undone" with the comment perhaps still there.
+    await expect(call(undoCodeChangeAction, team(), { id: unknown.action.id })).rejects.toThrow("There's no record of what it changed");
   });
 
   test("two people approving the same ones at once apply each once", async () => {
@@ -385,6 +475,9 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
     expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+    // What it saved is known: Undo deletes the draft.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme", deletedAt: null } })).toBe(0);
   });
 
   test("a failure before anything is saved (looking up the portal's address) leaves it waiting, to apply again", async () => {
@@ -445,7 +538,7 @@ describe("docs", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     // The edit's save fails, and so does the check of whether it was saved.
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
-    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
@@ -459,7 +552,7 @@ describe("docs", () => {
       await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
       return claim(...args);
     }) as never);
-    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
   });
@@ -469,14 +562,95 @@ describe("docs", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     // Right as it's claimed, someone saves the article (so its save is refused as changed)...
     const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
-    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
-      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
-      return claim(...args);
-    }) as never);
-    // ...and putting it back fails.
-    vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.codeChangeAction, "updateMany")
+      .mockImplementationOnce((async (...args: unknown[]) => {
+        await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+        return claim(...args);
+      }) as never)
+      // ...and putting it back fails.
+      .mockRejectedValueOnce(new Error("connection reset"));
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+  });
+
+  test("an article edit whose read of what readers saw fails, once claimed, is waiting again", async () => {
+    const { action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.article, "findUniqueOrThrow").mockRejectedValueOnce(new Error("connection reset"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("connection reset");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+  });
+
+  test("an article edit kept unpublished has no Undo (it's finished or discarded in the editor)", async () => {
+    const { action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", canUndo: false });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Its edit is waiting in the editor: discard the changes there");
+  });
+
+  test("an article with only plain text (from before rich text): Undo publishes that text again", async () => {
+    const { article, action } = await articleEdit();
+    await prisma.article.update({ where: { id: article.id }, data: { content: Prisma.DbNull } });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light in Settings.");
+  });
+
+  test("a teammate's save right after an edit is applied isn't taken for it: Undo then refuses", async () => {
+    const { article, action } = await articleEdit();
+    // Right as the edit's version is looked up, a teammate publishes another.
+    const find = prisma.articleRevision.findFirst.bind(prisma.articleRevision) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.articleRevision, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return find(...args);
+    }) as never);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article was edited since");
+    expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
+  });
+
+  test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
+    const { article, action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await published(article.slug)).toEqual({ body: "Pick Light in Settings.", changes: null });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("UNDONE");
+
+    const again = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: again.action.id });
+    await call(updateArticle, team(), { slug: again.article.slug, body: "Pick Light, Dark, Sepia or System.", publish: true });
+    await expect(call(undoCodeChangeAction, team(), { id: again.action.id })).rejects.toThrow("The article was edited since");
+    expect((await published(again.article.slug)).body).toBe("Pick Light, Dark, Sepia or System.");
+  });
+
+  test("Undo a new article: its draft is deleted; refused once it's published", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const create = (title: string) =>
+      prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title, content: EDITED, body: "Pick Light, Dark or System in Settings." } } });
+    const first = await create("Use the dark theme");
+    const { article: slug } = (await call(applyCodeChangeAction, team(), { id: first.id })) as { article: string };
+    await call(undoCodeChangeAction, team(), { id: first.id });
+    expect(await prisma.article.count({ where: { projectId: project.id, slug, deletedAt: null } })).toBe(0);
+
+    // Published between Undo's first look and its delete: checked again under the lock, it stays.
+    const third = await create("Theme shortcuts");
+    const { article: racing } = (await call(applyCodeChangeAction, team(), { id: third.id })) as { article: string };
+    const transaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+      await call(publishArticle, team(), { slug: racing });
+      return transaction(...args);
+    }) as typeof prisma.$transaction);
+    await expect(call(undoCodeChangeAction, team(), { id: third.id })).rejects.toThrow("The draft was edited or published since: change it in Docs");
+    expect(await prisma.article.count({ where: { projectId: project.id, slug: racing, deletedAt: null, publishedAt: { not: null } } })).toBe(1);
+
+    const second = await create("Dark theme tips");
+    const { article: other } = (await call(applyCodeChangeAction, team(), { id: second.id })) as { article: string };
+    await call(publishArticle, team(), { slug: other });
+    await expect(call(undoCodeChangeAction, team(), { id: second.id })).rejects.toThrow();
+    expect(await prisma.article.count({ where: { projectId: project.id, slug: other, deletedAt: null } })).toBe(1);
   });
 
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
@@ -520,7 +694,103 @@ describe("the changelog line", () => {
         },
       ],
     });
-    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({ line: "A dark theme, in Settings" });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({
+      line: "A dark theme, in Settings",
+      undo: { previous: "Add a dark theme (acme/app#30)", added: null },
+    });
+    // Undo puts the bullet back as it was, still linking to the pull request.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("Faster search (acme/app#29)\nAdd a dark theme (acme/app#30)");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("UNDONE");
+  });
+
+  test("Undo is refused once the line's entry is published: edit the entry instead", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("Dark theme");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id, collecting: true }, data: { publishedAt: new Date(), collecting: false } });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Its changelog entry is published: edit the entry instead");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+  });
+
+  test("a line whose first try added the pull request to the draft and then failed: it comes out again; approved after, Undo takes it out", async () => {
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    const action = await line("A dark theme");
+    // The pull request goes into the draft; writing its line fails.
+    const transaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction")
+      .mockImplementationOnce(((...args: Parameters<typeof transaction>) => transaction(...args)) as typeof prisma.$transaction)
+      .mockRejectedValueOnce(new Error("connection reset"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("connection reset");
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("");
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
+  });
+
+  test("while a line is being applied, Undo has nothing to go on yet: refused, not marked undone", async () => {
+    const action = await line("A dark theme");
+    const find = prisma.changelogEntryPullRequest.findFirst.bind(prisma.changelogEntryPullRequest) as (...args: unknown[]) => Promise<unknown>;
+    let undoing: Promise<unknown> | undefined;
+    // Its first read finds what the bullet said; then it's claimed, and while it writes the line, someone clicks Undo.
+    vi.spyOn(prisma.changelogEntryPullRequest, "findFirst")
+      .mockImplementationOnce(((...args: unknown[]) => find(...args)) as never)
+      .mockImplementationOnce((async (...args: unknown[]) => {
+        undoing = call(undoCodeChangeAction, team(), { id: action.id }).catch((error: Error) => error.message);
+        await undoing;
+        return find(...args);
+      }) as never);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect(await undoing).toBe("There's no record of what it changed: change it by hand");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    expect((await draft()).body).toBe("A dark theme");
+  });
+
+  test("Undo of a line someone rewrote since is refused; one whose entry was deleted puts nothing back", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("A dark theme");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    // A teammate rewrites the bullet (still linking to the pull request).
+    const { content } = await draft();
+    const rewritten = JSON.parse(JSON.stringify(content).replace("A dark theme", "Dark theme, everywhere"));
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id, collecting: true }, data: { content: rewritten } });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The changelog line was edited since: change it in the entry instead");
+    // The entry is deleted: Undo has nothing to put back, and adds nothing to a draft.
+    await prisma.changelogEntry.deleteMany({ where: { projectId: project.id } });
+    expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
+    expect(await prisma.changelogEntry.count({ where: { projectId: project.id } })).toBe(0);
+  });
+
+  test("a bullet a teammate rewrites while the line is being applied: Undo puts back their words, not the ones from before", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("A dark theme");
+    // After the apply's first look, a teammate rewrites the bullet (still linking to the pull request).
+    const find = prisma.changelogEntryPullRequest.findFirst.bind(prisma.changelogEntryPullRequest) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.changelogEntryPullRequest, "findFirst")
+      .mockImplementationOnce(((...args: unknown[]) => find(...args)) as never)
+      .mockImplementationOnce((async (...args: unknown[]) => {
+        const { content } = await draft();
+        await prisma.changelogEntry.updateMany({
+          where: { projectId: project.id, collecting: true },
+          data: { content: JSON.parse(JSON.stringify(content).replace("Add a dark theme (acme/app#30)", "Dark theme, from the team")) },
+        });
+        return find(...args);
+      }) as never);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("Dark theme, from the team");
+  });
+
+  test("Undo's changelog step leaves an entry published meanwhile as it is", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id, collecting: true }, data: { publishedAt: new Date(), collecting: false } });
+    const before = await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } });
+    const url = "https://github.com/acme/app/pull/30";
+    expect(await undoChangelogLine(project.id, url, { applied: "Add a dark theme (acme/app#30)", previous: "Other words", added: null })).toBe("published");
+    expect(await undoChangelogLine(project.id, url, { applied: "Add a dark theme (acme/app#30)", previous: "", added: "entry" })).toBe("published");
+    expect(await prisma.changelogEntry.findFirstOrThrow({ where: { projectId: project.id }, select: { body: true } })).toEqual(before);
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url, entry: { projectId: project.id } } })).toBe(1);
   });
 
   test("a pull request the draft doesn't have (it had nothing to do, until Analyse anyway) goes into it with its line", async () => {
@@ -528,5 +798,9 @@ describe("the changelog line", () => {
     await call(applyCodeChangeAction, team(), { id: action.id });
     expect((await draft()).body).toBe("A dark theme");
     expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(1);
+    // Undo takes out what applying added: the bullet, and the pull request with it.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("");
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
   });
 });

@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { emailLine } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
 import { cn } from "@/lib/utils";
-import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
+import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
 type Update = CodeChangeDetail["actions"][number];
@@ -176,24 +176,27 @@ export function AutopilotReview({
             </h2>
             <ul className="flex flex-col divide-y rounded-xl border bg-card">
               {decided.map((update) => (
-                <li key={update.id} aria-label={`${updateKind(update)}: ${titleOf(update)}`} className="flex flex-col gap-0.5 px-4 py-3 text-sm">
-                  <span>
-                    <span className="text-muted-foreground">{updateKind(update)} · </span>
-                    {titleOf(update)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {update.auto ? "Linked by Autopilot" : update.status === "applied" ? "Approved" : "Dismissed"}
-                    {!update.auto && update.decidedBy && ` by ${update.decidedBy}`}
-                    {update.dismissReason && `: ${update.dismissReason}`}
-                    {update.status === "applied" && update.article && (
-                      <>
-                        {" · "}
-                        <Link href={`/app/${projectSlug}/docs/${update.article.slug}`} className="hover:underline">
-                          {update.kind === "new_article" ? "Open the draft" : "Open the article"}
-                        </Link>
-                      </>
-                    )}
-                  </span>
+                <li key={update.id} aria-label={`${updateKind(update)}: ${titleOf(update)}`} className="flex items-start gap-3 px-4 py-3 text-sm">
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="break-words">
+                      <span className="text-muted-foreground">{updateKind(update)} · </span>
+                      {titleOf(update)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {update.status === "undone" ? "Undone" : update.auto ? "Linked by Autopilot" : update.status === "applied" ? "Approved" : "Dismissed"}
+                      {(update.status === "undone" || !update.auto) && update.decidedBy && ` by ${update.decidedBy}`}
+                      {update.dismissReason && `: ${update.dismissReason}`}
+                      {update.status === "applied" && update.article && (
+                        <>
+                          {" · "}
+                          <Link href={`/app/${projectSlug}/docs/${update.article.slug}`} className="hover:underline">
+                            {update.kind === "new_article" ? "Open the draft" : "Open the article"}
+                          </Link>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} />}
                 </li>
               ))}
             </ul>
@@ -260,6 +263,67 @@ export function AutopilotReview({
         </section>
       </aside>
     </div>
+  );
+}
+
+/** What undoing puts back, as the dialog says it first. */
+function undoes(update: Update): string {
+  switch (update.kind) {
+    case "resolves":
+      // Completed already when it was approved: it stays so, and what's due still goes.
+      if (!update.putsBackStatus) {
+        return `${update.post?.title} stays Completed (it was already), so its shipped emails still go.`;
+      }
+      return `${update.post?.title} goes back to the status it had.${
+        update.emailed ? ` ${plural(update.emailed, "person was", "people were")} already emailed that it shipped; that can't be taken back.` : " Its shipped emails not sent yet won't be."
+      }`;
+    case "moves_forward":
+      return "Its progress update is deleted, and the post goes back to the status it had.";
+    case "links":
+      return "The post's link to the pull request is removed.";
+    case "article_edit":
+      return "The article's previous version is published again.";
+    case "new_article":
+      return "The draft is deleted.";
+    default:
+      return "The changelog line goes back to what it said.";
+  }
+}
+
+/** Undo on an approved update: asks first, saying what it puts back (and what it can't). */
+function UndoButton({ projectSlug, update }: { projectSlug: string; update: Update }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const undo = () =>
+    startTransition(async () => {
+      const result = await undoCodeChange(projectSlug, update.id);
+      setOpen(false);
+      if (result.error) {
+        toast.error(result.error);
+      } else {
+        toast.success("Undone");
+      }
+      router.refresh();
+    });
+  return (
+    <AlertDialog open={open} onOpenChange={(next) => !pending && setOpen(next)}>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+        Undo
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Undo this update?</AlertDialogTitle>
+          <AlertDialogDescription>{undoes(update)}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={pending} onClick={undo}>
+            {pending ? "Undoing…" : "Undo"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

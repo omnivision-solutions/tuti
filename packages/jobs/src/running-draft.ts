@@ -181,12 +181,69 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
   });
 }
 
+const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
+
+/**
+ * The pull request's bullet as its entry has it now (its text, and whether the entry is published), or
+ * null if no entry has it. For putting a changelog line back (Autopilot's Undo).
+ */
+export async function changelogLineOf(projectId: string, url: string): Promise<{ text: string | null; published: boolean } | null> {
+  const known = await prisma.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entry: { select: { content: true, publishedAt: true } } } });
+  if (!known) {
+    return null;
+  }
+  const doc = (known.entry.content as Doc | null) ?? { type: "doc", content: [] };
+  const bullet = (doc.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
+  return { text: bullet ? textOf(bullet) : null, published: known.entry.publishedAt !== null };
+}
+
+/**
+ * Autopilot's Undo of a changelog line: the pull request's bullet goes back to `previous`, or out again
+ * (`added`), with the entry's record of the pull request when applying added that too ("entry"). Only
+ * in a draft, and only while the bullet still says what was approved (`applied`; null: whatever it
+ * says, for an apply that failed): "published" or "edited" otherwise, changing nothing. No entry has the pull request any more: nothing to put back.
+ */
+export async function undoChangelogLine(
+  projectId: string,
+  url: string,
+  { applied, previous, added }: { applied: string | null; previous: string; added: "entry" | "bullet" | null },
+): Promise<"done" | "published" | "edited"> {
+  return prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entryId: true, entry: { select: { content: true, publishedAt: true } } } });
+    if (!known) {
+      return "done";
+    }
+    if (known.entry.publishedAt) {
+      return "published";
+    }
+    // The entry's row too, read again: an edit in the changelog (which doesn't take the project's lock) waits, or is seen.
+    const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
+    const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
+    if (bullet && applied !== null && textOf(bullet) !== applied) {
+      return "edited";
+    }
+    if (added === "entry") {
+      await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId: known.entryId, url } } });
+    }
+    const doc = added ? withoutBullet(current, url) : (withLine(current, url, previous) ?? current);
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+    return "done";
+  });
+}
+
 /**
  * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
  * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):
- * it's added to the running draft with that line. Returns the entry's number.
+ * it's added to the running draft with that line. Returns the entry's number, and for Undo, what the
+ * bullet said before (read under the lock that writes it) or what writing it added.
  */
-export async function setChangelogLine(projectId: string, pr: PullRequest, line: string): Promise<number> {
+export async function setChangelogLine(
+  projectId: string,
+  pr: PullRequest,
+  line: string,
+): Promise<{ number: number; previous: string | null; added: "entry" | "bullet" | null }> {
   const found = await prisma.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
   if (!found) {
     await addToRunningDraft(projectId, pr);
@@ -194,11 +251,18 @@ export async function setChangelogLine(projectId: string, pr: PullRequest, line:
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const known = await tx.changelogEntryPullRequest.findFirstOrThrow({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
-    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { number: true, content: true } });
-    const current = (entry.content as Doc | null) ?? { type: "doc", content: [] };
+    // The entry's row too: an edit in the changelog (which doesn't take the project's lock) waits, or is seen here.
+    const [entry] = await tx.$queryRaw<{ number: number; content: Prisma.JsonValue }[]>`SELECT number, content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
+    // What the bullet said as it's rewritten (for Undo), or what writing it adds: the pull request with it, or the bullet.
+    const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, pr.url));
     // The team may have rewritten the bullet without its link: then the line goes at the end of the draft's list.
     const doc = withLine(current, pr.url, line) ?? withPullRequest(current, { ...pr, title: line }, line);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
-    return entry.number;
+    return {
+      number: entry!.number,
+      previous: found && bullet ? textOf(bullet) : null,
+      added: !found ? ("entry" as const) : bullet ? null : ("bullet" as const),
+    };
   });
 }

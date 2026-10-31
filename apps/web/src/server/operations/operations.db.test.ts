@@ -129,6 +129,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   "codeChangeActions.apply": (f) => ({ id: f.linkActionId }),
   "codeChangeActions.applyMany": (f) => ({ actions: [{ id: f.linkActionId }] }),
   "codeChangeActions.dismiss": (f) => ({ id: f.dismissActionId, reason: "Not this one" }),
+  "codeChangeActions.undo": (f) => ({ id: f.appliedActionId }),
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).
   "widget.update": () => ({ label: "Matrix", color: "#5b21b6", links: [{ label: "Status", url: "https://status.example.com" }] }),
@@ -353,6 +354,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       actions: {
         create: [
           { kind: "LINKS", postId: first!.id, probability: 0.9 },
+          // Approved already, to undo (it put nothing back to put back).
+          { kind: "RESOLVES", postId: first!.id, probability: 0.9, status: "APPLIED", payload: { undo: { linked: false } } },
           { kind: "MOVES_FORWARD", postId: second!.id, probability: 0.5, payload: { comment: "Getting there" } },
         ],
       },
@@ -369,6 +372,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
     dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
+    appliedActionId: codeChange.actions.find((action) => action.kind === "RESOLVES")!.id,
   };
 }
 

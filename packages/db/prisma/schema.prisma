@@ -1954,6 +1954,8 @@ enum CodeChangeActionStatus {
   DISMISSED
   /// Its article changed since the edit was written: write it again, or dismiss it.
   STALE
+  /// Applied, then put back (codeChangeActions.undo): `decidedBy` is who undid it. Not proposed again.
+  UNDONE
 }
 
 /// A merged pull request, analysed once into actions the team applies, edits or dismisses (docs/plan.md,
@@ -2005,10 +2007,11 @@ model CodeChangeAction {
   probability   Float
   /// Why Tuti proposes it.
   reason        String                 @default("")
-  /// What applying it writes, by kind: a comment, an article's content and the revision it's against, a line.
+  /// What applying it writes, by kind: a comment, an article's content and the revision it's against, a line;
+  /// once applied, `undo`: what it changed, for codeChangeActions.undo to put back.
   payload       Json                   @default("{}")
   status        CodeChangeActionStatus @default(PENDING)
-  /// Who applied or dismissed it, and when.
+  /// Who applied, dismissed or undid it, and when.
   decidedById   String?
   decidedAt     DateTime?
   dismissReason String                 @default("")
