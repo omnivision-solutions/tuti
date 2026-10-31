@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-import { feedbackStep } from "@/lib/feedback-steps";
+import { feedbackStep, sameFeedbackList } from "@/lib/feedback-steps";
 import { pageShortcut } from "@/lib/shortcut-keys";
 
 /**
@@ -16,7 +16,7 @@ import { pageShortcut } from "@/lib/shortcut-keys";
 export function FeedbackKeys({ order, open, base }: { order: number[]; open: number | null; base: string }) {
   const router = useRouter();
   // The list as it was while the open post was in it: triaged (a new status, say), it leaves the list, and
-  // J and K go on from where it stood. Only for that list (its address): filtered otherwise, J opens the first.
+  // J and K go on from where it stood. Only for that list (more of it loaded too): filtered otherwise, J opens the first.
   const known = useRef({ base, order });
   useEffect(() => {
     if (open === null || order.includes(open)) {
@@ -47,7 +47,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 
   useEffect(() => {
     const href = (number: number | null) => (number === null ? base : `${base}${base.includes("?") ? "&" : "?"}post=${number}`);
-    const step = (by: 1 | -1) => feedbackStep(order, known.current.base === base ? known.current.order : order, open, by);
+    const step = (by: 1 | -1) => feedbackStep(order, sameFeedbackList(known.current.base, base) ? known.current.order : order, open, by);
     const onKey = (event: KeyboardEvent) => {
       if (!pageShortcut(event, { closedChoicesIn: "[data-feedback-pane]" })) {
         return;

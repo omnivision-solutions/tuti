@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { feedbackStep } from "./feedback-steps";
+import { feedbackStep, sameFeedbackList } from "./feedback-steps";
 
 test("J and K go to the next and previous post; J opens the first with none open", () => {
   expect(feedbackStep([1, 2, 3], [1, 2, 3], 2, 1)).toBe(3);
@@ -22,4 +22,10 @@ test("the last loaded post triaged, J opens the one that moved up from the next 
   const after = [...before.slice(0, 49), 51];
   expect(feedbackStep(after, before, 50, 1)).toBe(51);
   expect(feedbackStep(after, before, 50, -1)).toBe(49);
+});
+
+test("more of the list loaded is the same list; another filter isn't", () => {
+  expect(sameFeedbackList("/app/acme/feedback?status=open", "/app/acme/feedback?status=open&page=2")).toBe(true);
+  expect(sameFeedbackList("/app/acme/feedback?board=bugs&status=all", "/app/acme/feedback?status=all&board=bugs")).toBe(true);
+  expect(sameFeedbackList("/app/acme/feedback?status=open", "/app/acme/feedback?status=open&board=bugs")).toBe(false);
 });

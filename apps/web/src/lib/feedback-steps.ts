@@ -21,3 +21,14 @@ export function feedbackStep(order: number[], before: number[], open: number | n
   }
   return by === 1 ? (order.find((number) => !list.includes(number)) ?? null) : null;
 }
+
+/** Whether two of Feedback's addresses are the same list: more of it loaded (`page`) is the same list. */
+export function sameFeedbackList(a: string, b: string): boolean {
+  const list = (address: string) => {
+    const url = new URL(address, "http://list");
+    url.searchParams.delete("page");
+    url.searchParams.sort();
+    return `${url.pathname}?${url.searchParams}`;
+  };
+  return list(a) === list(b);
+}
