@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { EmptyState } from "@/components/empty-state";
-import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -11,17 +10,31 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UserColumnsMenu } from "@/components/user-columns-menu";
+import { timeAgo } from "@/lib/format";
 import type { PropertyValue } from "@/lib/user-properties";
-import { getMembership } from "@/server/membership";
+import { getMembership, isAdminRole } from "@/server/membership";
+import { propertyNames } from "@/server/operations/groups";
 import { call } from "@/server/operations/run";
-import { listUsers } from "@/server/operations/users";
+import { listUsers, USER_SORTS } from "@/server/operations/users";
 import { getSession } from "@/server/session";
 
 const PER_PAGE = 50;
 
 const text = (value: PropertyValue) => (Array.isArray(value) ? value.join(", ") : String(value));
 
-/** The project's users (users.list): the people its app signs in or syncs, with their properties and groups. */
+type Sort = (typeof USER_SORTS)[number];
+/** The columns the table sorts by, and their headings. */
+const COUNTS: { sort: Exclude<Sort, "name" | "lastSeen">; label: string; key: "posts" | "votes" | "conversations" }[] = [
+  { sort: "posts", label: "Posts", key: "posts" },
+  { sort: "votes", label: "Votes", key: "votes" },
+  { sort: "conversations", label: "Conversations", key: "conversations" },
+];
+
+/**
+ * The project's users (users.list) as a table: the people its app signs in or syncs, the properties the team picked
+ * (Columns), and what they did here (posts, votes, conversations, last seen), sorted by any of those.
+ */
 export default async function UsersPage(props: PageProps<"/app/[project]/users">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
@@ -34,16 +47,31 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
   const groups = await prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } });
   const group = groups.find((g) => g.key === searchParams.group)?.key;
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);
-  const { users, nextCursor } = await call(
-    listUsers,
-    { actor: { kind: "user", userId: session.user.id }, projectId: project.id },
-    { q: q || undefined, group, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE },
-  );
+  const sort: Sort = USER_SORTS.find((s) => s === searchParams.sort) ?? "name";
+  const [{ users, nextCursor }, { userColumns }, properties] = await Promise.all([
+    call(
+      listUsers,
+      { actor: { kind: "user", userId: session.user.id }, projectId: project.id },
+      { q: q || undefined, group, sort, limit: PER_PAGE, cursor: (page - 1) * PER_PAGE },
+    ),
+    prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { userColumns: true } }),
+    propertyNames(project.id),
+  ]);
+  // The picked properties some user has (one no user has any more has nothing to show).
+  const columns = userColumns.filter((name) => properties.includes(name));
   const names = new Map(groups.map((g) => [g.key, g.name]));
-  const pageHref = (n: number) => {
-    const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(n > 1 && { page: String(n) }) });
+  const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) => {
+    const params = new URLSearchParams({ ...(q && { q }), ...(group && { group }), ...(by !== "name" && { sort: by }), ...(to > 1 && { page: String(to) }) });
     return params.size > 0 ? `?${params}` : `/app/${slug}/users`;
   };
+  /** A column's heading: a link that sorts by it (from the first page), marked while it does. */
+  const sortHeading = ({ by, label, className }: { by: Sort; label: string; className?: string }) => (
+    <th key={by} scope="col" aria-sort={sort === by ? (by === "name" ? "ascending" : "descending") : undefined} className={className}>
+      <Link href={href({ to: 1, by })} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
+        {label}
+      </Link>
+    </th>
+  );
 
   return (
     <>
@@ -56,6 +84,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
               {group && <input type="hidden" name="group" value={group} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Name, email or id" aria-label="Search users" className="h-8" />
             </form>
+            {isAdminRole(membership.role) && properties.length > 0 && <UserColumnsMenu projectSlug={slug} columns={userColumns} properties={properties} />}
             {groups.length > 0 && (
               <ListFilters
                 filters={[
@@ -89,44 +118,60 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
         )
       ) : (
         <Card size="sm">
-          <CardContent>
-            <ItemList>
-              {users.map((user) => {
-                const properties = Object.entries(user.properties);
-                return (
-                  <ItemRow
-                    key={user.id}
-                    leading={
-                      <Avatar className="size-8">
-                        {user.avatar && <AvatarImage src={user.avatar} alt="" />}
-                        <AvatarFallback>{user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                      </Avatar>
-                    }
-                    title={user.name}
-                    badges={user.groups.map((key) => (
-                      <Badge key={key} variant="secondary">
-                        {names.get(key) ?? key}
-                      </Badge>
+          <CardContent className="overflow-x-auto">
+            {/* On phones, who they are and when they were last seen; the rest from tablet width up. */}
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs font-medium text-muted-foreground">
+                <tr className="[&>th]:px-2 [&>th]:pb-2 [&>th]:font-medium">
+                  {sortHeading({ by: "name", label: "User" })}
+                  {columns.map((name) => (
+                    <th key={name} scope="col" className="hidden break-all md:table-cell">
+                      {name}
+                    </th>
+                  ))}
+                  {COUNTS.map((count) => sortHeading({ by: count.sort, label: count.label, className: "hidden text-right md:table-cell" }))}
+                  {sortHeading({ by: "lastSeen", label: "Last seen", className: "text-right" })}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id} className="border-t align-top [&>td]:px-2 [&>td]:py-2">
+                    <td className="min-w-48">
+                      <div className="flex items-start gap-2">
+                        <Avatar className="size-8">
+                          {user.avatar && <AvatarImage src={user.avatar} alt="" />}
+                          <AvatarFallback>{user.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex min-w-0 flex-col gap-0.5">
+                          <span className="font-medium break-words">{user.name}</span>
+                          <span className="text-xs break-all text-muted-foreground">{[user.email, `id ${user.id}`].filter(Boolean).join(" · ")}</span>
+                          {user.groups.length > 0 && (
+                            <span className="flex flex-wrap gap-1">
+                              {user.groups.map((key) => (
+                                <Badge key={key} variant="secondary">
+                                  {names.get(key) ?? key}
+                                </Badge>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    {columns.map((name) => (
+                      <td key={name} className="hidden break-words md:table-cell">
+                        {name in user.properties ? text(user.properties[name]!) : <span className="text-muted-foreground">–</span>}
+                      </td>
                     ))}
-                    meta={
-                      <>
-                        <span className="break-all">{[user.email, `id ${user.id}`].filter(Boolean).join(" · ")}</span>
-                        {properties.length > 0 && (
-                          <dl aria-label="Properties" className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                            {properties.map(([name, value]) => (
-                              <div key={name} className="flex min-w-0 gap-1">
-                                <dt className="shrink-0">{name}:</dt>
-                                <dd className="min-w-0 break-words text-foreground">{text(value)}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        )}
-                      </>
-                    }
-                  />
-                );
-              })}
-            </ItemList>
+                    {COUNTS.map((count) => (
+                      <td key={count.key} className="hidden text-right tabular-nums md:table-cell">
+                        {user.activity[count.key]}
+                      </td>
+                    ))}
+                    <td className="text-right whitespace-nowrap text-muted-foreground">{user.activity.lastSeenAt ? timeAgo(user.activity.lastSeenAt) : "Never"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </CardContent>
         </Card>
       )}
@@ -134,14 +179,14 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
       {(page > 1 || nextCursor) && (
         <nav aria-label="Pages" className="flex justify-between gap-2">
           {page > 1 ? (
-            <Link href={pageHref(page - 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={href({ to: page - 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Previous
             </Link>
           ) : (
             <span />
           )}
           {nextCursor && (
-            <Link href={pageHref(page + 1)} className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={href({ to: page + 1 })} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Next
             </Link>
           )}

@@ -483,6 +483,7 @@ const matrix: Matrix = {
     // Names the project's SSO users, like Settings → Groups.
     previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, [{ property: "plan", op: "is", value: "pro" }]) },
     setAskingProperty: { allowed: "ADMIN", call: (slug) => groups.setAskingProperty(slug, "mrr") },
+    setUserColumns: { allowed: "ADMIN", call: (slug) => groups.setUserColumns(slug, ["company", "mrr"]) },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.

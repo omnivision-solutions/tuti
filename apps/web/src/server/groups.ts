@@ -58,6 +58,13 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
   return matchingUsers(project.id, input.data, PREVIEW_USERS);
 }
 
+/** Users' Columns: the properties the table shows, in order (see project.update's userColumns). */
+export async function setUserColumns(projectSlug: string, columns: string[]): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change Users' columns", (context) =>
+    call(updateProject, context, { userColumns: Array.isArray(columns) ? columns.map(String) : [] }),
+  );
+}
+
 /** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
 export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
   return asAdmin(projectSlug, "Only project owners and admins can change Who's asking", (context) =>

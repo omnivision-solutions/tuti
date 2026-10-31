@@ -163,6 +163,11 @@ Use these instead of hand-rolling layout:
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.
+- A list compared across columns (Users) is a table in a `Card`: its headings
+  sort it (a link each, `aria-sort` on the one in use, the most first), and on
+  phones it keeps who and the column that matters most (Last seen), the rest
+  from tablet width up. Which properties it shows is the team's pick
+  (Columns), kept for everyone.
 - **`EmptyState`**: what a list shows when it's empty. Say what's missing and
   what to do next; add an `action` when there's an obvious one.
 - **`Card`** with `CardHeader`/`CardTitle`/`CardDescription`: a settings section
