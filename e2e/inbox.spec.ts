@@ -436,7 +436,7 @@ test("the team's own address: add it, put SES's records in DNS, check, a test em
   await expect(owner.getByText("Waiting for DNS")).toBeVisible();
   const receiving = owner.getByRole("region", { name: "Receiving emails" });
   await expect(receiving).toContainText(`${domain}'s email is at Google Workspace. There, forward support@${domain} to your support address`);
-  await expect(receiving.getByRole("link", { name: "How to forward with Google Workspace" })).toHaveAttribute("href", /docs\/email-forwarding\.md#google-workspace$/);
+  await expect(receiving.getByRole("link", { name: "How to forward with Google Workspace" })).toHaveAttribute("href", "https://tuti.so/help/docs/forward-from-google-workspace");
   await expect(receiving.getByText("Waiting for an email")).toBeVisible();
   for (const n of [1, 2, 3]) {
     await expect(owner.getByRole("region", { name: `CNAME record ${n}` })).toContainText(`._domainkey.${domain}`);

@@ -1,16 +1,19 @@
-/** How to forward a team's own address to its support address, per email provider (docs/email-forwarding.md). */
-export const EMAIL_FORWARDING_DOCS = "https://github.com/omnivision-solutions/tuti/blob/main/docs/email-forwarding.md";
+/** Tuti's help center, where each guide below is an article (the "Support email" collection). */
+const HELP = "https://tuti.so/help/docs";
 
-/** An email provider, known by its MX hosts, and its section of docs/email-forwarding.md. */
+/** Using a team's own address, both ways, and forwarding it with any other provider. */
+export const EMAIL_FORWARDING_DOCS = `${HELP}/own-email-address`;
+
+/** An email provider, known by its MX hosts, and its forwarding guide. */
 export type MailProvider = { name: string; docs: string };
 
-const PROVIDERS: { name: string; anchor: string; mx: RegExp }[] = [
-  { name: "Google Workspace", anchor: "google-workspace", mx: /(^|\.)(google|googlemail)\.com$/ },
-  { name: "Microsoft 365", anchor: "microsoft-365", mx: /(^|\.)(outlook\.com|mx\.microsoft)$/ },
-  { name: "Zoho Mail", anchor: "zoho-mail", mx: /(^|\.)(zoho(mail)?\.(com|com\.au|com\.cn|ae|eu|in|jp|uk|sa)|zohocloud\.ca)$/ },
-  { name: "Fastmail", anchor: "fastmail", mx: /(^|\.)messagingengine\.com$/ },
-  { name: "Proton Mail", anchor: "proton-mail", mx: /(^|\.)protonmail\.ch$/ },
-  { name: "Cloudflare Email Routing", anchor: "cloudflare-email-routing", mx: /(^|\.)mx\.cloudflare\.net$/ },
+const PROVIDERS: { name: string; article: string; mx: RegExp }[] = [
+  { name: "Google Workspace", article: "forward-from-google-workspace", mx: /(^|\.)(google|googlemail)\.com$/ },
+  { name: "Microsoft 365", article: "forward-from-microsoft-365", mx: /(^|\.)(outlook\.com|mx\.microsoft)$/ },
+  { name: "Zoho Mail", article: "forward-from-zoho-mail", mx: /(^|\.)(zoho(mail)?\.(com|com\.au|com\.cn|ae|eu|in|jp|uk|sa)|zohocloud\.ca)$/ },
+  { name: "Fastmail", article: "forward-from-fastmail", mx: /(^|\.)messagingengine\.com$/ },
+  { name: "Proton Mail", article: "forward-from-proton-mail", mx: /(^|\.)protonmail\.ch$/ },
+  { name: "Cloudflare Email Routing", article: "forward-with-cloudflare-email-routing", mx: /(^|\.)mx\.cloudflare\.net$/ },
 ];
 
 /**
@@ -22,5 +25,5 @@ export function mailProvider(mx: string[]): MailProvider | "none" | "other" {
     return "none";
   }
   const known = PROVIDERS.find((provider) => mx.some((host) => provider.mx.test(host)));
-  return known ? { name: known.name, docs: `${EMAIL_FORWARDING_DOCS}#${known.anchor}` } : "other";
+  return known ? { name: known.name, docs: `${HELP}/${known.article}` } : "other";
 }

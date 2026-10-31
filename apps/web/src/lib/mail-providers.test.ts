@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 
-import { EMAIL_FORWARDING_DOCS, mailProvider } from "./mail-providers";
+import { mailProvider } from "./mail-providers";
 
 test("a domain's email provider comes from its MX hosts, with its section of the forwarding guide", () => {
-  expect(mailProvider(["aspmx.l.google.com", "alt1.aspmx.l.google.com"])).toEqual({ name: "Google Workspace", docs: `${EMAIL_FORWARDING_DOCS}#google-workspace` });
+  expect(mailProvider(["aspmx.l.google.com", "alt1.aspmx.l.google.com"])).toEqual({ name: "Google Workspace", docs: "https://tuti.so/help/docs/forward-from-google-workspace" });
   expect(mailProvider(["smtp.google.com"])).toMatchObject({ name: "Google Workspace" });
   expect(mailProvider(["acme-com.mail.protection.outlook.com"])).toMatchObject({ name: "Microsoft 365" });
   // Its DNSSEC endpoints, for newer domains.

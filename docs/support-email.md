@@ -11,9 +11,10 @@ users keep writing to the address they know.
 1. In Settings → Inbox and email, under Email, choose **Get a support address** and copy it.
 2. In your email provider, forward your support address to it, keeping the original sender. Most
    providers send a confirmation first; it lands in your Inbox in Tuti. Step by step for Google
-   Workspace, Microsoft 365, Zoho Mail, Fastmail, Proton Mail and Cloudflare Email Routing:
-   [email-forwarding.md](email-forwarding.md). With your own address set (Settings → Support → Your
-   own address), Receiving emails names your domain's provider and links its guide.
+   Workspace, Microsoft 365, Zoho Mail, Fastmail, Proton Mail and Cloudflare Email Routing are in the
+   help center: [Use your own email address](https://tuti.so/help/docs/own-email-address). With your
+   own address set (Settings → Support → Your own address), Receiving emails names your domain's
+   provider and links its guide.
 3. Send your support address a test email: it shows in the Inbox, and Settings → Inbox and email says when
    the last email came in (and, for your own address, that it's forwarded).
 
