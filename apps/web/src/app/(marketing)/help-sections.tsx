@@ -201,7 +201,7 @@ export function HelpCenterShowcase({ docs }: { docs: string }) {
       </div>
       {plansEnabled() && (
         <p className="mt-8 text-sm text-muted-foreground">
-          Your own domain from Pro; private docs and a path of your site on Business.{" "}
+          Your own domain from Pro; a private portal, reader groups and a path of your site on Business.{" "}
           <Link href="/pricing" className="font-semibold text-foreground underline-offset-4 hover:underline">
             See what each plan includes
           </Link>
@@ -468,7 +468,7 @@ export function PricingTeaser() {
   const pro = PLAN_PRICES.PRO;
   // AI answers run on credits where they're sold: Free gets a grant to start, Pro some each month (as /pricing says).
   const startCredits = creditsEnabled() && freeCredits() > 0 ? `, with ${freeCredits().toLocaleString("en")} AI credits to start` : "";
-  const proCredits = creditsEnabled() ? `, ${planCredits("PRO").toLocaleString("en")} AI credits a month` : "";
+  const proCredits = creditsEnabled() && planCredits("PRO") > 0 ? `, ${planCredits("PRO").toLocaleString("en")} AI credits a month` : "";
   const tiers: { name: string; price: string; text: string }[] = [
     { name: "Free", price: "$0", text: `Help center, feedback board, roadmap and changelog${startCredits}.` },
     { name: pro.name, price: `$${pro.month} a month`, text: `Autopilot, your own domain${proCredits} and unlimited team members. Per project, not per seat.` },
