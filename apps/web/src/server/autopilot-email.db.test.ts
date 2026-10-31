@@ -348,3 +348,42 @@ test("a sweep that finishes sending in the middle of queuing the next analysis d
   // Still to be sent, with what the new analysis found.
   expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: null });
 });
+
+test("one person's sweep failing (a database error) doesn't keep the others' email back, and theirs goes next minute", async () => {
+  const admin = await signUp("Ada Admin");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  await prisma.project.update({ where: { id: project.id }, data: { autopilotTellAdmins: true } });
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  // Reading the first person's membership fails.
+  vi.spyOn(prisma.teamMember, "findUnique").mockRejectedValueOnce(new Error("database blip"));
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(logged).toHaveBeenCalledWith("Autopilot's email sweep failed for someone", expect.anything());
+  logged.mockRestore();
+  // Not held for the claim's quarter of an hour: the next sweep sends it.
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  expect(to(owner)).toHaveLength(1);
+  expect(to(admin)).toHaveLength(1);
+});
+
+test("analysed again while its email went: that email's news isn't repeated, and it's still on record if the next has nothing to say", async () => {
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  // No hold: the progress update went out by itself.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  await queueAutopilotNotices(one.id);
+  // As the email goes (after the sweep read the notice), the change is analysed again.
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.teamMember, "findUnique").mockImplementationOnce((async (...args: unknown[]) => {
+    await queueAutopilotNotices(one.id);
+    return findUnique(...args);
+  }) as never);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).toContain("Went out by itself");
+  // The team decides the request before the next email: nothing new to say, and the first email stays on record.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(0);
+  expect((await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).sentAt).not.toBeNull();
+});
