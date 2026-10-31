@@ -305,6 +305,10 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
   for (const [id, x] of [[dark.id, 1], [night.id, 0.95], [darkEditor.id, 0.9], [merged.id, 1]] as const) {
     await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
   }
+  // An embedding row that says it's this project's but is another project's post: never shown here.
+  const other = await createProject(await signUp("Oscar Other"));
+  const theirs = await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Their dark mode" } });
+  await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${theirs.id}, ${project.id}, 'test', 'x', ${vector(1)}::vector, now())`;
   // Found both ways first (the dark editor), then by meaning (the night theme); not Exports, itself or the merged one.
   const like = await postsLike(project.id, dark);
   expect(like.map((p) => p.title)).toEqual(["Dark mode in the editor", "Night theme for the editor"]);

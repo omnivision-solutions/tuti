@@ -232,7 +232,8 @@ export async function postsLike(projectId: string, post: { id: string; title: st
       FROM post_embedding mine
       JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
       JOIN post p ON p.id = e."postId"
-      WHERE mine."postId" = ${post.id} AND p."duplicateOfId" IS NULL
+      -- The project's own posts only, whatever an embedding row says.
+      WHERE mine."postId" = ${post.id} AND p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
       LIMIT ${SIMILAR_SHOWN * 2}`,
