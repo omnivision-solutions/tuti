@@ -22,8 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { emailLine } from "@/lib/autopilot-email-line";
+import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
+import { updateKind } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";
 import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
@@ -34,24 +35,6 @@ type Update = CodeChangeDetail["actions"][number];
 const STATUS_LABELS: Record<string, string> = { open: "Open", under_review: "Under review", planned: "Planned", in_progress: "In progress", completed: "Completed", closed: "Closed" };
 /** Statuses a progress update moves on to In progress (as codeChangeActions.apply does). */
 const NOT_STARTED = new Set(["open", "under_review", "planned"]);
-
-/** What an update is, as the review page names it. */
-export function updateKind(update: Pick<Update, "kind" | "problem">): string {
-  switch (update.kind) {
-    case "resolves":
-      return "Closes the request";
-    case "moves_forward":
-      return "Progress update";
-    case "links":
-      return "Link";
-    case "article_edit":
-      return update.problem === "missing" ? "Missing info" : "Out of date";
-    case "new_article":
-      return "New article";
-    default:
-      return "Changelog line";
-  }
-}
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 /** "Maya", "Maya and Sam", "Maya, Sam and Lee". */
@@ -95,7 +78,8 @@ export function AutopilotReview({
   const stale = updates.filter((update) => update.status === "stale");
   const scheduled = updates.filter((update) => update.status === "scheduled");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
-  const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
+  // Ticked as it opens: what waits, except one a teammate stopped (its card says so; ticking it is a choice).
+  const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id && !stoppedUpdate(update)))));
   // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
   const [namedIds] = useState(() => [...ticked]);
   // The team's edits: a progress update's comment, the changelog line.
@@ -174,6 +158,7 @@ export function AutopilotReview({
             preview={previews[update.id]}
             canAnalyse={canAnalyse}
             busy={pending}
+            named={fromEmail === "named" && update.status === "scheduled" && namedIds.includes(update.id)}
           />
         ))}
         {decided.length > 0 && (
@@ -387,6 +372,7 @@ function UpdateCard({
   preview,
   canAnalyse,
   busy,
+  named = false,
 }: {
   projectSlug: string;
   changeId: string;
@@ -399,6 +385,8 @@ function UpdateCard({
   preview?: ReactNode;
   canAnalyse: boolean;
   busy: boolean;
+  /** One going out by itself that the email's link named (it has no checkbox to tick): marked so. */
+  named?: boolean;
 }) {
   const router = useRouter();
   const [working, startTransition] = useTransition();
@@ -475,7 +463,10 @@ function UpdateCard({
           {isStale ? (
             <Badge variant="highlight">Changed since</Badge>
           ) : isScheduled ? (
-            <Badge variant="secondary">Goes out by itself</Badge>
+            <>
+              <Badge variant="secondary">Goes out by itself</Badge>
+              {named && <Badge variant="highlight">In your email</Badge>}
+            </>
           ) : (
             <Badge variant={update.confidence === "likely" ? "secondary" : "outline"}>{update.confidence === "likely" ? "Likely" : "Not sure"}</Badge>
           )}

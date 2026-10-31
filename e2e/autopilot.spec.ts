@@ -6,7 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { runAutopilot } from "./autopilot";
-import { latestEmailTo, linkIn } from "./mail";
+import { latestEmailTo } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -275,8 +275,17 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   expect(email.text).toContain(`Out of date · ${article}`);
   expect(email.text).toContain("goes out in 24 hours");
   expect(email.text).toContain("Done (only your team sees it)");
-  await owner.goto(linkIn(email, `${APP_URL}/app/${slug}/autopilot/`));
+  // Publish now, Review and Stop under what goes out: Review opens the page.
+  const review = email.text.split(/\s+/).find((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.endsWith("?select=likely"));
+  const acts = email.text.split(/\s+/).filter((word) => word.includes("/act?token="));
+  expect(acts).toHaveLength(2);
+  await owner.goto(review!);
   await expect(owner.getByText("From your email:", { exact: false })).toBeVisible();
+  // Its Publish now or Stop opened by someone else (or late) names the edit: it has no checkbox, so it's marked.
+  const [payload] = new URL(acts[0]!).searchParams.get("token")!.split(".");
+  const named = (JSON.parse(Buffer.from(payload!, "base64url").toString()) as { b: string }).b.split(":")[1]!;
+  await owner.goto(`${review!.split("?")[0]}?select=${named}`);
+  await expect(owner.getByRole("article", { name: `Out of date: ${article}` }).getByText("In your email")).toBeVisible();
   await expect(owner.getByRole("region", { name: "The change" })).toContainText("Emailed to Olive Owner");
 
   // Home says it goes out by itself, with Publish now and Stop; the page says when.
@@ -333,4 +342,70 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await asTheyHappen.check();
   await expect(owner.getByText("Sign in first")).toBeVisible();
   await expect(off).toBeChecked();
+});
+
+test("the email's Approve, clicked signed out: sign in, and it's done; the post is in progress and the article's new version on the portal", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const id = randomUUID().slice(0, 8);
+  const number = randomInt(1_000, 1_000_000);
+  const slug = `e2e-${id}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  const title = `Dark mode ${id}`;
+  await api("/posts", { board: "feature-requests", title });
+  const article = `Change the theme ${id}`;
+  const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
+  await api(`/articles/${articleSlug}/publish`, {});
+  const installationId = await connectGithub(owner, slug);
+
+  // Under the bar (95%): the progress update and the article's edit both wait for the team.
+  const pr = `Add a dark theme ${id}`;
+  const summary = `You can now switch to a dark theme in Settings (${id}).`;
+  await similar(summary, title, 0.95);
+  await similar(summary, `${article}\n\nPick Light in Settings.`, 0.9);
+  await nextDecision({ audience: { users: 0.95, internal: 0.03, dependencies: 0.01, repository_docs: 0.01 } }, pr);
+  await nextModelReply(summary, pr);
+  await nextDecision({ effect: { resolves: 0.05, moves_forward: 0.9, related: 0.04, unrelated: 0.01 } }, title);
+  await nextDecision({ effect: { wrong: 0.87, missing: 0.05, unaffected: 0.08 } }, `"article":{"title":"${article}"`);
+  await nextDecision({ needed: 0.1 }, `${summary}","existing_articles`);
+  await nextModelReply(
+    JSON.stringify({ why: "", changelog: "Dark theme", proposals: { p2: { reason: "Dark mode is part of it.", comment: "Dark mode is on its way: the theme is in Settings now." } } }),
+    title,
+  );
+  await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
+  await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
+
+  // The email: what needs her, each with Approve.
+  await runAutopilot(slug, { emailNow: true });
+  const email = await latestEmailTo(owner.email, { subject: /^Autopilot/ });
+  expect(email.subject).toBe(`Autopilot: ${pr} · 2 need you`);
+  const approves = email.text.split(/\s+/).filter((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.includes("/act?token="));
+  expect(approves).toHaveLength(2);
+  const inbox = await (await browser.newContext()).newPage();
+  await inbox.setContent(email.html);
+  await expect(inbox.getByRole("link", { name: "Approve" })).toHaveCount(2);
+  await checkpoint(inbox, "autopilot-email");
+
+  // Clicked on another device, signed out: sign in first, then it's done.
+  const elsewhere = await (await browser.newContext()).newPage();
+  await elsewhere.goto(approves[0]!);
+  await elsewhere.waitForURL("**/sign-in?next=*");
+  await elsewhere.getByLabel("Email").fill(owner.email);
+  await elsewhere.getByLabel("Password").fill("correct horse battery staple");
+  await elsewhere.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(elsewhere.getByText(`Approved: Out of date: ${article}. Undo is under Done.`)).toBeVisible();
+  await checkpoint(elsewhere, "autopilot-email-approved");
+  // Signed in now, the next one acts at once; clicked again, it says it's done and does nothing.
+  await elsewhere.goto(approves[1]!);
+  await expect(elsewhere.getByText(`Approved: Progress update: ${title}. Undo is under Done.`)).toBeVisible();
+  await elsewhere.goto(approves[1]!);
+  await expect(elsewhere.getByText(`Done already: Progress update: ${title} was approved by Olive Owner`, { exact: false })).toBeVisible();
+
+  // The post is in progress with the update, and the portal has the article's new version.
+  await elsewhere.goto(`/app/${slug}/p/1`);
+  await expect(elsewhere.getByRole("combobox", { name: "Status" })).toContainText("In progress");
+  await expect(elsewhere.getByText("Dark mode is on its way: the theme is in Settings now.")).toBeVisible();
+  await elsewhere.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
+  await expect(elsewhere.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
 });

@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { emailedAbout, queueAutopilotNotices, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
+import { emailedAbout, queueAutopilotNotices, readAutopilotButton, sendAutopilotEmails, tellOwners } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
 import pg from "pg";
@@ -676,6 +676,51 @@ test("an email whose read missed an update the runner saved before it was stampe
   expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: savedAt })).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("Publish now and Stop name only the updates the email shows (five in all); a change it shows none of gets neither", async () => {
+  const one = await change("Add a dark theme");
+  // Six more going out by itself: seven, and the email shows five.
+  for (let i = 0; i < 6; i++) {
+    const post = await call(createPost, team(), { board: "feature-requests", title: `More ${i}` });
+    const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+    await prisma.codeChangeAction.create({
+      data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { comment: "Out soon" } },
+    });
+  }
+  const two = await change("Faster search");
+  await queueAutopilotNotices(one.id);
+  await queueAutopilotNotices(two.id);
+  // The first change first in the email: its updates use up the five.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: two.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  // The five it shows, in its order.
+  const shown = (
+    await prisma.codeChangeAction.findMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, orderBy: [{ probability: "desc" }, { id: "asc" }], select: { id: true } })
+  )
+    .slice(0, 5)
+    .map(({ id }) => id);
+  const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!);
+  for (const kind of ["publish", "stop"]) {
+    const named = buttons.filter((button) => button.button.startsWith(`${kind}:`));
+    expect(named.map((button) => button.codeChangeId)).toEqual([one.id]);
+    expect(named[0]!.button.slice(kind.length + 1).split(",")).toEqual(shown);
+  }
+});
+
+test("an update a teammate stopped is in the email with Edit only, not a one-click Approve", async () => {
+  const one = await change("Add a dark theme");
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "PENDING", dueAt: null, decidedById: owner.id, waitReason: "Stopped by Olive Owner" } });
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!.button);
+  expect(buttons).not.toContain(`approve:${progress.id}`);
+  // The request it closes (not stopped) keeps its Approve.
+  expect(buttons.filter((button) => button.startsWith("approve:"))).toHaveLength(1);
+  expect(to(owner)[0]!.html).toContain(`select=${progress.id}`);
 });
 
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {

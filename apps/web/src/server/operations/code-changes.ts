@@ -997,8 +997,8 @@ export const stopCodeChangeAction = defineOperation({
     const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
     const { count } = await prisma.codeChangeAction.updateMany({
       where: { id: action.id, status: "SCHEDULED" },
-      // Who stopped it, too: analysed again, a stopped update stays as it is, waiting for the team.
-      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor) },
+      // Who stopped it and when: analysed again, a stopped update stays as it is; the next person who tries is told ("stopped by Alice, just now").
+      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor), decidedAt: new Date() },
     });
     if (count === 0) {
       throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
