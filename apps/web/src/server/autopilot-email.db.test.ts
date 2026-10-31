@@ -212,6 +212,32 @@ test("five needing you still leave a place for what goes out by itself, with its
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
+test("an earlier change's done updates don't take the place kept for what goes out by itself", async () => {
+  // The earlier change: one changelog line Autopilot wrote by itself (done); its request, waiting when it was
+  // queued, a teammate dismissed before the email went.
+  const earlier = await change("Faster search", { scheduled: false });
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: earlier.id, kind: "CHANGELOG_LINE", probability: 1, status: "APPLIED", decidedAt: new Date(), payload: { line: "Faster search", auto: true, autoAt: new Date().toISOString() } },
+  });
+  await queueAutopilotNotices(earlier.id);
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: earlier.id, kind: "RESOLVES" }, data: { status: "DISMISSED" } });
+  // The later one: four needing you and one going out by itself.
+  const later_ = await change("Big release");
+  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: later_.id } })).postId!;
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 3 }, () => ({ codeChangeId: later_.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+  });
+  await queueAutopilotNotices(later_.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: earlier.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: later_.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  expect(await sendAutopilotEmails()).toBe(1);
+  const [email] = to(owner);
+  expect(email!.subject).toBe("4 need you, 1 goes out in 24 hours · 2 pull requests");
+  expect(email!.text).toContain("Goes out by itself · 1");
+  expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
+  expect(email!.text).toContain("+1 more in Tuti");
+});
+
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;

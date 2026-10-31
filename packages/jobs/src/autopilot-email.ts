@@ -176,17 +176,18 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
 type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
 
 /**
- * An email's five updates: room for what needs the team first (`needsYou` of them, across all its changes), but
- * one kept for what goes out by itself when anything does (`goesOut`), so its Stop is always there; what's left
- * for the rest. `take` cuts a list (`needsYou`: one of those) to the room left; `more` counts what didn't fit.
+ * An email's five updates, each list kind with its own room across all its changes (whichever change comes first):
+ * what needs the team (`needsYou` of them) first, but one place kept for what goes out by itself when anything
+ * does (`goesOut`), so its Stop is always there; then what goes out; what's left for what went out and what's
+ * done. `take` cuts a list to its kind's room left; `more` counts what didn't fit.
  */
 function shownFive(needsYou: number, goesOut: number) {
   const first = Math.min(needsYou, SHOWN - (goesOut > 0 ? 1 : 0));
-  const room = { needsYou: first, rest: SHOWN - first };
+  const second = Math.min(goesOut, SHOWN - first);
+  const room = { needsYou: first, goesOut: second, rest: SHOWN - first - second };
   let more = 0;
   return {
-    take: (list: AutopilotEmailUpdate[], isNeedsYou = false) => {
-      const which = isNeedsYou ? "needsYou" : "rest";
+    take: (list: AutopilotEmailUpdate[], which: keyof typeof room) => {
       const shown = list.slice(0, room[which]);
       room[which] -= shown.length;
       more += list.length - shown.length;
@@ -206,7 +207,7 @@ function emailChange(
   projectSlug: string,
   userId: string,
   now: Date,
-  take: (list: AutopilotEmailUpdate[], needsYou?: boolean) => AutopilotEmailUpdate[],
+  take: (list: AutopilotEmailUpdate[], which: "needsYou" | "goesOut" | "rest") => AutopilotEmailUpdate[],
   gone: ActionRow[],
   drafts: ActionRow[],
 ): AutopilotEmailChange {
@@ -217,7 +218,7 @@ function emailChange(
     return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
   };
   const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
-  const goesOut = take(scheduled.map((action) => previewOf(action, now)));
+  const goesOut = take(scheduled.map((action) => previewOf(action, now)), "goesOut");
   // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
   const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
   const needsYou = codeChange.actions
@@ -236,9 +237,9 @@ function emailChange(
     reviewUrl: `${page}?select=likely`,
     ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
     goesOut,
-    wentOut: take(gone.map((action) => previewOf(action, now))),
-    needsYou: take(needsYou, true),
-    done: take(drafts.map((action) => previewOf(action, now))),
+    wentOut: take(gone.map((action) => previewOf(action, now)), "rest"),
+    needsYou: take(needsYou, "needsYou"),
+    done: take(drafts.map((action) => previewOf(action, now)), "rest"),
   };
 }
 
