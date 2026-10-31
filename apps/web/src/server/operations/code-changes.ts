@@ -245,27 +245,29 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
 export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number }> {
   const recent = await prisma.codeChangeAction.findMany({
     where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
-    orderBy: [{ decidedAt: "desc" }, { id: "desc" }],
+    // By when it was proposed, which Undo doesn't move (it does move decidedAt): an old update undone stays old.
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 50,
     select: { kind: true, status: true, payload: true },
   });
   const known = recent.flatMap((action) => {
     const payload = (action.payload ?? {}) as { edited?: boolean; undo?: Undo; auto?: boolean };
-    if (action.status === "UNDONE") {
-      return [false];
-    }
-    if (action.kind === "MOVES_FORWARD" || action.kind === "CHANGELOG_LINE") {
-      return payload.edited === undefined ? [] : [!payload.edited];
-    }
+    // What isn't counted when kept isn't counted when undone either.
     if (action.kind === "NEW_ARTICLE" || (action.kind === "ARTICLE_EDIT" && payload.undo?.published === false)) {
       // Finished in the editor: whether it went out as written isn't known (saved again before or after
       // it was published, deleted…), so it isn't counted either way.
       return [];
     }
-    if (action.kind === "ARTICLE_EDIT") {
-      return payload.undo === undefined ? [] : [true];
+    if ((action.kind === "MOVES_FORWARD" || action.kind === "CHANGELOG_LINE") && payload.edited === undefined) {
+      return [];
     }
-    return [true];
+    if (action.kind === "ARTICLE_EDIT" && payload.undo === undefined) {
+      return [];
+    }
+    if (action.status === "UNDONE") {
+      return [false];
+    }
+    return [!payload.edited];
   });
   return { kept: known.filter(Boolean).length, of: known.length };
 }

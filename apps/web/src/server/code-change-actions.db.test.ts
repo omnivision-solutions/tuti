@@ -318,6 +318,24 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   expect(await autopilotRecord(project.id)).toEqual({ kept: 2, of: 4 });
 });
 
+test("how Autopilot is doing: what isn't counted when kept isn't counted when undone; the last 50 are the last proposed, whenever undone", async () => {
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 40, url: "https://github.com/acme/app/pull/40", title: "Docs", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  // A new article's draft, undone: not counted (nor would it be, kept).
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 3 * 86_400_000), decidedAt: new Date(), payload: { undo: { revision: null } } },
+  });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+  // An old link, undone just now, then 50 newer ones kept: the last 50 are the newer ones.
+  const day = 86_400_000;
+  await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "LINKS", probability: 0.9, status: "UNDONE", createdAt: new Date(Date.now() - 2 * day), decidedAt: new Date(), payload: { undo: { linked: true } } } });
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 50 }, (_, i) => ({ codeChangeId: change.id, kind: "LINKS" as const, probability: 0.9, status: "APPLIED" as const, createdAt: new Date(Date.now() - day + i * 1000), decidedAt: new Date(Date.now() - day), payload: { undo: { linked: true } } })),
+  });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 50, of: 50 });
+});
+
 describe("approving several (applyMany)", () => {
   test("each as apply does, with its edits; one refused doesn't stop the rest, and says why", async () => {
     const resolves = await proposal("RESOLVES");
