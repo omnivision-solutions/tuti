@@ -5,7 +5,7 @@ import { addToRunningDraft, undoChangelogLine } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction, autopilotRecord } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -291,6 +291,21 @@ test("the review page ticks the likely updates as it opens (not a comment nobody
   const done = await proposal("RESOLVES", { status: "COMPLETED" });
   const again = await call(getCodeChange, team(), { id: done.change.id });
   expect(again.actions.find((action) => action.id === done.action.id)).toMatchObject({ emails: 0 });
+});
+
+test("how Autopilot is doing: of its last updates that went out, those kept as it wrote them (not edited first, nor undone)", async () => {
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
+  const kept = await proposal("RESOLVES");
+  const edited = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+  const undone = await proposal("LINKS");
+  await call(applyCodeChangeAction, team(), { id: kept.action.id });
+  await call(applyCodeChangeAction, team(), { id: edited.action.id, comment: "Weekly repeats are out; monthly next." });
+  await call(applyCodeChangeAction, team(), { id: undone.action.id });
+  await call(undoCodeChangeAction, team(), { id: undone.action.id });
+  // Waiting, or dismissed: not counted.
+  const waiting = await proposal("LINKS");
+  await call(dismissCodeChangeAction, team(), { id: waiting.action.id });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 1, of: 3 });
 });
 
 describe("approving several (applyMany)", () => {
@@ -696,6 +711,7 @@ describe("the changelog line", () => {
     });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({
       line: "A dark theme, in Settings",
+      edited: true,
       undo: { previous: "Add a dark theme (acme/app#30)", added: null },
     });
     // Undo puts the bullet back as it was, still linking to the pull request.

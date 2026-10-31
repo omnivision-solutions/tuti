@@ -45,7 +45,10 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   );
   await checkpoint(owner, "settings-github-connected");
 
-  // Autopilot is on, and the team can turn it off (and on again).
+  // Autopilot is on, and its owner can turn it off (and on again), in Settings → Autopilot (GitHub's page points there).
+  await owner.getByRole("link", { name: "Settings → Autopilot" }).click();
+  await owner.waitForURL("**/settings/autopilot");
+  await expect(owner.getByText("Nothing has gone out yet.", { exact: false })).toBeVisible();
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
   await analysis.click();

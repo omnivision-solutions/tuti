@@ -21,6 +21,12 @@ export async function getMembership(slug: string) {
 }
 
 /** The project, if the signed-in user is one of its owners or admins. */
+/** The project, if the signed-in user owns it (settings only owners change, like Autopilot's). */
+export async function getOwnerProject(slug: string) {
+  const membership = await getMembership(slug);
+  return membership?.role === "OWNER" ? membership.project : null;
+}
+
 export async function getAdminProject(slug: string) {
   const membership = await getMembership(slug);
   return membership && (ADMIN_ROLES as readonly string[]).includes(membership.role) ? membership.project : null;

@@ -70,7 +70,7 @@ async function emailedOnCompletion(projectId: string, postIds: string[]): Promis
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
 
-type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string };
+type DocsPayload = { problem?: "wrong" | "missing"; basedOn?: string | null; title?: string; content?: unknown; body?: string; before?: string; edited?: boolean };
 
 /** An article edit is out of date once the article was saved again since it was written, or has unpublished changes (applying would publish them too). */
 const outdated = (payload: DocsPayload, article: { revisions: { id: string }[]; changes: unknown }) =>
@@ -235,6 +235,21 @@ export async function codeChangeDetail(projectId: string, id: string) {
 }
 
 export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeDetail>>>;
+
+/**
+ * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
+ * many were kept as it wrote them (not edited first, nor undone since).
+ */
+export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number }> {
+  const recent = await prisma.codeChangeAction.findMany({
+    where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
+    orderBy: [{ decidedAt: "desc" }, { id: "desc" }],
+    take: 50,
+    select: { status: true, payload: true },
+  });
+  const kept = recent.filter((action) => action.status === "APPLIED" && !((action.payload ?? {}) as { edited?: boolean }).edited).length;
+  return { kept, of: recent.length };
+}
 
 const id = z.string().min(1).max(100);
 
@@ -416,6 +431,8 @@ export const applyCodeChangeAction = defineOperation({
       // Whether the changelog has the pull request yet: if not, a failed try takes out what it added.
       const before = await changelogLineOf(projectId, action.codeChange.url);
       const undo = { previous: before?.text ?? null, added: before === null ? ("entry" as const) : before.text === null ? ("bullet" as const) : null };
+      // Changed by the team before approving (for "how it's doing").
+      const edited = line !== (((action.payload ?? {}) as { line?: string }).line ?? "");
       const { count } = await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: "PENDING" },
         // Applying adds the bullet when no entry has it (and the pull request too, when none has that): Undo takes them out again.
@@ -424,7 +441,7 @@ export const applyCodeChangeAction = defineOperation({
           decidedById: actorUser(context.actor),
           decidedAt: new Date(),
           // What to undo is recorded once it's done: till then, Undo has nothing to go on.
-          payload: { line },
+          payload: { line, edited },
         },
       });
       if (count === 0) {
@@ -433,7 +450,7 @@ export const applyCodeChangeAction = defineOperation({
       try {
         // What to put back is what the bullet said as it was rewritten (read under the project's lock).
         const { number: entry, previous, added } = await setChangelogLine(projectId, { ...action.codeChange }, line);
-        await recordUndo(action.id, { line }, { previous, added });
+        await recordUndo(action.id, { line, edited }, { previous, added });
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
         // Not done: the pull request it put in a draft comes out again (writing the line is one save: it's
@@ -533,7 +550,7 @@ export const applyCodeChangeAction = defineOperation({
       await putBackPost(context, action.kind, post, codeChange.url, undo).catch((cause: unknown) => unknown(error, cause));
       return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
     }
-    await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment } : asObject(action.payload), undo);
+    await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment, edited: comment !== proposed } : asObject(action.payload), undo);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
 });
@@ -693,7 +710,8 @@ async function applyDocs(
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
-      await recordUndo(action.id, payload, { revision: await ourRevision(article!.id), live, published: publish });
+      // Kept unpublished to finish in the editor ("Edit"): edited by the team.
+      await recordUndo(action.id, { ...payload, ...(!publish && { edited: true }) }, { revision: await ourRevision(article!.id), live, published: publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
     }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });

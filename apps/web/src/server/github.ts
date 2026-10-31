@@ -4,7 +4,7 @@ import { prisma } from "@tuti/db";
 import { includeRepositories, inInstallation, listedRepositories, syncRepositories } from "@tuti/jobs";
 import { refresh } from "next/cache";
 
-import { getAdminProject } from "./membership";
+import { getAdminProject, getOwnerProject } from "./membership";
 
 /** Disconnects GitHub from the project here (the App stays installed on GitHub until removed there). */
 export async function disconnectGithub(projectSlug: string): Promise<{ error?: string }> {
@@ -103,9 +103,10 @@ export async function refreshGithubRepositories(projectSlug: string): Promise<{ 
 
 /** Turns code changes (merged pull requests read and analysed by the AI provider) on or off for the project. */
 export async function setCodeChangeAnalysis(projectSlug: string, on: boolean): Promise<{ error?: string }> {
-  const project = await getAdminProject(projectSlug);
+  // Autopilot's settings are the owners' (Settings → AI → Autopilot).
+  const project = await getOwnerProject(projectSlug);
   if (!project) {
-    return { error: "Only project owners and admins can change the GitHub connection" };
+    return { error: "Only project owners can change Autopilot's settings" };
   }
   await prisma.project.update({ where: { id: project.id }, data: { analyseCodeChanges: on === true } });
   refresh();
@@ -114,9 +115,10 @@ export async function setCodeChangeAnalysis(projectSlug: string, on: boolean): P
 
 /** Lets Tuti apply a code change's "links" proposals by itself when it's very sure (only links: nothing users see). */
 export async function setAutoApplyLinks(projectSlug: string, on: boolean): Promise<{ error?: string }> {
-  const project = await getAdminProject(projectSlug);
+  // Autopilot's settings are the owners' (Settings → AI → Autopilot).
+  const project = await getOwnerProject(projectSlug);
   if (!project) {
-    return { error: "Only project owners and admins can change the GitHub connection" };
+    return { error: "Only project owners can change Autopilot's settings" };
   }
   await prisma.project.update({ where: { id: project.id }, data: { autoApplyLinks: on === true } });
   refresh();
