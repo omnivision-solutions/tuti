@@ -12,9 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { asking } from "@/lib/format";
+import { storedConditions } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
-import { teamPostCounts, teamPosts } from "@/server/post-lists";
+import { teamPostCounts, teamPosts, voterTotals } from "@/server/post-lists";
 
 /** Feedback's tabs by status, opening on the posts nobody has triaged; then All and the possible duplicates. */
 const TABS = [
@@ -38,16 +40,25 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
-    select: { id: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
+    select: {
+      id: true,
+      askingProperty: true,
+      boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } },
+      readerGroups: { orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true, conditions: true } },
+    },
   });
   const board = project.boards.some((b) => b.slug === filters.board) ? filters.board : undefined;
-  const scope = { board, q };
+  // Who's asking: the posts a reader group voted for.
+  const group = project.readerGroups.find((g) => g.key === first(searchParams.group));
+  const scope = { board, q, group: group && storedConditions(group.conditions) };
   const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
+  const totals = await voterTotals(project.id, project.askingProperty, posts.map((post) => post.id));
 
   // A tab keeps the board, the search and the sort.
   const href = (to: string) => {
     const params = new URLSearchParams({
       ...(board && { board }),
+      ...(group && { group: group.key }),
       ...(q && { q }),
       ...(filters.sort !== "top" && { sort: filters.sort }),
       ...(to === "duplicates" ? { show: "duplicates" } : to !== "open" && { status: to }),
@@ -68,6 +79,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           <>
             <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
               {board && <input type="hidden" name="board" value={board} />}
+              {group && <input type="hidden" name="group" value={group.key} />}
               {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
               {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Search titles and descriptions" aria-label="Search feedback" className="h-8" />
@@ -101,18 +113,29 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
             value: board ?? "all",
             options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
           },
+          ...(project.readerGroups.length > 0
+            ? [
+                {
+                  name: "group",
+                  label: "Voters",
+                  // "*" can't be a group's key (a group named "All" has "all").
+                  value: group?.key ?? "*",
+                  options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                },
+              ]
+            : []),
           sortFilter(filters.sort, TEAM_SORTS),
         ]}
       />
 
       {posts.length === 0 ? (
-        counts.all === 0 && !q && !board ? (
+        counts.all === 0 && !q && !board && !group ? (
           <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
         ) : (
           <EmptyState
-            title={q || board ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
+            title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
             description={
-              q || board
+              q || board || group
                 ? "Try other words, or another board or tab."
                 : tab === "duplicates"
                   ? "Posts that may repeat an older one show here."
@@ -141,6 +164,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
                       #{post.number} · {post.board.name} · {post.author.name}
                       {post.commentCount > 0 &&
                         ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
+                      {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
                     </>
                   }
                   actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}

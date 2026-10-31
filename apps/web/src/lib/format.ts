@@ -34,3 +34,8 @@ export function shortDuration(date: Date, now = new Date()): string {
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
 }
+
+/** Who's asking: a post's voters' total of a number property ("12,400 mrr"). */
+export function asking(total: number, property: string): string {
+  return `${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${property}`;
+}

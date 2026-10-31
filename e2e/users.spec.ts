@@ -90,3 +90,46 @@ test("the team syncs its users over the API and finds them on the Users page, by
   await owner.getByRole("button", { name: "More actions" }).click();
   await expect(owner.getByRole("searchbox", { name: "Search users" })).toHaveValue("cipher");
 });
+
+test("who's asking: Feedback totals the property the team picks over each post's voters, and lists what a group voted for", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(owner, "Acme", slug);
+  const api = await apiFor(owner, slug);
+  await api("/users", {
+    users: [
+      { id: "user-1", name: "Ada Lovelace", properties: { plan: "enterprise", mrr: 1200 } },
+      { id: "user-2", name: "Bea Byte", properties: { plan: "pro", mrr: 300 } },
+    ],
+  });
+  await api("/groups", { name: "Enterprise", conditions: [{ property: "plan", op: "is", value: "enterprise" }] });
+  await api("/posts", { board: "feature-requests", title: "SSO" });
+  await api("/posts", { board: "feature-requests", title: "Exports" });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-1" } });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-2" } });
+  await api("/posts/2/vote", { voted: true, author: { id: "user-2" } });
+
+  // Settings → Access: the team picks MRR, from its users' number properties.
+  await owner.goto(`/app/${slug}/settings/access`);
+  const card = owner.getByRole("region", { name: "Who's asking" });
+  await card.getByRole("combobox", { name: "Property to total" }).click();
+  await expect(owner.getByRole("option")).toHaveText(["None", "mrr"]);
+  await owner.getByRole("option", { name: "mrr" }).click();
+  await expect(owner.getByText("Feedback totals mrr over each post's voters")).toBeVisible();
+
+  // Each post's voters' total, on the list and the post.
+  await owner.goto(`/app/${slug}/feedback`);
+  const rows = owner.getByRole("main").getByRole("listitem");
+  await expect(rows.filter({ hasText: "SSO" })).toContainText("1,500 mrr");
+  await expect(rows.filter({ hasText: "Exports" })).toContainText("300 mrr");
+  await checkpoint(owner, "team-feedback-whos-asking");
+  // What Enterprise voted for.
+  await owner.getByRole("combobox", { name: "Voters" }).click();
+  await owner.getByRole("option", { name: "Voted by Enterprise" }).click();
+  await expect(owner).toHaveURL(/\?group=enterprise$/);
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("SSO");
+  await rows.getByRole("link", { name: "SSO" }).click();
+  await expect(owner.locator('[data-slot="page-header"]')).toContainText("1,500 mrr");
+});

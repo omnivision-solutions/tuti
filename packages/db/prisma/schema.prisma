@@ -131,6 +131,8 @@ model Project {
   /// HS256 secret the project's own app uses to sign SSO tokens. SSO is
   /// enabled when this is set. Stored as-is because verification needs it.
   ssoSecret             String?
+  /// Who's asking: the number property (Users, from the app: MRR, seats…) totalled over a post's voters for the team; none until picked.
+  askingProperty        String?
   /// Last post number handed out; posts are numbered #1, #2, … per project.
   postCount             Int          @default(0)
   /// Last changelog entry number handed out, like postCount.

@@ -1,6 +1,8 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
 
+import type { GroupCondition } from "@/lib/group-conditions";
 import { POSTS_PER_PAGE, type PostFilters, postOrderBy } from "@/lib/post-filters";
+import { inGroupSql } from "@/server/group-conditions-sql";
 
 /** Pending suggestions that this post duplicates an older post that's still listed. */
 export const possibleDuplicateOf = { status: "PENDING", original: { duplicateOfId: null } } as const;
@@ -31,62 +33,106 @@ const teamPostSelect = {
   _count: { select: { duplicateSuggestions: { where: possibleDuplicateOf } } },
 } satisfies Prisma.PostSelect;
 
-/** What Feedback's list narrows to besides the status: a board, words in the title or description, possible duplicates only. */
-export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boolean };
-
-/** The posts `scope` takes, every status (Feedback's tab counts). */
-export function teamPostWhere(projectId: string, { board, q, duplicatesOnly }: TeamPostScope): Prisma.PostWhereInput {
-  // `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
-  const words = q?.trim() ? { contains: q.trim().replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const } : null;
-  return {
-    projectId,
-    duplicateOfId: null,
-    ...(board && { board: { slug: board } }),
-    ...(words && { OR: [{ title: words }, { body: words }] }),
-    ...(duplicatesOnly && { duplicateSuggestions: { some: possibleDuplicateOf } }),
-  };
-}
+/**
+ * What Feedback's list narrows to besides the status: a board, words in the title or description,
+ * possible duplicates only, posts a reader group voted for (its conditions).
+ */
+export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boolean; group?: GroupCondition[] };
 
 /**
- * The team's Feedback list. Trending: the most votes in the last 7 days first (then the most votes),
- * which Prisma can't order by, so the page's ids come from SQL with the same filters.
+ * A voter (`v`, a vote; `u`, its user) as the project's users (`s`): the one its SSO signed in as, or,
+ * signed in another way, the ones with their address once it's verified (as readerOf). Identities'
+ * emails are kept lowercase, so (projectId, email)'s index finds them.
+ */
+const voterIdentities = (projectId: string) => Prisma.sql`
+  JOIN "user" u ON u.id = v."userId"
+  JOIN sso_identity s ON s."projectId" = ${projectId}
+    AND (s."userId" = v."userId" OR (u."emailVerified" AND s.email = lower(u.email)))
+    -- The team votes as the team, not as one of the project's users (as readerOf).
+    AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = v."userId")`;
+
+/** A post with a pending suggestion that it duplicates a post still listed. */
+const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId"
+  WHERE d."postId" = p.id AND d.status = 'PENDING' AND o."duplicateOfId" IS NULL)`;
+
+/** The posts (`p`) `scope` takes, every status. */
+function teamPostFilter(projectId: string, { board, q, duplicatesOnly, group }: TeamPostScope): Prisma.Sql {
+  // ILIKE's wildcards (and its escape) typed as themselves.
+  const words = q?.trim() ? `%${q.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
+  return Prisma.sql`p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
+    ${board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${board})` : Prisma.empty}
+    ${words ? Prisma.sql`AND (p.title ILIKE ${words} OR p.body ILIKE ${words})` : Prisma.empty}
+    ${duplicatesOnly ? Prisma.sql`AND ${possibleDuplicate}` : Prisma.empty}
+    ${
+      group
+        ? Prisma.sql`AND EXISTS (SELECT 1 FROM vote v ${voterIdentities(projectId)} WHERE v."postId" = p.id AND ${inGroupSql(group, Prisma.sql`s`)})`
+        : Prisma.empty
+    }`;
+}
+
+const ORDER = {
+  top: Prisma.sql`p."voteCount" DESC, p."createdAt" DESC, p.id DESC`,
+  new: Prisma.sql`p."createdAt" DESC, p.id DESC`,
+  // The most votes in the last 7 days, then the most votes.
+  trending: Prisma.sql`COALESCE(r.recent, 0) DESC, p."voteCount" DESC, p."createdAt" DESC, p.id DESC`,
+};
+
+/**
+ * The team's Feedback list, in SQL (Prisma can't filter by a group's votes or order by this week's):
+ * the page's ids, then their posts.
  */
 export async function teamPosts(projectId: string, filters: PostFilters, scope: TeamPostScope = {}) {
-  const where = { ...teamPostWhere(projectId, scope), ...(filters.status && { status: filters.status }) };
-  if (filters.sort !== "trending") {
-    return upToPage(filters, (page) => prisma.post.findMany({ ...page, where, orderBy: postOrderBy(filters.sort), select: teamPostSelect }));
-  }
   return upToPage(filters, async ({ skip, take }) => {
     const since = new Date(Date.now() - 7 * 86_400_000);
-    const words = scope.q?.trim() ? `%${scope.q.trim().replace(/[\\%_]/g, "\\$&")}%` : null;
     const rows = await prisma.$queryRaw<{ id: string }[]>`
       SELECT p.id FROM post p
-      LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id
-      WHERE p."projectId" = ${projectId} AND p."duplicateOfId" IS NULL
-        ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}
-        ${scope.board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${scope.board})` : Prisma.empty}
-        ${words ? Prisma.sql`AND (p.title ILIKE ${words} OR p.body ILIKE ${words})` : Prisma.empty}
-        ${
-          scope.duplicatesOnly
-            ? Prisma.sql`AND EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId" WHERE d."postId" = p.id AND d.status = 'PENDING' AND o."duplicateOfId" IS NULL)`
-            : Prisma.empty
-        }
-      ORDER BY COALESCE(r.recent, 0) DESC, p."voteCount" DESC, p."createdAt" DESC, p.id DESC
+      ${
+        filters.sort === "trending"
+          ? Prisma.sql`LEFT JOIN (SELECT "postId", COUNT(*) AS recent FROM vote WHERE "projectId" = ${projectId} AND "createdAt" >= ${since} GROUP BY "postId") r ON r."postId" = p.id`
+          : Prisma.empty
+      }
+      WHERE ${teamPostFilter(projectId, scope)} ${filters.status ? Prisma.sql`AND p.status = ${filters.status}::"PostStatus"` : Prisma.empty}
+      ORDER BY ${ORDER[filters.sort]}
       OFFSET ${skip} LIMIT ${take}`;
     const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select: teamPostSelect });
-    return rows.flatMap((row) => posts.filter((post) => post.id === row.id));
+    const byId = new Map(posts.map((post) => [post.id, post]));
+    return rows.flatMap((row) => byId.get(row.id) ?? []);
   });
 }
 
 /** Feedback's tab counts: posts in `scope` by status, the possible duplicates among them, and all of them. */
 export async function teamPostCounts(projectId: string, scope: TeamPostScope) {
-  const where = teamPostWhere(projectId, { ...scope, duplicatesOnly: false });
-  const [byStatus, duplicates] = await Promise.all([
-    prisma.post.groupBy({ by: ["status"], where, _count: true }),
-    prisma.post.count({ where: teamPostWhere(projectId, { ...scope, duplicatesOnly: true }) }),
-  ]);
-  const of = (status: PostStatus) => byStatus.find((row) => row.status === status)?._count ?? 0;
-  return { of, all: byStatus.reduce((sum, row) => sum + row._count, 0), duplicates };
+  const rows = await prisma.$queryRaw<{ status: PostStatus; posts: number; duplicates: number }[]>`
+    SELECT p.status, COUNT(*)::int AS posts, (COUNT(*) FILTER (WHERE ${possibleDuplicate}))::int AS duplicates
+    FROM post p WHERE ${teamPostFilter(projectId, { ...scope, duplicatesOnly: false })} GROUP BY p.status`;
+  const sum = (count: (row: (typeof rows)[number]) => number) => rows.reduce((total, row) => total + count(row), 0);
+  return { of: (status: PostStatus) => rows.find((row) => row.status === status)?.posts ?? 0, all: sum((row) => row.posts), duplicates: sum((row) => row.duplicates) };
+}
+
+/**
+ * Who's asking: each post's total of `property` (a number property of the project's users) over its
+ * voters: each voter as one of the project's users (their own identity, else the oldest with their
+ * address), each of those once (two accounts can be the same user); posts with none aren't in it.
+ */
+export async function voterTotals(projectId: string, property: string | null, postIds: string[]): Promise<Map<string, number>> {
+  if (!property || postIds.length === 0) {
+    return new Map();
+  }
+  // As text: numbers JavaScript can hold may add up past what float8 can (then it's Infinity, not an error).
+  const rows = await prisma.$queryRaw<{ postId: string; total: string }[]>`
+    SELECT "postId", SUM((attributes ->> ${property}::text)::numeric)::text AS total FROM (
+      SELECT DISTINCT ON ("postId", identity) "postId", attributes FROM (
+        SELECT DISTINCT ON (v."postId", v."userId") v."postId", s.id AS identity, s.attributes
+        FROM vote v ${voterIdentities(projectId)}
+        WHERE v."postId" = ANY(${postIds})
+        -- Their own identity first, then the oldest with their address.
+        ORDER BY v."postId", v."userId", (s."userId" = v."userId") DESC, s."createdAt"
+      ) voter
+      ORDER BY "postId", identity
+    ) asker
+    WHERE jsonb_typeof(attributes -> ${property}::text) = 'number'
+    GROUP BY "postId"`;
+  return new Map(rows.map((row) => [row.postId, Number(row.total)]));
 }
 
 /** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */

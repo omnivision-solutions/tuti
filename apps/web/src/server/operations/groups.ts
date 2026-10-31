@@ -57,6 +57,14 @@ export async function propertyNames(projectId: string): Promise<string[]> {
   return rows.map((row) => row.name);
 }
 
+/** The names of the project's users' number properties (Who's asking totals one), A to Z. */
+export async function numberPropertyNames(projectId: string): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ name: string }[]>`
+    SELECT DISTINCT p.key AS name FROM sso_identity s, jsonb_each(s.attributes) p
+    WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name LIMIT 200`;
+  return rows.map((row) => row.name);
+}
+
 /** The project's groups by name, each with who's in it now (or just group `key`). */
 export async function groupsWithReaders(projectId: string, key?: string): Promise<GroupView[]> {
   const groups = await prisma.readerGroup.findMany({

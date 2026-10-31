@@ -7,6 +7,7 @@ import { groupConditions } from "@/lib/group-conditions";
 import type { FormState } from "./form-state";
 import { getAdminProject } from "./membership";
 import { createGroup, deleteGroup as deleteGroupOperation, matchingUsers, updateGroup } from "./operations/groups";
+import { updateProject } from "./operations/more";
 import { asAdmin, call } from "./operations/run";
 import { getSession } from "./session";
 
@@ -55,4 +56,11 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
   return matchingUsers(project.id, input.data, PREVIEW_USERS);
+}
+
+/** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
+export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
+  return asAdmin(projectSlug, "Only project owners and admins can change Who's asking", (context) =>
+    call(updateProject, context, { askingProperty: property === null ? null : String(property) }),
+  );
 }

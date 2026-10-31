@@ -456,6 +456,7 @@ const matrix: Matrix = {
     deleteGroup: { allowed: "ADMIN", call: (slug) => groups.deleteGroup(slug, "beta") },
     // Names the project's SSO users, like Settings → Groups.
     previewGroup: { allowed: "ADMIN", call: (slug) => groups.previewGroup(slug, [{ property: "plan", op: "is", value: "pro" }]) },
+    setAskingProperty: { allowed: "ADMIN", call: (slug) => groups.setAskingProperty(slug, "mrr") },
   },
   "portal-handoff": {
     // Any Tuti account may sign in to any portal as itself.

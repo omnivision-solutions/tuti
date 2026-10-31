@@ -1,10 +1,13 @@
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
+import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
-import { createProject, signUp } from "@/test/helpers";
+import { setAskingProperty } from "@/server/groups";
+import { numberPropertyNames } from "@/server/operations/groups";
+import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, MAX_LISTED, teamPostCounts, teamPosts } from "./post-lists";
+import { boardPosts, MAX_LISTED, teamPostCounts, teamPosts, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -104,4 +107,58 @@ test("Feedback: a tab's posts, words found in titles and descriptions, Trending 
   expect([counts.of("OPEN"), counts.of("PLANNED"), counts.of("COMPLETED"), counts.all, counts.duplicates]).toEqual([3, 1, 0, 4, 1]);
   const searched = await teamPostCounts(project.id, { q: "O", board: ideas.slug });
   expect([searched.of("OPEN"), searched.of("PLANNED"), searched.all, searched.duplicates]).toEqual([2, 1, 3, 0]);
+});
+
+test("Who's asking: each post's voters' total of the number property the team picks, and the posts a group voted for", async () => {
+  const owner = await signUp("Owner");
+  const project = await createProject(owner);
+  actAs(owner);
+  const board = project.boards[0]!;
+  const post = (number: number, title: string) => prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title } });
+  const [sso, exports, quiet] = [await post(1, "SSO"), await post(2, "Exports"), await post(3, "Quiet")];
+  // Three of the app's users: two paying (mrr), one on the free plan with mrr as text, which isn't counted.
+  const user = async (name: string, properties: Record<string, unknown>) => {
+    const { id } = await signUp(name);
+    await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: name, userId: id, properties: properties as object } });
+    return id;
+  };
+  const acme = await user("Acme", { mrr: 1200.5, plan: "enterprise" });
+  const bolt = await user("Bolt", { mrr: 300, plan: "pro" });
+  const free = await user("Free", { mrr: "none", plan: "free" });
+  // Signed in to the portal with their own account, the address the app gave Cora (verified): Cora's properties.
+  const cora = await signUp("Cora");
+  await prisma.user.update({ where: { id: cora.id }, data: { emailVerified: true } });
+  const coraApp = (await signUp("Cora (app)")).id;
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "cora", userId: coraApp, email: cora.email.toLowerCase(), properties: { mrr: 99, plan: "pro" } } });
+  // The owner's address is one of the app's users too (an enterprise one): the team's votes don't count as theirs.
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "olive", userId: (await signUp("Olive (app)")).id, email: owner.email.toLowerCase(), properties: { mrr: 5000, plan: "enterprise" } } });
+  await prisma.vote.createMany({
+    data: [
+      { projectId: project.id, postId: sso.id, userId: acme },
+      { projectId: project.id, postId: sso.id, userId: bolt },
+      { projectId: project.id, postId: quiet.id, userId: cora.id },
+      // Cora again, signed in by the app: the same user of the project, counted once.
+      { projectId: project.id, postId: quiet.id, userId: coraApp },
+      { projectId: project.id, postId: exports.id, userId: free },
+      { projectId: project.id, postId: quiet.id, userId: owner.id },
+    ],
+  });
+
+  // Picked in Settings → Access, from the number properties.
+  expect(await numberPropertyNames(project.id)).toEqual(["mrr"]);
+  expect(await setAskingProperty(project.slug, "mrr")).toEqual({});
+  expect(await setAskingProperty(project.slug, " ")).toEqual({ error: "Pick one of your users' properties" });
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).askingProperty).toBe("mrr");
+  const totals = await voterTotals(project.id, "mrr", [sso.id, exports.id, quiet.id]);
+  expect(new Map(totals)).toEqual(new Map([[sso.id, 1500.5], [quiet.id, 99]]));
+  expect(await voterTotals(project.id, null, [sso.id])).toEqual(new Map());
+
+  // Voted for by the paying ones: SSO and Quiet (Cora); by enterprise: SSO; by free: Exports. The tab counts follow.
+  const titles = async (group: GroupCondition[]) => (await teamPosts(project.id, parsePostFilters({}), { group })).posts.map((p) => p.title);
+  expect(await titles([{ property: "plan", op: "is_any_of", value: ["enterprise", "pro"] }])).toEqual(["Quiet", "SSO"]);
+  expect(await titles([{ property: "plan", op: "is", value: "enterprise" }])).toEqual(["SSO"]);
+  expect(await titles([{ property: "plan", op: "is", value: "free" }])).toEqual(["Exports"]);
+  expect((await teamPosts(project.id, parsePostFilters({ sort: "trending" }, TEAM_SORTS), { group: [{ property: "plan", op: "is", value: "free" }] })).posts.map((p) => p.title)).toEqual(["Exports"]);
+  expect((await teamPostCounts(project.id, { group: [{ property: "plan", op: "is", value: "free" }] })).all).toBe(1);
 });
