@@ -58,7 +58,8 @@ export async function FeedbackPane({
   const total = totals.get(post.id);
   const doc = displayDoc(post);
   return (
-    <section aria-label={`Post #${post.number}`} data-feedback-pane className="flex flex-col gap-4 text-sm">
+    // Scrolled into view on a phone: just below the app's bar (3rem), not under it.
+    <section aria-label={`Post #${post.number}`} data-feedback-pane className="flex scroll-mt-14 flex-col gap-4 text-sm">
       <div className="flex items-center gap-2 text-muted-foreground">
         <Link href={close} scroll={false} aria-label="Close" title="Close (Esc)" className={buttonVariants({ variant: "ghost", size: "icon-sm", className: "-ml-2" })}>
           <ArrowLeftIcon className="lg:hidden" />

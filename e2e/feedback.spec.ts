@@ -506,6 +506,9 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   const last = (await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents()).at(-1)!;
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
+  // Its first row (Close, Open full page) clear of the app's bar (3rem), not under it.
+  const header = (await team.locator("header").first().boundingBox())!;
+  expect((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(header.y + header.height);
   // Closed, the list is back where it was: at the row just triaged.
   await pane.getByRole("link", { name: "Close" }).click();
   await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();
