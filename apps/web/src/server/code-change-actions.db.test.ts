@@ -451,6 +451,21 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
   });
 
+  test("approving several: refused (the article changed meanwhile), then not put back (the database went): unknown, not the refusal", async () => {
+    const { article, action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // Right as it's claimed, someone saves the article (so its save is refused as changed)...
+    const claim = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return claim(...args);
+    }) as never);
+    // ...and putting it back fails.
+    vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("connection reset"));
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
+    expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
+  });
+
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
     const change = await prisma.codeChange.create({
       data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 21, url: "https://github.com/acme/app/pull/21", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },

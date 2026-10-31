@@ -347,7 +347,8 @@ async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateIn
   try {
     await prisma.codeChangeAction.update({ where: { id }, data });
   } catch {
-    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { saved: "unknown" as const });
+    // Not a refusal (an OperationError's message would say "try again" or "out of date"): unknown, the refusal as its cause.
+    throw Object.assign(new Error("Couldn't put an Autopilot update back after a failure", { cause: error }), { saved: "unknown" as const });
   }
   throw error;
 }
