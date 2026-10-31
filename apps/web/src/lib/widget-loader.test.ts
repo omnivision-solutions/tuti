@@ -970,3 +970,13 @@ test("on a phone the open panel is the whole screen, so the page under it is out
   page.resize(false);
   expect(content.hasAttribute("inert")).toBe(false);
 });
+
+test("on a phone, what the page adds while the panel covers it (the button, once it's set up) is out of reach too", async () => {
+  const page = loadWidget({ narrow: true });
+  page.Tuti.open();
+  const late = page.body.appendChild(new FakeElement("div", page));
+  page.mutated();
+  expect(late.hasAttribute("inert")).toBe(true);
+  page.Tuti.close();
+  expect(late.hasAttribute("inert")).toBe(false);
+});

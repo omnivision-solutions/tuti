@@ -12,6 +12,21 @@ const close = () => window.parent.postMessage(WIDGET_CLOSE_MESSAGE, "*");
 const noSubscription = () => () => {};
 
 /**
+ * Tells the loader its Close is here (on a phone it hides its own, kept for a page that never comes),
+ * and that it's gone once it is: the page goes away (a tab loading as a whole new page, which may fail),
+ * or this Close does (the page's error screen took its place). Returns the cleanup.
+ */
+export function announceClose(window: Pick<Window, "addEventListener" | "removeEventListener"> & { parent: Pick<Window, "postMessage"> }) {
+  const gone = () => window.parent.postMessage({ type: WIDGET_CLOSABLE_MESSAGE, closable: false }, "*");
+  window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
+  window.addEventListener("pagehide", gone);
+  return () => {
+    window.removeEventListener("pagehide", gone);
+    gone();
+  };
+}
+
+/**
  * The widget's close button; Escape anywhere in the panel closes it too. Not in an inline
  * panel (in the customer's page, with nothing to close): the loader opens it with
  * `display=inline` (`inline`), and names its iframe, which keeps that name on the pages
@@ -27,11 +42,7 @@ export function WidgetClose({ inline, className }: { inline: boolean; className?
     if (hidden) {
       return;
     }
-    // Here to close it: the loader's own Close (a phone's, in case this page never comes) can go; leaving (a
-    // tab that loads as a whole new page, which may fail), it's needed again until the next page says so.
-    window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
-    const onLeave = () => window.parent.postMessage({ type: WIDGET_CLOSABLE_MESSAGE, closable: false }, "*");
-    window.addEventListener("pagehide", onLeave);
+    const unannounce = announceClose(window);
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         close();
@@ -40,7 +51,7 @@ export function WidgetClose({ inline, className }: { inline: boolean; className?
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("pagehide", onLeave);
+      unannounce();
     };
   }, [hidden]);
 

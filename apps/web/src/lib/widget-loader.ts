@@ -209,11 +209,12 @@ export function widgetLoader(portalTemplate: string): string {
     standIn.style.display = small && small.matches && !closable ? "flex" : "none";
   }
   // On a phone the open panel is the whole screen: the page under it is out of reach (Tab, a screen reader's
-  // swipes) until it closes or the screen's wide again. Only what the loader made inert is put back.
+  // swipes) until it closes or the screen's wide again, what it adds meanwhile too (the button, once it's
+  // set up). Only what the loader made inert is put back.
   var covered = [];
   function coverPage() {
     var cover = opened && small && small.matches;
-    if (cover && covered.length === 0) {
+    if (cover) {
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
@@ -222,7 +223,7 @@ export function widgetLoader(portalTemplate: string): string {
           covered.push(child);
         }
       }
-    } else if (!cover) {
+    } else {
       for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");
       covered = [];
     }
@@ -501,7 +502,12 @@ export function widgetLoader(portalTemplate: string): string {
   }
   whenBody(function () {
     mountInline();
-    if (window.MutationObserver) new window.MutationObserver(mountInline).observe(document.body, { childList: true, subtree: true });
+    if (window.MutationObserver) {
+      new window.MutationObserver(function () {
+        mountInline();
+        coverPage();
+      }).observe(document.body, { childList: true, subtree: true });
+    }
   });
   var getToken = typeof settings.identify === "function" ? settings.identify : null;
   window.Tuti = {
