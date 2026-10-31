@@ -69,3 +69,17 @@ test("read from one of the team's sites, the widget counts as added (Home's Get 
   await from("https://www.acme.example");
   expect(await seen()).not.toBeNull();
 });
+
+test("the portal at its own address doesn't count as one of the team's sites either", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const hostname = `help-${project.slug}.example.com`;
+  await prisma.customDomain.create({ data: { projectId: project.id, hostname, verificationToken: "t", verifiedAt: new Date() } });
+  const { protocol, port } = new URL(portalUrl(project.slug));
+  const from = (origin: string) => GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin } }));
+  await from(`${protocol}//${hostname}${port ? `:${port}` : ""}`);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt).toBeNull();
+});

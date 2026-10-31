@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
+import { portalAddress } from "@/server/custom-domains";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
@@ -35,9 +36,17 @@ export async function GET(request: Request) {
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),
   };
-  // On a site of the team's (not the app or a portal): the widget is set up (Home's "Get set up"). Once.
+  // On a site of the team's (not the app or the portal, at Tuti's address or its own): the widget is
+  // set up (Home's "Get set up"). Once: the portal's address is only looked up until then.
   const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
-  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin) {
+  if (
+    project &&
+    !project.widgetSeenAt &&
+    from &&
+    from !== appUrl().origin &&
+    from !== new URL(portalUrl(slug)).origin &&
+    from !== new URL(await portalAddress(slug)).origin
+  ) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
