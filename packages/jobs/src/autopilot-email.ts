@@ -121,10 +121,11 @@ type ActionRow = {
   article: { title: string } | null;
 };
 
-/** Lines of an edit an email shows (changed ones, with one unchanged either side), and how long each; the rest are on its page. */
+/** Lines of an edit an email shows (changed ones, with one unchanged either side); the rest are on its page. */
 const DIFF_LINES = 8;
-const LINE_LENGTH = 280;
-const clip = (text: string) => (text.length > LINE_LENGTH ? `${text.slice(0, LINE_LENGTH - 1)}…` : text);
+/** How much of an unchanged line shows, for context. Changed ones show whole: they're what Approve publishes. */
+const CONTEXT_LENGTH = 280;
+const clip = (text: string) => (text.length > CONTEXT_LENGTH ? `${text.slice(0, CONTEXT_LENGTH - 1)}…` : text);
 /** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
 const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
   action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
@@ -150,7 +151,7 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     NEW_ARTICLE: "A draft only your team sees",
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
   };
-  const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text: clip(text) }] : undefined);
+  const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text }] : undefined);
   const edit = action.kind === "ARTICLE_EDIT" ? nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1) : [];
   // Cut after DIFF_LINES, but not between a paragraph's removed line and what replaces it (up to twice as many).
   let cut = Math.min(DIFF_LINES, edit.length);
@@ -159,7 +160,7 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   }
   const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
     MOVES_FORWARD: added(payload.comment),
-    ARTICLE_EDIT: edit.slice(0, cut).map((line) => ({ ...line, text: clip(line.text) })),
+    ARTICLE_EDIT: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),
     CHANGELOG_LINE: added(payload.line),
   };
   return {

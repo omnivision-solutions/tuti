@@ -199,6 +199,17 @@ test("a long edit shows its first lines and says how many more; a progress updat
   expect(email!.text).not.toContain("New paragraph 5.");
   expect(email!.text).toContain("8 more lines in Tuti");
   expect(email!.text).toContain("Marks it in progress: write its comment first");
+
+  // A long paragraph changed only at its end: both its versions whole, so what Approve publishes shows.
+  const long = await change("Exports", { scheduled: false });
+  const start = "Exports run every night. ".repeat(20);
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: long.id, kind: "ARTICLE_EDIT", probability: 0.8, payload: { problem: "wrong", before: `${start}They are kept a week.`, body: `${start}They are kept a month.` } },
+  });
+  await queueAutopilotNotices(long.id);
+  await sendAutopilotEmails(new Date(Date.now() + 30 * MINUTE));
+  expect(to(owner)[1]!.text).toContain("They are kept a week.");
+  expect(to(owner)[1]!.text).toContain("They are kept a month.");
   // Approve for the request it closes and the edit; the progress update only gets Edit.
   expect(email!.text.match(/Approve http\S+\/act\?token=/g)).toHaveLength(2);
 });

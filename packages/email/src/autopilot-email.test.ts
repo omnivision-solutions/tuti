@@ -54,9 +54,9 @@ test("Autopilot's email: from Tuti Autopilot, what needs you first in a short su
   expect(text).toContain("https://app.example.com/act?token=publish Stop https://app.example.com/act?token=stop");
 });
 
-test("with nothing for customers, the subject counts every draft (shown or not); the digest says what still waits", () => {
+test("with nothing for customers, the subject counts everything done for the team (shown or not); the digest says what still waits", () => {
   const drafts = { ...props, changes: [{ ...props.changes[0]!, needsYou: [], goesOut: [] }], totals: { goesOut: 0, wentOut: 0, needsYou: 0, done: 7, first: "" } };
   // All of them, not just the one shown.
-  expect(autopilotEmail(drafts).subject).toBe("7 drafts for your team · Email voters: the team's reply sent to the post's voters too");
+  expect(autopilotEmail(drafts).subject).toBe("7 done for your team · Email voters: the team's reply sent to the post's voters too");
   expect(autopilotEmail({ ...props, digest: true, totals: { ...props.totals, needsYou: 3, pullRequests: 2 } }).subject).toBe("3 still need you · 2 pull requests");
 });

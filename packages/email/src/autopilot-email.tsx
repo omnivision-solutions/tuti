@@ -199,7 +199,7 @@ function headline(totals: AutopilotProps["totals"], digest = false): string {
     totals.goesOut > 0 && `${totals.goesOut} ${totals.goesOut === 1 ? "goes" : "go"} out ${totals.first}`,
     totals.wentOut > 0 && `${totals.wentOut} went out`,
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join(", ") : `${plural(totals.done ?? 0, "draft", "drafts")} for your team`;
+  return parts.length > 0 ? parts.join(", ") : `${totals.done ?? 0} done for your team`;
 }
 
 /** "1 needs you, 2 go out in 24 hours · Add a dark theme" (the sender says it's Autopilot); for several, how many merged. */
