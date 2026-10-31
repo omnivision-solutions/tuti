@@ -37,6 +37,7 @@ import { request } from "@/test/next-headers";
 
 import * as aiModels from "./ai-models";
 import * as apiKeys from "./api-keys";
+import * as appSearch from "./app-search";
 import * as appWidget from "./app-widget";
 import * as assistant from "./assistant";
 import * as boards from "./boards";
@@ -85,6 +86,7 @@ const modules = {
   credits,
   "ai-models": aiModels,
   "api-keys": apiKeys,
+  "app-search": appSearch,
   "app-widget": appWidget,
   assistant,
   boards,
@@ -156,6 +158,9 @@ const matrix: Matrix = {
   // A token for the account itself (none while APP_WIDGET_PROJECT has SSO off; see app-widget.db.test.ts).
   "app-widget": {
     appWidgetToken: { allowed: "signed in", refusesSsoUsers: true, call: () => appWidget.appWidgetToken() },
+  },
+  "app-search": {
+    searchApp: { allowed: "MEMBER", call: (slug) => appSearch.searchApp(slug, "matrix") },
   },
   "api-keys": {
     createApiKey: { allowed: "ADMIN", call: (slug) => apiKeys.createApiKey(slug, "Zapier", "READ") },

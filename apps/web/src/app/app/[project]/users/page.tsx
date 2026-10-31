@@ -30,7 +30,7 @@ export default async function UsersPage(props: PageProps<"/app/[project]/users">
     notFound();
   }
   const { project } = membership;
-  const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 200) : "";
+  const q = typeof searchParams.q === "string" ? searchParams.q.trim().slice(0, 255) : "";
   const groups = await prisma.readerGroup.findMany({ where: { projectId: project.id }, orderBy: [{ name: "asc" }, { key: "asc" }], select: { key: true, name: true } });
   const group = groups.find((g) => g.key === searchParams.group)?.key;
   const page = Math.max(1, Number.parseInt(String(searchParams.page ?? "1"), 10) || 1);

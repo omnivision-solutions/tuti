@@ -121,8 +121,23 @@ test("an admin brands the portal: logos, favicon, colour and links; Powered by t
   await checkpoint(owner, "customize-leave-unsaved", { fullPage: false });
   await leave.getByRole("button", { name: "Keep editing" }).click();
   await expect(leave).toBeHidden();
+  // So does going elsewhere from ⌘K.
+  await owner.keyboard.press("ControlOrMeta+k");
+  const search = owner.getByRole("dialog", { name: "Go to or do" }).getByRole("combobox", { name: "Search the project" });
+  await search.fill("inbox");
+  await search.press("Enter");
+  await expect(leave).toBeVisible();
+  await leave.getByRole("button", { name: "Keep editing" }).click();
+  await expect(leave).toBeHidden();
   // Its own section in the rail isn't leaving: nothing to ask, the changes stay.
   await rail.getByRole("link", { name: "Navigation" }).click();
+  await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
+  // Nor is picking it in ⌘K.
+  await owner.keyboard.press("ControlOrMeta+k");
+  await search.fill("customize · navigation");
+  await search.press("Enter");
+  await expect(owner.getByRole("dialog", { name: "Go to or do" })).toBeHidden();
+  await expect(leave).toHaveCount(0);
   await expect(links.getByLabel("Label", { exact: true })).toHaveValue("Talk to us");
   await owner.getByRole("button", { name: "Save changes" }).click();
   await expect(owner.getByText("Navigation saved")).toBeVisible();
