@@ -70,11 +70,16 @@ export const answerArticle = defineOperation({
 /** How the Gaps list groups questions (in SQL, so grouping and dismissing can't disagree): lowercase, trimmed, spaces collapsed. */
 const normalized = (text: Prisma.Sql) => Prisma.sql`lower(btrim(regexp_replace(${text}, '[[:space:]]+', ' ', 'g')))`;
 
+/** Where Insights' window starts: whole days (UTC), today included, so daily counts and timestamps cover the same span. */
+export function insightsSince(now = new Date()): Date {
+  const since = new Date(now.toISOString().slice(0, 10));
+  since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
+  return since;
+}
+
 /** The team's numbers for the last INSIGHTS_DAYS days (docs.insights and the app's insights page). */
 export async function docsInsights(projectId: string) {
-  // Whole days (UTC), today included, so daily view counts and timestamps cover the same span.
-  const since = new Date(new Date().toISOString().slice(0, 10));
-  since.setUTCDate(since.getUTCDate() - (INSIGHTS_DAYS - 1));
+  const since = insightsSince();
   const [views, articles, comments, searches, topFailed, gaps] = await Promise.all([
     prisma.articleViewDay.aggregate({ where: { article: { projectId, deletedAt: null }, day: { gte: since } }, _sum: { views: true } }),
     prisma.$queryRaw<{ slug: string; title: string; views: number; helpful: number; notHelpful: number }[]>`

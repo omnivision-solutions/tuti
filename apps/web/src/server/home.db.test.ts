@@ -32,6 +32,9 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(2), query: "refund", count: 2 } });
   // That day, one more found nothing past the queries kept: Docs → Insights counts 3, and so does Home.
   await prisma.docsSearchDay.create({ data: { projectId: project.id, day: ago(2), searches: 10, failed: 3 } });
+  // A month ago, the day before Insights' 30: in neither.
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: ago(30), searches: 50, failed: 40 } });
+  await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(30), query: "old question", count: 40 } });
   // Votes: two on SSO this week (one old one doesn't count), one on Exports.
   const voters = await Promise.all(["Vera", "Val", "Vic"].map((name) => signUp(name)));
   const idOf = async (number: number) => (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;

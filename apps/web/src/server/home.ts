@@ -1,6 +1,7 @@
 import { prisma } from "@tuti/db";
 
 import { githubConfig } from "@/lib/github";
+import { insightsSince } from "@/server/operations/docs-insights";
 
 /** Home's numbers, what needs the team (oldest first), what's left to set up and the trending ideas. */
 export type HomeOverview = Awaited<ReturnType<typeof homeOverview>>;
@@ -21,7 +22,8 @@ export type AttentionItem = { key: string; at: Date; kind: string; title: string
 export async function homeOverview(projectId: string, slug: string, { emailVerified }: { emailVerified: boolean }) {
   const now = Date.now();
   const week = new Date(now - 7 * DAY);
-  const month = new Date(now - 30 * DAY);
+  // Searches as Docs → Insights counts them (the page their number opens): its days.
+  const month = insightsSince(new Date(now));
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
   const needsReply = { projectId, spam: false, status: "OPEN" as const };
