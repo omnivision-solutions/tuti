@@ -1021,6 +1021,7 @@ model Conversation {
   @@index([assigneeId])
   @@index([userId])
   @@index([visitorHash])
+  @@index([projectId, email])
   @@map("conversation")
 }
 

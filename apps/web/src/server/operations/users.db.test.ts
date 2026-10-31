@@ -242,7 +242,26 @@ test("someone who signs in to the portal another way, with a user's address veri
   expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
   await prisma.user.update({ where: { id: portal.id }, data: { emailVerified: true } });
   expect((await list()).users[0]!.activity).toEqual({ posts: 1, votes: 1, conversations: 0, lastSeenAt: new Date("2026-10-06") });
+  // An email from their address (verified) started a conversation before they were a user: theirs. Someone else
+  // on the email (in Cc), writing later, doesn't make them seen then.
+  await prisma.conversation.create({
+    data: {
+      projectId,
+      number: 1,
+      subject: "Hi",
+      origin: "EMAIL",
+      email: "e2e-sam@example.com",
+      emailVerified: true,
+      messages: {
+        create: [
+          { projectId, author: "USER", channel: "EMAIL", body: "Hi", createdAt: new Date("2026-10-07") },
+          { projectId, author: "USER", channel: "EMAIL", body: "Me too", fromAddress: "e2e-cc@example.com", createdAt: new Date("2026-10-09") },
+        ],
+      },
+    },
+  });
+  expect((await list()).users[0]!.activity).toEqual({ posts: 1, votes: 1, conversations: 1, lastSeenAt: new Date("2026-10-07") });
   // Once they're on the team, what they do is the team's.
   await prisma.teamMember.create({ data: { projectId, userId: portal.id, role: "MEMBER" } });
-  expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 0, lastSeenAt: null });
+  expect((await list()).users[0]!.activity).toEqual({ posts: 0, votes: 0, conversations: 1, lastSeenAt: new Date("2026-10-07") });
 });

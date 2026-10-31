@@ -53,17 +53,21 @@ const accountsOf = Prisma.sql`CROSS JOIN LATERAL (
  * time in the widget, their posts, votes and comments, and their messages in conversations: what Tuti sees of them.
  * ponytail: worked out per user, for every user an activity sort matches; keep a summary per user if projects outgrow it.
  */
+/** A conversation (`c`) is theirs: with one of their accounts, or started by email from their address, verified. */
+const theirConversation = Prisma.sql`(c."userId" = ANY(who.ids) OR (c."userId" IS NULL AND c."emailVerified" AND c.email = s.email))`;
+
 const activitySql = {
   posts: Prisma.sql`(SELECT count(*) FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids) AND p."duplicateOfId" IS NULL)::int`,
   votes: Prisma.sql`(SELECT count(*) FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids))::int`,
-  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND c."userId" = ANY(who.ids) AND NOT c.spam)::int`,
+  conversations: Prisma.sql`(SELECT count(*) FROM conversation c WHERE c."projectId" = s."projectId" AND ${theirConversation} AND NOT c.spam)::int`,
   lastSeen: Prisma.sql`GREATEST(
     (SELECT max(w."lastSeenAt") FROM widget_presence w WHERE w."projectId" = s."projectId" AND w.who = ANY(who.ids)),
     (SELECT max(p."createdAt") FROM post p WHERE p."projectId" = s."projectId" AND p."authorId" = ANY(who.ids)),
     (SELECT max(v."createdAt") FROM vote v WHERE v."projectId" = s."projectId" AND v."userId" = ANY(who.ids)),
     (SELECT max(m."createdAt") FROM comment m WHERE m."projectId" = s."projectId" AND m."authorId" = ANY(who.ids)),
     (SELECT max(cm."createdAt") FROM conversation_message cm JOIN conversation c ON c.id = cm."conversationId"
-      WHERE c."projectId" = s."projectId" AND c."userId" = ANY(who.ids) AND cm.author = 'USER'))`,
+      -- Their own messages: not someone else's on the email (in Cc), who has an address of their own.
+      WHERE c."projectId" = s."projectId" AND ${theirConversation} AND cm.author = 'USER' AND cm."fromAddress" IS NULL))`,
 };
 
 const userSelect = {
