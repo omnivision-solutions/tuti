@@ -210,7 +210,7 @@ test("the worker's minute reaches the runner only with the server's token", asyn
   expect((await due(request("not-it"))).status).toBe(401);
   const response = await due(request(autopilotDueToken()!));
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ applied: 0, waiting: 0 });
+  expect(await response.json()).toEqual({ applied: 0, waiting: 0, emailed: 0 });
 });
 
 test("Autopilot's settings: owners save the switches, the three limits and the hold, within reason", async () => {

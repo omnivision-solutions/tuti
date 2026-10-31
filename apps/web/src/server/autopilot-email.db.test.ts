@@ -1,0 +1,139 @@
+import { prisma } from "@tuti/db";
+import { queueAutopilotNotices, sendAutopilotEmails } from "@tuti/jobs";
+import { FAKE_OPENAI_KEY, startModelFake, startOpenAIFake } from "@tuti/testkit";
+import { afterAll, beforeAll, beforeEach, expect, test, vi } from "vitest";
+
+import { saveAutopilotRecipients, setAutopilotEmails } from "@/server/github";
+import { createPost } from "@/server/operations/create";
+import { call } from "@/server/operations/run";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
+import { mailbox } from "@/test/mailbox";
+
+let owner: TestUser;
+let project: Awaited<ReturnType<typeof createProject>>;
+let number = 0;
+
+// AI on (Autopilot needs it), with local fakes.
+let fakes: { close: () => Promise<void> }[] = [];
+beforeAll(async () => {
+  const model = await startModelFake();
+  const openai = await startOpenAIFake();
+  fakes = [model, openai];
+  for (const [name, value] of Object.entries(model.env)) {
+    vi.stubEnv(name, value);
+  }
+  vi.stubEnv("OPENAI_BASE_URL", openai.url);
+  vi.stubEnv("OPENAI_API_KEY", FAKE_OPENAI_KEY);
+});
+afterAll(async () => {
+  await Promise.all(fakes.map((fake) => fake.close()));
+});
+
+beforeEach(async () => {
+  await prisma.autopilotNotice.deleteMany({});
+  owner = await signUp("Olive Owner");
+  project = await createProject(owner);
+  actAs(owner);
+});
+
+const team = () => ({ actor: { kind: "user" as const, userId: owner.id }, projectId: project.id });
+const MINUTE = 60_000;
+
+/** A ready change with a request it closes (waiting for the team) and, with `scheduled`, a progress update going out in 24 hours. */
+async function change(title: string, { scheduled = true } = {}) {
+  number++;
+  const post = await call(createPost, team(), { board: "feature-requests", title: `Dark mode ${number}` });
+  const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
+  return prisma.codeChange.create({
+    data: {
+      projectId: project.id,
+      repoId: 1,
+      repo: "acme/app",
+      number,
+      url: `https://github.com/acme/app/pull/${number}`,
+      title,
+      author: "octo",
+      mergedAt: new Date(),
+      state: "READY",
+      summary: "You can now switch to a dark theme.",
+      actions: {
+        create: [
+          { kind: "RESOLVES", postId, probability: 0.9 },
+          ...(scheduled
+            ? [{ kind: "MOVES_FORWARD" as const, postId, probability: 0.97, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000), payload: { comment: "Out soon" } }]
+            : []),
+        ],
+      },
+    },
+  });
+}
+
+const to = (user: TestUser) => mailbox.emails.filter((email) => email.to.includes(user.email) && email.subject.startsWith("Autopilot"));
+const later = () => new Date(Date.now() + 11 * MINUTE);
+
+test("who's told: owners, admins when the project says so, and the members it picks, each as they chose; owners always hear what goes out by itself", async () => {
+  const admin = await signUp("Ada Admin");
+  const member = await signUp("Max Member");
+  const chosen = await signUp("Cy Chosen");
+  for (const [user, role] of [[admin, "ADMIN"], [member, "MEMBER"], [chosen, "MEMBER"]] as const) {
+    await prisma.teamMember.create({ data: { projectId: project.id, userId: user.id, role } });
+  }
+  const told = async (codeChangeId: string) =>
+    (await prisma.autopilotNotice.findMany({ where: { codeChangeId }, select: { user: { select: { name: true } } } })).map((n) => n.user.name).sort();
+
+  const first = await change("Add a dark theme");
+  await queueAutopilotNotices(first.id);
+  expect(await told(first.id)).toEqual(["Olive Owner"]);
+
+  // The owner adds admins and picks Cy.
+  const form = new FormData();
+  form.set("admins", "on");
+  form.append("told", chosen.id);
+  expect(await saveAutopilotRecipients(project.slug, {}, form)).toEqual({});
+  const second = await change("Faster search");
+  await queueAutopilotNotices(second.id);
+  expect(await told(second.id)).toEqual(["Ada Admin", "Cy Chosen", "Olive Owner"]);
+
+  // Cy and the owner turn it off: Cy isn't told; the owner still is while something goes out by itself, not otherwise.
+  for (const user of [chosen, owner]) {
+    actAs(user);
+    expect(await setAutopilotEmails("OFF")).toEqual({});
+  }
+  actAs(owner);
+  const third = await change("Exports");
+  await queueAutopilotNotices(third.id);
+  expect(await told(third.id)).toEqual(["Ada Admin", "Olive Owner"]);
+  const quiet = await change("Docs tweaks", { scheduled: false });
+  await queueAutopilotNotices(quiet.id);
+  expect(await told(quiet.id)).toEqual(["Ada Admin"]);
+});
+
+test("the email: what goes out by itself and when, what needs you, Review with the likely ones ticked; sent ten minutes on", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // Not yet: something else may merge.
+  expect(await sendAutopilotEmails()).toBe(0);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  const [email] = to(owner);
+  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update goes out in 24 hours, 1 needs you");
+  expect(email!.text).toContain("Goes out by itself");
+  expect(email!.text).toContain("Progress update · Dark mode");
+  expect(email!.text).toContain("Needs you");
+  expect(email!.text).toContain("Closes the request · Dark mode");
+  expect(email!.html).toContain(`/app/${project.slug}/autopilot/${one.id}?select=likely`);
+  // Once.
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: one.id, sentAt: { not: null } } })).toBe(1);
+});
+
+test("changes merged within ten minutes go in one email", async () => {
+  const a = await change("Add a dark theme");
+  const b = await change("Faster search");
+  await queueAutopilotNotices(a.id);
+  await queueAutopilotNotices(b.id);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  const [email] = to(owner);
+  expect(email!.subject).toBe("Autopilot: 2 merged pull requests · 2 updates go out in 24 hours, 2 need you");
+  expect(email!.text).toContain("Add a dark theme");
+  expect(email!.text).toContain("Faster search");
+});

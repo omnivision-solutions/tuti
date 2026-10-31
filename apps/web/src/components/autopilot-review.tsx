@@ -54,6 +54,8 @@ export function updateKind(update: Pick<Update, "kind" | "problem">): string {
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** "Maya", "Maya and Sam", "Maya, Sam and Lee". */
+const listed = (names: string[]) => (names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 
 /**
  * A change's updates to review: a card each, ticked as it opens (`ticked`: the likely ones, or those
@@ -67,6 +69,7 @@ export function AutopilotReview({
   updates,
   ticked,
   fromEmail,
+  emailed,
   previews,
   canAnalyse,
 }: {
@@ -76,6 +79,8 @@ export function AutopilotReview({
   ticked: string[];
   /** Opened from an email's link (its Review, the likely ones; or its buttons, those it named): say why some are ticked. */
   fromEmail: "likely" | "named" | null;
+  /** Who Autopilot's email told about it (names). */
+  emailed: string[];
   /** Formatted as readers see it (from the server), by update id: an edit's changed blocks, or a new article's draft. */
   previews: Record<string, ReactNode>;
   /** Whether an out-of-date edit can be written again (the project's plan includes Autopilot). */
@@ -272,6 +277,7 @@ export function AutopilotReview({
             {change.repo}#{change.number}
           </a>
           <span className="text-muted-foreground">by @{change.author}</span>
+          {emailed.length > 0 && <span className="text-muted-foreground">Emailed to {listed(emailed)}</span>}
         </section>
       </aside>
     </div>

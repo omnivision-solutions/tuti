@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { keepingFields } from "@/lib/forms";
 import type { FormState } from "@/server/form-state";
-import { saveAutopilotSettings } from "@/server/github";
+import { saveAutopilotRecipients, saveAutopilotSettings, setAutopilotEmails } from "@/server/github";
 
 export type AutopilotSettingsValues = {
   drafts: boolean;
@@ -95,5 +95,97 @@ export function AutopilotSettingsForm({ projectSlug, settings, owner }: { projec
         </FieldGroup>
       </fieldset>
     </form>
+  );
+}
+
+/** Settings → Autopilot → Who's told (owners change it): owners always; admins too, or chosen team members. */
+export function AutopilotRecipientsForm({
+  projectSlug,
+  owner,
+  admins,
+  members,
+}: {
+  projectSlug: string;
+  owner: boolean;
+  admins: boolean;
+  /** The team past its owners: each one's name, role and whether they're told. */
+  members: { userId: string; name: string; role: "ADMIN" | "MEMBER"; told: boolean }[];
+}) {
+  const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
+    const result = await saveAutopilotRecipients(projectSlug, prev, formData);
+    if (!result.error) {
+      toast.success("Who's told saved");
+    }
+    return result;
+  }, {});
+  return (
+    <form {...keepingFields(action)}>
+      <fieldset disabled={pending || !owner} className="contents">
+        <FieldGroup>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="admins" defaultChecked={admins} className="size-4 accent-primary" />
+            Admins too
+          </label>
+          {members.length > 0 && (
+            <fieldset className="flex flex-col gap-2">
+              <legend className="mb-1 text-sm font-medium">And these team members</legend>
+              {members.map((member) => (
+                <label key={member.userId} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="told" value={member.userId} defaultChecked={member.told} className="size-4 accent-primary" />
+                  {member.name}
+                  <span className="text-muted-foreground">{member.role === "ADMIN" ? "Admin" : "Member"}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {state.error && <FieldError>{state.error}</FieldError>}
+          {owner && (
+            <Button type="submit" disabled={pending} className="self-end">
+              {pending ? "Saving…" : "Save who's told"}
+            </Button>
+          )}
+        </FieldGroup>
+      </fieldset>
+    </form>
+  );
+}
+
+/** Account → Autopilot's email: as each change is analysed, or off. Saved as it's picked. */
+export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "OFF" }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <fieldset disabled={pending} className="flex flex-col gap-2">
+      <legend className="sr-only">Autopilot&apos;s email</legend>
+      {(
+        [
+          ["AS_THEY_HAPPEN", "As they happen", "An email when a merged pull request has updates (several merged within ten minutes in one)."],
+          ["OFF", "Off", "None. If you own a project, you still hear what goes out by itself."],
+        ] as const
+      ).map(([value, label, description]) => (
+        <label key={value} className="flex items-start gap-2 text-sm">
+          <input
+            type="radio"
+            name="autopilotEmails"
+            value={value}
+            defaultChecked={choice === value}
+            className="mt-0.5 size-4 accent-primary"
+            onChange={() =>
+              startTransition(async () => {
+                const result = await setAutopilotEmails(value);
+                if (result.error) {
+                  toast.error(result.error);
+                } else {
+                  toast.success("Saved");
+                }
+              })
+            }
+          />
+          <span className="flex flex-col">
+            <span className="font-medium">{label}</span>
+            <span className="text-muted-foreground">{description}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }

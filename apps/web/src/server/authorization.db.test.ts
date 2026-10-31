@@ -362,6 +362,15 @@ const matrix: Matrix = {
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
     setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
     setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
+    saveAutopilotRecipients: {
+      allowed: "OWNER",
+      call: (slug) => {
+        const form = new FormData();
+        form.set("admins", "on");
+        return github.saveAutopilotRecipients(slug, {}, form);
+      },
+    },
+    setAutopilotEmails: { allowed: "signed in", call: () => github.setAutopilotEmails("OFF") },
     saveAutopilotSettings: {
       allowed: "OWNER",
       call: (slug) => {

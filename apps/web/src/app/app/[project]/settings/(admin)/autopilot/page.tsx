@@ -3,7 +3,7 @@ import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { AutopilotSettingsForm } from "@/components/autopilot-settings";
+import { AutopilotRecipientsForm, AutopilotSettingsForm } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +21,12 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
     notFound();
   }
   const owner = membership.role === "OWNER";
-  const [project, github, record] = await Promise.all([
+  const [team, project, github, record] = await Promise.all([
+    prisma.teamMember.findMany({
+      where: { projectId: membership.project.id, role: { not: "OWNER" } },
+      orderBy: { createdAt: "asc" },
+      select: { userId: true, role: true, autopilotTold: true, user: { select: { name: true } } },
+    }),
     prisma.project.findUniqueOrThrow({
       where: { id: membership.project.id },
       select: {
@@ -36,6 +41,7 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
         autopilotMaxReach: true,
         autopilotMaxViews: true,
         autopilotHoldHours: true,
+        autopilotTellAdmins: true,
       },
     }),
     prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { projectId: true } }),
@@ -91,6 +97,25 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
                 maxViews: project.autopilotMaxViews,
                 holdHours: project.autopilotHoldHours,
               }}
+            />
+          </CardContent>
+        </Card>
+      )}
+      {project.analyseCodeChanges && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Who&apos;s told</CardTitle>
+            <CardDescription>
+              An email when a merged pull request has updates. Owners are always told; each person picks in their account settings when they hear
+              (owners always hear what goes out by itself).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AutopilotRecipientsForm
+              projectSlug={slug}
+              owner={owner}
+              admins={project.autopilotTellAdmins}
+              members={team.map((member) => ({ userId: member.userId, name: member.user.name, role: member.role as "ADMIN" | "MEMBER", told: member.autopilotTold }))}
             />
           </CardContent>
         </Card>

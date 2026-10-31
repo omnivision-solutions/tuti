@@ -1,3 +1,4 @@
+export { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate } from "./autopilot-email";
 export { changelogEmail } from "./changelog-email";
 export { conversationEmail } from "./conversation-email";
 export { conversationReplyEmail } from "./conversation-reply-email";
