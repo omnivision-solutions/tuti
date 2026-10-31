@@ -1,6 +1,6 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, Prisma, prisma } from "@tuti/db";
 import { confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
-import { codeChangesEnabled } from "@tuti/shared";
+import { codeChangesEnabled, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
@@ -42,12 +42,15 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
 }
 
 /**
- * How many people completing each post emails (its author, voters and commenters, past the team and
- * those who turned the project's emails off), by post id. ponytail: before postShipped's other rules
- * (verified addresses, a private portal's readers): it can count a few it won't email.
+ * How many people completing each post emails (its author, voters and commenters, past the team,
+ * those who turned the project's emails off and those it emailed already), by post id, as postShipped
+ * does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
+ * a few it won't email.
  */
 async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
-  if (postIds.length === 0) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
+  // A private portal on a plan without them is the team's only: postShipped emails nobody.
+  if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal"))) {
     return new Map();
   }
   const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
@@ -59,6 +62,7 @@ async function emailedOnCompletion(projectId: string, postIds: string[]): Promis
     ) x
     WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
       AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
+      AND NOT EXISTS (SELECT 1 FROM shipped_email s WHERE s."postId" = x."postId" AND s."userId" = x."userId" AND s."sentAt" IS NOT NULL)
     GROUP BY x."postId"`;
   return new Map(rows.map((row) => [row.postId, Number(row.people)]));
 }
@@ -495,7 +499,14 @@ export const applyCodeChangeActions = defineOperation({
           results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
         } else {
           console.error(`codeChangeActions.applyMany: ${action.id} failed`, error);
-          results.push({ id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." });
+          // apply keeps it applied once what users see was saved (a comment, an article's version), so
+          // trying again can't do it twice: then it went, whatever failed after.
+          const after = await prisma.codeChangeAction.findUnique({ where: { id: action.id }, select: { status: true } });
+          results.push(
+            after?.status === "APPLIED"
+              ? { id: action.id, status: "applied" }
+              : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+          );
         }
       }
     }

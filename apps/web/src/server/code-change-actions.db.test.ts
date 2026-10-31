@@ -197,6 +197,9 @@ test("the review page ticks the likely updates as it opens (not a comment nobody
   const { actions } = await call(getCodeChange, team(), { id: likely.change.id });
   expect(actions.filter((action) => action.applyLikely).map((action) => action.id)).toEqual([likely.action.id]);
   expect(actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 2 });
+  // Someone emailed already (it was completed, then reopened): not again.
+  await prisma.shippedEmail.create({ data: { postId: likely.post.id, userId: other.id, claimedAt: new Date(), sentAt: new Date() } });
+  expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 1 });
   expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining([unwritten.action.id, maybe.action.id]));
   // A post completed already (by hand, since): approving emails nobody.
   const done = await proposal("RESOLVES", { status: "COMPLETED" });
@@ -394,6 +397,20 @@ describe("docs", () => {
     }) as never);
     await expect(call(applyCodeChangeAction, team(), { id: draft.id })).rejects.toThrow("database blip");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe("PENDING");
+  });
+
+  test("approving several: a new article saved before something after it failed is reported as applied, not to try again", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 22, url: "https://github.com/acme/app/pull/22", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const action = await prisma.codeChangeAction.create({
+      data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title: "Use the dark theme", content: EDITED, body: "Pick Light, Dark or System in Settings." } },
+    });
+    // The draft is saved; pointing the action at it fails.
+    vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("database blip"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).toEqual({ results: [{ id: action.id, status: "applied" }] });
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
   });
 
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
