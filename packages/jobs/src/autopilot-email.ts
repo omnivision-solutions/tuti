@@ -21,6 +21,11 @@ const PUBLIC = new Set<CodeChangeActionKind>(["RESOLVES", "MOVES_FORWARD", "ARTI
 
 /** Applied by Autopilot itself, nobody approving it. */
 const auto = (action: { payload: unknown }) => ((action.payload ?? {}) as { auto?: boolean }).auto === true;
+/** When Autopilot made an update its own: when the runner marked it (`autoAt`), or before that was kept, when it was decided. */
+const goneAt = (action: { payload: unknown; decidedAt: Date | null }) => {
+  const autoAt = ((action.payload ?? {}) as { autoAt?: unknown }).autoAt;
+  return typeof autoAt === "string" ? new Date(autoAt) : action.decidedAt;
+};
 /** Gone out by itself where customers see it. */
 const wentOut = (action: { kind: CodeChangeActionKind; status: string; payload: unknown }) => action.status === "APPLIED" && auto(action) && PUBLIC.has(action.kind);
 
@@ -50,7 +55,7 @@ async function queueNotices(codeChangeId: string): Promise<number> {
   });
   // What customers see that went out by itself just now (no hold: the runner may apply it before this runs) is this analysis's.
   const justNow = new Date(Date.now() - MERGE_MINUTES * 60_000);
-  const gone = change?.actions.filter((action) => wentOut(action) && action.decidedAt && action.decidedAt > justNow) ?? [];
+  const gone = change?.actions.filter((action) => wentOut(action) && (goneAt(action)?.getTime() ?? 0) > justNow.getTime()) ?? [];
   // Nothing to do or tell, nothing to say.
   if (!change || (!change.actions.some((action) => action.status !== "APPLIED") && gone.length === 0)) {
     return 0;
@@ -233,7 +238,11 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         // Kept apart from `createdAt` (refreshed while it waits): what went out meanwhile, never emailed, stays news.
         const queued = notice.newsFrom?.getTime() ?? notice.createdAt.getTime() - MERGE_MINUTES * 60_000;
         const from = Math.max(queued, notice.since?.getTime() ?? 0);
-        return (action: ActionRow) => auto(action) && action.decidedAt !== null && action.decidedAt.getTime() > from;
+        return (action: ActionRow) => {
+          // When it became Autopilot's own (it may have been applied, not yet marked, as an email read it).
+          const at = goneAt(action);
+          return auto(action) && at !== null && at.getTime() > from;
+        };
       };
       const went = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => wentOut(action) && lately(notice)(action));
       // Going out by itself, or gone already (a short hold passes before the email goes): owners hear of it.
@@ -341,11 +350,13 @@ export async function emailedAbout(codeChangeId: string): Promise<string[]> {
 /**
  * Something customers see went out by itself (the runner applied it): the project's owners hear of it.
  * The runner may apply it as the analysis's notices are queued (no hold), before they could tell it went,
- * so each owner who hasn't heard of it is told: one with no notice for the change, and one whose last email
- * about it went before these updates existed (`since`: the earliest's creation). One being sent right now
- * goes again. An owner emailed since already heard of them (going out, or waiting).
+ * so each owner who hasn't heard of it is told: one with no notice for the change, one whose last email
+ * about it was read before these updates existed (`since`: the earliest's creation), and one whose last
+ * email was read while the runner had them in hand (`inFlight`: taken, not yet marked its own), when they
+ * showed as neither going out nor gone.
+ * One being sent right now goes again. An owner emailed in between heard of them (going out, or waiting).
  */
-export async function tellOwners(codeChangeId: string, since: Date): Promise<number> {
+export async function tellOwners(codeChangeId: string, since: Date, inFlight?: { from: Date; to: Date }): Promise<number> {
   try {
     const change = await prisma.codeChange.findUnique({ where: { id: codeChangeId }, select: { projectId: true } });
     if (!change) {
@@ -358,7 +369,8 @@ export async function tellOwners(codeChangeId: string, since: Date): Promise<num
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
     const again = await prisma.$executeRaw`
       UPDATE autopilot_notice SET "since" = "sentAt", "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
-      WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" < ${since}`;
+      WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners})
+        AND ("sentAt" < ${since} OR ("sentAt" >= ${inFlight?.from ?? null} AND "sentAt" < ${inFlight?.to ?? null}))`;
     const { count } = await prisma.autopilotNotice.createMany({ data: owners.map((userId) => ({ codeChangeId, userId })), skipDuplicates: true });
     return count + again;
   } catch (error) {

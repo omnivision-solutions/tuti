@@ -562,3 +562,27 @@ test("what goes out by itself while an email is being sent (read before it) is i
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   expect(to(owner)[1]!.text).toContain("Went out by itself");
 });
+
+test("an update the runner was still applying when an email read the change (applied, not yet marked Autopilot's) is in the next one", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  // The runner took the progress update a moment ago and applied it (a request would be emailing its voters): not yet marked its own.
+  const takenAt = new Date(Date.now() - 31_000);
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 30_000), payload: { comment: "Out soon" } } });
+  // After the sweep read the change, the runner marks it and tells the owners.
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.teamMember, "findUnique").mockImplementationOnce((async (...args: unknown[]) => {
+    const markedAt = new Date();
+    await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
+    await tellOwners(one.id, progress.createdAt, { from: takenAt, to: markedAt });
+    return findUnique(...args);
+  }) as never);
+  expect(await sendAutopilotEmails()).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  // The next email says it went.
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
