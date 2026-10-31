@@ -1180,10 +1180,13 @@ test("on a phone, help opened over a modal of the page's is a card, the modal in
     page.Tuti.open();
     expect(page.panel.style.top).toBe("auto");
     expect(page.panel.style.borderRadius).toBe("14px");
+    // As it closes, the modal's library puts back the panel's inert as it found it (closed before).
     shown = false;
+    page.panel.setAttribute("inert", "");
     vi.advanceTimersByTime(300);
     expect(app.hasAttribute("inert")).toBe(true);
     expect(page.panel.style.top).toBe("0");
+    expect(page.panel.hasAttribute("inert")).toBe(false);
   } finally {
     vi.useRealTimers();
   }

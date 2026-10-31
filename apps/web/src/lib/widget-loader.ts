@@ -289,6 +289,8 @@ export function widgetLoader(portalTemplate: string): string {
     if (cover) {
       if (!covering) {
         covering = true;
+        // In reach: a modal's library that made it inert (as it was, closed before) may have put that back.
+        panel.removeAttribute("inert");
         layoutPanel();
       }
       // Covered again before a modal's library let go of them: the loader's again (theirs or not, inert now).
