@@ -6,6 +6,8 @@ test("a domain's email provider comes from its MX hosts, with its section of the
   expect(mailProvider(["aspmx.l.google.com", "alt1.aspmx.l.google.com"])).toEqual({ name: "Google Workspace", docs: `${EMAIL_FORWARDING_DOCS}#google-workspace` });
   expect(mailProvider(["smtp.google.com"])).toMatchObject({ name: "Google Workspace" });
   expect(mailProvider(["acme-com.mail.protection.outlook.com"])).toMatchObject({ name: "Microsoft 365" });
+  // Its DNSSEC endpoints, for newer domains.
+  expect(mailProvider(["acme-com.o-v1.mx.microsoft"])).toMatchObject({ name: "Microsoft 365" });
   expect(mailProvider(["mx.zoho.eu", "mx2.zoho.eu"])).toMatchObject({ name: "Zoho Mail" });
   expect(mailProvider(["in1-smtp.messagingengine.com"])).toMatchObject({ name: "Fastmail" });
   expect(mailProvider(["mail.protonmail.ch"])).toMatchObject({ name: "Proton Mail" });
