@@ -198,37 +198,45 @@ export async function changelogLineOf(projectId: string, url: string): Promise<{
 }
 
 /**
- * Takes the pull request's bullet out of whichever entry has it (Autopilot's Undo of a line that
- * added it), and with `forget`, the entry's record of the pull request too (applying added both).
- * With `draftOnly`, a published entry is left as it is: false.
+ * Autopilot's Undo of a changelog line: the pull request's bullet goes back to `previous`, or out again
+ * (`added`), with the entry's record of the pull request when applying added that too ("entry"). Only
+ * in a draft, and only while the bullet still says what was approved (`applied`): "published" or
+ * "edited" otherwise, changing nothing. No entry has the pull request any more: nothing to put back.
  */
-export async function removeChangelogLine(projectId: string, url: string, { forget, draftOnly = false }: { forget: boolean; draftOnly?: boolean }): Promise<boolean> {
+export async function undoChangelogLine(
+  projectId: string,
+  url: string,
+  { applied, previous, added }: { applied: string; previous: string; added: "entry" | "bullet" | null },
+): Promise<"done" | "published" | "edited"> {
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
-    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entryId: true, entry: { select: { publishedAt: true } } } });
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entryId: true, entry: { select: { content: true, publishedAt: true } } } });
     if (!known) {
-      return true;
+      return "done";
     }
-    if (draftOnly && known.entry.publishedAt) {
-      return false;
+    if (known.entry.publishedAt) {
+      return "published";
     }
-    if (forget) {
+    const current = (known.entry.content as Doc | null) ?? { type: "doc", content: [] };
+    const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
+    if (bullet && textOf(bullet) !== applied) {
+      return "edited";
+    }
+    if (added === "entry") {
       await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId: known.entryId, url } } });
     }
-    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { content: true } });
-    const doc = withoutBullet((entry.content as Doc | null) ?? { type: "doc", content: [] }, url);
+    const doc = added ? withoutBullet(current, url) : (withLine(current, url, previous) ?? current);
     await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
-    return true;
+    return "done";
   });
 }
 
 /**
  * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
  * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):
- * it's added to the running draft with that line. Returns the entry's number; with `draftOnly`, null
- * for a published entry, left as it is.
+ * it's added to the running draft with that line. Returns the entry's number.
  */
-export async function setChangelogLine(projectId: string, pr: PullRequest, line: string, { draftOnly = false } = {}): Promise<number | null> {
+export async function setChangelogLine(projectId: string, pr: PullRequest, line: string): Promise<number> {
   const found = await prisma.changelogEntryPullRequest.findFirst({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
   if (!found) {
     await addToRunningDraft(projectId, pr);
@@ -236,10 +244,7 @@ export async function setChangelogLine(projectId: string, pr: PullRequest, line:
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
     const known = await tx.changelogEntryPullRequest.findFirstOrThrow({ where: { url: pr.url, entry: { projectId } }, select: { entryId: true } });
-    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { number: true, content: true, publishedAt: true } });
-    if (draftOnly && entry.publishedAt) {
-      return null;
-    }
+    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { number: true, content: true } });
     const current = (entry.content as Doc | null) ?? { type: "doc", content: [] };
     // The team may have rewritten the bullet without its link: then the line goes at the end of the draft's list.
     const doc = withLine(current, pr.url, line) ?? withPullRequest(current, { ...pr, title: line }, line);

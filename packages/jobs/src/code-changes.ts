@@ -386,6 +386,12 @@ async function finish(
   ready?: { projectId: string; pullRequest: { repo: string; number: number; url: string; title: string }; data: (waiting: number) => Record<string, unknown> },
 ): Promise<{ waiting: number; linked: number }> {
   const { waiting, linked, deliveries } = await prisma.$transaction(async (tx) => {
+    // What a failed try at applying one did (see codeChangeActions.apply) goes to the proposal replacing
+    // it, for the same post (or the changelog line), so Undo still puts it back.
+    const replaced = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } }, select: { kind: true, postId: true, payload: true } });
+    const triedFor = (proposal: Proposal) =>
+      replaced.find((action) => (action.postId ? action.postId === proposal.postId : action.kind === "CHANGELOG_LINE" && proposal.kind === "CHANGELOG_LINE") && (action.payload as { tried?: unknown } | null)?.tried)
+        ?.payload as { tried: Prisma.InputJsonValue } | undefined;
     await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
@@ -395,7 +401,14 @@ async function finish(
           (proposal.articleId && action.articleId === proposal.articleId) ||
           ((proposal.kind === "NEW_ARTICLE" || proposal.kind === "CHANGELOG_LINE") && action.kind === proposal.kind),
       );
-    const { count } = await tx.codeChangeAction.createMany({ data: proposals.filter((proposal) => !taken(proposal)).map((proposal) => ({ codeChangeId: id, ...proposal })) });
+    const { count } = await tx.codeChangeAction.createMany({
+      data: proposals
+        .filter((proposal) => !taken(proposal))
+        .map((proposal) => {
+          const tried = triedFor(proposal)?.tried;
+          return { codeChangeId: id, ...proposal, ...(tried && { payload: { ...((proposal.payload ?? {}) as Prisma.JsonObject), tried } }) };
+        }),
+    });
     await tx.codeChange.update({ where: { id }, data });
     const linked = ready ? await linkByItself(tx, ready.projectId, id, ready.pullRequest) : 0;
     // Only when something waits for the team (analysed again, the team may have decided it all already).

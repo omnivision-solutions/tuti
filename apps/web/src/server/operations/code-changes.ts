@@ -1,5 +1,5 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { changelogLineOf, confidence, enqueue, removeChangelogLine, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
+import { changelogLineOf, confidence, enqueue, setChangelogLine, THRESHOLDS, undoChangelogLine } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
@@ -355,9 +355,10 @@ const NOT_STARTED = new Set(["OPEN", "UNDER_REVIEW", "PLANNED"]);
  * If even that fails, nobody can tell what went: rethrown marked `saved: "unknown"` (it stays claimed,
  * so it's never done twice, and the team is told to check).
  */
-async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateInput, error: unknown): Promise<never> {
+async function revert(id: string, data: Prisma.CodeChangeActionUncheckedUpdateManyInput, error: unknown): Promise<never> {
   try {
-    await prisma.codeChangeAction.update({ where: { id }, data });
+    // Only while it's still the claimed apply's (nobody undid it meanwhile).
+    await prisma.codeChangeAction.updateMany({ where: { id, status: "APPLIED" }, data });
   } catch {
     // Not a refusal (an OperationError's message would say "try again" or "out of date"): unknown, the refusal as its cause.
     throw Object.assign(new Error("Couldn't put an Autopilot update back after a failure", { cause: error }), { saved: "unknown" as const });
@@ -410,7 +411,7 @@ export const applyCodeChangeAction = defineOperation({
       const line = input.line ?? ((action.payload ?? {}) as { line?: string }).line ?? "";
       // What the bullet said, for Undo to put back: as a failed try found it, if one did (it may have added the pull request since).
       const before = await changelogLineOf(projectId, action.codeChange.url);
-      const tried = undoOf(action.payload);
+      const tried = triedOf(action.payload);
       const undo = tried ?? { previous: before?.text ?? null, added: before === null ? ("entry" as const) : before.text === null ? ("bullet" as const) : null };
       const { count } = await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: "PENDING" },
@@ -419,7 +420,8 @@ export const applyCodeChangeAction = defineOperation({
           status: "APPLIED",
           decidedById: actorUser(context.actor),
           decidedAt: new Date(),
-          payload: { line, undo },
+          // What to undo is recorded once it's done: till then, Undo has nothing to go on.
+          payload: { line, tried: undo },
         },
       });
       if (count === 0) {
@@ -427,9 +429,10 @@ export const applyCodeChangeAction = defineOperation({
       }
       try {
         const entry = await setChangelogLine(projectId, { ...action.codeChange }, line);
+        await recordUndo(action.id, { line }, undo);
         return { id: action.id, kind: KINDS[action.kind], status: "applied", changelog: entry };
       } catch (error) {
-        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: { ...asObject(action.payload), undo } }, error);
+        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: { ...asObject(action.payload), tried: undo } }, error);
       }
     }
     if (!action.post) {
@@ -457,7 +460,7 @@ export const applyCodeChangeAction = defineOperation({
     const { codeChange, post } = action;
     // What it changes, for Undo to put back: the link (if it's new), the entries it joins, the status it moved from, the comment.
     // A failed try may have done some of it: what it recorded counts too.
-    const tried = undoOf(action.payload);
+    const tried = triedOf(action.payload);
     const undo: { linked: boolean; entries: string[]; status: string | null; commentId: string | null } = {
       linked: tried?.linked ?? false,
       entries: tried?.entries ?? [],
@@ -518,13 +521,12 @@ export const applyCodeChangeAction = defineOperation({
         }
       }
       // Not done: it's waiting again, for another try, with what this one did for Undo.
-      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: { ...asObject(action.payload), undo } }, error);
+      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: { ...asObject(action.payload), tried: undo } }, error);
     }
-    const done = action.kind === "MOVES_FORWARD" ? { comment } : asObject(action.payload);
-    // Applied either way: without the record, Undo says to change it by hand.
-    await prisma.codeChangeAction
-      .update({ where: { id: action.id }, data: { payload: { ...done, undo } } })
-      .catch((error: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(error) }));
+    // What it did is recorded as done now, not as a try.
+    const done: Prisma.JsonObject = action.kind === "MOVES_FORWARD" ? { comment } : asObject(action.payload);
+    delete done.tried;
+    await recordUndo(action.id, done, undo);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
   },
 });
@@ -578,9 +580,17 @@ export const applyCodeChangeActions = defineOperation({
 const newestRevision = async (articleId: string) =>
   (await prisma.articleRevision.findFirst({ where: { articleId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } }))?.id ?? null;
 
-/** Keeps what applying changed (`undo`) with the action's payload, for codeChangeActions.undo. */
-const recordUndo = (id: string, payload: DocsPayload, undo: Record<string, unknown>) =>
-  prisma.codeChangeAction.update({ where: { id }, data: { payload: { ...(payload as Prisma.JsonObject), undo } as Prisma.InputJsonValue } });
+/**
+ * Keeps what applying changed (`undo`) with the action's payload, for codeChangeActions.undo. It's
+ * applied either way: if this fails, Undo says to change it by hand.
+ */
+const recordUndo = (id: string, payload: object, undo: object) =>
+  prisma.codeChangeAction
+    .update({ where: { id }, data: { payload: { ...payload, undo } as Prisma.InputJsonValue } })
+    .then(
+      () => undefined,
+      (error: unknown) => log.error("code change: couldn't record what to undo", { actionId: id, error: String(error) }),
+    );
 
 /**
  * An article edit is published as a new version (or kept as unpublished changes to finish in the
@@ -675,6 +685,9 @@ type Undo = {
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
+/** What a failed try did (kept while it waits again, and across an analysis again; see finish in packages/jobs): its next try records it too. */
+const triedOf = (payload: Prisma.JsonValue): Undo | null => ((payload ?? {}) as { tried?: Undo }).tried ?? null;
+
 const undoOf = (payload: Prisma.JsonValue): Undo | null => {
   const { undo, auto } = (payload ?? {}) as { undo?: Undo; auto?: boolean };
   return undo ?? (auto ? { linked: true } : null);
@@ -747,12 +760,17 @@ export const undoCodeChangeAction = defineOperation({
     try {
       if (action.kind === "CHANGELOG_LINE") {
         // Back to what the bullet said; one applying added goes again.
-        // Published meanwhile (the check above ran before the project's lock): refused, unchanged.
-        const changed = undo.added
-          ? await removeChangelogLine(projectId, action.codeChange.url, { forget: undo.added === "entry", draftOnly: true })
-          : (await setChangelogLine(projectId, action.codeChange, undo.previous ?? `${action.codeChange.title} (${action.codeChange.repo}#${action.codeChange.number})`, { draftOnly: true })) !== null;
-        if (!changed) {
+        // Published meanwhile (the check above ran before the project's lock), or the bullet rewritten since: refused, unchanged.
+        const result = await undoChangelogLine(projectId, action.codeChange.url, {
+          applied: ((action.payload ?? {}) as { line?: string }).line ?? "",
+          previous: undo.previous ?? `${action.codeChange.title} (${action.codeChange.repo}#${action.codeChange.number})`,
+          added: undo.added ?? null,
+        });
+        if (result === "published") {
           throw new OperationError(409, "published", "Its changelog entry is published: edit the entry instead");
+        }
+        if (result === "edited") {
+          throw new OperationError(409, "edited", "The changelog line was edited since: change it in the entry instead");
         }
       } else if (action.kind === "ARTICLE_EDIT") {
         if (undo.live === undefined || undo.live === null) {

@@ -493,6 +493,9 @@ describe("deciding", () => {
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id }, select: { id: true } });
     await prisma.codeChangeAction.updateMany({ where: { codeChangeId: change.id, postId: posts.themes!.id }, data: { status: "APPLIED" } });
     await prisma.codeChangeAction.updateMany({ where: { codeChangeId: change.id, postId: posts.settings!.id }, data: { status: "DISMISSED" } });
+    // A try at applying Dark mode's failed part-way (it linked the post and moved it from Planned): the next proposal keeps that, for Undo.
+    const tried = { linked: true, entries: [], status: "PLANNED", commentId: null };
+    await prisma.codeChangeAction.updateMany({ where: { codeChangeId: change.id, postId: posts.darkMode!.id }, data: { payload: { tried } } });
 
     script(0.6);
     await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false, resume: false });
@@ -504,6 +507,7 @@ describe("deciding", () => {
       // The changelog line, written again.
       { postId: null, status: "PENDING", probability: 1 },
     ]);
+    expect((await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: change.id, postId: posts.darkMode!.id } })).payload).toMatchObject({ tried });
   });
 
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {
