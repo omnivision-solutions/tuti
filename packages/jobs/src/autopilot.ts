@@ -157,10 +157,10 @@ export function autopilotDueToken(): string | null {
 }
 
 /**
- * The worker's minute: asks the web app to apply Autopilot's due updates (applying is the web app's:
+ * The worker's minute: asks the web app to apply Autopilot's due updates and send its emails (applying is the web app's:
  * it saves posts, comments and articles as the team does). Nothing to do without the app's address.
  */
-export async function autopilotDue(): Promise<{ applied: number; waiting: number } | { skipped: true }> {
+export async function autopilotDue(): Promise<{ applied: number; waiting: number; emailed: number } | { skipped: true }> {
   const token = autopilotDueToken();
   if (!process.env.APP_URL || !token) {
     // Said each minute while an update is due, so it's seen: it waits until the worker has both. Nothing due
@@ -178,5 +178,5 @@ export async function autopilotDue(): Promise<{ applied: number; waiting: number
   if (!response.ok) {
     throw new Error(`The web app answered ${response.status} to /api/autopilot/due`);
   }
-  return (await response.json()) as { applied: number; waiting: number };
+  return (await response.json()) as { applied: number; waiting: number; emailed: number };
 }

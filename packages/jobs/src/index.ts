@@ -26,6 +26,7 @@ export { aiPaused, creditBalance, type CreditGrant, emailIfCreditsLow, grantCred
 export { confidence, THRESHOLDS } from "./code-change-decisions";
 export { addToRunningDraft, changelogLineOf, lockProject, RUNNING_DRAFT_TITLE, setChangelogLine, undoChangelogLine } from "./running-draft";
 import { autopilotDue } from "./autopilot";
+export { emailedAbout, queueAutopilotNotices, sendAutopilotEmails, tellOwners } from "./autopilot-email";
 export { autopilotDue, autopilotDueToken, type AutopilotSettings, autopilotSettingsSelect, dueAt, postReach, recentViews, scheduleByItself, waitsBecause } from "./autopilot";
 
 export { articleChanged, DELETED_ARTICLE_DAYS, embedPublishedArticles } from "./articles";

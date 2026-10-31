@@ -6,6 +6,7 @@ import { refresh } from "next/cache";
 
 import type { FormState } from "./form-state";
 import { getAdminProject, getOwnerProject } from "./membership";
+import { getSession } from "./session";
 
 /** Disconnects GitHub from the project here (the App stays installed on GitHub until removed there). */
 export async function disconnectGithub(projectSlug: string): Promise<{ error?: string }> {
@@ -162,6 +163,39 @@ export async function saveAutopilotSettings(projectSlug: string, _state: FormSta
       autopilotHoldHours: holdHours,
     },
   });
+  refresh();
+  return {};
+}
+
+/**
+ * Settings → Autopilot → Who's told (owners): owners always are; admins too when ticked (`admins`), and
+ * the team members picked (`told`, their user ids).
+ */
+export async function saveAutopilotRecipients(projectSlug: string, _state: FormState, formData: FormData): Promise<FormState> {
+  const project = await getOwnerProject(projectSlug);
+  if (!project) {
+    return { error: "Only project owners can change Autopilot's settings" };
+  }
+  const told = formData.getAll("told").map(String);
+  await prisma.$transaction([
+    prisma.project.update({ where: { id: project.id }, data: { autopilotTellAdmins: formData.get("admins") === "on" } }),
+    prisma.teamMember.updateMany({ where: { projectId: project.id }, data: { autopilotTold: false } }),
+    prisma.teamMember.updateMany({ where: { projectId: project.id, userId: { in: told } }, data: { autopilotTold: true } }),
+  ]);
+  refresh();
+  return {};
+}
+
+/** Account → Autopilot's email: as each change is analysed, or off (owners still hear what goes out by itself). */
+export async function setAutopilotEmails(choice: string): Promise<FormState> {
+  const session = await getSession();
+  if (!session) {
+    return { error: "Sign in first" };
+  }
+  if (choice !== "AS_THEY_HAPPEN" && choice !== "OFF") {
+    return { error: "Pick when you hear from Autopilot" };
+  }
+  await prisma.user.update({ where: { id: session.user.id }, data: { autopilotEmails: choice } });
   refresh();
   return {};
 }

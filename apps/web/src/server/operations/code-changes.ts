@@ -1,6 +1,6 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, tellOwners, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
@@ -1025,6 +1025,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
       payload: true,
       postId: true,
       articleId: true,
+      createdAt: true,
       codeChange: { select: { projectId: true, project: { select: autopilotSettingsSelect } } },
     },
   });
@@ -1059,6 +1060,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     }
     // Taken off the schedule first, so two runners (or a Publish now) apply it once; held as the owner's while
     // it's applied, so an analysis at the same moment leaves it alone (it replaces only what nobody decided).
+    // When the runner takes it: an email read from then on can't show it as going out, nor as gone (tellOwners).
+    const takenAt = new Date();
     const { count } = await prisma.codeChangeAction.updateMany({
       where: { id: action.id, status: "SCHEDULED", dueAt: { lte: now } },
       data: { status: "PENDING", dueAt: null, decidedById: owner.userId },
@@ -1087,8 +1090,18 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     }
     // Autopilot's own: nobody approved it.
     const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
-    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
+    // Marked Autopilot's own once it's done (a request emails its voters first): when (`autoAt`) says what's news to an email.
+    const markedAt = new Date();
+    await prisma.codeChangeAction.update({
+      where: { id: action.id },
+      data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true, autoAt: markedAt.toISOString() } },
+    });
     applied++;
+    // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
+    // Told now, so a later update failing can't keep this one from them.
+    if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
+      await tellOwners(action.codeChangeId, action.createdAt, { from: takenAt, to: new Date() });
+    }
   }
   for (const codeChangeId of nowWaiting) {
     await announceWaiting(codeChangeId);

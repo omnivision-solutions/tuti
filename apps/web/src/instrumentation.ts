@@ -9,6 +9,11 @@ export async function register() {
   // (Journeys turn it off, AUTOPILOT_TIMER=off, and run the minute by hand at /api/autopilot/due.)
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.JOBS_DRIVER === "inline" && process.env.AUTOPILOT_TIMER !== "off") {
     const { runDueAutopilot } = await import("@/server/operations/code-changes");
-    setInterval(() => void runDueAutopilot().catch((error) => log.error("Applying Autopilot's due updates failed", { error })), 60_000).unref();
+    const { sendAutopilotEmails } = await import("@tuti/jobs");
+    const minute = async () => {
+      await runDueAutopilot();
+      await sendAutopilotEmails();
+    };
+    setInterval(() => void minute().catch((error) => log.error("Autopilot's minute failed", { error })), 60_000).unref();
   }
 }

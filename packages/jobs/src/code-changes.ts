@@ -22,6 +22,7 @@ import {
 } from "./code-change-decisions";
 import { aiFor } from "./ai-usage";
 import { scheduleByItself } from "./autopilot";
+import { queueAutopilotNotices } from "./autopilot-email";
 import { OutOfCredits } from "./credits";
 import { writeArticleEdit, writeNewArticle } from "./code-change-docs";
 import { portalOrigin, queueDeliveries, recordEvent } from "./events";
@@ -254,6 +255,8 @@ async function analyse(
     pullRequest: change.pullRequest,
     data: (count) => ({ codeChange: { id: change.id, ...change.pullRequest, summary, waiting: count, page: `${appOrigin()}/app/${change.slug}/autopilot/${change.id}` } }),
   });
+  // Those told about it hear in the next email (with whatever else merges within ten minutes).
+  await queueAutopilotNotices(change.id);
   return { state: "READY" as const, actions: waiting, linked, scheduled };
 }
 

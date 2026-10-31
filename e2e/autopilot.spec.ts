@@ -6,6 +6,7 @@ import { checkpoints } from "./checkpoint";
 import { APP_URL, portalUrl } from "./env";
 import { connectGithub, mergePullRequest } from "./github";
 import { runAutopilot } from "./autopilot";
+import { latestEmailTo, linkIn } from "./mail";
 import { apiFor, createProject, signUp } from "./helpers";
 import { nextDecision, nextModelReply } from "./model";
 import { similar } from "./openai";
@@ -250,11 +251,9 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   const { slug: articleSlug } = await api("/articles", { title: article, body: "Pick Light in Settings." });
   await api(`/articles/${articleSlug}/publish`, {});
   const installationId = await connectGithub(owner, slug);
-  // Its owner lets article edits go out by themselves (Settings → Autopilot).
+  // Article edits go out by themselves for a new project (Settings → Autopilot).
   await owner.goto(`/app/${slug}/settings/autopilot`);
-  await owner.getByRole("switch", { name: "Publish article edits" }).click();
-  await owner.getByRole("button", { name: "Save" }).click();
-  await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
+  await expect(owner.getByRole("switch", { name: "Publish article edits" })).toBeChecked();
 
   const pr = `Add a dark theme ${id}`;
   const summary = `You can now switch to a dark theme in Settings (${id}).`;
@@ -268,18 +267,32 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await nextModelReply(JSON.stringify({ why: "", changelog: "Dark theme", proposals: {} }), pr);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
+  // Its owner is emailed: what goes out by itself and when; Review opens the page.
+  await runAutopilot(slug, { emailNow: true });
+  const email = await latestEmailTo(owner.email, { subject: /^Autopilot/ });
+  // (The minute wrote the changelog line first: a draft, so it doesn't wait.)
+  expect(email.subject).toBe(`Autopilot: ${pr} · 1 update goes out in 24 hours`);
+  expect(email.text).toContain(`Out of date · ${article}`);
+  expect(email.text).toContain("goes out in 24 hours");
+  expect(email.text).toContain("Done (only your team sees it)");
+  await owner.goto(linkIn(email, `${APP_URL}/app/${slug}/autopilot/`));
+  await expect(owner.getByText("From your email:", { exact: false })).toBeVisible();
+  await expect(owner.getByRole("region", { name: "The change" })).toContainText("Emailed to Olive Owner");
+
   // Home says it goes out by itself, with Publish now and Stop; the page says when.
   await owner.goto(`/app/${slug}`);
   const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
-  await expect(catchUp).toContainText("2 updates go out");
+  await expect(catchUp).toContainText(/1 update goes out tomorrow at \d/);
   await expect(catchUp.getByRole("button", { name: "Stop" })).toBeVisible();
   await catchUp.getByRole("link", { name: pr }).click();
   const edit = owner.getByRole("article", { name: `Out of date: ${article}` });
   await expect(edit).toContainText("Goes out by itself");
   await expect(edit).toContainText(/Goes out tomorrow at \d/);
   await expect(edit.getByRole("button", { name: "Publish now" })).toBeVisible();
-  // Nothing's done yet: no Done list.
-  await expect(owner.getByRole("region", { name: "Done" })).toHaveCount(0);
+  // Done: the changelog line Autopilot wrote by itself (a draft); not the edit, which waits for its time.
+  const doneSoFar = owner.getByRole("region", { name: "Done" });
+  await expect(doneSoFar.getByRole("listitem", { name: "Changelog line: Dark theme" })).toContainText("Applied by Autopilot");
+  await expect(doneSoFar.getByRole("listitem", { name: `Out of date: ${article}` })).toHaveCount(0);
   await checkpoint(owner, "autopilot-scheduled");
 
   // The hold passes (the minute, run by hand): checked again, it goes out, as Autopilot's own.
@@ -292,4 +305,32 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   await portalArticle.goto(`${portalUrl(slug)}/docs/${articleSlug}`);
   await expect(portalArticle.getByText("Pick Light, Dark or System in Settings.")).toBeVisible();
   await portalArticle.close();
+});
+
+test("on their account, someone picks when they hear from Autopilot; a choice that isn't saved goes back", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const owner = await signUp(browser, APP_URL, "Olive Owner");
+  await owner.goto("/app/account");
+  const off = owner.getByRole("radio", { name: /^Off/ });
+  const asTheyHappen = owner.getByRole("radio", { name: /^As they happen/ });
+  await expect(asTheyHappen).toBeChecked();
+  await off.check();
+  await expect(owner.getByText("Saved", { exact: true })).toBeVisible();
+  await checkpoint(owner, "account-autopilot-email");
+  // Changed back in another tab: this one shows it once the page refreshes (saving the name, here).
+  const other = await owner.context().newPage();
+  await other.goto("/app/account");
+  await other.getByRole("radio", { name: /^As they happen/ }).check();
+  await expect(other.getByText("Saved", { exact: true })).toBeVisible();
+  await other.close();
+  await owner.getByLabel("Name").fill("Olive O. Owner");
+  await owner.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(asTheyHappen).toBeChecked();
+  await off.check();
+  await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
+  // Signed out meanwhile (another tab, say): not saved, so it shows what is.
+  await owner.context().clearCookies();
+  await asTheyHappen.check();
+  await expect(owner.getByText("Sign in first")).toBeVisible();
+  await expect(off).toBeChecked();
 });

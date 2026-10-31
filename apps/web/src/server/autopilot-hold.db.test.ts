@@ -140,6 +140,9 @@ test("when due, checked again and applied as Autopilot's own; held back, with wh
   expect(await prisma.article.findUniqueOrThrow({ where: { id: edit.article.id }, select: { body: true } })).toEqual({ body: "Pick Light, Dark or System in Settings." });
   expect(await statusOf(changed.action.id)).toMatchObject({ status: "PENDING", dueAt: null, waitReason: "Its article changed since" });
   expect((await statusOf(later.action.id)).status).toBe("SCHEDULED");
+  // Its owner is told it went (Autopilot's email); not about the edit held back.
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: progress.codeChangeId, userId: owner.id } })).toBe(1);
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: changed.codeChangeId } })).toBe(0);
   // The page says it was Autopilot's own.
   const detail = await call(getCodeChange, team(), { id: progress.codeChangeId });
   expect(detail.actions[0]).toMatchObject({ status: "applied", auto: true, decidedBy: "Autopilot" });
@@ -210,7 +213,7 @@ test("the worker's minute reaches the runner only with the server's token", asyn
   expect((await due(request("not-it"))).status).toBe(401);
   const response = await due(request(autopilotDueToken()!));
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ applied: 0, waiting: 0 });
+  expect(await response.json()).toEqual({ applied: 0, waiting: 0, emailed: 0 });
 });
 
 test("Autopilot's settings: owners save the switches, the three limits and the hold, within reason", async () => {
@@ -418,4 +421,27 @@ test("a Publish now that fails leaves the update waiting for anyone, not looking
   vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
   await expect(publishCodeChangesNow(project.slug, [progress.action.id])).rejects.toThrow("Connection lost");
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: null });
+});
+
+test("an update that went out by itself is told to its owner at once, even if the next due one fails", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 2000) } });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Taking the second off the schedule fails (a database error), after the first went out.
+  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementation((async (...args: unknown[]) => {
+    const { where } = args[0] as { where: { id?: string; status?: string } };
+    if (where.id === second.action.id && where.status === "SCHEDULED") {
+      throw new Error("database blip");
+    }
+    return updateMany(...args);
+  }) as never);
+  await expect(runDueAutopilot()).rejects.toThrow("database blip");
+  spy.mockRestore();
+  expect((await statusOf(first.action.id)).status).toBe("APPLIED");
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: first.codeChangeId, userId: owner.id } })).toBe(1);
 });

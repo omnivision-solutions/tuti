@@ -72,11 +72,15 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByRole("switch", { name: "Complete requests" })).not.toBeChecked();
   await owner.getByRole("switch", { name: "Complete requests" }).click();
   await owner.getByLabel("The hold (hours)").fill("12");
-  await owner.getByRole("button", { name: "Save" }).click();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
   await expect(owner.getByText("Autopilot's settings saved")).toBeVisible();
   await owner.reload();
   await expect(owner.getByRole("switch", { name: "Complete requests" })).toBeChecked();
   await expect(owner.getByLabel("The hold (hours)")).toHaveValue("12");
+  // Who's told: owners always; the owner adds admins.
+  await owner.getByLabel("Admins too").check();
+  await owner.getByRole("button", { name: "Save who's told" }).click();
+  await expect(owner.getByText("Who's told saved")).toBeVisible();
   await checkpoint(owner, "settings-autopilot");
 
   // The second project picks the same account: it starts with none, and adds the iOS app.

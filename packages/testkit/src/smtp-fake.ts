@@ -23,8 +23,12 @@ export type SmtpFake = {
   emails: CapturedEmail[];
   /** The latest email to `address` (waits up to a few seconds for it to arrive). */
   latestTo(address: string): Promise<CapturedEmail>;
-  /** Refuses the next email to `address` (a mail server rejecting it), then takes them again. */
-  refuseNext(address: string): void;
+  /**
+   * Refuses the next email to `address` (a mail server rejecting it), then takes them again. By default
+   * the message, for now (450); with `code`, the message with that code (554: the provider won't send
+   * it, a server-side refusal); `permanently`, the address itself (550 at RCPT TO, as for one that doesn't exist).
+   */
+  refuseNext(address: string, options?: { permanently?: boolean; code?: number }): void;
   /** Answers the next email to `address` with `250 <answer>` (e.g. Amazon SES's "Ok <its message id>"). */
   answerNext(address: string, answer: string): void;
   close(): Promise<void>;
@@ -39,11 +43,20 @@ export async function startSmtpFake({
   onEmail,
 }: { onEmail?: (email: CapturedEmail) => void | Promise<void> } = {}): Promise<SmtpFake> {
   const emails: CapturedEmail[] = [];
-  const refusing = new Set<string>();
+  // The address refused next: its message with a code, or (`recipient`) the address itself.
+  const refusing = new Map<string, number | "recipient">();
   const answers = new Map<string, string>();
   const server = new SMTPServer({
     authOptional: true,
     disabledCommands: ["STARTTLS"],
+    onRcptTo(address, _session, callback) {
+      if (refusing.get(address.address) === "recipient") {
+        refusing.delete(address.address);
+        callback(Object.assign(new Error(`Mailbox ${address.address} unavailable`), { responseCode: 550 }));
+        return;
+      }
+      callback();
+    },
     async onData(stream, _session, callback) {
       try {
         const mail = await simpleParser(stream);
@@ -60,10 +73,11 @@ export async function startSmtpFake({
           headers: Object.fromEntries(mail.headerLines.map((h) => [h.key, h.line.slice(h.line.indexOf(":") + 1).trim()])),
           attachments: mail.attachments.map((a) => ({ filename: a.filename ?? "", contentType: a.contentType, content: a.content })),
         };
-        const refused = to.find((address) => refusing.has(address));
+        const refused = to.find((address) => typeof refusing.get(address) === "number");
         if (refused) {
+          const responseCode = refusing.get(refused) as number;
           refusing.delete(refused);
-          throw new Error(`Mailbox ${refused} refused`);
+          throw Object.assign(new Error(`Mailbox ${refused} refused`), { responseCode });
         }
         await onEmail?.(email);
         emails.push(email);
@@ -95,7 +109,7 @@ export async function startSmtpFake({
       }
       throw new Error(`No email to ${address} arrived`);
     },
-    refuseNext: (address) => void refusing.add(address),
+    refuseNext: (address, options) => void refusing.set(address, options?.permanently ? "recipient" : (options?.code ?? 450)),
     answerNext: (address, answer) => void answers.set(address, answer),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
