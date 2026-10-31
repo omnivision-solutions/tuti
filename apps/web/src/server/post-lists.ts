@@ -95,7 +95,8 @@ export async function teamPosts(projectId: string, filters: PostFilters, scope: 
       ORDER BY ${ORDER[filters.sort]}
       OFFSET ${skip} LIMIT ${take}`;
     const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select: teamPostSelect });
-    return rows.flatMap((row) => posts.filter((post) => post.id === row.id));
+    const byId = new Map(posts.map((post) => [post.id, post]));
+    return rows.flatMap((row) => byId.get(row.id) ?? []);
   });
 }
 
