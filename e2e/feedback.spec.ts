@@ -714,3 +714,29 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
   await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
 });
+
+test("Feedback's picked row that leaves the list and comes back (its status set from the pane) isn't picked any more", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title });
+  }
+  await team.goto(`/app/${slug}/feedback`);
+  await team.getByRole("link", { name: "Dark mode", exact: true }).click();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+  await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
+  const bar = team.getByRole("toolbar", { name: "Selected posts" });
+  await expect(bar).toContainText("1 selected");
+  // Planned: it leaves Needs triage.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Planned" }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Dark mode" })).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
+  // Open again: back in the list, not picked.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Open" }).click();
+  await expect(team.getByRole("checkbox", { name: "Select Dark mode" })).not.toBeChecked();
+  await expect(bar).toHaveCount(0);
+});
