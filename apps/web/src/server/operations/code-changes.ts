@@ -467,6 +467,8 @@ export const applyCodeChangeAction = defineOperation({
         kind: true,
         status: true,
         payload: true,
+        // Who stopped it, if someone did: a failed apply puts that back (it's what keeps it off the schedule).
+        decidedById: true,
         codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true } },
         article: { select: { ...articleSelect, id: true, deletedAt: true } },
@@ -513,7 +515,7 @@ export const applyCodeChangeAction = defineOperation({
         if (undo.added === "entry") {
           await undoChangelogLine(projectId, action.codeChange.url, { applied: null, previous: "", added: "entry" }).catch((cause: unknown) => unknown(error, cause));
         }
-        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
+        return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
       }
     }
     if (!action.post) {
@@ -603,7 +605,7 @@ export const applyCodeChangeAction = defineOperation({
       }
       // Not done: what this try did is put back, and it's waiting again, for another try.
       await putBackPost(context, action.kind, post, codeChange.url, undo).catch((cause: unknown) => unknown(error, cause));
-      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
+      return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
     }
     await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment, edited: comment !== proposed } : asObject(action.payload), undo);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
@@ -722,6 +724,7 @@ async function applyDocs(
     kind: CodeChangeActionKind;
     status: CodeChangeActionStatus;
     payload: Prisma.JsonValue;
+    decidedById: string | null;
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
   publish: boolean,
@@ -801,7 +804,7 @@ async function applyDocs(
     const changed = error instanceof OperationError && error.code === "changed";
     return revert(
       action.id,
-      { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null },
+      { status: changed ? "STALE" : "PENDING", decidedById: action.decidedById, decidedAt: null },
       changed ? new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.") : error,
     );
   }
@@ -1061,6 +1064,8 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
         continue;
       }
       // Can't tell whether it went: it stays applied (never twice), credited to nobody, and the page says to check it.
+      // ponytail: only its card and the error log say so (Home and the list count it as done); a "checked" step
+      // that keeps it on Home till someone clears it, if this ever shows up outside a database outage.
       if (saved === "unknown") {
         const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
         await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), unsure: true } } });

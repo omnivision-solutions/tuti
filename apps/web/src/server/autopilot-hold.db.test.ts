@@ -9,7 +9,7 @@ import { saveAutopilotSettings } from "@/server/github";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { homeOverview } from "@/server/home";
-import { getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, getCodeChange, runDueAutopilot, stopCodeChangeAction, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 
@@ -314,4 +314,15 @@ test("due, its comment failing and the check for it too: it stays applied, credi
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "APPLIED", decidedById: null });
   const detail = await call(getCodeChange, team(), { id: progress.codeChangeId });
   expect(detail.actions[0]).toMatchObject({ status: "applied", unsure: true, auto: false, decidedBy: null });
+});
+
+test("stopped, then an approval that fails: still stopped by who stopped it, so analysing again doesn't schedule it", async () => {
+  const progress = await update("MOVES_FORWARD");
+  await scheduleByItself(project.id, progress.codeChangeId);
+  await call(stopCodeChangeAction, team(), { id: progress.action.id });
+  // A teammate approves it and moving the post fails, before anything's saved.
+  vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("Connection lost"));
+  await expect(call(applyCodeChangeAction, team(), { id: progress.action.id })).rejects.toThrow("Connection lost");
+  // Back to waiting, still stopped (what keeps an analysis from replacing and scheduling it again).
+  expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: owner.id, waitReason: "Stopped by Olive Owner" });
 });
