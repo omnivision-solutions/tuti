@@ -17,13 +17,16 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
   if (!membership) {
     notFound();
   }
+  // Three panes, as Docs: the menu a column of its own the page's height, the page beside it.
   return (
-    <>
-      <PageHeader title="Settings" />
-      <div className="flex flex-col gap-6 md:grid md:grid-cols-[11rem_minmax(0,1fr)] md:items-start md:gap-8">
+    <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t md:flex-row">
+      <aside className="px-6 pt-6 md:w-60 md:shrink-0 md:border-r md:p-0">
         <SettingsMenu groups={settingsGroups(slug, isAdminRole(membership.role))} />
-        <div className="flex min-w-0 flex-col gap-6">{children}</div>
+      </aside>
+      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">
+        <PageHeader title="Settings" />
+        {children}
       </div>
-    </>
+    </div>
   );
 }

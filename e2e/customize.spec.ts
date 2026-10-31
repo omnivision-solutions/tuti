@@ -158,7 +158,8 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
     expect((await visitor.request.get("/hc/en-us/articles/123-billing", { maxRedirects: 0 })).status()).toBe(404);
   }).toPass({ timeout: 20_000 });
 
-  // The sidebar is folded in Customize and on Docs: opened to go there, it's folded again when Docs opens.
+  // The sidebar is folded where a page has three panes (Customize, Settings, a docs article: a column of its
+  // own), and open where it hasn't (the docs' home shows them all itself).
   await owner.goto(`/app/${slug}/customize/branding`);
   const sidebar = owner.locator('[data-slot="sidebar"][data-state]');
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
@@ -166,7 +167,16 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await expect(sidebar).toHaveAttribute("data-state", "expanded");
   await sidebar.getByRole("link", { name: "Docs", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/docs`);
+  await expect(sidebar).toHaveAttribute("data-state", "expanded");
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
+  await owner.waitForURL(`**/app/${slug}/settings/**`);
   await expect(sidebar).toHaveAttribute("data-state", "collapsed");
+  // Settings' menu is a column of its own beside the page, the page's height.
+  const menu = owner.getByRole("navigation", { name: "Settings" });
+  await expect(menu).toBeVisible();
+  await checkpoint(owner, "settings-panes", { fullPage: false });
+  // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
+  await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
 });
 
 test("the team's own CSS shows in the preview as it's typed, and on the portal once saved", async ({ browser }, testInfo) => {
