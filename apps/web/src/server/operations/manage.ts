@@ -20,7 +20,7 @@ export const updatePost = defineOperation({
     // The same rule, for the OpenAPI spec (a refine doesn't show up in JSON Schema).
     .meta({ anyOf: [{ required: ["status"] }, { required: ["board"] }] }),
   example: { status: "planned" },
-  run: async ({ projectId }, input) => {
+  run: async ({ actor, projectId }, input) => {
     const post = await findPost(projectId, input.number);
     let boardId: string | undefined;
     if (input.board !== undefined) {
@@ -32,10 +32,14 @@ export const updatePost = defineOperation({
     }
     // Before the change is written (see posts.create).
     const portal = await projectPortal(projectId);
-    const updated = await prisma.post.update({
-      where: { id: post.id },
-      data: { ...(input.status && { status: fromApiStatus(input.status) }), ...(boardId && { boardId }) },
-      select: postSummarySelect,
+    const status = input.status && fromApiStatus(input.status);
+    // The change and its event (the post's activity) together: by whoever made it (an API key: its creator).
+    const updated = await prisma.$transaction(async (tx) => {
+      const saved = await tx.post.update({ where: { id: post.id }, data: { ...(status && { status }), ...(boardId && { boardId }) }, select: postSummarySelect });
+      if (status && status !== post.status) {
+        await tx.postEvent.create({ data: { postId: post.id, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: post.status, to: status } });
+      }
+      return saved;
     });
     const result = summary(updated, portal);
     if (updated.status !== post.status) {

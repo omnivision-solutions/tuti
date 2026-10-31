@@ -192,6 +192,13 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
     }
     emailed++;
   }
+  // Its activity says how many the shipped email reached: added to the latest completion, run by run.
+  if (emailed > 0) {
+    const completion = await prisma.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
+    if (completion) {
+      await prisma.postEvent.update({ where: { id: completion.id }, data: { emailed: { increment: emailed } } });
+    }
+  }
   if (failed > 0) {
     throw new Error(`${failed} shipped email(s) for post ${postId} failed; retrying those`);
   }

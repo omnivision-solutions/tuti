@@ -169,8 +169,14 @@ export async function roadmapColumns(projectId: string, { board, completedDays }
           status,
           duplicateOfId: null,
           ...(board && { board: { slug: board } }),
-          // ponytail: updatedAt stands in for when it was completed (votes and edits move it too); post_event (a post's activity) has the real time.
-          ...(status === "COMPLETED" && completedSince && { updatedAt: { gte: completedSince } }),
+          // Completed since then (its activity says when); one completed before status changes were kept: by its last change.
+          ...(status === "COMPLETED" &&
+            completedSince && {
+              OR: [
+                { events: { some: { to: "COMPLETED", createdAt: { gte: completedSince } } } },
+                { events: { none: { to: "COMPLETED" } }, updatedAt: { gte: completedSince } },
+              ],
+            }),
         },
         orderBy: status === "COMPLETED" ? [{ updatedAt: "desc" }] : [{ voteCount: "desc" }, { createdAt: "desc" }],
         take: 50,
