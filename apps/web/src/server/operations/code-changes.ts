@@ -1033,8 +1033,6 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
   let waiting = 0;
   // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
   const nowWaiting = new Set<string>();
-  // Changes with something customers see that went out by itself, and when the earliest of those was proposed: their owners are told (tellOwners).
-  const wentOut = new Map<string, Date>();
   // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays). After the
   // runner's own claim (`claimed`), the one its failed apply put back: waiting, or out of date (an article
   // changed since), as it is, now nobody's (an analysis may replace it again).
@@ -1093,16 +1091,13 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
     applied++;
     // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
+    // Told now, so a later update failing can't keep this one from them.
     if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
-      const earliest = wentOut.get(action.codeChangeId);
-      wentOut.set(action.codeChangeId, earliest && earliest < action.createdAt ? earliest : action.createdAt);
+      await tellOwners(action.codeChangeId, action.createdAt);
     }
   }
   for (const codeChangeId of nowWaiting) {
     await announceWaiting(codeChangeId);
-  }
-  for (const [codeChangeId, since] of wentOut) {
-    await tellOwners(codeChangeId, since);
   }
   return { applied, waiting };
 }

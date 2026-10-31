@@ -422,3 +422,26 @@ test("a Publish now that fails leaves the update waiting for anyone, not looking
   await expect(publishCodeChangesNow(project.slug, [progress.action.id])).rejects.toThrow("Connection lost");
   expect(await statusOf(progress.action.id)).toMatchObject({ status: "PENDING", decidedById: null });
 });
+
+test("an update that went out by itself is told to its owner at once, even if the next due one fails", async () => {
+  const first = await update("MOVES_FORWARD");
+  const second = await update("MOVES_FORWARD");
+  for (const { codeChangeId } of [first, second]) {
+    await scheduleByItself(project.id, codeChangeId);
+  }
+  await prisma.codeChangeAction.update({ where: { id: first.action.id }, data: { dueAt: new Date(Date.now() - 2000) } });
+  await prisma.codeChangeAction.update({ where: { id: second.action.id }, data: { dueAt: new Date(Date.now() - 1000) } });
+  // Taking the second off the schedule fails (a database error), after the first went out.
+  const updateMany = prisma.codeChangeAction.updateMany.bind(prisma.codeChangeAction) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.codeChangeAction, "updateMany").mockImplementation((async (...args: unknown[]) => {
+    const { where } = args[0] as { where: { id?: string; status?: string } };
+    if (where.id === second.action.id && where.status === "SCHEDULED") {
+      throw new Error("database blip");
+    }
+    return updateMany(...args);
+  }) as never);
+  await expect(runDueAutopilot()).rejects.toThrow("database blip");
+  spy.mockRestore();
+  expect((await statusOf(first.action.id)).status).toBe("APPLIED");
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: first.codeChangeId, userId: owner.id } })).toBe(1);
+});

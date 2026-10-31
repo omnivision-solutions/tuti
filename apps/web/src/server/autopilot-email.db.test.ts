@@ -405,24 +405,22 @@ test("analysed again, those emailed still show as emailed on the page until the 
   expect(await emailedAbout(one.id)).toEqual(["Olive Owner"]);
 });
 
-test("with the mail server down, an email is tried again a while after each failure for as long as that lasts, and goes once it's back", async () => {
+test("with the mail server not taking it (down, or 4xx: try later), an email is tried again a while after each failure for as long as that lasts, and goes once it's back", async () => {
   const one = await change("Add a dark theme");
   await queueAutopilotNotices(one.id);
   const logged = vi.spyOn(log, "error").mockImplementation(() => {});
-  // Nothing listens there: every send fails, the server's fault, not the address's.
-  const port = process.env.SMTP_PORT ?? "";
-  vi.stubEnv("SMTP_PORT", "1");
   let at = Date.now() + 11 * MINUTE;
   try {
     for (let attempt = 1; attempt <= 7; attempt++) {
+      // The server's fault, not the address's: try later.
+      mailbox.refuseNext(owner.email, { code: 421 });
       expect(await sendAutopilotEmails(new Date(at))).toBe(0);
       at += 16 * MINUTE;
     }
   } finally {
-    vi.stubEnv("SMTP_PORT", port);
     logged.mockRestore();
   }
-  // Still there, not given up: it goes once the server's back.
+  // Still there, not given up: it goes once the server takes it.
   expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: 0, sentAt: null });
   expect(await sendAutopilotEmails(new Date(at))).toBe(1);
 });
