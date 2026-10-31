@@ -336,6 +336,8 @@ export function widgetLoader(portalTemplate: string): string {
       if (stillFading()) checkAgain();
     } else {
       covering = false;
+      // Opened again, a modal still at opacity 0 may fade in then: watched afresh.
+      fading = [];
       for (var u = 0; u < covered.length; u++) covered[u].removeAttribute("inert");
       covered = [];
     }

@@ -1241,6 +1241,21 @@ test("on a phone, a modal of the page's fading in once the panel covers it (wher
     expect(later.panel.hasAttribute("inert")).toBe(true);
     expect(app.hasAttribute("inert")).toBe(false);
 
+    // One let go (kept at opacity 0 past a fade's length) gets a fresh wait when the panel opens again, and fades in then.
+    const again = loadWidget({ narrow: true });
+    again.Tuti.open();
+    const reused = again.body.appendChild(new FakeElement("div", again)) as Modal;
+    const reveal = fadingIn(reused);
+    again.mutated();
+    vi.advanceTimersByTime(2500);
+    again.Tuti.close();
+    again.Tuti.open();
+    vi.advanceTimersByTime(300);
+    reveal();
+    vi.advanceTimersByTime(300);
+    expect(again.panel.hasAttribute("inert")).toBe(true);
+    expect(reused.hasAttribute("inert")).toBe(false);
+
   } finally {
     vi.useRealTimers();
   }
