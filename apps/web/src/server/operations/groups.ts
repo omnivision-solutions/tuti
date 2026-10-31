@@ -61,7 +61,7 @@ export async function propertyNames(projectId: string): Promise<string[]> {
 export async function numberPropertyNames(projectId: string): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ name: string }[]>`
     SELECT DISTINCT p.key AS name FROM sso_identity s, jsonb_each(s.attributes) p
-    WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name LIMIT 200`;
+    WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name`;
   return rows.map((row) => row.name);
 }
 
