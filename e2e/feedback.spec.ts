@@ -65,7 +65,25 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const feedbackItem = team.locator('[data-slot="sidebar-menu-item"]').filter({ has: team.getByRole("link", { name: "Feedback", exact: true }) });
   await expect(feedbackItem).toContainText("2 to triage");
   await expect(team.getByRole("link", { name: "Feedback", exact: true }).first()).toHaveAccessibleDescription("2 to triage");
-  // The team merges the duplicate into the original…
+  // J and K step to the older post and back (by number). Not while a list of choices is open: a letter there picks one.
+  await team.getByLabel("Status").click();
+  await expect(team.getByRole("listbox")).toBeVisible();
+  await team.keyboard.press("j");
+  // A step would have gone by now (it's not instant: wait for one, and expect none).
+  await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
+  await team.keyboard.press("Escape");
+  await expect(team.getByRole("listbox")).toBeHidden();
+  // Closed but still focused, its letters still pick an option: not a step either.
+  await team.keyboard.press("j");
+  await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
+  // Away from it, as clicking elsewhere would.
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await team.keyboard.press("j");
+  await team.waitForURL(`**/app/${slug}/p/1`);
+  await team.keyboard.press("k");
+  await team.waitForURL(`**/app/${slug}/p/2`);
+  // The team merges the duplicate into the original, from the page's other actions…
+  await team.getByRole("button", { name: "More actions" }).click();
   await team.getByRole("button", { name: "Merge into…" }).click();
   await team.getByRole("button", { name: /Dark mode/ }).click();
   await checkpoint(team, "team-merge-confirm", { fullPage: false });

@@ -3,7 +3,7 @@ import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 
-import { PostShipped, PostVoters } from "@/components/post-sidebar";
+import { PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, MAX_LISTED, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -287,4 +287,68 @@ test("a post's sidebar shows them: each voter, how many more, what shipped it an
   expect(text).toContain("|acme/app#9|");
   expect(html).toContain(`href="/app/${project.slug}/changelog/4"`);
   expect(text).toContain("March| · Draft|");
+});
+
+test("posts like a post: by meaning (its kept embedding), by its title's words, both first; not itself, nor merged ones", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const post = (number: number, title: string, extra: object = {}) =>
+    prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title, ...extra } });
+  const dark = await post(1, "Dark mode");
+  const night = await post(2, "Night theme for the editor");
+  const darkEditor = await post(3, "Dark mode in the editor");
+  const merged = await post(4, "Dark mode please", { duplicateOfId: dark.id, status: "CLOSED" });
+  await post(5, "Exports");
+  // Embeddings as the duplicate job keeps them: the night theme and the dark editor mean the same as dark mode.
+  const vector = (x: number) => `[${[x, 1 - x, ...Array<number>(1534).fill(0)].join(",")}]`;
+  for (const [id, x] of [[dark.id, 1], [night.id, 0.95], [darkEditor.id, 0.9], [merged.id, 1]] as const) {
+    await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
+  }
+  // An embedding row that says it's this project's but is another project's post: never shown here.
+  const other = await createProject(await signUp("Oscar Other"));
+  const theirs = await prisma.post.create({ data: { projectId: other.id, boardId: other.boards[0]!.id, authorId: owner.id, number: 1, title: "Their dark mode" } });
+  await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${theirs.id}, ${project.id}, 'test', 'x', ${vector(1)}::vector, now())`;
+  // Found both ways first (the dark editor), then by meaning (the night theme); not Exports, itself or the merged one.
+  const like = await postsLike(project.id, dark);
+  expect(like.map((p) => p.title)).toEqual(["Dark mode in the editor", "Night theme for the editor"]);
+  // The sidebar lists them, linked, with their status and votes.
+  const text = renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like })).replace(/<[^>]+>/g, "|");
+  expect(text).toContain("|Dark mode in the editor|");
+  expect(text).toContain("|Open|");
+  expect(text).toContain("0 votes");
+  expect(renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like }))).toContain(`href="/app/${project.slug}/p/3"`);
+  // And "Merge into…" offers them first.
+  const others = [{ id: "a" }, { id: darkEditor.id }, { id: "b" }];
+  expect(likeFirst([{ id: darkEditor.id }, { id: night.id }], others).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
+});
+
+test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const ids: string[] = [];
+  for (const number of [1, 2, 3, 4]) {
+    ids.push((await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title: `Idea ${number}` } })).id);
+  }
+  await prisma.post.update({ where: { id: ids[2]! }, data: { duplicateOfId: ids[0]!, status: "CLOSED" } });
+  expect(await postNeighbours(project.id, 2)).toEqual({ newer: 4, older: 1 });
+  expect(await postNeighbours(project.id, 4)).toEqual({ newer: null, older: 2 });
+  expect(await postNeighbours(project.id, 1)).toEqual({ newer: 2, older: null });
+});
+
+test("a post found both ways ranks first even when it's sixth by meaning alone", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const post = (number: number, title: string) => prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title } });
+  const vector = (x: number) => `[${[x, 1 - x, ...Array<number>(1534).fill(0)].join(",")}]`;
+  const dark = await post(1, "Dark mode");
+  // Five closer by meaning than the one whose words match too, none of them by its words.
+  const closer = await Promise.all([0.99, 0.98, 0.97, 0.96, 0.95].map((x, i) => post(i + 2, `Night theme ${i + 1}`).then((p) => [p, x] as const)));
+  const both = await post(7, "Dark mode in the editor");
+  for (const [p, x] of [[dark, 1], ...closer, [both, 0.9]] as const) {
+    await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${p.id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
+  }
+  expect((await postsLike(project.id, dark))[0]!.title).toBe("Dark mode in the editor");
 });

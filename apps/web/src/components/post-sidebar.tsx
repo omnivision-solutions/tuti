@@ -1,6 +1,8 @@
+import type { PostStatus } from "@tuti/db";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PostStatusBadge } from "@/components/post-status-badge";
 import { asking } from "@/lib/format";
 
 /** One of the post's properties in its sidebar: a label above its control. */
@@ -74,5 +76,29 @@ export function PostShipped({
         </Property>
       )}
     </>
+  );
+}
+
+/** Posts like it (postsLike), each with its status and votes: maybe the same idea, to merge from its menu. */
+export function PostsLike({ projectSlug, posts }: { projectSlug: string; posts: { id: string; number: number; title: string; voteCount: number; status: PostStatus }[] }) {
+  if (posts.length === 0) {
+    return null;
+  }
+  return (
+    <Property label="Similar">
+      <ul aria-label="Similar posts" className="flex flex-col gap-2">
+        {posts.map((post) => (
+          <li key={post.id} className="flex flex-col gap-0.5">
+            <Link href={`/app/${projectSlug}/p/${post.number}`} className="break-words hover:underline">
+              {post.title}
+            </Link>
+            <span className="flex items-center gap-2 text-xs text-muted-foreground">
+              <PostStatusBadge status={post.status} />
+              {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Property>
   );
 }
