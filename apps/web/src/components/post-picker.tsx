@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import { Input } from "@/components/ui/input";
+import { postMatches } from "@/lib/post-matches";
 
 export type PickablePost = { id: string; number: number; title: string; voteCount: number };
 
@@ -21,10 +22,7 @@ export function PostPicker<T extends PickablePost>({
   /** While what picking does runs. */
   disabled?: boolean;
 }) {
-  const matches = useMemo(() => {
-    const q = query.trim().toLowerCase().replace(/^#/, "");
-    return candidates.filter((c) => !q || c.title.toLowerCase().includes(q) || String(c.number) === q).slice(0, 50);
-  }, [candidates, query]);
+  const matches = useMemo(() => postMatches(candidates, query), [candidates, query]);
 
   return (
     <>
