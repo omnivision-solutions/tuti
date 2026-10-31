@@ -1,8 +1,8 @@
 import { prisma } from "@tuti/db";
+import { liveDomain, projectWith } from "@tuti/jobs";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
-import { portalAddress } from "@/server/custom-domains";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
 
@@ -37,10 +37,10 @@ export async function GET(request: Request) {
     ...(project && servedIcon(settings, project.plan)),
   };
   // On a site of the team's (not the app or the portal, at Tuti's address or its own domain): the widget
-  // is set up (Home's "Get set up"). Once: the portal's address is only looked up until then. A portal
-  // under a path of the team's site (acme.com/portal) shares that site's origin, which counts.
+  // is set up (Home's "Get set up"). Once: the domain is only looked up until then. A portal under a
+  // path of the team's site (acme.com/portal) shares that site's origin, which counts.
   const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
-  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin && from !== (await ownDomain(slug))) {
+  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin && !(await isOwnDomain(slug, from))) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
@@ -60,10 +60,19 @@ export function OPTIONS() {
   });
 }
 
-/** The portal's origin when it has a domain to itself (its custom domain); null when it's under a path of a site. */
-async function ownDomain(slug: string): Promise<string | null> {
-  const address = new URL(await portalAddress(slug));
-  return address.pathname === "/" ? address.origin : null;
+/**
+ * Whether `origin` is the project's live custom domain, read from the database now (not the cached
+ * address links use, which a mount on the team's site takes first, and another process may still hold).
+ */
+async function isOwnDomain(slug: string, origin: string): Promise<boolean> {
+  if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
+    return false;
+  }
+  const domain = await prisma.customDomain.findFirst({
+    where: { hostname: new URL(origin).hostname, project: { slug, ...projectWith("customDomain") }, ...liveDomain },
+    select: { hostname: true },
+  });
+  return domain !== null;
 }
 
 /** A request's site (its Origin, or its Referer's origin); null if there isn't one. */
