@@ -269,13 +269,17 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
 
   // Its owner is emailed: what goes out by itself and when; Review opens the page.
   await runAutopilot(slug, { emailNow: true });
-  const email = await latestEmailTo(owner.email, { subject: /^Autopilot/ });
+  const email = await latestEmailTo(owner.email, { subject: new RegExp(`· ${pr}$`) });
   // (The minute wrote the changelog line first: a draft, so it doesn't wait.)
-  expect(email.subject).toBe(`Autopilot: ${pr} · 1 update goes out in 24 hours`);
-  expect(email.text).toContain(`Out of date · ${article}`);
+  expect(email.from).toContain("Tuti Autopilot");
+  expect(email.subject).toBe(`1 goes out in 24 hours · ${pr}`);
+  expect(email.text).toMatch(new RegExp(`Out of date\\s+${article}`));
+  // The edit as lines: what it takes out, what it puts in.
+  expect(email.text).toContain("− Pick Light in Settings.");
+  expect(email.text).toContain("+ Pick Light, Dark or System in Settings.");
   expect(email.text).toContain("goes out in 24 hours");
   expect(email.text).toContain("Done (only your team sees it)");
-  // Publish now, Review and Stop under what goes out: Review opens the page.
+  // Publish now and Stop under what goes out; Review in Tuti opens the page.
   const review = email.text.split(/\s+/).find((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.endsWith("?select=likely"));
   const acts = email.text.split(/\s+/).filter((word) => word.includes("/act?token="));
   expect(acts).toHaveLength(2);
@@ -378,8 +382,8 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
 
   // The email: what needs her, each with Approve.
   await runAutopilot(slug, { emailNow: true });
-  const email = await latestEmailTo(owner.email, { subject: /^Autopilot/ });
-  expect(email.subject).toBe(`Autopilot: ${pr} · 2 need you`);
+  const email = await latestEmailTo(owner.email, { subject: new RegExp(`· ${pr}$`) });
+  expect(email.subject).toBe(`2 need you · ${pr}`);
   const approves = email.text.split(/\s+/).filter((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.includes("/act?token="));
   expect(approves).toHaveLength(2);
   const inbox = await (await browser.newContext()).newPage();

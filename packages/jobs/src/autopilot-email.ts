@@ -1,3 +1,4 @@
+import { type DiffLine, diffLines, nearChanges } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -120,9 +121,14 @@ type ActionRow = {
   article: { title: string } | null;
 };
 
-/** One update as the email previews it: what it is, about what, and what it changes. */
+/** Changed lines of an edit an email shows (with one unchanged either side), and how long each; the rest are on its page. */
+const DIFF_LINES = 8;
+const LINE_LENGTH = 280;
+const clip = (text: string) => (text.length > LINE_LENGTH ? `${text.slice(0, LINE_LENGTH - 1)}…` : text);
+
+/** One update as the email previews it: what it is, about what, and what it changes (line by line). */
 function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
-  const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string };
+  const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string; before?: string; body?: string };
   const label: Record<CodeChangeActionKind, string> = {
     RESOLVES: "Closes the request",
     MOVES_FORWARD: "Progress update",
@@ -135,16 +141,25 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: done ? `In progress, posted: “${payload.comment ?? ""}”` : `In progress, posting: “${payload.comment ?? ""}”`,
+    MOVES_FORWARD: done ? "In progress, with this comment" : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
-    ARTICLE_EDIT: done ? "Published its edit" : "Publishes its edit",
+    ARTICLE_EDIT: done ? "Published this edit" : "Publishes this edit",
     NEW_ARTICLE: "A draft only your team sees",
-    CHANGELOG_LINE: `“${payload.line ?? ""}”, in the changelog's draft`,
+    CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
+  };
+  const added = (text = "") => [{ kind: "added" as const, text: clip(text) }];
+  const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
+    MOVES_FORWARD: added(payload.comment),
+    ARTICLE_EDIT: nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1)
+      .slice(0, DIFF_LINES)
+      .map((line) => ({ ...line, text: clip(line.text) })),
+    CHANGELOG_LINE: added(payload.line),
   };
   return {
     kind: label[action.kind],
     title: action.post?.title ?? action.article?.title ?? payload.title ?? "Changelog",
     fact: fact[action.kind],
+    ...(diff[action.kind] && { diff: diff[action.kind] }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
   };
 }

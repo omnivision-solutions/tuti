@@ -1,6 +1,6 @@
+import { diffBlocks, nearChanges } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 
-import { diffBlocks, nearChanges } from "@/lib/line-diff";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 

@@ -79,7 +79,7 @@ async function change(title: string, { scheduled = true } = {}) {
   });
 }
 
-const to = (user: TestUser) => mailbox.emails.filter((email) => email.to.includes(user.email) && email.subject.startsWith("Autopilot"));
+const to = (user: TestUser) => mailbox.emails.filter((email) => email.to.includes(user.email) && email.from.startsWith('"Tuti Autopilot"'));
 const later = () => new Date(Date.now() + 11 * MINUTE);
 
 test("who's told: owners, admins when the project says so, and the members it picks, each as they chose; owners always hear what goes out by itself", async () => {
@@ -126,11 +126,12 @@ test("the email: what goes out by itself and when, what needs you, Review with t
   expect(await sendAutopilotEmails()).toBe(0);
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
-  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update goes out in 24 hours, 1 needs you");
-  expect(email!.text).toContain("Goes out by itself");
-  expect(email!.text).toContain("Progress update · Dark mode");
-  expect(email!.text).toContain("Needs you");
-  expect(email!.text).toContain("Closes the request · Dark mode");
+  expect(email!.from).toBe('"Tuti Autopilot" <test@example.com>');
+  expect(email!.subject).toBe("1 needs you, 1 goes out in 24 hours · Add a dark theme");
+  // Needs you first, each update under its kind, a comment it posts as an added line.
+  expect(email!.text).toMatch(/Needs you · 1\s+Closes the request\s+Dark mode[\s\S]*Goes out by itself · 1\s+Progress update\s+Dark mode/);
+  expect(email!.html).toMatch(/Needs you: Dark mode \d+ \(closes the request\)\. Goes out in 24 hours: Dark mode \d+ \(progress update\)\./);
+  expect(email!.text).toContain("+ Out soon");
   expect(email!.html).toContain(`/app/${project.slug}/autopilot/${one.id}?select=likely`);
   // Once.
   expect(await sendAutopilotEmails(later())).toBe(0);
@@ -144,7 +145,7 @@ test("changes merged within ten minutes go in one email", async () => {
   await queueAutopilotNotices(b.id);
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
-  expect(email!.subject).toBe("Autopilot: 2 merged pull requests · 2 updates go out in 24 hours, 2 need you");
+  expect(email!.subject).toBe("2 need you, 2 go out in 24 hours · 2 pull requests");
   expect(email!.text).toContain("Add a dark theme");
   expect(email!.text).toContain("Faster search");
 });
@@ -175,7 +176,7 @@ test("the subject counts every update, the email shows five and says how many mo
   await queueAutopilotNotices(many.id);
   await sendAutopilotEmails(later());
   const [email] = to(owner);
-  expect(email!.subject).toBe("Autopilot: Big release · 1 update goes out in 24 hours, 6 need you");
+  expect(email!.subject).toBe("6 need you, 1 goes out in 24 hours · Big release");
   expect(email!.text).toContain("+2 more in Tuti");
 });
 
@@ -188,7 +189,7 @@ test("what went out by itself before the email did (a short hold) is still news:
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
-  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update went out, 1 needs you");
+  expect(email!.subject).toBe("1 needs you, 1 went out · Add a dark theme");
   expect(email!.text).toContain("Went out by itself");
   expect(email!.text).not.toContain("Done (only your team sees it)");
 });
@@ -224,7 +225,7 @@ test("analysed again, what Autopilot did by itself before the last email isn't n
   await queueAutopilotNotices(one.id);
   expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(1);
   const [, again] = to(owner);
-  expect(again!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(again!.subject).toBe("1 needs you · Add a dark theme");
   expect(again!.text).not.toContain("Went out by itself");
 });
 
@@ -236,7 +237,7 @@ test("no hold, and the runner applies it before the notices are queued: owners s
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
   expect(await queueAutopilotNotices(one.id)).toBe(1);
   expect(await sendAutopilotEmails(later())).toBe(1);
-  expect(to(owner)[0]!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
+  expect(to(owner)[0]!.subject).toBe("1 went out · Add a dark theme");
 });
 
 test("everything decided before the email went (the team approved it all): no email, and the page doesn't say anyone was emailed", async () => {
@@ -270,7 +271,7 @@ test("someone told for the first time on a later analysis hears only what that a
   await queueAutopilotNotices(one.id);
   expect(await sendAutopilotEmails(later())).toBe(2);
   const [email] = to(admin);
-  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(email!.subject).toBe("1 needs you · Add a dark theme");
   expect(email!.text).not.toContain("Went out by itself");
 });
 
@@ -303,7 +304,7 @@ test("what went out by itself between the last email and the next analysis isn't
   await queueAutopilotNotices(one.id);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
   const [, again] = to(owner);
-  expect(again!.subject).toBe("Autopilot: Add a dark theme · 1 needs you");
+  expect(again!.subject).toBe("1 needs you · Add a dark theme");
   expect(again!.text).not.toContain("Went out by itself");
 });
 
@@ -470,9 +471,9 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   expect(await tellOwners(one.id, new Date(Date.now() - MINUTE))).toBe(1);
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
-  expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
+  expect(email!.subject).toBe("1 went out · Add a dark theme");
   // Said as what it did, not what it will do.
-  expect(email!.text).toContain("In progress, posted: “Out soon”");
+  expect(email!.text).toContain("In progress, with this comment\n\n+ Out soon");
 });
 
 test("given up on one notice, another queued lately in the same email keeps its own tries", async () => {
@@ -508,7 +509,7 @@ test("analysed again and its new update applied mid-queue: an owner emailed abou
   // Emailed before that update existed: told now.
   expect(await tellOwners(one.id, proposed)).toBe(1);
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
-  expect(to(owner)[1]!.text).toContain("In progress, posted: “Live now”");
+  expect(to(owner)[1]!.text).toContain("In progress, with this comment\n\n+ Live now");
   // Emailed since (about it): not again.
   expect(await tellOwners(one.id, proposed)).toBe(0);
 });
@@ -548,7 +549,7 @@ test("what went out by itself during a mail outage stays news when the change is
   expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
   const [email] = to(owner);
   expect(email!.text).toContain("Went out by itself");
-  expect(email!.text).toContain("In progress, posted: “Out soon”");
+  expect(email!.text).toContain("In progress, with this comment\n\n+ Out soon");
 });
 
 test("what goes out by itself while an email is being sent (read before it) is in the next one", async () => {
@@ -763,8 +764,8 @@ test("the daily digest: in their morning (their browser's time zone), once a day
   expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
   expect(await sendAutopilotDigests(new Date("2026-11-02T07:45:00Z"))).toBe(0);
   const [digest] = to(owner);
-  expect(digest!.subject).toBe("Autopilot this morning: 1 update waits for you in 1 merged pull request");
-  expect(digest!.text).toContain("Closes the request · Dark mode");
+  expect(digest!.subject).toBe("1 still needs you · Add a dark theme");
+  expect(digest!.text).toMatch(/Closes the request\s+Dark mode/);
   // A day the sweep ran late (11:00 in Berlin): still that day's, once.
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:00:00Z"))).toBe(1);
   expect(await sendAutopilotDigests(new Date("2026-11-03T10:01:00Z"))).toBe(0);
@@ -816,7 +817,7 @@ test("the digest shows the newest five updates and counts the rest, and goes to 
   expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBe(1);
   expect(to(member)).toHaveLength(0);
   const [digest] = to(owner);
-  expect(digest!.subject).toBe("Autopilot this morning: 7 updates wait for you in 7 merged pull requests");
+  expect(digest!.subject).toBe("7 still need you · 7 pull requests");
   // The five newest, each with its update; the two oldest only counted.
   for (const title of titles.slice(2)) {
     expect(digest!.text).toContain(title);

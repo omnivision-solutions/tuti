@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { deliveredMessageId } from "./send";
+import { deliveredMessageId, renamed } from "./send";
 
 const ses = "0100019a2b3c4d5e-1a2b3c4d-5e6f-4a1b-9c8d-0123456789ab-000000";
 
@@ -10,4 +10,9 @@ test("Amazon SES's Message-ID comes from its answer, in its region's domain; oth
   expect(deliveredMessageId("250 2.0.0 Ok: queued as 4F1A2B3C", "smtp.example.com")).toBeNull();
   expect(deliveredMessageId("250 Accepted", "smtp.example.com")).toBeNull();
   expect(deliveredMessageId(null)).toBeNull();
+});
+
+test("a sender's name for what it's about keeps EMAIL_FROM's address", () => {
+  expect(renamed("Tuti <hello@example.com>", "Tuti Autopilot")).toBe('"Tuti Autopilot" <hello@example.com>');
+  expect(renamed("hello@example.com", "Tuti Inbox")).toBe('"Tuti Inbox" <hello@example.com>');
 });

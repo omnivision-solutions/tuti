@@ -31,6 +31,8 @@ test("a new conversation is emailed to every team member with \"Email me new con
   await call(createConversation, key, { user: { id: "user-42", name: "Sam" }, subject: "Export is broken", body: "The button does nothing." });
   expect(to(owner.email)).toEqual(["New conversation: Export is broken"]);
   const email = await mailbox.latestTo(owner.email);
+  // Named for what it's about, at the install's address.
+  expect(email.from).toBe('"Tuti Inbox" <test@example.com>');
   expect(email.text).toContain("Sam started a conversation");
   expect(email.text).toContain("The button does nothing.");
   expect(email.text).toContain(`/app/${project.slug}/inbox/1`);
