@@ -457,4 +457,12 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await checkpoint(team, "team-feedback-split-phone");
   await pane.getByRole("link", { name: "Close" }).click();
   await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  // Opened from far down a long list, the pane starts at its top, not where the list was scrolled.
+  await Promise.all(Array.from({ length: 20 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  await team.setViewportSize({ width: 390, height: 360 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const last = (await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents()).at(-1)!;
+  await team.getByRole("link", { name: last, exact: true }).click();
+  await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
 });

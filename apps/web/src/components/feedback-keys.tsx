@@ -9,7 +9,8 @@ import { pageShortcut } from "@/lib/shortcut-keys";
  * Feedback's keys: J and K open the next and the previous post of the list in its pane (J the first, with
  * none open), Esc closes the pane. Not while typing, nor with a dialog, menu or list of choices open; a
  * select of the pane's, focused after a pick, doesn't keep them (`data-feedback-pane`).
- * `order`: the list's post numbers; `base`: the list's address with none open.
+ * `order`: the list's post numbers; `base`: the list's address with none open. On a phone, the pane is brought
+ * into view as a post opens.
  */
 export function FeedbackKeys({ order, open, base }: { order: number[]; open: number | null; base: string }) {
   const router = useRouter();
@@ -21,6 +22,13 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
       known.current = order;
     }
   }, [order, open]);
+
+  // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its top.
+  useEffect(() => {
+    if (open !== null && window.matchMedia("(max-width: 63.99rem)").matches) {
+      document.querySelector("[data-feedback-pane]")?.scrollIntoView({ block: "start" });
+    }
+  }, [open]);
 
   useEffect(() => {
     const href = (number: number | null) => (number === null ? base : `${base}${base.includes("?") ? "&" : "?"}post=${number}`);
