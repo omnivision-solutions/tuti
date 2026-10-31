@@ -14,7 +14,7 @@ import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { timeAgo } from "@/lib/format";
+import { asking, timeAgo } from "@/lib/format";
 import { portalAddress } from "@/server/custom-domains";
 import { postPath } from "@/lib/post-urls";
 import { getMembership } from "@/server/membership";
@@ -22,6 +22,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
+import { voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -56,6 +57,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
+  const total = (await voterTotals(project.id, project.askingProperty, [post.id])).get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
   const [candidates, suggestions] = post.duplicateOf
     ? [[], []]
@@ -89,6 +91,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           <>
             #{post.number} · {post.author.name} · {timeAgo(post.createdAt)} · {post.voteCount}{" "}
             {post.voteCount === 1 ? "vote" : "votes"}
+            {total !== undefined && ` · ${asking(total, project.askingProperty!)}`}
           </>
         }
         actions={

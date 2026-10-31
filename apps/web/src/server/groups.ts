@@ -1,5 +1,6 @@
 "use server";
 
+import { prisma } from "@tuti/db";
 import { z } from "zod";
 
 import { groupConditions } from "@/lib/group-conditions";
@@ -55,4 +56,13 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
     return { error: input.error.issues[0]?.message ?? "Invalid input" };
   }
   return matchingUsers(project.id, input.data, PREVIEW_USERS);
+}
+
+/** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none). */
+export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
+  const name = property === null ? null : String(property).trim();
+  if (name !== null && (name.length < 1 || name.length > 64)) {
+    return { error: "Pick one of your users' properties" };
+  }
+  return asAdmin(projectSlug, DENIED, ({ projectId }) => prisma.project.update({ where: { id: projectId }, data: { askingProperty: name } }));
 }

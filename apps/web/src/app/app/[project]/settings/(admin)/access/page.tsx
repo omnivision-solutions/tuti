@@ -2,13 +2,14 @@ import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
 import { notFound } from "next/navigation";
 
+import { AskingPropertySelect } from "@/components/asking-property-select";
 import { PlanNotice } from "@/components/plan-notice";
 import { PortalAccessSelect } from "@/components/portal-access-select";
 import { PortalReaders } from "@/components/portal-readers";
 import { ReaderGroups } from "@/components/reader-groups";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminProject } from "@/server/membership";
-import { groupsWithReaders, propertyNames } from "@/server/operations/groups";
+import { groupsWithReaders, numberPropertyNames, propertyNames } from "@/server/operations/groups";
 import { portalAccess, portalReaders } from "@/server/operations/portal";
 
 /** Settings → Access: who can read the portal, and the groups single sign-on puts readers in. */
@@ -18,9 +19,11 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
   if (!project) {
     notFound();
   }
-  const [{ access }, { plan }] = await Promise.all([
+  const [{ access }, { plan }, properties, numbers] = await Promise.all([
     portalAccess(project.id),
     prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { plan: true } }),
+    propertyNames(project.id),
+    numberPropertyNames(project.id),
   ]);
 
   return (
@@ -50,7 +53,20 @@ export default async function AccessSettingsPage(props: PageProps<"/app/[project
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ReaderGroups projectSlug={project.slug} groups={await groupsWithReaders(project.id)} properties={await propertyNames(project.id)} />
+          <ReaderGroups projectSlug={project.slug} groups={await groupsWithReaders(project.id)} properties={properties} />
+        </CardContent>
+      </Card>
+
+      <Card id="asking" role="region" aria-labelledby="asking-title" className="scroll-mt-18">
+        <CardHeader>
+          <CardTitle id="asking-title">Who&apos;s asking</CardTitle>
+          <CardDescription>
+            A number property of your users (MRR, seats…), totalled over each post&apos;s voters on Feedback and the post, so you can see what an
+            idea is worth. Only your team sees it.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AskingPropertySelect projectSlug={project.slug} property={project.askingProperty} properties={numbers} />
         </CardContent>
       </Card>
     </>
