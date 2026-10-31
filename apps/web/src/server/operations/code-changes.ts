@@ -1100,7 +1100,7 @@ export async function runDueAutopilot(now = new Date()): Promise<{ applied: numb
     // What customers see went out: its owners hear of it (Autopilot's email), whenever its notices were queued.
     // Told now, so a later update failing can't keep this one from them.
     if (action.kind === "RESOLVES" || action.kind === "MOVES_FORWARD" || action.kind === "ARTICLE_EDIT") {
-      await tellOwners(action.codeChangeId, action.createdAt, { from: takenAt, to: markedAt });
+      await tellOwners(action.codeChangeId, action.createdAt, { from: takenAt, to: new Date() });
     }
   }
   for (const codeChangeId of nowWaiting) {

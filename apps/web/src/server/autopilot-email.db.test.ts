@@ -587,6 +587,45 @@ test("an update the runner was still applying when an email read the change (app
   expect(to(owner)[1]!.text).toContain("Went out by itself");
 });
 
+test("an email that read the change while the runner was marking an update its own (begun, not saved) is followed by one that says it went", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  const takenAt = new Date(Date.now() - 31_000);
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 30_000), payload: { comment: "Out soon" } } });
+  // The runner stamps the mark's time, then the sweep claims and reads before the mark is saved.
+  const markedAt = new Date(Date.now() - 1000);
+  const findUnique = prisma.teamMember.findUnique.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+  const spy = vi.spyOn(prisma.teamMember, "findUnique").mockImplementationOnce((async (...args: unknown[]) => {
+    await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
+    await tellOwners(one.id, progress.createdAt, { from: takenAt, to: new Date() });
+    return findUnique(...args);
+  }) as never);
+  expect(await sendAutopilotEmails()).toBe(1);
+  spy.mockRestore();
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
+test("an email sent while the runner was marking an update its own (begun, not saved) is followed by one that says it went", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
+  const takenAt = new Date(Date.now() - 31_000);
+  const progress = await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, status: "SCHEDULED" } });
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(Date.now() - 30_000), payload: { comment: "Out soon" } } });
+  // The runner stamps the mark's time; the whole email goes before the mark is saved.
+  const markedAt = new Date(Date.now() - 1000);
+  expect(await sendAutopilotEmails()).toBe(1);
+  expect(to(owner)[0]!.text).not.toContain("Went out by itself");
+  await prisma.codeChangeAction.update({ where: { id: progress.id }, data: { payload: { comment: "Out soon", auto: true, autoAt: markedAt.toISOString() } } });
+  expect(await tellOwners(one.id, progress.createdAt, { from: takenAt, to: new Date() })).toBe(1);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("Went out by itself");
+});
+
 test("an email claimed just before the runner took an update, but read once it had, doesn't count as having told it", async () => {
   const one = await change("Add a dark theme");
   await queueAutopilotNotices(one.id);

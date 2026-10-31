@@ -354,8 +354,8 @@ export async function emailedAbout(codeChangeId: string): Promise<string[]> {
  * The runner may apply it as the analysis's notices are queued (no hold), before they could tell it went,
  * so each owner who hasn't heard of it is told: one with no notice for the change, one whose last email
  * about it was read before these updates existed (`since`: the earliest's creation), and one whose last
- * email was read while the runner had them in hand (`inFlight`: taken, not yet marked its own), when they
- * showed as neither going out nor gone.
+ * email was read while the runner had them in hand (`inFlight`: from taking them till their mark was saved),
+ * when they showed as neither going out nor gone.
  * One being sent right now goes again. An owner emailed in between heard of them (going out, or waiting).
  */
 export async function tellOwners(codeChangeId: string, since: Date, inFlight?: { from: Date; to: Date }): Promise<number> {
@@ -365,14 +365,17 @@ export async function tellOwners(codeChangeId: string, since: Date, inFlight?: {
       return 0;
     }
     const owners = (await prisma.teamMember.findMany({ where: { projectId: change.projectId, role: "OWNER" }, select: { userId: true } })).map(({ userId }) => userId);
-    // In queueNotices' order, so whatever a sweep does with a notice meanwhile, a later step catches it.
+    // In queueNotices' order, so whatever a sweep does with a notice meanwhile, a later step catches it. One being
+    // sent is let go too: its read may have missed these, so its send can't count it as told (its news stays as it was).
     await prisma.$executeRaw`
-      UPDATE autopilot_notice SET "newsFrom" = COALESCE("newsFrom", "createdAt" - make_interval(mins => ${MERGE_MINUTES})), "createdAt" = now(), attempts = 0
+      UPDATE autopilot_notice SET "newsFrom" = COALESCE("newsFrom", "createdAt" - make_interval(mins => ${MERGE_MINUTES})), "createdAt" = now(), attempts = 0, "claimedAt" = NULL
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
+    // Its read ran from its claim (`sentAt`) to `readAt`; one that overlapped the runner's hold counts back from the
+    // hold's start, so what it applied is news to the next email.
     const again = await prisma.$executeRaw`
-      UPDATE autopilot_notice SET "since" = "sentAt", "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
+      UPDATE autopilot_notice SET "since" = LEAST("sentAt", ${inFlight?.from ?? null}), "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners})
-        AND ("sentAt" < ${since} OR ("readAt" >= ${inFlight?.from ?? null} AND "readAt" < ${inFlight?.to ?? null}))`;
+        AND ("sentAt" < ${since} OR ("readAt" >= ${inFlight?.from ?? null} AND "sentAt" < ${inFlight?.to ?? null}))`;
     const { count } = await prisma.autopilotNotice.createMany({ data: owners.map((userId) => ({ codeChangeId, userId })), skipDuplicates: true });
     return count + again;
   } catch (error) {
