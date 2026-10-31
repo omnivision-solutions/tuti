@@ -25,16 +25,24 @@ const late = () => new Date(Date.now() - LATE_MINUTES * 60_000);
  * has it or it's sent.
  */
 async function claim(postId: string, userId: string): Promise<Date | null> {
-  const claimedAt = new Date();
-  const { count } = await prisma.shippedEmail.createMany({ data: [{ postId, userId, claimedAt }], skipDuplicates: true });
-  if (count === 1) {
-    return claimedAt;
-  }
-  const taken = await prisma.shippedEmail.updateMany({
-    where: { postId, userId, sentAt: null, claimedAt: { lt: late() } },
-    data: { claimedAt },
+  return prisma.$transaction(async (tx) => {
+    // Only while it's still shipped: the post's row locked, so a status change (Undo, say) waits for
+    // this claim, or this claim sees it and emails nobody else. One claimed already may still go.
+    const [post] = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM post WHERE id = ${postId} FOR UPDATE`;
+    if (post?.status !== "COMPLETED") {
+      return null;
+    }
+    const claimedAt = new Date();
+    const { count } = await tx.shippedEmail.createMany({ data: [{ postId, userId, claimedAt }], skipDuplicates: true });
+    if (count === 1) {
+      return claimedAt;
+    }
+    const taken = await tx.shippedEmail.updateMany({
+      where: { postId, userId, sentAt: null, claimedAt: { lt: late() } },
+      data: { claimedAt },
+    });
+    return taken.count === 1 ? claimedAt : null;
   });
-  return taken.count === 1 ? claimedAt : null;
 }
 
 /**

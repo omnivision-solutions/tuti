@@ -513,10 +513,13 @@ export const applyCodeChangeAction = defineOperation({
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
         // Can't tell (the check failed too): it stays applied, so it's never posted twice, but nobody's told it went.
-        const saved = await prisma.comment
-          .count({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } } })
-          .then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+        const found = await prisma.comment
+          .findFirst({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } }, orderBy: { createdAt: "desc" }, select: { id: true } })
+          .catch(() => "unknown" as const);
+        const saved = found === "unknown" ? "unknown" : found !== null;
         if (saved !== false) {
+          // What's known, for Undo: what came before the comment, and the comment if it was found.
+          await recordUndo(action.id, { comment }, { ...undo, commentId: found === "unknown" ? null : found!.id });
           throw Object.assign(error as Error, { saved });
         }
       }
@@ -626,10 +629,11 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
+  // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
+  let live: Prisma.JsonValue | undefined;
   try {
     if (action.kind === "ARTICLE_EDIT") {
-      // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
-      const { content: live } = await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true } });
+      ({ content: live } = await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true } }));
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
@@ -648,12 +652,21 @@ async function applyDocs(
     // a teammate's save meanwhile isn't it.
     const ours = { createdAt: { gte: claimedAt }, body: payload.body ?? "" };
     // Can't tell (the check failed too): it stays applied, and the team is told to check.
-    const saved = await (action.kind === "ARTICLE_EDIT"
-      ? prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })
-      : prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })
-    ).then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+    const found = await (action.kind === "ARTICLE_EDIT"
+      ? prisma.articleRevision.findFirst({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours }, select: { id: true } })
+      : prisma.article.findFirst({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours }, select: { id: true } })
+    ).catch(() => "unknown" as const);
+    const saved = found === "unknown" ? "unknown" : found !== null;
     if (saved !== false) {
-      // What users see was saved (or may have been): it stays applied, and says so.
+      // What users see was saved (or may have been): it stays applied, and says so. Found, Undo can take it back.
+      if (found && found !== "unknown") {
+        await (action.kind === "ARTICLE_EDIT"
+          ? recordUndo(action.id, payload, { revision: found.id, live, published: publish })
+          : prisma.codeChangeAction
+              .update({ where: { id: action.id }, data: { articleId: found.id } })
+              .then(async () => recordUndo(action.id, payload, { revision: await newestRevision(found.id) }))
+              .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) })));
+      }
       throw Object.assign(error as Error, { saved });
     }
     // Saved again since the check above: it's out of date now.
@@ -726,7 +739,7 @@ export const undoCodeChangeAction = defineOperation({
     }
     const undo = undoOf(action.payload);
     if (!undo) {
-      throw new OperationError(409, "not_undoable", "It was approved before Undo was there: change it by hand");
+      throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it by hand");
     }
     const { article } = action;
 
@@ -774,7 +787,7 @@ export const undoCodeChangeAction = defineOperation({
         }
       } else if (action.kind === "ARTICLE_EDIT") {
         if (undo.live === undefined || undo.live === null) {
-          throw new OperationError(409, "not_undoable", "It was approved before Undo was there: change it in the editor");
+          throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it in the editor");
         }
         // What readers saw before, published again in one save, only if the article is still the version it published.
         await call(updateArticle, context, { slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) });

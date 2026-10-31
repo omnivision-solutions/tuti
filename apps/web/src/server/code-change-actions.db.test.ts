@@ -234,7 +234,7 @@ describe("undo", () => {
     const { post, action } = await proposal("RESOLVES");
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date(), payload: {} } });
     expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "applied", canUndo: false });
-    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("It was approved before Undo was there");
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("There's no record of what it changed");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     expect((await postOf(post.id)).status).toBe("PLANNED");
   });
@@ -315,6 +315,9 @@ describe("approving several (applyMany)", () => {
     vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
     expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Undo knows the comment it found.
+    await call(undoCodeChangeAction, team(), { id: saved.action.id });
+    expect((await postOf(saved.post.id)).comments).toHaveLength(0);
     // Not saved: the comment's transaction fails.
     const lost = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Monthly too." });
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
@@ -326,7 +329,7 @@ describe("approving several (applyMany)", () => {
     // Not saved, and checking fails too: it stays applied (never posted twice), reported as unknown, not approved.
     const unknown = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Yearly too." });
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
-    vi.spyOn(prisma.comment, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.comment, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
       { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },
     ]);
@@ -449,6 +452,9 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Someone already applied or dismissed this");
     expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
+    // What it saved is known: Undo deletes the draft.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme", deletedAt: null } })).toBe(0);
   });
 
   test("a failure before anything is saved (looking up the portal's address) leaves it waiting, to apply again", async () => {
@@ -509,7 +515,7 @@ describe("docs", () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     // The edit's save fails, and so does the check of whether it was saved.
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
-    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
@@ -523,7 +529,7 @@ describe("docs", () => {
       await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
       return claim(...args);
     }) as never);
-    vi.spyOn(prisma.articleRevision, "count").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.articleRevision, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] });
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
   });
@@ -674,7 +680,7 @@ describe("the changelog line", () => {
         return find(...args);
       }) as never);
     await call(applyCodeChangeAction, team(), { id: action.id });
-    expect(await undoing).toBe("It was approved before Undo was there: change it by hand");
+    expect(await undoing).toBe("There's no record of what it changed: change it by hand");
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
     expect((await draft()).body).toBe("A dark theme");
   });
