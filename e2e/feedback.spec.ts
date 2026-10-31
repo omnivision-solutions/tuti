@@ -241,9 +241,9 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Load more" })).toHaveCount(0);
     await checkpoint(page, page === portal ? "portal-board-page-two" : "team-feedback-page-two");
-    // Back from a post on page two comes back to the whole list.
+    // Back from a post on page two comes back to the whole list (the team's opens in the pane, page two kept).
     await page.getByRole("link", { name: "Idea 1", exact: true }).click();
-    await page.waitForURL((url) => !url.search.includes("page"));
+    await page.waitForURL((url) => (page === team ? url.search.includes("post=1") : !url.search.includes("page")));
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
@@ -380,4 +380,182 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team).toHaveURL(/\?board=feature-requests$/);
   await expect(card("Crash on save")).toHaveCount(0);
   await expect(card("Calendar sync")).toBeVisible();
+});
+
+test("Feedback's split view: a row opens the post beside the list, to triage and reply; J and K step through, Esc closes", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Calendar sync", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title, body: `Please add ${title.toLowerCase()}.` });
+  }
+  await team.setViewportSize({ width: 1440, height: 900 });
+  // All of them (a post triaged in the pane stays in the list).
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+
+  // A row's title opens it beside the list, which stays.
+  await team.getByRole("link", { name: "Calendar sync", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
+  await expect(pane).toContainText("Please add calendar sync.");
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Calendar sync", exact: true })).toHaveAttribute("aria-current", "true");
+  await checkpoint(team, "team-feedback-split");
+
+  // Triaged there: its status, and a reply as the team.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Planned" }).click();
+  await expect(team.getByText("Status: Planned")).toBeVisible();
+  await pane.getByRole("textbox", { name: "Comment" }).fill("On our list for next month.");
+  await pane.getByRole("button", { name: "Comment" }).click();
+  await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("");
+
+  // Scrolled down the pane (to its reply box) on a short laptop screen, J's post starts at its top.
+  await team.setViewportSize({ width: 1440, height: 420 });
+  await team.getByRole("complementary", { name: "Post" }).evaluate((aside) => aside.scrollTo(0, aside.scrollHeight));
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).not.toBeInViewport();
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await team.keyboard.press("j");
+  const titles = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  const after = titles[titles.indexOf("Calendar sync") + 1]!;
+  await expect(pane.getByRole("heading", { name: after })).toBeInViewport();
+  await team.keyboard.press("k");
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
+  await team.setViewportSize({ width: 1440, height: 900 });
+
+  // J and K step through the list in the pane; Esc closes it.
+  const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  const at = order.indexOf("Calendar sync");
+  await team.locator("body").press("j");
+  await expect(pane.getByRole("heading", { name: order[at + 1]! })).toBeVisible();
+  await team.locator("body").press("k");
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
+  await team.locator("body").press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+
+  // Open full page: the post's own page, with the reply.
+  await team.getByRole("link", { name: "Dark mode", exact: true }).click();
+  await pane.getByRole("link", { name: "Open full page" }).click();
+  await team.waitForURL(/\/p\/\d+$/);
+  await team.goto(`/app/${slug}/p/2`);
+  await expect(team.getByText("On our list for next month.")).toBeVisible();
+
+  // On Needs triage, the way it's used: set a post's status (it leaves the tab) and press J straight away, the
+  // select still focused: the post after it, not the top of the list; Esc closes, from the select too.
+  await team.goto(`/app/${slug}/feedback`);
+  const triage = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  expect(triage).toHaveLength(2);
+  await team.getByRole("link", { name: triage[0]!, exact: true }).click();
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Under review" }).click();
+  await expect(team.getByRole("link", { name: triage[0]!, exact: true })).toHaveCount(0);
+  // (Its select keeps focus after a pick in some browsers: J works from there too.)
+  await pane.getByRole("combobox", { name: "Status" }).focus();
+  await team.keyboard.press("j");
+  await expect(pane.getByRole("heading", { name: triage[1]! })).toBeVisible();
+  await pane.getByRole("combobox", { name: "Status" }).focus();
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+
+  // On the last post, J has nowhere to go: a pane select that has focus doesn't take the J as an option (June, July).
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const listed = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  await team.getByRole("link", { name: listed.at(-1)!, exact: true }).click();
+  const eta = pane.getByRole("combobox", { name: "ETA" });
+  const before = await eta.textContent();
+  await eta.focus();
+  await team.keyboard.press("j");
+  // Saved as it's picked: what's saved, once anything sent has gone, is still what it was.
+  await team.waitForLoadState("networkidle");
+  await team.reload();
+  await expect(pane.getByRole("heading", { name: listed.at(-1)! })).toBeVisible();
+  await expect(eta).toHaveText(before!);
+
+  // Filtered so the open post isn't listed any more (another board), J opens the new list's first.
+  await team.goto(`/app/${slug}/feedback/boards`);
+  await team.getByRole("button", { name: "New board" }).click();
+  await team.getByRole("dialog", { name: "New board" }).getByLabel("Name").fill("Bug reports");
+  await team.getByRole("dialog", { name: "New board" }).getByRole("button", { name: "Create board" }).click();
+  await expect(team.getByText("Board created")).toBeVisible();
+  await api("/posts", { board: "bug-reports", title: "Crash on export" });
+  // The others voted for, so it's last on the list: none listed after it once it's filtered out.
+  for (const number of [1, 2, 3]) {
+    await api(`/posts/${number}/vote`, { voted: true, author: { id: `user-${number}` } });
+  }
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: "Crash on export", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Crash on export" })).toBeVisible();
+  await team.getByRole("combobox", { name: "Board" }).first().click();
+  await team.getByRole("option", { name: "Feature requests" }).click();
+  await expect(team.getByRole("link", { name: "Crash on export", exact: true })).toHaveCount(0);
+  const filtered = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  // (Back on the page: a filter's own select, focused, keeps its letters.)
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await team.keyboard.press("j");
+  await expect(pane.getByRole("heading", { name: filtered[0]! })).toBeVisible();
+
+  // An address with a post number past any (a mistyped link) says there's no such post.
+  await team.goto(`/app/${slug}/feedback?post=3000000000`);
+  await expect(team.getByText("There's no post #3000000000 here.")).toBeVisible();
+
+  // On a phone: the pane takes the list's place, and its arrow goes back to the list.
+  await team.setViewportSize({ width: 390, height: 800 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: "Export to PDF", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Export to PDF" })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeHidden();
+  await checkpoint(team, "team-feedback-split-phone");
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  // Opened from far down a long list, the pane starts at its top, not where the list was scrolled.
+  await Promise.all(Array.from({ length: 20 }, (_, i) => api("/posts", { board: "feature-requests", title: `Idea ${i + 1}` })));
+  await team.setViewportSize({ width: 390, height: 360 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const last = (await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents()).at(-1)!;
+  await team.getByRole("link", { name: last, exact: true }).click();
+  await expect(pane.getByRole("heading", { name: last })).toBeInViewport();
+  // Its first row (Close, Open full page) clear of the app's bar (3rem), not under it.
+  const header = (await team.locator("header").first().boundingBox())!;
+  expect((await pane.getByRole("link", { name: "Close" }).boundingBox())!.y).toBeGreaterThanOrEqual(header.y + header.height);
+  // Closed, the list is back where it was: at the row just triaged.
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();
+
+  // The list's place, exactly, whichever way the pane opened. (Each from a fresh page: nothing kept before.)
+  const scrollY = () => team.evaluate(() => Math.round(window.scrollY));
+  const scrolledTo = async (y: number) => {
+    await team.evaluate((to) => window.scrollTo(0, to), y);
+    await expect.poll(scrollY).toBe(y);
+  };
+  // J from part way down the list (it opens the first post), then Esc.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await scrolledTo(400);
+  await team.keyboard.press("j");
+  await expect(pane).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect.poll(scrollY).toBe(400);
+  // J from the very top: back at the top.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await scrolledTo(0);
+  await team.keyboard.press("j");
+  await expect.poll(scrollY).toBeGreaterThan(0);
+  await team.keyboard.press("Escape");
+  await expect.poll(scrollY).toBe(0);
+  // Opened, Back, the list scrolled elsewhere, Forward (the pane again), closed: at that new place.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: last, exact: true }).click();
+  await expect(pane).toBeVisible();
+  await team.goBack();
+  await expect(pane).toHaveCount(0);
+  await scrolledTo(300);
+  await team.goForward();
+  await expect(pane).toBeVisible();
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect.poll(scrollY).toBe(300);
 });

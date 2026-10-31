@@ -42,8 +42,10 @@ test("duplicates are suggested while typing, and flagged for the team to settle"
   await expect(flagged).toContainText(duplicate);
   await checkpoint(owner, "team-possible-duplicates");
 
-  // The post shows what it may duplicate; "Not a duplicate" settles it for good.
+  // The post (opened beside the list, then its full page) shows what it may duplicate; "Not a duplicate" settles it for good.
   await flagged.getByRole("link", { name: duplicate }).click();
+  await owner.getByRole("region", { name: /^Post #/ }).getByRole("link", { name: "Open full page" }).click();
+  await owner.waitForURL(/\/p\/\d+$/);
   const panel = owner.getByText("Possible duplicates").locator("xpath=ancestor::*[@data-slot='card'][1]");
   await expect(panel).toContainText(original);
   await expect(panel).toContainText("80% similar");
