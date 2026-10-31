@@ -214,12 +214,18 @@ export function widgetLoader(portalTemplate: string): string {
   var covered = [];
   // A modal the page has open (help opened from inside it) is the page's: covered, it would freeze with
   // nothing in reach to close it, so the page is left as it is then.
+  // Whether an element is shown: not display: none, nor (as faded-out dialogs are) visibility: hidden or opacity 0.
+  // Where the browser can't say (checkVisibility is new, Safari 17.4), by whether it has a box and isn't hidden.
+  function showing(element) {
+    if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    if (element.getClientRects && element.getClientRects().length === 0) return false;
+    return !(window.getComputedStyle && window.getComputedStyle(element).visibility === "hidden");
+  }
   function modalOpen() {
     // Only one showing: pages keep closed ones in their markup, marked all the same.
     var marked = document.querySelectorAll("[aria-modal]");
     for (var m = 0; m < marked.length; m++) {
-      var modal = marked[m];
-      if (modal.getAttribute("aria-modal") === "true" && (!modal.checkVisibility || modal.checkVisibility())) return true;
+      if (marked[m].getAttribute("aria-modal") === "true" && showing(marked[m])) return true;
     }
     try {
       return !!document.querySelector("dialog:modal");

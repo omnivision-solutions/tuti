@@ -1024,3 +1024,23 @@ test("on a phone, a modal the page opens once the panel covers it doesn't uncove
   expect(app.hasAttribute("inert")).toBe(false);
   expect(popup.hasAttribute("inert")).toBe(false);
 });
+
+test("on a phone, a page's modal counts as showing only when it is: not faded out, nor without a box where the browser can't say", async () => {
+  type Modal = FakeElement & { checkVisibility?: (options?: { visibilityProperty?: boolean; opacityProperty?: boolean }) => boolean; getClientRects?: () => unknown[] };
+  // Faded out (visibility: hidden, opacity 0): shown to a plain checkVisibility(), not with its options.
+  const faded = loadWidget({ narrow: true });
+  const app = faded.body.appendChild(new FakeElement("div", faded));
+  const dialog = app.appendChild(new FakeElement("div", faded)) as Modal;
+  dialog.setAttribute("aria-modal", "true");
+  dialog.checkVisibility = (options) => !(options?.visibilityProperty && options.opacityProperty);
+  faded.Tuti.open();
+  expect(app.hasAttribute("inert")).toBe(true);
+  // A browser without checkVisibility (Safari before 17.4): one with no box (hidden) isn't showing.
+  const older = loadWidget({ narrow: true });
+  const page = older.body.appendChild(new FakeElement("div", older));
+  const kept = page.appendChild(new FakeElement("div", older)) as Modal;
+  kept.setAttribute("aria-modal", "true");
+  kept.getClientRects = () => [];
+  older.Tuti.open();
+  expect(page.hasAttribute("inert")).toBe(true);
+});
