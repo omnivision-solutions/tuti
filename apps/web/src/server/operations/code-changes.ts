@@ -238,17 +238,35 @@ export type CodeChangeDetail = NonNullable<Awaited<ReturnType<typeof codeChangeD
 
 /**
  * How Autopilot is doing: of its last 50 updates that went out (approved, or applied by itself), how
- * many were kept as it wrote them (not edited first, nor undone since).
+ * many were kept as it wrote them: not undone since, and not edited (the team's own words before
+ * approving; a draft or an edit finished in the editor, saved again since). Those approved before this
+ * was recorded aren't counted either way.
  */
 export async function autopilotRecord(projectId: string): Promise<{ kept: number; of: number }> {
   const recent = await prisma.codeChangeAction.findMany({
     where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
     orderBy: [{ decidedAt: "desc" }, { id: "desc" }],
     take: 50,
-    select: { status: true, payload: true },
+    select: { kind: true, status: true, payload: true, article: { select: { revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } } } } },
   });
-  const kept = recent.filter((action) => action.status === "APPLIED" && !((action.payload ?? {}) as { edited?: boolean }).edited).length;
-  return { kept, of: recent.length };
+  const known = recent.flatMap((action) => {
+    const payload = (action.payload ?? {}) as { edited?: boolean; undo?: Undo; auto?: boolean };
+    if (action.status === "UNDONE") {
+      return [false];
+    }
+    if (action.kind === "MOVES_FORWARD" || action.kind === "CHANGELOG_LINE") {
+      return payload.edited === undefined ? [] : [!payload.edited];
+    }
+    if (action.kind === "NEW_ARTICLE" || (action.kind === "ARTICLE_EDIT" && payload.undo?.published === false)) {
+      // Finished in the editor: kept if it wasn't saved again since.
+      return payload.undo?.revision === undefined ? [] : [(action.article?.revisions[0]?.id ?? null) === payload.undo.revision];
+    }
+    if (action.kind === "ARTICLE_EDIT") {
+      return payload.undo === undefined ? [] : [true];
+    }
+    return [true];
+  });
+  return { kept: known.filter(Boolean).length, of: known.length };
 }
 
 const id = z.string().min(1).max(100);
@@ -710,8 +728,7 @@ async function applyDocs(
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
-      // Kept unpublished to finish in the editor ("Edit"): edited by the team.
-      await recordUndo(action.id, { ...payload, ...(!publish && { edited: true }) }, { revision: await ourRevision(article!.id), live, published: publish });
+      await recordUndo(action.id, payload, { revision: await ourRevision(article!.id), live, published: publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
     }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });

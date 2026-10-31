@@ -306,6 +306,16 @@ test("how Autopilot is doing: of its last updates that went out, those kept as i
   const waiting = await proposal("LINKS");
   await call(dismissCodeChangeAction, team(), { id: waiting.action.id });
   expect(await autopilotRecord(project.id)).toEqual({ kept: 1, of: 3 });
+  // Approved before edits were recorded (its own words or not, nobody knows): left out.
+  const old = await proposal("MOVES_FORWARD", { comment: "Monthly too." });
+  await prisma.codeChangeAction.update({ where: { id: old.action.id }, data: { status: "APPLIED", decidedAt: new Date(), payload: { comment: "Monthly too, next week." } } });
+  // The changelog line approved as written: kept.
+  const change = await prisma.codeChange.create({
+    data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 31, url: "https://github.com/acme/app/pull/31", title: "Faster", author: "octo", mergedAt: new Date(), state: "READY" },
+  });
+  const line = await prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "CHANGELOG_LINE", probability: 1, payload: { line: "Faster search" } } });
+  await call(applyCodeChangeAction, team(), { id: line.id, line: "Faster search" });
+  expect(await autopilotRecord(project.id)).toEqual({ kept: 2, of: 4 });
 });
 
 describe("approving several (applyMany)", () => {
@@ -622,6 +632,14 @@ describe("docs", () => {
     await call(applyCodeChangeAction, team(), { id: action.id });
     await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article was edited since");
     expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
+  });
+
+  test("how Autopilot is doing: an edit finished in the editor counts as kept until the article is saved again there", async () => {
+    const { article, action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
+    expect(await autopilotRecord(project.id)).toEqual({ kept: 1, of: 1 });
+    await call(updateArticle, team(), { slug: article.slug, body: "Pick Light, Dark or System in Settings → Appearance." });
+    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 1 });
   });
 
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {

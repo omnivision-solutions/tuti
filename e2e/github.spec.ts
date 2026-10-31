@@ -55,6 +55,11 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await expect(owner.getByText("Autopilot off")).toBeVisible();
   await owner.reload();
   await expect(analysis).not.toBeChecked();
+  // Off, Autopilot's page says so, and takes its owner to the switch.
+  await owner.goto(`/app/${web}/autopilot`);
+  await expect(owner.getByText("Autopilot is off for this project. Turn it on in its settings.")).toBeVisible();
+  await owner.getByRole("link", { name: "Autopilot settings" }).click();
+  await owner.waitForURL("**/settings/autopilot");
   await analysis.click();
   await expect(owner.getByText("Autopilot on")).toBeVisible();
   // Applying by itself is opt-in, and only for links.
