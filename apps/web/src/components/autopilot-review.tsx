@@ -89,21 +89,19 @@ export function AutopilotReview({
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
   // What the email's link named and is still waiting, as the page opened.
-  const [named] = useState(() => selected.size);
-  // What the email's line says when nothing it named is waiting to tick: what became of them.
-  const [instead] = useState(() => {
-    const listed = updates.filter((update) => ticked.includes(update.id));
-    if (listed.some((update) => update.status === "stale")) {
-      return "the update it named changed since: write it again, or dismiss it.";
-    }
-    if (listed.length > 0 && listed.every((update) => update.status === "scheduled")) {
-      return "the updates it named go out by themselves (Publish now, or Stop).";
-    }
-    if (fromEmail === "likely" && waiting.length > 0) {
-      return "Autopilot isn't sure of any of these: tick the ones to approve.";
-    }
-    return "the updates it named were decided already.";
-  });
+  // What the email's link named, as the page opened: those still waiting are counted each time (approved here, they're not).
+  const [namedIds] = useState(() => new Set(selected));
+  const named = waiting.filter((update) => namedIds.has(update.id)).length;
+  // What the email's line says when nothing it named is waiting to tick: what became of them, now.
+  const namedNow = updates.filter((update) => namedIds.has(update.id));
+  const instead =
+    namedIds.size === 0 && fromEmail === "likely" && waiting.length > 0
+      ? "Autopilot isn't sure of any of these: tick the ones to approve."
+      : namedNow.some((update) => update.status === "stale")
+        ? "the update it named changed since: write it again, or dismiss it."
+        : namedNow.length > 0 && namedNow.every((update) => update.status === "scheduled")
+          ? "the updates it named go out by themselves (Publish now, or Stop)."
+          : "the updates it named were decided already.";
   // The team's edits: a progress update's comment, the changelog line.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const textOf = (update: Update) => edits[update.id] ?? (update.kind === "moves_forward" ? (update.comment ?? "") : (update.line ?? ""));
@@ -112,7 +110,8 @@ export function AutopilotReview({
   const emails = chosen.reduce((sum, update) => sum + (update.emails ?? 0), 0);
   const published = chosen.filter((update) => update.kind === "article_edit").length;
   const effects = [
-    ...(emails > 0 ? [`emails ${plural(emails, "person", "people")}`] : []),
+    // "Up to": the shipped email's own rules (verified addresses, a private portal's readers) may leave some out.
+    ...(emails > 0 ? [`emails up to ${plural(emails, "person", "people")}`] : []),
     ...(published > 0 ? [`publishes ${plural(published, "article")}`] : []),
   ];
   // A progress update or changelog line can't go out empty.
@@ -283,7 +282,7 @@ function whenApproved(chosen: Update[], emails: number): string[] {
   const lines: string[] = [];
   const closes = count("resolves");
   if (closes) {
-    lines.push(`${plural(closes, "request")} completed${emails ? `, ${plural(emails, "person", "people")} emailed` : ""}`);
+    lines.push(`${plural(closes, "request")} completed${emails ? `, up to ${plural(emails, "person", "people")} emailed` : ""}`);
   }
   if (count("moves_forward")) {
     lines.push(`${plural(count("moves_forward"), "progress update")} posted`);
@@ -375,7 +374,7 @@ function UpdateCard({
         update.kind === "resolves"
           ? post.status === "completed"
             ? "Already completed"
-            : `${STATUS_LABELS[post.status]} → Completed${update.emails ? ` · emails ${plural(update.emails, "person", "people")}` : ""}`
+            : `${STATUS_LABELS[post.status]} → Completed${update.emails ? ` · emails up to ${plural(update.emails, "person", "people")}` : ""}`
           : update.kind === "moves_forward"
             ? `${NOT_STARTED.has(post.status) ? `${STATUS_LABELS[post.status]} → In progress · ` : ""}posts the update`
             : `${STATUS_LABELS[post.status]} · links the pull request`,

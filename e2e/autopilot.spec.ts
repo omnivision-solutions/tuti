@@ -201,4 +201,12 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   const approve = owner.getByRole("button", { name: /^Approve \d/ });
   await expect(approve).toBeInViewport();
   await checkpoint(owner, "autopilot-phone", { fullPage: false });
+
+  // Approved from the email's link: the line says they're decided now, not still selected.
+  await owner.setViewportSize({ width: 1280, height: 720 });
+  await owner.goto(`${page}?select=likely`);
+  await owner.getByRole("button", { name: /^Approve \d/ }).click();
+  await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
+  await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
+  await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
 });
