@@ -131,7 +131,7 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await expect(rows).toHaveCount(1);
   await expect(rows).toContainText("SSO");
   await rows.getByRole("link", { name: "SSO" }).click();
-  await expect(owner.locator('[data-slot="page-header"]')).toContainText("1,500 mrr");
+  await expect(owner.getByRole("region", { name: /^Post #/ })).toContainText("1,500 mrr");
   // And on the roadmap, once it's planned.
   await api("/posts/1", { status: "planned" }, "PATCH");
   await owner.goto(`/app/${slug}/feedback/roadmap`);

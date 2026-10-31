@@ -145,6 +145,13 @@ Use these instead of hand-rolling layout:
   - A list is read first: a row shows values, changed on click (a badge that
     opens a menu, like `PostStatusMenu`), in a preview pane or in bulk; no
     form controls (selects, checkboxes for settings) in rows, on phones too.
+  - A list that's triaged (Feedback) opens a row in a pane beside it, the whole
+    width: `?post=<number>` in the address (shareable, Back works), the list
+    left as it was. The pane holds what triage needs (description, properties,
+    voters, a reply) and "Open full page" for the rest; J and K step through
+    the list in it, Esc closes it (`pageShortcut`: not while typing, nor with a
+    dialog or menu open). On a phone the pane takes the list's place, its
+    arrow back to the list.
   - Compact actions (a badge, one or two small buttons) stay on the right.
   - Pickers or several buttons → `wideActions`: on phones they move under the
     title and share the row width. Give select triggers `w-full sm:w-…`.

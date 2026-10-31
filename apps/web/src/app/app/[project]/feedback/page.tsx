@@ -3,6 +3,8 @@ import { LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
+import { FeedbackKeys } from "@/components/feedback-keys";
+import { FeedbackPane } from "@/components/feedback-pane";
 import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
@@ -13,6 +15,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { asking } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import { storedConditions } from "@/lib/group-conditions";
 import { sortFilter } from "@/lib/post-filter-options";
 import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
@@ -53,6 +56,26 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const scope = { board, q, group: group && storedConditions(group.conditions) };
   const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
   const totals = await voterTotals(project.id, project.askingProperty, posts.map((post) => post.id));
+
+  // The post open in the pane (`?post=<number>`), and the list's links with another one open, or none.
+  const opened = Number(first(searchParams.post));
+  const open = Number.isInteger(opened) && opened > 0 ? opened : null;
+  const withPost = (number: number | null) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams)) {
+      const one = first(value);
+      if (key !== "post" && one !== undefined) {
+        params.set(key, one);
+      }
+    }
+    if (number !== null) {
+      params.set("post", String(number));
+    }
+    return params.size > 0 ? `/app/${slug}/feedback?${params}` : `/app/${slug}/feedback`;
+  };
+  const at = posts.findIndex((post) => post.number === open);
+  const next = open === null ? posts[0] : posts[at + 1];
+  const previous = at > 0 ? posts[at - 1] : undefined;
 
   // A tab keeps the board, the search and the sort.
   const href = (to: string) => {
@@ -96,97 +119,117 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         }
       />
 
-      <SubNav
-        label="Statuses"
-        current={href(tab)}
-        items={tabs.map((t) => ({
-          href: href(t.key),
-          title: (
-            <>
-              {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
-            </>
-          ),
-        }))}
-      />
-
-      <ListFilters
-        filters={[
-          {
-            name: "board",
-            label: "Board",
-            value: board ?? "all",
-            options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
-          },
-          ...(project.readerGroups.length > 0
-            ? [
-                {
-                  name: "group",
-                  label: "Voters",
-                  // "*" can't be a group's key (a group named "All" has "all").
-                  value: group?.key ?? "*",
-                  options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
-                },
-              ]
-            : []),
-          sortFilter(filters.sort, TEAM_SORTS),
-        ]}
-      />
-
-      {posts.length === 0 ? (
-        counts.all === 0 && !q && !board && !group ? (
-          <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
-        ) : (
-          <EmptyState
-            title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
-            description={
-              q || board || group
-                ? "Try other words, or another board or tab."
-                : tab === "duplicates"
-                  ? "Posts that may repeat an older one show here."
-                  : "Posts show here when they have this status."
-            }
+      <FeedbackKeys next={next ? withPost(next.number) : null} previous={previous ? withPost(previous.number) : null} close={open !== null ? withPost(null) : null} />
+      {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
+      <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
+        <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
+          <SubNav
+            label="Statuses"
+            current={href(tab)}
+            items={tabs.map((t) => ({
+              href: href(t.key),
+              title: (
+                <>
+                  {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
+                </>
+              ),
+            }))}
           />
-        )
-      ) : (
-        <Card size="sm">
-          <CardContent>
-            <ItemList>
-              {posts.map((post) => (
-                <ItemRow
-                  key={post.id}
-                  leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>}
-                  title={
-                    <Link href={`/app/${slug}/p/${post.number}`} className="hover:underline">
-                      {post.title}
-                    </Link>
-                  }
-                  badges={
-                    post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
-                  }
-                  meta={
-                    <>
-                      #{post.number} · {post.board.name} · {post.author.name}
-                      {post.commentCount > 0 &&
-                        ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
-                      {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
-                    </>
-                  }
-                  actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}
-                />
-              ))}
-            </ItemList>
-          </CardContent>
-        </Card>
-      )}
-      {more && (
-        <Link
-          href={nextPageHref(searchParams, filters)}
-          scroll={false}
-          className={buttonVariants({ variant: "outline", className: "self-center" })}
+
+          <ListFilters
+            filters={[
+              {
+                name: "board",
+                label: "Board",
+                value: board ?? "all",
+                options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
+              },
+              ...(project.readerGroups.length > 0
+                ? [
+                    {
+                      name: "group",
+                      label: "Voters",
+                      // "*" can't be a group's key (a group named "All" has "all").
+                      value: group?.key ?? "*",
+                      options: [{ value: "*", label: "Everyone" }, ...project.readerGroups.map((g) => ({ value: g.key, label: `Voted by ${g.name}` }))],
+                    },
+                  ]
+                : []),
+              sortFilter(filters.sort, TEAM_SORTS),
+            ]}
+          />
+
+          {posts.length === 0 ? (
+            counts.all === 0 && !q && !board && !group ? (
+              <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
+            ) : (
+              <EmptyState
+                title={q || board || group ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
+                description={
+                  q || board || group
+                    ? "Try other words, or another board or tab."
+                    : tab === "duplicates"
+                      ? "Posts that may repeat an older one show here."
+                      : "Posts show here when they have this status."
+                }
+              />
+            )
+          ) : (
+            <Card size="sm">
+              <CardContent>
+                <ItemList>
+                  {posts.map((post) => (
+                    <ItemRow
+                      key={post.id}
+                      className={cn(post.number === open && "-mx-2 rounded-md bg-muted px-2")}
+                      leading={<span className="w-8 shrink-0 text-right font-semibold tabular-nums">{post.voteCount}</span>}
+                      title={
+                        <Link href={withPost(post.number)} scroll={false} aria-current={post.number === open ? "true" : undefined} className="hover:underline">
+                          {post.title}
+                        </Link>
+                      }
+                      badges={
+                        post._count.duplicateSuggestions > 0 && <Badge variant="highlight">Possible duplicate</Badge>
+                      }
+                      meta={
+                        <>
+                          #{post.number} · {post.board.name} · {post.author.name}
+                          {post.commentCount > 0 &&
+                            ` · ${post.commentCount} ${post.commentCount === 1 ? "comment" : "comments"}`}
+                          {totals.has(post.id) && ` · ${asking(totals.get(post.id)!, project.askingProperty!)}`}
+                        </>
+                      }
+                      actions={<PostStatusMenu projectSlug={slug} postId={post.id} status={post.status} />}
+                    />
+                  ))}
+                </ItemList>
+              </CardContent>
+            </Card>
+          )}
+          {more && (
+            <Link
+              href={nextPageHref(searchParams, filters)}
+              scroll={false}
+              className={buttonVariants({ variant: "outline", className: "self-center" })}
+            >
+              Load more
+            </Link>
+          )}
+        </div>
+        <aside
+          aria-label="Post"
+          className={cn(
+            "lg:sticky lg:top-18 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto lg:border-l lg:pl-6",
+            open === null && "max-lg:hidden",
+          )}
         >
-          Load more
-        </Link>
-      )}
+          {open !== null ? (
+            <FeedbackPane projectSlug={slug} projectId={project.id} askingProperty={project.askingProperty} number={open} close={withPost(null)} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Open a post to triage it here: click its title, or press J.</p>
+          )}
+        </aside>
+      </div>
     </>
   );
 }

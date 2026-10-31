@@ -241,9 +241,9 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Load more" })).toHaveCount(0);
     await checkpoint(page, page === portal ? "portal-board-page-two" : "team-feedback-page-two");
-    // Back from a post on page two comes back to the whole list.
+    // Back from a post on page two comes back to the whole list (the team's opens in the pane, page two kept).
     await page.getByRole("link", { name: "Idea 1", exact: true }).click();
-    await page.waitForURL((url) => !url.search.includes("page"));
+    await page.waitForURL((url) => (page === team ? url.search.includes("post=1") : !url.search.includes("page")));
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
@@ -380,4 +380,64 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team).toHaveURL(/\?board=feature-requests$/);
   await expect(card("Crash on save")).toHaveCount(0);
   await expect(card("Calendar sync")).toBeVisible();
+});
+
+test("Feedback's split view: a row opens the post beside the list, to triage and reply; J and K step through, Esc closes", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  for (const title of ["Dark mode", "Calendar sync", "Export to PDF"]) {
+    await api("/posts", { board: "feature-requests", title, body: `Please add ${title.toLowerCase()}.` });
+  }
+  await team.setViewportSize({ width: 1440, height: 900 });
+  // All of them (a post triaged in the pane stays in the list).
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+  const pane = team.getByRole("region", { name: /^Post #/ });
+
+  // A row's title opens it beside the list, which stays.
+  await team.getByRole("link", { name: "Calendar sync", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
+  await expect(pane).toContainText("Please add calendar sync.");
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Calendar sync", exact: true })).toHaveAttribute("aria-current", "true");
+  await checkpoint(team, "team-feedback-split");
+
+  // Triaged there: its status, and a reply as the team.
+  await pane.getByRole("combobox", { name: "Status" }).click();
+  await team.getByRole("option", { name: "Planned" }).click();
+  await expect(team.getByText("Status: Planned")).toBeVisible();
+  await pane.getByRole("textbox", { name: "Comment" }).fill("On our list for next month.");
+  await pane.getByRole("button", { name: "Comment" }).click();
+  await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("");
+
+  // J and K step through the list in the pane; Esc closes it.
+  const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  const at = order.indexOf("Calendar sync");
+  await team.locator("body").press("j");
+  await expect(pane.getByRole("heading", { name: order[at + 1]! })).toBeVisible();
+  await team.locator("body").press("k");
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
+  await team.locator("body").press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect(team.getByText("Open a post to triage it here")).toBeVisible();
+
+  // Open full page: the post's own page, with the reply.
+  await team.getByRole("link", { name: "Dark mode", exact: true }).click();
+  await pane.getByRole("link", { name: "Open full page" }).click();
+  await team.waitForURL(/\/p\/\d+$/);
+  await team.goto(`/app/${slug}/p/2`);
+  await expect(team.getByText("On our list for next month.")).toBeVisible();
+
+  // On a phone: the pane takes the list's place, and its arrow goes back to the list.
+  await team.setViewportSize({ width: 390, height: 800 });
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: "Export to PDF", exact: true }).click();
+  await expect(pane.getByRole("heading", { name: "Export to PDF" })).toBeVisible();
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeHidden();
+  await checkpoint(team, "team-feedback-split-phone");
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toBeVisible();
 });
