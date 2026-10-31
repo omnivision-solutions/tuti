@@ -68,8 +68,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // J and K step to the older post and back (by number). Not while a list of choices is open: a letter there picks one.
   await team.getByLabel("Status").click();
   await team.keyboard.press("j");
-  await expect(team).toHaveURL(new RegExp(`/app/${slug}/p/2$`));
+  // A step would have gone by now (it's not instant: wait for one, and expect none).
+  await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
   await team.keyboard.press("Escape");
+  await expect(team.getByRole("listbox")).toBeHidden();
   await team.keyboard.press("j");
   await team.waitForURL(`**/app/${slug}/p/1`);
   await team.keyboard.press("k");

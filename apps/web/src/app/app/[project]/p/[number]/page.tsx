@@ -24,7 +24,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { howShipped, postNeighbours, postsLike, postVoters, voterTotals } from "@/server/post-lists";
+import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -123,8 +123,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </a>
           </>
         }
-        // Those most like it first: the one it duplicates is likely among them.
-        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={[...like, ...candidates.filter((c) => !like.some((l) => l.id === c.id))]} />}
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={likeFirst(like, candidates)} />}
       />
 
       {post.duplicateOf ? (

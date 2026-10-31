@@ -235,17 +235,23 @@ export async function postsLike(projectId: string, post: { id: string; title: st
       WHERE mine."postId" = ${post.id} AND p."duplicateOfId" IS NULL
         AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
       ORDER BY e.embedding <=> mine.embedding
-      LIMIT ${SIMILAR_SHOWN}`,
+      LIMIT ${SIMILAR_SHOWN * 2}`,
     prisma.$queryRaw<Like[]>`
       SELECT p.id, p.number, p.title, p."voteCount", p.status
       FROM post p
       WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL
         AND (p.title % ${post.title} OR ${post.title} <% p.title)
       ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
-      LIMIT ${SIMILAR_SHOWN}`,
+      LIMIT ${SIMILAR_SHOWN * 2}`,
   ]);
+  // Each way's best twice over, so one found both ways but past the other's first five still ranks as found both ways.
   const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
   return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
+}
+
+/** The posts a post may be merged into (`candidates`), those like it (`like`, postsLike's) first: the one it duplicates is likely among them. */
+export function likeFirst<T extends { id: string }>(like: T[], candidates: T[]): T[] {
+  return [...like, ...candidates.filter((candidate) => !like.some((post) => post.id === candidate.id))];
 }
 
 /** The posts either side of `number` among the project's, by number (not merged ones): the newer and the older. */

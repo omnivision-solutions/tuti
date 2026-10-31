@@ -3,7 +3,7 @@ import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, test } from "vitest";
 
-import { PostShipped, PostVoters } from "@/components/post-sidebar";
+import { PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -11,7 +11,7 @@ import { setAskingProperty } from "@/server/groups";
 import { numberPropertyNames } from "@/server/operations/groups";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
-import { boardPosts, howShipped, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
+import { boardPosts, howShipped, likeFirst, MAX_LISTED, postNeighbours, postsLike, postVoters, teamPostCounts, teamPosts, VOTERS_SHOWN, voterTotals } from "./post-lists";
 
 test("lists of 120 posts are read in full, a page of 50 at a time", async () => {
   const owner = await signUp("Owner");
@@ -306,7 +306,17 @@ test("posts like a post: by meaning (its kept embedding), by its title's words, 
     await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
   }
   // Found both ways first (the dark editor), then by meaning (the night theme); not Exports, itself or the merged one.
-  expect((await postsLike(project.id, dark)).map((p) => p.title)).toEqual(["Dark mode in the editor", "Night theme for the editor"]);
+  const like = await postsLike(project.id, dark);
+  expect(like.map((p) => p.title)).toEqual(["Dark mode in the editor", "Night theme for the editor"]);
+  // The sidebar lists them, linked, with their status and votes.
+  const text = renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like })).replace(/<[^>]+>/g, "|");
+  expect(text).toContain("|Dark mode in the editor|");
+  expect(text).toContain("|Open|");
+  expect(text).toContain("0 votes");
+  expect(renderToStaticMarkup(createElement(PostsLike, { projectSlug: project.slug, posts: like }))).toContain(`href="/app/${project.slug}/p/3"`);
+  // And "Merge into…" offers them first.
+  const others = [{ id: "a" }, { id: darkEditor.id }, { id: "b" }];
+  expect(likeFirst([{ id: darkEditor.id }, { id: night.id }], others).map((p) => p.id)).toEqual([darkEditor.id, night.id, "a", "b"]);
 });
 
 test("a post's newer and older neighbours, newest first as Feedback lists them, past merged ones", async () => {

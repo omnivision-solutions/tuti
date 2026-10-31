@@ -13,8 +13,8 @@ const typing = (target: EventTarget | null) =>
 
 /**
  * The team's post page: the newer and the older post (by number, merged ones skipped), as buttons in
- * its header and as K and J (not while typing, nor with a dialog, menu or list of choices open: a
- * letter there picks an option).
+ * its header and as K and J (not while typing, nor with a dialog, menu or list of choices open, the
+ * page's More actions too: a letter there picks an option).
  */
 export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; newer: number | null; older: number | null }) {
   const router = useRouter();
@@ -28,7 +28,7 @@ export function PostSteps({ projectSlug, newer, older }: { projectSlug: string; 
         event.ctrlKey ||
         event.altKey ||
         typing(event.target) ||
-        document.querySelector('[role="dialog"], [role="listbox"], [role="menu"]')
+        document.querySelector('[role="dialog"], [role="listbox"], [role="menu"], [aria-label="More actions"][aria-expanded="true"]')
       ) {
         return;
       }
