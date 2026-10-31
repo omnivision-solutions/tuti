@@ -105,12 +105,6 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   const projectId = owner.projectId;
   const mail = await simpleParser(raw);
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
-  // Sent to the team's own address and forwarded here: its forwarding works (Settings → Support). Only
-  // a status: anyone who knows the support address can write headers that look forwarded.
-  const forwarded = forwardedFrom(mail.headerLines, domain!);
-  if (forwarded.length > 0) {
-    await prisma.emailDomain.updateMany({ where: { projectId, address: { in: forwarded } }, data: { receivedAt: new Date() } });
-  }
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
   const subject = (mail.subject ?? "").slice(0, 500);
@@ -167,6 +161,13 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   }
   try {
     const outcome = await readEmail(row.id, projectId, to.token, auth, mail, sender);
+    // Sent to the team's own address, forwarded here and in the Inbox: its forwarding works (Settings →
+    // Support); list mail (a group's) and refused mail never get here. Only a status: anyone who knows
+    // the support address can write headers that look forwarded.
+    const forwarded = outcome === "added" ? forwardedFrom(mail.headerLines, domain!) : [];
+    if (forwarded.length > 0) {
+      await prisma.emailDomain.updateMany({ where: { projectId, address: { in: forwarded } }, data: { receivedAt: new Date() } });
+    }
     return { status: 200, outcome };
   } catch (error) {
     if (error instanceof AlreadyRead) {

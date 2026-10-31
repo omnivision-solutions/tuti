@@ -249,6 +249,9 @@ test("an email forwarded from the team's own address shows its forwarding works;
   // Sent to someone else at the domain (a teammate's own forwarding), and to an address that only contains it.
   await postEmail(rawEmail({ from: "e2e-kim@example.com", to: "sales@acme.example, xsupport@acme.example" }), { recipient: address });
   expect(await receivedAt()).toBeNull();
+  // A group's list mail to the address: ignored, so not in the Inbox.
+  await postEmail(rawEmail({ from: "e2e-kim@example.com", to: "support@acme.example", headers: { Precedence: "list", "List-Id": "<support.acme.example>" } }), { recipient: address });
+  expect(await receivedAt()).toBeNull();
   // Sent to the support address directly, the team's address beside it: nothing forwarded it.
   await postEmail(rawEmail({ from: "e2e-kim@example.com", to: address, headers: { Cc: "support@acme.example" } }), { recipient: address });
   expect(await receivedAt()).toBeNull();
