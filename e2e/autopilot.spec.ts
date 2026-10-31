@@ -215,6 +215,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await done.getByRole("button", { name: "Undo" }).click();
   const undo = owner.getByRole("alertdialog", { name: "Undo this update?" });
   await expect(undo).toContainText("The draft is deleted.");
+  await checkpoint(owner, "autopilot-undo", { fullPage: false });
   await undo.getByRole("button", { name: "Undo" }).click();
   await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
   await expect(done).toContainText("Undone by Olive Owner");
