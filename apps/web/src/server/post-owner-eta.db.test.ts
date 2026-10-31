@@ -6,6 +6,7 @@ import { removeMember } from "@/server/team";
 import { createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { getPost } from "@/server/operations/read";
+import { recentlyShipped } from "@/server/post-lists";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
@@ -68,4 +69,17 @@ test("made a post's owner while they're taken off the team: one waits for the ot
   });
   expect(await update).toMatchObject({ message: "The owner must be on your team" });
   expect((await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).ownerId).toBeNull();
+});
+
+test("an owner or ETA set on a shipped post doesn't move it up Recently shipped: that's by when it was completed", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const team = { actor: { kind: "user" as const, userId: owner.id }, projectId: project.id };
+  const older = await call(createPost, team, { board: "feature-requests", title: "Dark mode" });
+  const newer = await call(createPost, team, { board: "feature-requests", title: "Exports" });
+  await call(updatePost, team, { number: older.number, status: "completed" });
+  await call(updatePost, team, { number: newer.number, status: "completed" });
+  await call(updatePost, team, { number: older.number, owner: owner.email, eta: "2026-12" });
+  const { boardId } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: older.number } });
+  expect((await recentlyShipped(boardId)).map((post) => post.title)).toEqual(["Exports", "Dark mode"]);
 });
