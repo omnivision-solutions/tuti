@@ -97,6 +97,12 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
     // Nothing it showed is going out any more: who did what to it, and when.
     page(`?done=already&button=${kind}${ids[0] ? `&update=${encodeURIComponent(ids[0])}` : ""}`);
   }
+  // Others it named that someone decided first: Stop says which went out already (to undo), Publish now which a
+  // teammate stopped (they wait).
+  const now = await prisma.codeChangeAction.findMany({ where: { id: { in: ids }, codeChangeId: id }, select: { status: true, waitReason: true } });
+  const went = kind === "stop" ? now.filter((action) => action.status === "APPLIED").length : 0;
+  const kept = kind === "publish" ? now.filter((action) => action.status === "PENDING" && action.waitReason?.startsWith("Stopped by")).length : 0;
+  const othersQuery = `${went > 0 ? `&went=${went}` : ""}${kept > 0 ? `&kept=${kept}` : ""}`;
   // None of them done: none went (or stopped), and the page says so.
-  page(`?done=${done === 0 ? (unsure.length > 0 ? "unsure" : "refused") : kind === "publish" ? "published" : "stopped"}&button=${kind}${heldQuery}`);
+  page(`?done=${done === 0 ? (unsure.length > 0 ? "unsure" : "refused") : kind === "publish" ? "published" : "stopped"}&button=${kind}${heldQuery}${othersQuery}`);
 }

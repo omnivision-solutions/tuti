@@ -22,10 +22,17 @@ export function updateKind(update: { kind: string; problem?: string }): string {
 type Update = CodeChangeDetail["actions"][number];
 
 /**
- * What a button in Autopilot's email did (`done`; `button`: approve, publish or stop; `update`; `held`: how many
- * it couldn't act on; `unsure`: how many it can't tell went), as a line above the updates; null when not back from one.
+ * What a button in Autopilot's email did (`done`; `button`: approve, publish or stop; `update`), as a line above the
+ * updates; null when not back from one. `counts`: how many it couldn't act on (`held`), can't tell went (`unsure`),
+ * and of the others it named, how many went out already (`went`, for Stop) or a teammate stopped (`kept`, for Publish now).
  */
-export function afterButton(updates: Update[], done: string | null, button: string | null, updateId: string | null, held: number, unsure = 0): string | null {
+export function afterButton(
+  updates: Update[],
+  done: string | null,
+  button: string | null,
+  updateId: string | null,
+  { held = 0, unsure = 0, went = 0, kept = 0 }: { held?: number; unsure?: number; went?: number; kept?: number } = {},
+): string | null {
   const update = updateId ? updates.find((u) => u.id === updateId) : undefined;
   const named = update ? `${updateKind(update)}: ${update.post?.title ?? update.article?.title ?? update.title ?? update.line ?? ""}` : "";
   const by = (u: Update) => `${u.decidedBy ? ` by ${u.decidedBy}` : ""}${u.decidedAt ? `, ${timeAgo(new Date(u.decidedAt))}` : ""}`;
@@ -33,6 +40,9 @@ export function afterButton(updates: Update[], done: string | null, button: stri
   const couldnt = held > 0 ? ` ${held === 1 ? `One couldn't ${verb}: it's ticked below` : `${held} couldn't ${verb}: they're ticked below`}, to check.` : "";
   const doubt =
     unsure > 0 ? ` ${unsure === 1 ? "Couldn't tell whether one went out: check it" : `Couldn't tell whether ${unsure} went out: check them`} below before doing it again.` : "";
+  const others =
+    (went > 0 ? ` ${went === 1 ? "One went out already: it's under Done, to undo there." : `${went} went out already: they're under Done, to undo there.`}` : "") +
+    (kept > 0 ? ` ${kept === 1 ? "One was stopped by a teammate: it waits for you below." : `${kept} were stopped by a teammate: they wait for you below.`}` : "");
   switch (done) {
     case "approved":
       return `Approved: ${named}. Undo is under Done.`;
@@ -41,11 +51,11 @@ export function afterButton(updates: Update[], done: string | null, button: stri
     case "failed":
       return `Couldn't approve ${named} just now. Try again in a moment.`;
     case "published":
-      return `Published: what was going out by itself went now.${couldnt}${doubt}`;
+      return `Published: what was going out by itself went now.${others}${couldnt}${doubt}`;
     case "unsure":
       return `${doubt.trim()}${couldnt}`;
     case "stopped":
-      return `Stopped: those updates wait for you now.${couldnt}`;
+      return `Stopped: those updates wait for you now.${others}${couldnt}`;
     case "refused":
       return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It's ticked below` : `they couldn't ${verb} as they are. They're ticked below`}, to check.`;
     case "replaced":

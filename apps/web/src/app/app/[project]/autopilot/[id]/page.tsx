@@ -77,8 +77,12 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
     typeof searchParams.done === "string" ? searchParams.done : null,
     typeof searchParams.button === "string" ? searchParams.button : null,
     typeof searchParams.update === "string" ? searchParams.update : null,
-    Number(typeof searchParams.held === "string" ? searchParams.held : 0) || 0,
-    Number(typeof searchParams.unsure === "string" ? searchParams.unsure : 0) || 0,
+    {
+      held: Number(typeof searchParams.held === "string" ? searchParams.held : 0) || 0,
+      unsure: Number(typeof searchParams.unsure === "string" ? searchParams.unsure : 0) || 0,
+      went: Number(typeof searchParams.went === "string" ? searchParams.went : 0) || 0,
+      kept: Number(typeof searchParams.kept === "string" ? searchParams.kept : 0) || 0,
+    },
   );
 
   return (
