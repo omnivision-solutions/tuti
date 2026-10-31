@@ -19,7 +19,7 @@ import { docsUrl, REPO_URL } from "./links";
 export const metadata: Metadata = {
   title: "Tuti: your docs and roadmap, kept true every time you ship",
   description:
-    "When a pull request merges, Tuti updates the docs it changes, drafts the changelog and lines up the requests it ships for the people who asked, so your AI never answers from stale docs. Feedback, roadmap, changelog and help center. Open source.",
+    "When a pull request merges, Tuti rewrites the docs it changes, drafts the changelog and lines up the requests it ships for the people who asked, so your docs and your AI keep up with what you ship. Feedback, roadmap, changelog and help center. Open source.",
 };
 
 /** A section's content column. */
