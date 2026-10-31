@@ -36,17 +36,11 @@ export async function GET(request: Request) {
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),
   };
-  // On a site of the team's (not the app or the portal, at Tuti's address or its own): the widget is
-  // set up (Home's "Get set up"). Once: the portal's address is only looked up until then.
+  // On a site of the team's (not the app or the portal, at Tuti's address or its own domain): the widget
+  // is set up (Home's "Get set up"). Once: the portal's address is only looked up until then. A portal
+  // under a path of the team's site (acme.com/portal) shares that site's origin, which counts.
   const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
-  if (
-    project &&
-    !project.widgetSeenAt &&
-    from &&
-    from !== appUrl().origin &&
-    from !== new URL(portalUrl(slug)).origin &&
-    from !== new URL(await portalAddress(slug)).origin
-  ) {
+  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin && from !== (await ownDomain(slug))) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
@@ -64,6 +58,12 @@ export function OPTIONS() {
       "access-control-max-age": "86400",
     },
   });
+}
+
+/** The portal's origin when it has a domain to itself (its custom domain); null when it's under a path of a site. */
+async function ownDomain(slug: string): Promise<string | null> {
+  const address = new URL(await portalAddress(slug));
+  return address.pathname === "/" ? address.origin : null;
 }
 
 /** A request's site (its Origin, or its Referer's origin); null if there isn't one. */
