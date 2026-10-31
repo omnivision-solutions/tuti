@@ -134,8 +134,8 @@ function StatusFlip() {
 
 /** land-a's picture: everything around the product, current, and what Autopilot just did. */
 export function UpToDateBoard() {
-  const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string; byItself?: boolean }[] = [
-    { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago", byItself: true },
+  const updates: { icon: typeof BookOpenIcon; kind: string; title: string; change: ReactNode; when: string }[] = [
+    { icon: BookOpenIcon, kind: "Help article", title: "Exporting data", change: <Diff from="Open Settings → Billing" to="Open Settings → Data" />, when: "Updated 2h ago" },
     {
       icon: LightbulbIcon,
       kind: "Feature request",
@@ -146,14 +146,13 @@ export function UpToDateBoard() {
           <Faces count={128} />
         </span>
       ),
-      // Completing a request waits for a click by default (and always for one reaching this many).
-      when: "Closed in a click",
+      when: "Shipped today",
     },
-    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Added to your next entry.</span>, when: "Drafted", byItself: true },
+    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Added to your next entry.</span>, when: "Drafted" },
   ];
   return (
     <figure
-      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data and added a line to the next changelog entry, and Dark mode was marked completed in one click, with 128 people told. The AI now answers from the updated article."
+      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data, marked Dark mode completed and told the 128 people who asked, and added a line to the next changelog entry. The AI now answers from the updated article."
       className="relative mx-auto max-w-5xl"
     >
       <Frame>
@@ -173,7 +172,7 @@ export function UpToDateBoard() {
         </div>
         <div aria-hidden className="grid gap-5 border-t p-4 sm:p-6 lg:grid-cols-[1fr_19rem]">
           <ul className="flex flex-col gap-3">
-            {updates.map(({ icon: Icon, kind, title, change, when, byItself }) => (
+            {updates.map(({ icon: Icon, kind, title, change, when }) => (
               <li key={kind} className="flex min-w-0 gap-3.5 rounded-xl border bg-background p-4">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-soft text-soft-foreground">
                   <Icon className="size-4.5" />
@@ -184,7 +183,7 @@ export function UpToDateBoard() {
                       {title} <span className="ml-1 text-xs font-normal text-muted-foreground">{kind}</span>
                     </span>
                     <span className="flex items-center gap-1 text-xs font-semibold text-soft-foreground">
-                      {byItself ? <SparklesIcon className="size-3.5" /> : <CheckIcon className="size-3.5" strokeWidth={3} />} {when}
+                      <SparklesIcon className="size-3.5" /> {when}
                     </span>
                   </p>
                   {change}
@@ -315,7 +314,7 @@ export function AutoCards() {
     },
     {
       title: "Every request closed out",
-      text: "One click marks it shipped and emails the people who asked.",
+      text: "Marked shipped, and everyone who asked hears about it.",
       picture: (
         <div className="flex flex-col gap-3">
           <p className="flex items-center justify-between gap-2 font-semibold">
