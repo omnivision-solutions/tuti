@@ -91,7 +91,8 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
     startTransition(async () => {
       const failed: string[] = [];
       for (const post of posts) {
-        const result = await run(post);
+        // A failed call (the network, the server) is that post's: the rest still go.
+        const result = await run(post).catch(() => ({ error: "Couldn't reach Tuti. Try again." }));
         if (result.error) {
           failed.push(`#${post.number}: ${result.error}`);
         }
