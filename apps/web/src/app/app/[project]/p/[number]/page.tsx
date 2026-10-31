@@ -11,7 +11,8 @@ import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
-import { Property, PostShipped, PostVoters } from "@/components/post-sidebar";
+import { Property, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
+import { PostSteps } from "@/components/post-steps";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,7 +24,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { howShipped, postVoters, voterTotals } from "@/server/post-lists";
+import { howShipped, postNeighbours, postsLike, postVoters, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -64,10 +65,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const [totals, voters, shipped] = await Promise.all([
+  const [totals, voters, shipped, like, neighbours] = await Promise.all([
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
     howShipped(post.id),
+    post.duplicateOf ? [] : postsLike(project.id, post),
+    postNeighbours(project.id, post.number),
   ]);
   const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
@@ -107,16 +110,21 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           </>
         }
         actions={
-          <a
-            href={`${await portalAddress(slug)}${postPath(post)}`}
-            target="_blank"
-            rel="noreferrer"
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
-            <ExternalLinkIcon />
-            View on portal
-          </a>
+          <>
+            <PostSteps projectSlug={slug} {...neighbours} />
+            <a
+              href={`${await portalAddress(slug)}${postPath(post)}`}
+              target="_blank"
+              rel="noreferrer"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              <ExternalLinkIcon />
+              View on portal
+            </a>
+          </>
         }
+        // Those most like it first: the one it duplicates is likely among them.
+        more={!post.duplicateOf && <MergePostDialog projectSlug={slug} post={post} candidates={[...like, ...candidates.filter((c) => !like.some((l) => l.id === c.id))]} />}
       />
 
       {post.duplicateOf ? (
@@ -192,7 +200,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             </Property>
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
             <PostShipped projectSlug={slug} {...shipped} />
-            <MergePostDialog projectSlug={slug} post={post} candidates={candidates} />
+            <PostsLike projectSlug={slug} posts={like} />
           </aside>
         )}
       </div>

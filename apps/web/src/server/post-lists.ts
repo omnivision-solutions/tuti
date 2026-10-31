@@ -1,4 +1,5 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
+import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
 import { POSTS_PER_PAGE, type PostFilters, postOrderBy } from "@/lib/post-filters";
@@ -213,4 +214,45 @@ export function recentlyShipped(boardId: string) {
     WHERE p."boardId" = ${boardId} AND p."duplicateOfId" IS NULL AND p.status = 'COMPLETED'
     ORDER BY COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt") DESC, p.id DESC
     LIMIT 5`;
+}
+
+/** How many similar posts a post's sidebar lists. */
+const SIMILAR_SHOWN = 5;
+
+/**
+ * Posts like `post`, for its sidebar (and the first in "Merge into…"): by meaning, from the embeddings
+ * kept for posts (no AI call to read a page), and by the words of its title (as findSimilarPosts
+ * matches a typed one); found both ways first. Not merged ones, nor itself.
+ */
+export async function postsLike(projectId: string, post: { id: string; title: string }) {
+  type Like = { id: string; number: number; title: string; voteCount: number; status: PostStatus };
+  const [byMeaning, byWords] = await Promise.all([
+    prisma.$queryRaw<Like[]>`
+      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      FROM post_embedding mine
+      JOIN post_embedding e ON e."projectId" = mine."projectId" AND e."postId" <> mine."postId"
+      JOIN post p ON p.id = e."postId"
+      WHERE mine."postId" = ${post.id} AND p."duplicateOfId" IS NULL
+        AND 1 - (e.embedding <=> mine.embedding) >= ${TYPING_SUGGESTION_MIN_SIMILARITY}
+      ORDER BY e.embedding <=> mine.embedding
+      LIMIT ${SIMILAR_SHOWN}`,
+    prisma.$queryRaw<Like[]>`
+      SELECT p.id, p.number, p.title, p."voteCount", p.status
+      FROM post p
+      WHERE p."projectId" = ${projectId} AND p.id <> ${post.id} AND p."duplicateOfId" IS NULL
+        AND (p.title % ${post.title} OR ${post.title} <% p.title)
+      ORDER BY greatest(similarity(p.title, ${post.title}), word_similarity(${post.title}, p.title)) DESC, p."voteCount" DESC
+      LIMIT ${SIMILAR_SHOWN}`,
+  ]);
+  const both = new Set(byWords.map((p) => p.id).filter((id) => byMeaning.some((p) => p.id === id)));
+  return [...byMeaning.filter((p) => both.has(p.id)), ...byMeaning.filter((p) => !both.has(p.id)), ...byWords.filter((p) => !both.has(p.id))].slice(0, SIMILAR_SHOWN);
+}
+
+/** The posts either side of `number` among the project's (not merged ones), newest first as Feedback lists them: the newer and the older. */
+export async function postNeighbours(projectId: string, number: number) {
+  const [newer, older] = await Promise.all([
+    prisma.post.findFirst({ where: { projectId, duplicateOfId: null, number: { gt: number } }, orderBy: { number: "asc" }, select: { number: true } }),
+    prisma.post.findFirst({ where: { projectId, duplicateOfId: null, number: { lt: number } }, orderBy: { number: "desc" }, select: { number: true } }),
+  ]);
+  return { newer: newer?.number ?? null, older: older?.number ?? null };
 }
