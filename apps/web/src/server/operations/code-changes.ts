@@ -1,6 +1,6 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, Prisma, prisma } from "@tuti/db";
 import { confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
-import { codeChangesEnabled, planIncludes } from "@tuti/shared";
+import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
@@ -498,7 +498,7 @@ export const applyCodeChangeActions = defineOperation({
         if (error instanceof OperationError) {
           results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
         } else {
-          console.error(`codeChangeActions.applyMany: ${action.id} failed`, error);
+          log.error("Approving an Autopilot update failed", { error, actionId: action.id });
           // apply keeps it applied once what users see was saved (a comment, an article's version), so
           // trying again can't do it twice: then it went, whatever failed after.
           const after = await prisma.codeChangeAction.findUnique({ where: { id: action.id }, select: { status: true } });

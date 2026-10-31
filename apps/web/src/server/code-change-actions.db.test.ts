@@ -2,6 +2,7 @@ import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { addToRunningDraft } from "@tuti/jobs";
+import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
 import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
@@ -232,7 +233,7 @@ describe("approving several (applyMany)", () => {
     const upsert = prisma.postLink.upsert.bind(prisma.postLink);
     vi.spyOn(prisma.postLink, "upsert").mockImplementation(((args: Parameters<typeof upsert>[0]) =>
       args.where.postId_url?.postId === failing.post.id ? Promise.reject(new Error("connection reset")) : upsert(args)) as unknown as typeof prisma.postLink.upsert);
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(log, "error").mockImplementation(() => {});
     const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: first.action.id }, { id: failing.action.id }, { id: last.action.id }] });
     expect(results).toEqual([
       { id: first.action.id, status: "applied" },
@@ -408,7 +409,7 @@ describe("docs", () => {
     });
     // The draft is saved; pointing the action at it fails.
     vi.spyOn(prisma.codeChangeAction, "update").mockRejectedValueOnce(new Error("database blip"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(log, "error").mockImplementation(() => {});
     expect(await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).toEqual({ results: [{ id: action.id, status: "applied" }] });
     expect(await prisma.article.count({ where: { projectId: project.id, title: "Use the dark theme" } })).toBe(1);
   });
