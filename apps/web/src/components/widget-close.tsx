@@ -4,7 +4,7 @@ import { XIcon } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
-import { WIDGET_CLOSE_MESSAGE, WIDGET_INLINE_NAME } from "@/lib/widget-messages";
+import { WIDGET_CLOSABLE_MESSAGE, WIDGET_CLOSE_MESSAGE, WIDGET_INLINE_NAME } from "@/lib/widget-messages";
 
 /** Asks the loader on the customer's page to close the widget. */
 const close = () => window.parent.postMessage(WIDGET_CLOSE_MESSAGE, "*");
@@ -27,6 +27,8 @@ export function WidgetClose({ inline, className }: { inline: boolean; className?
     if (hidden) {
       return;
     }
+    // Here to close it: the loader's own Close (a phone's, in case this page never comes) can go.
+    window.parent.postMessage(WIDGET_CLOSABLE_MESSAGE, "*");
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         close();

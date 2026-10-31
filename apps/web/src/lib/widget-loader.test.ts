@@ -234,7 +234,7 @@ function loadWidget({ attributes = {}, settings, latest = { latest: null, launch
       return page.body.children.find((child) => (child as FakeElement).id === "tuti-widget") as FakeElement;
     },
     get frame() {
-      return page.panel.children[0] as FakeElement | undefined;
+      return page.panel.children.find((child) => (child as FakeElement).tagName === "iframe") as FakeElement | undefined;
     },
     /** Calls to /api/widget/seen. */
     get seenRequests() {
@@ -926,4 +926,22 @@ test("when the page's new identify gives no token or fails, open panels hear nob
     expect(panel.postMessage).toHaveBeenLastCalledWith({ type: "tuti:identify", token: null }, "https://acme.tuti.example");
   }
   error.mockRestore();
+});
+
+test("on a phone, until the panel's page is up with its own Close, the loader's Close is there, so a page that never comes can still be closed", async () => {
+  const page = loadWidget({ narrow: true });
+  await settled();
+  page.button!.click();
+  const standIn = page.panel.children.find((child) => child instanceof FakeElement && child.getAttribute("aria-label") === "Close") as FakeElement;
+  expect(standIn.style.display).toBe("flex");
+  // The page failed (offline, an error): its Close closes the panel.
+  standIn.click();
+  expect(page.panel.hasAttribute("inert")).toBe(true);
+  // Up, with its own Close: the loader's goes.
+  page.button!.click();
+  page.message(page.frame!.contentWindow, "tuti:closable");
+  expect(standIn.style.display).toBe("none");
+  // Wide screens never show it.
+  page.resize(false);
+  expect(standIn.style.display).toBe("none");
 });

@@ -980,6 +980,8 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   await expect.poll(() => visitor.locator("#tuti-widget").boundingBox()).toEqual({ x: 0, y: 0, width: 360, height: 720 });
   const button = (await launcher.boundingBox())!;
   expect(await visitor.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("#tuti-widget") !== null, [button.x + button.width / 2, button.y + button.height / 2])).toBe(true);
+  // Its page is up with its own Close: the loader's stand-in (for a page that never comes) is gone.
+  await expect(visitor.locator('#tuti-widget > button[aria-label="Close"]')).toBeHidden();
   await checkpoint(visitor, "widget-phone", { fullPage: false });
   // Wide again: floating above the launcher, on its side.
   await visitor.setViewportSize({ width: 1280, height: 720 });

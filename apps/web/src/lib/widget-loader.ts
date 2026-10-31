@@ -1,6 +1,7 @@
 import { SLUG_PATTERN } from "./project-slugs";
 import { WIDGET_ICONS } from "./widget-icons";
 import {
+  WIDGET_CLOSABLE_MESSAGE,
   WIDGET_CLOSE_MESSAGE,
   WIDGET_IDENTIFY_MESSAGE,
   WIDGET_INLINE_NAME,
@@ -184,6 +185,29 @@ export function widgetLoader(portalTemplate: string): string {
     position: "fixed", zIndex: "2147483000", display: "none", overflow: "hidden", boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
     background: dark ? "oklch(0.185 0.01 158.9)" : "oklch(0.994 0.007 88.6)"
   });
+  // On a phone the panel covers the page and its button: until its page says it's up with its own Close
+  // (WidgetClose), the loader's own, so a page that doesn't come (offline, an error) can still be closed.
+  var closable = false;
+  var standIn = document.createElement("button");
+  standIn.type = "button";
+  standIn.setAttribute("aria-label", "Close");
+  css(standIn, {
+    position: "absolute", top: "calc(env(safe-area-inset-top) + 8px)", right: "8px", zIndex: "1", width: "36px", height: "36px",
+    padding: "0", border: "0", borderRadius: "999px", cursor: "pointer", display: "none", alignItems: "center", justifyContent: "center",
+    background: "rgba(0, 0, 0, 0.55)", color: "#fff"
+  });
+  var cross = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  var crossAttributes = { viewBox: "0 0 24 24", width: "20", height: "20", fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "aria-hidden": "true" };
+  for (var attribute in crossAttributes) cross.setAttribute(attribute, crossAttributes[attribute]);
+  var crossPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  crossPath.setAttribute("d", "M18 6 6 18M6 6l12 12");
+  cross.appendChild(crossPath);
+  standIn.appendChild(cross);
+  standIn.addEventListener("click", function () { close(); });
+  panel.appendChild(standIn);
+  function showStandIn() {
+    standIn.style.display = small && small.matches && !closable ? "flex" : "none";
+  }
   // The sidebar: a drawer over the button, with a backdrop that closes it on narrow screens
   // (where it covers most of the page); on wider ones the page stays usable beside it.
   var backdrop = document.createElement("div");
@@ -201,7 +225,7 @@ export function widgetLoader(portalTemplate: string): string {
     css(panel, { right: "0", top: "0", bottom: "0", zIndex: "2147483001", width: "min(400px, 100vw)" });
     css(backdrop, { position: "fixed", top: "0", right: "0", bottom: "0", left: "0", zIndex: "2147483001", display: "none", background: "rgba(0, 0, 0, 0.4)" });
     backdrop.addEventListener("click", function () { close(); });
-    if (narrow) narrow.onchange = showBackdrop;
+    if (narrow) narrow.onchange = function () { showBackdrop(); showStandIn(); };
   } else {
     placePanel();
     if (small) small.onchange = placePanel;
@@ -209,6 +233,7 @@ export function widgetLoader(portalTemplate: string): string {
   // The floating panel: above the button, or on a phone the whole screen (over the button, its own close
   // button at the top). Pinned to the screen's edges there, so the browser's bars can't push it off screen.
   function placePanel() {
+    showStandIn();
     if (small && small.matches) {
       // Clear of the status bar and home indicator where the page runs under them (viewport-fit=cover):
       // the panel's page, in a frame, isn't told where they are.
@@ -263,6 +288,7 @@ export function widgetLoader(portalTemplate: string): string {
     if (sidebar) document.body.appendChild(backdrop);
     document.body.appendChild(panel);
   });
+
 
   // The button, unless the page has its own: once the settings are read, or after 3 seconds
   // without them (in their place, or styled when they come).
@@ -373,11 +399,15 @@ export function widgetLoader(portalTemplate: string): string {
     var article = options && typeof options.article === "string" ? options.article : "";
     var query = article ? "?tab=docs&article=" + encodeURIComponent(article) : tabQuery(options && options.tab);
     var src = portal + "/widget" + (query || "");
+    // A page loading in it: until it says it can close itself, the loader's Close is there (on a phone).
     if (!frame) {
+      closable = false;
       frame = panel.appendChild(newFrame(src));
     } else if (query !== null) {
+      closable = false;
       frame.src = src;
     }
+    showStandIn();
     if (!opened) {
       returnFocus = from;
       opened = true;
@@ -523,6 +553,12 @@ export function widgetLoader(portalTemplate: string): string {
     if (!from) return;
     // Only the floating panel closes; an inline one has nothing to close.
     if (event.data === ${JSON.stringify(WIDGET_CLOSE_MESSAGE)}) { if (from === frame) close(); }
+    else if (event.data === ${JSON.stringify(WIDGET_CLOSABLE_MESSAGE)}) {
+      if (from === frame) {
+        closable = true;
+        showStandIn();
+      }
+    }
     else if (event.data && event.data.type === ${JSON.stringify(WIDGET_READY_MESSAGE)}) {
       sendToken(from);
       // Closed while it loaded: it couldn't hear that then.
