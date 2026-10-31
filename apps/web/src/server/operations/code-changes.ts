@@ -1,4 +1,4 @@
-import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type Prisma, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, Prisma, prisma } from "@tuti/db";
 import { confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
 import { codeChangesEnabled } from "@tuti/shared";
 import { z } from "zod";
@@ -28,17 +28,39 @@ const KINDS: Record<CodeChangeActionKind, string> = {
 };
 const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale" };
 
-/** A feedback proposal "Apply likely" takes: above its kind's likely threshold, and for a post it moves forward, with a comment to post. */
+/**
+ * An update the review page ticks as it opens: one Autopilot is sure of (above its kind's likely
+ * threshold; the changelog line always), and for a progress update, with a comment to post.
+ */
 export function likelyToApply(action: { kind: CodeChangeActionKind; probability: number; payload: Prisma.JsonValue }): boolean {
   // The changelog line only rewrites a bullet in a draft: always likely.
   if (action.kind === "CHANGELOG_LINE") {
     return true;
   }
-  if (action.kind !== "RESOLVES" && action.kind !== "MOVES_FORWARD" && action.kind !== "LINKS") {
-    return false;
-  }
   const comment = ((action.payload ?? {}) as { comment?: string }).comment ?? "";
   return action.probability >= THRESHOLDS[action.kind].likely && (action.kind !== "MOVES_FORWARD" || comment.trim() !== "");
+}
+
+/**
+ * How many people completing each post emails (its author, voters and commenters, past the team and
+ * those who turned the project's emails off), by post id. ponytail: before postShipped's other rules
+ * (verified addresses, a private portal's readers): it can count a few it won't email.
+ */
+async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+  if (postIds.length === 0) {
+    return new Map();
+  }
+  const rows = await prisma.$queryRaw<{ postId: string; people: bigint }[]>`
+    SELECT x."postId", COUNT(DISTINCT x."userId") AS people
+    FROM (
+      SELECT id AS "postId", "authorId" AS "userId" FROM post WHERE id IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "userId" FROM vote WHERE "postId" IN (${Prisma.join(postIds)})
+      UNION SELECT "postId", "authorId" FROM comment WHERE "postId" IN (${Prisma.join(postIds)})
+    ) x
+    WHERE NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = x."userId")
+      AND NOT EXISTS (SELECT 1 FROM email_opt_out o WHERE o."projectId" = ${projectId} AND o."userId" = x."userId")
+    GROUP BY x."postId"`;
+  return new Map(rows.map((row) => [row.postId, Number(row.people)]));
 }
 
 const APPLICABLE = new Set<CodeChangeActionKind>(["LINKS", "RESOLVES", "MOVES_FORWARD", "ARTICLE_EDIT", "NEW_ARTICLE", "CHANGELOG_LINE"]);
@@ -143,9 +165,11 @@ export async function codeChangeDetail(projectId: string, id: string) {
   if (!change) {
     return null;
   }
-  const [portal, bullet] = await Promise.all([
+  const completing = change.actions.filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post).map((action) => action.post!.id);
+  const [portal, bullet, emails] = await Promise.all([
     projectPortal(projectId),
     prisma.changelogEntryPullRequest.findFirst({ where: { url: change.url, entry: { projectId } }, select: { entry: { select: { number: true, title: true } } } }),
+    emailedOnCompletion(projectId, completing),
   ]);
   return {
     ...changeView(change),
@@ -161,8 +185,10 @@ export async function codeChangeDetail(projectId: string, id: string) {
         status: stale ? "stale" : ACTION_STATUSES[action.status],
         probability: action.probability,
         confidence: action.kind === "CHANGELOG_LINE" ? "likely" : confidence(action.kind, action.probability),
-        /** "Apply likely" applies it (see likelyToApply). */
-        applyLikely: action.status === "PENDING" && likelyToApply(action),
+        /** Ticked as the review page opens (see likelyToApply). */
+        applyLikely: !stale && action.status === "PENDING" && likelyToApply(action),
+        /** For a request it closes: how many people completing it emails. */
+        ...(action.kind === "RESOLVES" && action.status === "PENDING" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
         reason: action.reason,
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
@@ -434,6 +460,40 @@ export const applyCodeChangeAction = defineOperation({
       throw error;
     }
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
+  },
+});
+
+export const applyCodeChangeActions = defineOperation({
+  name: "codeChangeActions.applyMany",
+  summary:
+    "Apply several proposed actions at once (the review page's Approve), each as codeChangeActions.apply does, with its edits (`comment`, `publish`, `line`): in order, each on its own, so one refused (out of date, already decided) doesn't stop the rest. Each is claimed as it's applied, so two people approving the same ones at once apply each once. `results` says, for each, `applied` or why not",
+  method: "POST",
+  path: "/code-change-actions/apply",
+  scope: "write",
+  access: "team",
+  input: z.object({
+    actions: z
+      .array(z.object({ id, comment: z.string().trim().min(1).max(5_000).optional(), publish: z.boolean().optional(), line: z.string().trim().min(1).max(300).optional() }))
+      .min(1, "Pick at least one")
+      .max(50, "Up to 50 at once")
+      .refine((actions) => new Set(actions.map((action) => action.id)).size === actions.length, "Each action once"),
+  }),
+  example: { actions: [{ id: "cm3x9a1b2c3d4e5f6g7h8i9j0" }, { id: "cm3x9a1b2c3d4e5f6g7h8i9j1", comment: "Weekly repeats are out today." }] },
+  run: async (context, input) => {
+    const results: ({ id: string; status: "applied" } | { id: string; status: "failed"; code: string; message: string })[] = [];
+    for (const action of input.actions) {
+      try {
+        await call(applyCodeChangeAction, context, action);
+        results.push({ id: action.id, status: "applied" });
+      } catch (error) {
+        // Refused (an OperationError: out of date, decided already, not found): said, and the rest go on.
+        if (!(error instanceof OperationError)) {
+          throw error;
+        }
+        results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
+      }
+    }
+    return { results };
   },
 });
 

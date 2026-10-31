@@ -31,6 +31,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
   // On a plan without Autopilot, those here are kept but can't be analysed (codeChanges.analyse refuses).
   const included = planIncludes(plan, "codeChanges");
   const listed = changes.filter((change) => change.state !== "nothing_to_do");
+  const lines = await updatesInALine(listed.filter((change) => change.waiting > 0).map((change) => change.id));
   const nothingToDo = changes.filter((change) => change.state === "nothing_to_do");
   const row = (change: CodeChangeView) => (
     <ItemRow
@@ -46,6 +47,7 @@ export default async function CodeChangesPage(props: PageProps<"/app/[project]/a
           {change.repo}#{change.number} · @{change.author} ·{" "}
           <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
           {(change.state === "nothing_to_do" || change.state === "paused") && change.reason && ` · ${change.reason}`}
+          {lines.get(change.id) && <span className="block text-foreground">{lines.get(change.id)}</span>}
         </>
       }
       actions={
@@ -126,4 +128,35 @@ function StateBadge({ change }: { change: CodeChangeView }) {
     default:
       return null;
   }
+}
+
+/**
+ * Each change's updates waiting for the team, in a line: "Closes Dark mode · updates 1 article ·
+ * changelog line" (the first post it closes or moves forward by name, the rest counted), by change id.
+ */
+async function updatesInALine(changeIds: string[]): Promise<Map<string, string>> {
+  const actions = await prisma.codeChangeAction.findMany({
+    where: { codeChangeId: { in: changeIds }, status: { in: ["PENDING", "STALE"] } },
+    orderBy: [{ probability: "desc" }, { id: "asc" }],
+    select: { codeChangeId: true, kind: true, post: { select: { title: true } } },
+  });
+  const lines = new Map<string, string>();
+  for (const id of changeIds) {
+    const mine = actions.filter((action) => action.codeChangeId === id);
+    const count = (...kinds: string[]) => mine.filter((action) => kinds.includes(action.kind)).length;
+    const closes = mine.find((action) => action.kind === "RESOLVES");
+    const forward = mine.find((action) => action.kind === "MOVES_FORWARD");
+    const parts = [
+      closes && `Closes ${closes.post?.title}${count("RESOLVES") > 1 ? ` and ${count("RESOLVES") - 1} more` : ""}`,
+      forward && `Progress on ${forward.post?.title}${count("MOVES_FORWARD") > 1 ? ` and ${count("MOVES_FORWARD") - 1} more` : ""}`,
+      count("LINKS") > 0 && `links ${count("LINKS")} ${count("LINKS") === 1 ? "post" : "posts"}`,
+      count("ARTICLE_EDIT") > 0 && `updates ${count("ARTICLE_EDIT")} ${count("ARTICLE_EDIT") === 1 ? "article" : "articles"}`,
+      count("NEW_ARTICLE") > 0 && `${count("NEW_ARTICLE")} new ${count("NEW_ARTICLE") === 1 ? "article" : "articles"}`,
+      count("CHANGELOG_LINE") > 0 && "changelog line",
+    ].filter(Boolean);
+    if (parts.length > 0) {
+      lines.set(id, parts.join(" · "));
+    }
+  }
+  return lines;
 }

@@ -127,6 +127,7 @@ const cases: Record<OperationName, (f: Fixture) => Record<string, unknown>> = {
   // With AI on and nothing paused, it resumes none.
   "codeChanges.resume": () => ({}),
   "codeChangeActions.apply": (f) => ({ id: f.linkActionId }),
+  "codeChangeActions.applyMany": (f) => ({ actions: [{ id: f.linkActionId }] }),
   "codeChangeActions.dismiss": (f) => ({ id: f.dismissActionId, reason: "Not this one" }),
   "widget.get": () => ({}),
   // Keys act as the team (only owners and admins create them); in the app, widget.update is admins only (see the authorization matrix).

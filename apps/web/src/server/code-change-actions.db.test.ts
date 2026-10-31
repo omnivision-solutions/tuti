@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { addToRunningDraft } from "@tuti/jobs";
 
-import { applyLikelyCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
+import { approveCodeChanges } from "@/server/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -183,17 +183,58 @@ test("proposals as likely as each other keep one order: by kind, then id", async
   expect((await call(getCodeChange, team(), { id: change.id })).actions.map((action) => action.id)).toEqual(["c", "a", "b", unlikely.id]);
 });
 
-test('"Apply likely" applies the likely feedback proposals and leaves the maybes, and a comment nobody wrote', async () => {
-  // Most likely of all, but with no comment to post: it waits for the team, and doesn't stop the rest.
+test("the review page ticks the likely updates as it opens (not a comment nobody wrote, nor a maybe), and says how many people completing a post emails", async () => {
+  // Most likely of all, but with no comment to post: not ticked.
   const unwritten = await proposal("MOVES_FORWARD", { probability: 0.95 });
   const likely = await proposal("RESOLVES", { probability: 0.9 });
   const maybe = await proposal("LINKS", { probability: 0.7 });
-  expect(await applyLikelyCodeChanges(project.slug, likely.change.id)).toEqual({});
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: likely.action.id } })).status).toBe("APPLIED");
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: maybe.action.id } })).status).toBe("PENDING");
-  expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: unwritten.action.id } })).status).toBe("PENDING");
-  expect((await call(getCodeChange, team(), { id: likely.change.id })).actions.filter((action) => action.applyLikely)).toEqual([]);
-  expect((await postOf(likely.post.id)).status).toBe("COMPLETED");
+  // The post's author is the voter; another voter, a commenter, and a teammate who voted (not emailed).
+  const other = await signUp("Otto Other");
+  const teammate = await signUp("Tess Team");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: teammate.id, role: "MEMBER" } });
+  await prisma.vote.createMany({ data: [other, teammate].map((user) => ({ projectId: project.id, postId: likely.post.id, userId: user.id })) });
+  await prisma.comment.create({ data: { projectId: project.id, postId: likely.post.id, authorId: other.id, body: "Yes please" } });
+  const { actions } = await call(getCodeChange, team(), { id: likely.change.id });
+  expect(actions.filter((action) => action.applyLikely).map((action) => action.id)).toEqual([likely.action.id]);
+  expect(actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 2 });
+  expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining([unwritten.action.id, maybe.action.id]));
+});
+
+describe("approving several (applyMany)", () => {
+  test("each as apply does, with its edits; one refused doesn't stop the rest, and says why", async () => {
+    const resolves = await proposal("RESOLVES");
+    const forward = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    const dismissed = await proposal("LINKS");
+    await call(dismissCodeChangeAction, team(), { id: dismissed.action.id });
+    const { results } = await call(applyCodeChangeActions, team(), {
+      actions: [{ id: resolves.action.id }, { id: dismissed.action.id }, { id: forward.action.id, comment: "Weekly repeats are out; monthly next." }],
+    });
+    expect(results).toEqual([
+      { id: resolves.action.id, status: "applied" },
+      { id: dismissed.action.id, status: "failed", code: "already_decided", message: "Someone already applied or dismissed this" },
+      { id: forward.action.id, status: "applied" },
+    ]);
+    expect((await postOf(resolves.post.id)).status).toBe("COMPLETED");
+    expect(await postOf(forward.post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out; monthly next." }] });
+  });
+
+  test("two people approving the same ones at once apply each once", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    const both = await Promise.all([1, 2].map(() => call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })));
+    expect(both.flatMap(({ results }) => results.map((result) => result.status)).sort()).toEqual(["applied", "failed"]);
+    expect((await postOf(post.id)).status).toBe("COMPLETED");
+    expect(shippedTo(voter.email)).toHaveLength(1);
+  });
+
+  test("the review page's Approve, as a server action: how many went, and those that didn't", async () => {
+    const { action } = await proposal("LINKS");
+    expect(await approveCodeChanges(project.slug, [{ id: action.id }, { id: "nope" }])).toEqual({
+      applied: 1,
+      failed: [{ id: "nope", message: "Action not found" }],
+    });
+    // None went: an error, saying why.
+    expect(await approveCodeChanges(project.slug, [{ id: action.id }])).toEqual({ error: "Someone already applied or dismissed this" });
+  });
 });
 
 describe("docs", () => {
