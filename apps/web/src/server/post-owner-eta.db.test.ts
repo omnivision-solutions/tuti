@@ -29,7 +29,9 @@ test("a post's owner (someone on the team) and ETA (a month): set and cleared, a
 
   // The team reads them; anyone else doesn't.
   expect(await call(getPost, team, { number: post.number })).toMatchObject({ owner: { name: "Olive Owner" }, eta: "2026-12" });
-  expect(await call(getPost, outside, { number: post.number })).not.toHaveProperty("owner");
+  const read = await call(getPost, outside, { number: post.number });
+  expect(read).not.toHaveProperty("owner");
+  expect(read).not.toHaveProperty("eta");
 
   // From the post's page: cleared.
   actAs(owner);
