@@ -139,3 +139,19 @@ test("a crashed send's claim for a voter who has since unsubscribed doesn't keep
   expect(emailsTo(voter.email)).toHaveLength(1);
   expect((await prisma.comment.findUniqueOrThrow({ where: { id: reply.id } })).votersEmailDueAt).toBeNull();
 });
+
+test("the safety net leaves a paused project's replies out, so they don't fill its batch before ones that can go", async () => {
+  const voter = await verified("Voter");
+  const { post } = await votedFor(voter);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
+  vi.stubEnv("PLANS", "on");
+  await prisma.project.update({ where: { id: project.id }, data: { emailPausedAt: new Date() } });
+  try {
+    expect(await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} })).toEqual({ found: 0, queued: 0 });
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});

@@ -1,6 +1,6 @@
 import { prisma } from "@tuti/db";
 import { replyEmail, sendEmail } from "@tuti/email";
-import type { JobInput } from "@tuti/shared";
+import { type JobInput, plansEnabled } from "@tuti/shared";
 
 import { claimProjectEmail } from "./email-limits";
 import { portalPostUrl } from "./events";
@@ -171,7 +171,11 @@ export async function replyEmailed({ commentId }: JobInput<"replyEmailed">, log:
 /** The safety net: a reply whose emails are still due after a while gets its job again. Claims keep that from emailing anyone twice. */
 export async function resubmitReplyEmails(_input: JobInput<"resubmitReplyEmails">, log: JobLogger): Promise<JobResult> {
   const due = await prisma.comment.findMany({
-    where: { votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) } },
+    where: {
+      votersEmailDueAt: { lt: late(), gt: new Date(Date.now() - RESUBMIT_FOR_HOURS * 3_600_000) },
+      // Not a paused project's (projectEmailWaits): they'd wait again, and fill the batch before ones that can go.
+      ...(plansEnabled() && { project: { emailPausedAt: null } }),
+    },
     select: { id: true },
     take: 500,
   });
