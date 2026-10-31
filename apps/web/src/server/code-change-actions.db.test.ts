@@ -218,6 +218,15 @@ describe("undo", () => {
     expect((await postOf(linked.post.id)).links).toEqual([{ url: PR_URL, source: "MANUAL", codeChangeId: null }]);
   });
 
+  test("one approved before Undo was there (nothing recorded to put back) is refused, and has no Undo", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: "APPLIED", decidedById: owner.id, decidedAt: new Date(), payload: {} } });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "applied", canUndo: false });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("It was approved before Undo was there");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    expect((await postOf(post.id)).status).toBe("PLANNED");
+  });
+
   test("a link: removed", async () => {
     const { post, action } = await proposal("LINKS");
     await call(applyCodeChangeAction, team(), { id: action.id });
@@ -598,7 +607,7 @@ describe("the changelog line", () => {
     });
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({
       line: "A dark theme, in Settings",
-      undo: { previous: "Add a dark theme (acme/app#30)" },
+      undo: { previous: "Add a dark theme (acme/app#30)", added: null },
     });
     // Undo puts the bullet back as it was, still linking to the pull request.
     await call(undoCodeChangeAction, team(), { id: action.id });
@@ -620,5 +629,9 @@ describe("the changelog line", () => {
     await call(applyCodeChangeAction, team(), { id: action.id });
     expect((await draft()).body).toBe("A dark theme");
     expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(1);
+    // Undo takes out what applying added: the bullet, and the pull request with it.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("");
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
   });
 });

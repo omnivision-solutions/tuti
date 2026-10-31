@@ -196,7 +196,7 @@ export function AutopilotReview({
                       )}
                     </span>
                   </div>
-                  {update.status === "applied" && <UndoButton projectSlug={projectSlug} update={update} />}
+                  {update.canUndo && <UndoButton projectSlug={projectSlug} update={update} />}
                 </li>
               ))}
             </ul>

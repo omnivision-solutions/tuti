@@ -1,11 +1,11 @@
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { changelogLineOf, confidence, enqueue, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
+import { changelogLineOf, confidence, enqueue, removeChangelogLine, setChangelogLine, THRESHOLDS } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
 
 import { createComment } from "./create";
 import { aiOrRefuse } from "./credits";
-import { createArticle, deleteArticle, publishChanges, restoreArticle, updateArticle } from "./docs";
+import { createArticle, deleteArticle, updateArticle } from "./docs";
 import { type Actor, defineOperation, OperationError } from "./define";
 import { updatePost } from "./manage";
 import { requirePlan } from "./plan";
@@ -221,6 +221,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
         decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
         /** Applied by Autopilot itself, nobody approving it. */
         auto: Boolean((payload as { auto?: boolean }).auto),
+        /** Approved, with what it changed recorded: Undo can put it back. */
+        canUndo: action.status === "APPLIED" && undoOf(action.payload) !== null,
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
       };
@@ -410,7 +412,13 @@ export const applyCodeChangeAction = defineOperation({
       const before = await changelogLineOf(projectId, action.codeChange.url);
       const { count } = await prisma.codeChangeAction.updateMany({
         where: { id: action.id, status: "PENDING" },
-        data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: new Date(), payload: { line, undo: { previous: before?.text ?? null } } },
+        // Applying adds the bullet when no entry has it (and the pull request too, when none has that): Undo takes them out again.
+        data: {
+          status: "APPLIED",
+          decidedById: actorUser(context.actor),
+          decidedAt: new Date(),
+          payload: { line, undo: { previous: before?.text ?? null, added: before === null ? "entry" : before.text === null ? "bullet" : null } },
+        },
       });
       if (count === 0) {
         throw new OperationError(409, "already_decided", "Someone already applied or dismissed this");
@@ -596,12 +604,14 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
+  // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
+  const live = action.kind === "ARTICLE_EDIT" ? (await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true } })).content : null;
   try {
     if (action.kind === "ARTICLE_EDIT") {
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
-      await recordUndo(action.id, payload, { revision: await newestRevision(article!.id), before: payload.basedOn ?? null, published: publish });
+      await recordUndo(action.id, payload, { revision: await newestRevision(article!.id), live, published: publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
     }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
@@ -634,15 +644,25 @@ async function applyDocs(
   }
 }
 
+/** What applying an update changed (its payload's `undo`), for Undo to put back. */
 type Undo = {
   linked?: boolean;
   entries?: string[];
   status?: string | null;
   commentId?: string | null;
+  /** An article's version once applied (to tell whether it's been edited since), and what readers saw before (its content). */
   revision?: string | null;
-  before?: string | null;
+  live?: Prisma.JsonValue;
   published?: boolean;
+  /** The changelog bullet's text before, and what applying added: the bullet, or the pull request with it ("entry"). */
   previous?: string | null;
+  added?: "entry" | "bullet" | null;
+};
+
+/** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
+const undoOf = (payload: Prisma.JsonValue): Undo | null => {
+  const { undo, auto } = (payload ?? {}) as { undo?: Undo; auto?: boolean };
+  return undo ?? (auto ? { linked: true } : null);
 };
 
 export const undoCodeChangeAction = defineOperation({
@@ -676,8 +696,10 @@ export const undoCodeChangeAction = defineOperation({
     if (action.status !== "APPLIED") {
       throw new OperationError(409, "not_applied", "Only an approved update can be undone");
     }
-    const payload = (action.payload ?? {}) as { undo?: Undo; auto?: boolean };
-    const undo: Undo = payload.undo ?? (payload.auto ? { linked: true } : {});
+    const undo = undoOf(action.payload);
+    if (!undo) {
+      throw new OperationError(409, "not_undoable", "It was approved before Undo was there: change it by hand");
+    }
     const { article } = action;
 
     // Refused before anything changes, saying why.
@@ -709,13 +731,18 @@ export const undoCodeChangeAction = defineOperation({
     }
     try {
       if (action.kind === "CHANGELOG_LINE") {
-        // Back to what the bullet said (the pull request's own line, if it had none).
-        await setChangelogLine(projectId, action.codeChange, undo.previous ?? `${action.codeChange.title} (${action.codeChange.repo}#${action.codeChange.number})`);
-      } else if (action.kind === "ARTICLE_EDIT") {
-        if (undo.before) {
-          await call(restoreArticle, context, { slug: article!.slug, revision: undo.before });
-          await call(publishChanges, context, { slug: article!.slug });
+        // Back to what the bullet said; one applying added goes again.
+        if (undo.added) {
+          await removeChangelogLine(projectId, action.codeChange.url, { forget: undo.added === "entry" });
+        } else {
+          await setChangelogLine(projectId, action.codeChange, undo.previous ?? `${action.codeChange.title} (${action.codeChange.repo}#${action.codeChange.number})`);
         }
+      } else if (action.kind === "ARTICLE_EDIT") {
+        if (undo.live === undefined || undo.live === null) {
+          throw new OperationError(409, "not_undoable", "It was approved before Undo was there: change it in the editor");
+        }
+        // What readers saw before, published again in one save, only if the article is still the version it published.
+        await call(updateArticle, context, { slug: article!.slug, content: undo.live, publish: true, ...(undo.revision && { revision: undo.revision }) });
       } else if (action.kind === "NEW_ARTICLE") {
         await call(deleteArticle, context, { slug: article!.slug });
       } else if (action.post) {

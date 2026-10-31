@@ -198,6 +198,26 @@ export async function changelogLineOf(projectId: string, url: string): Promise<{
 }
 
 /**
+ * Takes the pull request's bullet out of whichever entry has it (Autopilot's Undo of a line that
+ * added it), and with `forget`, the entry's record of the pull request too (applying added both).
+ */
+export async function removeChangelogLine(projectId: string, url: string, { forget }: { forget: boolean }): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await lockProject(tx, projectId);
+    const known = await tx.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entryId: true } });
+    if (!known) {
+      return;
+    }
+    if (forget) {
+      await tx.changelogEntryPullRequest.delete({ where: { entryId_url: { entryId: known.entryId, url } } });
+    }
+    const entry = await tx.changelogEntry.findUniqueOrThrow({ where: { id: known.entryId }, select: { content: true } });
+    const doc = withoutBullet((entry.content as Doc | null) ?? { type: "doc", content: [] }, url);
+    await tx.changelogEntry.update({ where: { id: known.entryId }, data: { content: doc as Prisma.InputJsonValue, body: toPlainText(doc as Parameters<typeof toPlainText>[0]) } });
+  });
+}
+
+/**
  * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
  * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):
  * it's added to the running draft with that line. Returns the entry's number.
