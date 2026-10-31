@@ -2229,6 +2229,9 @@ model AutopilotNotice {
   /// When the email before this one about the change went (it was analysed again since): what Autopilot did
   /// by itself before then isn't news.
   since        DateTime?
+  /// Where what Autopilot did by itself counts as news from, once known (the last send; or, refreshed while
+  /// it waited, where it stood): `createdAt` moves as it's queued again, this doesn't.
+  newsFrom     DateTime?
 
   codeChange CodeChange @relation(fields: [codeChangeId], references: [id], onDelete: Cascade)
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)

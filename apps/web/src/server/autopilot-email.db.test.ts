@@ -520,3 +520,23 @@ test("the mail server refusing the message itself (its limits, the sender: 554 a
   expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ attempts: 0, sentAt: null });
   expect(await sendAutopilotEmails(new Date(at))).toBe(1);
 });
+
+test("what went out by itself during a mail outage stays news when the change is analysed again before the server's back", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  // The server's down: the send fails, the notice waits (claimed).
+  mailbox.refuseNext(owner.email, { code: 421 });
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  logged.mockRestore();
+  // Meanwhile the progress update goes out by itself, and twenty minutes on the change is analysed again.
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, data: { status: "APPLIED", dueAt: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 20 * MINUTE) } });
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, status: "APPLIED" }, data: { decidedAt: new Date(Date.now() - 15 * MINUTE) } });
+  await queueAutopilotNotices(one.id);
+  // The server's back: the email still says it went out.
+  expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
+  const [email] = to(owner);
+  expect(email!.text).toContain("Went out by itself");
+  expect(email!.text).toContain("In progress, posted: “Out soon”");
+});

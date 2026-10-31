@@ -16,6 +16,7 @@ CREATE TABLE "autopilot_notice" (
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "sentAt" TIMESTAMP(3),
     "since" TIMESTAMP(3),
+    "newsFrom" TIMESTAMP(3),
 
     CONSTRAINT "autopilot_notice_pkey" PRIMARY KEY ("id")
 );

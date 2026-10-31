@@ -66,12 +66,12 @@ async function queueNotices(codeChangeId: string): Promise<number> {
   // a later step catches it. Being sent right now (with what the analysis before found): left unsent by that
   // sweep, so it goes again.
   await prisma.$executeRaw`
-    UPDATE autopilot_notice SET "createdAt" = now(), attempts = 0
+    UPDATE autopilot_notice SET "newsFrom" = COALESCE("newsFrom", "createdAt" - make_interval(mins => ${MERGE_MINUTES})), "createdAt" = now(), attempts = 0
     WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
   // Told already (an analysis before this one): told again, about what this one found; what Autopilot did by
   // itself before that email isn't news again (`since`).
   const again = await prisma.$executeRaw`
-    UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
+    UPDATE autopilot_notice SET "since" = "sentAt", "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
     WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NOT NULL`;
   // Not told yet (or the sweep dropped it): told now.
   const { count } = await prisma.autopilotNotice.createMany({
@@ -178,6 +178,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         select: {
           id: true,
           since: true,
+          newsFrom: true,
           createdAt: true,
           attempts: true,
           user: { select: { email: true, autopilotEmails: true } },
@@ -229,7 +230,8 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       // What Autopilot did by itself for this analysis: since a little before it was queued (as queuing reads it),
       // and since the email before this one about the change (if any). What went out between them isn't news.
       const lately = (notice: (typeof mine)[number]) => {
-        const queued = notice.createdAt.getTime() - MERGE_MINUTES * 60_000;
+        // Kept apart from `createdAt` (refreshed while it waits): what went out meanwhile, never emailed, stays news.
+        const queued = notice.newsFrom?.getTime() ?? notice.createdAt.getTime() - MERGE_MINUTES * 60_000;
         const from = Math.max(queued, notice.since?.getTime() ?? 0);
         return (action: ActionRow) => auto(action) && action.decidedAt !== null && action.decidedAt.getTime() > from;
       };
@@ -315,7 +317,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       }
       // Analysed again while it went: it did go, so what it said isn't news again (and, not sent after all next
       // time, it goes back to this send).
-      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt, sentAt: null }, data: { since: sentAt, claimedAt: null } });
+      await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt, sentAt: null }, data: { since: sentAt, newsFrom: sentAt, claimedAt: null } });
       sent++;
     } catch (error) {
       log.error("Autopilot's email sweep failed for someone", { error, userId });
@@ -351,10 +353,10 @@ export async function tellOwners(codeChangeId: string, since: Date): Promise<num
     const owners = (await prisma.teamMember.findMany({ where: { projectId: change.projectId, role: "OWNER" }, select: { userId: true } })).map(({ userId }) => userId);
     // In queueNotices' order, so whatever a sweep does with a notice meanwhile, a later step catches it.
     await prisma.$executeRaw`
-      UPDATE autopilot_notice SET "createdAt" = now(), attempts = 0
+      UPDATE autopilot_notice SET "newsFrom" = COALESCE("newsFrom", "createdAt" - make_interval(mins => ${MERGE_MINUTES})), "createdAt" = now(), attempts = 0
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
     const again = await prisma.$executeRaw`
-      UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
+      UPDATE autopilot_notice SET "since" = "sentAt", "newsFrom" = NULL, "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
       WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" < ${since}`;
     const { count } = await prisma.autopilotNotice.createMany({ data: owners.map((userId) => ({ codeChangeId, userId })), skipDuplicates: true });
     return count + again;
