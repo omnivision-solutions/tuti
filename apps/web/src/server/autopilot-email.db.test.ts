@@ -327,3 +327,24 @@ test("not sent after all, a notice sent before goes back to that: the page still
   expect(await sendAutopilotEmails(new Date(Date.now() + 25 * MINUTE))).toBe(0);
   expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: first, claimedAt: null });
 });
+
+test("a sweep that finishes sending in the middle of queuing the next analysis doesn't swallow it", async () => {
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  // A sweep has it claimed, and is sending the analysis before's updates.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { claimedAt: new Date() } });
+  const [{ createdAt, claimedAt }] = await prisma.autopilotNotice.findMany({ where: { codeChangeId: one.id } });
+  // Analysed again: the sweep marks it sent (as it read it) between queuing's first and second steps.
+  const executeRaw = prisma.$executeRaw.bind(prisma) as (...args: unknown[]) => Promise<number>;
+  let steps = 0;
+  const spy = vi.spyOn(prisma, "$executeRaw").mockImplementation((async (...args: unknown[]) => {
+    if (++steps === 2) {
+      await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id, claimedAt, createdAt }, data: { sentAt: new Date() } });
+    }
+    return executeRaw(...args);
+  }) as never);
+  await queueAutopilotNotices(one.id);
+  spy.mockRestore();
+  // Still to be sent, with what the new analysis found.
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).toMatchObject({ sentAt: null });
+});

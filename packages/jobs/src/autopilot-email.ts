@@ -59,19 +59,23 @@ async function queueNotices(codeChangeId: string): Promise<number> {
     select: { role: true, autopilotTold: true, userId: true, user: { select: { autopilotEmails: true } } },
   });
   const told = team.filter((member) => isTold(member, change.project, goesOutUnseen));
-  const { count } = await prisma.autopilotNotice.createMany({
-    data: told.map(({ userId }) => ({ codeChangeId, userId })),
-    skipDuplicates: true,
-  });
+  const userIds = told.map(({ userId }) => userId);
+  // In this order, so whatever a sweep does with someone's notice meanwhile (sends it, puts it back, drops it),
+  // a later step catches it. Being sent right now (with what the analysis before found): left unsent by that
+  // sweep, so it goes again.
+  await prisma.$executeRaw`
+    UPDATE autopilot_notice SET "createdAt" = now()
+    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
   // Told already (an analysis before this one): told again, about what this one found; what Autopilot did by
   // itself before that email isn't news again (`since`).
   const again = await prisma.$executeRaw`
     UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now()
-    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${told.map(({ userId }) => userId)}) AND "sentAt" IS NOT NULL`;
-  // Being sent right now (with what the analysis before found): left unsent by that sweep, so it goes again.
-  await prisma.$executeRaw`
-    UPDATE autopilot_notice SET "createdAt" = now()
-    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${told.map(({ userId }) => userId)}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
+    WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${userIds}) AND "sentAt" IS NOT NULL`;
+  // Not told yet (or the sweep dropped it): told now.
+  const { count } = await prisma.autopilotNotice.createMany({
+    data: userIds.map((userId) => ({ codeChangeId, userId })),
+    skipDuplicates: true,
+  });
   return count + again;
 }
 
