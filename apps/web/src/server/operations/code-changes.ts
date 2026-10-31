@@ -459,11 +459,12 @@ export const applyCodeChangeAction = defineOperation({
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
+        // Can't tell (the check failed too): it stays applied, so it's never posted twice, but nobody's told it went.
         const saved = await prisma.comment
           .count({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } } })
-          .then((n) => n > 0, () => true);
-        if (saved) {
-          throw Object.assign(error as Error, { saved: true });
+          .then((n): boolean | "unknown" => n > 0, () => "unknown" as const);
+        if (saved !== false) {
+          throw Object.assign(error as Error, { saved });
         }
       }
       // Not done: it's waiting again, for another try.
@@ -508,10 +509,13 @@ export const applyCodeChangeActions = defineOperation({
           log.error("Approving an Autopilot update failed", { error, actionId: action.id });
           // apply says when what users see was saved before the failure (a comment, an article's
           // version): then it went, and stays applied so trying again can't do it twice.
+          const { saved } = error as { saved?: boolean | "unknown" };
           results.push(
-            (error as { saved?: boolean }).saved
+            saved === true
               ? { id: action.id, status: "applied" }
-              : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+              : saved === "unknown"
+                ? { id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether its update was posted: check the post" }
+                : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
           );
         }
       }

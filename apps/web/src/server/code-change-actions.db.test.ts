@@ -259,6 +259,13 @@ describe("approving several (applyMany)", () => {
     ]);
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: lost.action.id } })).status).toBe("PENDING");
     expect((await postOf(lost.post.id)).comments).toHaveLength(0);
+    // Not saved, and checking fails too: it stays applied (never posted twice), reported as unknown, not approved.
+    const unknown = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Yearly too." });
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    vi.spyOn(prisma.comment, "count").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
+      { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether its update was posted: check the post" },
+    ]);
   });
 
   test("two people approving the same ones at once apply each once", async () => {
