@@ -25,7 +25,8 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
   }, [base, order, open]);
 
   // On a phone the pane takes the list's place, where the list was scrolled to: it's brought into view, from its
-  // top; closed, the list goes back to where it was (kept as it scrolls, before the pane hides it).
+  // top; closed, the list goes back to where it was. Kept as a post is opened (a click on the list, or J), before
+  // the pane hides the list (and the browser moves the page up).
   const listScroll = useRef(0);
   useEffect(() => {
     const phone = window.matchMedia("(max-width: 63.99rem)").matches;
@@ -41,8 +42,8 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
     const keep = () => {
       listScroll.current = window.scrollY;
     };
-    window.addEventListener("scroll", keep, { passive: true });
-    return () => window.removeEventListener("scroll", keep);
+    window.addEventListener("click", keep, true);
+    return () => window.removeEventListener("click", keep, true);
   }, [open]);
 
   useEffect(() => {
@@ -64,6 +65,9 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
       }
       event.preventDefault();
       event.stopPropagation();
+      if (open === null) {
+        listScroll.current = window.scrollY;
+      }
       router.replace(typeof to === "number" ? href(to) : to, { scroll: false });
     };
     // Caught first: before a focused select's own keys.
