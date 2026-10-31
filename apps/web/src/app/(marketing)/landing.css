@@ -35,7 +35,6 @@
   animation: landing-removed 9s infinite;
 }
 .landing-added {
-  overflow: hidden;
   animation: landing-added 9s infinite;
 }
 @keyframes landing-stale-answer {
@@ -58,8 +57,8 @@
   0%, 44% { background: transparent; color: var(--foreground); text-decoration: none; }
 }
 @keyframes landing-added {
-  0%, 50% { opacity: 0; max-height: 0; }
-  56%, 100% { opacity: 1; max-height: 2rem; }
+  0%, 50% { opacity: 0; }
+  56%, 100% { opacity: 1; }
 }
 
 /* "Sound familiar?": three lines taking turns (delays 0s, 4s, 8s). */
