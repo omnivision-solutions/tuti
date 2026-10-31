@@ -14,7 +14,7 @@ import { asking, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
 import { emailedOnCompletion } from "@/server/operations/code-changes";
-import { postVoters, voterTotals } from "@/server/post-lists";
+import { postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
 
 /**
  * Feedback's pane: the post a row opened (`number`), beside the list, to triage without leaving it. Its
@@ -55,10 +55,11 @@ export async function FeedbackPane({
       </p>
     );
   }
-  const [totals, voters, emails] = await Promise.all([
+  const [totals, voters, emails, toEmail] = await Promise.all([
     voterTotals(projectId, askingProperty, [post.id]),
     postVoters(projectId, askingProperty, post.id),
     emailedOnCompletion(projectId, [post.id]),
+    votersToEmail(projectId, post.id),
   ]);
   const total = totals.get(post.id);
   const doc = displayDoc(post);
@@ -116,7 +117,7 @@ export async function FeedbackPane({
           <div className="flex flex-col gap-2 border-t pt-4">
             <h3 className="font-medium">Reply</h3>
             {/* Keyed by post: J and K start each one's reply afresh. */}
-            <CommentForm key={post.id} postId={post.id} placeholder="Reply as the team…" notes />
+            <CommentForm key={post.id} postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />
           </div>
         </>
       )}

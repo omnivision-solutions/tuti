@@ -25,7 +25,7 @@ import { isEmptyDoc } from "@tuti/content";
 import { RichText } from "@tuti/content/react";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
-import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, voterTotals } from "@/server/post-lists";
+import { howShipped, likeFirst, postNeighbours, postsLike, postVoters, votersToEmail, voterTotals } from "@/server/post-lists";
 
 /** The team's view of a post: reply as the team, change status, move board, merge duplicates. */
 export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[number]">) {
@@ -66,13 +66,14 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
   if (!post) {
     notFound();
   }
-  const [totals, voters, shipped, like, neighbours, emails] = await Promise.all([
+  const [totals, voters, shipped, like, neighbours, emails, toEmail] = await Promise.all([
     voterTotals(project.id, project.askingProperty, [post.id]),
     postVoters(project.id, project.askingProperty, post.id),
     howShipped(post.id),
     post.duplicateOf ? [] : postsLike(project.id, post),
     postNeighbours(project.id, post.number),
     emailedOnCompletion(project.id, [post.id]),
+    votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
@@ -171,7 +172,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               teamUserIds={new Set(team.map((m) => m.userId))}
               events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
             />
-            {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes />}
+            {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" notes voters={toEmail} />}
           </section>
         </div>
 

@@ -63,7 +63,13 @@ export async function addComment(_prev: FormState, formData: FormData): Promise<
       return post && { id: post.projectId };
     },
     (context) =>
-      // An internal note when the team's form asks (the operation refuses anyone else).
-      call(createCommentOperation, context, { number, content: value("content") || undefined, body: value("body"), ...(value("internal") === "on" && { internal: true }) }),
+      // An internal note, or a reply emailed to the voters, when the team's form asks (the operation refuses anyone else).
+      call(createCommentOperation, context, {
+        number,
+        content: value("content") || undefined,
+        body: value("body"),
+        ...(value("internal") === "on" && { internal: true }),
+        ...(value("emailVoters") === "on" && { emailVoters: true }),
+      }),
   );
 }

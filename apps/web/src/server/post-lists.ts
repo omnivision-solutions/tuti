@@ -1,4 +1,5 @@
 import { type PostStatus, Prisma, prisma } from "@tuti/db";
+import { postAudience } from "@tuti/jobs";
 import { TYPING_SUGGESTION_MIN_SIMILARITY } from "@tuti/shared";
 
 import type { GroupCondition } from "@/lib/group-conditions";
@@ -161,6 +162,15 @@ export function postVoters(projectId: string, property: string | null, postId: s
     ) voter
     ORDER BY value DESC NULLS LAST, "createdAt" DESC, "userId"
     LIMIT ${VOTERS_SHOWN}`;
+}
+
+/** How many of a post's voters the team's reply emails with "Email voters" (who replyEmailed tells: postAudience). */
+export async function votersToEmail(projectId: string, postId: string) {
+  const [project, votes] = await Promise.all([
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } }),
+    prisma.vote.findMany({ where: { postId }, select: { userId: true } }),
+  ]);
+  return (await postAudience(projectId, project, votes.map((vote) => vote.userId))).length;
 }
 
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */

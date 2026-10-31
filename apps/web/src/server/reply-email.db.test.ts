@@ -8,7 +8,9 @@ import { mergePost } from "@/server/operations/manage";
 import { setVote } from "@/server/operations/more";
 import { OperationError } from "@/server/operations";
 import { call } from "@/server/operations/run";
-import { createProject, signUp, type TestUser } from "@/test/helpers";
+import { votersToEmail } from "@/server/post-lists";
+import { addComment } from "@/server/posts";
+import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { mailbox } from "@/test/mailbox";
 
 let owner: TestUser;
@@ -65,6 +67,21 @@ test("the team's reply with Email voters goes to the post's voters, each once; n
   expect(emailsTo(unverified.email)).toEqual([]);
   // Done: not due any more.
   expect(await prisma.comment.count({ where: { votersEmailDueAt: { not: null } } })).toBe(0);
+});
+
+test("the team's reply form says how many voters it emails, and emails them when switched on", async () => {
+  const [voter, unverified] = [await verified("Voter"), await signUp("Unverified")];
+  const { post } = await votedFor(voter, unverified, owner);
+  const { id } = await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number }, select: { id: true } });
+  // Its author and Voter: not an address nobody verified, nor the team.
+  expect(await votersToEmail(project.id, id)).toBe(2);
+  actAs(owner);
+  const form = new FormData();
+  form.set("postId", id);
+  form.set("body", "Shipping soon.");
+  form.set("emailVoters", "on");
+  expect(await addComment({}, form)).toEqual({});
+  expect(emailsTo(voter.email)).toHaveLength(1);
 });
 
 test("only the team emails voters, and a note isn't emailed", async () => {
