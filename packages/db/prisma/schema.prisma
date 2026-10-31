@@ -2261,7 +2261,8 @@ model AutopilotDigest {
   day       DateTime  @db.Date
   /// A sweep sending it took it then; one that failed (or a sweep that stopped) is taken again after a while.
   claimedAt DateTime?
-  /// Sends that failed: tried again a while after each, given up after a few (tomorrow's comes all the same).
+  /// Sends the mail server refused (the address, not the server being down): tried again a while after each,
+  /// given up after a few (tomorrow's comes all the same).
   attempts  Int       @default(0)
   sentAt    DateTime?
 

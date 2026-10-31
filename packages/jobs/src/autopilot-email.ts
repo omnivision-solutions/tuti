@@ -197,6 +197,15 @@ function emailChange(
 }
 
 /**
+ * Whether a failed send was the mail server refusing this address (5xx to its RCPT TO): that's the address's.
+ * Anything else (down, a failed login, the sender or the message refused, its limits) is the server's, and passes.
+ */
+function refusedAddress(error: unknown): boolean {
+  const { responseCode: code, command } = error as { responseCode?: unknown; command?: unknown };
+  return typeof code === "number" && code >= 500 && typeof command === "string" && /^RCPT\b/i.test(command);
+}
+
+/**
  * The minute's sweep: each person's notices from ten minutes ago or more (with any newer ones of the
  * same project, so nothing's left for a lonely email right after) go in one email, then are marked
  * sent. Claimed first, so two sweeps send each once; a failed send is tried again next minute.
@@ -348,10 +357,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
         // down, or not taking it for now (4xx): for as long as that lasts. It refusing this address (5xx): a few
         // times, then given up.
-        // Only the server refusing this address (5xx to its RCPT TO) is the address's; anything else (down,
-        // a failed login, the sender or the message refused, its limits) is the server's, and passes.
-        const { responseCode: code, command } = error as { responseCode?: unknown; command?: unknown };
-        const refused = typeof code === "number" && code >= 500 && typeof command === "string" && /^RCPT\b/i.test(command);
+        const refused = refusedAddress(error);
         log.error("Sending Autopilot's email failed", { error, userId, refused });
         if (refused) {
           await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
@@ -550,9 +556,13 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
             }),
           });
         } catch (error) {
-          // Tried again once the claim lapses, a few times at most; tomorrow's comes all the same.
-          log.error("Sending Autopilot's digest failed", { error, userId: reader.id, projectId: project.id });
-          await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { attempts: { increment: 1 } } });
+          // Tried again once the claim lapses: while the server's down, for as long as that lasts; the address
+          // refused, a few times at most (tomorrow's comes all the same).
+          const refused = refusedAddress(error);
+          log.error("Sending Autopilot's digest failed", { error, userId: reader.id, projectId: project.id, refused });
+          if (refused) {
+            await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { attempts: { increment: 1 } } });
+          }
           continue;
         }
         await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });

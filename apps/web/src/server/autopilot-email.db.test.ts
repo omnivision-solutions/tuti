@@ -859,3 +859,20 @@ test("a digest claimed late in a long sweep is claimed as of then: a sweep start
     vi.useRealTimers();
   }
 });
+
+test("a mail server down for a while (not refusing the address) doesn't use up the digest's tries", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  vi.spyOn(log, "error").mockImplementation(() => {});
+  // Six sweeps in a row the server answers "try later" (421), each after the claim lapsed.
+  for (let i = 0; i < 6; i++) {
+    mailbox.refuseNext(owner.email, { code: 421 });
+    await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+    await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"));
+  }
+  expect(to(owner)).toHaveLength(0);
+  // Back up: it goes.
+  await prisma.autopilotDigest.updateMany({ where: { userId: owner.id, sentAt: null }, data: { claimedAt: new Date(Date.now() - 16 * MINUTE) } });
+  await sendAutopilotDigests(new Date("2026-11-02T09:00:00Z"));
+  expect(to(owner)).toHaveLength(1);
+});
