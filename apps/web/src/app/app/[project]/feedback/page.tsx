@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { LayoutListIcon } from "lucide-react";
+import { LayoutListIcon, MapIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
@@ -84,6 +84,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
               {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
               <Input type="search" name="q" defaultValue={q} placeholder="Search titles and descriptions" aria-label="Search feedback" className="h-8" />
             </form>
+            <Link href={`/app/${slug}/feedback/roadmap`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+              <MapIcon />
+              Roadmap
+            </Link>
             <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               <LayoutListIcon />
               Boards

@@ -56,8 +56,11 @@ export function PostStatusSelect({
   );
 }
 
-/** Team-only, for lists: the status as its badge, which opens a menu to change it. */
-export function PostStatusMenu({ projectSlug, postId, status }: { projectSlug: string; postId: string; status: PostStatus }) {
+/**
+ * Team-only, for lists: the status as its badge, which opens a menu to change it. `onComplete`: Completed
+ * (which emails people) goes there instead, for the list to ask first.
+ */
+export function PostStatusMenu({ projectSlug, postId, status, onComplete }: { projectSlug: string; postId: string; status: PostStatus; onComplete?: () => void }) {
   const [pending, startTransition] = useTransition();
 
   return (
@@ -73,14 +76,16 @@ export function PostStatusMenu({ projectSlug, postId, status }: { projectSlug: s
         <DropdownMenuRadioGroup
           value={status}
           onValueChange={(value) =>
-            startTransition(async () => {
-              const result = await changePostStatus(projectSlug, postId, String(value));
-              if (result.error) {
-                toast.error(result.error);
-              } else {
-                toast.success(`Status: ${STATUS_LABELS[value as PostStatus]}`);
-              }
-            })
+            value === "COMPLETED" && onComplete
+              ? onComplete()
+              : startTransition(async () => {
+                  const result = await changePostStatus(projectSlug, postId, String(value));
+                  if (result.error) {
+                    toast.error(result.error);
+                  } else {
+                    toast.success(`Status: ${STATUS_LABELS[value as PostStatus]}`);
+                  }
+                })
           }
         >
           {STATUSES.map((s) => (

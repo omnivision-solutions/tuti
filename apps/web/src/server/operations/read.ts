@@ -155,15 +155,26 @@ export const ROADMAP = [
   { status: "COMPLETED", key: "completed" },
 ] as const satisfies readonly { status: PostStatus; key: string }[];
 
-/** Each column's posts: most voted first, except Completed (most recently finished first). Up to 50 each. */
-export async function roadmapColumns(projectId: string) {
+/**
+ * Each column's posts: most voted first, except Completed (most recently finished first). Up to 50
+ * each. The team's roadmap narrows to a board, and Completed to what finished in its last `completedDays`.
+ */
+export async function roadmapColumns(projectId: string, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
+  const completedSince = completedDays && new Date(Date.now() - completedDays * 86_400_000);
   return Promise.all(
     ROADMAP.map(({ status }) =>
       prisma.post.findMany({
-        where: { projectId, status, duplicateOfId: null },
+        where: {
+          projectId,
+          status,
+          duplicateOfId: null,
+          ...(board && { board: { slug: board } }),
+          // ponytail: updatedAt stands in for when it was completed (votes and edits move it too); post_event (a post's activity) has the real time.
+          ...(status === "COMPLETED" && completedSince && { updatedAt: { gte: completedSince } }),
+        },
         orderBy: status === "COMPLETED" ? [{ updatedAt: "desc" }] : [{ voteCount: "desc" }, { createdAt: "desc" }],
         take: 50,
-        select: { ...postSummarySelect, board: { select: { slug: true, name: true } } },
+        select: { ...postSummarySelect, id: true, board: { select: { slug: true, name: true } } },
       }),
     ),
   );

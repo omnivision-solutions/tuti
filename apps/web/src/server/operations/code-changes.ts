@@ -48,7 +48,7 @@ export function likelyToApply(action: { kind: CodeChangeActionKind; probability:
  * does. ponytail: before its other rules (verified addresses, a private portal's readers): it can count
  * a few it won't email.
  */
-async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
+export async function emailedOnCompletion(projectId: string, postIds: string[]): Promise<Map<string, number>> {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { portalAccess: true, plan: true } });
   // A private portal on a plan without them is the team's only: postShipped emails nobody.
   if (postIds.length === 0 || (project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal"))) {
