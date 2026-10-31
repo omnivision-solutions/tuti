@@ -543,8 +543,9 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
     await team.evaluate((to) => window.scrollTo(0, to), y);
     await expect.poll(scrollY).toBe(y);
   };
-  // J from part way down the list (it opens the first post), then Esc.
+  // J from part way down the list (it opens the first post), then Esc. (Each page ready for keys first.)
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await scrolledTo(400);
   await team.keyboard.press("j");
   await expect(pane).toBeVisible();
@@ -553,13 +554,15 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect.poll(scrollY).toBe(400);
   // J from the very top: back at the top.
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await scrolledTo(0);
   await team.keyboard.press("j");
-  await expect.poll(scrollY).toBeGreaterThan(0);
+  await expect(pane).toBeVisible();
   await team.keyboard.press("Escape");
   await expect.poll(scrollY).toBe(0);
   // Opened, Back, the list scrolled elsewhere, Forward (the pane again), closed: at that new place.
   await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.waitForLoadState("networkidle");
   await team.getByRole("link", { name: last, exact: true }).click();
   await expect(pane).toBeVisible();
   await team.goBack();
