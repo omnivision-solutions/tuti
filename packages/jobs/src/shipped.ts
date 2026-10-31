@@ -1,8 +1,9 @@
 import { prisma } from "@tuti/db";
 import { sendEmail, shippedEmail } from "@tuti/email";
-import { type JobInput, planIncludes } from "@tuti/shared";
+import type { JobInput } from "@tuti/shared";
 
 import { portalPostUrl } from "./events";
+import { postAudience } from "./post-audience";
 import { portalAddress } from "./portal-address";
 import { claimProjectEmail } from "./email-limits";
 import { projectEmailWaits, projectSender } from "./project-sender";
@@ -95,9 +96,7 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
 
 /**
  * A post became Completed: emails its author, voters and commenters that it
- * shipped. Only to addresses someone vouched for (verified, or asserted by the
- * project's SSO), never to the team, and not to people who unsubscribed. On a private
- * portal, only to people who may still read it (its SSO users and readers).
+ * shipped (as postAudience has who may be told).
  */
 export async function postShipped({ postId }: JobInput<"postShipped">, log: JobLogger): Promise<JobResult> {
   // Only while it's still shipped (the team may have reopened it since) and not merged away.
@@ -123,66 +122,35 @@ export async function postShipped({ postId }: JobInput<"postShipped">, log: JobL
   if (await projectEmailWaits(projectId)) {
     return { waiting: "the project's email is paused" };
   }
-  // On a plan without private portals, a private portal is its team's only: nobody past it to tell.
-  const teamOnly = project.portalAccess === "PRIVATE" && !planIncludes(project.plan, "privatePortal");
-  const ids = teamOnly ? [] : [...new Set([post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)])];
-  if (teamOnly) {
-    // Claims a crashed try left unsent won't be sent now: dropped, so the post isn't due again and again.
-    // A run still sending keeps its claim (not stale yet), so it can mark it sent.
+  const people = await postAudience(projectId, project, [post.authorId, ...post.votes.map((v) => v.userId), ...post.comments.map((c) => c.authorId)]);
+  if (people.length === 0) {
+    // Claims a crashed try left unsent won't be sent now (a private portal that's the team's only, say): dropped,
+    // so the post isn't due again and again. A run still sending keeps its claim (not stale yet), so it can mark it sent.
     await prisma.shippedEmail.deleteMany({ where: { postId, sentAt: null, claimedAt: { lt: late() } } });
   }
-  // A private portal's post is only for its readers: past the team, the people its SSO signs in and
-  // the readers the team added by email (verified, as server/portal-access.ts asks).
-  const readers =
-    project.portalAccess === "PRIVATE"
-      ? (await prisma.portalReader.findMany({ where: { projectId }, select: { email: true } })).map((r) => r.email)
-      : [];
-  const people = await prisma.user.findMany({
-    where: {
-      id: { in: ids },
-      teamMemberships: { none: { projectId } },
-      emailOptOuts: { none: { projectId } },
-      ...(project.portalAccess === "PRIVATE" && {
-        OR: [
-          { ssoIdentity: { projectId } },
-          { emailVerified: true, email: { in: readers.filter((r) => !r.startsWith("@")), mode: "insensitive" } },
-          // A domain ("@acme.com"): everyone with a verified address there.
-          ...readers.filter((r) => r.startsWith("@")).map((domain) => ({ emailVerified: true, email: { endsWith: domain, mode: "insensitive" as const } })),
-        ],
-      }),
-    },
-    select: { id: true, email: true, emailVerified: true, unsubscribeToken: true, ssoIdentity: { select: { projectId: true, email: true } } },
-  });
 
   const origin = await portalAddress(project.slug);
   const sender = await projectSender(projectId);
   const postUrl = portalPostUrl(origin, post);
-  const sentTo = new Set<string>();
   let emailed = 0;
   let failed = 0;
   let held = false;
-  for (const person of people) {
-    const address =
-      person.ssoIdentity?.projectId === projectId ? person.ssoIdentity.email : person.emailVerified ? person.email : null;
-    if (!address || address.endsWith(".invalid") || sentTo.has(address.toLowerCase())) {
-      continue;
-    }
-    sentTo.add(address.toLowerCase());
+  for (const { id, address, unsubscribeToken } of people) {
     // Claimed before sending, so a retry, a second run or the post completed again doesn't email them twice.
-    const claimedAt = await claim(postId, person.id);
+    const claimedAt = await claim(postId, id);
     if (!claimedAt) {
       continue;
     }
     // A new project's daily cap, taken once they're ours to email (and a pause since the run began):
     // past it, they're let go and wait.
     if (!(await claimProjectEmail(projectId))) {
-      await prisma.shippedEmail.deleteMany({ where: { postId, userId: person.id, claimedAt } });
+      await prisma.shippedEmail.deleteMany({ where: { postId, userId: id, claimedAt } });
       held = true;
       break;
     }
-    const token = encodeURIComponent(person.unsubscribeToken);
+    const token = encodeURIComponent(unsubscribeToken);
     const unsubscribeUrl = `${origin}/unsubscribe?token=${token}`;
-    const error = await whileClaimed({ postId, userId: person.id, claimedAt }, () =>
+    const error = await whileClaimed({ postId, userId: id, claimedAt }, () =>
       sendEmail({
         to: address,
         ...shippedEmail({ projectName: project.name, postTitle: post.title, postUrl, unsubscribeUrl }),

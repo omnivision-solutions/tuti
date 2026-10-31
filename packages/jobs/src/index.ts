@@ -11,6 +11,7 @@ import { conversationMessage, pruneInboundEmails, resubmitConversationNotices, s
 import { githubPullRequest, githubRelease } from "./github";
 import { imageUploaded } from "./images";
 import { postCreated } from "./post-created";
+import { replyEmailed, resubmitReplyEmails } from "./reply-email";
 import { postShipped, resubmitShippedEmails } from "./shipped";
 import { resubmitWebhookDeliveries, webhookDelivery } from "./webhooks";
 
@@ -65,6 +66,8 @@ export const handlers: { [K in JobKey]: (input: JobInput<K>, log: JobLogger) => 
   codeChange,
   postShipped,
   resubmitShippedEmails,
+  replyEmailed,
+  resubmitReplyEmails,
   autopilotDue: () => autopilotDue(),
 };
 

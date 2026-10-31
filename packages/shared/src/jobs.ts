@@ -115,6 +115,20 @@ export const jobs = {
     // 5s, 25s, 2m, 10m, then an hour: rides out a mail provider's outage.
     backoff: { factor: 5, maxSeconds: 60 * 60 },
   },
+  /** The team replied with Email voters: email the post's voters (each once; a retry emails only those not reached). */
+  replyEmailed: {
+    name: "reply-emailed",
+    input: z.object({ commentId: z.string() }),
+    retries: 5,
+    // As post-shipped: rides out a mail provider's outage.
+    backoff: { factor: 5, maxSeconds: 60 * 60 },
+  },
+  /** Queues reply-emailed again for replies whose emails are late (never queued, or the run died). */
+  resubmitReplyEmails: {
+    name: "reply-emails-resubmit",
+    input: z.object({}),
+    cron: "*/10 * * * *",
+  },
   /** Applies Autopilot's updates that are due (its hold is over), through the web app. */
   autopilotDue: {
     name: "autopilot-due",

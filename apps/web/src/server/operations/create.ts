@@ -136,7 +136,7 @@ export const createPost = defineOperation({
 export const createComment = defineOperation({
   name: "comments.create",
   summary:
-    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks",
+    "Comment on a post, as the key's creator (shown as the team) or on behalf of someone from your app; or, as the team, leave an internal note (`internal: true`): only the team sees it, never on the portal, in emails or webhooks. The team's reply can be emailed to the post's voters too (`emailVoters: true`)",
   method: "POST",
   path: "/posts/{number}/comments",
   scope: "write",
@@ -147,6 +147,8 @@ export const createComment = defineOperation({
     author,
     /** An internal note: only the team sees it (never on the portal, in emails or webhooks; over the API, only to the team). The team's only. */
     internal: z.boolean().optional(),
+    /** The team's reply emailed to the post's voters too (those who may still read it and haven't unsubscribed). The team's only; not with a note. */
+    emailVoters: z.boolean().optional(),
   }),
   example: { body: "Thanks! This is planned for next month." },
   run: async (context, input) => {
@@ -162,13 +164,18 @@ export const createComment = defineOperation({
     if (text.text === "") {
       throw new OperationError(400, "invalid_content", "Write something first");
     }
-    // Notes are the team's own: written by a team member, or the team's key as itself (keys are the team's, as actorReader has them).
-    if (input.internal && input.author) {
-      throw new OperationError(403, "forbidden", "Only your team can write internal notes");
+    if (input.internal && input.emailVoters) {
+      throw new OperationError(400, "invalid_input", "An internal note isn't emailed to anyone");
+    }
+    // Notes, and replies emailed to voters, are the team's own: written by a team member, or the team's key as
+    // itself (keys are the team's, as actorReader has them).
+    const teamOnly = input.internal ? "Only your team can write internal notes" : input.emailVoters ? "Only your team can email a post's voters" : null;
+    if (teamOnly && input.author) {
+      throw new OperationError(403, "forbidden", teamOnly);
     }
     const userId = await authorId(context, input.author);
-    if (input.internal && context.actor.kind !== "apiKey" && !(await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } }))) {
-      throw new OperationError(403, "forbidden", "Only your team can write internal notes");
+    if (teamOnly && context.actor.kind !== "apiKey" && !(await prisma.teamMember.findFirst({ where: { projectId, userId }, select: { id: true } }))) {
+      throw new OperationError(403, "forbidden", teamOnly);
     }
     const portal = await projectPortal(projectId);
     if (input.internal) {
@@ -188,7 +195,8 @@ export const createComment = defineOperation({
     const comment = await saving(() =>
       prisma.$transaction(async (tx) => {
         const created = await tx.comment.create({
-          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc },
+          // Emailed to voters: due from now (reply-emailed sends it; the cron brings back one that didn't).
+          data: { projectId, postId: post.id, authorId: userId, body: text.text, content: text.doc, ...(input.emailVoters && { votersEmailDueAt: new Date() }) },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { name: true } } },
         });
         await tx.post.update({ where: { id: post.id }, data: { commentCount: { increment: 1 } } });
@@ -207,6 +215,14 @@ export const createComment = defineOperation({
     };
     const { url, number, title } = summary(post, portal);
     await emitEvent(projectId, "comment.created", { post: { number, title, url }, comment: created });
+    if (input.emailVoters) {
+      try {
+        await enqueue("replyEmailed", { commentId: comment.id });
+      } catch (error) {
+        // Still due: reply-emails-resubmit queues it again.
+        log.warn("Couldn't queue a reply's emails to voters", { commentId: comment.id, error });
+      }
+    }
     return created;
   },
 });
