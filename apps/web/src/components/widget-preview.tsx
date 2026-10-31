@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { usePreview } from "@/components/customize-shell";
 import { textColorOn } from "@/lib/colors";
@@ -50,8 +50,7 @@ export function WidgetPreview({
   const { label, color, position, icon, iconUrl } = draft.widget ?? saved;
   const left = position === "bottom-left";
   const [open, setOpen] = useState(false);
-  // Once opened the panel stays, hidden while closed, so it opens again where it was left, as on the site.
-  const [opened, setOpened] = useState(false);
+  const panelId = useId();
   // The panel's Close (and Escape in it) asks its page to close it, as the loader does on the team's site.
   const panel = useRef<HTMLIFrameElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
@@ -82,13 +81,13 @@ export function WidgetPreview({
       </div>
       {!open && <p className="px-6 text-sm text-muted-foreground">Click the launcher to open the widget, as your readers will.</p>}
       <div className={cn("absolute bottom-5 flex flex-col gap-3", left ? "left-5 items-start" : "right-5 items-end")}>
-        {opened && (
+        {open && (
           <iframe
             ref={panel}
+            id={panelId}
             key={version}
             title="Widget panel preview"
             src={src}
-            hidden={!open}
             className="h-[min(600px,calc(100svh-15rem))] w-[min(400px,calc(100vw-5rem))] rounded-[14px] border bg-background shadow-lg"
           />
         )}
@@ -97,11 +96,9 @@ export function WidgetPreview({
           type="button"
           aria-label={`Launcher: ${label}`}
           aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
           title={label}
-          onClick={() => {
-            setOpen((was) => !was);
-            setOpened(true);
-          }}
+          onClick={() => setOpen((was) => !was)}
           className="flex size-14 cursor-pointer items-center justify-center rounded-full shadow-md"
           style={{ background: color, color: textColorOn(color) }}
         >
