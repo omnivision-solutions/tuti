@@ -176,11 +176,13 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
 type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
 
 /**
- * An email's five updates: room for what needs the team first (`needsYou` of them, across all its changes),
- * what's left for the rest. `take` cuts a list (`needsYou`: one of those) to the room left; `more` counts what didn't fit.
+ * An email's five updates: room for what needs the team first (`needsYou` of them, across all its changes), but
+ * one kept for what goes out by itself when anything does (`goesOut`), so its Stop is always there; what's left
+ * for the rest. `take` cuts a list (`needsYou`: one of those) to the room left; `more` counts what didn't fit.
  */
-function shownFive(needsYou: number) {
-  const room = { needsYou: Math.min(SHOWN, needsYou), rest: SHOWN - Math.min(SHOWN, needsYou) };
+function shownFive(needsYou: number, goesOut: number) {
+  const first = Math.min(needsYou, SHOWN - (goesOut > 0 ? 1 : 0));
+  const room = { needsYou: first, rest: SHOWN - first };
   let more = 0;
   return {
     take: (list: AutopilotEmailUpdate[], isNeedsYou = false) => {
@@ -385,7 +387,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         await settle();
         continue;
       }
-      const five = shownFive(totals.needsYou);
+      const five = shownFive(totals.needsYou, totals.goesOut);
       const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice)));
       try {
         await sendEmail({
@@ -595,7 +597,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
         }
         const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
         // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
-        const five = shownFive(needsYou);
+        const five = shownFive(needsYou, 0);
         const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [])).filter((change) => change.needsYou.length > 0);
         try {
           await sendEmail({

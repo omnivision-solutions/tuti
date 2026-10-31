@@ -196,6 +196,22 @@ test("what needs you takes its room in the five first: five going out by themsel
   expect(email!.text).toContain("+1 more in Tuti");
 });
 
+test("five needing you still leave a place for what goes out by itself, with its Stop", async () => {
+  const many = await change("Big release");
+  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 4 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.7 })),
+  });
+  await queueAutopilotNotices(many.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.subject).toBe("5 need you, 1 goes out in 24 hours · Big release");
+  expect(email!.text).toContain("Needs you · 4");
+  expect(email!.text).toContain("Goes out by itself · 1");
+  expect(email!.text).toMatch(/Stop http\S+\/act\?token=/);
+  expect(email!.text).toContain("+1 more in Tuti");
+});
+
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
