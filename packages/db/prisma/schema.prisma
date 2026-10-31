@@ -259,6 +259,8 @@ model Project {
   /// Tuti applies a code change's "links" proposals by itself when it's this sure (AUTO_LINK), if the
   /// team opted in. Only links: completing posts, comments and docs always wait for someone.
   autoApplyLinks        Boolean      @default(false)
+  /// When the widget was first on one of the team's sites (Home's "Get set up": add the widget).
+  widgetSeenAt          DateTime?
   /// The model the project picked for an AI feature, by feature (answers, escalations, changelog,
   /// code_changes): a model id; a feature that isn't here uses the server's default for it.
   aiModels              Json         @default("{}")

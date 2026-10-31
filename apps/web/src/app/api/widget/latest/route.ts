@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 
+import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
 import { latestAnnouncedAt } from "@/server/operations/changelog-seen";
 import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/widget";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -34,6 +35,11 @@ export async function GET(request: Request) {
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),
   };
+  // On a site of the team's (not the app or a portal): the widget is set up (Home's "Get set up"). Once.
+  const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
+  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin) {
+    await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
+  }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
   return Response.json({ latest: latest?.toISOString() ?? null, launcher, inbox: project?.supportInbox ?? false }, { headers });
 }
@@ -49,4 +55,13 @@ export function OPTIONS() {
       "access-control-max-age": "86400",
     },
   });
+}
+
+/** A request's site (its Origin, or its Referer's origin); null if there isn't one. */
+function siteOrigin(header: string | null): string | null {
+  try {
+    return header ? new URL(header).origin : null;
+  } catch {
+    return null;
+  }
 }
