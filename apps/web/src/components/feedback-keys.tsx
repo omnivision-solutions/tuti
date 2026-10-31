@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 
+import { feedbackStep } from "@/lib/feedback-steps";
 import { pageShortcut } from "@/lib/shortcut-keys";
 
 /**
@@ -46,23 +47,7 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
 
   useEffect(() => {
     const href = (number: number | null) => (number === null ? base : `${base}${base.includes("?") ? "&" : "?"}post=${number}`);
-    const step = (by: 1 | -1): number | null => {
-      if (open === null) {
-        return by === 1 ? (order[0] ?? null) : null;
-      }
-      const list = order.includes(open) ? order : known.current.base === base ? known.current.order : order;
-      const at = list.indexOf(open);
-      if (at === -1) {
-        return by === 1 ? (order[0] ?? null) : null;
-      }
-      // The nearest one that's still in the list.
-      for (let i = at + by; i >= 0 && i < list.length; i += by) {
-        if (order.includes(list[i]!)) {
-          return list[i]!;
-        }
-      }
-      return null;
-    };
+    const step = (by: 1 | -1) => feedbackStep(order, known.current.base === base ? known.current.order : order, open, by);
     const onKey = (event: KeyboardEvent) => {
       if (!pageShortcut(event, { closedChoicesIn: "[data-feedback-pane]" })) {
         return;
