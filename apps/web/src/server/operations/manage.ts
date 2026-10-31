@@ -42,18 +42,7 @@ export const updatePost = defineOperation({
       }
       boardId = board.id;
     }
-    // The owner is on the team (by their email); the ETA, a month's first day.
-    let ownerId: string | null | undefined;
-    if (input.owner !== undefined) {
-      ownerId = null;
-      if (input.owner !== null) {
-        const member = await prisma.teamMember.findFirst({ where: { projectId, user: { email: { equals: input.owner, mode: "insensitive" } } }, select: { userId: true } });
-        if (!member) {
-          throw new OperationError(400, "invalid_input", "The owner must be on your team");
-        }
-        ownerId = member.userId;
-      }
-    }
+    // The ETA: a month's first day. The owner: found on the team in the update's transaction (below).
     const eta = input.eta === undefined ? undefined : input.eta === null ? null : new Date(`${input.eta}-01T00:00:00Z`);
     // Before the change is written (see posts.create).
     const portal = await projectPortal(projectId);
@@ -63,6 +52,21 @@ export const updatePost = defineOperation({
     const { updated, previous } = await prisma.$transaction(async (tx) => {
       const [current] = await tx.$queryRaw<{ status: PostStatus }[]>`SELECT status FROM post WHERE id = ${post.id} FOR UPDATE`;
       const previous = current?.status ?? post.status;
+      // The owner is on the team (by their email), its membership row held until this commits: taken off the
+      // team meanwhile, their removal waits for this, and then clears them as owner.
+      let ownerId: string | null | undefined;
+      if (input.owner !== undefined) {
+        ownerId = null;
+        if (input.owner !== null) {
+          const [member] = await tx.$queryRaw<{ userId: string }[]>`
+            SELECT m."userId" FROM team_member m JOIN "user" u ON u.id = m."userId"
+            WHERE m."projectId" = ${projectId} AND lower(u.email) = lower(${input.owner}) FOR SHARE OF m`;
+          if (!member) {
+            throw new OperationError(400, "invalid_input", "The owner must be on your team");
+          }
+          ownerId = member.userId;
+        }
+      }
       const saved = await tx.post.update({
         where: { id: post.id },
         data: { ...(status && { status }), ...(boardId && { boardId }), ...(ownerId !== undefined && { ownerId }), ...(eta !== undefined && { eta }) },

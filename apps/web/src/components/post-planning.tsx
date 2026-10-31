@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setPostEta, setPostOwner } from "@/server/manage-posts";
 
@@ -46,58 +44,54 @@ export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projec
   );
 }
 
-/**
- * Team-only: the month the team expects a post ("2026-12"). Saved once it's a whole month, as the field
- * is left or with Enter (typing a year passes through ones that aren't, and a browser without a month
- * picker is a text box); one save at a time. Left half-typed (blank to a month input), nothing changes:
- * only Clear says none. Follows what's saved when the page reloads (a teammate may have changed it).
- */
-export function PostEtaInput({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
-  const [pending, startTransition] = useTransition();
-  const [value, setValue] = useState(eta ?? "");
-  const [shown, setShown] = useState(eta);
-  // A new value from the server (a reload after someone's change): shown, unless one's being typed.
-  if (eta !== shown) {
-    setShown(eta);
-    setValue(eta ?? "");
+/** "none" can't be a month: it stands for no ETA. */
+const NO_ETA = "none";
+
+/** This month and the next 23 (and `keep`, a month already saved outside them), as "2026-12" → "December 2026". */
+function months(keep: string | null): Record<string, string> {
+  const now = new Date();
+  const values = Array.from({ length: 24 }, (_, i) => {
+    const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + i, 1));
+    return month.toISOString().slice(0, 7);
+  });
+  if (keep && !values.includes(keep)) {
+    values.unshift(keep);
   }
-  const save = (month: string | null) => {
-    if (pending || month === (eta ?? null)) {
-      return;
-    }
-    if (month !== null && !/^\d{4}-\d{2}$/.test(month)) {
-      toast.error("Say the month as 2026-12");
-      return;
-    }
-    startTransition(async () => {
-      const result = await setPostEta(projectSlug, postId, month);
-      if (result.error) {
-        toast.error(result.error);
-        setValue(eta ?? "");
-      } else {
-        toast.success(month === null ? "No ETA" : "ETA saved");
-      }
-    });
-  };
-  // Blank is a month half-typed, or a field emptied: put back what's saved; Clear is how to say none.
-  const commit = () => (value === "" ? setValue(eta ?? "") : save(value));
+  const label = (value: string) => new Date(`${value}-01T00:00:00Z`).toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
+  return { [NO_ETA]: "No ETA", ...Object.fromEntries(values.map((value) => [value, label(value)])) };
+}
+
+/** Team-only: the month the team expects a post, picked from the next two years and saved as it's picked. */
+export function PostEtaSelect({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
+  const [pending, startTransition] = useTransition();
+  const items = months(eta);
   return (
-    <div className="flex items-center gap-1">
-      <Input
-        type="month"
-        aria-label="ETA"
-        placeholder="2026-12"
-        className="h-8"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => event.key === "Enter" && commit()}
-      />
-      {eta && (
-        <Button variant="ghost" size="sm" disabled={pending} onClick={() => save(null)}>
-          Clear
-        </Button>
-      )}
-    </div>
+    <Select
+      items={items}
+      value={eta ?? NO_ETA}
+      disabled={pending}
+      onValueChange={(value) =>
+        startTransition(async () => {
+          const month = value === NO_ETA ? null : String(value);
+          const result = await setPostEta(projectSlug, postId, month);
+          if (result.error) {
+            toast.error(result.error);
+          } else {
+            toast.success(month === null ? "No ETA" : `ETA: ${items[month]}`);
+          }
+        })
+      }
+    >
+      <SelectTrigger size="sm" className="w-full" aria-label="ETA">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {Object.entries(items).map(([value, label]) => (
+          <SelectItem key={value} value={value}>
+            {label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

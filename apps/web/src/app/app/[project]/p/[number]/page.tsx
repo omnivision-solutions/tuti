@@ -8,7 +8,7 @@ import { CommentList } from "@/components/comments";
 import { DuplicateSuggestions } from "@/components/duplicate-suggestions";
 import { MergePostDialog } from "@/components/merge-post-dialog";
 import { MovePostSelect } from "@/components/move-post-select";
-import { PostEtaInput, PostOwnerSelect } from "@/components/post-planning";
+import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
 import { PostStatusSelect } from "@/components/post-status-select";
@@ -173,7 +173,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
               <PostOwnerSelect projectSlug={slug} postId={post.id} ownerId={post.owner?.id ?? null} team={team.map((m) => ({ id: m.userId, name: m.user.name }))} />
             </Property>
             <Property label="ETA">
-              <PostEtaInput projectSlug={slug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} />
+              <PostEtaSelect projectSlug={slug} postId={post.id} eta={post.eta?.toISOString().slice(0, 7) ?? null} />
             </Property>
             <Property label="Votes">
               <span>
