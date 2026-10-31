@@ -376,6 +376,10 @@ test("the email's Approve, clicked signed out: sign in, and it's done; the post 
   expect(email.subject).toBe(`Autopilot: ${pr} · 2 need you`);
   const approves = email.text.split(/\s+/).filter((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.includes("/act?token="));
   expect(approves).toHaveLength(2);
+  const inbox = await (await browser.newContext()).newPage();
+  await inbox.setContent(email.html);
+  await expect(inbox.getByRole("link", { name: "Approve" })).toHaveCount(2);
+  await checkpoint(inbox, "autopilot-email");
 
   // Clicked on another device, signed out: sign in first, then it's done.
   const elsewhere = await (await browser.newContext()).newPage();
