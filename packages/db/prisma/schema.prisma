@@ -905,6 +905,7 @@ model PostEvent {
   shippedEmails ShippedEmail[]
 
   @@index([postId, createdAt])
+  @@index([actorId])
   @@map("post_event")
 }
 
@@ -1298,6 +1299,7 @@ model ShippedEmail {
 
   @@id([postId, userId])
   @@index([userId])
+  @@index([eventId])
   @@map("shipped_email")
 }
 
