@@ -175,11 +175,15 @@ test("a post's voters: their company and number from the project's app, the bigg
   const project = await createProject(owner);
   const board = project.boards[0]!;
   const post = await prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number: 1, title: "SSO" } });
-  // Signed in through the app (their own identity), with a company and mrr; one without mrr; one the app doesn't know.
-  const [ada, ben, cy] = await Promise.all(["Ada", "Ben", "Cy"].map((name) => signUp(name)));
+  // Signed in through the app (their own identity), with a company and mrr; one without mrr; one the app doesn't know;
+  // and one signed in another way, known to the app by their verified address.
+  const [ada, ben, cy, dee] = await Promise.all(["Ada", "Ben", "Cy", "Dee"].map((name) => signUp(name)));
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ada", userId: ada!.id, properties: { company: "Acme", mrr: 120 } } });
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "ben", userId: ben!.id, properties: { company: "Globex" } } });
-  // The owner has an identity in the app too, but votes as the team: no company or number.
+  await prisma.user.update({ where: { id: dee!.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "dee", userId: (await signUp("Dee (app)")).id, email: dee!.email.toLowerCase(), properties: { company: "Initech", mrr: 40 } } });
+  // The owner's verified address is one of the app's users too, but they vote as the team: no company or number.
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
   await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "olive", userId: (await signUp("Olive (app)")).id, email: owner.email.toLowerCase(), properties: { company: "Us", mrr: 9000 } } });
   const at = (minutes: number) => new Date(Date.now() - minutes * 60_000);
   await prisma.vote.createMany({
@@ -188,16 +192,18 @@ test("a post's voters: their company and number from the project's app, the bigg
       { projectId: project.id, postId: post.id, userId: cy!.id, createdAt: at(2) },
       { projectId: project.id, postId: post.id, userId: ben!.id, createdAt: at(3) },
       { projectId: project.id, postId: post.id, userId: ada!.id, createdAt: at(4) },
+      { projectId: project.id, postId: post.id, userId: dee!.id, createdAt: at(5) },
     ],
   });
   expect(await postVoters(project.id, "mrr", post.id)).toEqual([
     { userId: ada!.id, name: "Ada", company: "Acme", value: 120 },
+    { userId: dee!.id, name: "Dee", company: "Initech", value: 40 },
     { userId: owner.id, name: "Olive Owner", company: null, value: null },
     { userId: cy!.id, name: "Cy", company: null, value: null },
     { userId: ben!.id, name: "Ben", company: "Globex", value: null },
   ]);
   // No number chosen: the latest first, companies still shown.
-  expect((await postVoters(project.id, null, post.id)).map((v) => [v.name, v.company])).toEqual([["Olive Owner", null], ["Cy", null], ["Ben", "Globex"], ["Ada", "Acme"]]);
+  expect((await postVoters(project.id, null, post.id)).map((v) => [v.name, v.company])).toEqual([["Olive Owner", null], ["Cy", null], ["Ben", "Globex"], ["Ada", "Acme"], ["Dee", "Initech"]]);
   // Only the first few.
   const more = await Promise.all(Array.from({ length: VOTERS_SHOWN }, (_, i) => signUp(`Voter ${i}`)));
   await prisma.vote.createMany({ data: more.map((user) => ({ projectId: project.id, postId: post.id, userId: user.id })) });
