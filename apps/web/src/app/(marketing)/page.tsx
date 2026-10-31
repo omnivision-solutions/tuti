@@ -610,7 +610,8 @@ function MergeFan() {
 function AutopilotChange() {
   const updates: { kind: string; title: string; status: string; waits?: boolean }[] = [
     { kind: "Docs", title: "Changing your theme", status: "goes out in 23h" },
-    { kind: "Progress", title: "Dark mode → In progress", status: "goes out in 23h" },
+    // A post under the reach limit (25 people): bigger ones always wait, as "Dark mode" below does.
+    { kind: "Progress", title: "Dark mode on mobile → In progress", status: "goes out in 23h" },
     { kind: "Closes", title: "Dark mode · tells 128 voters", status: "needs you", waits: true },
   ];
   return (
