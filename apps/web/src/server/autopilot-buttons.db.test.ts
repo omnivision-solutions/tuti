@@ -4,7 +4,7 @@ import { log } from "@tuti/shared";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { GET as act } from "@/app/app/[project]/autopilot/[id]/act/route";
-import { publishCodeChangeActionNow } from "@/server/operations/code-changes";
+import { publishCodeChangeActionNow, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
@@ -243,4 +243,16 @@ test("Stop whose other update a teammate published first says that one went out 
   await call(publishCodeChangeActionNow, team(), { id: a });
   expect(await click(c.id, signAutopilotButton(owner.id, c.id, `stop:${a},${b.id}`)!)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=stopped&button=stop&went=1`);
   expect(await statusOf(b.id)).toBe("PENDING");
+});
+
+test("Publish now when a teammate published one it named and stopped the other says the stopped one waits; Stop, the mirror, that one went out", async () => {
+  const c = await change();
+  const a = scheduledOf(c);
+  const b = await prisma.codeChangeAction.create({
+    data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.96, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Later" } },
+  });
+  await call(publishCodeChangeActionNow, team(), { id: a });
+  await call(stopCodeChangeAction, team(), { id: b.id });
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `publish:${a},${b.id}`)!)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=already&button=publish&update=${a}&kept=1`);
+  expect(await click(c.id, signAutopilotButton(owner.id, c.id, `stop:${b.id},${a}`)!)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=already&button=stop&update=${b.id}&went=1`);
 });

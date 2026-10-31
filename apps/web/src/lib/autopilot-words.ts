@@ -40,9 +40,10 @@ export function afterButton(
   const couldnt = held > 0 ? ` ${held === 1 ? `One couldn't ${verb}: it's ticked below` : `${held} couldn't ${verb}: they're ticked below`}, to check.` : "";
   const doubt =
     unsure > 0 ? ` ${unsure === 1 ? "Couldn't tell whether one went out: check it" : `Couldn't tell whether ${unsure} went out: check them`} below before doing it again.` : "";
-  const others =
-    (went > 0 ? ` ${went === 1 ? "One went out already: it's under Done, to undo there." : `${went} went out already: they're under Done, to undo there.`}` : "") +
-    (kept > 0 ? ` ${kept === 1 ? "One was stopped by a teammate: it waits for you below." : `${kept} were stopped by a teammate: they wait for you below.`}` : "");
+  const othersOf = (w: number, k: number) =>
+    (w > 0 ? ` ${w === 1 ? "One went out already: it's under Done, to undo there." : `${w} went out already: they're under Done, to undo there.`}` : "") +
+    (k > 0 ? ` ${k === 1 ? "One was stopped by a teammate: it waits for you below." : `${k} were stopped by a teammate: they wait for you below.`}` : "");
+  const others = othersOf(went, kept);
   switch (done) {
     case "approved":
       return `Approved: ${named}. Undo is under Done.`;
@@ -66,8 +67,12 @@ export function afterButton(
           : "Those updates were replaced when Autopilot read the pull request again: nothing goes out by itself now, and what it found waits for you below.";
     case "already": {
       if (!update) {
-        return "Nothing it named is going out any more. Nothing more to do.";
+        return `Nothing it named is going out any more. Nothing more to do.${others}`;
       }
+      // The others' counts, without the one it names (counted among them when it went out, or was stopped).
+      const self =
+        (button === "stop" && update.status === "applied") || (button === "publish" && update.status === "pending" && !!update.waitReason?.startsWith("Stopped by"));
+      const rest = othersOf(button === "stop" && self ? went - 1 : went, button === "publish" && self ? kept - 1 : kept);
       const what =
         update.status === "applied"
           ? update.auto
@@ -81,11 +86,11 @@ export function afterButton(
                 ? "was stopped"
                 : null;
       if (what) {
-        return `Done already: ${named} ${what}${update.auto ? "" : by(update)}. Nothing more to do.`;
+        return `Done already: ${named} ${what}${update.auto ? "" : by(update)}. Nothing more to do.${rest}`;
       }
       // Publish now or Stop on one that waits for the team already (its article changed, say): why.
       if (button !== "approve") {
-        return `${named} waits for you now${update.waitReason ? ` (${update.waitReason})` : ""}. Check it below.`;
+        return `${named} waits for you now${update.waitReason ? ` (${update.waitReason})` : ""}. Check it below.${rest}`;
       }
       return `${named} couldn't be approved as it is. Check it below.`;
     }
