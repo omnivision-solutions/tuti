@@ -337,9 +337,10 @@ test("on their account, someone picks when they hear from Autopilot; a choice th
   await expect(asTheyHappen).toBeChecked();
   await off.check();
   await expect(owner.getByText("Saved", { exact: true }).first()).toBeVisible();
-  // Signed out meanwhile (another tab, say): not saved, so it shows what is.
+  // Signed out meanwhile (another tab, say): not saved, so it shows what is. Clicked, not check(): it goes back
+  // as soon as the save fails, and check() would call that a click that didn't take.
   await owner.context().clearCookies();
-  await asTheyHappen.check();
+  await asTheyHappen.click();
   await expect(owner.getByText("Sign in first")).toBeVisible();
   await expect(off).toBeChecked();
 });
