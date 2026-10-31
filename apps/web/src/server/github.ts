@@ -135,8 +135,10 @@ export async function saveAutopilotSettings(projectSlug: string, _state: FormSta
   if (!project) {
     return { error: "Only project owners can change Autopilot's settings" };
   }
+  // Missing or blank isn't 0 (Number("") is): a request without the hold mustn't save none.
   const whole = (name: string, min: number, max: number) => {
-    const value = Number(formData.get(name));
+    const raw = formData.get(name);
+    const value = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : Number.NaN;
     return Number.isInteger(value) && value >= min && value <= max ? value : null;
   };
   const minSure = whole("minSure", 50, 100);

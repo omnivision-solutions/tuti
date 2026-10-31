@@ -1,5 +1,7 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
+
 /** When a scheduled update goes out, in the reader's own time: "today at 3:10 pm", "tomorrow at 9:00 am", "on Mon 3 Nov at …". */
 export function goesOutAt(at: Date, now = new Date()): string {
   const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -12,7 +14,17 @@ export function goesOutAt(at: Date, now = new Date()): string {
   return `${day} at ${time}`;
 }
 
-/** "Goes out tomorrow at 3:10 pm" (`prefix`, then when), in the reader's time zone (the server's may differ). */
+const noChange = () => () => {};
+
+/**
+ * "Goes out tomorrow at 3:10 pm" (`prefix`, then when), in the reader's time zone. The server doesn't
+ * know it: its HTML says the prefix alone, and the browser fills in the time as it loads.
+ */
 export function GoesOut({ at, prefix = "Goes out" }: { at: string; prefix?: string }) {
-  return <span suppressHydrationWarning>{`${prefix} ${goesOutAt(new Date(at))}`}</span>;
+  const when = useSyncExternalStore(
+    noChange,
+    () => goesOutAt(new Date(at)),
+    () => null,
+  );
+  return <span>{when === null ? prefix : `${prefix} ${when}`}</span>;
 }

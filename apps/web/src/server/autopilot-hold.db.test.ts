@@ -230,6 +230,13 @@ test("Autopilot's settings: owners save the switches, the three limits and the h
   expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "40", maxReach: "30", maxViews: "400", holdHours: "12" }))).toEqual({
     error: "How sure is 50 to 100%, people and views at least 1, and the hold 0 to 336 hours (two weeks)",
   });
+  // A hold left out, or blank, isn't no hold: refused, not saved as 0.
+  for (const holdHours of [undefined, " "]) {
+    expect(await saveAutopilotSettings(project.slug, {}, form({ minSure: "90", maxReach: "30", maxViews: "400", ...(holdHours !== undefined && { holdHours }) }))).toMatchObject({
+      error: expect.stringContaining("the hold 0 to 336 hours"),
+    });
+  }
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).autopilotHoldHours).toBe(12);
 });
 
 test("a request that goes out by itself says how many people completing it emails, as one waiting does", async () => {

@@ -29,8 +29,8 @@ export type AutopilotSettings = Prisma.ProjectGetPayload<{ select: typeof autopi
 const AT_ONCE = new Set<CodeChangeActionKind>(["CHANGELOG_LINE", "NEW_ARTICLE"]);
 
 /** How many people a post reaches: its author, voters and commenters. */
-export async function postReach(postId: string): Promise<number> {
-  const [row] = await prisma.$queryRaw<{ people: bigint }[]>`
+export async function postReach(postId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
+  const [row] = await db.$queryRaw<{ people: bigint }[]>`
     SELECT COUNT(DISTINCT x."userId") AS people FROM (
       SELECT "authorId" AS "userId" FROM post WHERE id = ${postId}
       UNION SELECT "userId" FROM vote WHERE "postId" = ${postId}
@@ -40,9 +40,9 @@ export async function postReach(postId: string): Promise<number> {
 }
 
 /** How often an article was read on the portal in the last 30 days. */
-export async function recentViews(articleId: string): Promise<number> {
+export async function recentViews(articleId: string, db: Prisma.TransactionClient = prisma): Promise<number> {
   const since = new Date(Date.now() - 30 * 86_400_000);
-  const { _sum } = await prisma.articleViewDay.aggregate({ where: { articleId, day: { gte: since } }, _sum: { views: true } });
+  const { _sum } = await db.articleViewDay.aggregate({ where: { articleId, day: { gte: since } }, _sum: { views: true } });
   return _sum.views ?? 0;
 }
 
@@ -94,7 +94,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     if (!post || post.duplicateOfId || post.status === "COMPLETED" || post.status === "CLOSED") {
       return "Its post changed since";
     }
-    if ((await postReach(action.postId)) >= project.autopilotMaxReach) {
+    if ((await postReach(action.postId, db)) >= project.autopilotMaxReach) {
       return `Its post reaches ${project.autopilotMaxReach} people or more`;
     }
   }
@@ -111,7 +111,7 @@ export async function waitsBecause(action: Candidate, project: AutopilotSettings
     if (!article || article.deletedAt || !article.publishedAt || article.changes || (article.revisions[0]?.id ?? null) !== (payload.basedOn ?? null)) {
       return "Its article changed since";
     }
-    if ((await recentViews(action.articleId)) >= project.autopilotMaxViews) {
+    if ((await recentViews(action.articleId, db)) >= project.autopilotMaxViews) {
       return `Its article was read ${project.autopilotMaxViews} times or more in 30 days`;
     }
   }
