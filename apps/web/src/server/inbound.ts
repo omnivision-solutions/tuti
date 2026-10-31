@@ -72,6 +72,15 @@ function headersOf(lines: readonly { key: string; line: string }[]) {
   return headers;
 }
 
+/** Where a forwarded email still names the address it was first sent to (forwarders keep To and Cc; Gmail adds X-Forwarded-For). */
+const FIRST_SENT_TO = new Set(["to", "cc", "delivered-to", "x-original-to", "x-forwarded-for", "x-gm-original-to"]);
+
+/** The addresses those headers name, lowercase. */
+const firstSentTo = (lines: readonly { key: string; line: string }[]) =>
+  lines
+    .filter(({ key }) => FIRST_SENT_TO.has(key.toLowerCase()))
+    .flatMap(({ line }) => line.slice(line.indexOf(":") + 1).toLowerCase().match(/[^\s<>,;:"()]+@[a-z0-9.-]+/g) ?? []);
+
 /** What happened to it, as the receiver should hear it: 200 (taken, ignored or refused), 404 (no such address), 500 (try again). */
 export type Received = { status: 200 | 404 | 500; outcome: string };
 
@@ -86,6 +95,11 @@ export async function receiveEmail(recipient: string, auth: Authentication, raw:
   const projectId = owner.projectId;
   const mail = await simpleParser(raw);
   const sender = mail.from?.value[0]?.address?.toLowerCase() ?? "";
+  // Sent to the team's own address and forwarded here: its forwarding works (Settings → Support).
+  const named = firstSentTo(mail.headerLines);
+  if (named.length > 0) {
+    await prisma.emailDomain.updateMany({ where: { projectId, address: { in: named } }, data: { receivedAt: new Date() } });
+  }
   const messageId = mail.messageId ?? null;
   const dedupeKey = sha256(messageId ? `${messageId}\n${sender}` : raw);
   const subject = (mail.subject ?? "").slice(0, 500);

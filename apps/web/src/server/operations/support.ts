@@ -37,6 +37,8 @@ export const supportSettings = async (projectId: string) => {
                 verified: !!own?.verifiedAt,
                 checkedAt: own?.checkedAt ?? null,
                 error: own?.error ?? null,
+                // Receiving: when an email forwarded from the address last came (the team forwards it to the support address).
+                receivedAt: own?.receivedAt ?? null,
               }
             : null,
         }

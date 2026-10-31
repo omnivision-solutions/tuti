@@ -240,3 +240,20 @@ test("the same message delivered several times at once is added once", async () 
   expect(await conversations(project.id)).toHaveLength(1);
   expect(await inbound(project.id)).toHaveLength(1);
 });
+
+test("an email forwarded from the team's own address shows its forwarding works; one that names another address doesn't", async () => {
+  const { project, address } = await setup();
+  await prisma.emailDomain.create({ data: { projectId: project.id, domain: "acme.example", address: "support@acme.example", dkimTokens: [] } });
+  const receivedAt = async () => (await prisma.emailDomain.findUniqueOrThrow({ where: { projectId: project.id } })).receivedAt;
+
+  // Sent to someone else at the domain (a teammate's own forwarding), and to an address that only contains it.
+  await postEmail(rawEmail({ from: "e2e-kim@example.com", to: "sales@acme.example, xsupport@acme.example" }), { recipient: address });
+  expect(await receivedAt()).toBeNull();
+
+  // Gmail's forwarding: To stays the team's address, and X-Forwarded-For names it too.
+  await postEmail(rawEmail({ from: "Kim Lee <e2e-kim@example.com>", to: '"Acme Support" <Support@Acme.example>', headers: { "X-Forwarded-For": `support@acme.example ${address}` } }), {
+    recipient: address,
+  });
+  expect(await receivedAt()).toBeInstanceOf(Date);
+  expect(await conversations(project.id)).toHaveLength(2);
+});
