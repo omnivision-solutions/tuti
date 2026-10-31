@@ -159,20 +159,20 @@ export default async function Home() {
             <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-dashed pt-5 text-muted-foreground">
               Sound familiar?
               <span className="relative h-6 min-w-0 basis-full sm:flex-1 sm:basis-auto">
-                <span className="sr-only">“Shipped in March. Still marked Planned.”</span>
                 {["“Shipped in March. Still marked Planned.”", "“128 people asked. Nobody told them.”", "“The changelog is three releases behind.”"].map(
                   (line, i) => (
                     <span
                       key={line}
                       className="landing-rotate absolute inset-x-0 top-0 truncate font-semibold text-foreground"
                       style={{ animationDelay: `${i * 4}s` }}
-                      // Screen readers get the first line, still, from the sr-only copy above.
+                      // Screen readers get the first line, still, from the sr-only copy below (after these, so the first line stays :first-child).
                       aria-hidden
                     >
                       {line}
                     </span>
                   ),
                 )}
+                <span className="sr-only">“Shipped in March. Still marked Planned.”</span>
               </span>
             </p>
           </div>
