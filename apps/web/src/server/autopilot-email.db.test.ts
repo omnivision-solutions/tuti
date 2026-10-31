@@ -466,3 +466,20 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   // Said as what it did, not what it will do.
   expect(email!.text).toContain("In progress, posted: “Out soon”");
 });
+
+test("given up on one notice, another queued lately in the same email keeps its own tries", async () => {
+  const old = await change("Add a dark theme");
+  const fresh = await change("Faster search");
+  await queueAutopilotNotices(old.id);
+  await queueAutopilotNotices(fresh.id);
+  // The first refused four times already.
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: old.id }, data: { attempts: 4 } });
+  const logged = vi.spyOn(log, "error").mockImplementation(() => {});
+  mailbox.refuseNext(owner.email, { permanently: true });
+  expect(await sendAutopilotEmails(later())).toBe(0);
+  logged.mockRestore();
+  // That one's given up; the one queued lately is still to be sent, with one try spent.
+  expect(await prisma.autopilotNotice.count({ where: { codeChangeId: old.id } })).toBe(0);
+  expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: fresh.id } })).toMatchObject({ attempts: 1, sentAt: null });
+  expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
+});

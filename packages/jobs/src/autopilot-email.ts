@@ -208,8 +208,9 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       }
       // Not sent after all: one sent before goes back to that (the page says they were emailed then), one never sent
       // goes; one analysed again meanwhile stays, for the next email.
-      const settle = async () => {
-        for (const notice of mine) {
+      // `which`: those not sent after all (all of them, unless some of a failed send are given up and others not).
+      const settle = async (which = mine) => {
+        for (const notice of which) {
           const unchanged = { id: notice.id, claimedAt, createdAt: notice.createdAt };
           if (notice.since) {
             await prisma.autopilotNotice.updateMany({ where: unchanged, data: { sentAt: notice.since, since: null, claimedAt: null } });
@@ -217,7 +218,7 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
             await prisma.autopilotNotice.deleteMany({ where: unchanged });
           }
         }
-        await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt, sentAt: null }, data: { claimedAt: null } });
+        await prisma.autopilotNotice.updateMany({ where: { id: { in: which.map((notice) => notice.id) }, claimedAt, sentAt: null }, data: { claimedAt: null } });
       };
       const project = mine[0]!.codeChange.project;
       // Still told? (They may have left the team, or turned it off, since.) If not: dropped, not sent.
@@ -294,13 +295,14 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         // times, then given up.
         const code = (error as { responseCode?: unknown }).responseCode;
         const refused = typeof code === "number" && code >= 500;
-        const attempts = Math.max(...mine.map((notice) => notice.attempts)) + (refused ? 1 : 0);
-        log.error("Sending Autopilot's email failed", { error, userId, attempts });
+        log.error("Sending Autopilot's email failed", { error, userId, refused });
         if (refused) {
           await prisma.autopilotNotice.updateMany({ where: { id: { in: ids }, claimedAt }, data: { attempts: { increment: 1 } } });
-        }
-        if (attempts >= MAX_SENDS) {
-          await settle();
+          // Each given up on its own count: one queued lately with one tried four times has tries left.
+          const spent = mine.filter((notice) => notice.attempts + 1 >= MAX_SENDS);
+          if (spent.length > 0) {
+            await settle(spent);
+          }
         }
         continue;
       }
