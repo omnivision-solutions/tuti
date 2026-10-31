@@ -11,7 +11,7 @@ import { startUpload } from "./attachments";
 import type { FormState } from "./form-state";
 import { getMembership } from "./membership";
 import { OperationError } from "./operations";
-import { replyToConversation, SETTABLE_STATUSES, updateConversation } from "./operations/conversations";
+import { linkConversationPost, replyToConversation, SETTABLE_STATUSES, unlinkConversationPost, updateConversation } from "./operations/conversations";
 import { asAdmin, asTeam, call } from "./operations/run";
 import { getSession } from "./session";
 import { supportDomain } from "./inbound";
@@ -103,6 +103,14 @@ export async function markConversationSpam(projectSlug: string, conversation: nu
   return asTeam(projectSlug, "Only the project's team can mark spam", async (context) =>
     call(updateConversation, context, { number: conversationNumber(conversation), spam: spam === true }),
   );
+}
+
+/** Links a conversation to a post it's about (by the post's number), or unlinks it. */
+export async function linkPostToConversation(projectSlug: string, conversation: number, post: number, linked: boolean): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can link conversations to posts", async (context) => {
+    const input = { number: conversationNumber(conversation), post: Number(post) };
+    return linked === true ? call(linkConversationPost, context, input) : call(unlinkConversationPost, context, input);
+  });
 }
 
 /** Settings → Support: turns the inbox on or off (owners and admins). */

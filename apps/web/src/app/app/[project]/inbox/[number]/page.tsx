@@ -4,6 +4,7 @@ import { aiEnabled, plansEnabled } from "@tuti/shared";
 import { cn } from "cn";
 import { notFound } from "next/navigation";
 
+import { ConversationPosts } from "@/components/inbox/conversation-posts";
 import { ConversationAssigneeSelect, ConversationStatusSelect, SpamButton, SummarizeButton } from "@/components/inbox/conversation-controls";
 import { MessageAttachments } from "@/components/inbox/message-attachments";
 import { PersonDetails } from "@/components/inbox/person-details";
@@ -49,6 +50,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
     prisma.conversation.findUnique({
       where: { projectId_number: { projectId, number } },
       select: {
+        id: true,
         number: true,
         subject: true,
         status: true,
@@ -61,6 +63,7 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
         visitorHash: true,
         createdAt: true,
         user: { select: { name: true, email: true, ssoIdentity: { select: { externalId: true, email: true } } } },
+        posts: { orderBy: { createdAt: "asc" }, select: { post: { select: { number: true, title: true, status: true } } } },
         messages: {
           orderBy: { createdAt: "asc" },
           select: {
@@ -106,6 +109,13 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
+  // What "Link post…" offers: the posts not merged nor linked already, the most voted first.
+  const candidates = await prisma.post.findMany({
+    where: { projectId, duplicateOfId: null, conversations: { none: { conversationId: conversation.id } } },
+    orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+    take: 500,
+    select: { id: true, number: true, title: true, voteCount: true },
+  });
 
   return (
     <>
@@ -159,7 +169,12 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       {/* The page's height at least, so the reply box is at the bottom of the screen with few messages too. */}
       <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-6">
         <PersonDetails name={personName}>
-          <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+          <div className="flex flex-col gap-4">
+            <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} candidates={candidates} />
+            <div className="border-t pt-4">
+              <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+            </div>
+          </div>
         </PersonDetails>
         <div className="flex min-w-0 flex-1 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <ol className="flex flex-col gap-3" aria-label="Messages">

@@ -1,8 +1,9 @@
-import type { PostStatus } from "@tuti/db";
+import type { ConversationStatus, PostStatus } from "@tuti/db";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { PostStatusBadge } from "@/components/post-status-badge";
+import { CONVERSATION_STATUS_LABELS, type ConversationStatusName } from "@/lib/conversation-statuses";
 import { asking } from "@/lib/format";
 
 /** One of the post's properties in its sidebar: a label above its control. */
@@ -95,6 +96,35 @@ export function PostsLike({ projectSlug, posts }: { projectSlug: string; posts: 
             <span className="flex items-center gap-2 text-xs text-muted-foreground">
               <PostStatusBadge status={post.status} />
               {post.voteCount} {post.voteCount === 1 ? "vote" : "votes"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Property>
+  );
+}
+
+/** The conversations linked to the post (from the Inbox): each opens in the Inbox, with who it's with and its status. */
+export function PostConversations({
+  projectSlug,
+  conversations,
+}: {
+  projectSlug: string;
+  conversations: { number: number; subject: string; status: ConversationStatus; person: string }[];
+}) {
+  if (conversations.length === 0) {
+    return null;
+  }
+  return (
+    <Property label="Conversations">
+      <ul aria-label="Conversations" className="flex flex-col gap-2">
+        {conversations.map((conversation) => (
+          <li key={conversation.number} className="flex flex-col gap-0.5">
+            <Link href={`/app/${projectSlug}/inbox/${conversation.number}`} className="break-words hover:underline">
+              {conversation.subject}
+            </Link>
+            <span className="text-xs break-words text-muted-foreground">
+              {conversation.person} · {CONVERSATION_STATUS_LABELS[conversation.status.toLowerCase() as ConversationStatusName]}
             </span>
           </li>
         ))}
