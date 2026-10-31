@@ -529,14 +529,24 @@ test("when the panel shows the announcement, it's recorded for the person, so th
   expect(anonymous.seenRequests).toEqual([]);
 });
 
-test("by default the panel opens above the launcher, as before: no drawer, no backdrop", async () => {
-  const page = loadWidget({ narrow: true });
+test("by default the panel opens above the launcher; on a phone it's the whole screen, over the launcher; no drawer, no backdrop", async () => {
+  const page = loadWidget({});
   await settled();
   page.button!.click();
-  expect(page.panel.style).toMatchObject({ display: "block", right: "20px", bottom: "88px", borderRadius: "14px" });
-  expect(page.panel.style.top).toBeUndefined();
+  expect(page.panel.style).toMatchObject({ display: "block", top: "auto", right: "20px", bottom: "88px", borderRadius: "14px" });
+  // Turned to a phone's width and back.
+  page.resize(true);
+  expect(page.panel.style).toMatchObject({ top: "0", left: "0", borderRadius: "0" });
+  page.resize(false);
+  expect(page.panel.style).toMatchObject({ top: "auto", right: "20px", left: "auto", borderRadius: "14px" });
   expect(page.backdrop).toBeUndefined();
   expect(page.inlineFrames).toEqual([]);
+
+  const phone = loadWidget({ narrow: true });
+  await settled();
+  phone.button!.click();
+  expect(phone.panel.style).toMatchObject({ display: "block", top: "0", right: "0", bottom: "0", left: "0", borderRadius: "0", zIndex: "2147483001" });
+  expect(phone.backdrop).toBeUndefined();
 });
 
 test("data-display or TutiSettings.display picks the mode, the attribute first; an unknown one is reported and it's the launcher", async () => {

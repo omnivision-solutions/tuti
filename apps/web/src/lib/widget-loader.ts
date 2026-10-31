@@ -187,9 +187,13 @@ export function widgetLoader(portalTemplate: string): string {
   // The sidebar: a drawer over the button, with a backdrop that closes it on narrow screens
   // (where it covers most of the page); on wider ones the page stays usable beside it.
   var backdrop = document.createElement("div");
-  var narrow = sidebar && window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  // A phone's width: the sidebar gets a backdrop, the floating panel the whole screen.
+  var small = window.matchMedia ? window.matchMedia("(max-width: 640px)") : null;
+  var narrow = sidebar ? small : null;
   // Whether the panel is open: it stays on screen a moment after closing, as it animates away.
   var opened = false;
+  // The button's side: bottom-right unless the project says bottom-left.
+  var onLeft = false;
   function showBackdrop() {
     backdrop.style.display = narrow && narrow.matches && opened ? "block" : "none";
   }
@@ -199,16 +203,28 @@ export function widgetLoader(portalTemplate: string): string {
     backdrop.addEventListener("click", function () { close(); });
     if (narrow) narrow.onchange = showBackdrop;
   } else {
+    placePanel();
+    if (small) small.onchange = placePanel;
+  }
+  // The floating panel: above the button, or on a phone the whole screen (over the button, its own close
+  // button at the top). Pinned to the screen's edges there, so the browser's bars can't push it off screen.
+  function placePanel() {
+    if (small && small.matches) {
+      css(panel, { top: "0", right: "0", bottom: "0", left: "0", width: "auto", height: "auto", borderRadius: "0", zIndex: "2147483001" });
+      return;
+    }
     css(panel, {
-      right: "20px", bottom: hideLauncher ? "20px" : "88px", borderRadius: "14px",
-      width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))", transformOrigin: "bottom right"
+      top: "auto", bottom: hideLauncher ? "20px" : "88px", right: onLeft ? "auto" : "20px", left: onLeft ? "20px" : "auto",
+      borderRadius: "14px", zIndex: "2147483000", width: "min(400px, calc(100vw - 40px))", height: "min(600px, calc(100vh - 112px))",
+      transformOrigin: onLeft ? "bottom left" : "bottom right"
     });
+    // The screen's height without the browser's bars, where it's known (iOS counts them in 100vh).
+    panel.style.height = "min(600px, calc(100dvh - 112px))";
   }
   // Opening, the panel grows out of the launcher's corner (a sidebar slides in from its edge); closing, the
   // reverse, then it's hidden. Not for visitors who ask for less motion (as they do now), nor where browsers
   // can't animate. Closing, it's inert at once: nothing in it can be clicked or focused on its way out.
   var lessMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
-  var onLeft = false;
   var motion = null;
   function animate(showing) {
     if (showing) panel.removeAttribute("inert"); else panel.setAttribute("inert", "");
@@ -225,7 +241,9 @@ export function widgetLoader(portalTemplate: string): string {
     }
     var away = sidebar
       ? { transform: "translateX(" + (onLeft ? "-" : "") + "100%)" }
-      : { opacity: 0, transform: "translateY(16px) scale(0.94)" };
+      : small && small.matches
+        ? { opacity: 0, transform: "translateY(24px)" }
+        : { opacity: 0, transform: "translateY(16px) scale(0.94)" };
     var here = sidebar ? { transform: "none" } : { opacity: 1, transform: "none" };
     motion = panel.animate(showing ? [away, here] : [here, away], showing
       ? { duration: 260, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
@@ -274,8 +292,9 @@ export function widgetLoader(portalTemplate: string): string {
       if (typeof launcher.color === "string") css(button, { background: launcher.color, color: launcher.textColor });
       if (launcher.position === "bottom-left") {
         css(button, { left: "20px", right: "auto" });
-        css(panel, { left: sidebar ? "0" : "20px", right: "auto", transformOrigin: "bottom left" });
         onLeft = true;
+        if (sidebar) css(panel, { left: "0", right: "auto", transformOrigin: "bottom left" });
+        else placePanel();
       }
     }
     showLauncher();
