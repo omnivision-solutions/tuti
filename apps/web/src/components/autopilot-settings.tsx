@@ -128,7 +128,7 @@ export function AutopilotRecipientsForm({
           </label>
           {members.length > 0 && (
             <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-sm font-medium">And these team members</legend>
+              <legend className="mb-1 text-sm font-medium">And these people on the team</legend>
               {members.map((member) => (
                 <label key={member.userId} className="flex items-center gap-2 text-sm">
                   <input type="checkbox" name="told" value={member.userId} defaultChecked={member.told} className="size-4 accent-primary" />

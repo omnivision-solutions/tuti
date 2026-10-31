@@ -387,3 +387,10 @@ test("analysed again while its email went: that email's news isn't repeated, and
   expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(0);
   expect((await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: one.id } })).sentAt).not.toBeNull();
 });
+
+test("a new project publishes article edits and posts progress updates by itself (its owners hear of each before it goes)", async () => {
+  expect(await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { autopilotArticleEdits: true, autopilotProgress: true } })).toEqual({
+    autopilotArticleEdits: true,
+    autopilotProgress: true,
+  });
+});
