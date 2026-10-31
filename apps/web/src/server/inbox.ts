@@ -127,8 +127,8 @@ export async function findPostsToLink(projectSlug: string, q: string): Promise<{
   const [numbered, titled] = await Promise.all([
     number === null ? null : prisma.post.findFirst({ where: { projectId, number, duplicateOfId: null }, select }),
     prisma.post.findMany({
-      // `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
-      where: { projectId, duplicateOfId: null, title: { contains: query.replace(/[\\%_]/g, "\\$&"), mode: "insensitive" } },
+      // Without a leading "#", as the picker matches titles; `contains` is a LIKE: its wildcards (and the escape) typed as themselves.
+      where: { projectId, duplicateOfId: null, title: { contains: query.replace(/^#/, "").replace(/[\\%_]/g, "\\$&"), mode: "insensitive" } },
       orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
       take: 20,
       select,

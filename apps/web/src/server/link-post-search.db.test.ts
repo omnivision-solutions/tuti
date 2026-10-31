@@ -22,6 +22,8 @@ test("Link post… finds any of the project's posts by number or title, however 
   const titles = async (q: string) => (await findPostsToLink(project.slug, q)).posts?.map((p) => `#${p.number} ${p.title}`);
   // By title: the most voted first.
   expect(await titles("csv")).toEqual(["#2 CSV import", "#1 Export reports to CSV"]);
+  // A "#" before it is the picker's, not the title's.
+  expect(await titles("#csv")).toEqual(["#2 CSV import", "#1 Export reports to CSV"]);
   // By number: that one first, then titles with it.
   expect(await titles("#1")).toEqual(["#1 Export reports to CSV"]);
   // Nothing typed: the newest.
