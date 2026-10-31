@@ -1139,6 +1139,35 @@ test("on a phone, a page's modal library that saves what's inert as it opens (He
   }
 });
 
+test("on a phone, help opened again from that library's modal, which then closes, has the page covered till the panel closes", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    // The library's dialog opens (recording the loader's inert, setting its own): the panel closes.
+    const saved = app.hasAttribute("inert");
+    app.setAttribute("inert", "");
+    const popup = page.body.appendChild(new FakeElement("div", page));
+    popup.setAttribute("aria-modal", "true");
+    page.mutated();
+    // Help opened from inside it a moment later: waits, uncovered, while it shows.
+    vi.advanceTimersByTime(100);
+    page.Tuti.open();
+    vi.advanceTimersByTime(200);
+    // It closes, putting back what it recorded; the panel covers the page (and both checks run once more).
+    page.body.children.splice(page.body.children.indexOf(popup), 1);
+    if (saved) app.setAttribute("inert", "");
+    page.mutated();
+    vi.advanceTimersByTime(600);
+    expect(app.hasAttribute("inert")).toBe(true);
+    page.Tuti.close();
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));

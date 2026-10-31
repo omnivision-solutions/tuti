@@ -288,6 +288,12 @@ export function widgetLoader(portalTemplate: string): string {
     }
     if (cover) {
       covering = true;
+      // Covered again before a modal's library let go of them: the loader's again (theirs or not, inert now).
+      for (var r = 0; r < released.length; r++) {
+        released[r].setAttribute("inert", "");
+        covered.push(released[r]);
+      }
+      released = [];
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
