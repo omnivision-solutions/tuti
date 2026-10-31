@@ -155,3 +155,20 @@ test("the safety net leaves a paused project's replies out, so they don't fill i
     vi.unstubAllEnvs();
   }
 });
+
+test("the safety net leaves a new project's replies out once it's past its daily cap, as paused ones", async () => {
+  const voter = await verified("Voter");
+  const { post } = await votedFor(voter);
+  vi.spyOn(log, "warn").mockImplementation(() => {});
+  mailbox.refuseNext(voter.email, { code: 421 });
+  const reply = await call(createComment, as(owner.id), { number: post.number, body: "Shipping soon.", emailVoters: true });
+  await prisma.comment.update({ where: { id: reply.id }, data: { votersEmailDueAt: new Date(Date.now() - 11 * 60_000) } });
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("SUPPORT_EMAIL_DOMAIN", "support.example.com");
+  await prisma.projectEmailDay.create({ data: { projectId: project.id, day: new Date(new Date().toISOString().slice(0, 10)), claimed: 200 } });
+  try {
+    expect(await handlers.resubmitReplyEmails({}, { info: () => {}, warn: () => {} })).toEqual({ found: 0, queued: 0 });
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
