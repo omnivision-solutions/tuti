@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { emailLine } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
 import { cn } from "@/lib/utils";
 import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange } from "@/server/code-changes";
@@ -88,20 +89,8 @@ export function AutopilotReview({
   const stale = updates.filter((update) => update.status === "stale");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
-  // What the email's link named and is still waiting, as the page opened.
-  // What the email's link named, as the page opened: those still waiting are counted each time (approved here, they're not).
-  const [namedIds] = useState(() => new Set(selected));
-  const named = waiting.filter((update) => namedIds.has(update.id)).length;
-  // What the email's line says when nothing it named is waiting to tick: what became of them, now.
-  const namedNow = updates.filter((update) => namedIds.has(update.id));
-  const instead =
-    namedIds.size === 0 && fromEmail === "likely" && waiting.length > 0
-      ? "Autopilot isn't sure of any of these: tick the ones to approve."
-      : namedNow.some((update) => update.status === "stale")
-        ? "the update it named changed since: write it again, or dismiss it."
-        : namedNow.length > 0 && namedNow.every((update) => update.status === "scheduled")
-          ? "the updates it named go out by themselves (Publish now, or Stop)."
-          : "the updates it named were decided already.";
+  // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
+  const [namedIds] = useState(() => [...ticked]);
   // The team's edits: a progress update's comment, the changelog line.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const textOf = (update: Update) => edits[update.id] ?? (update.kind === "moves_forward" ? (update.comment ?? "") : (update.line ?? ""));
@@ -161,9 +150,7 @@ export function AutopilotReview({
         {fromEmail && (
           <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
             <span className="font-medium">From your email:</span>{" "}
-            {named === 0
-              ? instead
-              : `${named === 1 ? "the update is" : `${named} updates are`} selected. Check ${named === 1 ? "it" : "them"} and approve.`}
+            {emailLine(fromEmail, namedIds, updates)}
           </p>
         )}
         {[...waiting, ...stale].map((update) => (
