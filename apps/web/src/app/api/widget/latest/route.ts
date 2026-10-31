@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   const [latest, settings, project] = await Promise.all([
     latestAnnouncedAt({ slug, portalAccess: "PUBLIC" }),
     widgetSettings({ slug }),
-    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true } }),
+    prisma.project.findUnique({ where: { slug }, select: { supportInbox: true, plan: true, widgetSeenAt: true } }),
   ]);
   const launcher = settings && {
     label: settings.label,
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   };
   // On a site of the team's (not the app or a portal): the widget is set up (Home's "Get set up"). Once.
   const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
-  if (project && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin) {
+  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.

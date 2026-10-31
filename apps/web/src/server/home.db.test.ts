@@ -25,10 +25,13 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   await prisma.post.updateMany({ where: { projectId: project.id, number: planned.number }, data: { status: "PLANNED", createdAt: ago(20) } });
   // A conversation waiting for a reply for five days.
   await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Can't log in", status: "OPEN", origin: "API", lastMessageAt: ago(5), waitingSince: ago(5) } });
-  // One closed without a reply: not waiting any more.
+  // One closed without a reply: not waiting any more. One set back to Open by hand (no `waitingSince`): its last message's age.
   await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Old question", status: "CLOSED", origin: "API", lastMessageAt: ago(9), waitingSince: ago(9) } });
+  await prisma.conversation.create({ data: { projectId: project.id, number: 3, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(1) } });
   // A docs search that found nothing, twice, two days ago.
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(2), query: "refund", count: 2 } });
+  // That day, one more found nothing past the queries kept: Docs → Insights counts 3, and so does Home.
+  await prisma.docsSearchDay.create({ data: { projectId: project.id, day: ago(2), searches: 10, failed: 3 } });
   // Votes: two on SSO this week (one old one doesn't count), one on Exports.
   const voters = await Promise.all(["Vera", "Val", "Vic"].map((name) => signUp(name)));
   const idOf = async (number: number) => (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number } })).id;
@@ -43,11 +46,12 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
 
   const home = await homeOverview(project.id, project.slug, { emailVerified: false });
   // New this week: Dark mode and Exports (not SSO, from 20 days ago).
-  expect(home.numbers).toEqual({ newPosts: 2, needReply: 1, updatesWaiting: 0, searchesFailed: 2 });
+  expect(home.numbers).toEqual({ newPosts: 2, needReply: 2, updatesWaiting: 0, searchesFailed: 3 });
   expect(home.attention.map((item) => [item.kind, item.title, item.action, item.href])).toEqual([
     ["Conversation", "Can't log in", "Reply", `${base}/inbox/1`],
     ["New post", "Dark mode", "Triage", `${base}/p/${old.number}`],
     ["Docs search", "“refund” found nothing (2 times)", "Write it", `${base}/docs/new?title=refund`],
+    ["Conversation", "Reopened", "Reply", `${base}/inbox/3`],
     ["New post", "Exports", "Triage", `${base}/p/${fresh.number}`],
   ]);
   // Votes this week, most first: SSO's two and its author's own (cast today; not the one from ten days ago),
@@ -57,7 +61,9 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
     ["Exports", 2],
     ["Dark mode", 1],
   ]);
-  // Get set up: nothing done yet but the team (one owner); each step as it's done.
+  // Get set up: nothing done yet; each step as it's done. A revoked invitation invites nobody. No GitHub here: no step for it.
+  expect(home.setup!.map((step) => step.key)).not.toContain("github");
+  await prisma.invitation.create({ data: { projectId: project.id, email: "e2e-typo@example.com", tokenHash: "revoked", createdById: owner.id, expiresAt: new Date(Date.now() + DAY), revokedAt: new Date() } });
   expect(home.setup!.filter((step) => step.done).map((step) => step.key)).toEqual([]);
   await prisma.project.update({ where: { id: project.id }, data: { widgetSeenAt: new Date(), ssoSecret: "s3cret" } });
   const later = await homeOverview(project.id, project.slug, { emailVerified: true });
@@ -84,6 +90,8 @@ test("Home counts every update waiting and every change past the list, and offer
     })),
   });
   const changes = await prisma.codeChange.findMany({ where: { projectId: project.id }, select: { id: true } });
+  // Analysed again and failed: its updates still wait (as the sidebar and Autopilot's list count them).
+  await prisma.codeChange.update({ where: { id: changes[0]!.id }, data: { state: "FAILED" } });
   await prisma.codeChangeAction.createMany({ data: changes.map((c) => ({ codeChangeId: c.id, kind: "LINKS" as const, probability: 0.9 })) });
   // A possible duplicate whose post was merged meanwhile: settled.
   const ids = await Promise.all(["Dark mode", "Night theme", "Dark theme"].map(async (title) => {
