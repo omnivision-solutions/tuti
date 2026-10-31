@@ -22,6 +22,10 @@ test("the last loaded post triaged, J opens the one that moved up from the next 
   const after = [...before.slice(0, 49), 51];
   expect(feedbackStep(after, before, 50, 1)).toBe(51);
   expect(feedbackStep(after, before, 50, -1)).toBe(49);
+  // A post that arrived meanwhile above it (the newest, sorting first) isn't where J goes: J doesn't jump back up.
+  const arrived = [99, ...before.slice(0, 49)];
+  expect(feedbackStep(arrived, before, 50, 1)).toBeNull();
+  expect(feedbackStep([99, ...before.slice(0, 49), 51], before, 50, 1)).toBe(51);
 });
 
 test("more of the list loaded is the same list; another filter isn't", () => {
