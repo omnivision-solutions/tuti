@@ -20,6 +20,8 @@ export function CommentForm({ postId, placeholder = "Add a comment…", notes = 
   // Bumped after each comment, to start the next one with an empty editor.
   const [submitted, setSubmitted] = useState(0);
   const errorId = useId();
+  // Off once nobody's left to email (after a refresh): a disabled switch isn't sent.
+  const emailing = emailVoters && voters > 0;
   const [state, action, pending] = useActionState<FormState, FormData>(async (prev, formData) => {
     const result = await addComment(prev, formData);
     if (!result.error) {
@@ -56,14 +58,14 @@ export function CommentForm({ postId, placeholder = "Add a comment…", notes = 
             {/* A note is never emailed. */}
             {!internal && (
               <label className="flex items-center gap-2">
-                <Switch name="emailVoters" checked={emailVoters} disabled={voters === 0} onChange={(event) => setEmailVoters(event.target.checked)} />
+                <Switch name="emailVoters" checked={emailing} disabled={voters === 0} onChange={(event) => setEmailVoters(event.target.checked)} />
                 Email voters <span className="text-muted-foreground">({voters === 0 ? "nobody to email" : voters === 1 ? "1 person" : `${voters} people`})</span>
               </label>
             )}
           </div>
         )}
         <Button type="submit" disabled={pending}>
-          {pending ? "Posting…" : internal ? "Add note" : emailVoters ? "Comment and email" : "Comment"}
+          {pending ? "Posting…" : internal ? "Add note" : emailing ? "Comment and email" : "Comment"}
         </Button>
       </div>
     </form>

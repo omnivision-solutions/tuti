@@ -73,7 +73,8 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
     post.duplicateOf ? [] : postsLike(project.id, post),
     postNeighbours(project.id, post.number),
     emailedOnCompletion(project.id, [post.id]),
-    votersToEmail(project.id, post.id),
+    // Only for the reply form, which a merged post doesn't have.
+    post.duplicateOf ? 0 : votersToEmail(project.id, post.id),
   ]);
   const total = totals.get(post.id);
   const postRef = { id: true, number: true, title: true, voteCount: true } as const;
