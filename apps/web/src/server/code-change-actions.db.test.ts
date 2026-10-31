@@ -1,4 +1,4 @@
-import { type CodeChangeActionKind, type PostStatus, prisma } from "@tuti/db";
+import { type CodeChangeActionKind, type PostStatus, Prisma, prisma } from "@tuti/db";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { addToRunningDraft, undoChangelogLine } from "@tuti/jobs";
@@ -218,16 +218,28 @@ describe("undo", () => {
     expect((await postOf(linked.post.id)).links).toEqual([{ url: PR_URL, source: "MANUAL", codeChangeId: null }]);
   });
 
-  test("a try that failed part-way, then approved: Undo puts back what both did (the link and the status the first one moved)", async () => {
+  test("a try that failed part-way puts back what it did (the link, the status it moved), and waits; approved after, Undo still works", async () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
-    // Linked and moved to In progress, then the comment's transaction fails.
+    // Linked and moved to In progress, then the comment's transaction fails: both are put back.
     vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })).results[0]).toMatchObject({ status: "failed" });
-    expect(await postOf(post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [] });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
     await call(applyCodeChangeAction, team(), { id: action.id });
     await call(undoCodeChangeAction, team(), { id: action.id });
     expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+  });
+
+  test("a progress update on a post merged since: Undo is refused, saying so, and nothing changes", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    const other = await call(createPost, team(), { board: "feature-requests", title: "Repeating events" });
+    const otherId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: other.number } })).id;
+    await prisma.post.update({ where: { id: post.id }, data: { duplicateOfId: otherId } });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The post was merged into another since: change it there");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
+    expect((await postOf(post.id)).comments).toHaveLength(1);
   });
 
   test("one approved before Undo was there (nothing recorded to put back) is refused, and has no Undo", async () => {
@@ -558,6 +570,21 @@ describe("docs", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
   });
 
+  test("an article edit kept unpublished has no Undo (it's finished or discarded in the editor)", async () => {
+    const { action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", canUndo: false });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Its edit is waiting in the editor: discard the changes there");
+  });
+
+  test("an article with only plain text (from before rich text): Undo publishes that text again", async () => {
+    const { article, action } = await articleEdit();
+    await prisma.article.update({ where: { id: article.id }, data: { content: Prisma.DbNull } });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light in Settings.");
+  });
+
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
     const { article, action } = await articleEdit();
     await call(applyCodeChangeAction, team(), { id: action.id });
@@ -583,6 +610,17 @@ describe("docs", () => {
     const { article: slug } = (await call(applyCodeChangeAction, team(), { id: first.id })) as { article: string };
     await call(undoCodeChangeAction, team(), { id: first.id });
     expect(await prisma.article.count({ where: { projectId: project.id, slug, deletedAt: null } })).toBe(0);
+
+    // Published between Undo's first look and its delete: checked again under the lock, it stays.
+    const third = await create("Theme shortcuts");
+    const { article: racing } = (await call(applyCodeChangeAction, team(), { id: third.id })) as { article: string };
+    const transaction = prisma.$transaction.bind(prisma);
+    vi.spyOn(prisma, "$transaction").mockImplementationOnce((async (...args: Parameters<typeof transaction>) => {
+      await call(publishArticle, team(), { slug: racing });
+      return transaction(...args);
+    }) as typeof prisma.$transaction);
+    await expect(call(undoCodeChangeAction, team(), { id: third.id })).rejects.toThrow("The draft was edited or published since: change it in Docs");
+    expect(await prisma.article.count({ where: { projectId: project.id, slug: racing, deletedAt: null, publishedAt: { not: null } } })).toBe(1);
 
     const second = await create("Dark theme tips");
     const { article: other } = (await call(applyCodeChangeAction, team(), { id: second.id })) as { article: string };
@@ -651,7 +689,7 @@ describe("the changelog line", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
   });
 
-  test("a line whose first try added the pull request to the draft and then failed: Undo still takes the pull request out", async () => {
+  test("a line whose first try added the pull request to the draft and then failed: it comes out again; approved after, Undo takes it out", async () => {
     vi.spyOn(log, "error").mockImplementation(() => {});
     const action = await line("A dark theme");
     // The pull request goes into the draft; writing its line fails.
@@ -660,7 +698,7 @@ describe("the changelog line", () => {
       .mockImplementationOnce(((...args: Parameters<typeof transaction>) => transaction(...args)) as typeof prisma.$transaction)
       .mockRejectedValueOnce(new Error("connection reset"));
     await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("connection reset");
-    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(1);
+    expect(await prisma.changelogEntryPullRequest.count({ where: { url: "https://github.com/acme/app/pull/30", entry: { projectId: project.id } } })).toBe(0);
     await call(applyCodeChangeAction, team(), { id: action.id });
     await call(undoCodeChangeAction, team(), { id: action.id });
     expect((await draft()).body).toBe("");

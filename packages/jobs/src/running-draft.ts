@@ -200,13 +200,13 @@ export async function changelogLineOf(projectId: string, url: string): Promise<{
 /**
  * Autopilot's Undo of a changelog line: the pull request's bullet goes back to `previous`, or out again
  * (`added`), with the entry's record of the pull request when applying added that too ("entry"). Only
- * in a draft, and only while the bullet still says what was approved (`applied`): "published" or
- * "edited" otherwise, changing nothing. No entry has the pull request any more: nothing to put back.
+ * in a draft, and only while the bullet still says what was approved (`applied`; null: whatever it
+ * says, for an apply that failed): "published" or "edited" otherwise, changing nothing. No entry has the pull request any more: nothing to put back.
  */
 export async function undoChangelogLine(
   projectId: string,
   url: string,
-  { applied, previous, added }: { applied: string; previous: string; added: "entry" | "bullet" | null },
+  { applied, previous, added }: { applied: string | null; previous: string; added: "entry" | "bullet" | null },
 ): Promise<"done" | "published" | "edited"> {
   return prisma.$transaction(async (tx) => {
     await lockProject(tx, projectId);
@@ -219,7 +219,7 @@ export async function undoChangelogLine(
     }
     const current = (known.entry.content as Doc | null) ?? { type: "doc", content: [] };
     const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
-    if (bullet && textOf(bullet) !== applied) {
+    if (bullet && applied !== null && textOf(bullet) !== applied) {
       return "edited";
     }
     if (added === "entry") {
