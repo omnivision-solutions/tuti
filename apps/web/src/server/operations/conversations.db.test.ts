@@ -229,8 +229,10 @@ test("a vote taken back during a merge waits for it, then finds the post merged:
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM post WHERE id = ${from} FOR NO KEY UPDATE`;
       unvoted = call(setVote, context, { number: a.number, voted: false, author: voter }).catch((error: unknown) => error);
-      // Time for it to reach the lock it waits for.
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Until it waits for a lock (this merge's), so the votes are moved while it does.
+      await expect
+        .poll(async () => (await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)[0]!.n)
+        .toBeGreaterThan(0);
       await tx.vote.deleteMany({ where: { postId: from } });
       await tx.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0 } });
     },
