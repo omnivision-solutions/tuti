@@ -149,11 +149,11 @@ export function UpToDateBoard() {
       // Completing a request waits for a click by default (and always for one reaching this many).
       when: "Closed in a click",
     },
-    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Switch to dark under Settings → Theme.</span>, when: "Drafted", byItself: true },
+    { icon: MegaphoneIcon, kind: "Changelog", title: "Dark mode is here", change: <span className="text-sm text-muted-foreground">Added to your next entry.</span>, when: "Drafted", byItself: true },
   ];
   return (
     <figure
-      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data and drafted the changelog entry, and Dark mode was marked completed in one click, with 128 people told. The AI now answers from the updated article."
+      aria-label="Acme's help center, AI answers, roadmap and changelog, all up to date. Tuti just rewrote the article Exporting data and added a line to the next changelog entry, and Dark mode was marked completed in one click, with 128 people told. The AI now answers from the updated article."
       className="relative mx-auto max-w-5xl"
     >
       <Frame>
@@ -328,12 +328,15 @@ export function AutoCards() {
     },
     {
       title: "Changelog, drafted",
-      text: "Every release written up, in your voice.",
+      text: "Every change you ship, lined up in your next entry.",
       picture: (
-        <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-semibold text-soft-foreground">New · Today</p>
-          <p className="font-semibold">Dark mode is here</p>
-          <p className="text-sm text-muted-foreground">Switch to dark under Settings → Theme.</p>
+        <div className="flex flex-col gap-1.5 text-sm">
+          <p className="text-xs font-semibold text-muted-foreground">Draft · Next release</p>
+          <p className="flex items-center gap-2 rounded-md bg-soft px-2 py-1 font-semibold text-soft-foreground">
+            <SparklesIcon className="size-3.5 shrink-0" /> Dark mode is here
+          </p>
+          <p className="px-2 text-muted-foreground">Export moved to Settings → Data</p>
+          <p className="px-2 text-muted-foreground">Faster search</p>
         </div>
       ),
     },
