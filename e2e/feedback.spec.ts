@@ -850,5 +850,8 @@ test("Feedback's pane asks before Completed too, saying how many it emails", asy
   await expect(ask.getByText("This emails up to 1 person who asked for it that it shipped.", { exact: true })).toBeVisible();
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask).toHaveCount(0);
+  // What's saved, not only what's shown: still Open after a reload, once anything sent has gone.
+  await team.waitForLoadState("networkidle");
+  await team.reload();
   await expect(pane.getByRole("combobox", { name: "Status" })).toHaveText(/Open/);
 });
