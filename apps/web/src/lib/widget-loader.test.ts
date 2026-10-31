@@ -1114,6 +1114,31 @@ test("on a phone, a modal of the page's opened inside what the panel covers (its
   expect(dialog.getAttribute("tabindex")).toBe("-1");
 });
 
+test("on a phone, a page's modal library that saves what's inert as it opens (Headless UI) and puts it back as it closes doesn't leave the page inert", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    expect(app.hasAttribute("inert")).toBe(true);
+    // The library opens its dialog: it records the page's inert (the loader's) and makes it inert itself.
+    const saved = app.hasAttribute("inert");
+    app.setAttribute("inert", "");
+    const popup = page.body.appendChild(new FakeElement("div", page));
+    popup.setAttribute("aria-modal", "true");
+    page.mutated();
+    // The panel closes for it.
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    // Closed: it puts back what it recorded.
+    page.body.children.splice(page.body.children.indexOf(popup), 1);
+    if (saved) app.setAttribute("inert", "");
+    vi.advanceTimersByTime(300);
+    expect(app.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));

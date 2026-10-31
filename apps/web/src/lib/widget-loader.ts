@@ -249,10 +249,23 @@ export function widgetLoader(portalTemplate: string): string {
   // Left uncovered for a modal of the page's: checked again a few times a second till it's gone (many close by
   // a class or style, which nothing else hears).
   var waitingOnModal = false;
+  // Closed for a modal of the page's: what the loader had made inert. A library that saved it so as the modal
+  // opened (Headless UI) makes it inert again as it closes; it's put back once the modal's gone.
+  var released = [];
+  function releaseAfterModal() {
+    if (modalOpen()) {
+      setTimeout(releaseAfterModal, 250);
+      return;
+    }
+    for (var r = 0; r < released.length; r++) released[r].removeAttribute("inert");
+    released = [];
+  }
   function coverPage() {
     var cover = opened && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
     if (modal) {
+      if (released.length === 0) setTimeout(releaseAfterModal, 250);
+      released = released.concat(covered);
       close(true);
       // Focus goes into it, unless it's there already: the page's own move in fails while the loader has it inert.
       var active = document.activeElement;
