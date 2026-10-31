@@ -156,6 +156,13 @@ export function AutopilotEmailsChoice({ choice }: { choice: "AS_THEY_HAPPEN" | "
   // What's saved: a choice that isn't (signed out meanwhile, say) goes back to it.
   const [saved, setSaved] = useState(choice);
   const [picked, setPicked] = useState(choice);
+  // Changed elsewhere (another tab) and the page refreshed: that's what's saved now, unless a save here is on its way.
+  const [given, setGiven] = useState(choice);
+  if (given !== choice && !pending) {
+    setGiven(choice);
+    setSaved(choice);
+    setPicked(choice);
+  }
   return (
     <fieldset disabled={pending} className="flex flex-col gap-2">
       <legend className="sr-only">Autopilot&apos;s email</legend>
