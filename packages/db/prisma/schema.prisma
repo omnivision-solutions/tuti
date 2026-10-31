@@ -1157,7 +1157,7 @@ model WidgetPresence {
   @@map("widget_presence")
 }
 
-/// A post a conversation is about, linked by the team: the conversation shows on the post, the post on the conversation.
+/// A post a conversation is about, linked by the team (conversations.linkPost).
 model ConversationPost {
   conversationId String
   postId         String

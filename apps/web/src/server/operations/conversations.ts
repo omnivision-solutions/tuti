@@ -526,7 +526,7 @@ async function linkedPosts(conversationId: string) {
 
 export const linkConversationPost = defineOperation({
   name: "conversations.linkPost",
-  summary: "Link a conversation to a post it's about: the post lists it, and merging the post takes the link along",
+  summary: "Link a conversation to a post it's about; merging the post takes the link along",
   method: "POST",
   path: "/conversations/{number}/posts",
   scope: "write",
@@ -534,11 +534,22 @@ export const linkConversationPost = defineOperation({
   input: z.object({ number: conversationNumber, post: postNumber }),
   example: { post: 12 },
   run: async ({ projectId }, input) => {
-    const [conversation, post] = await Promise.all([findConversation(projectId, input.number), findPost(projectId, input.post)]);
+    const conversation = await findConversation(projectId, input.number);
+    let post = await findPost(projectId, input.post);
+    if (!post.duplicateOf) {
+      // Only while it isn't merged: a merge marks it first, holding its row, so a link either lands before
+      // (and the merge moves it) or finds it merged.
+      const linked = await prisma.$executeRaw`
+        INSERT INTO conversation_post ("conversationId", "postId")
+        SELECT ${conversation.id}, id FROM post WHERE id = ${post.id} AND "duplicateOfId" IS NULL FOR SHARE
+        ON CONFLICT ("conversationId", "postId") DO NOTHING`;
+      if (linked === 0) {
+        post = await findPost(projectId, input.post);
+      }
+    }
     if (post.duplicateOf) {
       throw new OperationError(409, "merged", `#${post.number} was merged into #${post.duplicateOf.number}: link that one`);
     }
-    await prisma.conversationPost.createMany({ data: { conversationId: conversation.id, postId: post.id }, skipDuplicates: true });
     return { posts: await linkedPosts(conversation.id) };
   },
 });
