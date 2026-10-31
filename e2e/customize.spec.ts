@@ -177,6 +177,12 @@ test("the team sends its old help center's addresses to the new docs", async ({ 
   await checkpoint(owner, "settings-panes", { fullPage: false });
   // The top bar stays where it is as the page scrolls (fixed to the window, as the title in it is).
   await expect(owner.locator("header").first()).toHaveCSS("position", "fixed");
+  // On a phone the page's heading comes first, above the menu.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const heading = owner.getByRole("heading", { name: "Settings", level: 1 });
+  const menuButton = owner.locator("details summary").first();
+  await expect(heading).toBeVisible();
+  expect((await heading.boundingBox())!.y).toBeLessThan((await menuButton.boundingBox())!.y);
 });
 
 test("the team's own CSS shows in the preview as it's typed, and on the portal once saved", async ({ browser }, testInfo) => {

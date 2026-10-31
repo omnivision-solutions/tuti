@@ -20,11 +20,17 @@ export default async function SettingsLayout({ children, params }: LayoutProps<"
   // Three panes, as Docs: the menu a column of its own the page's height, the page beside it.
   return (
     <div data-slot="pane-layout" className="-mx-6 -mb-6 flex flex-1 flex-col first:-mt-6 not-first:border-t md:flex-row">
+      {/* On phones the page's heading comes first, above the menu (from tablet width up it's in the top bar). */}
+      <div className="px-6 pt-6 md:hidden">
+        <PageHeader title="Settings" />
+      </div>
       <aside className="px-6 pt-6 md:w-60 md:shrink-0 md:border-r md:p-0">
         <SettingsMenu groups={settingsGroups(slug, isAdminRole(membership.role))} />
       </aside>
       <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-1 flex-col gap-6 p-6">
-        <PageHeader title="Settings" />
+        <div className="max-md:hidden md:contents">
+          <PageHeader title="Settings" />
+        </div>
         {children}
       </div>
     </div>
