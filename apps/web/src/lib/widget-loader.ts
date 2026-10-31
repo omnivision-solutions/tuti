@@ -226,6 +226,14 @@ export function widgetLoader(portalTemplate: string): string {
     if (element.getClientRects && element.getClientRects().length === 0) return false;
     return !(window.getComputedStyle && window.getComputedStyle(element).visibility === "hidden");
   }
+  // Whether an element is, or holds, a native dialog open over everything (showModal()).
+  function holdsModalDialog(element) {
+    try {
+      return element.matches("dialog:modal") || !!element.querySelector("dialog:modal");
+    } catch (error) {
+      return false;
+    }
+  }
   function modalOpen() {
     // Only one showing: pages keep closed ones in their markup, marked all the same.
     var marked = document.querySelectorAll("[aria-modal]");
@@ -261,9 +269,17 @@ export function widgetLoader(portalTemplate: string): string {
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
-        if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
+        if (child !== panel && child !== backdrop && !child.hasAttribute("inert") && !holdsModalDialog(child)) {
           child.setAttribute("inert", "");
           covered.push(child);
+        }
+      }
+      // A native dialog of the page's opened over everything since (showModal()) makes the panel inert itself:
+      // left usable, or neither could be closed.
+      for (var h = covered.length - 1; h >= 0; h--) {
+        if (holdsModalDialog(covered[h])) {
+          covered[h].removeAttribute("inert");
+          covered.splice(h, 1);
         }
       }
     } else {

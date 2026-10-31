@@ -1084,3 +1084,22 @@ test("on a phone, a page's modal that closes by a class or style (no attribute t
     vi.useRealTimers();
   }
 });
+
+test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) is left usable", async () => {
+  const page = loadWidget({ narrow: true });
+  let modal = false;
+  const dialog = page.body.appendChild(new FakeElement("dialog", page)) as FakeElement & { matches?: (selector: string) => boolean; querySelector?: () => null };
+  dialog.matches = (selector) => selector === "dialog:modal" && modal;
+  dialog.querySelector = () => null;
+  page.Tuti.open();
+  expect(dialog.hasAttribute("inert")).toBe(true);
+  // The page opens it with showModal() (it gets `open`): the loader takes its own inert off it.
+  modal = true;
+  dialog.setAttribute("open", "");
+  page.mutated();
+  expect(dialog.hasAttribute("inert")).toBe(false);
+  // And doesn't put it back on the next change while it's open.
+  page.body.appendChild(new FakeElement("div", page));
+  page.mutated();
+  expect(dialog.hasAttribute("inert")).toBe(false);
+});
