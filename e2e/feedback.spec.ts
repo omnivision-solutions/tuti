@@ -73,7 +73,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
   await team.keyboard.press("Escape");
   await expect(team.getByRole("listbox")).toBeHidden();
-  // Away from the list (still focused, its letters pick an option), as clicking elsewhere would.
+  // Closed but still focused, its letters still pick an option: not a step either.
+  await team.keyboard.press("j");
+  await expect(team.waitForURL(`**/app/${slug}/p/1`, { timeout: 1500 })).rejects.toThrow();
+  // Away from it, as clicking elsewhere would.
   await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await team.keyboard.press("j");
   await team.waitForURL(`**/app/${slug}/p/1`);

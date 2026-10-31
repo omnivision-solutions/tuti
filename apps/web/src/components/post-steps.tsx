@@ -13,9 +13,10 @@ const open = () =>
     (element) => element.getAttribute("aria-expanded") === "true" || element.checkVisibility(),
   );
 
-/** Whether a key press is someone typing (in a field, an editor), not a shortcut. */
+/** Whether a key press is someone typing (in a field, an editor, or a list of choices, whose letters pick one), not a shortcut. */
 const typing = (target: EventTarget | null) =>
-  target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.getAttribute("role") === "combobox");
 
 /**
  * The team's post page: the newer and the older post (by number, merged ones skipped), as buttons in
