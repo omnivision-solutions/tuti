@@ -57,11 +57,18 @@ export async function propertyNames(projectId: string): Promise<string[]> {
   return rows.map((row) => row.name);
 }
 
+/**
+ * How many number properties Who's asking offers: far past what a team picks from, while an app that
+ * names one per user (`usage_<id>`) can't make the page send and draw them all. ponytail: a search box
+ * that asks the server if a project needs more.
+ */
+export const NUMBER_PROPERTIES = 1000;
+
 /** The names of the project's users' number properties (Who's asking totals one), A to Z. */
 export async function numberPropertyNames(projectId: string): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ name: string }[]>`
     SELECT DISTINCT p.key AS name FROM sso_identity s, jsonb_each(s.attributes) p
-    WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name LIMIT 200`;
+    WHERE s."projectId" = ${projectId} AND jsonb_typeof(p.value) = 'number' ORDER BY name LIMIT ${NUMBER_PROPERTIES}`;
   return rows.map((row) => row.name);
 }
 

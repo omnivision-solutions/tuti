@@ -147,6 +147,13 @@ test("Who's asking: each post's voters' total of the number property the team pi
 
   // Picked in Settings → Access, from the number properties.
   expect(await numberPropertyNames(project.id)).toEqual(["mrr"]);
+  // Up to a thousand number properties are offered (past 200, the old cap); an app naming one per user can't send more.
+  await prisma.ssoIdentity.create({
+    data: { projectId: project.id, externalId: "many", userId: (await signUp("Many")).id, properties: Object.fromEntries(Array.from({ length: 1100 }, (_, i) => [`p${String(i).padStart(4, "0")}`, i])) },
+  });
+  const names = await numberPropertyNames(project.id);
+  expect([names.length, names.includes("mrr"), names.includes("p0250")]).toEqual([1000, true, true]);
+  await prisma.ssoIdentity.deleteMany({ where: { projectId: project.id, externalId: "many" } });
   expect(await setAskingProperty(project.slug, "mrr")).toEqual({});
   expect(await setAskingProperty(project.slug, " ")).toEqual({ error: "Pick one of your users' properties" });
   expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id } })).askingProperty).toBe("mrr");
