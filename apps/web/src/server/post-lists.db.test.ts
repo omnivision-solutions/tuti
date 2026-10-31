@@ -231,7 +231,11 @@ test("what shipped a post: the Autopilot change that completed it, and the chang
   // Written in order (February, March, April), published in another (March, then February); April's a draft.
   const day = (n: number) => new Date(Date.UTC(2026, 9, n));
   for (const [number, title, publishedAt] of [[1, "February", day(20)], [2, "March", day(10)], [3, "April", null]] as const) {
-    await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
+    // Reopened by hand: it didn't ship after all.
+  await prisma.post.update({ where: { id: post.id }, data: { status: "IN_PROGRESS" } });
+  expect((await howShipped(post.id)).change).toBeNull();
+  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+  await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
   }
   expect(await howShipped(post.id)).toEqual({
     change: { id: completed.id, repo: "acme/app", number: 9 },

@@ -166,7 +166,8 @@ export function postVoters(projectId: string, property: string | null, postId: s
 export async function howShipped(postId: string) {
   const [change, entries] = await Promise.all([
     prisma.codeChangeAction.findFirst({
-      where: { postId, kind: "RESOLVES", status: "APPLIED" },
+      // Only while it's completed: reopened by hand, it didn't ship after all (Undo marks the update undone).
+      where: { postId, kind: "RESOLVES", status: "APPLIED", post: { status: "COMPLETED" } },
       orderBy: { decidedAt: "desc" },
       select: { codeChange: { select: { id: true, repo: true, number: true } } },
     }),
