@@ -1009,20 +1009,21 @@ test("on a phone, a page with a modal open (help opened from inside it) isn't co
   expect(app.hasAttribute("inert")).toBe(true);
 });
 
-test("on a phone, a modal the page opens once the panel covers it doesn't uncover the page; closing puts it all back", async () => {
+test("on a phone, a modal the page opens once the panel covers it closes the panel: the page and the modal are left usable, focus where the modal put it", async () => {
   const page = loadWidget({ narrow: true });
   const app = page.body.appendChild(new FakeElement("div", page));
   page.Tuti.open();
   expect(app.hasAttribute("inert")).toBe(true);
-  // A popup of the page's (on a timer, say), added to the page: still covered, the popup with it.
+  // A popup of the page's (on a timer, say) traps focus and taps: under the panel, neither could be closed.
   const popup = page.body.appendChild(new FakeElement("div", page));
   popup.setAttribute("aria-modal", "true");
+  popup.focus();
   page.mutated();
-  expect(app.hasAttribute("inert")).toBe(true);
-  expect(popup.hasAttribute("inert")).toBe(true);
-  page.Tuti.close();
+  // Closed: the panel is out of reach.
+  expect(page.panel.hasAttribute("inert")).toBe(true);
   expect(app.hasAttribute("inert")).toBe(false);
   expect(popup.hasAttribute("inert")).toBe(false);
+  expect(page.document.activeElement).toBe(popup);
 });
 
 test("on a phone, a page's modal counts as showing only when it is: not faded out, nor without a box where the browser can't say", async () => {
@@ -1043,6 +1044,19 @@ test("on a phone, a page's modal counts as showing only when it is: not faded ou
   kept.getClientRects = () => [];
   older.Tuti.open();
   expect(page.hasAttribute("inert")).toBe(true);
+  // Nor one that has a box but has faded out (opacity 0).
+  const fadedOut = loadWidget({ narrow: true });
+  const host = fadedOut.body.appendChild(new FakeElement("div", fadedOut));
+  const closing = host.appendChild(new FakeElement("div", fadedOut)) as Modal;
+  closing.setAttribute("aria-modal", "true");
+  closing.getClientRects = () => [{}];
+  (fadedOut.window as unknown as { getComputedStyle: (element: unknown) => { display: string; visibility: string; opacity: string } }).getComputedStyle = (element) => ({
+    display: "block",
+    visibility: "visible",
+    opacity: element === closing ? "0" : "1",
+  });
+  fadedOut.Tuti.open();
+  expect(host.hasAttribute("inert")).toBe(true);
 });
 
 test("on a phone, a page's modal with no box of its own (display: contents) counts as showing when what's in it is", async () => {
@@ -1085,21 +1099,18 @@ test("on a phone, a page's modal that closes by a class or style (no attribute t
   }
 });
 
-test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) is left usable", async () => {
+test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
+  const dialog = page.body.appendChild(new FakeElement("dialog", page));
   let modal = false;
-  const dialog = page.body.appendChild(new FakeElement("dialog", page)) as FakeElement & { matches?: (selector: string) => boolean; querySelector?: () => null };
-  dialog.matches = (selector) => selector === "dialog:modal" && modal;
-  dialog.querySelector = () => null;
+  (page.document as unknown as { querySelector: (selector: string) => unknown }).querySelector = (selector) => (selector === "dialog:modal" && modal ? dialog : null);
   page.Tuti.open();
   expect(dialog.hasAttribute("inert")).toBe(true);
-  // The page opens it with showModal() (it gets `open`): the loader takes its own inert off it.
+  // The page opens it with showModal() (it gets `open`, and matches dialog:modal).
   modal = true;
   dialog.setAttribute("open", "");
   page.mutated();
-  expect(dialog.hasAttribute("inert")).toBe(false);
-  // And doesn't put it back on the next change while it's open.
-  page.body.appendChild(new FakeElement("div", page));
-  page.mutated();
+  // Closed: the panel is out of reach.
+  expect(page.panel.hasAttribute("inert")).toBe(true);
   expect(dialog.hasAttribute("inert")).toBe(false);
 });

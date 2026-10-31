@@ -224,15 +224,10 @@ export function widgetLoader(portalTemplate: string): string {
     }
     if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
     if (element.getClientRects && element.getClientRects().length === 0) return false;
-    return !(window.getComputedStyle && window.getComputedStyle(element).visibility === "hidden");
-  }
-  // Whether an element is, or holds, a native dialog open over everything (showModal()).
-  function holdsModalDialog(element) {
-    try {
-      return element.matches("dialog:modal") || !!element.querySelector("dialog:modal");
-    } catch (error) {
-      return false;
-    }
+    if (!window.getComputedStyle) return true;
+    if (window.getComputedStyle(element).visibility === "hidden") return false;
+    for (var e = element; e; e = e.parentElement) if (window.getComputedStyle(e).opacity === "0") return false;
+    return true;
   }
   function modalOpen() {
     // Only one showing: pages keep closed ones in their markup, marked all the same.
@@ -247,13 +242,18 @@ export function widgetLoader(portalTemplate: string): string {
     }
   }
   // Whether the page is covered now: decided as the panel opens (left as it is while a modal of the page's
-  // shows, covered once that closes), then kept till it closes. A modal the page opens later is under the panel.
+  // shows, covered once that closes), then kept till it closes. A modal the page opens later closes the panel:
+  // its own trap (a native one's top layer too) would leave neither in reach.
   var covering = false;
   // Left uncovered for a modal of the page's: checked again a few times a second till it's gone (many close by
   // a class or style, which nothing else hears).
   var waitingOnModal = false;
   function coverPage() {
     var cover = opened && small && small.matches;
+    if (cover && covering && modalOpen()) {
+      close(true);
+      return;
+    }
     if (cover && !covering && modalOpen()) {
       if (!waitingOnModal) {
         waitingOnModal = true;
@@ -269,17 +269,9 @@ export function widgetLoader(portalTemplate: string): string {
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
-        if (child !== panel && child !== backdrop && !child.hasAttribute("inert") && !holdsModalDialog(child)) {
+        if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
           child.setAttribute("inert", "");
           covered.push(child);
-        }
-      }
-      // A native dialog of the page's opened over everything since (showModal()) makes the panel inert itself:
-      // left usable, or neither could be closed.
-      for (var h = covered.length - 1; h >= 0; h--) {
-        if (holdsModalDialog(covered[h])) {
-          covered[h].removeAttribute("inert");
-          covered.splice(h, 1);
         }
       }
     } else {
@@ -507,7 +499,8 @@ export function widgetLoader(portalTemplate: string): string {
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: ${JSON.stringify(WIDGET_SHOWN_MESSAGE)}, shown: shown }, origin);
   }
 
-  function close() {
+  // \`leaveFocus\`: closed for a modal of the page's, which has focus where it wants it.
+  function close(leaveFocus) {
     if (!opened) return;
     opened = false;
     animate(false);
@@ -516,7 +509,7 @@ export function widgetLoader(portalTemplate: string): string {
     // Back in reach before focus goes back to it.
     coverPage();
     button.setAttribute("aria-expanded", "false");
-    (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
+    if (!leaveFocus) (returnFocus && returnFocus.focus && document.contains(returnFocus) ? returnFocus : button).focus();
   }
 
   button.addEventListener("click", function () {
@@ -599,7 +592,7 @@ export function widgetLoader(portalTemplate: string): string {
     open: function (options) {
       open(options, document.activeElement);
     },
-    close: close,
+    close: function () { close(); },
     unseen: function () {
       return unseen;
     },
