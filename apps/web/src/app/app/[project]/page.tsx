@@ -50,7 +50,7 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {(
           [
-            ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?sort=newest`],
+            ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?status=all&sort=new`],
             ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
             ["Updates waiting", overview.numbers.updatesWaiting, `/app/${slug}/autopilot`],
             ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/docs/insights`],
