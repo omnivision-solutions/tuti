@@ -92,9 +92,19 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   // The merged duplicate no longer waits for triage.
   await expect(feedbackItem).toContainText("1 to triage");
 
-  // …then answers and plans it.
+  // …then answers and plans it, emailing the answer to its voters: Ada, once she's verified her address (Bo hasn't).
+  await ada.goto(linkIn(await latestEmailTo(ada.email), "http"));
+  await team.reload();
   await team.getByRole("textbox", { name: "Comment" }).fill("Thanks! We're on it.");
-  await team.getByRole("button", { name: "Comment" }).click();
+  // Switched on once the page is ready for it (before then, a click isn't heard).
+  await expect(async () => {
+    await team.getByRole("switch", { name: "Email voters (1 person)" }).check();
+    await expect(team.getByRole("button", { name: "Comment and email" })).toBeVisible({ timeout: 1000 });
+  }).toPass();
+  await checkpoint(team, "team-reply-email-voters");
+  await team.getByRole("button", { name: "Comment and email" }).click();
+  const reply = await latestEmailTo(ada.email, { subject: /^Re: Dark mode$/ });
+  expect(reply.text).toContain("Thanks! We're on it.");
   // And a note only the team sees.
   await expect(team.getByText("Thanks! We're on it.")).toBeVisible();
   // Switched on once the page is ready for it (before then, a click isn't heard).
