@@ -524,4 +524,37 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   // Closed, the list is back where it was: at the row just triaged.
   await pane.getByRole("link", { name: "Close" }).click();
   await expect(team.getByRole("link", { name: last, exact: true })).toBeInViewport();
+
+  // The list's place, exactly, whichever way the pane opened. (Each from a fresh page: nothing kept before.)
+  const scrollY = () => team.evaluate(() => Math.round(window.scrollY));
+  const scrolledTo = async (y: number) => {
+    await team.evaluate((to) => window.scrollTo(0, to), y);
+    await expect.poll(scrollY).toBe(y);
+  };
+  // J from part way down the list (it opens the first post), then Esc.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await scrolledTo(400);
+  await team.keyboard.press("j");
+  await expect(pane).toBeVisible();
+  await team.keyboard.press("Escape");
+  await expect(pane).toHaveCount(0);
+  await expect.poll(scrollY).toBe(400);
+  // J from the very top: back at the top.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await scrolledTo(0);
+  await team.keyboard.press("j");
+  await expect.poll(scrollY).toBeGreaterThan(0);
+  await team.keyboard.press("Escape");
+  await expect.poll(scrollY).toBe(0);
+  // Opened, Back, the list scrolled elsewhere, Forward (the pane again), closed: at that new place.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("link", { name: last, exact: true }).click();
+  await expect(pane).toBeVisible();
+  await team.goBack();
+  await expect(pane).toHaveCount(0);
+  await scrolledTo(300);
+  await team.goForward();
+  await expect(pane).toBeVisible();
+  await pane.getByRole("link", { name: "Close" }).click();
+  await expect.poll(scrollY).toBe(300);
 });
