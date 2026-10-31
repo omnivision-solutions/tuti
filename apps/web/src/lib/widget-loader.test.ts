@@ -1192,6 +1192,31 @@ test("on a phone, help opened over a modal of the page's is a card, the modal in
   }
 });
 
+test("on a phone, a modal the page opens fading in (not showing yet) once the panel covers it is left usable, and closes the panel once it shows", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    const app = page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    expect(app.hasAttribute("inert")).toBe(true);
+    // Added at opacity 0: not showing yet with opacity counted.
+    const popup = page.body.appendChild(new FakeElement("div", page)) as FakeElement & { checkVisibility?: (options?: { opacityProperty?: boolean }) => boolean };
+    popup.setAttribute("aria-modal", "true");
+    let faded = true;
+    popup.checkVisibility = (options) => !(faded && options?.opacityProperty);
+    page.mutated();
+    expect(popup.hasAttribute("inert")).toBe(false);
+    // Faded in (a class changes, which the observer doesn't hear): the next check closes the panel.
+    faded = false;
+    vi.advanceTimersByTime(300);
+    expect(page.panel.hasAttribute("inert")).toBe(true);
+    expect(app.hasAttribute("inert")).toBe(false);
+    expect(popup.hasAttribute("inert")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));

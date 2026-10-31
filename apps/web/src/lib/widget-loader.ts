@@ -260,6 +260,17 @@ export function widgetLoader(portalTemplate: string): string {
     for (var r = 0; r < released.length; r++) released[r].removeAttribute("inert");
     released = [];
   }
+  function checkAgain() {
+    if (waitingOnModal) return;
+    waitingOnModal = true;
+    setTimeout(function () {
+      waitingOnModal = false;
+      coverPage();
+    }, 250);
+  }
+  function holdsModal(element) {
+    return element.getAttribute("aria-modal") === "true" || !!(element.querySelector && element.querySelector('[aria-modal="true"]'));
+  }
   function coverPage() {
     var cover = opened && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
@@ -277,17 +288,12 @@ export function widgetLoader(portalTemplate: string): string {
       return;
     }
     if (cover && !covering && modalOpen()) {
-      if (!waitingOnModal) {
-        waitingOnModal = true;
-        setTimeout(function () {
-          waitingOnModal = false;
-          coverPage();
-        }, 250);
-      }
+      checkAgain();
       return;
     }
     if (cover) {
-      if (!covering) {
+      var starting = !covering;
+      if (starting) {
         covering = true;
         // In reach: a modal's library that made it inert (as it was, closed before) may have put that back.
         panel.removeAttribute("inert");
@@ -303,6 +309,12 @@ export function widgetLoader(portalTemplate: string): string {
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
         if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
+          // Added since, holding a modal of the page's not showing yet (fading in, say): left as it is, checked
+          // again till it shows (closing the panel) or goes.
+          if (!starting && holdsModal(child)) {
+            checkAgain();
+            continue;
+          }
           child.setAttribute("inert", "");
           covered.push(child);
         }
