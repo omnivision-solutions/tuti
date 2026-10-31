@@ -892,11 +892,16 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const article = await api("/articles", { title: "Exporting your data", body: "Download a CSV of every post from the board's menu." });
   await api(`/articles/${article.slug}/publish`, {});
 
-  // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside the widget open on a stand-in for the site.
+  // Customize → Widget: a name, a colour, the left corner, an icon and a quick link (https only), beside a stand-in for the
+  // site with the launcher closed, as readers first see it; clicking it opens the widget above it.
   await owner.goto(`/app/${slug}/customize/widget`);
+  const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("button", { name: `Launcher: ${name}` });
+  await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "false");
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
+  await checkpoint(owner, "widget-preview-closed");
+  await previewLauncher("Feedback").click();
+  await expect(previewLauncher("Feedback")).toHaveAttribute("aria-expanded", "true");
   await expect(owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("link", { name: "Feedback", exact: true })).toBeVisible();
-  const previewLauncher = (name: string) => owner.getByRole("figure", { name: "Widget preview" }).getByRole("img", { name: `Launcher: ${name}` });
-  await expect(previewLauncher("Feedback")).toBeVisible();
   await owner.getByLabel("Button name").fill("Help & ideas");
   await owner.getByLabel("Colour", { exact: true }).fill("#5b21b6");
   await owner.getByLabel("Bottom left").check();
@@ -918,6 +923,31 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   // Saved, the launcher in the preview is the new one.
   await expect(previewLauncher("Help & ideas").locator("path")).toHaveCount(3);
   await checkpoint(owner, "widget-settings");
+  // The launcher names the panel it opens.
+  const panelId = await owner.locator('iframe[title="Widget panel preview"]').getAttribute("id");
+  await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-controls", panelId!);
+  // Clicked again, it closes (the panel goes, so nothing runs in it unseen).
+  await previewLauncher("Help & ideas").click();
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0);
+  // The panel's own Close closes it too.
+  await previewLauncher("Help & ideas").click();
+  // Retried with its check: a click before the panel's page is ready does nothing.
+  await expect(async () => {
+    await owner.frameLocator('iframe[title="Widget panel preview"]').getByRole("button", { name: "Close" }).click({ timeout: 2_000 });
+    await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0, { timeout: 1_000 });
+  }).toPass();
+  await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
+  await expect(previewLauncher("Help & ideas")).toBeFocused();
+  // Opened from the keyboard, focus goes into the panel.
+  await owner.keyboard.press("Enter");
+  await expect(owner.locator('iframe[title="Widget panel preview"]')).toBeFocused();
+  // And Escape there closes it, back on the launcher.
+  await expect(async () => {
+    await owner.keyboard.press("Escape");
+    await expect(owner.locator('iframe[title="Widget panel preview"]')).toHaveCount(0, { timeout: 1_000 });
+  }).toPass();
+  await expect(previewLauncher("Help & ideas")).toHaveAttribute("aria-expanded", "false");
+  await expect(previewLauncher("Help & ideas")).toBeFocused();
   await owner.reload();
   await expect(owner.getByLabel("Button name")).toHaveValue("Help & ideas");
   await expect(owner.getByRole("radio", { name: "Megaphone" })).toBeChecked();
