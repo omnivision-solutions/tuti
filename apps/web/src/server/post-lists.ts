@@ -165,11 +165,11 @@ export function postVoters(projectId: string, property: string | null, postId: s
 /** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */
 export async function howShipped(postId: string) {
   const [change, entries] = await Promise.all([
+    // Only while it's completed: reopened by hand, it didn't ship after all (Undo marks the update undone).
     prisma.codeChangeAction.findFirst({
-      // Only while it's completed: reopened by hand, it didn't ship after all (Undo marks the update undone).
       where: { postId, kind: "RESOLVES", status: "APPLIED", post: { status: "COMPLETED" } },
       orderBy: { decidedAt: "desc" },
-      select: { codeChange: { select: { id: true, repo: true, number: true } } },
+      select: { decidedAt: true, codeChange: { select: { id: true, repo: true, number: true } } },
     }),
     prisma.changelogEntryPost.findMany({
       where: { postId },
@@ -178,7 +178,10 @@ export async function howShipped(postId: string) {
       select: { entry: { select: { number: true, title: true, publishedAt: true } } },
     }),
   ]);
-  return { change: change?.codeChange ?? null, entries: entries.map(({ entry }) => entry) };
+  // Reopened since (and completed again some other way): this completion isn't that change's.
+  const reopened =
+    change?.decidedAt && (await prisma.postEvent.count({ where: { postId, from: "COMPLETED", createdAt: { gt: change.decidedAt } } })) > 0;
+  return { change: change && !reopened ? change.codeChange : null, entries: entries.map(({ entry }) => entry) };
 }
 
 /** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */

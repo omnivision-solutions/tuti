@@ -232,14 +232,12 @@ test("what shipped a post: the Autopilot change that completed it, and the chang
       { codeChangeId: completed.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() },
     ],
   });
+  // Completed by it.
+  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
   // Written in order (February, March, April), published in another (March, then February); April's a draft.
   const day = (n: number) => new Date(Date.UTC(2026, 9, n));
   for (const [number, title, publishedAt] of [[1, "February", day(20)], [2, "March", day(10)], [3, "April", null]] as const) {
-    // Reopened by hand: it didn't ship after all.
-  await prisma.post.update({ where: { id: post.id }, data: { status: "IN_PROGRESS" } });
-  expect((await howShipped(post.id)).change).toBeNull();
-  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
-  await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
   }
   expect(await howShipped(post.id)).toEqual({
     change: { id: completed.id, repo: "acme/app", number: 9 },
@@ -249,6 +247,13 @@ test("what shipped a post: the Autopilot change that completed it, and the chang
       { number: 2, title: "March", publishedAt: day(10) },
     ],
   });
+  // Reopened by hand: it didn't ship after all. Completed again by hand: not that change's either.
+  await prisma.postEvent.create({ data: { postId: post.id, from: "COMPLETED", to: "IN_PROGRESS", createdAt: new Date(Date.now() + 1000) } });
+  await prisma.post.update({ where: { id: post.id }, data: { status: "IN_PROGRESS" } });
+  expect((await howShipped(post.id)).change).toBeNull();
+  await prisma.postEvent.create({ data: { postId: post.id, from: "IN_PROGRESS", to: "COMPLETED", createdAt: new Date(Date.now() + 2000) } });
+  await prisma.post.update({ where: { id: post.id }, data: { status: "COMPLETED" } });
+  expect((await howShipped(post.id)).change).toBeNull();
 });
 
 test("a post's sidebar shows them: each voter, how many more, what shipped it and its entries, linked", async () => {
