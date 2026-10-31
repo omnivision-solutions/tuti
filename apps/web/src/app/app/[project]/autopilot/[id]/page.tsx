@@ -60,7 +60,8 @@ export default async function CodeChangePage(props: PageProps<"/app/[project]/au
   // Feedback first, then the docs (edits, then new articles), then the changelog line.
   const ORDER = ["resolves", "moves_forward", "links", "article_edit", "new_article", "changelog_line"];
   const updates = [...change.actions].sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
-  const docs = updates.filter((action) => (action.kind === "article_edit" || action.kind === "new_article") && action.status === "pending");
+  // Previewed while waiting, or going out by itself (seen during the hold).
+  const docs = updates.filter((action) => (action.kind === "article_edit" || action.kind === "new_article") && (action.status === "pending" || action.status === "scheduled"));
   const previews = Object.fromEntries(await docsPreviews(docs.map((action) => action.id)));
   // `?select=likely` (the email's Review) or `?select=<ids>` (its buttons, opened by someone else) ticks those; else the likely ones.
   const select = typeof searchParams.select === "string" ? searchParams.select : null;

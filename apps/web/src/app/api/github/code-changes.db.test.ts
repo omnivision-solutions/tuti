@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 
 import { actAs, createProject, signUp, type TestUser } from "@/test/helpers";
 import { setCodeChangeAnalysis } from "@/server/github";
-import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges } from "@/server/operations/code-changes";
+import { analyseCodeChange, codeChangeDetail, codeChangeList, resumeCodeChanges, stopCodeChangeAction } from "@/server/operations/code-changes";
 import { call } from "@/server/operations/run";
 
 import { POST as webhook } from "./webhook/route";
@@ -43,6 +43,11 @@ beforeEach(async () => {
   model.requests.splice(0);
   owner = await signUp("Olive Owner");
   project = await createProject(owner);
+  // What analysing proposes, as the team sees it: nothing goes out by itself here (autopilot-hold.db.test.ts has that).
+  await prisma.project.update({
+    where: { id: project.id },
+    data: { autoApplyLinks: false, autopilotDrafts: false, autopilotArticleEdits: false, autopilotProgress: false, autopilotComplete: false },
+  });
   actAs(owner);
   installationId++;
   repo = `acme/app-${installationId}`;
@@ -626,6 +631,36 @@ describe("deciding", () => {
 
     const change = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 17 }, select: { id: true } });
     expect((await codeChangeDetail(project.id, change.id))!.actions.find((action) => action.post?.title === "Custom colour themes")).toMatchObject({ status: "applied", decidedBy: "Autopilot", auto: true });
+
+    // With drafts going out by themselves (Autopilot's default), the changelog line is scheduled as the analysis is saved.
+    // The ready event counts what waits for the team, not what goes out by itself.
+    vi.stubEnv("WEBHOOK_ALLOW_PRIVATE_URLS", "true");
+    const receiver = await startWebhookReceiver();
+    await prisma.webhook.create({ data: { projectId: project.id, url: receiver.url, secret: "whsec_test", events: ["code_change.ready"], createdById: owner.id } });
+    await prisma.project.update({ where: { id: project.id }, data: { autopilotDrafts: true } });
+    script(19);
+    await merge(19);
+    const line = () => prisma.codeChangeAction.findMany({ where: { codeChange: { projectId: project.id, number: 19 }, kind: "CHANGELOG_LINE" }, select: { id: true, status: true } });
+    expect((await line()).map((action) => action.status)).toEqual(["SCHEDULED"]);
+    // Dark mode's request and the settings link wait; the themes link went, the line goes by itself.
+    expect((JSON.parse(receiver.received[0]!.body) as { data: { codeChange: { waiting: number } } }).data.codeChange.waiting).toBe(2);
+    await receiver.close();
+
+    // Stopped, then analysed again: it stays stopped, waiting for the team (not proposed and scheduled again).
+    const [scheduled] = await line();
+    await call(stopCodeChangeAction, { actor: { kind: "user", userId: owner.id }, projectId: project.id }, { id: scheduled!.id });
+    const change19 = await prisma.codeChange.findFirstOrThrow({ where: { projectId: project.id, number: 19 }, select: { id: true } });
+    script(19);
+    await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
+    expect(await line()).toEqual([{ id: scheduled!.id, status: "PENDING" }]);
+
+    // Gone out of date (an approval found it changed): analysed again, it's written again, stopped or not.
+    await prisma.codeChangeAction.update({ where: { id: scheduled!.id }, data: { status: "STALE" } });
+    script(19);
+    await enqueue("codeChange", { codeChangeId: change19.id, force: true, pastGate: false, resume: false });
+    const lines = await line();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.id).not.toBe(scheduled!.id);
   });
 
   test("if the AI provider doesn't answer, the code change says so (and is retried); the merge is in the draft, whatever its labels", async () => {

@@ -277,7 +277,7 @@ export function CodeChangeSwitch({
               that hold secrets (like .env and keys) are left out, and secret-looking strings are masked.
             </>
           ) : (
-            "When Autopilot is very sure a pull request relates to a post, it links them without asking. A link changes nothing for users. Closing requests, progress updates and docs always wait for your team."
+            "At once, when Autopilot is very sure a pull request relates to a post. A link changes nothing for users."
           )}
         </p>
       </div>

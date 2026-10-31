@@ -1,7 +1,7 @@
 import type { Operation } from "./define";
 import { getBranding, updateBranding } from "./branding";
 import { checkLicense } from "./license";
-import { analyseCodeChange, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, undoCodeChangeAction, getCodeChange, listCodeChanges, resumeCodeChanges } from "./code-changes";
+import { analyseCodeChange, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, stopCodeChangeAction, undoCodeChangeAction, getCodeChange, listCodeChanges, resumeCodeChanges } from "./code-changes";
 import { createComment, createPost } from "./create";
 import {
   createConversation,
@@ -157,6 +157,8 @@ const all = [
   applyCodeChangeAction,
   applyCodeChangeActions,
   undoCodeChangeAction,
+  publishCodeChangeActionNow,
+  stopCodeChangeAction,
   dismissCodeChangeAction,
   setVote,
   listDuplicates,

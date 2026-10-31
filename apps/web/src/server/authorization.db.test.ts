@@ -337,6 +337,8 @@ const matrix: Matrix = {
     dismissCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.dismissCodeChange(slug, f.dismissActionId, "Not this one") },
     approveCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.approveCodeChanges(slug, [{ id: f.linkActionId }]) },
     undoCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.undoCodeChange(slug, f.appliedActionId) },
+    publishCodeChangesNow: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.publishCodeChangesNow(slug, [f.scheduledActionId]) },
+    stopCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.stopCodeChanges(slug, [f.stoppableActionId]) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -360,6 +362,16 @@ const matrix: Matrix = {
     setGithubRepository: { allowed: "ADMIN", takesIds: true, call: (slug, f) => github.setGithubRepository(slug, f.githubRepoId, true) },
     setCodeChangeAnalysis: { allowed: "OWNER", call: (slug) => github.setCodeChangeAnalysis(slug, false) },
     setAutoApplyLinks: { allowed: "OWNER", call: (slug) => github.setAutoApplyLinks(slug, true) },
+    saveAutopilotSettings: {
+      allowed: "OWNER",
+      call: (slug) => {
+        const form = new FormData();
+        for (const [name, value] of Object.entries({ minSure: "90", maxReach: "30", maxViews: "400", holdHours: "12", drafts: "on", articleEdits: "on" })) {
+          form.set(name, value);
+        }
+        return github.saveAutopilotSettings(slug, {}, form);
+      },
+    },
   },
   invitations: {
     createInvitation: {
@@ -864,18 +876,23 @@ async function createFixture(own: "domain" | "site" = "domain") {
           { kind: "LINKS", postId: post!.id, probability: 0.9 },
           // Approved already, to undo (it put nothing back to put back).
           { kind: "RESOLVES", postId: post!.id, probability: 0.9, status: "APPLIED", payload: { undo: { linked: false } } },
+          // Going out by itself later: to publish now, and to stop.
+          { kind: "MOVES_FORWARD", postId: post!.id, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "Out now" } },
+          { kind: "ARTICLE_EDIT", probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000) },
           { kind: "MOVES_FORWARD", postId: duplicate!.id, probability: 0.5, payload: { comment: "Getting there" } },
         ],
       },
     },
-    select: { id: true, actions: { select: { id: true, kind: true } } },
+    select: { id: true, actions: { select: { id: true, kind: true, status: true } } },
   });
   return {
     slug: project.slug,
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
-    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
+    dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "PENDING")!.id,
     appliedActionId: codeChange.actions.find((action) => action.kind === "RESOLVES")!.id,
+    scheduledActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD" && action.status === "SCHEDULED")!.id,
+    stoppableActionId: codeChange.actions.find((action) => action.kind === "ARTICLE_EDIT")!.id,
     githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,

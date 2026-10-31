@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
-import { AnalyseCodeChangeButton } from "@/components/code-changes";
+import { AnalyseCodeChangeButton, ScheduledButtons } from "@/components/code-changes";
 import { DiffLines } from "@/components/line-diff";
 import {
   AlertDialog,
@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { emailLine } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
 import { cn } from "@/lib/utils";
+import { GoesOut } from "@/components/goes-out";
 import { type Approval, applyCodeChange, approveCodeChanges, dismissCodeChange, undoCodeChange } from "@/server/code-changes";
 import type { CodeChangeDetail } from "@/server/operations/code-changes";
 
@@ -87,7 +88,8 @@ export function AutopilotReview({
   const [asked, setAsked] = useState({ count: 0, lines: [] as string[] });
   const waiting = updates.filter((update) => update.status === "pending");
   const stale = updates.filter((update) => update.status === "stale");
-  const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
+  const scheduled = updates.filter((update) => update.status === "scheduled");
+  const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
   // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
   const [namedIds] = useState(() => [...ticked]);
@@ -153,7 +155,7 @@ export function AutopilotReview({
             {emailLine(fromEmail, namedIds, updates)}
           </p>
         )}
-        {[...waiting, ...stale].map((update) => (
+        {[...scheduled, ...waiting, ...stale].map((update) => (
           <UpdateCard
             key={update.id}
             projectSlug={projectSlug}
@@ -183,7 +185,17 @@ export function AutopilotReview({
                       {titleOf(update)}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {update.status === "undone" ? "Undone" : update.auto ? "Linked by Autopilot" : update.status === "applied" ? "Approved" : "Dismissed"}
+                      {update.status === "undone"
+                        ? "Undone"
+                        : update.unsure
+                          ? "Autopilot couldn't tell whether it went out: check it"
+                          : update.auto
+                            ? update.kind === "links"
+                              ? "Linked by Autopilot"
+                              : "Applied by Autopilot"
+                            : update.status === "applied"
+                              ? "Approved"
+                              : "Dismissed"}
                       {(update.status === "undone" || !update.auto) && update.decidedBy && ` by ${update.decidedBy}`}
                       {update.dismissReason && `: ${update.dismissReason}`}
                       {update.status === "applied" && update.article && (
@@ -390,6 +402,8 @@ function UpdateCard({
   const kind = updateKind(update);
   const title = titleOf(update);
   const isStale = update.status === "stale";
+  // Going out by itself at its time: Publish now or Stop instead of a checkbox.
+  const isScheduled = update.status === "scheduled";
   const disabled = busy || working;
   const post = update.post;
 
@@ -438,7 +452,7 @@ function UpdateCard({
 
   return (
     <article aria-label={`${kind}: ${title}`} className="flex gap-3 rounded-xl border bg-card p-4">
-      {isStale ? (
+      {isStale || isScheduled ? (
         <span className="size-4 shrink-0" />
       ) : (
         <input
@@ -454,16 +468,25 @@ function UpdateCard({
           <span className="text-xs font-semibold tracking-wide text-primary uppercase">{kind}</span>
           {isStale ? (
             <Badge variant="highlight">Changed since</Badge>
+          ) : isScheduled ? (
+            <Badge variant="secondary">Goes out by itself</Badge>
           ) : (
             <Badge variant={update.confidence === "likely" ? "secondary" : "outline"}>{update.confidence === "likely" ? "Likely" : "Not sure"}</Badge>
           )}
           <span className="ml-auto flex items-center gap-1">
-            {!isStale && editable && (
-              <Button variant="ghost" size="sm" disabled={disabled} onClick={() => (update.kind === "article_edit" ? editArticle() : setEditing((was) => !was))}>
-                Edit
-              </Button>
+            {isScheduled ? (
+              // Asks first when it emails people (a request it completes), as Approve does.
+              <ScheduledButtons projectSlug={projectSlug} actionIds={[update.id]} emails={update.emails ?? 0} />
+            ) : (
+              <>
+                {!isStale && editable && (
+                  <Button variant="ghost" size="sm" disabled={disabled} onClick={() => (update.kind === "article_edit" ? editArticle() : setEditing((was) => !was))}>
+                    Edit
+                  </Button>
+                )}
+                <DismissButton disabled={disabled} onDismiss={dismiss} />
+              </>
             )}
-            <DismissButton disabled={disabled} onDismiss={dismiss} />
           </span>
         </div>
         {post ? (
@@ -480,6 +503,12 @@ function UpdateCard({
         <p className="text-sm text-muted-foreground">
           {facts.join(" · ")}
           {update.reason && <span className="block">{update.reason}</span>}
+          {isScheduled && update.dueAt && (
+            <span className="block font-medium text-foreground">
+              <GoesOut at={update.dueAt} />
+            </span>
+          )}
+          {update.status === "pending" && update.waitReason && <span className="block">Waits for you: {update.waitReason}.</span>}
         </p>
         {isStale && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

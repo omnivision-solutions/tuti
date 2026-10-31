@@ -2,7 +2,7 @@
 
 import type { FormState } from "./form-state";
 import { OperationError } from "./operations";
-import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, resumeCodeChanges as resumeOperation, undoCodeChangeAction } from "./operations/code-changes";
+import { analyseCodeChange as analyseOperation, applyCodeChangeAction, applyCodeChangeActions, dismissCodeChangeAction, publishCodeChangeActionNow, resumeCodeChanges as resumeOperation, stopCodeChangeAction, undoCodeChangeAction } from "./operations/code-changes";
 import { asTeam, call } from "./operations/run";
 
 /** The team's actions on code changes (any team role), through the codeChanges.* operations. */
@@ -47,6 +47,50 @@ export async function applyCodeChange(
 /** Undo on an approved update: puts back what it changed (codeChangeActions.undo). */
 export async function undoCodeChange(projectSlug: string, actionId: string): Promise<FormState> {
   return asTeam(projectSlug, "Only the project's team can use Autopilot", (context) => call(undoCodeChangeAction, context, { id: String(actionId) }));
+}
+
+/** Publish now: scheduled updates applied at once, by whoever asks (codeChangeActions.publishNow). */
+export async function publishCodeChangesNow(projectSlug: string, actionIds: string[]): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await call(publishCodeChangeActionNow, context, { id });
+        done++;
+      } catch (error) {
+        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+          throw error;
+        }
+      }
+    }
+    if (ids.length > 1 && done === 0) {
+      throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
+    }
+  });
+}
+
+/** Stop: scheduled updates wait for the team instead (codeChangeActions.stop). */
+export async function stopCodeChanges(projectSlug: string, actionIds: string[]): Promise<FormState> {
+  return asTeam(projectSlug, "Only the project's team can use Autopilot", async (context) => {
+    // Several at once (Home's buttons): one that went out (or was stopped) meanwhile is skipped, not the end of it.
+    const ids = (Array.isArray(actionIds) ? actionIds : []).map(String);
+    let done = 0;
+    for (const id of ids) {
+      try {
+        await call(stopCodeChangeAction, context, { id });
+        done++;
+      } catch (error) {
+        if (!(error instanceof OperationError && error.code === "not_scheduled" && ids.length > 1)) {
+          throw error;
+        }
+      }
+    }
+    if (ids.length > 1 && done === 0) {
+      throw new OperationError(409, "not_scheduled", "None of them is scheduled any more: they went out, or someone stopped them");
+    }
+  });
 }
 
 export async function dismissCodeChange(projectSlug: string, actionId: string, reason?: string): Promise<FormState> {

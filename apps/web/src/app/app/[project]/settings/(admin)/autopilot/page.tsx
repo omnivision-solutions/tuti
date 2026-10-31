@@ -3,6 +3,7 @@ import { aiProvider, codeChangesEnabled, planIncludes } from "@tuti/shared";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AutopilotSettingsForm } from "@/components/autopilot-settings";
 import { CodeChangeSwitch } from "@/components/github-connection";
 import { PlanNotice } from "@/components/plan-notice";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +22,22 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
   }
   const owner = membership.role === "OWNER";
   const [project, github, record] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: membership.project.id }, select: { analyseCodeChanges: true, autoApplyLinks: true, plan: true } }),
+    prisma.project.findUniqueOrThrow({
+      where: { id: membership.project.id },
+      select: {
+        analyseCodeChanges: true,
+        autoApplyLinks: true,
+        plan: true,
+        autopilotDrafts: true,
+        autopilotArticleEdits: true,
+        autopilotProgress: true,
+        autopilotComplete: true,
+        autopilotMinSure: true,
+        autopilotMaxReach: true,
+        autopilotMaxViews: true,
+        autopilotHoldHours: true,
+      },
+    }),
     prisma.githubInstallation.findUnique({ where: { projectId: membership.project.id }, select: { projectId: true } }),
     autopilotRecord(membership.project.id),
   ]);
@@ -60,8 +76,22 @@ export default async function AutopilotSettingsPage(props: PageProps<"/app/[proj
           <CardHeader>
             <CardTitle>What it does by itself</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-6">
             <CodeChangeSwitch projectSlug={slug} setting="autoLinks" on={project.autoApplyLinks} provider={aiProvider()} owner={owner} />
+            <AutopilotSettingsForm
+              projectSlug={slug}
+              owner={owner}
+              settings={{
+                drafts: project.autopilotDrafts,
+                articleEdits: project.autopilotArticleEdits,
+                progress: project.autopilotProgress,
+                complete: project.autopilotComplete,
+                minSure: project.autopilotMinSure,
+                maxReach: project.autopilotMaxReach,
+                maxViews: project.autopilotMaxViews,
+                holdHours: project.autopilotHoldHours,
+              }}
+            />
           </CardContent>
         </Card>
       )}

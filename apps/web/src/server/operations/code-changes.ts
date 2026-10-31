@@ -1,8 +1,10 @@
 import { fromPlainText, toPlainText } from "@tuti/content";
 import { type CodeChangeActionKind, type CodeChangeActionStatus, type CodeChangeState, type PostStatus, Prisma, prisma } from "@tuti/db";
-import { changelogLineOf, confidence, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine } from "@tuti/jobs";
+import { autopilotSettingsSelect, changelogLineOf, confidence, emitEvent, enqueue, lockProject, setChangelogLine, THRESHOLDS, undoChangelogLine, waitsBecause } from "@tuti/jobs";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
 import { z } from "zod";
+
+import { appUrl } from "@/lib/hosts";
 
 import { createComment } from "./create";
 import { aiOrRefuse } from "./credits";
@@ -27,7 +29,7 @@ const KINDS: Record<CodeChangeActionKind, string> = {
   NEW_ARTICLE: "new_article",
   CHANGELOG_LINE: "changelog_line",
 };
-const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale", UNDONE: "undone" };
+const ACTION_STATUSES: Record<CodeChangeActionStatus, string> = { PENDING: "pending", APPLIED: "applied", DISMISSED: "dismissed", STALE: "stale", UNDONE: "undone", SCHEDULED: "scheduled" };
 
 /**
  * An update the review page ticks as it opens: one Autopilot is sure of (above its kind's likely
@@ -121,7 +123,11 @@ const changeView = (change: ChangeRow) => ({
   waiting: change._count.actions,
 });
 
-export type CodeChangeView = ReturnType<typeof changeView>;
+export type CodeChangeView = ReturnType<typeof changeView> & {
+  /** Updates going out by itself (their ids, for Publish now and Stop), and when the first goes (Home's "Goes out …"). */
+  scheduled: string[];
+  nextDueAt: string | null;
+};
 
 /**
  * The project's code changes: those with proposals waiting first, then newest first (`waiting`: only
@@ -132,14 +138,27 @@ export async function codeChangeList(projectId: string, { waiting = false, pause
   const changes = await prisma.codeChange.findMany({
     where: {
       projectId,
-      ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE"] } } } }),
+      // Waiting for the team, or going out by itself (Home shows both).
+      ...(waiting && { actions: { some: { status: { in: ["PENDING", "STALE", "SCHEDULED"] } } } }),
       ...(paused && { state: "PAUSED" as const }),
     },
     orderBy: { mergedAt: "desc" },
     take: 100,
     select: changeSelect,
   });
-  return changes.map(changeView).sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
+  const scheduled = await prisma.codeChangeAction.findMany({
+    where: { codeChangeId: { in: changes.map((change) => change.id) }, status: "SCHEDULED" },
+    orderBy: { dueAt: "asc" },
+    select: { id: true, codeChangeId: true, dueAt: true },
+  });
+  const of = (id: string) => scheduled.filter((action) => action.codeChangeId === id);
+  return changes
+    .map((change) => ({
+      ...changeView(change),
+      scheduled: of(change.id).map((action) => action.id),
+      nextDueAt: of(change.id)[0]?.dueAt?.toISOString() ?? null,
+    }))
+    .sort((a, b) => Number(b.waiting > 0) - Number(a.waiting > 0));
 }
 
 /** One code change with its proposed actions (most likely first; ties keep one order: by kind, then id), or null if the project has no such code change. */
@@ -160,6 +179,8 @@ export async function codeChangeDetail(projectId: string, id: string) {
           payload: true,
           decidedAt: true,
           dismissReason: true,
+          dueAt: true,
+          waitReason: true,
           decidedBy: { select: { name: true } },
           post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
           article: { select: articleSelect },
@@ -172,7 +193,11 @@ export async function codeChangeDetail(projectId: string, id: string) {
   }
   // Approving completes (and emails about) only a post not completed yet, nor merged into another.
   const completing = change.actions
-    .filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId)
+    // Waiting for the team, or going out by itself: both email when they go.
+    .filter(
+      (action) =>
+        action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId,
+    )
     .map((action) => action.post!.id);
   // For Undo to say first: those already emailed that it shipped, since it was approved (they can't be unemailed).
   const sent = new Map(
@@ -206,7 +231,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
         /** For a request it closed: how many it emailed that it shipped (Undo can't take those back). */
         ...(sent.has(action.id) && { emailed: sent.get(action.id)! }),
         /** For a request it closes: how many people completing it emails. */
-        ...(action.kind === "RESOLVES" && action.status === "PENDING" && action.post && { emails: emails.get(action.post.id) ?? 0 }),
+        ...(action.kind === "RESOLVES" && (action.status === "PENDING" || action.status === "SCHEDULED") && action.post && { emails: emails.get(action.post.id) ?? 0 }),
         reason: action.reason,
         /** The team's comment, for a post it moves forward (as proposed, or as posted once applied). */
         ...(action.kind === "MOVES_FORWARD" && { comment: payload.comment ?? "" }),
@@ -222,13 +247,19 @@ export async function codeChangeDetail(projectId: string, id: string) {
         decidedBy: action.decidedBy?.name ?? ((payload as { auto?: boolean }).auto ? "Autopilot" : null),
         /** Applied by Autopilot itself, nobody approving it. */
         auto: Boolean((payload as { auto?: boolean }).auto),
+        /** Autopilot went to apply it by itself and couldn't tell whether it went out: someone should check. */
+        unsure: Boolean((payload as { unsure?: boolean }).unsure),
         /** Approved, with what it changed recorded: Undo can put it back. */
         // An edit kept unpublished is finished (or discarded) in the editor: no Undo for it.
-        canUndo: action.status === "APPLIED" && undoOf(action.payload) !== null && undoOf(action.payload)?.published !== false,
+        canUndo: action.status === "APPLIED" && undoOf(action.payload, action.kind) !== null && undoOf(action.payload, action.kind)?.published !== false,
         /** Undo puts the post's status back (applying moved it): a closed request's shipped emails still due won't go. */
-        putsBackStatus: Boolean(undoOf(action.payload)?.status),
+        putsBackStatus: Boolean(undoOf(action.payload, action.kind)?.status),
         decidedAt: action.decidedAt?.toISOString() ?? null,
         dismissReason: action.dismissReason,
+        /** A scheduled update: when it goes out by itself (Publish now, Stop). */
+        dueAt: action.dueAt?.toISOString() ?? null,
+        /** Why it waits for the team after all (it stopped qualifying, or someone stopped it). */
+        waitReason: action.waitReason,
       };
     }),
   };
@@ -436,6 +467,8 @@ export const applyCodeChangeAction = defineOperation({
         kind: true,
         status: true,
         payload: true,
+        // Who stopped it, if someone did: a failed apply puts that back (it's what keeps it off the schedule).
+        decidedById: true,
         codeChange: { select: { id: true, repo: true, number: true, url: true, title: true } },
         post: { select: { id: true, number: true, status: true } },
         article: { select: { ...articleSelect, id: true, deletedAt: true } },
@@ -482,7 +515,7 @@ export const applyCodeChangeAction = defineOperation({
         if (undo.added === "entry") {
           await undoChangelogLine(projectId, action.codeChange.url, { applied: null, previous: "", added: "entry" }).catch((cause: unknown) => unknown(error, cause));
         }
-        return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
+        return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
       }
     }
     if (!action.post) {
@@ -572,7 +605,7 @@ export const applyCodeChangeAction = defineOperation({
       }
       // Not done: what this try did is put back, and it's waiting again, for another try.
       await putBackPost(context, action.kind, post, codeChange.url, undo).catch((cause: unknown) => unknown(error, cause));
-      return revert(action.id, { status: "PENDING", decidedById: null, decidedAt: null, payload: action.payload ?? {} }, error);
+      return revert(action.id, { status: "PENDING", decidedById: action.decidedById, decidedAt: null, payload: action.payload ?? {} }, error);
     }
     await recordUndo(action.id, action.kind === "MOVES_FORWARD" ? { comment, edited: comment !== proposed } : asObject(action.payload), undo);
     return { id: action.id, kind: KINDS[action.kind], status: "applied", post: post.number };
@@ -691,6 +724,7 @@ async function applyDocs(
     kind: CodeChangeActionKind;
     status: CodeChangeActionStatus;
     payload: Prisma.JsonValue;
+    decidedById: string | null;
     article: (Prisma.ArticleGetPayload<{ select: typeof articleSelect }> & { id: string; deletedAt: Date | null }) | null;
   },
   publish: boolean,
@@ -770,7 +804,7 @@ async function applyDocs(
     const changed = error instanceof OperationError && error.code === "changed";
     return revert(
       action.id,
-      { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null },
+      { status: changed ? "STALE" : "PENDING", decidedById: action.decidedById, decidedAt: null },
       changed ? new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.") : error,
     );
   }
@@ -795,9 +829,10 @@ type Undo = {
 };
 
 /** What Undo has to go on: what applying recorded, or for a link Autopilot made by itself, that link. None: approved before Undo was. */
-const undoOf = (payload: Prisma.JsonValue): Undo | null => {
+const undoOf = (payload: Prisma.JsonValue, kind: CodeChangeActionKind): Undo | null => {
   const { undo, auto } = (payload ?? {}) as { undo?: Undo; auto?: boolean };
-  return undo ?? (auto ? { linked: true } : null);
+  // A link Autopilot made by itself (linkByItself records no undo): just that link. Anything else without a record has none.
+  return undo ?? (auto && kind === "LINKS" ? { linked: true } : null);
 };
 
 export const undoCodeChangeAction = defineOperation({
@@ -831,7 +866,7 @@ export const undoCodeChangeAction = defineOperation({
     if (action.status !== "APPLIED") {
       throw new OperationError(409, "not_applied", "Only an approved update can be undone");
     }
-    const undo = undoOf(action.payload);
+    const undo = undoOf(action.payload, action.kind);
     if (!undo) {
       throw new OperationError(409, "not_undoable", "There's no record of what it changed: change it by hand");
     }
@@ -915,6 +950,164 @@ export const undoCodeChangeAction = defineOperation({
     return { id: action.id, status: "undone" };
   },
 });
+
+export const publishCodeChangeActionNow = defineOperation({
+  name: "codeChangeActions.publishNow",
+  summary: "Publish now: a scheduled action (going out by itself after the hold) is applied at once, as codeChangeActions.apply does, by whoever asks",
+  method: "POST",
+  path: "/code-change-actions/{id}/publish-now",
+  scope: "write",
+  access: "team",
+  input: z.object({ id }),
+  run: async (context, input) => {
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    if (!action) {
+      throw new OperationError(404, "not_found", "Action not found");
+    }
+    // Taken off the schedule first, so the runner can't apply it too; apply then claims it as anyone's approval does.
+    // Held as theirs meanwhile, so an analysis at that moment leaves it alone (it replaces only what nobody decided).
+    const by = actorUser(context.actor);
+    const { count } = await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: "SCHEDULED" }, data: { status: "PENDING", dueAt: null, decidedById: by } });
+    if (count === 0) {
+      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+    }
+    try {
+      return await call(applyCodeChangeAction, context, { id: action.id });
+    } catch (error) {
+      // Not applied (back to waiting, or out of date): nobody's again, not looking stopped.
+      await prisma.codeChangeAction.updateMany({ where: { id: action.id, status: { in: ["PENDING", "STALE"] }, decidedById: by }, data: { decidedById: null } });
+      throw error;
+    }
+  },
+});
+
+export const stopCodeChangeAction = defineOperation({
+  name: "codeChangeActions.stop",
+  summary: "Stop: a scheduled action doesn't go out by itself; it waits for the team instead (to approve, edit or dismiss)",
+  method: "POST",
+  path: "/code-change-actions/{id}/stop",
+  scope: "write",
+  access: "team",
+  input: z.object({ id }),
+  run: async (context, input) => {
+    const action = await prisma.codeChangeAction.findFirst({ where: { id: input.id, codeChange: { projectId: context.projectId } }, select: { id: true } });
+    if (!action) {
+      throw new OperationError(404, "not_found", "Action not found");
+    }
+    const who = await prisma.user.findUnique({ where: { id: actorUser(context.actor) }, select: { name: true } });
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: "SCHEDULED" },
+      // Who stopped it, too: analysed again, a stopped update stays as it is, waiting for the team.
+      data: { status: "PENDING", dueAt: null, waitReason: `Stopped by ${who?.name ?? "the team"}`, decidedById: actorUser(context.actor) },
+    });
+    if (count === 0) {
+      throw new OperationError(409, "not_scheduled", "It isn't scheduled any more: it went out, or someone stopped it");
+    }
+    return { id: action.id, status: "pending" };
+  },
+});
+
+/**
+ * Autopilot's runner: each scheduled update that's due is checked again (waitsBecause) and applied as
+ * Tuti (by the project's first owner, marked as Autopilot's own), or put back to waiting with why. Run
+ * every minute (the worker's autopilot-due, or a timer where jobs run inline). Returns how many of each.
+ */
+export async function runDueAutopilot(now = new Date()): Promise<{ applied: number; waiting: number }> {
+  const due = await prisma.codeChangeAction.findMany({
+    where: { status: "SCHEDULED", dueAt: { lte: now } },
+    orderBy: { dueAt: "asc" },
+    take: 100,
+    select: {
+      id: true,
+      codeChangeId: true,
+      kind: true,
+      probability: true,
+      payload: true,
+      postId: true,
+      articleId: true,
+      codeChange: { select: { projectId: true, project: { select: autopilotSettingsSelect } } },
+    },
+  });
+  let applied = 0;
+  let waiting = 0;
+  // Changes with an update that now waits for the team: told about, as an analysis is (code_change.ready).
+  const nowWaiting = new Set<string>();
+  // Only one still scheduled (a teammate may have stopped it meanwhile: their reason stays). After the
+  // runner's own claim (`claimed`), the one its failed apply put back: waiting, or out of date (an article
+  // changed since), as it is, now nobody's (an analysis may replace it again).
+  const wait = async (action: { id: string; codeChangeId: string }, waitReason: string, claimed = false) => {
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: claimed ? { in: ["PENDING", "STALE"] } : "SCHEDULED" },
+      data: claimed ? { dueAt: null, waitReason, decidedById: null } : { status: "PENDING", dueAt: null, waitReason },
+    });
+    waiting += count;
+    if (count > 0) {
+      nowWaiting.add(action.codeChangeId);
+    }
+  };
+  for (const action of due) {
+    const { projectId, project } = action.codeChange;
+    const reason = await waitsBecause(action, project);
+    if (reason) {
+      await wait(action, reason);
+      continue;
+    }
+    const owner = await prisma.teamMember.findFirst({ where: { projectId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { userId: true } });
+    if (!owner) {
+      await wait(action, "The project has no owner to apply it as");
+      continue;
+    }
+    // Taken off the schedule first, so two runners (or a Publish now) apply it once; held as the owner's while
+    // it's applied, so an analysis at the same moment leaves it alone (it replaces only what nobody decided).
+    const { count } = await prisma.codeChangeAction.updateMany({
+      where: { id: action.id, status: "SCHEDULED", dueAt: { lte: now } },
+      data: { status: "PENDING", dueAt: null, decidedById: owner.userId },
+    });
+    if (count === 0) {
+      continue;
+    }
+    try {
+      await call(applyCodeChangeAction, { actor: { kind: "user", userId: owner.userId }, projectId }, { id: action.id });
+    } catch (error) {
+      log.error("Autopilot couldn't apply a due update", { error, actionId: action.id });
+      const saved = (error as { saved?: boolean | "unknown" }).saved;
+      // Saved before the failure: it went. Not: it waits for the team, saying why.
+      if (!saved) {
+        await wait(action, error instanceof OperationError ? error.message : "Couldn't apply it", true);
+        continue;
+      }
+      // Can't tell whether it went: it stays applied (never twice), credited to nobody, and the page says to check it.
+      // ponytail: only its card and the error log say so (Home and the list count it as done); a "checked" step
+      // that keeps it on Home till someone clears it, if this ever shows up outside a database outage.
+      if (saved === "unknown") {
+        const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
+        await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), unsure: true } } });
+        continue;
+      }
+    }
+    // Autopilot's own: nobody approved it.
+    const after = await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id }, select: { payload: true } });
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { decidedById: null, payload: { ...((after.payload ?? {}) as Prisma.JsonObject), auto: true } } });
+    applied++;
+  }
+  for (const codeChangeId of nowWaiting) {
+    await announceWaiting(codeChangeId);
+  }
+  return { applied, waiting };
+}
+
+/** `code_change.ready` for a change whose update went back to waiting for the team (as saving its analysis says it), with how many wait now. */
+async function announceWaiting(codeChangeId: string) {
+  const change = await prisma.codeChange.findUniqueOrThrow({
+    where: { id: codeChangeId },
+    select: { id: true, projectId: true, repo: true, number: true, url: true, title: true, summary: true, project: { select: { slug: true } } },
+  });
+  const count = await prisma.codeChangeAction.count({ where: { codeChangeId, status: { in: ["PENDING", "STALE"] } } });
+  const { projectId, project, ...pullRequest } = change;
+  await emitEvent(projectId, "code_change.ready", {
+    codeChange: { ...pullRequest, waiting: count, page: `${appUrl().origin}/app/${project.slug}/autopilot/${change.id}` },
+  });
+}
 
 export const dismissCodeChangeAction = defineOperation({
   name: "codeChangeActions.dismiss",
