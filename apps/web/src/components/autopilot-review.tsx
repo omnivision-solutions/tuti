@@ -176,8 +176,8 @@ export function AutopilotReview({
                     {titleOf(update)}
                   </span>
                   <span className="text-xs text-muted-foreground">
-                    {update.status === "applied" ? "Approved" : "Dismissed"}
-                    {update.decidedBy && ` by ${update.decidedBy}`}
+                    {update.auto ? "Linked by Autopilot" : update.status === "applied" ? "Approved" : "Dismissed"}
+                    {!update.auto && update.decidedBy && ` by ${update.decidedBy}`}
                     {update.dismissReason && `: ${update.dismissReason}`}
                     {update.status === "applied" && update.article && (
                       <>
