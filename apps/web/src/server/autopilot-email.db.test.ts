@@ -840,3 +840,22 @@ test("chosen again from a time zone further west, the digest still comes that mo
   await sendAutopilotDigests(new Date("2026-11-04T16:30:00Z"));
   expect(to(owner)).toHaveLength(2);
 });
+
+test("a digest claimed late in a long sweep is claimed as of then: a sweep starting meanwhile doesn't take it again", async () => {
+  expect(await setAutopilotEmails("DIGEST", "Europe/Berlin")).toEqual({});
+  await change("Add a dark theme", { scheduled: false });
+  // The sweep reaches this reader 20 minutes after it started (lots of readers before, a slow mail server).
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-02T07:30:00Z") });
+  try {
+    const findMany = prisma.teamMember.findMany.bind(prisma.teamMember) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.teamMember, "findMany").mockImplementationOnce((async (...args: unknown[]) => {
+      vi.setSystemTime(new Date("2026-11-02T07:50:00Z"));
+      return findMany(...args);
+    }) as never);
+    expect(await sendAutopilotDigests(new Date("2026-11-02T07:30:00Z"))).toBeGreaterThanOrEqual(1);
+    const claim = await prisma.autopilotDigest.findFirstOrThrow({ where: { userId: owner.id } });
+    expect(claim.claimedAt!.getTime()).toBeGreaterThanOrEqual(new Date("2026-11-02T07:50:00Z").getTime());
+  } finally {
+    vi.useRealTimers();
+  }
+});

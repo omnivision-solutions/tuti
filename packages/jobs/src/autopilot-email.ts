@@ -457,8 +457,6 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
   // A week's claims are plenty to keep (a reader's day, wherever they are, is over by then).
   await prisma.autopilotDigest.deleteMany({ where: { day: { lt: new Date(now.getTime() - 7 * 86_400_000) } } });
   const readers = await prisma.user.findMany({ where: { autopilotEmails: "DIGEST", autopilotTimeZone: { not: null } }, select: { id: true, email: true, autopilotTimeZone: true } });
-  const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
-  const lapsed = new Date(claimedAt.getTime() - CLAIM_MINUTES * 60_000);
   let sent = 0;
   for (const reader of readers) {
     const local = localNow(now, reader.autopilotTimeZone!);
@@ -484,7 +482,10 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
         if (!project.analyseCodeChanges || !planIncludes(project.plan, "codeChanges")) {
           continue;
         }
-        // Taken: new for the day, or one that failed (or whose sweep stopped) a while ago, with tries left.
+        // Taken: new for the day, or one that failed (or whose sweep stopped) a while ago, with tries left. As of
+        // now, not when the sweep started: a long sweep's claim isn't one another can take as lapsed.
+        const claimedAt = new Date(Math.max(now.getTime(), Date.now()));
+        const lapsed = new Date(claimedAt.getTime() - CLAIM_MINUTES * 60_000);
         const mine = { userId: reader.id, projectId: project.id, day };
         const { count: fresh } = await prisma.autopilotDigest.createMany({ data: [{ ...mine, claimedAt }], skipDuplicates: true });
         const taken =
