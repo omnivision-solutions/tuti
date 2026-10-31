@@ -47,7 +47,7 @@ function useStatusChange(projectSlug: string, postId: string, status: PostStatus
     <AlertDialog open={asking} onOpenChange={(open) => !open && !pending && setAsking(false)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Mark “{completing.title}” completed?</AlertDialogTitle>
+          <AlertDialogTitle className="wrap-anywhere">Mark “{completing.title}” completed?</AlertDialogTitle>
           <AlertDialogDescription>
             {completing.emails
               ? `This emails up to ${completing.emails} ${completing.emails === 1 ? "person" : "people"} who asked for it that it shipped.`

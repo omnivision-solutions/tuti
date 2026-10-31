@@ -794,3 +794,20 @@ test("Feedback's row boxes are off while a picked rows' action runs, and back on
   }
   await team.unroute(`**/app/${slug}/feedback**`);
 });
+
+test("Completed's question fits a phone, whatever the post's title (a long link)", async ({ browser }) => {
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Olive Owner");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  const title = "https://example.com/integrations/salesforce/oauth-callback-fails-for-sandbox-orgs";
+  await api("/posts", { board: "feature-requests", title });
+  await team.setViewportSize({ width: 390, height: 800 });
+  await team.goto(`/app/${slug}/feedback`);
+  await team.getByRole("main").getByRole("listitem").getByRole("button", { name: /^Status: / }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  const heading = team.getByRole("alertdialog").getByRole("heading");
+  await expect(heading).toContainText("oauth-callback");
+  const box = (await heading.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(390);
+});
