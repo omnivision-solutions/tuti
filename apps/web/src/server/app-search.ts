@@ -59,7 +59,12 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
       take: EACH,
       select: { slug: true, title: true, publishedAt: true },
     }),
-    prisma.collection.findMany({ where: { projectId, name: has }, orderBy: { name: "asc" }, take: EACH, select: { slug: true, name: true } }),
+    prisma.collection.findMany({
+      where: { projectId, name: has },
+      orderBy: [{ name: "asc" }, { slug: "asc" }],
+      take: EACH,
+      select: { slug: true, name: true, parent: { select: { name: true } }, tab: { select: { name: true } } },
+    }),
     call(listUsers, { actor: { kind: "user", userId: session.user.id }, projectId }, { q: query, limit: EACH }),
   ]);
   const posts = [numberedPost, ...titled].filter((post) => post !== null).slice(0, EACH);
@@ -74,7 +79,13 @@ export async function searchApp(projectSlug: string, q: string): Promise<{ error
       })),
       ...conversations.map((c) => ({ kind: "conversation" as const, title: c.subject, meta: `#${c.number} · ${c.status.toLowerCase()}`, href: `${base}/inbox/${c.number}` })),
       ...articles.map((a) => ({ kind: "article" as const, title: a.title, meta: a.publishedAt ? "Published" : "Draft", href: `${base}/docs/${a.slug}` })),
-      ...collections.map((c) => ({ kind: "collection" as const, title: c.name, meta: "Collection", href: `${base}/docs/collections/${c.slug}` })),
+      // Where it is, so two of the same name (in different places) tell apart.
+      ...collections.map((c) => ({
+        kind: "collection" as const,
+        title: c.name,
+        meta: c.parent ? `Collection in ${c.parent.name}` : c.tab ? `Collection in ${c.tab.name}` : "Collection",
+        href: `${base}/docs/collections/${c.slug}`,
+      })),
       ...users.map((user) => ({
         kind: "user" as const,
         title: user.name ?? user.email ?? user.id,
