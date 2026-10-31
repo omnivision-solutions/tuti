@@ -143,8 +143,16 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
             <AlertDialogDescription>Everyone who voted for them is emailed that it shipped, as when one post is completed.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => setStatus("COMPLETED")}>Mark Completed</AlertDialogAction>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => {
+                setCompleting(false);
+                setStatus("COMPLETED");
+              }}
+            >
+              Mark Completed
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -170,15 +178,17 @@ export function FeedbackBulk({ projectSlug, boards }: { projectSlug: string; boa
             ))}
           </fieldset>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() =>
+              disabled={pending}
+              onClick={() => {
+                setMerging(false);
                 each(
                   picked.filter((post) => post.id !== kept.id),
                   (post) => mergePost(projectSlug, post.id, kept.id),
                   `Merged into #${kept.number}`,
-                )
-              }
+                );
+              }}
             >
               Merge into #{kept.number}
             </AlertDialogAction>

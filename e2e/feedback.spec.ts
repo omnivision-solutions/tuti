@@ -621,4 +621,22 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await expect(team.getByText("Merged into #2")).toBeVisible();
   await expect(team.getByRole("link", { name: "Dark mode", exact: true })).toHaveCount(0);
   await expect(team.getByRole("link", { name: "Night theme", exact: true })).toBeVisible();
+  await expect(merge).toHaveCount(0);
+
+  // Picked again after a confirmed one: no dialog opens by itself. Completed confirmed closes too.
+  await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await bar.getByRole("button", { name: "Set status" }).click();
+  await team.getByRole("menuitem", { name: "Completed" }).click();
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark Completed" }).click();
+  await expect(team.getByText("1 post: Completed")).toBeVisible();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await team.getByRole("checkbox", { name: "Select Night theme" }).check();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+
+  // Another tab or filter: what was picked isn't any more (none of it may be listed).
+  await expect(bar).toContainText("1 selected");
+  await team.getByRole("navigation", { name: "Statuses" }).getByRole("link", { name: /^Planned/ }).click();
+  await team.waitForURL(/status=planned/);
+  await expect(bar).toHaveCount(0);
 });

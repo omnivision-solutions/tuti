@@ -74,6 +74,9 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
     }
     return params.size > 0 ? `/app/${slug}/feedback?${params}` : `/app/${slug}/feedback`;
   };
+  // The list, whatever's open in the pane or however much is loaded: picked rows are for it, and go with it.
+  const listKey = new URLSearchParams(Object.entries(searchParams).flatMap(([key, value]) => (key === "post" || key === "page" || first(value) === undefined ? [] : [[key, first(value)!]])));
+  listKey.sort();
 
   // A tab keeps the board, the search and the sort.
   const href = (to: string) => {
@@ -121,7 +124,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
       {/* The list and, beside it, the post a row opened (the whole width); on a phone, one or the other. */}
       <div data-slot="pane-layout" className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:items-start">
         {/* Rows picked for Set status, Move to board and Merge, the bar over the list once some are. */}
-        <FeedbackSelection>
+        <FeedbackSelection key={listKey.toString()}>
           <div className={cn("flex min-w-0 flex-col gap-4", open !== null && "max-lg:hidden")}>
             <SubNav
               label="Statuses"
