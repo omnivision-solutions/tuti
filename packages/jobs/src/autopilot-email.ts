@@ -356,18 +356,20 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
       };
       // The subject counts them all, not just the ones shown.
       const all = mine.flatMap(({ codeChange }) => codeChange.actions);
+      // Drafts Autopilot wrote by itself lately (only the team sees them).
+      const done = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind));
       const totals = {
         goesOut: all.filter((action) => action.status === "SCHEDULED").length,
         wentOut: mine.reduce((sum, notice) => sum + went(notice).length, 0),
         needsYou: all.filter((action) => action.status === "PENDING" || action.status === "STALE").length,
+        done: mine.reduce((sum, notice) => sum + done(notice).length, 0),
         first: when(
           all.filter((action) => action.status === "SCHEDULED").reduce<Date | null>((min, action) => (!min || (action.dueAt && action.dueAt < min) ? action.dueAt : min), null),
           now,
         ),
       };
       // Everything decided in the ten minutes before it went (the team approved it all, say): nothing to say.
-      const done = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind));
-      if (totals.goesOut + totals.wentOut + totals.needsYou + mine.reduce((sum, notice) => sum + done(notice).length, 0) === 0) {
+      if (totals.goesOut + totals.wentOut + totals.needsYou + totals.done === 0) {
         await settle();
         continue;
       }

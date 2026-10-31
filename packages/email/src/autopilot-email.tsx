@@ -39,8 +39,8 @@ export type AutopilotEmailChange = {
 type AutopilotProps = {
   projectName: string;
   changes: AutopilotEmailChange[];
-  /** Every update going out by itself (and when the first goes) and needing the team, shown or not: the subject's counts. */
-  totals: { goesOut: number; wentOut: number; needsYou: number; first: string; pullRequests?: number };
+  /** Every update going out by itself (and when the first goes), needing the team and done, shown or not: the subject's counts. */
+  totals: { goesOut: number; wentOut: number; needsYou: number; done?: number; first: string; pullRequests?: number };
   /** The morning's digest: what's still waiting. */
   digest?: boolean;
   /** Updates past the first five, left out: "+N more in Tuti". */
@@ -140,7 +140,7 @@ function Updates({ heading, tone, updates, children }: { heading: string; tone: 
 export function AutopilotEmail({ projectName, changes, totals, digest, more, autopilotUrl, accountUrl }: AutopilotProps) {
   return (
     <Layout preview={previewOf(changes, totals)}>
-      <Text style={{ fontSize: 20, fontWeight: 700, color: colors.text, lineHeight: "26px", margin: "16px 0 2px" }}>{headline(changes, totals, digest)}</Text>
+      <Text style={{ fontSize: 20, fontWeight: 700, color: colors.text, lineHeight: "26px", margin: "16px 0 2px" }}>{headline(totals, digest)}</Text>
       <Text style={{ fontSize: 13, color: colors.muted, margin: "0 0 8px" }}>
         {projectName} · {plural(totals.pullRequests ?? changes.length, "merged pull request", "merged pull requests")}
       </Text>
@@ -190,7 +190,7 @@ export function AutopilotEmail({ projectName, changes, totals, digest, more, aut
 }
 
 /** What needs them first, then what goes out by itself and what went: "1 needs you, 2 go out in 24 hours". */
-function headline(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"], digest = false): string {
+function headline(totals: AutopilotProps["totals"], digest = false): string {
   if (digest) {
     return `${totals.needsYou} still ${totals.needsYou === 1 ? "needs" : "need"} you`;
   }
@@ -199,13 +199,13 @@ function headline(changes: AutopilotEmailChange[], totals: AutopilotProps["total
     totals.goesOut > 0 && `${totals.goesOut} ${totals.goesOut === 1 ? "goes" : "go"} out ${totals.first}`,
     totals.wentOut > 0 && `${totals.wentOut} went out`,
   ].filter(Boolean);
-  return parts.length > 0 ? parts.join(", ") : `${plural(changes.reduce((sum, change) => sum + change.done.length, 0), "draft", "drafts")} for your team`;
+  return parts.length > 0 ? parts.join(", ") : `${plural(totals.done ?? 0, "draft", "drafts")} for your team`;
 }
 
 /** "1 needs you, 2 go out in 24 hours · Add a dark theme" (the sender says it's Autopilot); for several, how many merged. */
 function subjectOf(changes: AutopilotEmailChange[], totals: AutopilotProps["totals"], digest = false): string {
   const merged = totals.pullRequests ?? changes.length;
-  return `${headline(changes, totals, digest)} · ${merged === 1 ? changes[0]!.title : `${merged} pull requests`}`;
+  return `${headline(totals, digest)} · ${merged === 1 ? changes[0]!.title : `${merged} pull requests`}`;
 }
 
 /** The inbox's line under the subject: which updates, by name, then what shipped (or which pull requests). */
