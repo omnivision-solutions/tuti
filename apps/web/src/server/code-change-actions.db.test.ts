@@ -345,6 +345,8 @@ describe("approving several (applyMany)", () => {
     expect((await call(applyCodeChangeActions, team(), { actions: [{ id: unknown.action.id }] })).results).toEqual([
       { id: unknown.action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" },
     ]);
+    // Nothing known to put back: Undo says so, rather than "Undone" with the comment perhaps still there.
+    await expect(call(undoCodeChangeAction, team(), { id: unknown.action.id })).rejects.toThrow("There's no record of what it changed");
   });
 
   test("two people approving the same ones at once apply each once", async () => {
@@ -583,6 +585,19 @@ describe("docs", () => {
     await call(applyCodeChangeAction, team(), { id: action.id });
     await call(undoCodeChangeAction, team(), { id: action.id });
     expect((await published(article.slug)).body).toBe("Pick Light in Settings.");
+  });
+
+  test("a teammate's save right after an edit is applied isn't taken for it: Undo then refuses", async () => {
+    const { article, action } = await articleEdit();
+    // Right as the edit's version is looked up, a teammate publishes another.
+    const find = prisma.articleRevision.findFirst.bind(prisma.articleRevision) as (...args: unknown[]) => Promise<unknown>;
+    vi.spyOn(prisma.articleRevision, "findFirst").mockImplementationOnce((async (...args: unknown[]) => {
+      await call(updateArticle, team(), { slug: article.slug, body: "Pick Light or Sepia in Settings.", publish: true });
+      return find(...args);
+    }) as never);
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("The article was edited since");
+    expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
   });
 
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {

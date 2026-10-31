@@ -512,13 +512,16 @@ export const applyCodeChangeAction = defineOperation({
       // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
         // Can't tell (the check failed too): it stays applied, so it's never posted twice, but nobody's told it went.
+        // This try's comment: by whoever applies it, with its words, since the claim.
         const found = await prisma.comment
-          .findFirst({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } }, orderBy: { createdAt: "desc" }, select: { id: true } })
+          .findFirst({ where: { postId: post.id, authorId: actorUser(context.actor), body: comment, createdAt: { gte: claimedAt } }, orderBy: { createdAt: "asc" }, select: { id: true } })
           .catch(() => "unknown" as const);
         const saved = found === "unknown" ? "unknown" : found !== null;
+        if (found && found !== "unknown") {
+          // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
+          await recordUndo(action.id, { comment }, { ...undo, commentId: found.id });
+        }
         if (saved !== false) {
-          // What's known, for Undo: what came before the comment, and the comment if it was found.
-          await recordUndo(action.id, { comment }, { ...undo, commentId: found === "unknown" ? null : found!.id });
           throw Object.assign(error as Error, { saved });
         }
       }
@@ -659,6 +662,16 @@ async function applyDocs(
     }
   }
   const claimedAt = new Date();
+  // For Undo: the version this save made (by whoever applies it, with the proposal's text, since the
+  // claim), not the newest: a teammate's save right after it isn't it, so Undo refuses then.
+  const ourRevision = async (articleId: string) =>
+    (
+      await prisma.articleRevision.findFirst({
+        where: { articleId, authorId: actorUser(context.actor), createdAt: { gte: claimedAt }, body: payload.body ?? "" },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true },
+      })
+    )?.id ?? null;
   const { count } = await prisma.codeChangeAction.updateMany({
     where: { id: action.id, status: "PENDING" },
     data: { status: "APPLIED", decidedById: actorUser(context.actor), decidedAt: claimedAt },
@@ -676,13 +689,13 @@ async function applyDocs(
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
-      await recordUndo(action.id, payload, { revision: await newestRevision(article!.id), live, published: publish });
+      await recordUndo(action.id, payload, { revision: await ourRevision(article!.id), live, published: publish });
       return { id: action.id, kind: KINDS[action.kind], status: "applied", article: article!.slug, published: publish };
     }
     const created = await call(createArticle, context, { title: payload.title ?? "", content: payload.content });
     const draft = await prisma.article.findFirstOrThrow({ where: { projectId: context.projectId, slug: created.slug, deletedAt: null }, select: { id: true } });
     await prisma.codeChangeAction.update({ where: { id: action.id }, data: { articleId: draft.id } });
-    await recordUndo(action.id, payload, { revision: await newestRevision(draft.id) });
+    await recordUndo(action.id, payload, { revision: await ourRevision(draft.id) });
     return { id: action.id, kind: KINDS[action.kind], status: "applied", article: created.slug, published: false };
   } catch (error) {
     // Saved anyway (the failure came after it)? Then it stays applied, so trying again can't save it
@@ -703,7 +716,7 @@ async function applyDocs(
           ? recordUndo(action.id, payload, { revision: found.id, live, published: publish })
           : prisma.codeChangeAction
               .update({ where: { id: action.id }, data: { articleId: found.id } })
-              .then(async () => recordUndo(action.id, payload, { revision: await newestRevision(found.id) }))
+              .then(async () => recordUndo(action.id, payload, { revision: await ourRevision(found.id) }))
               .catch((cause: unknown) => log.error("code change: couldn't record what to undo", { actionId: action.id, error: String(cause) })));
       }
       throw Object.assign(error as Error, { saved });

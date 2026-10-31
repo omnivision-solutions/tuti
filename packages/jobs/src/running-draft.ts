@@ -217,7 +217,9 @@ export async function undoChangelogLine(
     if (known.entry.publishedAt) {
       return "published";
     }
-    const current = (known.entry.content as Doc | null) ?? { type: "doc", content: [] };
+    // The entry's row too, read again: an edit in the changelog (which doesn't take the project's lock) waits, or is seen.
+    const [entry] = await tx.$queryRaw<{ content: Prisma.JsonValue }[]>`SELECT content FROM changelog_entry WHERE id = ${known.entryId} FOR UPDATE`;
+    const current = (entry?.content as Doc | null | undefined) ?? { type: "doc", content: [] };
     const bullet = (current.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
     if (bullet && applied !== null && textOf(bullet) !== applied) {
       return "edited";
