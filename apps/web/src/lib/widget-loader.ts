@@ -216,17 +216,18 @@ export function widgetLoader(portalTemplate: string): string {
   // nothing in reach to close it, so the page is left as it is then.
   // Whether an element is shown: not display: none, nor (as faded-out dialogs are) visibility: hidden or opacity 0.
   // Where the browser can't say (checkVisibility is new, Safari 17.4), by whether it has a box and isn't hidden.
-  function showing(element) {
+  // \`faded\`: opacity 0 counts as shown (one fading in).
+  function showing(element, faded) {
     // No box of its own (display: contents): shown if what's in it is.
     if (window.getComputedStyle && window.getComputedStyle(element).display === "contents") {
-      for (var k = 0; k < element.children.length; k++) if (showing(element.children[k])) return true;
+      for (var k = 0; k < element.children.length; k++) if (showing(element.children[k], faded)) return true;
       return false;
     }
-    if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+    if (element.checkVisibility) return element.checkVisibility({ visibilityProperty: true, opacityProperty: !faded });
     if (element.getClientRects && element.getClientRects().length === 0) return false;
     if (!window.getComputedStyle) return true;
     if (window.getComputedStyle(element).visibility === "hidden") return false;
-    for (var e = element; e; e = e.parentElement) if (window.getComputedStyle(e).opacity === "0") return false;
+    if (!faded) for (var e = element; e; e = e.parentElement) if (window.getComputedStyle(e).opacity === "0") return false;
     return true;
   }
   // The modal of the page's that shows, if one does.
@@ -268,9 +269,14 @@ export function widgetLoader(portalTemplate: string): string {
       coverPage();
     }, 250);
   }
-  function holdsModal(element) {
-    return element.getAttribute("aria-modal") === "true" || !!(element.querySelector && element.querySelector('[aria-modal="true"]'));
+  // Whether an element holds a modal of the page's that may be fading in: there, only its opacity hiding it.
+  function holdsFadingModal(element) {
+    var modal = element.getAttribute("aria-modal") === "true" ? element : element.querySelector && element.querySelector('[aria-modal="true"]');
+    return !!modal && showing(modal, true);
   }
+  // Since when one has (FADE_WAIT on, it's covered all the same: a fade is over by then).
+  var fadingSince = 0;
+  var FADE_WAIT = 2000;
   function coverPage() {
     var cover = opened && small && small.matches;
     var modal = cover && covering ? modalOpen() : null;
@@ -306,18 +312,25 @@ export function widgetLoader(portalTemplate: string): string {
       }
       released = [];
       var children = document.body ? document.body.children : [];
+      var fading = false;
       for (var c = 0; c < children.length; c++) {
         var child = children[c];
         if (child !== panel && child !== backdrop && !child.hasAttribute("inert")) {
-          // Added since, holding a modal of the page's not showing yet (fading in, say): left as it is, checked
-          // again till it shows (closing the panel) or goes.
-          if (!starting && holdsModal(child)) {
-            checkAgain();
+          // Added since, holding a modal of the page's fading in: left as it is, checked again till it shows
+          // (closing the panel), goes, or FADE_WAIT is over.
+          if (!starting && holdsFadingModal(child) && (!fadingSince || new Date().getTime() - fadingSince < FADE_WAIT)) {
+            fading = true;
             continue;
           }
           child.setAttribute("inert", "");
           covered.push(child);
         }
+      }
+      if (fading) {
+        if (!fadingSince) fadingSince = new Date().getTime();
+        checkAgain();
+      } else {
+        fadingSince = 0;
       }
     } else {
       covering = false;

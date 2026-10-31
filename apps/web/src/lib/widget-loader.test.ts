@@ -1217,6 +1217,36 @@ test("on a phone, a modal the page opens fading in (not showing yet) once the pa
   }
 });
 
+test("on a phone, a closed modal the page adds once the panel covers it (a consent manager's) is covered; one fading in is waited for a moment, no longer", async () => {
+  vi.useFakeTimers();
+  try {
+    const page = loadWidget({ narrow: true });
+    page.body.appendChild(new FakeElement("div", page));
+    page.Tuti.open();
+    type Modal = FakeElement & { checkVisibility?: (options?: { opacityProperty?: boolean }) => boolean };
+    // (Timers of the loader's own that run all the same.)
+    const timers = vi.getTimerCount();
+    // Hidden whatever's counted (display: none): covered at once, nothing checked again.
+    const closed = page.body.appendChild(new FakeElement("div", page)) as Modal;
+    closed.setAttribute("aria-modal", "true");
+    closed.checkVisibility = () => false;
+    page.mutated();
+    expect(closed.hasAttribute("inert")).toBe(true);
+    expect(vi.getTimerCount()).toBe(timers);
+    // At opacity 0 and staying so: left as it is a moment, then covered, and the checks stop.
+    const stuck = page.body.appendChild(new FakeElement("div", page)) as Modal;
+    stuck.setAttribute("aria-modal", "true");
+    stuck.checkVisibility = (options) => !options?.opacityProperty;
+    page.mutated();
+    expect(stuck.hasAttribute("inert")).toBe(false);
+    vi.advanceTimersByTime(2500);
+    expect(stuck.hasAttribute("inert")).toBe(true);
+    expect(vi.getTimerCount()).toBe(timers);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("on a phone, a native dialog of the page's opened over everything once the panel covers it (showModal) closes the panel", async () => {
   const page = loadWidget({ narrow: true });
   const dialog = page.body.appendChild(new FakeElement("dialog", page));
