@@ -23,7 +23,9 @@ export function boardStatuses(searchParams: Record<string, string | string[] | u
 }
 
 export const SORTS = { top: "Most votes", new: "Newest" } as const;
-export type Sort = keyof typeof SORTS;
+/** The team's Feedback also sorts by Trending: votes in the last 7 days. */
+export const TEAM_SORTS = { ...SORTS, trending: "Trending" } as const;
+export type Sort = keyof typeof TEAM_SORTS;
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -37,7 +39,7 @@ export function parsePostFilters(searchParams: Record<string, string | string[] 
   return {
     statusParam: statusParam ?? "all",
     status: statusParam ? STATUS_PARAMS[statusParam] : undefined,
-    sort: (sortParam === "new" ? "new" : "top") as Sort,
+    sort: (sortParam === "new" || sortParam === "trending" ? sortParam : "top") as Sort,
     board: first(searchParams.board),
     /** How many pages are shown: a list grows by a page each "Load more", from the first. */
     page: Number.isSafeInteger(page) && page > 1 ? page : 1,
@@ -58,6 +60,7 @@ export function nextPageHref(searchParams: Record<string, string | string[] | un
   return `?${params}`;
 }
 
+/** Trending orders by a count Prisma can't (see teamPosts); elsewhere it's Most votes. */
 export function postOrderBy(sort: Sort): Prisma.PostOrderByWithRelationInput[] {
   // `id` last: posts created together keep one order, so pages neither repeat nor skip them.
   return sort === "new"

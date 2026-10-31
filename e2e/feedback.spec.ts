@@ -124,8 +124,31 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.goto(`/app/${slug}?status=open`);
   await team.waitForURL(`**/app/${slug}/feedback?status=open`);
   await expect(team.getByRole("link", { name: /Dark mode/ })).toHaveCount(0);
+  // Feedback opens on what needs triage: nothing now. Each status is a tab with its count.
   await team.goto(`/app/${slug}/feedback`);
+  const tabs = team.getByRole("navigation", { name: "Statuses" });
+  await expect(tabs.getByRole("link", { name: "Needs triage 0" })).toHaveAttribute("aria-current", "page");
+  await expect(team.getByText("Nothing to triage")).toBeVisible();
+  await tabs.getByRole("link", { name: "Planned 1" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback?status=planned`);
+  // A search looks in titles and descriptions, on the tab it's typed on.
+  const search = team.getByRole("searchbox", { name: "Search feedback" });
+  await search.fill("dark");
+  await search.press("Enter");
+  await team.waitForURL(`**/app/${slug}/feedback?status=planned&q=dark`);
+  await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
+  await search.fill("light");
+  await search.press("Enter");
+  await expect(team.getByText("No posts match")).toBeVisible();
+  // Trending: the most votes this week first; the tab and the search stay.
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  await team.getByRole("combobox", { name: "Sort" }).click();
+  await team.getByRole("option", { name: "Trending" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback?status=all&sort=trending`);
+  await expect(tabs.getByRole("link", { name: "All 1" })).toHaveAttribute("href", `/app/${slug}/feedback?sort=trending&status=all`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
+  // The portal's address isn't in the header (the project switcher has it).
+  await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
   // No sentence under the page's title (what it's for is in its empty state).
   await expect(team.locator('[data-slot="page-header"] p')).toHaveCount(0);
   // A row shows values, no form controls: its board as text, its status as a badge that opens a menu.

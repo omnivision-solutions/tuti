@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { ExternalLinkIcon, LayoutListIcon } from "lucide-react";
+import { LayoutListIcon } from "lucide-react";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
@@ -7,26 +7,57 @@ import { ItemList, ItemRow } from "@/components/item-list";
 import { ListFilters } from "@/components/list-filters";
 import { PageHeader } from "@/components/page-header";
 import { PostStatusMenu } from "@/components/post-status-select";
+import { SubNav } from "@/components/sub-nav";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { portalAddress } from "@/server/custom-domains";
-import { sortFilter, statusFilter } from "@/lib/post-filter-options";
-import { nextPageHref, parsePostFilters } from "@/lib/post-filters";
-import { teamPosts } from "@/server/post-lists";
+import { Input } from "@/components/ui/input";
+import { sortFilter } from "@/lib/post-filter-options";
+import { nextPageHref, parsePostFilters, STATUS_PARAMS, TEAM_SORTS } from "@/lib/post-filters";
+import { teamPostCounts, teamPosts } from "@/server/post-lists";
+
+/** Feedback's tabs by status, opening on the posts nobody has triaged; then All and the possible duplicates. */
+const TABS = [
+  ["open", "Needs triage"],
+  ["under-review", "Under review"],
+  ["planned", "Planned"],
+  ["in-progress", "In progress"],
+  ["completed", "Done"],
+] as const;
+
+const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value);
 
 export default async function FeedbackPage(props: PageProps<"/app/[project]/feedback">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
-  const filters = parsePostFilters(searchParams);
   const duplicatesOnly = searchParams.show === "duplicates";
+  // No status: Needs triage. The duplicates tab: every status.
+  const tab = duplicatesOnly ? "duplicates" : (first(searchParams.status) ?? "open");
+  const filters = parsePostFilters({ ...searchParams, status: duplicatesOnly ? "all" : tab });
+  const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
     select: { id: true, boards: { orderBy: { createdAt: "asc" }, select: { slug: true, name: true } } },
   });
-  const { posts, more } = await teamPosts(project.id, filters, duplicatesOnly);
-  const portal = await portalAddress(slug);
-  const filtered = Boolean(filters.status || filters.board || duplicatesOnly);
+  const board = project.boards.some((b) => b.slug === filters.board) ? filters.board : undefined;
+  const scope = { board, q };
+  const [{ posts, more }, counts] = await Promise.all([teamPosts(project.id, filters, { ...scope, duplicatesOnly }), teamPostCounts(project.id, scope)]);
+
+  // A tab keeps the board, the search and the sort.
+  const href = (to: string) => {
+    const params = new URLSearchParams({
+      ...(board && { board }),
+      ...(q && { q }),
+      ...(filters.sort !== "top" && { sort: filters.sort }),
+      ...(to === "duplicates" ? { show: "duplicates" } : to !== "open" && { status: to }),
+    });
+    return params.size > 0 ? `/app/${slug}/feedback?${params}` : `/app/${slug}/feedback`;
+  };
+  const tabs = [
+    ...TABS.map(([key, title]) => ({ key, title, count: counts.of(STATUS_PARAMS[key]!) })),
+    { key: "all", title: "All", count: counts.all },
+    { key: "duplicates", title: "Possible duplicates", count: counts.duplicates },
+  ];
 
   return (
     <>
@@ -34,21 +65,31 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
         title="Feedback"
         actions={
           <>
+            <form role="search" className="flex w-full min-w-0 sm:w-56 lg:w-72">
+              {board && <input type="hidden" name="board" value={board} />}
+              {filters.sort !== "top" && <input type="hidden" name="sort" value={filters.sort} />}
+              {duplicatesOnly ? <input type="hidden" name="show" value="duplicates" /> : tab !== "open" && <input type="hidden" name="status" value={tab} />}
+              <Input type="search" name="q" defaultValue={q} placeholder="Search titles and descriptions" aria-label="Search feedback" className="h-8" />
+            </form>
             <Link href={`/app/${slug}/feedback/boards`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               <LayoutListIcon />
               Boards
             </Link>
-            <a
-              href={portal}
-              target="_blank"
-              rel="noreferrer"
-              className={buttonVariants({ variant: "outline", size: "sm", className: "max-w-full" })}
-            >
-              <ExternalLinkIcon />
-              <span className="truncate">{new URL(portal).host}</span>
-            </a>
           </>
         }
+      />
+
+      <SubNav
+        label="Statuses"
+        current={tabs.some((t) => t.key === tab) ? href(tab) : ""}
+        items={tabs.map((t) => ({
+          href: href(t.key),
+          title: (
+            <>
+              {t.title} <span className="text-muted-foreground tabular-nums">{t.count}</span>
+            </>
+          ),
+        }))}
       />
 
       <ListFilters
@@ -56,32 +97,22 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           {
             name: "board",
             label: "Board",
-            value: project.boards.some((b) => b.slug === filters.board) ? filters.board! : "all",
+            value: board ?? "all",
             options: [{ value: "all", label: "All boards" }, ...project.boards.map((b) => ({ value: b.slug, label: b.name }))],
           },
-          statusFilter(filters.statusParam),
-          sortFilter(filters.sort),
-          {
-            name: "show",
-            label: "Show",
-            value: duplicatesOnly ? "duplicates" : "all",
-            options: [
-              { value: "all", label: "All posts" },
-              { value: "duplicates", label: "Possible duplicates" },
-            ],
-          },
+          sortFilter(filters.sort, TEAM_SORTS),
         ]}
       />
 
       {posts.length === 0 ? (
-        <EmptyState
-          title={filtered ? "No posts match these filters" : "No feedback yet"}
-          description={
-            filtered
-              ? "Try other filters."
-              : "Share your portal with users, or connect your app with single sign-on in Settings."
-          }
-        />
+        counts.all === 0 && !q && !board ? (
+          <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
+        ) : (
+          <EmptyState
+            title={q || board ? "No posts match" : tab === "open" ? "Nothing to triage" : "No posts here"}
+            description={q || board ? "Try other words, or another board or tab." : "Posts show here when they have this status."}
+          />
+        )
       ) : (
         <Card size="sm">
           <CardContent>
