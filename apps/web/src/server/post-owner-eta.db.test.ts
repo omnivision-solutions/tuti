@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
 import { setPostEta, setPostOwner } from "@/server/manage-posts";
+import { removeMember } from "@/server/team";
 import { createPost } from "@/server/operations/create";
 import { updatePost } from "@/server/operations/manage";
 import { getPost } from "@/server/operations/read";
@@ -22,6 +23,8 @@ test("a post's owner (someone on the team) and ETA (a month): set and cleared, a
   // Someone off the team, or a month said another way: refused.
   await expect(call(updatePost, team, { number: post.number, owner: reader.email })).rejects.toThrow("The owner must be on your team");
   await expect(call(updatePost, team, { number: post.number, eta: "December" })).rejects.toThrow("Say the month as 2026-12");
+  // A year typed halfway isn't a month either.
+  await expect(call(updatePost, team, { number: post.number, eta: "0002-12" })).rejects.toThrow("Say the month as 2026-12");
 
   // The team reads them; anyone else doesn't.
   expect(await call(getPost, team, { number: post.number })).toMatchObject({ owner: { name: "Olive Owner" }, eta: "2026-12" });
@@ -35,4 +38,12 @@ test("a post's owner (someone on the team) and ETA (a month): set and cleared, a
   expect(await planning()).toEqual({ ownerId: null, eta: null });
   expect(await setPostOwner(project.slug, postId, owner.id)).toEqual({});
   expect((await planning()).ownerId).toBe(owner.id);
+
+  // Taken off the team, they own nothing.
+  const admin = await signUp("Ada Admin");
+  await prisma.teamMember.create({ data: { projectId: project.id, userId: admin.id, role: "ADMIN" } });
+  await call(updatePost, team, { number: post.number, owner: admin.email });
+  const { id: memberId } = await prisma.teamMember.findFirstOrThrow({ where: { projectId: project.id, userId: admin.id } });
+  expect(await removeMember(project.slug, memberId)).toEqual({});
+  expect((await planning()).ownerId).toBeNull();
 });

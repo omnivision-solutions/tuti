@@ -46,24 +46,47 @@ export function PostOwnerSelect({ projectSlug, postId, ownerId, team }: { projec
   );
 }
 
-/** Team-only: the month the team expects a post ("2026-12"), saved as it's picked; Clear says none. */
+/**
+ * Team-only: the month the team expects a post ("2026-12"). Saved once it's a whole month, as the field
+ * is left (typing a year passes through ones that aren't, and a browser without a month picker is a
+ * text box); Clear says none.
+ */
 export function PostEtaInput({ projectSlug, postId, eta }: { projectSlug: string; postId: string; eta: string | null }) {
   const [pending, startTransition] = useTransition();
   const [value, setValue] = useState(eta ?? "");
-  const save = (month: string) =>
+  const [saved, setSaved] = useState(eta ?? "");
+  const save = (month: string) => {
+    if (month === saved) {
+      return;
+    }
+    if (month !== "" && !/^\d{4}-\d{2}$/.test(month)) {
+      toast.error("Say the month as 2026-12");
+      return;
+    }
     startTransition(async () => {
-      setValue(month);
       const result = await setPostEta(projectSlug, postId, month === "" ? null : month);
       if (result.error) {
         toast.error(result.error);
-        setValue(eta ?? "");
+        setValue(saved);
       } else {
+        setSaved(month);
+        setValue(month);
         toast.success(month === "" ? "No ETA" : "ETA saved");
       }
     });
+  };
   return (
     <div className="flex items-center gap-1">
-      <Input type="month" aria-label="ETA" className="h-8" value={value} disabled={pending} onChange={(event) => event.target.value && save(event.target.value)} />
+      <Input
+        type="month"
+        aria-label="ETA"
+        placeholder="2026-12"
+        className="h-8"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => save(value)}
+        onKeyDown={(event) => event.key === "Enter" && save(value)}
+      />
       {value && (
         <Button variant="ghost" size="sm" disabled={pending} onClick={() => save("")}>
           Clear

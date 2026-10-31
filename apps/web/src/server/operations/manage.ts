@@ -23,7 +23,8 @@ export const updatePost = defineOperation({
       owner: z.email().nullable().optional(),
       eta: z
         .string()
-        .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
+        // A month this century, as 2026-12 (a year typed halfway, like 0002, isn't one).
+        .regex(/^20\d{2}-(0[1-9]|1[0-2])$/, "Say the month as 2026-12")
         .nullable()
         .optional(),
     })

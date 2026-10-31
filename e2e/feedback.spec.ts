@@ -98,6 +98,7 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("option", { name: "Tess Team" }).click();
   await expect(team.getByText("Owner: Tess Team")).toBeVisible();
   await properties.getByLabel("ETA").fill("2026-12");
+  await properties.getByLabel("ETA").blur();
   await expect(team.getByText("ETA saved")).toBeVisible();
   // The change is in the post's activity, after the team's answer: who made it, from what to what.
   await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
