@@ -41,12 +41,13 @@ export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boole
 
 /**
  * A voter (`v`, a vote; `u`, its user) as the project's users (`s`): the one its SSO signed in as, or,
- * signed in another way, the ones with their address once it's verified (as readerOf).
+ * signed in another way, the ones with their address once it's verified (as readerOf). Identities'
+ * emails are kept lowercase, so (projectId, email)'s index finds them.
  */
 const voterIdentities = (projectId: string) => Prisma.sql`
   JOIN "user" u ON u.id = v."userId"
   JOIN sso_identity s ON s."projectId" = ${projectId}
-    AND (s."userId" = v."userId" OR (u."emailVerified" AND lower(s.email) = lower(u.email)))`;
+    AND (s."userId" = v."userId" OR (u."emailVerified" AND s.email = lower(u.email)))`;
 
 /** A post with a pending suggestion that it duplicates a post still listed. */
 const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId"
