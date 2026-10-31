@@ -176,6 +176,25 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
 type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
 
 /**
+ * An email's five updates: room for what needs the team first (`needsYou` of them, across all its changes),
+ * what's left for the rest. `take` cuts a list (`needsYou`: one of those) to the room left; `more` counts what didn't fit.
+ */
+function shownFive(needsYou: number) {
+  const room = { needsYou: Math.min(SHOWN, needsYou), rest: SHOWN - Math.min(SHOWN, needsYou) };
+  let more = 0;
+  return {
+    take: (list: AutopilotEmailUpdate[], isNeedsYou = false) => {
+      const which = isNeedsYou ? "needsYou" : "rest";
+      const shown = list.slice(0, room[which]);
+      room[which] -= shown.length;
+      more += list.length - shown.length;
+      return shown;
+    },
+    more: () => more,
+  };
+}
+
+/**
  * One change as an email shows it to `userId`: what goes out by itself (Publish now, Stop), what needs them
  * (Approve, Edit), and what Autopilot did by itself already (`gone`: what customers see; `drafts`: what only
  * the team sees), each list cut by `take` (the email's five).
@@ -185,7 +204,7 @@ function emailChange(
   projectSlug: string,
   userId: string,
   now: Date,
-  take: (list: AutopilotEmailUpdate[]) => AutopilotEmailUpdate[],
+  take: (list: AutopilotEmailUpdate[], needsYou?: boolean) => AutopilotEmailUpdate[],
   gone: ActionRow[],
   drafts: ActionRow[],
 ): AutopilotEmailChange {
@@ -216,7 +235,7 @@ function emailChange(
     ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
     goesOut,
     wentOut: take(gone.map((action) => previewOf(action, now))),
-    needsYou: take(needsYou),
+    needsYou: take(needsYou, true),
     done: take(drafts.map((action) => previewOf(action, now))),
   };
 }
@@ -347,14 +366,6 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         await settle();
         continue;
       }
-      let budget = SHOWN;
-      let more = 0;
-      const take = (list: AutopilotEmailUpdate[]) => {
-        const shown = list.slice(0, Math.max(budget, 0));
-        budget -= shown.length;
-        more += list.length - shown.length;
-        return shown;
-      };
       // The subject counts them all, not just the ones shown.
       const all = mine.flatMap(({ codeChange }) => codeChange.actions);
       // Drafts Autopilot wrote by itself lately (only the team sees them).
@@ -374,11 +385,12 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         await settle();
         continue;
       }
-      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, take, went(notice), done(notice)));
+      const five = shownFive(totals.needsYou);
+      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice)));
       try {
         await sendEmail({
           to: mine[0]!.user.email,
-          ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
+          ...autopilotEmail({ projectName: project.name, changes, totals, more: five.more(), autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
         });
       } catch (error) {
         // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
@@ -581,17 +593,10 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
           await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
           continue;
         }
-        let budget = SHOWN;
-        let more = 0;
-        const take = (list: AutopilotEmailUpdate[]) => {
-          const shown = list.slice(0, Math.max(budget, 0));
-          budget -= shown.length;
-          more += list.length - shown.length;
-          return shown;
-        };
-        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
-        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, take, [], [])).filter((change) => change.needsYou.length > 0);
         const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
+        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
+        const five = shownFive(needsYou);
+        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [])).filter((change) => change.needsYou.length > 0);
         try {
           await sendEmail({
             to: reader.email,
@@ -599,7 +604,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
               projectName: project.name,
               changes,
               totals: { goesOut: 0, wentOut: 0, needsYou, first: "", pullRequests: waiting.length },
-              more,
+              more: five.more(),
               digest: true,
               autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`,
               accountUrl: `${appOrigin()}/app/account`,

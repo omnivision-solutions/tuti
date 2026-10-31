@@ -180,6 +180,22 @@ test("the subject counts every update, the email shows five and says how many mo
   expect(email!.text).toContain("+2 more in Tuti");
 });
 
+test("what needs you takes its room in the five first: five going out by themselves don't push it out", async () => {
+  const many = await change("Big release");
+  const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: many.id } })).postId!;
+  await prisma.codeChangeAction.createMany({
+    data: Array.from({ length: 4 }, () => ({ codeChangeId: many.id, kind: "LINKS" as const, postId, probability: 0.9, status: "SCHEDULED" as const, dueAt: new Date(Date.now() + 24 * 3_600_000) })),
+  });
+  await queueAutopilotNotices(many.id);
+  await sendAutopilotEmails(later());
+  const [email] = to(owner);
+  expect(email!.subject).toBe("1 needs you, 5 go out in 24 hours · Big release");
+  expect(email!.text).toMatch(/Needs you · 1\s+Closes the request/);
+  expect(email!.text).toMatch(/Approve http\S+\/act\?token=/);
+  expect(email!.text).toContain("Goes out by itself · 4");
+  expect(email!.text).toContain("+1 more in Tuti");
+});
+
 test("a long edit shows its first lines and says how many more; a progress update with nothing to post has Edit, not Approve", async () => {
   const one = await change("Add a dark theme", { scheduled: false });
   const postId = (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id } })).postId!;
@@ -713,9 +729,9 @@ test("an email whose read missed an update the runner saved before it was stampe
   expect(to(owner)[1]!.text).toContain("Went out by itself");
 });
 
-test("Publish now and Stop name only the updates the email shows (five in all); a change it shows none of gets neither", async () => {
+test("Publish now and Stop name only the updates the email shows (five in all, what needs you first); a change it shows none of gets neither", async () => {
   const one = await change("Add a dark theme");
-  // Six more going out by itself: seven, and the email shows five.
+  // Six more going out by itself: seven. The two changes' requests needing you take two of the five, so it shows three.
   for (let i = 0; i < 6; i++) {
     const post = await call(createPost, team(), { board: "feature-requests", title: `More ${i}` });
     const postId = (await prisma.post.findFirstOrThrow({ where: { projectId: project.id, number: post.number } })).id;
@@ -726,15 +742,15 @@ test("Publish now and Stop name only the updates the email shows (five in all); 
   const two = await change("Faster search");
   await queueAutopilotNotices(one.id);
   await queueAutopilotNotices(two.id);
-  // The first change first in the email: its updates use up the five.
+  // The first change first in the email: its updates use up what's left of the five.
   await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { createdAt: new Date(Date.now() - 12 * MINUTE) } });
   await prisma.autopilotNotice.updateMany({ where: { codeChangeId: two.id }, data: { createdAt: new Date(Date.now() - 11 * MINUTE) } });
   expect(await sendAutopilotEmails()).toBe(1);
-  // The five it shows, in its order.
+  // The three it shows, in its order.
   const shown = (
     await prisma.codeChangeAction.findMany({ where: { codeChangeId: one.id, status: "SCHEDULED" }, orderBy: [{ probability: "desc" }, { id: "asc" }], select: { id: true } })
   )
-    .slice(0, 5)
+    .slice(0, 3)
     .map(({ id }) => id);
   const buttons = [...to(owner)[0]!.html.matchAll(/act\?token=([\w.-]+)/g)].map((match) => readAutopilotButton(match[1]!)!);
   for (const kind of ["publish", "stop"]) {
