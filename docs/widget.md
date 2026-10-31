@@ -48,7 +48,7 @@ The floating panel grows out of the button's corner as it opens and shrinks back
 phone's screen it slides up); a sidebar slides in from its edge. While the panel covers a phone's screen,
 the rest of your page is made `inert` (out of reach for Tab and screen readers, as under any full-screen
 dialog); the loader puts back what it changed when the panel closes, and leaves alone anything you made
-inert yourself. Visitors whose device asks for reduced motion get it without the motion.
+inert yourself. With a modal of yours open (help opened from inside it), your page is left as it is. Visitors whose device asks for reduced motion get it without the motion.
 
 ```html
 <!-- Launcher (the default) -->

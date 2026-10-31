@@ -212,8 +212,19 @@ export function widgetLoader(portalTemplate: string): string {
   // swipes) until it closes or the screen's wide again, what it adds meanwhile too (the button, once it's
   // set up). Only what the loader made inert is put back.
   var covered = [];
+  // A modal the page has open (help opened from inside it) is the page's: covered, it would freeze with
+  // nothing in reach to close it, so the page is left as it is then.
+  function modalOpen() {
+    var marked = document.querySelectorAll("[aria-modal]");
+    for (var m = 0; m < marked.length; m++) if (marked[m].getAttribute("aria-modal") === "true") return true;
+    try {
+      return !!document.querySelector("dialog:modal");
+    } catch (error) {
+      return false;
+    }
+  }
   function coverPage() {
-    var cover = opened && small && small.matches;
+    var cover = opened && small && small.matches && !modalOpen();
     if (cover) {
       var children = document.body ? document.body.children : [];
       for (var c = 0; c < children.length; c++) {
