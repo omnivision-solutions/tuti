@@ -260,6 +260,11 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await owner.addInitScript(() =>
     document.addEventListener("DOMContentLoaded", () => document.head.append(Object.assign(document.createElement("style"), { textContent: "html { overflow-anchor: none }" }))),
   );
+  // And without the browser putting the reloaded page back where it was before (Chrome does, once its images
+  // are in): when that lands against the page's own scroll varies run to run, which made this step flaky.
+  await owner.addInitScript(() => {
+    history.scrollRestoration = "manual";
+  });
   await owner.route("**/*", async (route) => {
     if (route.request().resourceType() === "image") {
       await new Promise((resolve) => setTimeout(resolve, 1_000));
