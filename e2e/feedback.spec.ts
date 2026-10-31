@@ -308,6 +308,13 @@ test("the team's roadmap: a card dragged to another column changes its status; C
   await expect(team.getByText("Dark mode: Completed")).toBeVisible();
   await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
 
+  // From a card's status menu (the keyboard's way, and a phone's), Completed asks first too.
+  await card("Calendar sync").getByRole("button", { name: "Status: In progress" }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  await expect(team.getByRole("alertdialog", { name: "Mark “Calendar sync” completed?" })).toContainText("Nobody is emailed.");
+  await team.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+  await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
+
   // A board at a time.
   await team.getByRole("combobox", { name: "Board" }).click();
   await team.getByRole("option", { name: "Feature requests" }).click();

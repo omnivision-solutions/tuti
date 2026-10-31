@@ -107,7 +107,13 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
                     <Link href={`/app/${projectSlug}/p/${card.number}`} className="min-w-0 flex-1 font-medium break-words hover:underline">
                       {card.title}
                     </Link>
-                    <PostStatusMenu projectSlug={projectSlug} postId={card.id} status={card.status} />
+                    <PostStatusMenu
+                      projectSlug={projectSlug}
+                      postId={card.id}
+                      status={card.status}
+                      // Completed from the menu (the keyboard's and a phone's way) asks first too.
+                      onComplete={() => setCompleting(card)}
+                    />
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {card.votes} {card.votes === 1 ? "vote" : "votes"} · {card.board}
@@ -127,7 +133,7 @@ export function RoadmapBoard({ projectSlug, columns, completedDays }: { projectS
             <AlertDialogDescription>
               {completing?.emails
                 ? `This emails up to ${completing.emails} ${completing.emails === 1 ? "person" : "people"} who asked for it that it shipped.`
-                : "Nobody is emailed: nobody outside your team asked for it."}
+                : "Nobody is emailed."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
