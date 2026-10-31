@@ -147,6 +147,10 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.waitForURL(`**/app/${slug}/feedback?status=all&sort=trending`);
   await expect(tabs.getByRole("link", { name: "All 1" })).toHaveAttribute("href", `/app/${slug}/feedback?sort=trending&status=all`);
   await expect(team.getByRole("link", { name: /Night theme/ })).toHaveCount(0);
+  // A status without a tab (an old link to Closed, say) lists All.
+  await team.goto(`/app/${slug}/feedback?status=closed`);
+  await expect(tabs.getByRole("link", { name: "All 1" })).toHaveAttribute("aria-current", "page");
+  await expect(team.getByRole("link", { name: /Dark mode/ })).toBeVisible();
   // The portal's address isn't in the header (the project switcher has it).
   await expect(team.locator('[data-slot="page-header"]').getByRole("link", { name: new URL(portalUrl(slug)).host })).toHaveCount(0);
   // No sentence under the page's title (what it's for is in its empty state).

@@ -31,9 +31,10 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
   const duplicatesOnly = searchParams.show === "duplicates";
-  // No status: Needs triage. The duplicates tab: every status.
-  const tab = duplicatesOnly ? "duplicates" : (first(searchParams.status) ?? "open");
-  const filters = parsePostFilters({ ...searchParams, status: duplicatesOnly ? "all" : tab });
+  // No status: Needs triage; one without a tab (Closed, say): All. The duplicates tab: every status.
+  const status = first(searchParams.status) ?? "open";
+  const tab = duplicatesOnly ? "duplicates" : TABS.some(([key]) => key === status) ? status : "all";
+  const filters = parsePostFilters({ ...searchParams, status: duplicatesOnly ? "all" : tab }, TEAM_SORTS);
   const q = first(searchParams.q)?.trim().slice(0, 255) || undefined;
   const project = await prisma.project.findUniqueOrThrow({
     where: { slug },
@@ -81,7 +82,7 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
 
       <SubNav
         label="Statuses"
-        current={tabs.some((t) => t.key === tab) ? href(tab) : ""}
+        current={href(tab)}
         items={tabs.map((t) => ({
           href: href(t.key),
           title: (

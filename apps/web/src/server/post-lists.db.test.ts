@@ -1,7 +1,7 @@
 import { prisma } from "@tuti/db";
 import { expect, test } from "vitest";
 
-import { parsePostFilters } from "@/lib/post-filters";
+import { parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
 import { createProject, signUp } from "@/test/helpers";
 
 import { boardPosts, MAX_LISTED, teamPostCounts, teamPosts } from "./post-lists";
@@ -22,7 +22,7 @@ test("lists of 120 posts are read in full, a page of 50 at a time", async () => 
   });
 
   for (const list of [
-    (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort })),
+    (page: string, sort: string) => teamPosts(project.id, parsePostFilters({ page, sort }, TEAM_SORTS)),
     (page: string, sort: string) => boardPosts(board.id, parsePostFilters({ page, sort }), owner.id),
   ]) {
     for (const sort of ["top", "new", "trending"]) {
@@ -87,7 +87,7 @@ test("Feedback: a tab's posts, words found in titles and descriptions, Trending 
       { projectId: project.id, postId: dark.id, userId: voters[1]!.id, createdAt: new Date(Date.now() - 10 * 86_400_000) },
     ],
   });
-  const titles = async (params: Record<string, string>, scope = {}) => (await teamPosts(project.id, parsePostFilters(params), scope)).posts.map((p) => p.title);
+  const titles = async (params: Record<string, string>, scope = {}) => (await teamPosts(project.id, parsePostFilters(params, TEAM_SORTS), scope)).posts.map((p) => p.title);
 
   expect(await titles({ status: "open" })).toEqual(["Dark mode", "Exports", "Crash on save"]);
   expect(await titles({ sort: "trending" })).toEqual(["SSO", "Exports", "Dark mode", "Crash on save"]);
