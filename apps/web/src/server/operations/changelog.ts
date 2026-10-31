@@ -578,7 +578,7 @@ export const publishChangelogEntry = defineOperation({
   access: "team",
   input: z.object({ number: entryNumber, announce: z.boolean().default(true) }),
   example: { announce: true },
-  run: async ({ projectId }, { number, announce }) => {
+  run: async ({ actor, projectId }, { number, announce }) => {
     const entry = await teamEntry(projectId, number);
     const slug = await projectSlug(projectId);
     const portal = await portalAddress(slug);
@@ -612,6 +612,7 @@ export const publishChangelogEntry = defineOperation({
           continue;
         }
         await tx.post.update({ where: { id: postId }, data: { status: "COMPLETED", shippedEmailsDueAt: new Date() } });
+        await tx.postEvent.create({ data: { postId, actorId: actor.kind === "user" ? actor.userId : actor.createdById, from: current.status, to: "COMPLETED" } });
         const updated = await tx.post.findUniqueOrThrow({ where: { id: postId }, select: postSummarySelect });
         deliveries.push(
           ...(await recordEvent(tx, projectId, "post.status_changed", {

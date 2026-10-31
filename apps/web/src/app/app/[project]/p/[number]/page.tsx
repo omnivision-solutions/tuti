@@ -45,6 +45,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
         },
+        events: { orderBy: { createdAt: "asc" }, select: { id: true, from: true, to: true, emailed: true, createdAt: true, actor: { select: { name: true } } } },
         comments: {
           orderBy: { createdAt: "asc" },
           select: { id: true, body: true, content: true, createdAt: true, author: { select: { id: true, name: true, image: true } } },
@@ -151,7 +152,11 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
         <h2 className="font-medium">
           {post.comments.length} {post.comments.length === 1 ? "comment" : "comments"}
         </h2>
-        <CommentList comments={post.comments} teamUserIds={new Set(team.map((m) => m.userId))} />
+        <CommentList
+          comments={post.comments}
+          teamUserIds={new Set(team.map((m) => m.userId))}
+          events={post.events.map(({ actor, ...event }) => ({ ...event, by: actor?.name ?? null }))}
+        />
         {!post.duplicateOf && <CommentForm postId={post.id} placeholder="Reply as the team…" />}
       </section>
     </>

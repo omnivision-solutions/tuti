@@ -33,6 +33,7 @@ model User {
   changelogSeen      ChangelogSeen[]
   ssoIdentity        SsoIdentity?
 
+  postEvents            PostEvent[]           @relation("PostEventActor")
   invitationsCreated    Invitation[]          @relation("InvitationCreatedBy")
   portalReadersAdded    PortalReader[]        @relation("PortalReaderAddedBy")
   customDomainsAdded    CustomDomain[]        @relation("CustomDomainAddedBy")
@@ -868,6 +869,7 @@ model Post {
   changelogEntries       ChangelogEntryPost[]
   votes                  Vote[]
   comments               Comment[]
+  events                 PostEvent[]
   embedding              PostEmbedding?
   duplicateSuggestions   DuplicateSuggestion[] @relation("SuggestedDuplicate")
   duplicateOfSuggestions DuplicateSuggestion[] @relation("SuggestedOriginal")
@@ -884,6 +886,27 @@ model Post {
   @@index([duplicateOfId])
   @@index([shippedEmailsDueAt])
   @@map("post")
+}
+
+/// A change of a post's status, for its activity (the team's post page; the portal's status history):
+/// who made it (null: Tuti itself, or someone since deleted), from what to what, when, and for one to
+/// Completed, how many people the shipped email reached.
+model PostEvent {
+  id        String     @id @default(cuid())
+  postId    String
+  actorId   String?
+  from      PostStatus
+  to        PostStatus
+  emailed   Int        @default(0)
+  createdAt DateTime   @default(now())
+
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actor         User?          @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  shippedEmails ShippedEmail[]
+
+  @@index([postId, createdAt])
+  @@index([actorId])
+  @@map("post_event")
 }
 
 // ─── Support inbox ───────────────────────────────────────────────────────────
@@ -1267,12 +1290,16 @@ model ShippedEmail {
   /// When a run took this person on; an unsent claim this old is a crashed run's, and is taken over.
   claimedAt DateTime  @default(now())
   sentAt    DateTime?
+  /// The completion it's for (the post's latest when it was claimed): sent, it's counted there.
+  eventId   String?
 
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post  Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event PostEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@id([postId, userId])
   @@index([userId])
+  @@index([eventId])
   @@map("shipped_email")
 }
 

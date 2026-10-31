@@ -32,14 +32,17 @@ async function claim(postId: string, userId: string): Promise<Date | null> {
     if (post?.status !== "COMPLETED") {
       return null;
     }
+    // For this completion (its activity counts who it reached), read under the same lock.
+    const completion = await tx.postEvent.findFirst({ where: { postId, to: "COMPLETED" }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true } });
+    const eventId = completion?.id ?? null;
     const claimedAt = new Date();
-    const { count } = await tx.shippedEmail.createMany({ data: [{ postId, userId, claimedAt }], skipDuplicates: true });
+    const { count } = await tx.shippedEmail.createMany({ data: [{ postId, userId, claimedAt, eventId }], skipDuplicates: true });
     if (count === 1) {
       return claimedAt;
     }
     const taken = await tx.shippedEmail.updateMany({
       where: { postId, userId, sentAt: null, claimedAt: { lt: late() } },
-      data: { claimedAt },
+      data: { claimedAt, eventId },
     });
     return taken.count === 1 ? claimedAt : null;
   });
@@ -79,7 +82,14 @@ async function whileClaimed(claim: { postId: string; userId: string; claimedAt: 
   }
   // Sent: never released from here on. If saving this fails, the claim stays unsent and is
   // taken over later, which may email them twice; better than not at all.
-  await prisma.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
+  // Counted on its completion in the same write: only by the run that marks it sent, once.
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.shippedEmail.updateMany({ where: mine, data: { sentAt: new Date() } });
+    const sent = count === 1 ? await tx.shippedEmail.findUnique({ where: { postId_userId: { postId, userId } }, select: { eventId: true } }) : null;
+    if (sent?.eventId) {
+      await tx.postEvent.update({ where: { id: sent.eventId }, data: { emailed: { increment: 1 } } });
+    }
+  });
   return null;
 }
 

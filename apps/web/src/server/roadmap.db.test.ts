@@ -59,4 +59,14 @@ test("the team's roadmap: a board at a time, and Completed only as far back as i
   // The team's: the last 90 days; one board.
   expect(titles(await roadmapColumns(project.id, { completedDays: 90 }))).toEqual([["Dark mode"], ["Crash on save"], ["Exports"]]);
   expect(titles(await roadmapColumns(project.id, { board: "bugs", completedDays: 90 }))).toEqual([[], ["Crash on save"], []]);
+  // Completed 100 days ago by its activity, then voted for today (which moves updatedAt): still not in the last 90 days.
+  const old = await post(5, "Exports v1", "COMPLETED");
+  await prisma.postEvent.create({ data: { postId: old.id, from: "PLANNED", to: "COMPLETED", createdAt: new Date(Date.now() - 100 * 86_400_000) } });
+  expect(titles(await roadmapColumns(project.id, { completedDays: 90 }))[2]).toEqual(["Exports"]);
+  // Ordered by when each was completed, not by its last vote: one completed yesterday comes before one completed 80 days ago, voted for today.
+  const recent = await post(6, "Calendar sync", "COMPLETED", ideas.id, new Date(Date.now() - 86_400_000));
+  await prisma.postEvent.create({ data: { postId: recent.id, from: "PLANNED", to: "COMPLETED", createdAt: new Date(Date.now() - 86_400_000) } });
+  const older = await post(7, "SSO v2", "COMPLETED");
+  await prisma.postEvent.create({ data: { postId: older.id, from: "PLANNED", to: "COMPLETED", createdAt: new Date(Date.now() - 80 * 86_400_000) } });
+  expect(titles(await roadmapColumns(project.id, { completedDays: 90 }))[2]).toEqual(["Exports", "Calendar sync", "SSO v2"]);
 });

@@ -81,6 +81,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   await team.getByRole("option", { name: "Planned" }).click();
   // Saved once the toast shows; the portal is opened only after that.
   await expect(team.getByText("Status: Planned")).toBeVisible();
+  // The change is in the post's activity, after the team's answer: who made it, from what to what.
+  await expect(team.getByRole("region", { name: "Comments" }).getByRole("listitem").last()).toContainText("Open → Planned, by Tess Team");
   await checkpoint(team, "team-planned");
 
   // People on the portal see one post with both votes, the team's answer and the status.
