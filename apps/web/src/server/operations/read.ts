@@ -1,4 +1,4 @@
-import { prisma, type PostStatus } from "@tuti/db";
+import { Prisma, prisma, type PostStatus } from "@tuti/db";
 import { postSummary, postSummarySelect } from "@tuti/jobs";
 import { z } from "zod";
 
@@ -160,29 +160,33 @@ export const ROADMAP = [
  * each. The team's roadmap narrows to a board, and Completed to what finished in its last `completedDays`.
  */
 export async function roadmapColumns(projectId: string, { board, completedDays }: { board?: string; completedDays?: number } = {}) {
-  const completedSince = completedDays && new Date(Date.now() - completedDays * 86_400_000);
+  const select = { ...postSummarySelect, id: true, board: { select: { slug: true, name: true } } } as const;
+  const onBoard = board ? { board: { slug: board } } : {};
   return Promise.all(
-    ROADMAP.map(({ status }) =>
-      prisma.post.findMany({
-        where: {
-          projectId,
-          status,
-          duplicateOfId: null,
-          ...(board && { board: { slug: board } }),
-          // Completed since then (its activity says when); one completed before status changes were kept: by its last change.
-          ...(status === "COMPLETED" &&
-            completedSince && {
-              OR: [
-                { events: { some: { to: "COMPLETED", createdAt: { gte: completedSince } } } },
-                { events: { none: { to: "COMPLETED" } }, updatedAt: { gte: completedSince } },
-              ],
-            }),
-        },
-        orderBy: status === "COMPLETED" ? [{ updatedAt: "desc" }] : [{ voteCount: "desc" }, { createdAt: "desc" }],
-        take: 50,
-        select: { ...postSummarySelect, id: true, board: { select: { slug: true, name: true } } },
-      }),
-    ),
+    ROADMAP.map(async ({ status }) => {
+      if (status !== "COMPLETED") {
+        return prisma.post.findMany({
+          where: { projectId, status, duplicateOfId: null, ...onBoard },
+          orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
+          take: 50,
+          select,
+        });
+      }
+      // When each was completed: its activity's latest Completed, or for one completed before status
+      // changes were kept, its last change. Ordered by it, and with `completedDays`, only that recent.
+      const completedAt = Prisma.sql`COALESCE((SELECT MAX(e."createdAt") FROM post_event e WHERE e."postId" = p.id AND e."to" = 'COMPLETED'), p."updatedAt")`;
+      const since = completedDays ? new Date(Date.now() - completedDays * 86_400_000) : null;
+      const rows = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT p.id FROM post p
+        WHERE p."projectId" = ${projectId} AND p.status = 'COMPLETED' AND p."duplicateOfId" IS NULL
+          ${board ? Prisma.sql`AND p."boardId" = (SELECT id FROM board WHERE "projectId" = ${projectId} AND slug = ${board})` : Prisma.empty}
+          ${since ? Prisma.sql`AND ${completedAt} >= ${since}` : Prisma.empty}
+        ORDER BY ${completedAt} DESC, p.id DESC
+        LIMIT 50`;
+      const posts = await prisma.post.findMany({ where: { id: { in: rows.map((row) => row.id) } }, select });
+      const byId = new Map(posts.map((post) => [post.id, post]));
+      return rows.flatMap((row) => byId.get(row.id) ?? []);
+    }),
   );
 }
 

@@ -900,8 +900,9 @@ model PostEvent {
   emailed   Int        @default(0)
   createdAt DateTime   @default(now())
 
-  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
-  actor User? @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  post          Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  actor         User?          @relation("PostEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  shippedEmails ShippedEmail[]
 
   @@index([postId, createdAt])
   @@map("post_event")
@@ -1288,9 +1289,12 @@ model ShippedEmail {
   /// When a run took this person on; an unsent claim this old is a crashed run's, and is taken over.
   claimedAt DateTime  @default(now())
   sentAt    DateTime?
+  /// The completion it's for (the post's latest when it was claimed): sent, it's counted there.
+  eventId   String?
 
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post  Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event PostEvent? @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@id([postId, userId])
   @@index([userId])
