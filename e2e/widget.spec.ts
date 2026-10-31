@@ -977,7 +977,7 @@ test("the team sets up the launcher; a customer's site shows it, opens articles 
   const panel = (await visitor.locator("#tuti-widget").boundingBox())!;
   expect((await icon.boundingBox())!.x + (await icon.boundingBox())!.width).toBeLessThanOrEqual(panel.x + panel.width);
   // On a phone the panel is the whole screen, over the launcher (its own close button at the top).
-  expect(panel).toEqual({ x: 0, y: 0, width: 360, height: 720 });
+  await expect.poll(() => visitor.locator("#tuti-widget").boundingBox()).toEqual({ x: 0, y: 0, width: 360, height: 720 });
   const button = (await launcher.boundingBox())!;
   expect(await visitor.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("#tuti-widget") !== null, [button.x + button.width / 2, button.y + button.height / 2])).toBe(true);
   await checkpoint(visitor, "widget-phone", { fullPage: false });
