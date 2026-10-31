@@ -25,6 +25,8 @@ test("Home: the numbers, what needs the team oldest first with its action, Get s
   await prisma.post.updateMany({ where: { projectId: project.id, number: planned.number }, data: { status: "PLANNED", createdAt: ago(20) } });
   // A conversation waiting for a reply for five days.
   await prisma.conversation.create({ data: { projectId: project.id, number: 1, subject: "Can't log in", status: "OPEN", origin: "API", lastMessageAt: ago(5), waitingSince: ago(5) } });
+  // One closed without a reply: not waiting any more.
+  await prisma.conversation.create({ data: { projectId: project.id, number: 2, subject: "Old question", status: "CLOSED", origin: "API", lastMessageAt: ago(9), waitingSince: ago(9) } });
   // A docs search that found nothing, twice, two days ago.
   await prisma.docsFailedSearchDay.create({ data: { projectId: project.id, day: ago(2), query: "refund", count: 2 } });
   // Votes: two on SSO this week (one old one doesn't count), one on Exports.

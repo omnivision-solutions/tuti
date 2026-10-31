@@ -21,22 +21,28 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const week = new Date(now - 7 * DAY);
   const month = new Date(now - 30 * DAY);
   const base = `/app/${slug}`;
-  const [newPosts, replies, triage, duplicates, changes, failedSearches, failedTotal, setup, trendingVotes] = await Promise.all([
+  // What waits for a reply: not spam, not closed (closing doesn't clear `waitingSince`).
+  const needsReply = { projectId, spam: false, status: { not: "CLOSED" as const }, waitingSince: { not: null } };
+  const toTriage = { projectId, duplicateOfId: null, status: "OPEN" as const };
+  const duplicate = { projectId, status: "PENDING" as const };
+  // Each list's oldest, as many as Home shows: merged and cut below; the totals come from counts.
+  const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, failedSearches, failedTotal, setup, trendingVotes] = await Promise.all([
     prisma.post.count({ where: { projectId, duplicateOfId: null, createdAt: { gte: week } } }),
-    prisma.conversation.findMany({
-      where: { projectId, spam: false, waitingSince: { not: null } },
-      orderBy: { waitingSince: "asc" },
-      select: { number: true, subject: true, waitingSince: true },
-    }),
-    prisma.post.findMany({ where: { projectId, duplicateOfId: null, status: "OPEN" }, orderBy: { createdAt: "asc" }, select: { number: true, title: true, createdAt: true } }),
+    prisma.conversation.findMany({ where: needsReply, orderBy: { waitingSince: "asc" }, take: ATTENTION, select: { number: true, subject: true, waitingSince: true } }),
+    prisma.conversation.count({ where: needsReply }),
+    prisma.post.findMany({ where: toTriage, orderBy: { createdAt: "asc" }, take: ATTENTION, select: { number: true, title: true, createdAt: true } }),
+    prisma.post.count({ where: toTriage }),
     prisma.duplicateSuggestion.findMany({
-      where: { projectId, status: "PENDING" },
+      where: duplicate,
       orderBy: { createdAt: "asc" },
+      take: ATTENTION,
       select: { id: true, createdAt: true, post: { select: { number: true, title: true } }, original: { select: { title: true } } },
     }),
+    prisma.duplicateSuggestion.count({ where: duplicate }),
     prisma.codeChange.findMany({
       where: { projectId, state: "READY", actions: { some: { status: { in: ["PENDING", "STALE"] } } } },
       orderBy: { mergedAt: "asc" },
+      take: 100,
       select: { id: true, title: true, mergedAt: true, _count: { select: { actions: { where: { status: { in: ["PENDING", "STALE"] } } } } } },
     }),
     prisma.docsFailedSearchDay.groupBy({ by: ["query"], where: { projectId, day: { gte: month } }, _sum: { count: true }, _min: { day: true }, orderBy: { _sum: { count: "desc" } }, take: 5 }),
@@ -103,12 +109,13 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   return {
     numbers: {
       newPosts,
-      needReply: replies.length,
+      needReply: replyCount,
       updatesWaiting: changes.reduce((sum, c) => sum + c._count.actions, 0),
       searchesFailed: failedTotal._sum.count ?? 0,
     },
     attention: attention.slice(0, ATTENTION),
-    moreAttention: Math.max(attention.length - ATTENTION, 0),
+    // Everything waiting, not just what was read: the counts, Autopilot's changes and the searches.
+    moreAttention: Math.max(replyCount + triageCount + duplicateCount + changes.length + failedSearches.length - ATTENTION, 0),
     setup: steps.every((step) => step.done) ? null : steps,
     trending,
   };
