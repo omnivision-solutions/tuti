@@ -60,5 +60,7 @@ export async function previewGroup(projectSlug: string, conditions: z.input<type
 
 /** Settings → Access → Who's asking: the number property Feedback totals over a post's voters (null: none; see project.update). */
 export async function setAskingProperty(projectSlug: string, property: string | null): Promise<{ error?: string }> {
-  return asAdmin(projectSlug, DENIED, (context) => call(updateProject, context, { askingProperty: property === null ? null : String(property) }));
+  return asAdmin(projectSlug, "Only project owners and admins can change Who's asking", (context) =>
+    call(updateProject, context, { askingProperty: property === null ? null : String(property) }),
+  );
 }

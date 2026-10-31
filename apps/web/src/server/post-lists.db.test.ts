@@ -128,12 +128,18 @@ test("Who's asking: each post's voters' total of the number property the team pi
   // Signed in to the portal with their own account, the address the app gave Cora (verified): Cora's properties.
   const cora = await signUp("Cora");
   await prisma.user.update({ where: { id: cora.id }, data: { emailVerified: true } });
-  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "cora", userId: (await signUp("Cora (app)")).id, email: cora.email.toLowerCase(), properties: { mrr: 99, plan: "pro" } } });
+  const coraApp = (await signUp("Cora (app)")).id;
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "cora", userId: coraApp, email: cora.email.toLowerCase(), properties: { mrr: 99, plan: "pro" } } });
+  // The owner's address is one of the app's users too (an enterprise one): the team's votes don't count as theirs.
+  await prisma.user.update({ where: { id: owner.id }, data: { emailVerified: true } });
+  await prisma.ssoIdentity.create({ data: { projectId: project.id, externalId: "olive", userId: (await signUp("Olive (app)")).id, email: owner.email.toLowerCase(), properties: { mrr: 5000, plan: "enterprise" } } });
   await prisma.vote.createMany({
     data: [
       { projectId: project.id, postId: sso.id, userId: acme },
       { projectId: project.id, postId: sso.id, userId: bolt },
       { projectId: project.id, postId: quiet.id, userId: cora.id },
+      // Cora again, signed in by the app: the same user of the project, counted once.
+      { projectId: project.id, postId: quiet.id, userId: coraApp },
       { projectId: project.id, postId: exports.id, userId: free },
       { projectId: project.id, postId: quiet.id, userId: owner.id },
     ],

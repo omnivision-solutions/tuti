@@ -6,26 +6,28 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setAskingProperty } from "@/server/groups";
 
-/** "*" can't be a property's name here: it stands for none. */
-const NONE = "*";
+/** Properties by name, behind a prefix, so none can be taken for None. */
+const NONE = "none";
+const valueOf = (name: string) => `property:${name}`;
 
 /** Settings → Access → Who's asking: the property Feedback totals over each post's voters, saved as it's picked. */
 export function AskingPropertySelect({ projectSlug, property, properties }: { projectSlug: string; property: string | null; properties: string[] }) {
   const [pending, startTransition] = useTransition();
   const names = property && !properties.includes(property) ? [property, ...properties] : properties;
-  const items = { [NONE]: "None", ...Object.fromEntries(names.map((name) => [name, name])) };
+  const items = { [NONE]: "None", ...Object.fromEntries(names.map((name) => [valueOf(name), name])) };
   return (
     <Select
       items={items}
-      value={property ?? NONE}
+      value={property === null ? NONE : valueOf(property)}
       disabled={pending}
       onValueChange={(value) =>
         startTransition(async () => {
-          const result = await setAskingProperty(projectSlug, value === NONE ? null : String(value));
+          const name = value === NONE ? null : String(value).slice(valueOf("").length);
+          const result = await setAskingProperty(projectSlug, name);
           if (result.error) {
             toast.error(result.error);
           } else {
-            toast.success(value === NONE ? "Feedback won't total a property" : `Feedback totals ${value} over each post's voters`);
+            toast.success(name === null ? "Feedback won't total a property" : `Feedback totals ${name} over each post's voters`);
           }
         })
       }

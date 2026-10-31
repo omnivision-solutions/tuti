@@ -47,7 +47,9 @@ export type TeamPostScope = { board?: string; q?: string; duplicatesOnly?: boole
 const voterIdentities = (projectId: string) => Prisma.sql`
   JOIN "user" u ON u.id = v."userId"
   JOIN sso_identity s ON s."projectId" = ${projectId}
-    AND (s."userId" = v."userId" OR (u."emailVerified" AND s.email = lower(u.email)))`;
+    AND (s."userId" = v."userId" OR (u."emailVerified" AND s.email = lower(u.email)))
+    -- The team votes as the team, not as one of the project's users (as readerOf).
+    AND NOT EXISTS (SELECT 1 FROM team_member t WHERE t."projectId" = ${projectId} AND t."userId" = v."userId")`;
 
 /** A post with a pending suggestion that it duplicates a post still listed. */
 const possibleDuplicate = Prisma.sql`EXISTS (SELECT 1 FROM duplicate_suggestion d JOIN post o ON o.id = d."originalId"
@@ -108,21 +110,28 @@ export async function teamPostCounts(projectId: string, scope: TeamPostScope) {
 
 /**
  * Who's asking: each post's total of `property` (a number property of the project's users) over its
- * voters, each counted once; posts with none aren't in it.
+ * voters: each voter as one of the project's users (their own identity, else the oldest with their
+ * address), each of those once (two accounts can be the same user); posts with none aren't in it.
  */
 export async function voterTotals(projectId: string, property: string | null, postIds: string[]): Promise<Map<string, number>> {
   if (!property || postIds.length === 0) {
     return new Map();
   }
-  const rows = await prisma.$queryRaw<{ postId: string; total: number }[]>`
-    SELECT "postId", SUM(value)::float8 AS total FROM (
-      SELECT DISTINCT ON (v."postId", v."userId") v."postId", (s.attributes ->> ${property}::text)::numeric AS value
-      FROM vote v ${voterIdentities(projectId)} AND jsonb_typeof(s.attributes -> ${property}::text) = 'number'
-      WHERE v."postId" = ANY(${postIds})
-      -- Their own identity first, then the oldest with their address.
-      ORDER BY v."postId", v."userId", (s."userId" = v."userId") DESC, s."createdAt"
-    ) voter GROUP BY "postId"`;
-  return new Map(rows.map((row) => [row.postId, row.total]));
+  // As text: numbers JavaScript can hold may add up past what float8 can (then it's Infinity, not an error).
+  const rows = await prisma.$queryRaw<{ postId: string; total: string }[]>`
+    SELECT "postId", SUM((attributes ->> ${property}::text)::numeric)::text AS total FROM (
+      SELECT DISTINCT ON ("postId", identity) "postId", attributes FROM (
+        SELECT DISTINCT ON (v."postId", v."userId") v."postId", s.id AS identity, s.attributes
+        FROM vote v ${voterIdentities(projectId)}
+        WHERE v."postId" = ANY(${postIds})
+        -- Their own identity first, then the oldest with their address.
+        ORDER BY v."postId", v."userId", (s."userId" = v."userId") DESC, s."createdAt"
+      ) voter
+      ORDER BY "postId", identity
+    ) asker
+    WHERE jsonb_typeof(attributes -> ${property}::text) = 'number'
+    GROUP BY "postId"`;
+  return new Map(rows.map((row) => [row.postId, Number(row.total)]));
 }
 
 /** A portal board's posts in `statuses` (every status without them), with whether `userId` voted for each. */
