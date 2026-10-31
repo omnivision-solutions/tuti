@@ -11,6 +11,8 @@ export type AutopilotEmailUpdate = {
   fact: string;
   /** What it changes, line by line: an edit's changed paragraphs, the comment it posts, the changelog line it writes. */
   diff?: DiffLine[];
+  /** Lines of it the email leaves out: "N more lines in Tuti". */
+  diffMore?: number;
   goesOut?: string;
   /** One click for its recipient (signed in): approve it. And its review page, with it ticked, to edit first. */
   approveUrl?: string;
@@ -52,9 +54,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /** Each list's colour, so a glance finds what needs them: amber waits for them, green goes out by itself, grey is done. */
 const tones = {
-  needsYou: { color: "#a35a00", background: "#fdf1dc" },
-  goesOut: { color: colors.green, background: "#e6f3ec" },
-  done: { color: colors.muted, background: "#f2efea" },
+  needsYou: { color: colors.onHighlight, background: colors.highlight },
+  goesOut: { color: colors.green, background: colors.soft },
+  done: { color: colors.muted, background: colors.mutedBackground },
 };
 type Tone = (typeof tones)[keyof typeof tones];
 
@@ -64,8 +66,8 @@ const secondary = { ...primary, backgroundColor: colors.card, color: colors.gree
 /** An edit as its lines: removed ones struck through in red, added ones in green, each with its sign (for plain text too). */
 function Diff({ lines }: { lines: DiffLine[] }) {
   const looks = {
-    removed: { sign: "−", color: "#9f1d1d", background: "#fbe9e7", border: "#d9534f" },
-    added: { sign: "+", color: "#145a32", background: "#e6f3ec", border: colors.green },
+    removed: { sign: "−", color: colors.destructive, background: colors.destructiveSoft, border: colors.destructive },
+    added: { sign: "+", color: colors.onSoft, background: colors.soft, border: colors.green },
     same: { sign: " ", color: colors.muted, background: colors.card, border: colors.border },
   };
   return (
@@ -106,6 +108,9 @@ function Updates({ heading, tone, updates, children }: { heading: string; tone: 
             {update.goesOut && <span style={{ color: tone.color, fontWeight: 600 }}> · goes out {update.goesOut}</span>}
           </Text>
           {update.diff && update.diff.length > 0 && <Diff lines={update.diff} />}
+          {!!update.diffMore && (
+            <Text style={{ fontSize: 13, color: colors.muted, margin: "4px 0 0" }}>{plural(update.diffMore, "more line", "more lines")} in Tuti</Text>
+          )}
           {(update.approveUrl || update.editUrl) && (
             <Section style={{ margin: "10px 0 0" }}>
               {update.approveUrl && (

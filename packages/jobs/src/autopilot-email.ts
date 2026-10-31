@@ -121,10 +121,13 @@ type ActionRow = {
   article: { title: string } | null;
 };
 
-/** Changed lines of an edit an email shows (with one unchanged either side), and how long each; the rest are on its page. */
+/** Lines of an edit an email shows (changed ones, with one unchanged either side), and how long each; the rest are on its page. */
 const DIFF_LINES = 8;
 const LINE_LENGTH = 280;
 const clip = (text: string) => (text.length > LINE_LENGTH ? `${text.slice(0, LINE_LENGTH - 1)}…` : text);
+/** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
+const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
+  action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
 
 /** One update as the email previews it: what it is, about what, and what it changes (line by line). */
 function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
@@ -141,18 +144,22 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: done ? "In progress, with this comment" : "Marks it in progress, with this comment",
+    MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
     ARTICLE_EDIT: done ? "Published this edit" : "Publishes this edit",
     NEW_ARTICLE: "A draft only your team sees",
     CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
   };
-  const added = (text = "") => [{ kind: "added" as const, text: clip(text) }];
+  const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text: clip(text) }] : undefined);
+  const edit = action.kind === "ARTICLE_EDIT" ? nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1) : [];
+  // Cut after DIFF_LINES, but not between a paragraph's removed line and what replaces it (up to twice as many).
+  let cut = Math.min(DIFF_LINES, edit.length);
+  while (cut < Math.min(edit.length, 2 * DIFF_LINES) && edit[cut]!.kind !== "same" && edit[cut - 1]!.kind !== "same") {
+    cut++;
+  }
   const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
     MOVES_FORWARD: added(payload.comment),
-    ARTICLE_EDIT: nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1)
-      .slice(0, DIFF_LINES)
-      .map((line) => ({ ...line, text: clip(line.text) })),
+    ARTICLE_EDIT: edit.slice(0, cut).map((line) => ({ ...line, text: clip(line.text) })),
     CHANGELOG_LINE: added(payload.line),
   };
   return {
@@ -160,6 +167,7 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
     title: action.post?.title ?? action.article?.title ?? payload.title ?? "Changelog",
     fact: fact[action.kind],
     ...(diff[action.kind] && { diff: diff[action.kind] }),
+    ...(edit.length > cut && { diffMore: edit.length - cut }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
   };
 }
@@ -194,8 +202,9 @@ function emailChange(
     .filter((action) => action.status === "PENDING" || action.status === "STALE")
     .map((action) => ({
       ...previewOf(action, now),
-      // Out of date ones can't be approved as they are, and one a teammate stopped isn't to approve unasked: Edit only.
-      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && { approveUrl: act(`approve:${action.id}`) }),
+      // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
+      // stopped isn't to approve unasked: Edit only.
+      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && !uncommented(action) && { approveUrl: act(`approve:${action.id}`) }),
       editUrl: `${page}?select=${action.id}`,
     }));
   return {
