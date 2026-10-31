@@ -101,9 +101,16 @@ test("Home counts every update waiting and every change past the list, and offer
   await prisma.post.update({ where: { id: ids[2]! }, data: { duplicateOfId: ids[0]!, status: "CLOSED" } });
   await prisma.duplicateSuggestion.create({ data: { projectId: project.id, postId: ids[2]!, originalId: ids[1]!, similarity: 0.9 } });
 
+  // 20 conversations waiting a day, and one set back to Open by hand whose last message is a week old: it's among the oldest.
+  await prisma.conversation.createMany({
+    data: Array.from({ length: 20 }, (_, i) => ({ projectId: project.id, number: i + 1, subject: `Question ${i + 1}`, status: "OPEN" as const, origin: "API" as const, lastMessageAt: ago(1), waitingSince: ago(1) })),
+  });
+  await prisma.conversation.create({ data: { projectId: project.id, number: 21, subject: "Reopened", status: "OPEN", origin: "API", lastMessageAt: ago(7) } });
+
   const home = await homeOverview(project.id, project.slug, { emailVerified: true });
+  expect(home.attention.some((item) => item.title === "Reopened")).toBe(true);
   expect(home.numbers.updatesWaiting).toBe(101);
   expect(home.attention.some((item) => item.kind === "Possible duplicate")).toBe(false);
-  // 101 changes and the two posts to triage, 20 shown.
-  expect(home.moreAttention).toBe(101 + 2 - 20);
+  // 101 changes, 21 conversations and the two posts to triage, 20 shown.
+  expect(home.moreAttention).toBe(101 + 21 + 2 - 20);
 });

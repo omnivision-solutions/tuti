@@ -25,6 +25,7 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const base = `/app/${slug}`;
   // What waits for a reply: the Inbox's Open view (and the sidebar's count).
   const needsReply = { projectId, spam: false, status: "OPEN" as const };
+  const conversationSelect = { number: true, subject: true, waitingSince: true, lastMessageAt: true } as const;
   const toTriage = { projectId, duplicateOfId: null, status: "OPEN" as const };
   // As Feedback's Possible duplicates lists them: neither post merged since.
   const duplicate = { projectId, status: "PENDING" as const, post: { duplicateOfId: null }, original: { duplicateOfId: null } };
@@ -35,13 +36,11 @@ export async function homeOverview(projectId: string, slug: string, { emailVerif
   const [newPosts, replies, replyCount, triage, triageCount, duplicates, duplicateCount, changes, changeCount, updatesWaiting, failedSearches, failedQueries, failedTotal, setup, trendingVotes] =
     await Promise.all([
     prisma.post.count({ where: { projectId, duplicateOfId: null, createdAt: { gte: week } } }),
-    // Set back to Open by hand, one has no `waitingSince`: its last message says how long.
-    prisma.conversation.findMany({
-      where: needsReply,
-      orderBy: [{ waitingSince: { sort: "asc", nulls: "last" } }, { lastMessageAt: "asc" }],
-      take: ATTENTION,
-      select: { number: true, subject: true, waitingSince: true, lastMessageAt: true },
-    }),
+    // Set back to Open by hand, one has no `waitingSince`: its last message says how long. Both kinds' oldest, merged below.
+    Promise.all([
+      prisma.conversation.findMany({ where: { ...needsReply, waitingSince: { not: null } }, orderBy: { waitingSince: "asc" }, take: ATTENTION, select: conversationSelect }),
+      prisma.conversation.findMany({ where: { ...needsReply, waitingSince: null }, orderBy: { lastMessageAt: "asc" }, take: ATTENTION, select: conversationSelect }),
+    ]).then((lists) => lists.flat()),
     prisma.conversation.count({ where: needsReply }),
     prisma.post.findMany({ where: toTriage, orderBy: { createdAt: "asc" }, take: ATTENTION, select: { number: true, title: true, createdAt: true } }),
     prisma.post.count({ where: toTriage }),
