@@ -63,7 +63,7 @@ export function afterButton(updates: Update[], done: string | null, button: stri
             ? "was dismissed"
             : update.status === "undone"
               ? "was undone"
-              : update.status === "pending" && update.waitReason?.startsWith("Stopped by")
+              : update.status === "pending" && button !== "approve" && update.waitReason?.startsWith("Stopped by")
                 ? "was stopped"
                 : null;
       if (what) {
