@@ -832,5 +832,5 @@ test("Completed for picked rows counts only who it emails: one completed already
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
-  await expect(team.getByRole("alertdialog")).toContainText("This emails up to 1 person who asked for them");
+  await expect(team.getByRole("alertdialog").getByText("This emails up to 1 person who asked for them that it shipped, as when one post is completed.", { exact: true })).toBeVisible();
 });
