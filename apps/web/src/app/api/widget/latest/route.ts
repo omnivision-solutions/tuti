@@ -1,4 +1,5 @@
 import { prisma } from "@tuti/db";
+import { liveDomain, projectWith } from "@tuti/jobs";
 
 import { appUrl, portalUrl } from "@/lib/hosts";
 import { SLUG_PATTERN } from "@/lib/project-slugs";
@@ -17,7 +18,8 @@ import { servedIcon, textColorOn, widgetSettings } from "@/server/operations/wid
  */
 export async function GET(request: Request) {
   const slug = new URL(request.url).searchParams.get("project") ?? "";
-  const headers = { "access-control-allow-origin": "*", "cache-control": "public, max-age=60" };
+  // Kept apart by the site asking: a browser's copy for the portal isn't reused for the team's site (Get set up counts that one).
+  const headers = { "access-control-allow-origin": "*", "cache-control": "public, max-age=60", vary: "Origin" };
   if (!SLUG_PATTERN.test(slug)) {
     return Response.json({ error: "Unknown project" }, { status: 404, headers });
   }
@@ -35,9 +37,11 @@ export async function GET(request: Request) {
     // Built-in icons by name; an image by its lasting link.
     ...(project && servedIcon(settings, project.plan)),
   };
-  // On a site of the team's (not the app or a portal): the widget is set up (Home's "Get set up"). Once.
+  // On a site of the team's (not the app or the portal, at Tuti's address or its own domain): the widget
+  // is set up (Home's "Get set up"). Once: the domain is only looked up until then. A portal under a
+  // path of the team's site (acme.com/portal) shares that site's origin, which counts.
   const from = siteOrigin(request.headers.get("origin") ?? request.headers.get("referer"));
-  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin) {
+  if (project && !project.widgetSeenAt && from && from !== appUrl().origin && from !== new URL(portalUrl(slug)).origin && !(await isOwnDomain(slug, from))) {
     await prisma.project.updateMany({ where: { slug, widgetSeenAt: null }, data: { widgetSeenAt: new Date() } });
   }
   // With the support inbox on, the script asks /api/widget/seen about the team's messages to whoever the page signs in.
@@ -57,10 +61,27 @@ export function OPTIONS() {
   });
 }
 
+/**
+ * Whether `origin` is the project's live custom domain, read from the database now (not the cached
+ * address links use, which a mount on the team's site takes first, and another process may still hold).
+ */
+async function isOwnDomain(slug: string, origin: string): Promise<boolean> {
+  if (!process.env.CUSTOM_DOMAIN_TARGET?.trim()) {
+    return false;
+  }
+  const domain = await prisma.customDomain.findFirst({
+    where: { hostname: new URL(origin).hostname, project: { slug, ...projectWith("customDomain") }, ...liveDomain },
+    select: { hostname: true },
+  });
+  return domain !== null;
+}
+
 /** A request's site (its Origin, or its Referer's origin); null if there isn't one. */
 function siteOrigin(header: string | null): string | null {
   try {
-    return header ? new URL(header).origin : null;
+    const origin = header ? new URL(header).origin : null;
+    // An opaque origin (a browser extension's, a sandboxed frame's) is "null": no site.
+    return origin === "null" ? null : origin;
   } catch {
     return null;
   }

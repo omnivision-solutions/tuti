@@ -69,3 +69,44 @@ test("read from one of the team's sites, the widget counts as added (Home's Get 
   await from("https://www.acme.example");
   expect(await seen()).not.toBeNull();
 });
+
+test("the portal at its own address doesn't count as one of the team's sites either", async () => {
+  vi.stubEnv("PLANS", "on");
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "PRO" } });
+  const hostname = `help-${project.slug}.example.com`;
+  await prisma.customDomain.create({ data: { projectId: project.id, hostname, verificationToken: "t", verifiedAt: new Date() } });
+  const { protocol, port } = new URL(portalUrl(project.slug));
+  const from = (origin: string) => GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin } }));
+  await from(`${protocol}//${hostname}${port ? `:${port}` : ""}`);
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt).toBeNull();
+});
+
+test("a portal under a path of the team's site: the site still counts (the widget may be on it)", async () => {
+  vi.stubEnv("PLANS", "on");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  await prisma.project.update({ where: { id: project.id }, data: { plan: "BUSINESS" } });
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  await prisma.siteMount.create({ data: { projectId: project.id, origin: "https://www.acme.example", path: "/portal", verificationToken: "t", verifiedAt: new Date() } });
+  // With a custom domain too (links go to the mount; the portal is still served there): that domain isn't the team's site.
+  await prisma.customDomain.create({ data: { projectId: project.id, hostname: `help-${project.slug}.example.com`, verificationToken: "t", verifiedAt: new Date() } });
+  const seen = async () => (await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt;
+  const from = (origin: string) => GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin } }));
+  await from(`https://help-${project.slug}.example.com`);
+  expect(await seen()).toBeNull();
+  await from("https://www.acme.example");
+  expect(await seen()).not.toBeNull();
+});
+
+test("an opaque origin (a browser extension's) is no site: the settings still come back, and nothing is counted", async () => {
+  vi.stubEnv("CUSTOM_DOMAIN_TARGET", "customers.example.net");
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const response = await GET(new Request(`http://tuti.localhost:3100/api/widget/latest?project=${project.slug}`, { headers: { origin: "chrome-extension://abcdef" } }));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("vary")).toBe("Origin");
+  expect((await prisma.project.findUniqueOrThrow({ where: { id: project.id }, select: { widgetSeenAt: true } })).widgetSeenAt).toBeNull();
+});
