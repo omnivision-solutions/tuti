@@ -37,6 +37,8 @@ test("Publish now or Stop whose updates were replaced (analysed again) says so, 
 test("Approve refused on an update someone stopped says it couldn't be approved, not that it's done", () => {
   expect(afterButton([progress("pending", "Stopped by Bob")], "already", "approve", "u1")).toBe("Progress update: Dark mode couldn't be approved as it is. Check it below.");
   expect(afterButton([progress("pending", "Stopped by Bob")], "already", "stop", "u1")).toBe("Done already: Progress update: Dark mode was stopped. Nothing more to do.");
+  // Publish now on it: it didn't go, and it waits.
+  expect(afterButton([progress("pending", "Stopped by Bob")], "already", "publish", "u1")).toBe("Progress update: Dark mode waits for you now (Stopped by Bob). Check it below.");
 });
 
 test("Stop or Publish now says which of the others it named someone decided first: went out already, or stopped", () => {
