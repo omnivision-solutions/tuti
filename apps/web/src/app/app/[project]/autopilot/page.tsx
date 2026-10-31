@@ -144,11 +144,12 @@ async function updatesInALine(changeIds: string[]): Promise<Map<string, string>>
   for (const id of changeIds) {
     const mine = actions.filter((action) => action.codeChangeId === id);
     const count = (...kinds: string[]) => mine.filter((action) => kinds.includes(action.kind)).length;
-    const closes = mine.find((action) => action.kind === "RESOLVES");
-    const forward = mine.find((action) => action.kind === "MOVES_FORWARD");
+    // Named by a post it has (one deleted since leaves the action without).
+    const closes = mine.find((action) => action.kind === "RESOLVES" && action.post);
+    const forward = mine.find((action) => action.kind === "MOVES_FORWARD" && action.post);
     const parts = [
-      closes && `Closes ${closes.post?.title}${count("RESOLVES") > 1 ? ` and ${count("RESOLVES") - 1} more` : ""}`,
-      forward && `Progress on ${forward.post?.title}${count("MOVES_FORWARD") > 1 ? ` and ${count("MOVES_FORWARD") - 1} more` : ""}`,
+      closes && `Closes ${closes.post!.title}${count("RESOLVES") > 1 ? ` and ${count("RESOLVES") - 1} more` : ""}`,
+      forward && `Progress on ${forward.post!.title}${count("MOVES_FORWARD") > 1 ? ` and ${count("MOVES_FORWARD") - 1} more` : ""}`,
       count("LINKS") > 0 && `links ${count("LINKS")} ${count("LINKS") === 1 ? "post" : "posts"}`,
       count("ARTICLE_EDIT") > 0 && `updates ${count("ARTICLE_EDIT")} ${count("ARTICLE_EDIT") === 1 ? "article" : "articles"}`,
       count("NEW_ARTICLE") > 0 && `${count("NEW_ARTICLE")} new ${count("NEW_ARTICLE") === 1 ? "article" : "articles"}`,

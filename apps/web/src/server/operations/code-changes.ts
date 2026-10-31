@@ -405,12 +405,13 @@ export const applyCodeChangeAction = defineOperation({
       throw new OperationError(400, "invalid_input", "Write the comment to post first");
     }
     // Claimed first, so two people applying it at once do it once.
+    const claimedAt = new Date();
     const { count } = await prisma.codeChangeAction.updateMany({
       where: { id: action.id, status: "PENDING" },
       data: {
         status: "APPLIED",
         decidedById: actorUser(context.actor),
-        decidedAt: new Date(),
+        decidedAt: claimedAt,
         ...(action.kind === "MOVES_FORWARD" && { payload: { comment } }),
       },
     });
@@ -456,8 +457,14 @@ export const applyCodeChangeAction = defineOperation({
       }
     } catch (error) {
       // Refused before saving (an OperationError: the post was merged, say) or failed before the comment: not done.
+      // Failed while posting it: done if the comment was saved (it stays applied, so it's never posted twice).
       if (posting && !(error instanceof OperationError)) {
-        throw error;
+        const saved = await prisma.comment
+          .count({ where: { postId: post.id, authorId: actorUser(context.actor), createdAt: { gte: claimedAt } } })
+          .then((n) => n > 0, () => true);
+        if (saved) {
+          throw Object.assign(error as Error, { saved: true });
+        }
       }
       // Not done: it's waiting again, for another try.
       await prisma.codeChangeAction.update({
@@ -499,11 +506,10 @@ export const applyCodeChangeActions = defineOperation({
           results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
         } else {
           log.error("Approving an Autopilot update failed", { error, actionId: action.id });
-          // apply keeps it applied once what users see was saved (a comment, an article's version), so
-          // trying again can't do it twice: then it went, whatever failed after.
-          const after = await prisma.codeChangeAction.findUnique({ where: { id: action.id }, select: { status: true } });
+          // apply says when what users see was saved before the failure (a comment, an article's
+          // version): then it went, and stays applied so trying again can't do it twice.
           results.push(
-            after?.status === "APPLIED"
+            (error as { saved?: boolean }).saved
               ? { id: action.id, status: "applied" }
               : { id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
           );
@@ -568,13 +574,15 @@ async function applyDocs(
       action.kind === "ARTICLE_EDIT"
         ? (await prisma.articleRevision.count({ where: { articleId: article!.id, authorId: actorUser(context.actor), ...ours } })) > 0
         : (await prisma.article.count({ where: { projectId: context.projectId, title: payload.title ?? "", createdById: actorUser(context.actor), ...ours } })) > 0;
-    if (!saved) {
-      // Saved again since the check above: it's out of date now.
-      const changed = error instanceof OperationError && error.code === "changed";
-      await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null } });
-      if (changed) {
-        throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
-      }
+    if (saved) {
+      // What users see was saved: it stays applied, and says so.
+      throw Object.assign(error as Error, { saved: true });
+    }
+    // Saved again since the check above: it's out of date now.
+    const changed = error instanceof OperationError && error.code === "changed";
+    await prisma.codeChangeAction.update({ where: { id: action.id }, data: { status: changed ? "STALE" : "PENDING", decidedById: null, decidedAt: null } });
+    if (changed) {
+      throw new OperationError(409, "stale", "The article changed since this edit was written. Analyse again to write it again, or dismiss it.");
     }
     throw error;
   }

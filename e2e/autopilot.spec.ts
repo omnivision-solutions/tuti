@@ -188,6 +188,7 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await expect(owner.getByText("From your email:")).toBeVisible();
   await expect(proposal.getByRole("checkbox")).toBeChecked();
   await owner.goto(`${page}?select=someone-else`);
+  await expect(owner.getByText("From your email: the updates it named were decided already.")).toBeVisible();
   await expect(proposal.getByRole("checkbox")).not.toBeChecked();
   await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
 

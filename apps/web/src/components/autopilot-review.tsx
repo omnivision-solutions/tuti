@@ -88,6 +88,8 @@ export function AutopilotReview({
   const stale = updates.filter((update) => update.status === "stale");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
   const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
+  // What the email's link named and is still waiting, as the page opened.
+  const [named] = useState(() => selected.size);
   // The team's edits: a progress update's comment, the changelog line.
   const [edits, setEdits] = useState<Record<string, string>>({});
   const textOf = (update: Update) => edits[update.id] ?? (update.kind === "moves_forward" ? (update.comment ?? "") : (update.line ?? ""));
@@ -141,10 +143,12 @@ export function AutopilotReview({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
       <div className="flex min-w-0 flex-col gap-4">
-        {fromEmail && waiting.length > 0 && (
+        {fromEmail && (
           <p className="rounded-lg bg-primary/10 px-3 py-2 text-sm">
-            <span className="font-medium">From your email:</span> {chosen.length === 1 ? "the update is" : `${chosen.length} updates are`} selected. Check
-            {chosen.length === 1 ? " it" : " them"} and approve.
+            <span className="font-medium">From your email:</span>{" "}
+            {named === 0
+              ? "the updates it named were decided already."
+              : `${named === 1 ? "the update is" : `${named} updates are`} selected. Check ${named === 1 ? "it" : "them"} and approve.`}
           </p>
         )}
         {[...waiting, ...stale].map((update) => (

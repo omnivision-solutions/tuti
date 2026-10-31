@@ -244,6 +244,23 @@ describe("approving several (applyMany)", () => {
     expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: failing.action.id } })).status).toBe("PENDING");
   });
 
+  test("a progress update: approved when its comment was saved before something failed, waiting again when it wasn't", async () => {
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    // Saved, then reading who wrote it fails.
+    const saved = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Weekly repeats are out." });
+    vi.spyOn(prisma.teamMember, "findFirst").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: saved.action.id }] })).results).toEqual([{ id: saved.action.id, status: "applied" }]);
+    expect((await postOf(saved.post.id)).comments).toHaveLength(1);
+    // Not saved: the comment's transaction fails.
+    const lost = await proposal("MOVES_FORWARD", { status: "IN_PROGRESS", comment: "Monthly too." });
+    vi.spyOn(prisma, "$transaction").mockRejectedValueOnce(new Error("connection reset"));
+    expect((await call(applyCodeChangeActions, team(), { actions: [{ id: lost.action.id }] })).results).toEqual([
+      { id: lost.action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+    ]);
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: lost.action.id } })).status).toBe("PENDING");
+    expect((await postOf(lost.post.id)).comments).toHaveLength(0);
+  });
+
   test("two people approving the same ones at once apply each once", async () => {
     const { post, action } = await proposal("RESOLVES");
     const both = await Promise.all([1, 2].map(() => call(applyCodeChangeActions, team(), { actions: [{ id: action.id }] })));
