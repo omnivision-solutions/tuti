@@ -508,6 +508,11 @@ describe("deciding", () => {
       { postId: null, status: "PENDING", probability: 1 },
     ]);
     expect((await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: change.id, postId: posts.darkMode!.id } })).payload).toMatchObject({ tried });
+
+    // Analysed again with nothing for Dark mode: the one that tried stays, waiting, with its record.
+    script(0);
+    await enqueue("codeChange", { codeChangeId: change.id, force: true, pastGate: false, resume: false });
+    expect(await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: change.id, postId: posts.darkMode!.id } })).toMatchObject({ status: "PENDING", payload: { tried } });
   });
 
   test("a new article is drafted; an edit that would drop a link isn't proposed", async () => {

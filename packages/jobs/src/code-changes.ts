@@ -387,12 +387,15 @@ async function finish(
 ): Promise<{ waiting: number; linked: number }> {
   const { waiting, linked, deliveries } = await prisma.$transaction(async (tx) => {
     // What a failed try at applying one did (see codeChangeActions.apply) goes to the proposal replacing
-    // it, for the same post (or the changelog line), so Undo still puts it back.
-    const replaced = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } }, select: { kind: true, postId: true, payload: true } });
-    const triedFor = (proposal: Proposal) =>
-      replaced.find((action) => (action.postId ? action.postId === proposal.postId : action.kind === "CHANGELOG_LINE" && proposal.kind === "CHANGELOG_LINE") && (action.payload as { tried?: unknown } | null)?.tried)
-        ?.payload as { tried: Prisma.InputJsonValue } | undefined;
-    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } } });
+    // it, for the same post (or the changelog line), so Undo still puts it back. With none to take it,
+    // the one that tried stays, waiting: approved, its record covers what the try did.
+    const replaced = await tx.codeChangeAction.findMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] } }, select: { id: true, kind: true, postId: true, payload: true } });
+    const tried = replaced.filter((action) => (action.payload as { tried?: unknown } | null)?.tried);
+    const sameTarget = (action: (typeof replaced)[number], proposal: Proposal) =>
+      action.postId ? action.postId === proposal.postId : action.kind === "CHANGELOG_LINE" && proposal.kind === "CHANGELOG_LINE";
+    const triedFor = (proposal: Proposal) => tried.find((action) => sameTarget(action, proposal))?.payload as { tried: Prisma.InputJsonValue } | undefined;
+    const kept = tried.filter((action) => !proposals.some((proposal) => sameTarget(action, proposal))).map((action) => action.id);
+    await tx.codeChangeAction.deleteMany({ where: { codeChangeId: id, status: { in: ["PENDING", "STALE"] }, id: { notIn: kept } } });
     const decided = await tx.codeChangeAction.findMany({ where: { codeChangeId: id }, select: { kind: true, postId: true, articleId: true } });
     const taken = (proposal: Proposal) =>
       decided.some(
