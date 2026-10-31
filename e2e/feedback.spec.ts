@@ -825,6 +825,8 @@ test("Completed for picked rows counts only who it emails: one completed already
     await api(`/posts/${number}/vote`, { voted: true, author: { id: `user-${number}`, email: `e2e-${randomUUID()}@example.com` } });
   }
   await api("/posts/1", { status: "completed" }, "PATCH");
+  // Someone votes for it after it shipped: counted for it, though completing it again emails nobody.
+  await api("/posts/1/vote", { voted: true, author: { id: "user-late", email: `e2e-${randomUUID()}@example.com` } });
   await team.goto(`/app/${slug}/feedback?status=all`);
   await team.getByRole("checkbox", { name: "Select Dark mode" }).check();
   await team.getByRole("checkbox", { name: "Select Export to PDF" }).check();
