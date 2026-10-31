@@ -84,7 +84,12 @@ test("a merged pull request becomes a code change; the team completes the post i
   await closes.getByRole("checkbox").uncheck();
   await expect(owner.getByText("2 of 3 selected · publishes 1 article")).toBeVisible();
   await owner.getByRole("button", { name: "Approve 2 updates" }).click();
+  // It asks first, saying what will happen.
+  const confirm = owner.getByRole("alertdialog", { name: "Approve 2 updates?" });
+  await expect(confirm).toContainText("1 article edit published. The changelog line updated (still a draft).");
+  await confirm.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 2 updates")).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   const done = owner.getByRole("region", { name: "Done" });
   await expect(done.getByRole("listitem", { name: `Out of date: ${article}` })).toContainText("Approved by Olive Owner");
   await expect(done.getByRole("listitem", { name: "Changelog line: A dark theme, in Settings" })).toContainText("Approved by Olive Owner");
@@ -92,6 +97,7 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(owner.getByRole("button", { name: "Approve", exact: true })).toBeDisabled();
   await closes.getByRole("checkbox").check();
   await owner.getByRole("button", { name: "Approve 1 update" }).click();
+  await owner.getByRole("alertdialog", { name: "Approve 1 update?" }).getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 1 update")).toBeVisible();
   await expect(done.getByRole("listitem", { name: `Closes the request: ${title}` })).toContainText("Approved by Olive Owner");
   const portalArticle = await owner.context().newPage();

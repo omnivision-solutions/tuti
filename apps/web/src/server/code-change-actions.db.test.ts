@@ -198,6 +198,10 @@ test("the review page ticks the likely updates as it opens (not a comment nobody
   expect(actions.filter((action) => action.applyLikely).map((action) => action.id)).toEqual([likely.action.id]);
   expect(actions.find((action) => action.id === likely.action.id)).toMatchObject({ emails: 2 });
   expect(actions.map((action) => action.id)).toEqual(expect.arrayContaining([unwritten.action.id, maybe.action.id]));
+  // A post completed already (by hand, since): approving emails nobody.
+  const done = await proposal("RESOLVES", { status: "COMPLETED" });
+  const again = await call(getCodeChange, team(), { id: done.change.id });
+  expect(again.actions.find((action) => action.id === done.action.id)).toMatchObject({ emails: 0 });
 });
 
 describe("approving several (applyMany)", () => {
@@ -216,6 +220,24 @@ describe("approving several (applyMany)", () => {
     ]);
     expect((await postOf(resolves.post.id)).status).toBe("COMPLETED");
     expect(await postOf(forward.post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out; monthly next." }] });
+  });
+
+  test("one failing unexpectedly is reported, and those before and after it are still applied", async () => {
+    const first = await proposal("LINKS");
+    const failing = await proposal("RESOLVES");
+    const last = await proposal("LINKS");
+    const upsert = prisma.postLink.upsert.bind(prisma.postLink);
+    vi.spyOn(prisma.postLink, "upsert").mockImplementation(((args: Parameters<typeof upsert>[0]) =>
+      args.where.postId_url?.postId === failing.post.id ? Promise.reject(new Error("connection reset")) : upsert(args)) as unknown as typeof prisma.postLink.upsert);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { results } = await call(applyCodeChangeActions, team(), { actions: [{ id: first.action.id }, { id: failing.action.id }, { id: last.action.id }] });
+    expect(results).toEqual([
+      { id: first.action.id, status: "applied" },
+      { id: failing.action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." },
+      { id: last.action.id, status: "applied" },
+    ]);
+    // Not done: it's waiting again.
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: failing.action.id } })).status).toBe("PENDING");
   });
 
   test("two people approving the same ones at once apply each once", async () => {

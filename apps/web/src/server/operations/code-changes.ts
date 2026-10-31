@@ -156,7 +156,7 @@ export async function codeChangeDetail(projectId: string, id: string) {
           decidedAt: true,
           dismissReason: true,
           decidedBy: { select: { name: true } },
-          post: { select: { ...postSummarySelect, id: true } },
+          post: { select: { ...postSummarySelect, id: true, duplicateOfId: true } },
           article: { select: articleSelect },
         },
       },
@@ -165,7 +165,10 @@ export async function codeChangeDetail(projectId: string, id: string) {
   if (!change) {
     return null;
   }
-  const completing = change.actions.filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post).map((action) => action.post!.id);
+  // Approving completes (and emails about) only a post not completed yet, nor merged into another.
+  const completing = change.actions
+    .filter((action) => action.kind === "RESOLVES" && action.status === "PENDING" && action.post && action.post.status !== "COMPLETED" && !action.post.duplicateOfId)
+    .map((action) => action.post!.id);
   const [portal, bullet, emails] = await Promise.all([
     projectPortal(projectId),
     prisma.changelogEntryPullRequest.findFirst({ where: { url: change.url, entry: { projectId } }, select: { entry: { select: { number: true, title: true } } } }),
@@ -486,11 +489,14 @@ export const applyCodeChangeActions = defineOperation({
         await call(applyCodeChangeAction, context, action);
         results.push({ id: action.id, status: "applied" });
       } catch (error) {
-        // Refused (an OperationError: out of date, decided already, not found): said, and the rest go on.
-        if (!(error instanceof OperationError)) {
-          throw error;
+        // Refused (out of date, decided already, not found) or failed: said, and the rest go on, so
+        // those already applied (and emailed about) are still reported.
+        if (error instanceof OperationError) {
+          results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
+        } else {
+          console.error(`codeChangeActions.applyMany: ${action.id} failed`, error);
+          results.push({ id: action.id, status: "failed", code: "internal", message: "Couldn't apply it. Try again in a moment." });
         }
-        results.push({ id: action.id, status: "failed", code: error.code, message: error.message });
       }
     }
     return { results };

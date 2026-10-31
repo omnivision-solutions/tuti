@@ -7,6 +7,16 @@ import { toast } from "sonner";
 
 import { AnalyseCodeChangeButton } from "@/components/code-changes";
 import { DiffLines } from "@/components/line-diff";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +81,9 @@ export function AutopilotReview({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  // What the dialog asks about, as it opened (the selection clears as it closes).
+  const [asked, setAsked] = useState({ count: 0, lines: [] as string[] });
   const waiting = updates.filter((update) => update.status === "pending");
   const stale = updates.filter((update) => update.status === "stale");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale");
@@ -108,8 +121,11 @@ export function AutopilotReview({
         ...(update.kind === "changelog_line" && { line: textOf(update) }),
       }));
       const result = await approveCodeChanges(projectSlug, approvals);
+      setConfirming(false);
       if (result.error) {
         toast.error(result.error);
+        // Someone else may have decided them meanwhile: show the page as it is now.
+        router.refresh();
         return;
       }
       setSelected(new Set());
@@ -186,12 +202,30 @@ export function AutopilotReview({
               </span>
               {effects.length > 0 && ` · ${effects.join(" · ")}`}
             </p>
-            <Button className="order-1 w-full sm:order-2 sm:w-auto" disabled={pending || chosen.length === 0 || blank} onClick={approve}>
-              {pending ? "Approving…" : chosen.length === 0 ? "Approve" : `Approve ${plural(chosen.length, "update")}`}
+            <Button className="order-1 w-full sm:order-2 sm:w-auto" disabled={pending || chosen.length === 0 || blank} onClick={() => {
+                setAsked({ count: chosen.length, lines: whenApproved(chosen, emails) });
+                setConfirming(true);
+              }}>
+              {chosen.length === 0 ? "Approve" : `Approve ${plural(chosen.length, "update")}`}
             </Button>
           </div>
         )}
       </div>
+      {/* Emails and published articles can't be taken back: it asks first. */}
+      <AlertDialog open={confirming} onOpenChange={(open) => !pending && setConfirming(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve {plural(asked.count, "update")}?</AlertDialogTitle>
+            <AlertDialogDescription>{asked.lines.join(". ")}.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={pending} onClick={approve}>
+              {pending ? "Approving…" : "Approve"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <aside className="flex flex-col gap-4">
         {waiting.length > 0 && (
           <section aria-labelledby="when-you-approve" className="flex flex-col gap-2 rounded-xl border bg-card p-4 text-sm">
@@ -319,7 +353,9 @@ function UpdateCard({
         `#${post.number}`,
         plural(post.votes, "vote"),
         update.kind === "resolves"
-          ? `${STATUS_LABELS[post.status]} → Completed${update.emails ? ` · emails ${plural(update.emails, "person", "people")}` : ""}`
+          ? post.status === "completed"
+            ? "Already completed"
+            : `${STATUS_LABELS[post.status]} → Completed${update.emails ? ` · emails ${plural(update.emails, "person", "people")}` : ""}`
           : update.kind === "moves_forward"
             ? `${NOT_STARTED.has(post.status) ? `${STATUS_LABELS[post.status]} → In progress · ` : ""}posts the update`
             : `${STATUS_LABELS[post.status]} · links the pull request`,
