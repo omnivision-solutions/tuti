@@ -7,7 +7,7 @@ export type MailProvider = { name: string; docs: string };
 const PROVIDERS: { name: string; anchor: string; mx: RegExp }[] = [
   { name: "Google Workspace", anchor: "google-workspace", mx: /(^|\.)(google|googlemail)\.com$/ },
   { name: "Microsoft 365", anchor: "microsoft-365", mx: /(^|\.)(outlook\.com|mx\.microsoft)$/ },
-  { name: "Zoho Mail", anchor: "zoho-mail", mx: /(^|\.)zoho(mail)?\.[a-z.]+$/ },
+  { name: "Zoho Mail", anchor: "zoho-mail", mx: /(^|\.)(zoho(mail)?\.(com|com\.au|com\.cn|eu|in|jp|uk|sa)|zohocloud\.ca)$/ },
   { name: "Fastmail", anchor: "fastmail", mx: /(^|\.)messagingengine\.com$/ },
   { name: "Proton Mail", anchor: "proton-mail", mx: /(^|\.)protonmail\.ch$/ },
   { name: "Cloudflare Email Routing", anchor: "cloudflare-email-routing", mx: /(^|\.)mx\.cloudflare\.net$/ },

@@ -9,10 +9,12 @@ test("a domain's email provider comes from its MX hosts, with its section of the
   // Its DNSSEC endpoints, for newer domains.
   expect(mailProvider(["acme-com.o-v1.mx.microsoft"])).toMatchObject({ name: "Microsoft 365" });
   expect(mailProvider(["mx.zoho.eu", "mx2.zoho.eu"])).toMatchObject({ name: "Zoho Mail" });
+  expect(mailProvider(["mx.zoho.com.au"])).toMatchObject({ name: "Zoho Mail" });
   expect(mailProvider(["in1-smtp.messagingengine.com"])).toMatchObject({ name: "Fastmail" });
   expect(mailProvider(["mail.protonmail.ch"])).toMatchObject({ name: "Proton Mail" });
   expect(mailProvider(["route1.mx.cloudflare.net"])).toMatchObject({ name: "Cloudflare Email Routing" });
   // Not fooled by a name that only contains a provider's.
   expect(mailProvider(["google.com.mx.example.net"])).toBe("other");
+  expect(mailProvider(["mx.zoho.example.net"])).toBe("other");
   expect(mailProvider([])).toBe("none");
 });
