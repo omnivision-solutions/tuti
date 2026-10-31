@@ -11,7 +11,7 @@ import { MovePostSelect } from "@/components/move-post-select";
 import { PostEtaSelect, PostOwnerSelect } from "@/components/post-planning";
 import { PageHeader } from "@/components/page-header";
 import { PostLinks } from "@/components/post-links";
-import { Property, PostConversations, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
+import { CONVERSATIONS_SHOWN, Property, PostConversations, PostShipped, PostsLike, PostVoters } from "@/components/post-sidebar";
 import { PostSteps } from "@/components/post-steps";
 import { PostStatusSelect } from "@/components/post-status-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -50,9 +50,12 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
           orderBy: { createdAt: "asc" },
           select: { id: true, kind: true, repo: true, number: true, tag: true, url: true, title: true, codeChangeId: true },
         },
+        // The latest linked, and how many there are.
+        _count: { select: { conversations: { where: { conversation: { spam: false } } } } },
         conversations: {
           where: { conversation: { spam: false } },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" },
+          take: CONVERSATIONS_SHOWN,
           select: {
             conversation: {
               select: {
@@ -227,6 +230,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
             <PostVoters voters={voters} voteCount={post.voteCount} property={project.askingProperty} />
             <PostConversations
               projectSlug={slug}
+              count={post._count.conversations}
               conversations={post.conversations.map(({ conversation }) => {
                 const person = conversationPerson(conversation);
                 return { ...conversation, person: person.name ?? person.email ?? "Unknown" };

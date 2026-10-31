@@ -272,6 +272,9 @@ test("the reply box stays at the bottom of the screen, and a long conversation o
   await expect(messages.last()).toBeInViewport();
   await expect(messages.first()).not.toBeInViewport();
   await expect(reply).toBeInViewport();
+  // What's beside it stays in view too: the linked posts and who it's with.
+  await expect(owner.getByRole("region", { name: "Linked posts" })).toBeInViewport();
+  await expect(owner.getByRole("complementary", { name: "About them" })).toBeInViewport();
   await checkpoint(owner, "conversation-newest", { fullPage: false });
   // Scrolled back to the first message, the reply box is where it was.
   const y = (await send.boundingBox())!.y;

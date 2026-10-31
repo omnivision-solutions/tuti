@@ -4,31 +4,52 @@ import type { PostStatus } from "@tuti/db";
 import { LinkIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { type PickablePost, PostPicker } from "@/components/post-picker";
 import { PostStatusBadge } from "@/components/post-status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { linkPostToConversation } from "@/server/inbox";
+import { findPostsToLink, linkPostToConversation } from "@/server/inbox";
 
-/** The posts a conversation is about, beside it: each opens the post or is unlinked; "Link post…" picks another. */
+/**
+ * The posts a conversation is about, beside it: each opens the post or is unlinked; "Link post…" searches the
+ * project's posts (findPostsToLink) as it's typed in, to pick another.
+ */
 export function ConversationPosts({
   projectSlug,
   number,
   posts,
-  candidates,
 }: {
   projectSlug: string;
   number: number;
   posts: { number: number; title: string; status: PostStatus }[];
-  candidates: PickablePost[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [found, setFound] = useState<PickablePost[]>([]);
   const [pending, startTransition] = useTransition();
+  // The latest search asked for, and its timer: an older answer arriving late is dropped.
+  const asked = useRef(0);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const search = (q: string, wait: number) => {
+    clearTimeout(timer.current);
+    const ask = ++asked.current;
+    timer.current = setTimeout(async () => {
+      const result = await findPostsToLink(projectSlug, q).catch(() => ({ error: "Couldn't reach Tuti. Try again.", posts: undefined }));
+      if (ask !== asked.current) {
+        return;
+      }
+      if (result.error) {
+        toast.error(result.error);
+      }
+      setFound(result.posts ?? []);
+    }, wait);
+  };
+  const linked = new Set(posts.map((post) => post.number));
 
   const link = (post: number, linked: boolean) =>
     startTransition(async () => {
@@ -71,8 +92,9 @@ export function ConversationPosts({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) {
-            setQuery("");
+          setQuery("");
+          if (next) {
+            search("", 0);
           }
         }}
       >
@@ -85,7 +107,16 @@ export function ConversationPosts({
             <DialogTitle>Link a post</DialogTitle>
             <DialogDescription>Pick the post this conversation is about.</DialogDescription>
           </DialogHeader>
-          <PostPicker candidates={candidates} query={query} onQueryChange={setQuery} onPick={(post) => !pending && link(post.number, true)} />
+          <PostPicker
+            candidates={found.filter((post) => !linked.has(post.number))}
+            query={query}
+            onQueryChange={(next) => {
+              setQuery(next);
+              search(next, 250);
+            }}
+            onPick={(post) => link(post.number, true)}
+            disabled={pending}
+          />
         </DialogContent>
       </Dialog>
     </section>

@@ -104,13 +104,21 @@ export function PostsLike({ projectSlug, posts }: { projectSlug: string; posts: 
   );
 }
 
-/** The conversations linked to the post (from the Inbox): each opens in the Inbox, with who it's with and its status. */
+/** How many of a post's linked conversations its sidebar lists, the latest linked first. */
+export const CONVERSATIONS_SHOWN = 10;
+
+/**
+ * The conversations linked to the post (from the Inbox), the latest linked first: each opens in the Inbox, with who
+ * it's with and its status; past CONVERSATIONS_SHOWN, "N more" of `count`.
+ */
 export function PostConversations({
   projectSlug,
   conversations,
+  count,
 }: {
   projectSlug: string;
   conversations: { number: number; subject: string; status: ConversationStatus; person: string }[];
+  count: number;
 }) {
   if (conversations.length === 0) {
     return null;
@@ -129,6 +137,7 @@ export function PostConversations({
           </li>
         ))}
       </ul>
+      {count > conversations.length && <span className="text-xs text-muted-foreground">{count - conversations.length} more</span>}
     </Property>
   );
 }
