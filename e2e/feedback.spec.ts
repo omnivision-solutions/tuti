@@ -710,7 +710,8 @@ test("Feedback's picked rows go by the list as it is now: Merge keeps the one wi
   await other.getByRole("button", { name: /^Status: / }).click();
   await team.getByRole("menuitemradio", { name: "Planned" }).click();
   await expect(team.getByText("Status: Planned")).toBeVisible();
-  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText("2");
+  // Its vote count, first in the row (not its number, #2): its author's and the two new ones.
+  await expect(team.getByRole("main").getByRole("listitem").filter({ hasText: "Night theme" })).toContainText(/^\s*3\s*Night theme/);
   await team.getByRole("toolbar", { name: "Selected posts" }).getByRole("button", { name: "Merge…" }).click();
   await expect(team.getByRole("alertdialog").getByRole("radio", { name: /Night theme/ })).toBeChecked();
 });
