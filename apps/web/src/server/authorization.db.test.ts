@@ -336,6 +336,7 @@ const matrix: Matrix = {
     applyCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.applyCodeChange(slug, f.linkActionId) },
     dismissCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.dismissCodeChange(slug, f.dismissActionId, "Not this one") },
     approveCodeChanges: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.approveCodeChanges(slug, [{ id: f.linkActionId }]) },
+    undoCodeChange: { allowed: "MEMBER", takesIds: true, call: (slug, f) => codeChanges.undoCodeChange(slug, f.appliedActionId) },
   },
   github: {
     disconnectGithub: { allowed: "ADMIN", call: (slug) => github.disconnectGithub(slug) },
@@ -858,6 +859,8 @@ async function createFixture(own: "domain" | "site" = "domain") {
       actions: {
         create: [
           { kind: "LINKS", postId: post!.id, probability: 0.9 },
+          // Approved already, to undo (it put nothing back to put back).
+          { kind: "RESOLVES", postId: post!.id, probability: 0.9, status: "APPLIED", payload: { undo: { linked: false } } },
           { kind: "MOVES_FORWARD", postId: duplicate!.id, probability: 0.5, payload: { comment: "Getting there" } },
         ],
       },
@@ -869,6 +872,7 @@ async function createFixture(own: "domain" | "site" = "domain") {
     codeChangeId: codeChange.id,
     linkActionId: codeChange.actions.find((action) => action.kind === "LINKS")!.id,
     dismissActionId: codeChange.actions.find((action) => action.kind === "MOVES_FORWARD")!.id,
+    appliedActionId: codeChange.actions.find((action) => action.kind === "RESOLVES")!.id,
     githubRepoId,
     redirectId: redirect.id,
     linkId: link.id,

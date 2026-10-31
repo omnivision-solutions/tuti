@@ -209,4 +209,15 @@ test("a pull request that needs a new article: its draft shows formatted, as rea
   await owner.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText(/^Approved \d updates?$/)).toBeVisible();
   await expect(owner.getByText("From your email: the updates it named were decided already.", { exact: true })).toBeVisible();
+  await expect(owner.getByRole("alertdialog")).toHaveCount(0);
+  // Then undone: the draft is deleted, and the update says who undid it.
+  const done = owner.getByRole("region", { name: "Done" }).getByRole("listitem", { name: `New article: ${draft}` });
+  await done.getByRole("button", { name: "Undo" }).click();
+  const undo = owner.getByRole("alertdialog", { name: "Undo this update?" });
+  await expect(undo).toContainText("The draft is deleted.");
+  await undo.getByRole("button", { name: "Undo" }).click();
+  await expect(owner.getByText("Undone", { exact: true })).toBeVisible();
+  await expect(done).toContainText("Undone by Olive Owner");
+  await owner.goto(`/app/${slug}/docs`);
+  await expect(owner.getByRole("link", { name: draft })).toHaveCount(0);
 });

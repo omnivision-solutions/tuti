@@ -181,6 +181,22 @@ export async function removeFromRunningDraft(projectId: string, url: string): Pr
   });
 }
 
+const textOf = (node: Item & { text?: string }): string => node.text ?? ((node.content ?? []) as Item[]).map(textOf).join("");
+
+/**
+ * The pull request's bullet as its entry has it now (its text, and whether the entry is published), or
+ * null if no entry has it. For putting a changelog line back (Autopilot's Undo).
+ */
+export async function changelogLineOf(projectId: string, url: string): Promise<{ text: string | null; published: boolean } | null> {
+  const known = await prisma.changelogEntryPullRequest.findFirst({ where: { url, entry: { projectId } }, select: { entry: { select: { content: true, publishedAt: true } } } });
+  if (!known) {
+    return null;
+  }
+  const doc = (known.entry.content as Doc | null) ?? { type: "doc", content: [] };
+  const bullet = (doc.content ?? []).flatMap((block) => (block.type === "bulletList" ? ((block.content as Item[] | undefined) ?? []) : [])).find((item) => isBullet(item, url));
+  return { text: bullet ? textOf(bullet) : null, published: known.entry.publishedAt !== null };
+}
+
 /**
  * A code change's changelog line: the pull request's bullet, in whichever entry has it, says `line`
  * instead of the pull request's title. Not in any (say, it had nothing to do until "Analyse anyway"):

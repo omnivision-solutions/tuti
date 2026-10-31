@@ -5,7 +5,7 @@ import { addToRunningDraft } from "@tuti/jobs";
 import { log } from "@tuti/shared";
 
 import { approveCodeChanges } from "@/server/code-changes";
-import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges } from "@/server/operations/code-changes";
+import { applyCodeChangeAction, applyCodeChangeActions, codeChangeList, dismissCodeChangeAction, getCodeChange, listCodeChanges, undoCodeChangeAction } from "@/server/operations/code-changes";
 import { createPost } from "@/server/operations/create";
 import { createArticle, publishArticle, updateArticle } from "@/server/operations/docs";
 import { call } from "@/server/operations/run";
@@ -182,6 +182,49 @@ test("proposals as likely as each other keep one order: by kind, then id", async
     await prisma.codeChangeAction.create({ data: { id, codeChangeId: change.id, kind, postId: post.id, probability: 0.9 } });
   }
   expect((await call(getCodeChange, team(), { id: change.id })).actions.map((action) => action.id)).toEqual(["c", "a", "b", unlikely.id]);
+});
+
+describe("undo", () => {
+  test("a request it closed: back to its status, the link and the entry's post gone; those emailed are counted first, the rest not sent", async () => {
+    const { post, action } = await proposal("RESOLVES");
+    const entry = await prisma.changelogEntry.create({
+      data: { projectId: project.id, number: 1, title: "Next release", collecting: true, pullRequests: { create: { url: PR_URL, repo: "acme/app", number: 12, title: "Dark theme" } } },
+    });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect(shippedTo(voter.email)).toHaveLength(1);
+    const detail = await call(getCodeChange, team(), { id: action.codeChangeId });
+    expect(detail.actions.find((a) => a.id === action.id)).toMatchObject({ status: "applied", emailed: 1 });
+    expect(await call(undoCodeChangeAction, team(), { id: action.id })).toEqual({ id: action.id, status: "undone" });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect(await prisma.changelogEntryPost.count({ where: { entryId: entry.id } })).toBe(0);
+    expect((await call(getCodeChange, team(), { id: action.codeChangeId })).actions[0]).toMatchObject({ status: "undone", decidedBy: "Olive Owner" });
+    // Once: a second undo is refused.
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Only an approved update can be undone");
+  });
+
+  test("a progress update: its comment deleted and the post back to its status; a link it didn't add stays", async () => {
+    const { post, action } = await proposal("MOVES_FORWARD", { comment: "Weekly repeats are out." });
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect(await postOf(post.id)).toMatchObject({ status: "IN_PROGRESS", comments: [{ body: "Weekly repeats are out." }] });
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await postOf(post.id)).toEqual({ status: "PLANNED", links: [], comments: [] });
+    expect((await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).commentCount).toBe(0);
+
+    // The post had the link already: undoing a link leaves it.
+    const linked = await proposal("LINKS");
+    await prisma.postLink.create({ data: { projectId: project.id, postId: linked.post.id, kind: "PULL_REQUEST", repo: "acme/app", number: 12, url: PR_URL, title: "Dark theme", source: "MANUAL" } });
+    await call(applyCodeChangeAction, team(), { id: linked.action.id });
+    await call(undoCodeChangeAction, team(), { id: linked.action.id });
+    expect((await postOf(linked.post.id)).links).toEqual([{ url: PR_URL, source: "MANUAL", codeChangeId: null }]);
+  });
+
+  test("a link: removed", async () => {
+    const { post, action } = await proposal("LINKS");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).links).toHaveLength(1);
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await postOf(post.id)).links).toEqual([]);
+  });
 });
 
 test("the review page ticks the likely updates as it opens (not a comment nobody wrote, nor a maybe), and says how many people completing a post emails", async () => {
@@ -479,6 +522,39 @@ describe("docs", () => {
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
   });
 
+  test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
+    const { article, action } = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    expect((await published(article.slug)).body).toBe("Pick Light, Dark or System in Settings.");
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect(await published(article.slug)).toEqual({ body: "Pick Light in Settings.", changes: null });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("UNDONE");
+
+    const again = await articleEdit();
+    await call(applyCodeChangeAction, team(), { id: again.action.id });
+    await call(updateArticle, team(), { slug: again.article.slug, body: "Pick Light, Dark, Sepia or System.", publish: true });
+    await expect(call(undoCodeChangeAction, team(), { id: again.action.id })).rejects.toThrow("The article was edited since");
+    expect((await published(again.article.slug)).body).toBe("Pick Light, Dark, Sepia or System.");
+  });
+
+  test("Undo a new article: its draft is deleted; refused once it's published", async () => {
+    const change = await prisma.codeChange.create({
+      data: { projectId: project.id, repoId: 1, repo: "acme/app", number: ++number, url: `https://github.com/acme/app/pull/${number}`, title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
+    });
+    const create = (title: string) =>
+      prisma.codeChangeAction.create({ data: { codeChangeId: change.id, kind: "NEW_ARTICLE", probability: 0.9, payload: { title, content: EDITED, body: "Pick Light, Dark or System in Settings." } } });
+    const first = await create("Use the dark theme");
+    const { article: slug } = (await call(applyCodeChangeAction, team(), { id: first.id })) as { article: string };
+    await call(undoCodeChangeAction, team(), { id: first.id });
+    expect(await prisma.article.count({ where: { projectId: project.id, slug, deletedAt: null } })).toBe(0);
+
+    const second = await create("Dark theme tips");
+    const { article: other } = (await call(applyCodeChangeAction, team(), { id: second.id })) as { article: string };
+    await call(publishArticle, team(), { slug: other });
+    await expect(call(undoCodeChangeAction, team(), { id: second.id })).rejects.toThrow();
+    expect(await prisma.article.count({ where: { projectId: project.id, slug: other, deletedAt: null } })).toBe(1);
+  });
+
   test("a new article becomes a draft, nothing more, and the action points to it", async () => {
     const change = await prisma.codeChange.create({
       data: { projectId: project.id, repoId: 1, repo: "acme/app", number: 21, url: "https://github.com/acme/app/pull/21", title: "Themes", author: "octo", mergedAt: new Date(), state: "READY" },
@@ -520,7 +596,23 @@ describe("the changelog line", () => {
         },
       ],
     });
-    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({ line: "A dark theme, in Settings" });
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toEqual({
+      line: "A dark theme, in Settings",
+      undo: { previous: "Add a dark theme (acme/app#30)" },
+    });
+    // Undo puts the bullet back as it was, still linking to the pull request.
+    await call(undoCodeChangeAction, team(), { id: action.id });
+    expect((await draft()).body).toBe("Faster search (acme/app#29)\nAdd a dark theme (acme/app#30)");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("UNDONE");
+  });
+
+  test("Undo is refused once the line's entry is published: edit the entry instead", async () => {
+    await addToRunningDraft(project.id, { repo: "acme/app", number: 30, url: "https://github.com/acme/app/pull/30", title: "Add a dark theme" });
+    const action = await line("Dark theme");
+    await call(applyCodeChangeAction, team(), { id: action.id });
+    await prisma.changelogEntry.updateMany({ where: { projectId: project.id, collecting: true }, data: { publishedAt: new Date(), collecting: false } });
+    await expect(call(undoCodeChangeAction, team(), { id: action.id })).rejects.toThrow("Its changelog entry is published: edit the entry instead");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("APPLIED");
   });
 
   test("a pull request the draft doesn't have (it had nothing to do, until Analyse anyway) goes into it with its line", async () => {
