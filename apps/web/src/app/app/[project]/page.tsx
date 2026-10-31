@@ -1,5 +1,6 @@
 import { prisma } from "@tuti/db";
 import { planIncludes } from "@tuti/shared";
+import { CheckCircle2Icon, CircleIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
@@ -11,13 +12,15 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, timeAgo } from "@/lib/format";
-import { getMembership } from "@/server/membership";
+import { homeOverview } from "@/server/home";
+import { getMembership, isAdminRole } from "@/server/membership";
+import { getSession } from "@/server/session";
 import { codeChangeList } from "@/server/operations/code-changes";
 
 /** The Feedback list's filters, from when it was the project's first page: a link with them still finds it. */
 const FEEDBACK_FILTERS = ["status", "board", "sort", "show"];
 
-/** A project's Home, where the app opens it: Catch up, what's waiting for the team. */
+/** A project's Home, where the app opens it: its numbers, Get set up, what needs the team, trending ideas, and Autopilot's paused merges. */
 export default async function HomePage(props: PageProps<"/app/[project]">) {
   const { project: slug } = await props.params;
   const searchParams = await props.searchParams;
@@ -29,8 +32,10 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   if (!membership) {
     notFound();
   }
-  const [waiting, paused, pausedCount] = await Promise.all([
-    codeChangeList(membership.project.id, { waiting: true }),
+  const admin = isAdminRole(membership.role);
+  const session = await getSession();
+  const [overview, paused, pausedCount] = await Promise.all([
+    homeOverview(membership.project.id, slug, { emailVerified: session?.user.emailVerified ?? false }),
     codeChangeList(membership.project.id, { paused: true }),
     prisma.codeChange.count({ where: { projectId: membership.project.id, state: "PAUSED" } }),
   ]);
@@ -41,45 +46,106 @@ export default async function HomePage(props: PageProps<"/app/[project]">) {
   return (
     <>
       <PageHeader title="Home" />
+      {/* Four numbers, each opening its list. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {(
+          [
+            ["New posts this week", overview.numbers.newPosts, `/app/${slug}/feedback?sort=newest`],
+            ["Need a reply", overview.numbers.needReply, `/app/${slug}/inbox`],
+            ["Updates waiting", overview.numbers.updatesWaiting, `/app/${slug}/autopilot`],
+            ["Searches that found nothing", overview.numbers.searchesFailed, `/app/${slug}/docs/insights`],
+          ] as const
+        ).map(([label, value, href]) => (
+          <Link key={label} href={href} className="flex flex-col gap-1 rounded-xl border bg-card p-4 transition-colors hover:bg-muted/50">
+            <span className="text-2xl font-semibold tabular-nums">{value}</span>
+            <span className="text-sm text-muted-foreground">{label}</span>
+          </Link>
+        ))}
+      </div>
+      {overview.setup && admin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Get set up</CardTitle>
+            <CardDescription>
+              {overview.setup.filter((step) => step.done).length} of {overview.setup.length} done
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2" aria-label="Get set up">
+              {overview.setup.map((step) => (
+                <li key={step.key} className="flex items-center gap-2 text-sm">
+                  {step.done ? <CheckCircle2Icon aria-hidden className="size-4 text-primary" /> : <CircleIcon aria-hidden className="size-4 text-muted-foreground" />}
+                  {step.done ? (
+                    <span className="text-muted-foreground line-through">{step.title}</span>
+                  ) : (
+                    <Link href={step.href} className="hover:underline">
+                      {step.title}
+                    </Link>
+                  )}
+                  <span className="sr-only">{step.done ? "(done)" : "(to do)"}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
-          <CardTitle>Catch up</CardTitle>
-          <CardDescription>Merged pull requests with updates from Autopilot waiting for your team: requests it closes, docs to update, a changelog line.</CardDescription>
+          <CardTitle>Needs your attention</CardTitle>
+          <CardDescription>Oldest first.</CardDescription>
         </CardHeader>
         <CardContent>
-          {waiting.length === 0 ? (
-            <EmptyState
-              title="You're all caught up"
-              description="When a merged pull request changes something your users see, it shows up here to review."
-              action={
-                <Link href={`/app/${slug}/autopilot`} className={buttonVariants({ variant: "outline" })}>
-                  Autopilot
-                </Link>
-              }
-            />
+          {overview.attention.length === 0 ? (
+            <EmptyState title="You're all caught up" description="Conversations to answer, new posts, possible duplicates and Autopilot's updates show up here." />
           ) : (
-            <ItemList>
-              {waiting.slice(0, 10).map((change) => (
-                <ItemRow
-                  key={change.id}
-                  title={
-                    <Link href={`/app/${slug}/autopilot/${change.id}`} className="hover:underline">
-                      {change.title}
-                    </Link>
-                  }
-                  badges={<Badge variant="highlight">{change.waiting} to review</Badge>}
-                  meta={
-                    <>
-                      {change.repo}#{change.number} · @{change.author} ·{" "}
-                      <span title={formatDate(new Date(change.mergedAt))}>merged {timeAgo(new Date(change.mergedAt))}</span>
-                    </>
-                  }
-                />
-              ))}
-            </ItemList>
+            <>
+              <ItemList>
+                {overview.attention.map((item) => (
+                  <ItemRow
+                    key={item.key}
+                    title={
+                      <Link href={item.href} className="hover:underline">
+                        {item.title}
+                      </Link>
+                    }
+                    badges={<Badge variant="outline">{item.kind}</Badge>}
+                    meta={<span title={formatDate(item.at)}>{timeAgo(item.at)}</span>}
+                    actions={
+                      <Link href={item.href} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                        {item.action}
+                      </Link>
+                    }
+                  />
+                ))}
+              </ItemList>
+              {overview.moreAttention > 0 && <p className="mt-2 text-sm text-muted-foreground">And {overview.moreAttention} more.</p>}
+            </>
           )}
         </CardContent>
       </Card>
+      {overview.trending.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Trending ideas</CardTitle>
+            <CardDescription>The most votes in the last 7 days.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ItemList>
+              {overview.trending.map((post) => (
+                <ItemRow
+                  key={post.id}
+                  title={
+                    <Link href={`/app/${slug}/p/${post.number}`} className="hover:underline">
+                      {post.title}
+                    </Link>
+                  }
+                  meta={`+${post.thisWeek} this week · ${post.voteCount} ${post.voteCount === 1 ? "vote" : "votes"}`}
+                />
+              ))}
+            </ItemList>
+          </CardContent>
+        </Card>
+      )}
       {paused.length > 0 && (
         <Card>
           <CardHeader>

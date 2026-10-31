@@ -41,10 +41,12 @@ test("a merged pull request becomes a code change; the team completes the post i
   await nextModelReply(JSON.stringify({ reason: "It says Light is the only theme.", sections: { "1": "Pick Light, **Dark** or System in Settings." } }), article);
   await mergePullRequest(installationId, { number, title: pr, files: [{ filename: "src/theme.css", patch: "+.dark { --background: #111; }" }] });
 
-  // Home's Catch up has it, and so does Autopilot, waiting for the team.
+  // Home's "Needs your attention" has it, with Review, and so does Autopilot, waiting for the team.
   await owner.goto(`/app/${slug}`);
   const catchUp = owner.getByRole("listitem").filter({ hasText: pr });
-  await expect(catchUp).toContainText("3 to review");
+  await expect(catchUp).toContainText(`${pr} · 3 updates`);
+  await expect(catchUp.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(owner.getByRole("link", { name: /^3\s*Updates waiting$/ })).toBeVisible();
   await checkpoint(owner, "home-catch-up");
   await owner.getByRole("link", { name: "Autopilot", exact: true }).click();
   await owner.waitForURL(`**/app/${slug}/autopilot`);
