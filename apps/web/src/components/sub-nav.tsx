@@ -18,8 +18,8 @@ export function SubNav({
   /** The active item's href, when the URL's path alone doesn't say (views in the query string). */
   current?: string;
 }) {
-  const fromPath = activeHref(usePathname(), items.map((item) => item.href));
-  const current = given ?? fromPath;
+  const pathname = usePathname();
+  const current = given ?? activeHref(pathname, items.map((item) => item.href));
   return (
     <nav aria-label={label} className="-mt-2 flex flex-wrap gap-x-1 gap-y-1 border-b">
       {items.map((item) => {

@@ -45,7 +45,7 @@ export default async function DocsInsightsPage(props: PageProps<"/app/[project]/
         title="Docs"
         meta={`The last ${INSIGHTS_DAYS} days: ${plural(insights.views, "article view", "article views")}, ${plural(insights.searches.total, "search", "searches")}, ${plural(insights.searches.failed, "failed search", "failed searches")}.`}
       />
-      <DocsSections projectSlug={slug} />
+      <DocsSections projectSlug={slug} current="insights" />
       <Card>
         <CardHeader>
           <CardTitle>Gaps</CardTitle>
