@@ -334,19 +334,28 @@ export async function emailedAbout(codeChangeId: string): Promise<string[]> {
 }
 
 /**
- * Something customers see went out by itself (the runner applied it): the project's owners hear of it,
- * each that hasn't a notice for the change yet (queued when it was analysed, they'd hear of it then). The
- * runner may apply it as the analysis's notices are queued (no hold), before they could tell it went.
+ * Something customers see went out by itself (the runner applied it): the project's owners hear of it.
+ * The runner may apply it as the analysis's notices are queued (no hold), before they could tell it went,
+ * so each owner who hasn't heard of it is told: one with no notice for the change, and one whose last email
+ * about it went before these updates existed (`since`: the earliest's creation). One being sent right now
+ * goes again. An owner emailed since already heard of them (going out, or waiting).
  */
-export async function tellOwners(codeChangeId: string): Promise<number> {
+export async function tellOwners(codeChangeId: string, since: Date): Promise<number> {
   try {
     const change = await prisma.codeChange.findUnique({ where: { id: codeChangeId }, select: { projectId: true } });
     if (!change) {
       return 0;
     }
-    const owners = await prisma.teamMember.findMany({ where: { projectId: change.projectId, role: "OWNER" }, select: { userId: true } });
-    const { count } = await prisma.autopilotNotice.createMany({ data: owners.map(({ userId }) => ({ codeChangeId, userId })), skipDuplicates: true });
-    return count;
+    const owners = (await prisma.teamMember.findMany({ where: { projectId: change.projectId, role: "OWNER" }, select: { userId: true } })).map(({ userId }) => userId);
+    // In queueNotices' order, so whatever a sweep does with a notice meanwhile, a later step catches it.
+    await prisma.$executeRaw`
+      UPDATE autopilot_notice SET "createdAt" = now(), attempts = 0
+      WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" IS NULL AND "claimedAt" IS NOT NULL`;
+    const again = await prisma.$executeRaw`
+      UPDATE autopilot_notice SET "since" = "sentAt", "sentAt" = NULL, "claimedAt" = NULL, "createdAt" = now(), attempts = 0
+      WHERE "codeChangeId" = ${codeChangeId} AND "userId" = ANY(${owners}) AND "sentAt" < ${since}`;
+    const { count } = await prisma.autopilotNotice.createMany({ data: owners.map((userId) => ({ codeChangeId, userId })), skipDuplicates: true });
+    return count + again;
   } catch (error) {
     log.error("Telling owners what Autopilot applied failed", { error, codeChangeId });
     return 0;

@@ -459,7 +459,7 @@ test("what the runner puts out by itself reaches the owners even if the analysis
   expect(await queueAutopilotNotices(one.id)).toBe(0);
   // The runner finishes and marks it Autopilot's, then tells the owners.
   await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id, kind: "MOVES_FORWARD" }, data: { status: "APPLIED", decidedById: null, decidedAt: new Date(), payload: { comment: "Out soon", auto: true } } });
-  expect(await tellOwners(one.id)).toBe(1);
+  expect(await tellOwners(one.id, new Date(Date.now() - MINUTE))).toBe(1);
   expect(await sendAutopilotEmails(later())).toBe(1);
   const [email] = to(owner);
   expect(email!.subject).toBe("Autopilot: Add a dark theme · 1 update went out");
@@ -482,4 +482,25 @@ test("given up on one notice, another queued lately in the same email keeps its 
   expect(await prisma.autopilotNotice.count({ where: { codeChangeId: old.id } })).toBe(0);
   expect(await prisma.autopilotNotice.findFirstOrThrow({ where: { codeChangeId: fresh.id } })).toMatchObject({ attempts: 1, sentAt: null });
   expect(await sendAutopilotEmails(new Date(Date.now() + 27 * MINUTE))).toBe(1);
+});
+
+test("analysed again and its new update applied mid-queue: an owner emailed about an earlier analysis hears of it; one emailed since doesn't again", async () => {
+  expect(await setAutopilotEmails("OFF")).toEqual({});
+  const one = await change("Add a dark theme");
+  await queueAutopilotNotices(one.id);
+  expect(await sendAutopilotEmails(later())).toBe(1);
+  // Analysed again days later: a new update, applied by the runner as the notices were queued (nobody re-queued).
+  const DAY = 86_400_000;
+  await prisma.autopilotNotice.updateMany({ where: { codeChangeId: one.id }, data: { sentAt: new Date(Date.now() - 3 * DAY) } });
+  await prisma.codeChangeAction.updateMany({ where: { codeChangeId: one.id }, data: { status: "DISMISSED", createdAt: new Date(Date.now() - 4 * DAY) } });
+  const proposed = new Date();
+  await prisma.codeChangeAction.create({
+    data: { codeChangeId: one.id, kind: "MOVES_FORWARD", postId: (await prisma.codeChangeAction.findFirstOrThrow({ where: { codeChangeId: one.id, kind: "RESOLVES" } })).postId, probability: 0.97, status: "APPLIED", decidedAt: new Date(), payload: { comment: "Live now", auto: true } },
+  });
+  // Emailed before that update existed: told now.
+  expect(await tellOwners(one.id, proposed)).toBe(1);
+  expect(await sendAutopilotEmails(new Date(Date.now() + 11 * MINUTE))).toBe(1);
+  expect(to(owner)[1]!.text).toContain("In progress, posted: “Live now”");
+  // Emailed since (about it): not again.
+  expect(await tellOwners(one.id, proposed)).toBe(0);
 });
