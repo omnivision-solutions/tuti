@@ -84,7 +84,7 @@ const STALE: { where: string; age: string; picture: ReactNode; cost: string; con
 /** After a release: the list nobody gets to, and what Tuti does instead (with when). */
 const CHORES: { todo: string; when: string; done: string; how: string }[] = [
   { todo: "Work out which requests it ships", when: "never", done: "“Dark mode” found and linked", how: "on merge" },
-  { todo: "Rewrite “Changing your theme”", when: "next sprint", done: "“Changing your theme” rewritten", how: "after a hold" },
+  { todo: "Rewrite “Changing your theme”", when: "next sprint", done: "“Changing your theme” rewritten", how: "one click or a hold" },
   { todo: "Write the changelog entry", when: "Friday?", done: "Changelog line drafted in your voice", how: "on merge" },
   { todo: "Complete “Dark mode”, email 128 voters", when: "forgot", done: "“Dark mode” completed, 128 told", how: "one click" },
   { todo: "Check what the AI now says", when: "someday", done: "AI answers from the new article", how: "as it's published" },
@@ -93,7 +93,7 @@ const CHORES: { todo: string; when: string; done: string; how: string }[] = [
 /** What one merge updates; `place` puts each card in the fan's grid around the merge. */
 const FAN: { kind: string; when: string; title: string; note: string; place: string }[] = [
   { kind: "Feedback", when: "one click", title: "Dark mode → Completed", note: "128 voters told, with one click from you", place: "lg:col-start-1 lg:row-start-1" },
-  { kind: "Docs", when: "after a hold", title: "Changing your theme", note: "2 paragraphs rewritten to match the code", place: "lg:col-start-3 lg:row-start-1" },
+  { kind: "Docs", when: "one click or a hold", title: "Changing your theme", note: "2 paragraphs rewritten to match the code", place: "lg:col-start-3 lg:row-start-1" },
   { kind: "Changelog", when: "on merge", title: "Dark mode is here", note: "Written in your voice, in the next draft", place: "lg:col-start-1 lg:row-start-2" },
   { kind: "AI answers", when: "as it's published", title: "“Pick Dark under Theme.”", note: "From the updated article", place: "lg:col-start-3 lg:row-start-2" },
 ];
@@ -104,7 +104,7 @@ const STEPS: { who: "Customer" | "You" | "Tuti"; title: string; text: string }[]
   { who: "Tuti", title: "Gathers the votes", text: "128 votes, and who they're from: their company and plan." },
   { who: "You", title: "Merge the pull request", text: "Write the code. That's the work." },
   { who: "Tuti", title: "Finds what it ships", text: "Links “Dark mode” and drafts the changelog line, from what the code changed." },
-  { who: "Tuti", title: "Rewrites the docs", text: "The articles the code made wrong, after a hold you can stop." },
+  { who: "Tuti", title: "Rewrites the docs", text: "The articles the code made wrong: yours to publish in a click, or out by themselves after a hold." },
   { who: "You", title: "Click Approve", text: "Tuti completes “Dark mode” and tells all 128 people." },
 ];
 
@@ -297,7 +297,7 @@ export default async function Home() {
             <Intro eyebrow="On autopilot, not unsupervised" title={<>It goes out by itself. <Em>You can always stop it.</Em></>} />
             <ol className="mt-8 flex flex-col gap-5">
               {[
-                ["Sure? It waits out a hold, then goes.", "Article fixes and progress updates wait a day (you pick how long), so there's time to look. Or don't."],
+                ["Sure? It can go out by itself, after a hold.", "Switch it on, and article fixes and progress updates go out after a day (you pick how long), so there's time to look. Until then, they wait for your click."],
                 ["Not sure? It asks you.", "Anything it isn't sure of, or that reaches lots of people, waits for your click."],
                 ["Everything in one place.", "Autopilot's page shows what goes out when, with Publish now and Stop, and most changes can be undone after."],
               ].map(([title, text], i) => (
@@ -417,7 +417,7 @@ export default async function Home() {
             items={[
               autopilotPlan ? "Free plan to start" : "Free to start",
               autopilotPlan ? `Autopilot from ${autopilotPlan}` : "Set up in a minute",
-              "Nothing goes out without a hold you can stop",
+              "Nothing goes out unseen",
               "Self-host anytime",
             ]}
             className="mt-6 justify-center"
