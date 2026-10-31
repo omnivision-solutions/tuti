@@ -9,7 +9,7 @@ import { docsUrl } from "../links";
 // A version of the landing page to compare with the live one: outcomes first, pictures over words.
 export const metadata: Metadata = {
   title: "Tuti: the help center that keeps up with what you ship",
-  description: "Tuti rewrites stale articles, closes shipped requests and drafts your changelog, automatically. A help center, feedback board and changelog in one.",
+  description: "Tuti rewrites stale articles, drafts your changelog and closes out shipped requests in a click. A help center, feedback board and changelog in one.",
   robots: { index: false },
 };
 
@@ -23,7 +23,7 @@ export default async function LandA() {
     <div data-full className="flex flex-col">
       <GlanceHero
         title="Ship every day. Your help center keeps up."
-        lead="Tuti rewrites stale articles, closes shipped requests and drafts your changelog, automatically. Customers and your AI always get the right answer."
+        lead="Tuti rewrites stale articles, drafts your changelog and closes out shipped requests in a click. Customers and your AI always get the right answer."
         start={start}
         docs={docs}
       >

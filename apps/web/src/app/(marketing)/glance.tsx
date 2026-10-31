@@ -281,7 +281,7 @@ export function StaleBand() {
                   {change}
                 </span>
               ))}
-              <span className="sr-only">{changes[1]}</span>
+              <span className="sr-only">{changes[0]}</span>
             </span>
           </h2>
           <p className="mt-5 text-xl text-muted-foreground">Your help center still says otherwise.</p>
@@ -314,7 +314,7 @@ export function AutoCards() {
     },
     {
       title: "Every request closed out",
-      text: "Marked shipped. Everyone who asked hears about it.",
+      text: "One click marks it shipped and tells everyone who asked.",
       picture: (
         <div className="flex flex-col gap-3">
           <p className="flex items-center justify-between gap-2 font-semibold">
@@ -359,7 +359,7 @@ export function AutoCards() {
         ))}
       </ul>
       <ul className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-2 text-sm font-medium text-muted-foreground">
-        {["Approve it, or let it go live after a review window", "Stop or undo in a click"].map((point) => (
+        {["Approve it, or let it go live after a review window", "Stop anything before it goes live"].map((point) => (
           <li key={point} className="flex items-center gap-2">
             <Tick /> {point}
           </li>
@@ -530,7 +530,7 @@ export function Faq() {
     ],
     [
       "Will it publish without me?",
-      "Only what it's sure of, and only after a review window (24 hours by default) where you can stop it. Anything else waits for your approval, and you can undo an update in a click.",
+      "Only what it's sure of, and only after a review window (24 hours by default) where you can stop it. Anything else waits for your approval, and most updates can be undone in a click.",
     ],
     [
       "Can I bring my existing help center?",
