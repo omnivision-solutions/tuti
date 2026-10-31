@@ -423,7 +423,7 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   const after = titles[titles.indexOf("Calendar sync") + 1]!;
   await expect(pane.getByRole("heading", { name: after })).toBeInViewport();
   await team.keyboard.press("k");
-  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeVisible();
+  await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
   await team.setViewportSize({ width: 1440, height: 900 });
 
   // J and K step through the list in the pane; Esc closes it.
