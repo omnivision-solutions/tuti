@@ -50,6 +50,7 @@ model User {
   media                 Media[]
   emailOptOuts          EmailOptOut[]
   shippedEmails         ShippedEmail[]
+  replyEmails           ReplyEmail[]
   articleRevisions      ArticleRevision[]
   codeChangeActions     CodeChangeAction[]
   conversations         Conversation[]        @relation("ConversationUser")
@@ -1240,23 +1241,45 @@ model Vote {
 }
 
 model Comment {
-  id        String   @id @default(cuid())
-  projectId String
-  postId    String
-  authorId  String
+  id               String    @id @default(cuid())
+  projectId        String
+  postId           String
+  authorId         String
   /// Plain text (derived from `content`).
-  body      String
+  body             String
   /// Rich content (@tuti/content "comment" profile); null for comments from before rich text.
-  content   Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  content          Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  /// The team's reply, sent to the post's voters too (Email voters): due from then until each of them was
+  /// emailed (reply_email), so the cron brings back one whose job never ran or died.
+  votersEmailDueAt DateTime?
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  post    Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
-  author  User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  post        Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author      User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  replyEmails ReplyEmail[]
 
   @@index([postId, createdAt])
+  @@index([votersEmailDueAt])
   @@map("comment")
+}
+
+/// The team's reply emailed to one of the post's voters (Email voters): claimed before sending, so a retry or
+/// a second run emails each of them once.
+model ReplyEmail {
+  commentId String
+  userId    String
+  /// When a run took this person on; an unsent claim this old is a crashed run's, and is taken over.
+  claimedAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("reply_email")
 }
 
 /// An internal note on a post: only the team sees it (never on the portal, in emails or webhooks; over
