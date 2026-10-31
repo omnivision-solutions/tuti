@@ -544,6 +544,14 @@ describe("docs", () => {
     expect(results).toEqual([{ id: action.id, status: "failed", code: "unknown", message: "Couldn't tell whether it went out: check it before doing it again" }]);
   });
 
+  test("an article edit whose read of what readers saw fails, once claimed, is waiting again", async () => {
+    const { action } = await articleEdit();
+    vi.spyOn(log, "error").mockImplementation(() => {});
+    vi.spyOn(prisma.article, "findUniqueOrThrow").mockRejectedValueOnce(new Error("connection reset"));
+    await expect(call(applyCodeChangeAction, team(), { id: action.id })).rejects.toThrow("connection reset");
+    expect((await prisma.codeChangeAction.findUniqueOrThrow({ where: { id: action.id } })).status).toBe("PENDING");
+  });
+
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
     const { article, action } = await articleEdit();
     await call(applyCodeChangeAction, team(), { id: action.id });

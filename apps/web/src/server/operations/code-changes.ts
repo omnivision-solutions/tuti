@@ -626,10 +626,10 @@ async function applyDocs(
   if (count === 0) {
     throw new OperationError(409, "already_decided", "Someone already applied or dismissed this, or it's out of date");
   }
-  // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
-  const live = action.kind === "ARTICLE_EDIT" ? (await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true } })).content : null;
   try {
     if (action.kind === "ARTICLE_EDIT") {
+      // What readers saw before it (no unpublished changes are waiting, or it'd be out of date): Undo publishes it again.
+      const { content: live } = await prisma.article.findUniqueOrThrow({ where: { id: article!.id }, select: { content: true } });
       // Saved only if the article is still the version the edit was written against (checked under the project's lock).
       await call(updateArticle, context, { slug: article!.slug, content: payload.content, publish, ...(payload.basedOn && { revision: payload.basedOn }) });
       // For Undo: the version it published (to tell whether it's been edited since) and the one before it.
@@ -783,10 +783,14 @@ export const undoCodeChangeAction = defineOperation({
       } else if (action.post) {
         const { post, codeChange } = action;
         if (undo.commentId) {
-          const { count: deleted } = await prisma.comment.deleteMany({ where: { id: undo.commentId, postId: post.id } });
-          if (deleted) {
-            await prisma.post.update({ where: { id: post.id }, data: { commentCount: { decrement: 1 } } });
-          }
+          const commentId = undo.commentId;
+          // Together, so a retry after a failure can't leave the count one too high.
+          await prisma.$transaction(async (tx) => {
+            const { count: deleted } = await tx.comment.deleteMany({ where: { id: commentId, postId: post.id } });
+            if (deleted) {
+              await tx.post.update({ where: { id: post.id }, data: { commentCount: { decrement: 1 } } });
+            }
+          });
         }
         if (undo.entries?.length) {
           await prisma.changelogEntryPost.deleteMany({ where: { postId: post.id, entryId: { in: undo.entries } } });
