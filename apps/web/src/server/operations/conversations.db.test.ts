@@ -8,11 +8,15 @@ import { removeMember } from "../team";
 import {
   createConversation,
   getConversation,
+  linkConversationPost,
   listConversations,
   replyToConversation,
+  unlinkConversationPost,
   updateConversation,
 } from "./conversations";
-import type { Actor } from "./define";
+import { createPost } from "./create";
+import { type Actor, OperationError } from "./define";
+import { mergePost } from "./manage";
 import { call } from "./run";
 
 async function setup() {
@@ -157,4 +161,29 @@ test("webhooks hear of new conversations and of the user's messages, not the tea
   });
   expect(deliveries.map((d) => d.event)).toEqual(["conversation.created", "conversation.message_created"]);
   expect(deliveries[1]!.payload).toMatchObject({ data: { conversation: 1, message: { author: "user", body: "Thanks" } } });
+});
+
+test("the team links a conversation to the posts it's about; merging a post takes its link along", async () => {
+  const { context } = await setup();
+  await call(createConversation, context, { user: sam, body: "Can I export my reports?" });
+  const author = { id: "user-7", name: "Ann" };
+  const csv = await call(createPost, context, { board: "feature-requests", title: "CSV export", author });
+  const excel = await call(createPost, context, { board: "feature-requests", title: "Excel export", author });
+
+  expect(await call(linkConversationPost, context, { number: 1, post: excel.number })).toEqual({
+    posts: [{ number: excel.number, title: "Excel export", status: "open" }],
+  });
+  // Twice is once.
+  await call(linkConversationPost, context, { number: 1, post: excel.number });
+  await call(linkConversationPost, context, { number: 1, post: csv.number });
+  expect((await call(getConversation, context, { number: 1 })).posts.map((p) => p.number)).toEqual([excel.number, csv.number]);
+
+  // Merged into the other: one link, to the post that's left.
+  await call(mergePost, context, { number: excel.number, into: csv.number });
+  expect((await call(getConversation, context, { number: 1 })).posts).toEqual([{ number: csv.number, title: "CSV export", status: "open" }]);
+  await expect(call(linkConversationPost, context, { number: 1, post: excel.number })).rejects.toThrow(
+    new OperationError(409, "merged", `#${excel.number} was merged into #${csv.number}: link that one`),
+  );
+
+  expect(await call(unlinkConversationPost, context, { number: 1, post: csv.number })).toEqual({ posts: [] });
 });

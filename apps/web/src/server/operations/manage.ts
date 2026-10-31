@@ -139,6 +139,12 @@ export async function mergePosts(fromId: string, toId: string): Promise<number> 
     // A reply still to be emailed to its post's voters (Email voters) isn't, once moved: the target's voters never saw it asked.
     prisma.comment.updateMany({ where: { postId: from }, data: { postId: to, votersEmailDueAt: null } }),
     prisma.postNote.updateMany({ where: { postId: from }, data: { postId: to } }),
+    // Conversations about it are about the post it's merged into.
+    prisma.$executeRaw`
+      INSERT INTO conversation_post ("conversationId", "postId", "createdAt")
+      SELECT "conversationId", ${to}, "createdAt" FROM conversation_post WHERE "postId" = ${from}
+      ON CONFLICT ("conversationId", "postId") DO NOTHING`,
+    prisma.conversationPost.deleteMany({ where: { postId: from } }),
     prisma.post.updateMany({ where: { duplicateOfId: from }, data: { duplicateOfId: to } }),
     prisma.post.update({ where: { id: from }, data: { duplicateOfId: to, voteCount: 0, commentCount: 0 } }),
     // The merged post is out of every list, so its duplicate suggestions are settled.
