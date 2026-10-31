@@ -25,6 +25,25 @@ type Templates = {
 
 export type OneClickDns = { provider: string; url: string };
 
+/** A `_domainconnect` record's value: the provider's API, a host and maybe a path. */
+const PROVIDER_HOST = /^[a-z0-9.-]+\.[a-z]{2,}(\/\S*)?$/i;
+
+type ProviderSettings = { providerName?: string; providerDisplayName?: string; urlSyncUX: string; urlAPI: string };
+
+/**
+ * What the provider at `api` says about `domain`, or null: it doesn't host it, or its answer isn't
+ * usable (https only, for the link the team follows). The team's DNS names this address, so it's
+ * fetched as their site is: public addresses only.
+ */
+async function providerSettings(api: string, domain: string): Promise<ProviderSettings | null> {
+  try {
+    const settings = JSON.parse((await fetchSiteCheck(`https://${api}/v2/${domain}/settings`)) ?? "null") as Partial<ProviderSettings> | null;
+    return settings?.urlSyncUX?.startsWith("https://") && settings.urlAPI?.startsWith("https://") ? (settings as ProviderSettings) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A link that adds `service`'s records for `fqdn` (a domain or a subdomain) at its DNS provider and
  * comes back to `returnTo`, or null: off on this server, a provider without Domain Connect, or one
@@ -36,25 +55,25 @@ export async function oneClickDns<S extends keyof Templates>(fqdn: string, servi
     return null;
   }
   try {
-    // The zone is the longest name with a `_domainconnect` record (help.acme.com, then acme.com); not the top-level domain.
+    // The zone is the longest name whose `_domainconnect` record names a provider that knows it
+    // (help.acme.com, then acme.com); not the top-level domain. A wildcard can answer for a name
+    // with the zone's own TXT records (SPF and the like), so only hosts count.
     const labels = fqdn.split(".");
     const names = labels.slice(0, -1).map((_, i) => labels.slice(i).join("."));
     const answers = await Promise.all(names.map((name) => txtRecords(`_domainconnect.${name}`)));
-    const found = answers.findIndex((answer) => answer.length > 0);
-    if (found < 0) {
+    let found: { domain: string; settings: ProviderSettings } | undefined;
+    for (const [i, domain] of names.entries()) {
+      const api = answers[i]!.find((answer) => PROVIDER_HOST.test(answer));
+      const settings = api && (await providerSettings(api, domain));
+      if (settings) {
+        found = { domain, settings };
+        break;
+      }
+    }
+    if (!found) {
       return null;
     }
-    const domain = names[found]!;
-    // The team's DNS names these addresses, so they're fetched as their site is: public addresses only.
-    const settings = JSON.parse((await fetchSiteCheck(`https://${answers[found]![0]}/v2/${domain}/settings`)) ?? "null") as {
-      providerName?: string;
-      providerDisplayName?: string;
-      urlSyncUX?: string;
-      urlAPI?: string;
-    } | null;
-    if (!settings?.urlSyncUX?.startsWith("https://") || !settings.urlAPI?.startsWith("https://")) {
-      return null;
-    }
+    const { domain, settings } = found;
     const template = `v2/domainTemplates/providers/${PROVIDER_ID}/services/${service}`;
     if ((await fetchSiteCheck(`${settings.urlAPI}/${template}`)) === null) {
       return null;

@@ -38,6 +38,15 @@ test("a domain at a provider with Tuti's template gets a signed link to add its 
   expect(verify("sha256", Buffer.from(signed!), publicKey, Buffer.from(decodeURIComponent(sig!), "base64"))).toBe(true);
 });
 
+test("a wildcard's answers on the subdomain (acme.co.uk's own TXT records, through *.acme.co.uk) don't hide the zone's provider", async () => {
+  dns.set("_domainconnect.help.acme.co.uk", ["v=spf1 include:_spf.google.com ~all", "google-site-verification=abc"]);
+  expect((await oneClickDns("help.acme.co.uk", "custom-domain", variables, returnTo))?.provider).toBe("Cloudflare");
+
+  // A host-like answer whose provider doesn't know the name: on to the next one.
+  dns.set("_domainconnect.help.acme.co.uk", ["example.com"]);
+  expect(new URL((await oneClickDns("help.acme.co.uk", "custom-domain", variables, returnTo))!.url).searchParams.get("domain")).toBe("acme.co.uk");
+});
+
 test("an address at its zone's apex has no host; a custom domain there has no link (its CNAME needs one)", async () => {
   web.set("https://api.cloudflare.com/client/v4/dns/domainconnect/v2/domainTemplates/providers/tuti.so/services/email-domain", '{"version":1}');
   const link = await oneClickDns("acme.co.uk", "email-domain", { dkim1: "a", dkim2: "b", dkim3: "c" }, returnTo);
