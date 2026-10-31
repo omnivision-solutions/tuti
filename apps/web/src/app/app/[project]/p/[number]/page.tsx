@@ -191,7 +191,7 @@ export default async function TeamPostPage(props: PageProps<"/app/[project]/p/[n
                 <ul aria-label="Voters" className="flex flex-col gap-1">
                   {voters.map((voter) => (
                     <li key={voter.userId} className="flex items-baseline justify-between gap-2">
-                      <span className="min-w-0 truncate">
+                      <span className="min-w-0 break-words">
                         {voter.name}
                         {voter.company && <span className="text-muted-foreground"> · {voter.company}</span>}
                       </span>

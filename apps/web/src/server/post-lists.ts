@@ -162,7 +162,7 @@ export function postVoters(projectId: string, property: string | null, postId: s
     LIMIT ${VOTERS_SHOWN}`;
 }
 
-/** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it, newest first. */
+/** What shipped a post, for its sidebar: the Autopilot change that completed it (the latest, if it was completed again since), and the changelog entries listing it (drafts, then the latest published first). */
 export async function howShipped(postId: string) {
   const [change, entries] = await Promise.all([
     prisma.codeChangeAction.findFirst({
@@ -172,7 +172,8 @@ export async function howShipped(postId: string) {
     }),
     prisma.changelogEntryPost.findMany({
       where: { postId },
-      orderBy: { entry: { createdAt: "desc" } },
+      // Drafts first, then the latest published.
+      orderBy: [{ entry: { publishedAt: { sort: "desc", nulls: "first" } } }, { entry: { createdAt: "desc" } }],
       select: { entry: { select: { number: true, title: true, publishedAt: true } } },
     }),
   ]);

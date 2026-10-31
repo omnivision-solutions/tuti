@@ -228,9 +228,17 @@ test("what shipped a post: the Autopilot change that completed it, and the chang
       { codeChangeId: completed.id, kind: "RESOLVES", postId: post.id, probability: 0.9, status: "APPLIED", decidedAt: new Date() },
     ],
   });
-  await prisma.changelogEntry.create({ data: { projectId: project.id, number: 1, title: "March", publishedAt: new Date(), posts: { create: { postId: post.id } } } });
+  // Written in order (February, March, April), published in another (March, then February); April's a draft.
+  const day = (n: number) => new Date(Date.UTC(2026, 9, n));
+  for (const [number, title, publishedAt] of [[1, "February", day(20)], [2, "March", day(10)], [3, "April", null]] as const) {
+    await prisma.changelogEntry.create({ data: { projectId: project.id, number, title, publishedAt, createdAt: day(number), posts: { create: { postId: post.id } } } });
+  }
   expect(await howShipped(post.id)).toEqual({
     change: { id: completed.id, repo: "acme/app", number: 9 },
-    entries: [{ number: 1, title: "March", publishedAt: expect.any(Date) }],
+    entries: [
+      { number: 3, title: "April", publishedAt: null },
+      { number: 1, title: "February", publishedAt: day(20) },
+      { number: 2, title: "March", publishedAt: day(10) },
+    ],
   });
 });
