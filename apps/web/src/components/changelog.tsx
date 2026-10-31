@@ -1,13 +1,12 @@
 "use client";
 
 import type { Editor } from "@tiptap/react";
-import type { Doc, MediaUrls } from "@tuti/content";
+import { diffLines, type Doc, type MediaUrls } from "@tuti/content";
 import { SparklesIcon } from "lucide-react";
 import { type RefObject, useActionState, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { keepingFields } from "@/lib/forms";
-import { diffLines } from "@/lib/line-diff";
 import { DiffLines } from "@/components/line-diff";
 import { BARE_TITLE, RichEditor } from "@/components/rich-editor";
 import {

@@ -1,3 +1,4 @@
+import { type DiffLine, diffLines, nearChanges } from "@tuti/content";
 import { type CodeChangeActionKind, prisma } from "@tuti/db";
 import { autopilotEmail, type AutopilotEmailChange, type AutopilotEmailUpdate, emailConfigured, sendEmail } from "@tuti/email";
 import { codeChangesEnabled, log, planIncludes } from "@tuti/shared";
@@ -120,9 +121,38 @@ type ActionRow = {
   article: { title: string } | null;
 };
 
-/** One update as the email previews it: what it is, about what, and what it changes. */
+/** Lines of an edit an email shows (changed ones, with one unchanged either side); the rest are on its page. */
+const DIFF_LINES = 8;
+/** How much of an unchanged line shows, for context. Changed ones show whole: they're what Approve publishes. */
+const CONTEXT_LENGTH = 280;
+const clip = (text: string) => (text.length > CONTEXT_LENGTH ? `${text.slice(0, CONTEXT_LENGTH - 1)}…` : text);
+/** A diff with each run of removed paragraphs and their replacements interleaved: each old one, then its new one. */
+function paired(lines: DiffLine[]): DiffLine[] {
+  const out: DiffLine[] = [];
+  for (let i = 0; i < lines.length; ) {
+    if (lines[i]!.kind === "same") {
+      out.push(lines[i++]!);
+      continue;
+    }
+    const removed: DiffLine[] = [];
+    const added: DiffLine[] = [];
+    for (; i < lines.length && lines[i]!.kind !== "same"; i++) {
+      (lines[i]!.kind === "removed" ? removed : added).push(lines[i]!);
+    }
+    for (let j = 0; j < Math.max(removed.length, added.length); j++) {
+      out.push(...[removed[j], added[j]].filter((line) => line !== undefined));
+    }
+  }
+  return out;
+}
+
+/** A progress update with nothing to post: it can't be approved as it is (applying it asks for the comment). */
+const uncommented = (action: { kind: CodeChangeActionKind; payload: unknown }) =>
+  action.kind === "MOVES_FORWARD" && !((action.payload ?? {}) as { comment?: string }).comment?.trim();
+
+/** One update as the email previews it: what it is, about what, and what it changes (line by line). */
 function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
-  const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string };
+  const payload = (action.payload ?? {}) as { comment?: string; line?: string; title?: string; problem?: string; before?: string; body?: string };
   const label: Record<CodeChangeActionKind, string> = {
     RESOLVES: "Closes the request",
     MOVES_FORWARD: "Progress update",
@@ -135,21 +165,54 @@ function previewOf(action: ActionRow, now: Date): AutopilotEmailUpdate {
   const done = action.status === "APPLIED";
   const fact: Record<CodeChangeActionKind, string> = {
     RESOLVES: done ? "Completed, emailing the people who asked" : `${statusName(action.post?.status ?? "OPEN")} → Completed, emailing the people who asked`,
-    MOVES_FORWARD: done ? `In progress, posted: “${payload.comment ?? ""}”` : `In progress, posting: “${payload.comment ?? ""}”`,
+    MOVES_FORWARD: done ? "In progress, with this comment" : uncommented(action) ? "Marks it in progress: write its comment first" : "Marks it in progress, with this comment",
     LINKS: done ? "Linked the pull request" : "Links the pull request",
-    ARTICLE_EDIT: done ? "Published its edit" : "Publishes its edit",
+    ARTICLE_EDIT: done ? "Published this edit" : "Publishes this edit",
     NEW_ARTICLE: "A draft only your team sees",
-    CHANGELOG_LINE: `“${payload.line ?? ""}”, in the changelog's draft`,
+    CHANGELOG_LINE: done ? "Wrote this line in the changelog's draft" : "Writes this line in the changelog's draft",
+  };
+  const added = (text = "") => (text.trim() ? [{ kind: "added" as const, text }] : undefined);
+  const edit = action.kind === "ARTICLE_EDIT" ? paired(nearChanges(diffLines(payload.before ?? "", payload.body ?? ""), 1)) : [];
+  // Cut after DIFF_LINES, but not between a removed paragraph and its replacement.
+  const cut = Math.min(DIFF_LINES, edit.length) + (edit[DIFF_LINES - 1]?.kind === "removed" && edit[DIFF_LINES]?.kind === "added" ? 1 : 0);
+  const diff: Partial<Record<CodeChangeActionKind, DiffLine[]>> = {
+    MOVES_FORWARD: added(payload.comment),
+    ARTICLE_EDIT: edit.slice(0, cut).map((line) => (line.kind === "same" ? { ...line, text: clip(line.text) } : line)),
+    CHANGELOG_LINE: added(payload.line),
   };
   return {
     kind: label[action.kind],
     title: action.post?.title ?? action.article?.title ?? payload.title ?? "Changelog",
     fact: fact[action.kind],
+    ...(diff[action.kind] && { diff: diff[action.kind] }),
+    ...(edit.length > cut && { diffMore: edit.length - cut }),
     ...(action.status === "SCHEDULED" && { goesOut: when(action.dueAt, now) }),
   };
 }
 
 type EmailedChange = { id: string; title: string; repo: string; number: number; summary: string; actions: (ActionRow & { waitReason?: string | null })[] };
+
+/**
+ * An email's five updates, each list kind with its own room across all its changes (whichever change comes first):
+ * what needs the team (`needsYou` of them) first, but one place kept for what goes out by itself when anything
+ * does (`goesOut`), so its Stop is always there; then what goes out; what's left for what went out and what's
+ * done. `take` cuts a list to its kind's room left; `more` counts what didn't fit.
+ */
+function shownFive(needsYou: number, goesOut: number) {
+  const first = Math.min(needsYou, SHOWN - (goesOut > 0 ? 1 : 0));
+  const second = Math.min(goesOut, SHOWN - first);
+  const room = { needsYou: first, goesOut: second, rest: SHOWN - first - second };
+  let more = 0;
+  return {
+    take: (list: AutopilotEmailUpdate[], which: keyof typeof room) => {
+      const shown = list.slice(0, room[which]);
+      room[which] -= shown.length;
+      more += list.length - shown.length;
+      return shown;
+    },
+    more: () => more,
+  };
+}
 
 /**
  * One change as an email shows it to `userId`: what goes out by itself (Publish now, Stop), what needs them
@@ -161,7 +224,7 @@ function emailChange(
   projectSlug: string,
   userId: string,
   now: Date,
-  take: (list: AutopilotEmailUpdate[]) => AutopilotEmailUpdate[],
+  take: (list: AutopilotEmailUpdate[], which: "needsYou" | "goesOut" | "rest") => AutopilotEmailUpdate[],
   gone: ActionRow[],
   drafts: ActionRow[],
 ): AutopilotEmailChange {
@@ -172,15 +235,16 @@ function emailChange(
     return token ? `${page}/act?token=${token}` : `${page}?select=likely`;
   };
   const scheduled = codeChange.actions.filter((action) => action.status === "SCHEDULED");
-  const goesOut = take(scheduled.map((action) => previewOf(action, now)));
+  const goesOut = take(scheduled.map((action) => previewOf(action, now)), "goesOut");
   // Publish now and Stop are for the ones it shows: not those past its five, nor others analysed again in their place.
   const shown = scheduled.slice(0, goesOut.length).map((action) => action.id).join(",");
   const needsYou = codeChange.actions
     .filter((action) => action.status === "PENDING" || action.status === "STALE")
     .map((action) => ({
       ...previewOf(action, now),
-      // Out of date ones can't be approved as they are, and one a teammate stopped isn't to approve unasked: Edit only.
-      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && { approveUrl: act(`approve:${action.id}`) }),
+      // Out of date ones and progress updates with nothing to post can't be approved as they are, and one a teammate
+      // stopped isn't to approve unasked: Edit only.
+      ...(action.status === "PENDING" && !action.waitReason?.startsWith("Stopped by") && !uncommented(action) && { approveUrl: act(`approve:${action.id}`) }),
       editUrl: `${page}?select=${action.id}`,
     }));
   return {
@@ -190,9 +254,9 @@ function emailChange(
     reviewUrl: `${page}?select=likely`,
     ...(shown && { publishUrl: act(`publish:${shown}`), stopUrl: act(`stop:${shown}`) }),
     goesOut,
-    wentOut: take(gone.map((action) => previewOf(action, now))),
-    needsYou: take(needsYou),
-    done: take(drafts.map((action) => previewOf(action, now))),
+    wentOut: take(gone.map((action) => previewOf(action, now)), "rest"),
+    needsYou: take(needsYou, "needsYou"),
+    done: take(drafts.map((action) => previewOf(action, now)), "rest"),
   };
 }
 
@@ -322,36 +386,31 @@ export async function sendAutopilotEmails(now = new Date()): Promise<number> {
         await settle();
         continue;
       }
-      let budget = SHOWN;
-      let more = 0;
-      const take = (list: AutopilotEmailUpdate[]) => {
-        const shown = list.slice(0, Math.max(budget, 0));
-        budget -= shown.length;
-        more += list.length - shown.length;
-        return shown;
-      };
       // The subject counts them all, not just the ones shown.
       const all = mine.flatMap(({ codeChange }) => codeChange.actions);
+      // Drafts Autopilot wrote by itself lately (only the team sees them).
+      const done = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind));
       const totals = {
         goesOut: all.filter((action) => action.status === "SCHEDULED").length,
         wentOut: mine.reduce((sum, notice) => sum + went(notice).length, 0),
         needsYou: all.filter((action) => action.status === "PENDING" || action.status === "STALE").length,
+        done: mine.reduce((sum, notice) => sum + done(notice).length, 0),
         first: when(
           all.filter((action) => action.status === "SCHEDULED").reduce<Date | null>((min, action) => (!min || (action.dueAt && action.dueAt < min) ? action.dueAt : min), null),
           now,
         ),
       };
       // Everything decided in the ten minutes before it went (the team approved it all, say): nothing to say.
-      const done = (notice: (typeof mine)[number]) => notice.codeChange.actions.filter((action) => action.status === "APPLIED" && lately(notice)(action) && !PUBLIC.has(action.kind));
-      if (totals.goesOut + totals.wentOut + totals.needsYou + mine.reduce((sum, notice) => sum + done(notice).length, 0) === 0) {
+      if (totals.goesOut + totals.wentOut + totals.needsYou + totals.done === 0) {
         await settle();
         continue;
       }
-      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, take, went(notice), done(notice)));
+      const five = shownFive(totals.needsYou, totals.goesOut);
+      const changes: AutopilotEmailChange[] = mine.map((notice) => emailChange(notice.codeChange, project.slug, userId, now, five.take, went(notice), done(notice)));
       try {
         await sendEmail({
           to: mine[0]!.user.email,
-          ...autopilotEmail({ projectName: project.name, changes, totals, more, autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
+          ...autopilotEmail({ projectName: project.name, changes, totals, more: five.more(), autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`, accountUrl: `${appOrigin()}/app/account` }),
         });
       } catch (error) {
         // Not sent: tried again once its claim lapses (CLAIM_MINUTES on); the others still go. The mail server
@@ -554,17 +613,10 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
           await prisma.autopilotDigest.updateMany({ where: { ...mine, claimedAt }, data: { sentAt: claimedAt } });
           continue;
         }
-        let budget = SHOWN;
-        let more = 0;
-        const take = (list: AutopilotEmailUpdate[]) => {
-          const shown = list.slice(0, Math.max(budget, 0));
-          budget -= shown.length;
-          more += list.length - shown.length;
-          return shown;
-        };
-        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
-        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, take, [], [])).filter((change) => change.needsYou.length > 0);
         const needsYou = waiting.reduce((sum, change) => sum + change.actions.length, 0);
+        // The newest first, five updates in all: changes past them only counted ("+N more in Tuti").
+        const five = shownFive(needsYou, 0);
+        const changes = waiting.map((change) => emailChange(change, project.slug, reader.id, now, five.take, [], [])).filter((change) => change.needsYou.length > 0);
         try {
           await sendEmail({
             to: reader.email,
@@ -572,7 +624,7 @@ export async function sendAutopilotDigests(now = new Date()): Promise<number> {
               projectName: project.name,
               changes,
               totals: { goesOut: 0, wentOut: 0, needsYou, first: "", pullRequests: waiting.length },
-              more,
+              more: five.more(),
               digest: true,
               autopilotUrl: `${appOrigin()}/app/${project.slug}/autopilot`,
               accountUrl: `${appOrigin()}/app/account`,

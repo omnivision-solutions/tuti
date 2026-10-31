@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "vitest";
 
-import { diffBlocks, diffLines, nearChanges } from "./line-diff";
+import { diffBlocks, diffLines, nearChanges } from "./diff";
 
 const show = (before: string, after: string) =>
   diffLines(before, after).map(({ kind, text }) => `${{ same: " ", added: "+", removed: "-" }[kind]}${text}`);

@@ -24,8 +24,9 @@ export const emailConfigured = () => !!process.env.SMTP_HOST;
  * development, installs without email) it's written to the log instead.
  * `replyTo` is where replies go (e.g. the person who sent an invite); `headers` are
  * extra headers (e.g. List-Unsubscribe); `from` replaces EMAIL_FROM (a project's support
- * address, which the SMTP provider must also let it send from). Returns the SMTP server's
- * answer to the message (with its id there, e.g. Amazon SES's).
+ * address, which the SMTP provider must also let it send from); `fromName` names EMAIL_FROM's sender
+ * for what it's about ("Tuti Autopilot"). Returns the SMTP server's answer to the message (with its
+ * id there, e.g. Amazon SES's).
  */
 export async function sendEmail({
   to,
@@ -34,6 +35,7 @@ export async function sendEmail({
   replyTo,
   headers,
   from: sender,
+  fromName,
   messageId,
   attachments,
 }: {
@@ -43,6 +45,7 @@ export async function sendEmail({
   replyTo?: string;
   headers?: Record<string, string>;
   from?: string;
+  fromName?: string;
   /** Its Message-ID (`<random@domain>`), when replies to it must be recognised; otherwise one is made. */
   messageId?: string;
   /** Files sent with it, as attachments. */
@@ -59,7 +62,7 @@ export async function sendEmail({
     throw new Error('EMAIL_FROM is not set (e.g. "Acme Feedback <feedback@example.com>")');
   }
   const info = (await smtp().sendMail({
-    from,
+    from: !sender && fromName ? renamed(from, fromName) : from,
     to,
     subject,
     html,
@@ -70,6 +73,12 @@ export async function sendEmail({
     ...(attachments?.length && { attachments: attachments.map((a) => ({ filename: a.filename, contentType: a.contentType, content: Buffer.from(a.content) })) }),
   })) as { response?: string };
   return info.response ?? null;
+}
+
+/** `from` ("Acme <a@example.com>", or the bare address) with `name` as its sender's name. */
+export function renamed(from: string, name: string): string {
+  const address = from.match(/<([^<>]+)>\s*$/)?.[1] ?? from.trim();
+  return `"${name}" <${address}>`;
 }
 
 /**

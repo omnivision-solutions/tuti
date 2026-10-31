@@ -47,6 +47,7 @@ export function ConversationEmail({ projectName, from, isNew, subject, body, url
 }
 
 export const conversationEmail = (props: ConversationProps) => ({
+  fromName: "Tuti Inbox",
   subject: props.isNew ? `New conversation: ${props.subject}` : `${props.from} replied: ${props.subject}`,
   body: <ConversationEmail {...props} />,
 });

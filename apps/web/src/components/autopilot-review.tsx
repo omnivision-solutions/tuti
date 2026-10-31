@@ -1,5 +1,6 @@
 "use client";
 
+import { diffLines } from "@tuti/content";
 import { type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,7 +24,6 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
-import { diffLines } from "@/lib/line-diff";
 import { updateKind } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
 import { GoesOut } from "@/components/goes-out";

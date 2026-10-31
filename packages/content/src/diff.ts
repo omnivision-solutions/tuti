@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import { listStart } from "@tuti/content";
+import { listStart } from "./document";
 
 export type DiffLine = { kind: "same" | "added" | "removed"; text: string };
 

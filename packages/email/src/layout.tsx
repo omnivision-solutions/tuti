@@ -2,7 +2,23 @@ import { Body, Container, Head, Html, Preview, Section, Text } from "@react-emai
 import type { ReactNode } from "react";
 
 // Brand colours: the light theme tokens in apps/web/src/app/globals.css, as hex.
-export const colors = { green: "#12804a", onGreen: "#ffffff", text: "#1c1917", muted: "#78716c", border: "#ece7dd", page: "#fffdf8", card: "#ffffff" };
+export const colors = {
+  green: "#12804a",
+  onGreen: "#ffffff",
+  text: "#1c1917",
+  muted: "#78716c",
+  mutedBackground: "#f3f0ea",
+  border: "#ece7dd",
+  page: "#fffdf8",
+  card: "#ffffff",
+  soft: "#e8f5ec",
+  onSoft: "#0f5e37",
+  highlight: "#ffe8d6",
+  onHighlight: "#9a3b06",
+  destructive: "#e7000b",
+  /** --destructive at 10% on white, as the app marks removed lines. */
+  destructiveSoft: "#fde6e7",
+};
 
 /** The frame every Tuti email shares. */
 export function Layout({ preview, children }: { preview: string; children: ReactNode }) {
