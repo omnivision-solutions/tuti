@@ -247,7 +247,7 @@ export async function autopilotRecord(projectId: string): Promise<{ kept: number
     where: { codeChange: { projectId }, status: { in: ["APPLIED", "UNDONE"] } },
     orderBy: [{ decidedAt: "desc" }, { id: "desc" }],
     take: 50,
-    select: { kind: true, status: true, payload: true, article: { select: { revisions: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true } } } } },
+    select: { kind: true, status: true, payload: true },
   });
   const known = recent.flatMap((action) => {
     const payload = (action.payload ?? {}) as { edited?: boolean; undo?: Undo; auto?: boolean };
@@ -258,8 +258,9 @@ export async function autopilotRecord(projectId: string): Promise<{ kept: number
       return payload.edited === undefined ? [] : [!payload.edited];
     }
     if (action.kind === "NEW_ARTICLE" || (action.kind === "ARTICLE_EDIT" && payload.undo?.published === false)) {
-      // Finished in the editor: kept if it wasn't saved again since.
-      return payload.undo?.revision === undefined ? [] : [(action.article?.revisions[0]?.id ?? null) === payload.undo.revision];
+      // Finished in the editor: whether it went out as written isn't known (saved again before or after
+      // it was published, deleted…), so it isn't counted either way.
+      return [];
     }
     if (action.kind === "ARTICLE_EDIT") {
       return payload.undo === undefined ? [] : [true];
@@ -317,7 +318,7 @@ export const analyseCodeChange = defineOperation({
       throw new OperationError(404, "not_found", "Code change not found");
     }
     if (!codeChangesEnabled() || !change.project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: an owner turns it on in Settings → Autopilot");
     }
     await requirePlan(projectId, "codeChanges");
     // Out of AI credits, the team hears so now, rather than finding it paused again.
@@ -345,7 +346,7 @@ export const resumeCodeChanges = defineOperation({
   run: async ({ projectId }) => {
     const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { analyseCodeChanges: true } });
     if (!codeChangesEnabled() || !project.analyseCodeChanges) {
-      throw new OperationError(409, "analysis_off", "Autopilot is off: turn it on in Settings → Integrations → GitHub");
+      throw new OperationError(409, "analysis_off", "Autopilot is off: an owner turns it on in Settings → Autopilot");
     }
     await requirePlan(projectId, "codeChanges");
     await aiOrRefuse(projectId, "code_changes");
@@ -558,7 +559,7 @@ export const applyCodeChangeAction = defineOperation({
         const saved = found === "unknown" ? "unknown" : found !== null;
         if (found && found !== "unknown") {
           // Found, Undo can take it all back. Can't tell: no record, so Undo says to change it by hand.
-          await recordUndo(action.id, { comment }, { ...undo, commentId: found.id });
+          await recordUndo(action.id, { comment, edited: comment !== proposed }, { ...undo, commentId: found.id });
         }
         if (saved !== false) {
           throw Object.assign(error as Error, { saved });

@@ -634,12 +634,12 @@ describe("docs", () => {
     expect((await published(article.slug)).body).toBe("Pick Light or Sepia in Settings.");
   });
 
-  test("how Autopilot is doing: an edit finished in the editor counts as kept until the article is saved again there", async () => {
+  test("how Autopilot is doing: an edit finished in the editor isn't counted, either way (whether it went out as written isn't known)", async () => {
     const { article, action } = await articleEdit();
     await call(applyCodeChangeAction, team(), { id: action.id, publish: false });
-    expect(await autopilotRecord(project.id)).toEqual({ kept: 1, of: 1 });
+    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
     await call(updateArticle, team(), { slug: article.slug, body: "Pick Light, Dark or System in Settings → Appearance." });
-    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 1 });
+    expect(await autopilotRecord(project.id)).toEqual({ kept: 0, of: 0 });
   });
 
   test("Undo an article edit: its previous version is published again; refused once someone edited it since", async () => {
