@@ -110,8 +110,14 @@ export default async function FeedbackPage(props: PageProps<"/app/[project]/feed
           <EmptyState title="No feedback yet" description="Share your portal with users, or connect your app with single sign-on in Settings." />
         ) : (
           <EmptyState
-            title={q || board ? "No posts match" : tab === "open" ? "Nothing to triage" : "No posts here"}
-            description={q || board ? "Try other words, or another board or tab." : "Posts show here when they have this status."}
+            title={q || board ? "No posts match" : tab === "open" ? "Nothing to triage" : tab === "duplicates" ? "No possible duplicates" : "No posts here"}
+            description={
+              q || board
+                ? "Try other words, or another board or tab."
+                : tab === "duplicates"
+                  ? "Posts that may repeat an older one show here."
+                  : "Posts show here when they have this status."
+            }
           />
         )
       ) : (

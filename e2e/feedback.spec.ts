@@ -129,6 +129,8 @@ test("a team collects feedback, merges a duplicate and plans it", async ({ brows
   const tabs = team.getByRole("navigation", { name: "Statuses" });
   await expect(tabs.getByRole("link", { name: "Needs triage 0" })).toHaveAttribute("aria-current", "page");
   await expect(team.getByText("Nothing to triage")).toBeVisible();
+  await tabs.getByRole("link", { name: "Possible duplicates 0" }).click();
+  await expect(team.getByText("No possible duplicates")).toBeVisible();
   await tabs.getByRole("link", { name: "Planned 1" }).click();
   await team.waitForURL(`**/app/${slug}/feedback?status=planned`);
   // A search looks in titles and descriptions, on the tab it's typed on.
