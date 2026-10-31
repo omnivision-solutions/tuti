@@ -277,9 +277,15 @@ test("an article edit Autopilot is sure of goes out by itself once the hold pass
   expect(email.text).toContain("Done (only your team sees it)");
   // Publish now, Review and Stop under what goes out: Review opens the page.
   const review = email.text.split(/\s+/).find((word) => word.startsWith(`${APP_URL}/app/${slug}/autopilot/`) && word.endsWith("?select=likely"));
-  expect(email.text.split(/\s+/).filter((word) => word.includes("/act?token="))).toHaveLength(2);
+  const acts = email.text.split(/\s+/).filter((word) => word.includes("/act?token="));
+  expect(acts).toHaveLength(2);
   await owner.goto(review!);
   await expect(owner.getByText("From your email:", { exact: false })).toBeVisible();
+  // Its Publish now or Stop opened by someone else (or late) names the edit: it has no checkbox, so it's marked.
+  const [payload] = new URL(acts[0]!).searchParams.get("token")!.split(".");
+  const named = (JSON.parse(Buffer.from(payload!, "base64url").toString()) as { b: string }).b.split(":")[1]!;
+  await owner.goto(`${review!.split("?")[0]}?select=${named}`);
+  await expect(owner.getByRole("article", { name: `Out of date: ${article}` }).getByText("In your email")).toBeVisible();
   await expect(owner.getByRole("region", { name: "The change" })).toContainText("Emailed to Olive Owner");
 
   // Home says it goes out by itself, with Publish now and Stop; the page says when.

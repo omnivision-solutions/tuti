@@ -158,6 +158,7 @@ export function AutopilotReview({
             preview={previews[update.id]}
             canAnalyse={canAnalyse}
             busy={pending}
+            named={fromEmail === "named" && update.status === "scheduled" && namedIds.includes(update.id)}
           />
         ))}
         {decided.length > 0 && (
@@ -371,6 +372,7 @@ function UpdateCard({
   preview,
   canAnalyse,
   busy,
+  named = false,
 }: {
   projectSlug: string;
   changeId: string;
@@ -383,6 +385,8 @@ function UpdateCard({
   preview?: ReactNode;
   canAnalyse: boolean;
   busy: boolean;
+  /** One going out by itself that the email's link named (it has no checkbox to tick): marked so. */
+  named?: boolean;
 }) {
   const router = useRouter();
   const [working, startTransition] = useTransition();
@@ -459,7 +463,10 @@ function UpdateCard({
           {isStale ? (
             <Badge variant="highlight">Changed since</Badge>
           ) : isScheduled ? (
-            <Badge variant="secondary">Goes out by itself</Badge>
+            <>
+              <Badge variant="secondary">Goes out by itself</Badge>
+              {named && <Badge variant="highlight">In your email</Badge>}
+            </>
           ) : (
             <Badge variant={update.confidence === "likely" ? "secondary" : "outline"}>{update.confidence === "likely" ? "Likely" : "Not sure"}</Badge>
           )}

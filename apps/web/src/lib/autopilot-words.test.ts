@@ -26,7 +26,7 @@ test("Approve that can't tell whether it went, or failed for now, says so rather
 
 test("Publish now or Stop whose updates were replaced (analysed again) says so, not that nothing's going out", () => {
   expect(afterButton([progress("scheduled")], "replaced", "stop", null)).toBe(
-    "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.",
+    "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is below, marked In your email, with Publish now and Stop.",
   );
   // Nothing goes out by itself now: it doesn't say there is.
   expect(afterButton([progress("pending")], "replaced", "stop", null)).toBe(
