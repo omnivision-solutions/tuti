@@ -140,7 +140,8 @@ test("an email's buttons act only on what it showed: analysed again, a new sched
   const fresh = await prisma.codeChangeAction.create({
     data: { codeChangeId: c.id, kind: "MOVES_FORWARD", postId: c.actions[0]!.postId, probability: 0.97, status: "SCHEDULED", dueAt: new Date(Date.now() + 86_400_000), payload: { comment: "New words" } },
   });
-  expect(await click(c.id, publish)).toBe(`/app/${project.slug}/autopilot/${c.id}?done=already&button=publish&update=${scheduledOf(c)}`);
+  // What replaced them goes out by itself: ticked, to publish or stop there, not "nothing more to do".
+  expect(await click(c.id, publish)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=${fresh.id}&done=replaced&button=publish`);
   expect(await statusOf(fresh.id)).toBe("SCHEDULED");
   expect(await click(c.id, approve)).toBe(`/app/${project.slug}/autopilot/${c.id}?select=likely&done=replaced`);
 });

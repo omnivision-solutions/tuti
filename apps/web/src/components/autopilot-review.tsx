@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import { emailLine } from "@/lib/autopilot-email-line";
+import { emailLine, stoppedUpdate } from "@/lib/autopilot-email-line";
 import { diffLines } from "@/lib/line-diff";
 import { updateKind } from "@/lib/autopilot-words";
 import { cn } from "@/lib/utils";
@@ -78,7 +78,8 @@ export function AutopilotReview({
   const stale = updates.filter((update) => update.status === "stale");
   const scheduled = updates.filter((update) => update.status === "scheduled");
   const decided = updates.filter((update) => update.status !== "pending" && update.status !== "stale" && update.status !== "scheduled");
-  const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id))));
+  // Ticked as it opens: what waits, except one a teammate stopped (its card says so; ticking it is a choice).
+  const [selected, setSelected] = useState(() => new Set(ticked.filter((id) => waiting.some((update) => update.id === id && !stoppedUpdate(update)))));
   // What the email's link named, as the page opened (`ticked`, waiting or not): the line says what became of them.
   const [namedIds] = useState(() => [...ticked]);
   // The team's edits: a progress update's comment, the changelog line.

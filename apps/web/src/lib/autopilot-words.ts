@@ -49,7 +49,9 @@ export function afterButton(updates: Update[], done: string | null, button: stri
     case "refused":
       return `${button === "stop" ? "Nothing was stopped" : "Nothing went out"}: ${held === 1 ? `it couldn't ${verb} as it is. It's ticked below` : `they couldn't ${verb} as they are. They're ticked below`}, to check.`;
     case "replaced":
-      return "That update was replaced when Autopilot read the pull request again: here's what it found now.";
+      return button === "approve" || !button
+        ? "That update was replaced when Autopilot read the pull request again: here's what it found now."
+        : "Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.";
     case "already": {
       if (!update) {
         return "Nothing it named is going out any more. Nothing more to do.";

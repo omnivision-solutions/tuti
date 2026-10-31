@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
 
-import { emailLine } from "./autopilot-email-line";
+import { emailLine, stoppedUpdate } from "./autopilot-email-line";
 
-const update = (id: string, status: string) => ({ id, status });
+const update = (id: string, status: string, waitReason: string | null = null) => ({ id, status, waitReason });
 
 test("the email's line says what became of the updates it named, now, whether they're ticked or not", () => {
   expect(emailLine("named", ["a"], [update("a", "pending")])).toBe("the update it named waits for you: check it and approve.");
@@ -15,4 +15,12 @@ test("the email's line says what became of the updates it named, now, whether th
   // Nothing likely, but some wait.
   expect(emailLine("likely", [], [update("a", "pending")])).toBe("Autopilot isn't sure of any of these: tick the ones to approve.");
   expect(emailLine("named", ["gone"], [update("a", "pending")])).toBe("the updates it named were decided already.");
+});
+
+test("an update it named that a teammate stopped says so, and isn't ticked to approve", () => {
+  const stopped = update("a", "pending", "Stopped by Bob");
+  expect(emailLine("named", ["a"], [stopped])).toBe("the update it named was stopped: it waits for the team, not ticked.");
+  expect(emailLine("named", ["a", "b"], [stopped, update("b", "pending")])).toBe("the update it named waits for you: check it and approve.");
+  expect(stoppedUpdate(stopped)).toBe(true);
+  expect(stoppedUpdate(update("b", "pending", "Its article changed"))).toBe(false);
 });

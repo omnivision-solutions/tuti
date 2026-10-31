@@ -54,10 +54,17 @@ export async function GET(request: Request, context: RouteContext<"/app/[project
   // Publish now or Stop: the ones the email showed, if they're still going out by themselves.
   const [kind, list = ""] = which.split(":") as ["publish" | "stop", string];
   const ids = list.split(",").filter(Boolean);
-  const scheduled = await prisma.codeChangeAction.findMany({
-    where: { id: { in: ids }, codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" },
-    select: { id: true },
+  const named = await prisma.codeChangeAction.findMany({
+    where: { id: { in: ids }, codeChangeId: id, codeChange: { projectId: membership.project.id } },
+    select: { id: true, status: true },
   });
+  // None of them there any more: analysed again since, and what replaced them may go out by itself. Those are
+  // ticked, to publish or stop there.
+  if (named.length === 0) {
+    const now = await prisma.codeChangeAction.findMany({ where: { codeChangeId: id, codeChange: { projectId: membership.project.id }, status: "SCHEDULED" }, select: { id: true } });
+    page(`?select=${now.length > 0 ? now.map(({ id: actionId }) => encodeURIComponent(actionId)).join(",") : "likely"}&done=replaced&button=${kind}`);
+  }
+  const scheduled = named.filter((action) => action.status === "SCHEDULED");
   let done = 0;
   const held: string[] = [];
   const unsure: string[] = [];

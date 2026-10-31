@@ -24,6 +24,10 @@ test("Approve that can't tell whether it went, or failed for now, says so rather
   expect(afterButton([], "unsure", "publish", null, 0, 1)).toBe("Couldn't tell whether one went out: check it below before doing it again.");
 });
 
+test("Publish now or Stop whose updates were replaced (analysed again) says so, not that nothing's going out", () => {
+  expect(afterButton([], "replaced", "stop", null, 0)).toBe("Those updates were replaced when Autopilot read the pull request again: what goes out by itself now is ticked below, to stop or publish.");
+});
+
 test("Approve refused on an update someone stopped says it couldn't be approved, not that it's done", () => {
   expect(afterButton([progress("pending", "Stopped by Bob")], "already", "approve", "u1", 0)).toBe("Progress update: Dark mode couldn't be approved as it is. Check it below.");
   expect(afterButton([progress("pending", "Stopped by Bob")], "already", "stop", "u1", 0)).toBe("Done already: Progress update: Dark mode was stopped. Nothing more to do.");
