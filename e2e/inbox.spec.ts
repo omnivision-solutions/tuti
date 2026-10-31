@@ -195,9 +195,17 @@ test("conversations from the API land in the inbox, where the team replies, assi
   // Someone known only by their address.
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("e2e-asker@example.com (not verified)");
   await expect(owner.getByRole("complementary", { name: "About them" })).toContainText("Known only by this address.");
+  // Linked to the post as well (through the API): the post lists it until it's spam.
+  await api("/conversations/2/posts", { post: 1 });
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(conversations).toContainText("Do you have a discount for nonprofits?");
+  await owner.goto(`/app/${slug}/inbox/2`);
   await owner.getByRole("button", { name: "More actions" }).click();
   await owner.getByRole("button", { name: "Mark as spam" }).click();
   await expect(owner.getByText("Marked as spam")).toBeVisible();
+  await owner.goto(`/app/${slug}/p/1`);
+  await expect(owner.getByRole("complementary", { name: "Properties" })).toContainText("Voters");
+  await expect(conversations).toHaveCount(0);
   await owner.goto(`/app/${slug}/inbox`);
   await expect(views.getByRole("link", { name: "Open 0" })).toBeVisible();
   await views.getByRole("link", { name: "Spam 1" }).click();

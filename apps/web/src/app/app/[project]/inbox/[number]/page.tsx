@@ -109,13 +109,15 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
       ? await onlineUntil(projectId, presenceKey({ userId: conversation.userId, visitorHash: conversation.visitorHash }))
       : null;
   const personName = person.name ?? person.email ?? "Unknown";
-  // What "Link post…" offers: the posts not merged nor linked already, the most voted first.
-  const candidates = await prisma.post.findMany({
-    where: { projectId, duplicateOfId: null, conversations: { none: { conversationId: conversation.id } } },
-    orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }],
-    take: 500,
-    select: { id: true, number: true, title: true, voteCount: true },
-  });
+  // What "Link post…" offers: the posts not merged nor linked already, the most voted and the newest (what
+  // someone writes in about is often new). ponytail: 500 at most; search on the server if projects outgrow it.
+  const unlinked = { projectId, duplicateOfId: null, conversations: { none: { conversationId: conversation.id } } };
+  const pickable = { id: true, number: true, title: true, voteCount: true };
+  const [voted, newest] = await Promise.all([
+    prisma.post.findMany({ where: unlinked, orderBy: [{ voteCount: "desc" }, { createdAt: "desc" }], take: 250, select: pickable }),
+    prisma.post.findMany({ where: unlinked, orderBy: { createdAt: "desc" }, take: 250, select: pickable }),
+  ]);
+  const candidates = [...new Map([...voted, ...newest].map((post) => [post.id, post])).values()];
 
   return (
     <>
@@ -168,14 +170,17 @@ export default async function ConversationPage(props: PageProps<"/app/[project]/
 
       {/* The page's height at least, so the reply box is at the bottom of the screen with few messages too. */}
       <div className="flex flex-1 flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-6">
-        <PersonDetails name={personName}>
-          <div className="flex flex-col gap-4">
-            <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} candidates={candidates} />
-            <div className="border-t pt-4">
-              <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
-            </div>
-          </div>
-        </PersonDetails>
+        {/* Beside it: the posts it's about, then the person (a sheet on phones, where the posts stay on the page). */}
+        <div className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
+          <Card size="sm">
+            <CardContent>
+              <ConversationPosts projectSlug={slug} number={conversation.number} posts={conversation.posts.map((link) => link.post)} candidates={candidates} />
+            </CardContent>
+          </Card>
+          <PersonDetails name={personName}>
+            <PersonPanel projectId={projectId} slug={slug} conversation={conversation} />
+          </PersonDetails>
+        </div>
         <div className="flex min-w-0 flex-1 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <ol className="flex flex-col gap-3" aria-label="Messages">
             {conversation.messages.map((message) => {
