@@ -265,3 +265,52 @@ test("a board opens on the ideas not done yet, with completed ones in Recently s
   await visitor.goto("/feedback/feature-requests?status=active");
   await expect(shipped.getByRole("link", { name: "Export to CSV" })).toBeVisible();
 });
+
+test("the team's roadmap: a card dragged to another column changes its status; Completed asks first, saying who's emailed", async ({ browser }, testInfo) => {
+  const checkpoint = checkpoints(testInfo);
+  const slug = `e2e-${randomUUID().slice(0, 8)}`;
+  const team = await signUp(browser, APP_URL, "Tess Team");
+  await createProject(team, "Acme", slug);
+  const api = await apiFor(team, slug);
+  // Two planned ideas; Ada, from the app, voted for one.
+  await api("/posts", { board: "feature-requests", title: "Dark mode" });
+  await api("/posts", { board: "feature-requests", title: "Calendar sync" });
+  await api("/posts/1/vote", { voted: true, author: { id: "user-ada", name: "Ada", email: "e2e-ada@example.com" } });
+  for (const number of [1, 2]) {
+    await api(`/posts/${number}`, { status: "planned" }, "PATCH");
+  }
+
+  // From Feedback's header.
+  await team.goto(`/app/${slug}/feedback`);
+  await team.getByRole("link", { name: "Roadmap" }).click();
+  await team.waitForURL(`**/app/${slug}/feedback/roadmap`);
+  const column = (name: string) => team.getByRole("region", { name });
+  const card = (title: string) => team.getByRole("listitem").filter({ hasText: title });
+  await expect(column("Planned").getByRole("listitem")).toHaveCount(2);
+  await checkpoint(team, "team-roadmap");
+
+  // Dragged to In progress: its status changes.
+  await card("Calendar sync").dragTo(column("In progress"));
+  await expect(team.getByText("Calendar sync: In progress")).toBeVisible();
+  await expect(column("In progress").getByRole("listitem")).toHaveCount(1);
+
+  // Dragged to Completed: asked first, saying who is emailed (Ada; the team never is).
+  await card("Dark mode").dragTo(column("Completed"));
+  const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
+  await expect(ask).toContainText("This emails up to 1 person who asked for it that it shipped.");
+  await checkpoint(team, "team-roadmap-complete", { fullPage: false });
+  // Cancelled: nothing changes.
+  await ask.getByRole("button", { name: "Cancel" }).click();
+  await expect(team.getByRole("alertdialog")).toHaveCount(0);
+  await expect(column("Planned").getByRole("listitem")).toHaveCount(1);
+  await card("Dark mode").dragTo(column("Completed"));
+  await team.getByRole("alertdialog").getByRole("button", { name: "Mark completed" }).click();
+  await expect(team.getByText("Dark mode: Completed")).toBeVisible();
+  await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
+
+  // A board at a time.
+  await team.getByRole("combobox", { name: "Board" }).click();
+  await team.getByRole("option", { name: "Feature requests" }).click();
+  await expect(team).toHaveURL(/\?board=feature-requests$/);
+  await expect(column("Completed").getByRole("listitem")).toHaveCount(1);
+});
