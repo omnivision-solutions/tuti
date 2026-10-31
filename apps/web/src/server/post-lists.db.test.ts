@@ -336,3 +336,19 @@ test("a post's newer and older neighbours, newest first as Feedback lists them, 
   expect(await postNeighbours(project.id, 4)).toEqual({ newer: null, older: 2 });
   expect(await postNeighbours(project.id, 1)).toEqual({ newer: 2, older: null });
 });
+
+test("a post found both ways ranks first even when it's sixth by meaning alone", async () => {
+  const owner = await signUp("Olive Owner");
+  const project = await createProject(owner);
+  const board = project.boards[0]!;
+  const post = (number: number, title: string) => prisma.post.create({ data: { projectId: project.id, boardId: board.id, authorId: owner.id, number, title } });
+  const vector = (x: number) => `[${[x, 1 - x, ...Array<number>(1534).fill(0)].join(",")}]`;
+  const dark = await post(1, "Dark mode");
+  // Five closer by meaning than the one whose words match too, none of them by its words.
+  const closer = await Promise.all([0.99, 0.98, 0.97, 0.96, 0.95].map((x, i) => post(i + 2, `Night theme ${i + 1}`).then((p) => [p, x] as const)));
+  const both = await post(7, "Dark mode in the editor");
+  for (const [p, x] of [[dark, 1], ...closer, [both, 0.9]] as const) {
+    await prisma.$executeRaw`INSERT INTO post_embedding ("postId", "projectId", model, "contentHash", embedding, "updatedAt") VALUES (${p.id}, ${project.id}, 'test', 'x', ${vector(x)}::vector, now())`;
+  }
+  expect((await postsLike(project.id, dark))[0]!.title).toBe("Dark mode in the editor");
+});
