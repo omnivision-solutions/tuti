@@ -611,10 +611,19 @@ test("Feedback's rows picked for Set status, Move to board and Merge; Completed 
   await bar.getByRole("button", { name: "Set status" }).click();
   await team.getByRole("menuitem", { name: "Completed" }).click();
   const ask = team.getByRole("alertdialog", { name: "Mark 1 post as Completed?" });
-  await expect(ask).toContainText("Everyone who voted for them is emailed that it shipped");
+  // Who it emails (here, nobody: only the team has voted).
+  await expect(ask).toContainText("Nobody is emailed.");
   await ask.getByRole("button", { name: "Cancel" }).click();
   await expect(ask).toHaveCount(0);
   await expect(row("Calendar sync").getByRole("button", { name: "Status: Planned" })).toBeVisible();
+
+  // From a row's own status menu, Completed asks first too.
+  await row("Export to PDF").getByRole("button", { name: "Status: Planned" }).click();
+  await team.getByRole("menuitemradio", { name: "Completed" }).click();
+  const one = team.getByRole("alertdialog", { name: "Mark “Export to PDF” completed?" });
+  await expect(one).toContainText("Nobody is emailed.");
+  await one.getByRole("button", { name: "Cancel" }).click();
+  await expect(row("Export to PDF").getByRole("button", { name: "Status: Planned" })).toBeVisible();
 
   // Moved to another board.
   await bar.getByRole("button", { name: "Move to board" }).click();

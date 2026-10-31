@@ -13,6 +13,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { asking, timeAgo } from "@/lib/format";
 import { displayDoc } from "@/server/content";
 import { mediaUrls } from "@/server/media-urls";
+import { emailedOnCompletion } from "@/server/operations/code-changes";
 import { postVoters, voterTotals } from "@/server/post-lists";
 
 /**
@@ -54,7 +55,11 @@ export async function FeedbackPane({
       </p>
     );
   }
-  const [totals, voters] = await Promise.all([voterTotals(projectId, askingProperty, [post.id]), postVoters(projectId, askingProperty, post.id)]);
+  const [totals, voters, emails] = await Promise.all([
+    voterTotals(projectId, askingProperty, [post.id]),
+    postVoters(projectId, askingProperty, post.id),
+    emailedOnCompletion(projectId, [post.id]),
+  ]);
   const total = totals.get(post.id);
   const doc = displayDoc(post);
   return (
@@ -87,7 +92,13 @@ export async function FeedbackPane({
         <>
           <div className="grid grid-cols-2 gap-3 border-t pt-4">
             <Property label="Status">
-              <PostStatusSelect projectSlug={projectSlug} postId={post.id} status={post.status} className="w-full" />
+              <PostStatusSelect
+                projectSlug={projectSlug}
+                postId={post.id}
+                status={post.status}
+                completing={{ title: post.title, emails: emails.get(post.id) ?? 0 }}
+                className="w-full"
+              />
             </Property>
             <Property label="Board">
               <MovePostSelect projectSlug={projectSlug} postId={post.id} boardSlug={post.board.slug} boards={boards} className="w-full max-w-none" />

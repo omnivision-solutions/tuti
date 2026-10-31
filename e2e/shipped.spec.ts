@@ -19,10 +19,14 @@ test("people hear when what they asked for ships, and can unsubscribe", async ({
   await ada.goto("/feedback/feature-requests");
   await postFeedback(ada, "Dark mode");
 
-  // The team ships it.
+  // The team ships it, told first who that emails.
   await team.goto(`/app/${slug}/p/1`);
   await team.getByLabel("Status").click();
   await team.getByRole("option", { name: "Completed" }).click();
+  const ask = team.getByRole("alertdialog", { name: "Mark “Dark mode” completed?" });
+  await expect(ask).toContainText("This emails up to 1 person who asked for it that it shipped.");
+  await checkpoint(team, "team-post-complete-asks");
+  await ask.getByRole("button", { name: "Mark completed" }).click();
   await expect(team.getByText("Status: Completed")).toBeVisible();
 
   const email = await latestEmailTo(ada.email);
