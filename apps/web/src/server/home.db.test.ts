@@ -1,5 +1,5 @@
 import { prisma } from "@tuti/db";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { createPost } from "@/server/operations/create";
 import { call } from "@/server/operations/run";
@@ -9,6 +9,14 @@ import { homeOverview } from "./home";
 
 const DAY = 86_400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY);
+
+// Midday UTC, held still: the 30-day window can't move past midnight while a test runs (only Date is faked).
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date(`${new Date().toISOString().slice(0, 10)}T12:00:00Z`) });
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 test("Home: the numbers, what needs the team oldest first with its action, Get set up as it's done, and this week's trending ideas", async () => {
   const owner = await signUp("Olive Owner");
