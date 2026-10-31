@@ -159,14 +159,15 @@ export default async function Home() {
             <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-dashed pt-5 text-muted-foreground">
               Sound familiar?
               <span className="relative h-6 min-w-0 basis-full sm:flex-1 sm:basis-auto">
+                <span className="sr-only">“Shipped in March. Still marked Planned.”</span>
                 {["“Shipped in March. Still marked Planned.”", "“128 people asked. Nobody told them.”", "“The changelog is three releases behind.”"].map(
                   (line, i) => (
                     <span
                       key={line}
                       className="landing-rotate absolute inset-x-0 top-0 truncate font-semibold text-foreground"
                       style={{ animationDelay: `${i * 4}s` }}
-                      // Screen readers read the first line only; the others take its place for the eye.
-                      aria-hidden={i > 0}
+                      // Screen readers get the first line, still, from the sr-only copy above.
+                      aria-hidden
                     >
                       {line}
                     </span>
@@ -417,7 +418,7 @@ export default async function Home() {
             items={[
               autopilotPlan ? "Free plan to start" : "Free to start",
               autopilotPlan ? `Autopilot from ${autopilotPlan}` : "Set up in a minute",
-              "Nothing goes out unseen",
+              "Stop anything before it goes out",
               "Self-host anytime",
             ]}
             className="mt-6 justify-center"
