@@ -448,6 +448,20 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await team.keyboard.press("Escape");
   await expect(pane).toHaveCount(0);
 
+  // On the last post, J has nowhere to go: a pane select that has focus doesn't take the J as an option (June, July).
+  await team.goto(`/app/${slug}/feedback?status=all`);
+  const listed = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
+  await team.getByRole("link", { name: listed.at(-1)!, exact: true }).click();
+  const eta = pane.getByRole("combobox", { name: "ETA" });
+  const before = await eta.textContent();
+  await eta.focus();
+  await team.keyboard.press("j");
+  // Saved as it's picked: what's saved, once anything sent has gone, is still what it was.
+  await team.waitForLoadState("networkidle");
+  await team.reload();
+  await expect(pane.getByRole("heading", { name: listed.at(-1)! })).toBeVisible();
+  await expect(eta).toHaveText(before!);
+
   // Filtered so the open post isn't listed any more (another board), J opens the new list's first.
   await team.goto(`/app/${slug}/feedback/boards`);
   await team.getByRole("button", { name: "New board" }).click();

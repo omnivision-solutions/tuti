@@ -67,6 +67,12 @@ export function FeedbackKeys({ order, open, base }: { order: number[]; open: num
       if (!pageShortcut(event, { closedChoicesIn: "[data-feedback-pane]" })) {
         return;
       }
+      // J and K are the list's, also with nowhere to go (the last post, the first): a pane select that has focus
+      // would otherwise pick an option by them (June, a teammate's name), and save it.
+      if (event.key === "j" || event.key === "k") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       const to = event.key === "j" ? step(1) : event.key === "k" ? step(-1) : event.key === "Escape" && open !== null ? href(null) : null;
       if (to === null) {
         return;
