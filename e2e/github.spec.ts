@@ -49,6 +49,7 @@ test("an admin connects two projects to one GitHub account, gives each its repos
   await owner.getByRole("link", { name: "Settings → Autopilot" }).click();
   await owner.waitForURL("**/settings/autopilot");
   await expect(owner.getByText("Nothing has gone out yet.", { exact: false })).toBeVisible();
+  await checkpoint(owner, "settings-autopilot");
   const analysis = owner.getByRole("switch", { name: "Analyse merged pull requests" });
   await expect(analysis).toBeChecked();
   await analysis.click();
