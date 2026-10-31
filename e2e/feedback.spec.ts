@@ -426,6 +426,17 @@ test("Feedback's split view: a row opens the post beside the list, to triage and
   await expect(pane.getByRole("heading", { name: "Calendar sync" })).toBeInViewport();
   await team.setViewportSize({ width: 1440, height: 900 });
 
+  // Writing a reply, its Internal note switch focused: Esc doesn't close the pane (the draft would be lost).
+  await pane.getByRole("textbox", { name: "Comment" }).fill("Half a thought");
+  await pane.getByRole("switch", { name: /Internal note/ }).focus();
+  await team.keyboard.press("Escape");
+  // (Once anything Esc would have done has happened.)
+  await team.waitForLoadState("networkidle");
+  await expect(pane).toBeVisible();
+  await expect(pane.getByRole("textbox", { name: "Comment" })).toHaveText("Half a thought");
+  await pane.getByRole("textbox", { name: "Comment" }).fill("");
+  await team.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
   // J and K step through the list in the pane; Esc closes it.
   const order = await team.getByRole("main").getByRole("listitem").getByRole("link").allTextContents();
   const at = order.indexOf("Calendar sync");
