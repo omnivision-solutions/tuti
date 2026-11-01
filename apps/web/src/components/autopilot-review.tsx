@@ -161,9 +161,9 @@ export function AutopilotReview({
                     ...(decided.length > 0 ? [`${decided.length} done`] : []),
                   ].join(" · ")}
                 </h2>
-                {/* Each one, to jump to its card: how sure Autopilot is, what it is. */}
+                {/* Each one, to jump to its card (or its line under Done): how sure Autopilot is, what it is. */}
                 <ul className="-mx-2 flex flex-col">
-                  {[...scheduled, ...waiting, ...stale].map((update) => (
+                  {[...scheduled, ...waiting, ...stale, ...decided].map((update) => (
                     <li key={update.id}>
                       <a href={`#update-${update.id}`} className="flex items-center gap-3 rounded-lg px-2 py-1 hover:bg-accent">
                         {update.kind === "changelog_line" ? <span className="size-9 shrink-0" /> : <ConfidenceRing update={update} />}
@@ -173,6 +173,7 @@ export function AutopilotReview({
                         </span>
                         {update.status === "scheduled" && <Badge variant="secondary">Goes out by itself</Badge>}
                         {update.status === "stale" && <Badge variant="highlight">Changed since</Badge>}
+                        {decided.includes(update) && <Badge variant="outline">Done</Badge>}
                       </a>
                     </li>
                   ))}
@@ -232,7 +233,12 @@ export function AutopilotReview({
             </h2>
             <ul className="flex flex-col divide-y rounded-xl border bg-card">
               {decided.map((update) => (
-                <li key={update.id} aria-label={`${updateKind(update)}: ${titleOf(update)}`} className="flex items-start gap-3 px-4 py-3 text-sm">
+                <li
+                  key={update.id}
+                  id={`update-${update.id}`}
+                  aria-label={`${updateKind(update)}: ${titleOf(update)}`}
+                  className="flex scroll-mt-20 items-start gap-3 px-4 py-3 text-sm"
+                >
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="break-words">
                       <span className="text-muted-foreground">{updateKind(update)} · </span>

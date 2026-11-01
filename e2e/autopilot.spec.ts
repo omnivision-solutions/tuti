@@ -112,6 +112,8 @@ test("a merged pull request becomes a code change; the team completes the post i
   await expect(confirm).toContainText("1 article edit published. The changelog line updated (still a draft).");
   await confirm.getByRole("button", { name: "Approve" }).click();
   await expect(owner.getByText("Approved 2 updates")).toBeVisible();
+  // The overview lists them still, marked Done.
+  await expect(owner.getByRole("region", { name: "Overview" }).getByRole("link", { name: `Out of date · ${article}` })).toContainText("Done");
   await expect(owner.getByRole("alertdialog")).toHaveCount(0);
   const done = owner.getByRole("region", { name: "Done" });
   await expect(done.getByRole("listitem", { name: `Out of date: ${article}` })).toContainText("Approved by Olive Owner");
