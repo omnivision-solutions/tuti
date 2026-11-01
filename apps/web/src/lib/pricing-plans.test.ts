@@ -12,7 +12,11 @@ test("AI credits say what they buy, at the server's credit rate", () => {
   vi.stubEnv("PLANS", "on");
   vi.stubEnv("AI_CREDITS", "on");
   vi.stubEnv("AI_CREDITS_FREE", "100");
+  vi.stubEnv("AI_CREDITS_PRO", "1000");
+  vi.stubEnv("AI_CREDITS_BUSINESS", "5000");
   vi.stubEnv("AI_CREDITS_PER_USAGE_DOLLAR", "500");
+  // Without Stripe, no top-ups: the cards list only what credits buy.
+  vi.stubEnv("STRIPE_SECRET_KEY", "");
   // Free doesn't include Autopilot, so its credits buy answers only.
   expect(line("Free", "100 AI credits")?.more?.points).toEqual(["About 200 AI answers for your customers"]);
   expect(line("Pro", "1,000 AI credits a month")?.more?.points).toEqual([
