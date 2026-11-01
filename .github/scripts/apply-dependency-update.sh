@@ -13,7 +13,7 @@ git apply --cached "$patch"
 git diff --cached --name-only --no-renames -z > "$RUNNER_TEMP/dependency-update.paths"
 while IFS= read -r -d '' file; do
   case "$file" in
-    .*|*/.*|AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|GEMINI.md|*/GEMINI.md|SKILL.md|*/SKILL.md|greptile.json|*/greptile.json)
+    .*|*/.*|AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|GEMINI.md|*/GEMINI.md|SKILL.md|*/SKILL.md|greptile.json|*/greptile.json|kodus-config.yml|*/kodus-config.yml)
       echo "::error::The dependency patch changes $(printf %q "$file"): workflows, instructions and env files are off limits."
       exit 1 ;;
   esac

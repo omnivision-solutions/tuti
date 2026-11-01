@@ -290,6 +290,10 @@ export type DocsTree = ReturnType<typeof docsTree>;
 
 export { docsTabPath } from "@/lib/docs-level-above";
 
+/** How many articles this reader may open in `collection` and the collections in it (locked ones aren't counted). */
+export const articleCount = (collection: DocsCollection): number =>
+  collection.articles.filter((article) => !article.locked).length + collection.collections.reduce((sum, inside) => sum + articleCount(inside), 0);
+
 /** Every collection in `collections` and the ones in them, in reading order. */
 export const everyCollection = (collections: DocsCollection[]): DocsCollection[] => collections.flatMap((c) => [c, ...everyCollection(c.collections)]);
 
@@ -527,7 +531,7 @@ const POPULAR_DAYS = 30;
  * 30 days among those this reader sees in `docs` and may open (locked ones left out), most viewed
  * first; articles nobody viewed aren't popular.
  */
-export async function popularArticles(projectSlug: string, docs: DocsContents): Promise<DocsArticleLink[]> {
+export async function popularArticles(projectSlug: string, docs: DocsContents, take = POPULAR_ARTICLES): Promise<DocsArticleLink[]> {
   const collections = (list: DocsCollection[]): DocsArticleLink[] => list.flatMap((c) => [...c.articles, ...collections(c.collections)]);
   const readable = new Map(
     [...collections(docs.collections), ...docs.uncollected].filter((article) => !article.locked).map((article) => [article.slug, article]),
@@ -541,7 +545,7 @@ export async function popularArticles(projectSlug: string, docs: DocsContents): 
     where: { day: { gte: since }, article: { ...listedArticle, project: { slug: projectSlug }, slug: { in: [...readable.keys()] } } },
     _sum: { views: true },
     orderBy: [{ _sum: { views: "desc" } }, { articleId: "asc" }],
-    take: POPULAR_ARTICLES,
+    take,
   });
   const slugs = new Map(
     (await prisma.article.findMany({ where: { id: { in: top.map((row) => row.articleId) } }, select: { id: true, slug: true } })).map((a) => [a.id, a.slug]),

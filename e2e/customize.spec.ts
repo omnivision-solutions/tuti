@@ -72,7 +72,7 @@ test("the team sets what readers can do with an article and the docs' home, seei
   await expect(visitor.getByRole("heading", { name: "Inviting your team" })).toBeVisible();
   await expect(visitor.getByRole("button", { name: "Page actions" })).toHaveCount(0);
 
-  // Customize → Docs home: the heading above the search box.
+  // Customize → Docs home: the heading at its top.
   await rail.getByRole("link", { name: "Docs home" }).click();
   await expect(preview.getByRole("heading", { name: "Docs", level: 1 })).toBeVisible();
   await owner.getByLabel("Title", { exact: true }).fill("  How can we help?  ");

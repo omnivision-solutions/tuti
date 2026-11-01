@@ -214,11 +214,11 @@ model Project {
   articleOpenChatGpt    Boolean      @default(true)
   articleOpenClaude     Boolean      @default(true)
   articleUpdatedDate    Boolean      @default(true)
-  /// The docs' home (Customize → Docs home): a title and a subtitle above its search box (empty for
-  /// "Docs" and the default line), and whether it lists the most-read articles.
+  /// The docs' home (Customize → Docs home): a title and a subtitle at its top (empty for "Docs" and
+  /// the default line), and whether it lists the most-read articles (new projects do).
   docsTitle             String       @default("")
   docsSubtitle          String       @default("")
-  docsPopular           Boolean      @default(false)
+  docsPopular           Boolean      @default(true)
   /// The portal's own search listing (Customize → SEO): its title (empty: the project's name), its
   /// description, and the image a link to it shows (an upload, like the logos).
   seoTitle              String       @default("")

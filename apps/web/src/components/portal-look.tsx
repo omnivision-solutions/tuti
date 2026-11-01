@@ -168,14 +168,14 @@ export function PortalContact() {
   );
 }
 
-/** The team's links above the docs' tree (Customize → Navigation). */
-export function DocsSidebarLinks() {
+/** The team's links above the docs' tree, or alone beside a tab's overview (Customize → Navigation). */
+export function DocsSidebarLinks({ className }: { className?: string }) {
   const { sidebarLinks } = usePortalLook();
   if (sidebarLinks.length === 0) {
     return null;
   }
   return (
-    <ul aria-label="Links" className="flex flex-col gap-0.5 border-b pb-4">
+    <ul aria-label="Links" className={cn("flex flex-col gap-0.5 text-sm", className)}>
       {sidebarLinks.map((link, i) => (
         <li key={i}>
           <a href={link.url} className="flex items-center gap-2 rounded-md px-2 py-1 break-words text-muted-foreground transition-colors hover:text-foreground">
@@ -186,6 +186,11 @@ export function DocsSidebarLinks() {
       ))}
     </ul>
   );
+}
+
+/** `children` only where the team has docs sidebar links (beside a tab's overview, which has no tree). */
+export function IfSidebarLinks({ children }: { children: React.ReactNode }) {
+  return usePortalLook().sidebarLinks.length > 0 ? children : null;
 }
 
 /** The team's links in the header. On phones they get a line of their own. */
