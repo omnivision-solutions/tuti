@@ -478,6 +478,9 @@ test("an entry's posts in the editor: a merged one doesn't block saving, and unp
   await completes.getByRole("button", { name: "Remove “Calendar sync”" }).click();
   await team.getByRole("button", { name: "Save", exact: true }).click();
   await expect(team.getByText("Saved", { exact: true })).toBeVisible();
+  // Reloaded, so this save's toast is gone before the next save's is waited for.
+  await team.reload();
+  await expect(completes.getByRole("link")).toHaveText(["Dark mode"]);
 
   // A post taken off without saving, then published and unpublished: the sidebar shows (and saves) the saved posts.
   await completes.getByRole("button", { name: "Remove “Dark mode”" }).click();
