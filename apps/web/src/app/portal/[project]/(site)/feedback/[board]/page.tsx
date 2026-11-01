@@ -99,8 +99,9 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           <SubNav
             label="Sort"
             current={tabHref(filters.sort)}
-            // A tab reorders the list under it: the page stays where it is.
-            scroll={false}
+            // A tab reorders the list under it: the page stays where it is. Not from further pages loaded
+            // ("Load more"), which a tab leaves (its list is the first page): there it starts at the top.
+            scroll={filters.page === 1 ? false : undefined}
             items={TABS.map(([key, title]) => ({ href: tabHref(key), title }))}
           />
         </div>

@@ -258,6 +258,15 @@ test("long lists load 50 posts at a time, keeping the place in the address", asy
     await page.goBack();
     await expect(page.getByRole("link", { name: "Idea 1", exact: true })).toBeVisible();
   }
+  // From further down page two, a board's tab (its first page, shorter) starts at the top, not past its end.
+  await portal.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const sort = portal.getByRole("navigation", { name: "Sort" });
+  await expect(sort).not.toBeInViewport();
+  // Clicked where it is (Playwright's click would scroll it into view first).
+  await sort.getByRole("link", { name: "New" }).evaluate((link: HTMLElement) => link.click());
+  await portal.waitForURL(/\?sort=new$/);
+  await expect(portal.getByRole("link", { name: "Idea 51", exact: true })).toBeVisible();
+  await expect(sort).toBeInViewport();
 });
 
 test("a board opens on the ideas not done yet, with completed ones in Recently shipped, and its box finds similar ideas", async ({ browser }, testInfo) => {
