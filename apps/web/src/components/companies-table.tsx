@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import Link from "next/link";
 
 import { EmptyState } from "@/components/empty-state";
@@ -43,11 +44,13 @@ export async function CompaniesTable({
       />
     );
   }
+  // On phones, the company and one number (Who's asking's total when there is one, else its users); the rest from tablet width up.
+  const wide = (column: Sort) => (column === "votes" || (column === "users" && property) ? "hidden md:table-cell" : undefined);
   const href = ({ to = page, by = sort }: { to?: number; by?: Sort }) =>
     `?${new URLSearchParams({ view: "companies", ...(by !== "users" && { sort: by }), ...(to > 1 && { page: String(to) }) })}`;
   /** A column's heading: a link that sorts by it, the most first (from the first page), marked while it does. */
   const sortHeading = (by: Sort, label: string) => (
-    <th scope="col" aria-sort={sort === by ? "descending" : undefined} className="text-right break-all">
+    <th scope="col" aria-sort={sort === by ? "descending" : undefined} className={cn("text-right break-all", wide(by))}>
       <Link href={href({ to: 1, by })} className={sort === by ? "text-foreground underline underline-offset-4" : "hover:text-foreground"}>
         {label}
       </Link>
@@ -75,8 +78,8 @@ export async function CompaniesTable({
                       {company.name}
                     </Link>
                   </td>
-                  <td className="text-right tabular-nums">{company.users}</td>
-                  <td className="text-right tabular-nums">{company.votes}</td>
+                  <td className={cn("text-right tabular-nums", wide("users"))}>{company.users}</td>
+                  <td className={cn("text-right tabular-nums", wide("votes"))}>{company.votes}</td>
                   {property && <td className="text-right tabular-nums">{company.total === null ? <span className="text-muted-foreground">–</span> : askingTotal(company.total, property, formats)}</td>}
                 </tr>
               ))}

@@ -240,4 +240,8 @@ test("who's asking: Feedback totals the property the team picks over each post's
   await table.getByRole("link", { name: "MRR" }).click();
   await expect(owner).toHaveURL(/\?view=companies&sort=total$/);
   await expect(table.getByRole("columnheader", { name: "MRR" })).toHaveAttribute("aria-sort", "descending");
+  // On a phone: the company and its MRR, nothing sideways.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await expect(table.getByRole("columnheader")).toHaveText(["Company", "MRR"]);
+  expect(await owner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });
