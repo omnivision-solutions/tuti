@@ -377,6 +377,8 @@ test("a board's posts are rows, in Trending, Top or New order, and its search na
   await main.getByRole("searchbox", { name: "Search ideas" }).press("Enter");
   await visitor.waitForURL(/\?sort=new&q=sync$/);
   await expect(titles).toHaveText(["Sync contacts", "Calendar sync"]);
+  // The box keeps focus, to refine the search.
+  await expect(main.getByRole("searchbox", { name: "Search ideas" })).toBeFocused();
   // What it found is read out (the page doesn't reload).
   await expect(main.getByRole("status").filter({ hasText: "ideas match" })).toHaveText('2 ideas match "sync"');
   await expect(main.getByRole("listitem").filter({ hasText: "Sync contacts" })).toContainText("Completed");

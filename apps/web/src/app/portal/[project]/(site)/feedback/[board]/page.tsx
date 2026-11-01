@@ -4,6 +4,7 @@ import Form from "next/form";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 
+import { BoardSearchInput } from "@/components/board-search-input";
 import { EmptyState } from "@/components/empty-state";
 import { ShareIdeaBox } from "@/components/new-post-form";
 import { PageHeader } from "@/components/page-header";
@@ -11,7 +12,6 @@ import { PostStatusBadge } from "@/components/post-status-badge";
 import { SubNav } from "@/components/sub-nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { VoteButton } from "@/components/vote-button";
 import { boardTexts } from "@/lib/board-texts";
 import { boardStatuses, nextPageHref, parsePostFilters, TEAM_SORTS } from "@/lib/post-filters";
@@ -108,8 +108,7 @@ export default async function BoardPage(props: PageProps<"/portal/[project]/feed
           {filters.sort !== "trending" && <input type="hidden" name="sort" value={filters.sort} />}
           {first(searchParams.status) && <input type="hidden" name="status" value={first(searchParams.status)} />}
           {title && <input type="hidden" name="title" value={title} />}
-          {/* Keyed by the search: Back (no reload) shows the one in the address, not the last typed. */}
-          <Input key={q ?? ""} type="search" name="q" defaultValue={q} placeholder="Search ideas" aria-label="Search ideas" className="h-8" />
+          <BoardSearchInput q={q ?? ""} />
         </Form>
         {/* What a search found, read out (the page doesn't reload, so nothing else is). */}
         <p role="status" className="sr-only">
