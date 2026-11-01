@@ -740,6 +740,12 @@ test("the next release waits to be written; its entry gets a cover readers see, 
   await ada.emulateMedia({ colorScheme: "dark" });
   await expect.poll(() => cover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
   await checkpoint(ada, "portal-changelog-entry-cover-phone-dark");
+  // In the widget too: What's new, opened from Home's card, shows the entry with its cover, loaded.
+  await ada.goto("/widget");
+  await ada.getByRole("link", { name: /^What's new/ }).click();
+  const widgetCover = ada.getByRole("article", { name: "Dark mode is here" }).getByRole("img", { name: "Dark mode is here" });
+  await expect(widgetCover).toBeVisible();
+  await expect.poll(() => widgetCover.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
 
   // A cover changed elsewhere (another tab, a teammate) shows here once the page refreshes, not the one it had.
   await team.goto(`/app/${slug}/changelog/1`);
