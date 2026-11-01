@@ -2,7 +2,7 @@ import { type ModelFake, startModelFake } from "@tuti/testkit";
 import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 
 import { aiEnabled, complete, decide, DEFAULT_AI_MODEL, DEFAULT_DECISION_MODEL, defaultModel, listModels, modelMaxPrice, withinModelCap } from "./ai";
-import type { AiUsage } from "./usage";
+import { type AiUsage, replyCost } from "./usage";
 
 let model: ModelFake;
 beforeAll(async () => {
@@ -140,6 +140,8 @@ test("every answered request says what it used: tokens and cost, chat and decisi
   const record = async (usage: AiUsage) => void used.push(usage);
   model.reply("Hello");
   await complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record });
+  model.reply("Hello");
+  await complete({ system: "Be brief", user: "Hi", model: "acme/tiny", meter: record });
   model.fail(500);
   await expect(complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record })).rejects.toThrow();
   model.decide({ shipped: 0.9 });
@@ -147,11 +149,28 @@ test("every answered request says what it used: tokens and cost, chat and decisi
   // Answered but unusable (an empty reply): still paid for, so still recorded.
   model.reply("  ");
   await expect(complete({ system: "Be brief", user: "Hi", model: DEFAULT_AI_MODEL, meter: record })).rejects.toThrow("The AI reply had no text");
-  expect(used.splice(2).map((usage) => usage.kind)).toEqual(["chat"]);
+  expect(used.splice(3).map((usage) => usage.kind)).toEqual(["chat"]);
   // The fake's usage: a token per character; chat a millionth of a dollar each, decisions a hundred-millionth.
   expect(used).toEqual([
+    // Through our own key (BYOK) or not, the same price.
     { kind: "chat", model: DEFAULT_AI_MODEL, inputTokens: 10, outputTokens: 5, cost: 15 / 1e6 },
+    { kind: "chat", model: "acme/tiny", inputTokens: 10, outputTokens: 5, cost: 15 / 1e6 },
     // The model that answered, as the reply names it.
     { kind: "decision", model: `${DEFAULT_DECISION_MODEL}-fake-build`, inputTokens: 10, outputTokens: 1, cost: 11 / 1e8 },
   ]);
+});
+
+test("a request's cost is what OpenRouter charged, plus the provider's charge when it went through our own key", () => {
+  // BYOK: OpenRouter's fee (none within its allowance) and the provider's charge.
+  expect(replyCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: 0.0013 } })).toBe(0.0013);
+  expect(replyCost({ cost: 0.0001, is_byok: true, cost_details: { upstream_inference_cost: 0.0013 } })).toBeCloseTo(0.0014);
+  // Otherwise the upstream cost is already in the cost.
+  expect(replyCost({ cost: 0.0013, is_byok: false, cost_details: { upstream_inference_cost: 0.0013 } })).toBe(0.0013);
+  expect(replyCost({ cost: 0.0013, cost_details: null })).toBe(0.0013);
+  // Neither reported (another OpenAI-compatible endpoint).
+  expect(replyCost({})).toBeNull();
+  expect(replyCost(undefined)).toBeNull();
+  // BYOK without the provider's charge: unknown, not free.
+  expect(replyCost({ cost: 0, is_byok: true, cost_details: { upstream_inference_cost: null } })).toBeNull();
+  expect(replyCost({ cost: 0, is_byok: true })).toBeNull();
 });
