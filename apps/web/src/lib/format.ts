@@ -64,3 +64,18 @@ export function firstLine(text: string, max = 140): string | undefined {
 
 /** A name's first character, as an avatar shows it (a whole emoji, not part of one). */
 export const initial = (name: string) => (graphemes(name.trim())[0] ?? "?").toUpperCase();
+
+/** A subject from the first line of the first message, when none is given. */
+export const subjectFrom = (text: string) => {
+  const line = text.split("\n", 1)[0]!.trim();
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+};
+
+/**
+ * What an Inbox row shows of a conversation's latest message beside its subject: its first line (firstLine), unless it
+ * says the same as the subject, or the subject was made from it (subjectFrom, a conversation started without one).
+ */
+export function rowLine(subject: string, body: string): string | undefined {
+  const line = firstLine(body);
+  return line !== undefined && line !== subject && subjectFrom(body) !== subject ? line : undefined;
+}

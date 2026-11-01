@@ -392,7 +392,7 @@ test("with an address for the project, an email to it lands in the inbox without
   // named for who, what and which, for screen readers.
   await (await apiFor(owner, slug))("/users", { users: [{ id: "kim-1", name: "Kim Lee", email: "e2e-kim@example.com", properties: { company: "Hooli" } }] });
   await owner.goto(`/app/${slug}/inbox`);
-  const kimLink = owner.getByRole("link", { name: "e2e-kim@example.com: Invoice missing (#1)" });
+  const kimLink = owner.getByRole("link", { name: "e2e-kim@example.com, Hooli: Invoice missing (#1)" });
   await expect(kimLink).toHaveText("e2e-kim@example.com · Hooli");
   await kimLink.click();
   await expect(owner.getByText(/e2e-kim@example\.com · started from email/)).toBeVisible();

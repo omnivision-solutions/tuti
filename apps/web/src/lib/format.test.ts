@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { asking, askingTotal, firstLine, initial, shortDuration, timeAgo } from "./format";
+import { asking, askingTotal, firstLine, initial, rowLine, shortDuration, subjectFrom, timeAgo } from "./format";
 
 const now = new Date("2026-10-18T12:00:00Z");
 const ago = (seconds: number) => timeAgo(new Date(now.getTime() - seconds * 1000), now);
@@ -50,4 +50,14 @@ test("a message's first line with something on it, cut short past 140 characters
   expect(firstLine("🇳🇿".repeat(150))).toBe(`${"🇳🇿".repeat(139)}…`);
   expect(initial("👩🏽‍💻 Ada")).toBe("👩🏽‍💻");
   expect(initial("sam")).toBe("S");
+});
+
+test("an Inbox row's line beside its subject: not when the subject is it, or was made from it; shown when a subject someone wrote only starts like it", () => {
+  const long = `https://example.com/reports/export?id=${"8f3c2a91".repeat(10)}`;
+  // Made from it (cut at 80): not said twice.
+  expect(rowLine(subjectFrom(long), long)).toBeUndefined();
+  expect(rowLine("Help", "Help")).toBeUndefined();
+  // A subject someone wrote, ending in "…", and a message going on from it: shown.
+  expect(rowLine("Billing…", "Billing page shows the wrong total")).toBe("Billing page shows the wrong total");
+  expect(rowLine("Can't export", "The button does nothing\nOn reports")).toBe("The button does nothing");
 });

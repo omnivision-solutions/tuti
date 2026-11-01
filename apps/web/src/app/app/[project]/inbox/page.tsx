@@ -11,10 +11,10 @@ import { SubNav } from "@/components/sub-nav";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { firstLine, initial, shortDuration, timeAgo } from "@/lib/format";
+import { initial, rowLine, shortDuration, timeAgo } from "@/lib/format";
 import { getMembership } from "@/server/membership";
 import { conversationCompanies } from "@/server/inbox-companies";
-import { awake, conversationPerson, subjectFrom } from "@/server/operations/conversations";
+import { awake, conversationPerson } from "@/server/operations/conversations";
 import { getSession } from "@/server/session";
 
 /** The inbox's views: what needs an answer first, then the rest. */
@@ -94,8 +94,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
           WHERE "conversationId" = c.id AND NOT note ORDER BY "createdAt" DESC, id DESC LIMIT 1
         ) m`
     : [];
-  // Its first line; none when the subject was made from it (a conversation started without one), not to say it twice.
-  const lines = new Map(latest.map((m) => [m.conversationId, { line: firstLine(m.body), madeSubject: subjectFrom(m.body) }]));
+  const bodies = new Map(latest.map((m) => [m.conversationId, m.body]));
   const companies = await conversationCompanies(projectId, conversations);
   const base = `/app/${slug}/inbox`;
   const href = (v: View) => (v === "open" ? base : `${base}?view=${v}`);
@@ -131,8 +130,8 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                   const name = person.name ?? person.email ?? "Unknown";
                   // Their company, as the team's app says (Users' company property), when it says one.
                   const company = companies.get(c.id);
-                  const latestLine = lines.get(c.id);
-                  const line = latestLine && latestLine.line !== c.subject && latestLine.madeSubject !== c.subject ? latestLine.line : undefined;
+                  const body = bodies.get(c.id);
+                  const line = body === undefined ? undefined : rowLine(c.subject, body);
                   return (
                     <ItemRow
                       key={c.number}
@@ -144,7 +143,7 @@ export default async function InboxPage(props: PageProps<"/app/[project]/inbox">
                       }
                       title={
                         // Named for screen readers by whom, what and which: one person's conversations told apart.
-                        <Link href={`${base}/${c.number}`} data-row-link aria-label={`${name}: ${c.subject} (#${c.number})`} className="hover:underline">
+                        <Link href={`${base}/${c.number}`} data-row-link aria-label={`${name}${company ? `, ${company}` : ""}: ${c.subject} (#${c.number})`} className="hover:underline">
                           {name}
                           {company && <span className="font-normal text-muted-foreground"> · {company}</span>}
                         </Link>
