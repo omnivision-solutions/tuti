@@ -96,6 +96,7 @@ export async function changelogPage(slug: string, page: number, tag?: ChangelogT
   const [found, announced, dates] = await Promise.all([
     publishedEntries(slug, { tag, take: PAGE_SIZE + 1, skip: (page - 1) * PAGE_SIZE, userId: session?.user.id }),
     // The newest entries are on the first page: viewing it, a signed-in user has seen them (the nav's "New" goes).
+    // Not a tag's first page: the newest announcement may not have the tag, and the reader wouldn't have seen it.
     session && page === 1 && !tag ? latestAnnouncedAt({ slug }) : null,
     changelogDates(slug),
   ]);

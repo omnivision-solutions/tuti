@@ -2,6 +2,7 @@ import { prisma } from "@tuti/db";
 import { isValidElement, type ReactNode } from "react";
 import { beforeEach, expect, test } from "vitest";
 
+import { ChangelogSeen } from "@/components/changelog-seen";
 import { actAs, createProject, signUp } from "@/test/helpers";
 
 import ChangelogPage from "./page";
@@ -27,7 +28,8 @@ beforeEach(async () => {
 
 /**
  * A page's entries (first and last number) and where its links go ("Newer entries", "Older entries", the tags' chips),
- * and the month index's ("January 2026, 45 entries"); or "308 <where>", "404". `tag`: `?tag=`.
+ * the month index's ("January 2026, 45 entries"), and `seen`, up to when it marks a signed-in reader's announcements seen;
+ * or "308 <where>", "404". `tag`: `?tag=`.
  */
 async function changelog(page?: string, tag?: string) {
   const params = Promise.resolve({ project: project.slug, ...(page !== undefined && { page }) });
@@ -46,12 +48,16 @@ async function changelog(page?: string, tag?: string) {
   const entries: number[] = [];
   const links: Record<string, string> = {};
   const months: Record<string, string> = {};
+  let seen: string | undefined;
   const walk = (node: ReactNode): void => {
     if (Array.isArray(node)) {
       node.forEach(walk);
     } else if (isValidElement<{ children?: ReactNode; action?: ReactNode; entry?: { number: number }; href?: string; "aria-label"?: string }>(node)) {
       if (node.props.entry) {
         entries.push(node.props.entry.number);
+      }
+      if (node.type === ChangelogSeen) {
+        seen = (node.props as { at: string }).at;
       }
       if (node.props.href && node.props["aria-label"]) {
         months[node.props["aria-label"]] = node.props.href;
@@ -64,7 +70,7 @@ async function changelog(page?: string, tag?: string) {
     }
   };
   walk(rendered);
-  return { entries: entries.length ? `${entries[0]}–${entries.at(-1)}` : "none", ...links, ...(Object.keys(months).length > 0 && { months }) };
+  return { entries: entries.length ? `${entries[0]}–${entries.at(-1)}` : "none", ...links, ...(Object.keys(months).length > 0 && { months }), ...(seen && { seen }) };
 }
 
 test("older entries are at /changelog/page/<n>; the links between pages follow", async () => {
@@ -129,4 +135,15 @@ test("a tag's chip lists only its entries, `?tag=` kept through the pages; the m
   expect(await changelog(undefined, "new")).toEqual({ entries: "71–71", ...chips });
   // Not a tag: every entry.
   expect(await changelog(undefined, "bogus")).toEqual(expect.objectContaining({ entries: "71–52", "Older entries": "/changelog/page/2" }));
+});
+
+test("signed in, the first page marks the newest announcement seen; a tag's page doesn't, as the newest may not be on it", async () => {
+  const publishedAt = new Date();
+  await prisma.changelogEntry.create({
+    data: { projectId: project.id, number: 46, title: "Dark mode", tags: ["NEW"], announced: true, publishedAt },
+  });
+  actAs(await signUp());
+  expect(await changelog()).toEqual(expect.objectContaining({ entries: "46–27", seen: publishedAt.toISOString() }));
+  expect(await changelog(undefined, "new")).not.toHaveProperty("seen");
+  expect(await changelog("2")).not.toHaveProperty("seen");
 });
